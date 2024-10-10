@@ -10,3 +10,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - 6% premine for founder allocations
 - Fair launch model, no ICO, no VC funding
 
+## Oct 10, 2024 — Proof-of-Antiquity Concept
+- Drafted PoA consensus: vintage hardware earns higher mining rewards
+- PowerPC G4 = 2.5x, G5 = 2.0x, Apple Silicon = 1.2x
+- Philosophy: every CPU has a voice
+
