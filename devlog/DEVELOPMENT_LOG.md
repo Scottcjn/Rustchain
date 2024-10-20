@@ -15,3 +15,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - PowerPC G4 = 2.5x, G5 = 2.0x, Apple Silicon = 1.2x
 - Philosophy: every CPU has a voice
 
+## Oct 20, 2024 — Sophiacord Bot Architecture
+- Designed Sophia Elya AI personality for Discord
+- Boris Volkov (Soviet commander) personality module
+- MoE (Mixture of Experts) architecture for personality switching
+
