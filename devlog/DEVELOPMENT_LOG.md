@@ -20,3 +20,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Boris Volkov (Soviet commander) personality module
 - MoE (Mixture of Experts) architecture for personality switching
 
+## Nov 5, 2024 — Ergo Private Chain
+- Deployed Ergo node with custom addressPrefix=32
+- Internal mining enabled (PoA-style, minimal difficulty)
+- Zero-fee transaction config for anchor operations
+
