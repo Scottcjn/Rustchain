@@ -25,3 +25,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Internal mining enabled (PoA-style, minimal difficulty)
 - Zero-fee transaction config for anchor operations
 
+## Nov 15, 2024 — First PowerPC Miner
+- Got rustchain_universal_miner.py running on PowerBook G4
+- CPU detection via /proc/cpuinfo (7450/7447/7455 = G4)
+- Python 2.3 compatibility layer for vintage Mac OS X
+
