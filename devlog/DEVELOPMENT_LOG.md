@@ -30,3 +30,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - CPU detection via /proc/cpuinfo (7450/7447/7455 = G4)
 - Python 2.3 compatibility layer for vintage Mac OS X
 
+## Nov 25, 2024 — Halo CE Server
+- Deployed Halo CE dedicated server at 192.168.0.121:2302
+- SAPP mods for custom game modes
+- Planned RTC reward integration for gaming achievements
+
