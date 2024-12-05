@@ -35,3 +35,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - SAPP mods for custom game modes
 - Planned RTC reward integration for gaming achievements
 
+## Dec 5, 2024 — Database Schema Design
+- Designed core tables: balances, ledger, headers, epoch_state
+- miner_attest_recent for attestation tracking
+- epoch_rewards and epoch_enroll for settlement
+
