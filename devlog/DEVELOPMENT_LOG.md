@@ -40,3 +40,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - miner_attest_recent for attestation tracking
 - epoch_rewards and epoch_enroll for settlement
 
+## Dec 20, 2024 — VPS Infrastructure
+- Provisioned LiquidWeb VPS at 50.28.86.131
+- Deployed rustchain_v2_integrated.py as systemd service
+- nginx reverse proxy with HTTPS (self-signed)
+
