@@ -45,3 +45,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Deployed rustchain_v2_integrated.py as systemd service
 - nginx reverse proxy with HTTPS (self-signed)
 
+## Jan 8, 2025 — Multi-Miner Attestation
+- Implemented /attest/submit endpoint
+- Device family detection (PowerPC, ARM, x86_64)
+- Attestation TTL: 24 hours (ATTESTATION_TTL = 86400)
+
