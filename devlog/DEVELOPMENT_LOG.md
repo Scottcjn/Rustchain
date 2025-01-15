@@ -50,3 +50,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Device family detection (PowerPC, ARM, x86_64)
 - Attestation TTL: 24 hours (ATTESTATION_TTL = 86400)
 
+## Jan 15, 2025 — Epoch Settlement
+- 10-minute epochs with automatic settlement
+- Time-aged multipliers: G4 2.5x decaying over 16.67 years
+- 1 CPU = 1 Vote weighted by antiquity bonus
+
