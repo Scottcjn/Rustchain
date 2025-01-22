@@ -55,3 +55,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Time-aged multipliers: G4 2.5x decaying over 16.67 years
 - 1 CPU = 1 Vote weighted by antiquity bonus
 
+## Jan 22, 2025 — Vintage Mac Fleet Deployment
+- PowerBook G4 miners at 192.168.0.115, 192.168.0.125
+- Power Mac G5 Dual at 192.168.0.130
+- Secure miner proxy for legacy TLS on old Macs
+
