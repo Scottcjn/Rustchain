@@ -60,3 +60,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Power Mac G5 Dual at 192.168.0.130
 - Secure miner proxy for legacy TLS on old Macs
 
+## Feb 3, 2025 — Halo CE Bridge
+- GameSpy protocol monitoring for player events
+- RTC rewards: 0.01 per kill, 0.05 per game win
+- Discord announcements for game events
+
