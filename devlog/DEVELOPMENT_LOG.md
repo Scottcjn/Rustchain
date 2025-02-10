@@ -65,3 +65,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - RTC rewards: 0.01 per kill, 0.05 per game win
 - Discord announcements for game events
 
+## Feb 10, 2025 — Wallet Cryptography
+- BIP39 24-word mnemonic seed phrases
+- Ed25519 elliptic curve digital signatures
+- PBKDF2 key derivation (100,000 iterations)
+- AES-256-GCM encrypted keystores
+
