@@ -71,3 +71,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - PBKDF2 key derivation (100,000 iterations)
 - AES-256-GCM encrypted keystores
 
+## Feb 18, 2025 — Block Explorer
+- Uvicorn-based explorer at port 8092
+- Transaction history, miner stats, epoch timeline
+- nginx proxied at /explorer path
+
