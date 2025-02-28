@@ -76,3 +76,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Transaction history, miner stats, epoch timeline
 - nginx proxied at /explorer path
 
+## Feb 28, 2025 — Wallet GUI Editions
+- Standard wallet for end users
+- Founder wallet with pre-loaded founder IDs
+- Secure wallet with BIP39 + Ed25519 signatures
+- PyInstaller builds + .deb packaging
+
