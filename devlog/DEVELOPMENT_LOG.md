@@ -82,3 +82,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Secure wallet with BIP39 + Ed25519 signatures
 - PyInstaller builds + .deb packaging
 
+## Mar 10, 2025 — Minecraft Server (Flamebound Realm)
+- Spigot 1.20.4 at 50.28.86.131:25565
+- BetonQuest + MythicMobs + Citizens NPCs
+- RTC rewards: diamond=0.001, boss=0.05, quest=0.001
+
