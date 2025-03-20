@@ -87,3 +87,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - BetonQuest + MythicMobs + Citizens NPCs
 - RTC rewards: diamond=0.001, boss=0.05, quest=0.001
 
+## Mar 20, 2025 — Node 2 Deployment
+- Second LiquidWeb VPS at 50.28.86.153
+- Ergo anchor node for on-chain commitments
+- Database sync between nodes
+
