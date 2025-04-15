@@ -98,3 +98,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Zero-fee transactions via config fix
 - First TX: 731d5d8766cb6012daf84aa9e3d961d72a9f6cc809f1a09b9e6417902d7ad8fc
 
+## Apr 15, 2025 — POWER8 S824 Acquired
+- IBM Power System S824 (8286-42A): 16 cores, 128 threads
+- 512 GB DDR3 across 2 NUMA nodes
+- Ubuntu 20.04 LTS (last POWER8-supported)
+- Pawn shop acquisition, estimated K+ value
+
