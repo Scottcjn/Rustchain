@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.env
+venv/
+*.egg-info/
+*.log
+.DS_Store
+Thumbs.db
+output/
+*.zip
+*.tar.gz
