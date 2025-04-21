@@ -1,0 +1,13 @@
+{
+    "validators": [
+        {
+            "wallet": "example-wallet-123",
+            "cpu_model": "Pentium III",
+            "bios_timestamp": "1998-12-01",
+            "entropy_score": 3.47,
+            "score_composite": 9.14,
+            "rank": 1
+        }
+    ],
+    "last_updated": "2025-04-21T16:37:47.088498Z"
+}
