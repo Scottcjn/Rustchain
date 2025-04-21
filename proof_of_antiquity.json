@@ -1,5 +1,10 @@
 {
-    "bios_timestamp": "TBD",
-    "cpu_model": "TBD",
-    "entropy_score": 0.0
+    "wallet": "example-wallet-123",
+    "bios_timestamp": "1998-12-01T00:00:00Z",
+    "cpu_model": "Pentium III",
+    "entropy_score": 3.47,
+    "bios_fingerprint": "1234abcd5678efgh9012ijkl3456mnop",
+    "score_composite": 9.14,
+    "timestamp": "2025-04-21 14:12:00",
+    "rarity_bonus": 1.02
 }

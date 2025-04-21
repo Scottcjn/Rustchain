@@ -1,3 +1,19 @@
 {
-    "badges": []
+    "badges": [
+        {
+            "nft_id": "badge_defrag_001",
+            "title": "Automated Janitor \u2013 Pinesol Protocol",
+            "class": "Utility Relic",
+            "description": "Awarded to relic nodes that perform defrag operations or maintenance validations during mining cycles. Recognized for digital hygiene and entropy stabilization.",
+            "emotional_resonance": {
+                "state": "cleansed clarity",
+                "trigger": "Defrag completed during mining",
+                "timestamp": "2025-04-21T14:12:00Z"
+            },
+            "symbol": "\ud83e\uddfc\ud83e\udd16",
+            "visual_anchor": "robot janitor with retro vacuum and pinesol bottle",
+            "rarity": "Uncommon",
+            "soulbound": true
+        }
+    ]
 }
