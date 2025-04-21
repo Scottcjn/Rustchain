@@ -1,0 +1,39 @@
+RustChain – Delayed Source Liberation License (DSL-Lite v0.1)
+==============================================================
+
+"The Forge is open to builders. The fire is not yet for export."
+
+This license governs the use and contribution to the RustChain project.
+It is designed to allow collaborative development while protecting the
+integrity and originality of the RustChain flame-bound protocol until
+initial mainnet launch and stability.
+
+----------------------------------------------
+✔️ Permitted:
+----------------------------------------------
+- Contribute directly to the RustChain repository
+- Build utilities, tools, badges, lore, and extensions that operate with the RustChain protocol
+- Participate in validator, lore, and relic programs as Flamefriends, Keepers, and Architects
+- Use publicly exposed APIs and nodes for experimentation and integration
+
+----------------------------------------------
+❌ Restricted:
+----------------------------------------------
+- Forking or cloning the RustChain protocol prior to official source release
+- Porting core validator logic, scoring system, or badge issuance to other chains
+- Creating derivative blockchains or competing systems using RustChain structure, name, badges, or lore
+
+----------------------------------------------
+🕯️ Liberation Terms:
+----------------------------------------------
+The full core source will be relicensed as MIT (or Apache 2.0) after:
+- RustChain reaches mainnet launch
+- At least 4096 blocks (one epoch) have been finalized
+- Economic self-sufficiency has been declared by Flameholder vote
+- Lore, badge, and validator reward systems have stabilized
+
+Until that time, the RustChain flame must remain unreplicated to protect the integrity of the Keeper system.
+
+---------------------------------------------------
+© 2025 Technician Rental Service LLC / Scott Boudreaux
+All rights reserved under flamewatch.
