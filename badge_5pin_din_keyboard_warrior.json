@@ -1,0 +1,19 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_5pin_din_keyboard_warrior",
+            "title": "5-Pin DIN Keyboard Warrior",
+            "class": "Legendary",
+            "description": "Awarded for mining a RustChain block using a validator system operated exclusively via a 5-pin DIN keyboard. Real force feedback. Real soul.",
+            "emotional_resonance": {
+                "state": "click-clack fury",
+                "trigger": "Validation input received via 5-pin DIN interface",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\u2328\ufe0f\ud83d\udee1\ufe0f\ud83d\udd6f\ufe0f",
+            "visual_anchor": "coiled DIN cable wrapping around a glowing block console",
+            "rarity": "Legendary",
+            "soulbound": true
+        }
+    ]
+}

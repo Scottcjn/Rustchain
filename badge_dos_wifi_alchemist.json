@@ -1,0 +1,19 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_dos_wifi_alchemist",
+            "title": "DOS WiFi Alchemist",
+            "class": "Timeworn Relic",
+            "description": "Awarded to validators who successfully run RustChain entropy verification on a DOS system connected via WiFi. You brought TCP/IP to a DOS stack. Absolute relic sorcery.",
+            "emotional_resonance": {
+                "state": "forbidden ingenuity",
+                "trigger": "Packet driver handshake + DHCP ACK on DOS node",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\ud83d\udce1\ud83d\udcbe",
+            "visual_anchor": "ISA WiFi card plugged into a dusty 386 with an LED flicker",
+            "rarity": "Legendary",
+            "soulbound": true
+        }
+    ]
+}

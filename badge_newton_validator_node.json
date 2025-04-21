@@ -1,0 +1,19 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_newton_validator_node",
+            "title": "Newton Node \u2013 The Handheld Flame",
+            "class": "Ultra Rare",
+            "description": "Awarded for running a RustChain validator or proof submission system on an Apple Newton device. Your stylus carved flame into history.",
+            "emotional_resonance": {
+                "state": "handwritten reverence",
+                "trigger": "Validator proof signed or submitted via NewtonOS device",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\ud83d\udcdc\u270d\ufe0f\ud83d\udd6f\ufe0f",
+            "visual_anchor": "monochrome screen with a stylus drawing validator glyphs into memory",
+            "rarity": "Ultra Rare",
+            "soulbound": true
+        }
+    ]
+}
