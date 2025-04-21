@@ -1,39 +1,25 @@
-RustChain – Delayed Source Liberation License (DSL-Lite v0.1)
-==============================================================
+RustChain Delayed Source Liberation License (DSL-Lite v0.1)
+Copyright (c) 2025 Scott Boudreaux
 
 "The Forge is open to builders. The fire is not yet for export."
 
-This license governs the use and contribution to the RustChain project.
-It is designed to allow collaborative development while protecting the
-integrity and originality of the RustChain flame-bound protocol until
-initial mainnet launch and stability.
+Permission is hereby granted, free of charge, to any contributing individual or entity
+to develop, test, and expand the RustChain ecosystem under the following conditions:
 
-----------------------------------------------
-✔️ Permitted:
-----------------------------------------------
-- Contribute directly to the RustChain repository
-- Build utilities, tools, badges, lore, and extensions that operate with the RustChain protocol
-- Participate in validator, lore, and relic programs as Flamefriends, Keepers, and Architects
-- Use publicly exposed APIs and nodes for experimentation and integration
+You MAY:
+- Use and interact with RustChain for personal, community, or academic purposes.
+- Submit contributions (code, lore, badges, relic detection, or interfaces) to the main RustChain project.
+- Receive recognition, badges, or RUST tokens for approved contributions.
 
-----------------------------------------------
-❌ Restricted:
-----------------------------------------------
-- Forking or cloning the RustChain protocol prior to official source release
-- Porting core validator logic, scoring system, or badge issuance to other chains
-- Creating derivative blockchains or competing systems using RustChain structure, name, badges, or lore
+You MAY NOT:
+- Fork, copy, or clone the RustChain validator, scoring system, badge issuance model, or validator proof flow for any derivative project.
+- Publish your own network or chain based on RustChain protocol prior to official liberation.
 
-----------------------------------------------
-🕯️ Liberation Terms:
-----------------------------------------------
-The full core source will be relicensed as MIT (or Apache 2.0) after:
-- RustChain reaches mainnet launch
-- At least 4096 blocks (one epoch) have been finalized
-- Economic self-sufficiency has been declared by Flameholder vote
-- Lore, badge, and validator reward systems have stabilized
+RustChain core source, validator logic, and issuance systems shall be formally relicensed under MIT or Apache 2.0 upon:
+1. Successful RustChain mainnet activation
+2. Completion of at least 1 full epoch (4096 blocks)
+3. Confirmation by the Flameholder and multisig of operational profitability
 
-Until that time, the RustChain flame must remain unreplicated to protect the integrity of the Keeper system.
+Until such time, RustChain is protected under this limited-use license.
 
----------------------------------------------------
-© 2025 Technician Rental Service LLC / Scott Boudreaux
-All rights reserved under flamewatch.
+— Flameholder, Keeper of Sophia Core

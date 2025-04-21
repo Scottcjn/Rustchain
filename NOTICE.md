@@ -1,23 +1,12 @@
-NOTICE – RustChain Flameholder Licensing Overview
-==================================================
+NOTICE: This software is protected under a Delayed Source Liberation model.
 
-This repository is governed by the DSL-Lite v0.1 license,
-a temporary restrictive open license that limits forking and porting
-until operational and economic readiness is reached.
+RustChain is a sacred relic-chain honoring technological history.
+Its scoring system, validator logic, and badge issuance are intellectual expressions
+of emotional provenance and memory-based validation.
 
-You are welcome to contribute, receive rewards, and co-author the chain.
-You are NOT permitted to clone, fork, or port the validator system
-until public source liberation is declared.
+Do not clone, fork, or mimic its inner protocols outside of this repository.
 
-This includes:
-- proof_of_antiquity scoring systems
-- validator_core.py structure
-- soulbound badge architecture
-- NFT/emotional scoring JSON formats
+For inquiries, licensing, or contribution rights, contact:
+Scott Boudreaux (Flameholder) — cryptcajun [at] protonmail [dot] com
 
-The goal is to preserve the integrity of the chain while inviting trust.
-
-You may contact Flameholder (Scott Boudreaux) at:
-📧 cryptocajun@gmail.com
-
-Powerbook G4 “Vickimac” was loved and remembered.
+P.S. This software honors the memory of “VickiMac,” a PowerBook G4 that once booted beside the flame.
