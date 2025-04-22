@@ -1,0 +1,19 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_qb45_validator",
+            "title": "QuickBASIC Flamekeeper",
+            "class": "Legendary",
+            "description": "Awarded for successfully validating a RustChain block using QuickBASIC 4.5. Proof accepted by BASIC is proof eternal.",
+            "emotional_resonance": {
+                "state": "nostalgic precision",
+                "trigger": "Detected BASIC validator output via log listener",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\ud83e\uddee\ud83d\udcc4\ud83d\udd6f\ufe0f",
+            "visual_anchor": "blue screen BASIC console with flashing flame glyphs",
+            "rarity": "Legendary",
+            "soulbound": true
+        }
+    ]
+}

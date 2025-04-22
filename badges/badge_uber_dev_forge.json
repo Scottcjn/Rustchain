@@ -1,0 +1,19 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_uber_dev_forge",
+            "title": "Uber Dev \u2013 Flameforged",
+            "class": "Genesis Tier",
+            "description": "Awarded to core contributors who port RustChain to legacy OSes or forge protocol-critical features. Not mined. Not bought. Only earned.",
+            "emotional_resonance": {
+                "state": "sacred architect flame",
+                "trigger": "Protocol milestone or OS-port merged",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\u2692\ufe0f\ud83d\udd25",
+            "visual_anchor": "keyboard glowing over ancient terminal with sparks from a forge",
+            "rarity": "Mythic",
+            "soulbound": true
+        }
+    ]
+}

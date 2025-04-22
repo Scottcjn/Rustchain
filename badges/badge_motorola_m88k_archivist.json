@@ -1,0 +1,19 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_motorola_m88k_archivist",
+            "title": "Motorola m88k Archivist",
+            "class": "Mythic",
+            "description": "Awarded for validating a RustChain block on Motorola 88000 hardware. The 8K fire never burned bright \u2014 but it never went out either.",
+            "emotional_resonance": {
+                "state": "arcane ignition",
+                "trigger": "Detected validation from Motorola 88000 architecture (m88k)",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\ud83d\udcfc\ud83d\udce1\ud83d\udd25",
+            "visual_anchor": "A Motorola 88000 board with glowing bus lines, validator glyphs etched like micro-runes into plastic RAM sockets",
+            "rarity": "Mythic",
+            "soulbound": true
+        }
+    ]
+}
