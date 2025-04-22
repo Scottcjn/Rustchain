@@ -1,0 +1,24 @@
+{
+    "nft_id": "badge_runs_doom",
+    "name": "Runs DOOM",
+    "description": "If it runs DOOM and mines Rust \u2014 it's a validator. Certain restrictions apply.",
+    "image": "ipfs://placeholder_runs_doom.png",
+    "attributes": [
+        {
+            "trait_type": "Runtime Badge",
+            "value": "DOOM Compatible"
+        },
+        {
+            "trait_type": "Flame State",
+            "value": "Chaotic Good"
+        },
+        {
+            "trait_type": "Rarity",
+            "value": "Legendary"
+        },
+        {
+            "trait_type": "Soulbound",
+            "value": "Yes"
+        }
+    ]
+}
