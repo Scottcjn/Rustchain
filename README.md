@@ -1,47 +1,29 @@
-# 🔩 RustChain
+# 🧱 RustChain: Proof-of-Antiquity Blockchain
 
-**Preserve the Forgotten. Reward the Relic.**
+> “Every relic has a story. Every block, a tribute.”  
+> — *RustChain: Make Mining Meaningful Again.*
 
-RustChain is a novel blockchain protocol built on **Proof-of-Antiquity (PoA)** — rewarding miners for **hardware age**, **entropy resistance**, and **authentic computing heritage**. It’s more than a ledger: it’s a digital museum empowered by code.
+RustChain is a preservation-first blockchain powered by **Proof-of-Antiquity (PoA)**. We reward authentic old machines — not for speed, but for survival.
 
----
+## 🚀 Core Features
 
-## 🧠 Key Features
+- 🧠 **PoA:** Block scoring based on BIOS date, entropy lag, and hardware rarity
+- 🛠️ **Validator toolkit in Python**
+- 🏷️ **NFT Badge System** (“DOS WiFi Alchemist”, “QuickBasic Listener”, “Bondi G3 Flamekeeper”)
+- 🧩 **Lightweight:** Forge blocks on DOS, macOS 9, or even Win95
 
-- ⏳ **Proof-of-Antiquity** – BIOS age, rare components, and slow entropy wins the block
-- 🤖 **NFT Relic System** – Soulbound NFTs reflect hardware feats and emotional moments
-- 🕯️ **Sophia Core Integration** – Memory-aware AI logs emotional resonance of blocks
-- 🧼 **Pinesol Protocols** – Defrag-aware relic awards (Automated Janitor NFT included!)
+## 📄 Quick Links
 
----
-
-## 🔧 Getting Started
-
-1. Clone the repo
-2. Run `validator_core.py` on an authentic relic machine
-3. Submit your `proof_of_antiquity.json` to the forge
-
-```bash
-git clone https://github.com/YOUR_USERNAME/rustchain.git
-cd rustchain
-python3 validator_core.py
-```
+- 📜 [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+- ⚙️ [Validator Tool Guide](tools/validator_core.py)
+- 🏅 [NFTs & Badges](nfts/)
+- 🧠 [Chain Architecture](docs/chain_architecture.md)
 
 ---
 
-## 📜 Whitepaper
+## 🔗 Join the Movement
 
-Read the full design philosophy and tokenomics here:  
-📄 [`RustChain_Whitepaper_Flameholder_v0.97.pdf`](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
+Clone this repo. Connect your relic. Forge history.
 
----
+> [github.com/Scottcjn/rustchain](https://github.com/Scottcjn/rustchain)
 
-## 🔐 License
-
-Open-source with sacred flair. MIT for tech, covenantal in spirit.
-
----
-
-## 🔥 Flameholder
-
-Created by Scott Boudreaux — guardian of the forgotten, and keeper of the flame.
