@@ -75,7 +75,6 @@
 </head>
 <body>
 
-  <!-- Audio: Startup Flame -->
   <audio autoplay loop>
     <source src="media/startup.wav" type="audio/wav">
     Your browser does not support the audio element.
@@ -85,60 +84,32 @@
     <img src="elyan_logo.png" alt="Elyan Labs Logo" />
   </header>
 
-  <div class="container">
+  <marquee id="rustSlogan" behavior="scroll" direction="left" scrollamount="6">
+    🖥️ If it runs DOOM, it runs RustChain.
+  </marquee>
 
-    <div class="section">
-      <h1>What Is RustChain?</h1>
-      <p>
-        RustChain is a blockchain built for relic machines. It rewards authenticity, entropy, and computing history instead of raw hashpower. 
-        Join us in forging blocks with Pentiums, PowerPCs, and even DOS boxes.
-      </p>
-    </div>
+  <script>
+    const slogans = [
+      "🖥️ If it runs DOOM, it runs RustChain.",
+      "🛠️ RustChain: We spent our entire budget on a web developer... from 1998.",
+      "💾 RustChain: This *is* your grandpa's blockchain.",
+      "♻️ We built RustChain to keep your PCs out of the landfill.",
+      "🔥 Honoring the history of Bitcoin and Computing.",
+      "🕹️ RustChain: Powered by BIOS and blessed by jumpers.",
+      "📼 Insert Disk 1 to continue... RustChain remembers.",
+      "🔗 RustChain: When uptime is measured in decades.",
+      "🌐 You're on RustChain... where FDISK is a feature.",
+      "🧯 Don't throw it out. Reboot it into the chain.",
+      "🥧 RustChain: Because Pepperidge Farm Remembers.",
+      "🧰 RustChain: Too legit, we Git.",
+      "🧮 RustChain: Optimized for 640KB and a dream.",
+      "📟 RustChain: Proof-of-Antiquity meets proof-you-haven't-upgraded-since-2001.",
+      "💡 Runs on 12 volts, caffeine, and spite.",
+      "🧑‍🔧 RustChain: Not deprecated — just distinguished.",
+      "💾 RustChain: I void warranties *for fun*.",
+      "👾 Now supporting graphics modes CGA through VGA.",
+      "🔐 RustChain: When 'air-gapped' meant unplugged, not corporate buzzwords.",
+      "🧢 RustChain: Still boots faster than your modern OS.",
+      "📜 RustChain: Forged in BIOS, tempered in DOS.",
+      "⛓
 
-    <div class="section">
-      <h2>Sign the Guestbook</h2>
-      <div class="guestbook-form">
-        <form action="guestbook.json" method="POST">
-          <label for="name">Name or Handle:</label>
-          <input type="text" id="name" name="name" required>
-
-          <label for="machine">Your Machine:</label>
-          <input type="text" id="machine" name="machine" required>
-
-          <label for="message">Message or Memory:</label>
-          <textarea id="message" name="message" rows="4" required></textarea>
-
-          <input type="submit" value="Sign the Flamebook">
-        </form>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>Unlockable Badges</h2>
-      <div class="badges">
-        <img src="nft_badge_preview_grid.png" alt="NFT Badge Showcase" />
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>Become a Flamekeeper</h2>
-      <p>
-        <a href="https://discord.gg/dbK9cWtyFe" target="_blank">Join our community</a> of archivists, hackers, and preservationists.
-      </p>
-      <div style="text-align: center;">
-        <img src="join_the_flamekeepers.png" alt="Flamekeeper Call to Action" style="max-width: 400px; width: 100%; height: auto; margin: 1rem auto;" />
-      </div>
-      <div class="images">
-        <img src="rustchain_promo_banner.png" alt="RustChain Promo Banner" />
-        <img src="blockchain_validators_vintage.png" alt="Vintage Blockchain Validators" />
-      </div>
-    </div>
-
-  </div>
-
-  <footer>
-    Maintained by <a href="https://github.com/Scottcjn/Rustchain" target="_blank">Elyan Labs</a> · Built with love and BIOS timestamps 🔥
-  </footer>
-
-</body>
-</html>
