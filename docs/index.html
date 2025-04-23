@@ -2,37 +2,106 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>RustChain | Proof of Antiquity</title>
-  <link rel="stylesheet" href="style.css" />
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f7f6f3;
+      margin: 0;
+      color: #2d2d2d;
+      line-height: 1.6;
+    }
+    header {
+      text-align: center;
+      padding: 2rem 1rem 1rem;
+    }
+    header img {
+      max-height: 80px;
+      margin-bottom: 1rem;
+    }
+    .banner {
+      width: 100%;
+      max-height: 320px;
+      object-fit: cover;
+    }
+    .container {
+      padding: 2rem;
+      max-width: 900px;
+      margin: auto;
+    }
+    h1, h2 {
+      color: #333;
+    }
+    .section {
+      margin-bottom: 2.5rem;
+    }
+    .badges, .images {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      justify-content: center;
+    }
+    .badges img, .images img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.1);
+    }
+    a {
+      color: #005580;
+      text-decoration: none;
+      font-weight: bold;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    footer {
+      text-align: center;
+      padding: 2rem;
+      font-size: 0.9rem;
+      color: #777;
+    }
+  </style>
 </head>
 <body>
   <header>
-    <img src="media/rustchain_hero_terminal.png" alt="RustChain Retro Terminal Hero" class="hero" />
+    <img src="elyan_logo.png" alt="Elyan Labs Logo" />
+    <img class="banner" src="rustchain_hero_terminal.png" alt="RustChain Terminal Hero" />
   </header>
 
-  <section>
-    <h2>What Is RustChain?</h2>
-    <p>RustChain is a blockchain built for relic machines. It rewards authenticity, entropy, and computing history instead of raw hashpower. Join us in forging blocks with Pentiums, PowerPCs, and even DOS boxes.</p>
-    <img src="media/blockchain_validators_vintage.png" alt="Vintage Blockchain Validators Graphic" />
-  </section>
+  <div class="container">
+    <div class="section">
+      <h1>What Is RustChain?</h1>
+      <p>
+        RustChain is a blockchain built for relic machines. It rewards authenticity, entropy, and computing history instead of raw hashpower. 
+        Join us in forging blocks with Pentiums, PowerPCs, and even DOS boxes.
+      </p>
+    </div>
 
-  <section>
-    <h2>Unlockable Badges</h2>
-    <img src="media/nft_badge_preview_grid.png" alt="NFT Achievement Badges Grid" />
-  </section>
+    <div class="section">
+      <h2>Unlockable Badges</h2>
+      <div class="badges">
+        <img src="nft_badge_preview_grid.png" alt="NFT Badge Showcase" />
+      </div>
+    </div>
 
-  <section>
-    <h2>Become a Flamekeeper</h2>
-    <p>Join our community of archivists, hackers, and preservationists.</p>
-    <img src="media/join_the_flamekeepers.png" alt="Join the Flamekeepers Call to Action" />
-    <p><a href="https://discord.gg/dbK9cWtyFe">Join Our Discord</a></p>
-  </section>
+    <div class="section">
+      <h2>Become a Flamekeeper</h2>
+      <p>
+        <a href="https://discord.gg/dbK9cWtyFe" target="_blank">Join our community</a> of archivists, hackers, and preservationists.
+      </p>
+      <img class="images" src="join_the_flamekeepers.png" alt="Flamekeeper Call to Action" />
+    </div>
+
+    <div class="section images">
+      <img src="rustchain_promo_banner.png" alt="RustChain Promo Banner" />
+      <img src="blockchain_validators_vintage.png" alt="Vintage Blockchain Validators" />
+    </div>
+  </div>
 
   <footer>
-    <img src="media/elyan_logo.png" alt="Elyan Labs Logo" style="max-width: 150px;" />
-    <p>Maintained by Elyan Labs · <a href="https://github.com/Scottcjn/Rustchain">GitHub</a></p>
-    <img src="media/rustchain_promo_banner.png" alt="RustChain Promo Banner" />
+    Maintained by <a href="https://github.com/Scottcjn/Rustchain" target="_blank">Elyan Labs</a> · Built with love and BIOS timestamps 🔥
   </footer>
 </body>
 </html>
