@@ -104,3 +104,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Ubuntu 20.04 LTS (last POWER8-supported)
 - Pawn shop acquisition, estimated K+ value
 
+## Apr 28, 2025 — llama.cpp on POWER8
+- First successful build with -mcpu=power8 -mvsx -maltivec
+- Stock scalar: 16.74 t/s prompt processing
+- VSX enabled: 66.49 t/s (3.97x speedup)
+
