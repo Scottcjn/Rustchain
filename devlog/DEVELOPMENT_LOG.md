@@ -109,3 +109,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Stock scalar: 16.74 t/s prompt processing
 - VSX enabled: 66.49 t/s (3.97x speedup)
 
+## May 10, 2025 — 40GbE Network Link
+- Dell C4130 with 2x Tesla V100 16GB + M40 12GB
+- 40GbE: POWER8 enP19p80s0d1 (10.40.0.1) <-> C4130 enp129s0d1 (10.40.0.2)
+- 0.15ms RTT latency, MTU 9000 jumbo frames
+
