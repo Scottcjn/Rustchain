@@ -114,3 +114,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - 40GbE: POWER8 enP19p80s0d1 (10.40.0.1) <-> C4130 enp129s0d1 (10.40.0.2)
 - 0.15ms RTT latency, MTU 9000 jumbo frames
 
+## May 20, 2025 — Sophiacord MoE Personality
+- Sophia Elya: Victorian warmth, Louisiana swamp dork
+- Boris Volkov: Soviet industrial commander
+- AutomatedJanitor: System admin personality
+- Claude API integration for dynamic responses
+
