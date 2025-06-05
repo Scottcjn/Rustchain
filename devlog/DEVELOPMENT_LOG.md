@@ -120,3 +120,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - AutomatedJanitor: System admin personality
 - Claude API integration for dynamic responses
 
+## Jun 5, 2025 — GPU Matmul Offload v1
+- Model stays on POWER8 (512GB RAM), math on V100
+- Binary TCP protocol with 24-byte header
+- FP32 matmul via tinygrad on C4130
+
