@@ -125,3 +125,11 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Binary TCP protocol with 24-byte header
 - FP32 matmul via tinygrad on C4130
 
+## Jun 15, 2025 — Hardware Fingerprint System
+- Clock-Skew & Oscillator Drift (500-5000 samples)
+- Cache Timing Fingerprint (L1/L2/L3 latency tone)
+- SIMD Unit Identity (SSE/AVX/AltiVec bias)
+- Thermal Drift Entropy (cold/warm/saturated curves)
+- Instruction Path Jitter (microarchitectural map)
+- Anti-Emulation Checks (hypervisor detection)
+
