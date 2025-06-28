@@ -133,3 +133,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Instruction Path Jitter (microarchitectural map)
 - Anti-Emulation Checks (hypervisor detection)
 
+## Jun 28, 2025 — Founder Wallet System
+- founder_community, founder_dev_fund, founder_team_bounty, founder_founders
+- Pre-defined wallet IDs for GUI quick-pay
+- Balance tracking in SQLite (amount_i64 for precision)
+
