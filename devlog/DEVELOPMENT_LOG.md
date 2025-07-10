@@ -138,3 +138,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Pre-defined wallet IDs for GUI quick-pay
 - Balance tracking in SQLite (amount_i64 for precision)
 
+## Jul 10, 2025 — RIP-200 Consensus
+- Every attesting miner gets equal base vote
+- Weighted by device antiquity multiplier
+- Time-aged decay: aged = 1.0 + (base-1.0) * (1 - 0.15*years)
+- Full decay after ~16.67 years
+
