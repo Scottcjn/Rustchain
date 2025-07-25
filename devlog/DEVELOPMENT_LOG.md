@@ -144,3 +144,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Time-aged decay: aged = 1.0 + (base-1.0) * (1 - 0.15*years)
 - Full decay after ~16.67 years
 
+## Jul 25, 2025 — Port Architecture
+- Port 8099: RustChain Flask app (internal)
+- Port 443: nginx HTTPS proxy (external)
+- Port 8088: nginx legacy proxy (old miners)
+- Port 8092: Block Explorer (uvicorn)
+
