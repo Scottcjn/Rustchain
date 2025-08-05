@@ -150,3 +150,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Port 8088: nginx legacy proxy (old miners)
 - Port 8092: Block Explorer (uvicorn)
 
+## Aug 5, 2025 — Apple Silicon Mining
+- Mac Mini M2 at 192.168.0.134
+- sysctl machdep.cpu.brand_string detection
+- 1.2x antiquity bonus for Apple Silicon
+- Joined attestation fleet
+
