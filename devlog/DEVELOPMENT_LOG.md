@@ -156,3 +156,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - 1.2x antiquity bonus for Apple Silicon
 - Joined attestation fleet
 
+## Aug 20, 2025 — First External Node!
+- Ryan's Proxmox VM at 76.8.228.245
+- Factorio game server + RustChain miner
+- VM correctly detected: earns 1 billionth of real rewards
+- Proof that RIP-PoA fingerprinting works
+
