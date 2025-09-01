@@ -162,3 +162,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - VM correctly detected: earns 1 billionth of real rewards
 - Proof that RIP-PoA fingerprinting works
 
+## Sep 1, 2025 — Node 3 Deployment
+- Third attestation node on Ryan's Proxmox
+- rustchain_v2_integrated_v2.2.1_rip200.py deployed
+- Database synced from Node 1
+- First RustChain node outside the lab!
+
