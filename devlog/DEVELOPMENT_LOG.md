@@ -168,3 +168,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Database synced from Node 1
 - First RustChain node outside the lab!
 
+## Sep 15, 2025 — ROM Fingerprint Database
+- 61 known emulator ROM hashes cataloged
+- Amiga Kickstart (12), Mac 68K (30), Mac PPC (19)
+- Clustering detection: 3+ miners with identical ROM = emulated
+- Prevents SheepShaver/Basilisk II/UAE farms
+
