@@ -174,3 +174,10 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Clustering detection: 3+ miners with identical ROM = emulated
 - Prevents SheepShaver/Basilisk II/UAE farms
 
+## Sep 28, 2025 — GPU Fleet Expansion
+- Ryzen 9 7950X tower: $600 pawn shop (retail $1,500+)
+- HP Victus 16": $617 pawn shop (retail $1,700)
+- V100 32GB: ~$500 eBay (retail $3,000+)
+- Total fleet: 18+ GPUs, 228GB+ VRAM
+- Acquisition strategy: pawn shops + datacenter decomm
+
