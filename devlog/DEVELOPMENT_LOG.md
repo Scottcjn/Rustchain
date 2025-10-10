@@ -181,3 +181,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Total fleet: 18+ GPUs, 228GB+ VRAM
 - Acquisition strategy: pawn shops + datacenter decomm
 
+## Oct 10, 2025 — PSE Vec_Perm Collapse
+- Non-bijunctive attention: prune weak, duplicate strong
+- POWER8 vec_perm: 5 ops vs 80 ops on GPU
+- Single-cycle dual-source permute
+- Hebbian learning: fire together, wire together
+
