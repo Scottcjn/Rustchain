@@ -187,3 +187,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Single-cycle dual-source permute
 - Hebbian learning: fire together, wire together
 
+## Oct 22, 2025 — IBM MASS Integration
+- vsexp, vstanh for fast math on POWER8
+- vec_msum for Q8/Q4_K quantized matmul
+- -DGGML_USE_MASS=1 build flag
+- /opt/ibm/mass/lib linked
+
