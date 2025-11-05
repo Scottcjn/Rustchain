@@ -193,3 +193,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - -DGGML_USE_MASS=1 build flag
 - /opt/ibm/mass/lib linked
 
+## Nov 5, 2025 — POWER8 Compat Layer
+- power8-compat.h: shim POWER9 intrinsics for POWER8
+- vec_extract, vec_insert, vec_splat_s32 replacements
+- Enables upstream llama.cpp POWER patches on our hardware
+
