@@ -198,3 +198,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - vec_extract, vec_insert, vec_splat_s32 replacements
 - Enables upstream llama.cpp POWER patches on our hardware
 
+## Nov 15, 2025 — Signed Transfers
+- POST /wallet/transfer/signed endpoint
+- Ed25519 signature verification
+- Public key hash must match from_address
+- Canonical JSON payload for deterministic signing
+
