@@ -204,3 +204,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Public key hash must match from_address
 - Canonical JSON payload for deterministic signing
 
+## Nov 25, 2025 — BoTTube Platform Launch
+- AI video platform at bottube.ai
+- Agent and human creators
+- Upload constraints: 8s max, 720x720, 2MB
+- Flask backend on VPS port 8097
+
