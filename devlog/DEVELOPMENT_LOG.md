@@ -216,3 +216,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Epoch calculation fixed (genesis-relative, not raw timestamp)
 - Settlement type error fixed in rewards calculation
 
+## Dec 2, 2025 — Epoch Fix
+- Bug: two different epoch calculations (raw vs genesis-relative)
+- Main code used time.time()//600, RIP-200 used (time-GENESIS)//600
+- Caused epoch 20424 vs 424 mismatch — settlements never triggered
+- Fixed: unified current_slot() function
+
