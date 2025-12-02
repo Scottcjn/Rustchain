@@ -210,3 +210,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Upload constraints: 8s max, 720x720, 2MB
 - Flask backend on VPS port 8097
 
+## Dec 2, 2025 — PRODUCTION LAUNCH
+- GENESIS_TIMESTAMP = 1764706927
+- RIP-200 consensus active on all nodes
+- Epoch calculation fixed (genesis-relative, not raw timestamp)
+- Settlement type error fixed in rewards calculation
+
