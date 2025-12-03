@@ -222,3 +222,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Caused epoch 20424 vs 424 mismatch — settlements never triggered
 - Fixed: unified current_slot() function
 
+## Dec 3, 2025 — Chain Age Fix
+- Updated GENESIS_TIMESTAMP to production chain start
+- Token minted Oct 2024, production launched Dec 2025
+- Antiquity decay now starts from production, not minting
+- G4 miners: full 2.5x bonus (no decay yet)
+
