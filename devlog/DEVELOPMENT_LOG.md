@@ -241,3 +241,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Server validates anti-emulation + clock drift CV
 - Fixed NameError: validate_fingerprint_data not defined
 
+## Dec 5, 2025 — ROM Clustering Defense
+- rom_fingerprint_db.py: 61 known emulator ROM hashes
+- rom_clustering_server.py: detect ROM hash collisions
+- 3+ miners with same ROM hash = emulation flagged
+- Prevents vintage hardware spoofing via emulators
+
