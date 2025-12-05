@@ -228,3 +228,10 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Antiquity decay now starts from production, not minting
 - G4 miners: full 2.5x bonus (no decay yet)
 
+## Dec 5, 2025 — RIP-PoA Phase 2
+- validate_fingerprint_data() on server
+- Anti-emulation: FAIL = 0.0 weight (strict enforcement)
+- Deployed fingerprint_checks.py to all miner hosts
+- HP Victus: ALL 6 CHECKS PASS
+- VPS QEMU: anti-emulation FAIL (correct!)
+
