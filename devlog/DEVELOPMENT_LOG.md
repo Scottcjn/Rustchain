@@ -235,3 +235,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - HP Victus: ALL 6 CHECKS PASS
 - VPS QEMU: anti-emulation FAIL (correct!)
 
+## Dec 5, 2025 — Miner Fingerprint Integration
+- Attestation payload now includes fingerprint dict
+- all_passed, 6 check results with raw data
+- Server validates anti-emulation + clock drift CV
+- Fixed NameError: validate_fingerprint_data not defined
+
