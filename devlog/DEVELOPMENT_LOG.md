@@ -253,3 +253,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Added at lines 10-11 of server code
 - Health now returns: {ok:true, version:2.2.1-rip200}
 
+## Dec 6, 2025 — External Security Review
+- Stephen Reed's Claude reviewed miner package
+- Moved verification commands to TOP of README
+- Added --dry-run, --show-payload, --test-only
+- Added reference to RUSTCHAIN_EXPLAINED.md
+
