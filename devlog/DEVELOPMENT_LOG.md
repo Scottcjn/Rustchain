@@ -247,3 +247,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - 3+ miners with same ROM hash = emulation flagged
 - Prevents vintage hardware spoofing via emulators
 
+## Dec 6, 2025 — Health Endpoint Fix
+- /health returning HTTP 500 after backup restore
+- Missing APP_VERSION and APP_START_TS constants
+- Added at lines 10-11 of server code
+- Health now returns: {ok:true, version:2.2.1-rip200}
+
