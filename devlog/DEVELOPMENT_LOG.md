@@ -259,3 +259,8 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Added --dry-run, --show-payload, --test-only
 - Added reference to RUSTCHAIN_EXPLAINED.md
 
+## Dec 10, 2025 — Cinder Node
+- Preservation vault at 192.168.0.126
+- RTX 3060 for local inference
+- Backup scripts for critical data
+
