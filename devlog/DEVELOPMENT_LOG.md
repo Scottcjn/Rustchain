@@ -270,3 +270,10 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - IBM MASS: vsexp, vstanh for activation functions
 - TinyLlama 1.1B: 84.62 t/s → 147.54 t/s (1.74x with prefetch!)
 
+## Dec 16, 2025 — RAM Coffers
+- 4 NUMA coffers mapped to cognitive functions
+- Coffer 0 (Node 3): Heavy/General, 189GB free
+- Coffer 1 (Node 1): Science/Tech, 178GB free
+- Cosine similarity routing for weight activation
+- Non-bijunctive skip planning before fetch
+
