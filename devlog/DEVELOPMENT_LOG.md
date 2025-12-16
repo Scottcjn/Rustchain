@@ -264,3 +264,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - RTX 3060 for local inference
 - Backup scripts for critical data
 
+## Dec 16, 2025 — PSE-MASS Module
+- vec_msum for Q8/Q4_K quantized multiply-accumulate
+- Resident prefetch: dcbt TH=0x10 keeps weights HOT in L2/L3
+- IBM MASS: vsexp, vstanh for activation functions
+- TinyLlama 1.1B: 84.62 t/s → 147.54 t/s (1.74x with prefetch!)
+
