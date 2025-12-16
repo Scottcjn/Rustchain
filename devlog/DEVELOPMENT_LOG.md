@@ -277,3 +277,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Cosine similarity routing for weight activation
 - Non-bijunctive skip planning before fetch
 
+## Dec 16, 2025 — Entropy Divergence Proof
+- Same seed (42), same temp (0.7), 3 runs → 3 different outputs
+- POWER8 mftb timebase injects real hardware entropy
+- Stock LLMs: identical output. PSE: behavioral variance
+- Validates non-bijunctive collapse creates personality
+
