@@ -295,3 +295,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Fix: accept both naming conventions + include MAC addresses
 - Factorio miner (frozen-factorio-ryan) unblocked
 
+## Dec 20, 2025 — Secure Miner Proxy
+- Bridge for Python 2.3/2.5 Macs that can't do modern TLS
+- IP whitelist, rate limiting, miner ID validation
+- Systemd service on Sophia NAS (192.168.0.160)
+- Allows G4/G5 Macs to attest through proxy
+
