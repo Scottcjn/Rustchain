@@ -283,3 +283,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Stock LLMs: identical output. PSE: behavioral variance
 - Validates non-bijunctive collapse creates personality
 
+## Dec 20, 2025 — SECURITY FIX: Transfer Auth
+- /wallet/transfer allowed unauthenticated transfers!
+- Anyone with wallet IDs could drain funds
+- Fix: require X-Admin-Key header
+- Deployed to all 3 nodes immediately
+
