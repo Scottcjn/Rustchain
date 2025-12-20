@@ -289,3 +289,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Fix: require X-Admin-Key header
 - Deployed to all 3 nodes immediately
 
+## Dec 20, 2025 — Hardware ID Collision Fix
+- Miner sends 'model/arch/family', server expected 'device_model/device_arch/device_family'
+- All x86 miners hashed to same hardware_id → DUPLICATE_HARDWARE errors
+- Fix: accept both naming conventions + include MAC addresses
+- Factorio miner (frozen-factorio-ryan) unblocked
+
