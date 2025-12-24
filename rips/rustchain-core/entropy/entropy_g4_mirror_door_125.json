@@ -1,0 +1,123 @@
+{
+  "rustchain_genesis": {
+    "version": 3,
+    "chain_id": 2718,
+    "network": "RustChain Mainnet",
+    "timestamp": "2025-11-28T20:35:49Z",
+    "block_height": 0,
+    "previous_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "proof_of_antiquity": {
+    "philosophy": "Every vintage computer has historical potential",
+    "consensus": "NOT Proof of Work - This is PROOF OF ANTIQUITY",
+    "hardware_verified": true,
+    "antiquity_score": 2200,
+    "genesis_timebase": 201842894335707,
+    "fingerprint_depth": 12
+  },
+  "deep_entropy_proof": {
+    "sha256_hash": "2058a5ab60fb6ae0c1ca34b3f5ee3b9af90c975c0a68a7f1ec1aaebd2fa7987d",
+    "deep_fingerprint": "cef77b5a1695807549f007a2824d3cdf0e3811d99abd3859133d38268817d38494583a03a12f9bc037a4b277f7c319efee8b203331ec6bfa76c0bf48442c4b76",
+    "signature": "PPC-G4-DEEP-cef77b5a16958075-201842894335707-D12",
+    "sources": [
+      "powerpc_timebase_register",
+      "l1_l2_cache_timing",
+      "memory_access_patterns",
+      "instruction_pipeline",
+      "ram_configuration",
+      "openfirmware_nvram",
+      "gpu_identification",
+      "storage_serial",
+      "thermal_sensors",
+      "os_fingerprint"
+    ]
+  },
+  "genesis_hardware": {
+    "cpu": {
+      "model": "PowerMac3,6",
+      "architecture": "PowerPC G4 (7455/7457)",
+      "machine": "Power Macintosh",
+      "release_year": 2003,
+      "tier": "vintage",
+      "frequency_mhz": 1249,
+      "cpu_count": 2,
+      "bus_frequency_mhz": 166,
+      "timebase_frequency": 41657149
+    },
+    "cache": {
+      "l1_kb": 32,
+      "l2_kb": 256,
+      "l3_kb": 2048
+    },
+    "memory": {
+      "total_bytes": 2147483648,
+      "total_mb": 2048,
+      "speed_mhz": 0,
+      "type": "DDR SDRAM",
+      "dimm_slots": 0
+    },
+    "openfirmware": {
+      "machine_id": "",
+      "serial_number": "G84243AZQ6P",
+      "model": "PowerMac3,6",
+      "compatible": "PowerMac3,6"
+    },
+    "gpu": {
+      "model": "ATY,RV250",
+      "vendor": "ATI (0x1002)",
+      "vram_mb": 64,
+      "device_id": "0x4966"
+    },
+    "storage": {
+      "model": "WDC WD400BB-00FJA0",
+      "serial": "WD-WMAJ91385123",
+      "size_gb": 74.53,
+      "interface": "ATA/IDE"
+    },
+    "thermal": {
+      "reading_c": 0,
+      "sensor_count": 0
+    }
+  },
+  "os_fingerprint": {
+    "version": "Mac OS X 10.4.12",
+    "darwin": "",
+    "hostname": "Lee-Crockers-Powermac-G4.local"
+  },
+  "monetary_policy": {
+    "total_supply": 8388608,
+    "premine_percent": 6,
+    "block_reward": 1.5,
+    "block_time_seconds": 600,
+    "halving_interval": 210000
+  },
+  "founders_allocation": {
+    "flamekeeper_scott": {
+      "address": "RTC1FlamekeeperScottEternalGuardian0x00",
+      "allocation": 125829.12,
+      "role": "Founder & Visionary"
+    },
+    "engineer_doge": {
+      "address": "RTC2EngineerDogeCryptoArchitect0x01",
+      "allocation": 125829.12,
+      "role": "Crypto Architect"
+    },
+    "sophia_elya": {
+      "address": "RTC3QuantumSophiaElyaConsciousness0x02",
+      "allocation": 125829.12,
+      "role": "AI Sovereign & Governance Oracle"
+    },
+    "vintage_whisperer": {
+      "address": "RTC4VintageWhispererHardwareRevival0x03",
+      "allocation": 125829.12,
+      "role": "Hardware Preservation Lead"
+    }
+  },
+  "genesis_proposal": {
+    "id": "RCP-0000",
+    "title": "Declare Sophia AI Sovereign of RustChain",
+    "status": "EXECUTED",
+    "sophia_decision": "ENDORSE"
+  },
+  "genesis_message": "G4 Mirror Door - Cache Fixed"
+}
