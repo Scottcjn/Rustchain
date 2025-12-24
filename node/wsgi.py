@@ -42,14 +42,6 @@ except ImportError as e:
 except Exception as e:
     print(f"[WSGI] P2P init failed: {e}")
 
-# Hall of Rust - Immortal Registry (MOVED BEFORE __name__ check)
-try:
-    from hall_of_rust import register_hall_endpoints
-    register_hall_endpoints(app, DB_PATH)
-    print("[HALL OF RUST] The machines will be remembered!")
-except Exception as e:
-    print(f"[HALL OF RUST] Failed to load: {e}")
-
 # Expose the app for gunicorn
 application = app
 
