@@ -1,0 +1,113 @@
+{
+  "rustchain_entropy": {
+    "version": 1,
+    "platform": "linux",
+    "collector": "entropy_collector_linux.py",
+    "timestamp": "2025-11-28T19:05:16Z"
+  },
+  "proof_of_antiquity": {
+    "philosophy": "Every vintage computer has historical potential",
+    "consensus": "NOT Proof of Work - This is PROOF OF ANTIQUITY",
+    "hardware_verified": true,
+    "tier": "modern",
+    "multiplier": 1.0
+  },
+  "entropy_proof": {
+    "sha256_hash": "c8139f23b5af0b6c1fad678867b33ba009387a2d03ad08fe6ddfaf936e92c1a8",
+    "deep_fingerprint": "8be1407109c59402f2542a692e69914430c1085b87ed8d785dd0de162c2f0d49",
+    "signature": "LINUX-X86_64-ENTROPY-8be1407109c59402-1764356716-D9",
+    "entropy_sources": 9,
+    "sources": [
+      "cpu_identification",
+      "cpu_microcode",
+      "memory_configuration",
+      "disk_serial",
+      "mac_addresses",
+      "motherboard_serial",
+      "system_uuid",
+      "gpu_identification",
+      "timing_entropy",
+      "thermal_sensors",
+      "kernel_random",
+      "machine_id"
+    ]
+  },
+  "hardware_profile": {
+    "hostname": "sophia-PowerEdge-C4130",
+    "kernel": "6.14.0-36-generic",
+    "os": "PRETTY_NAME=\"Ubuntu 24.04.3 LTS\"",
+    "architecture": "x86_64",
+    "cpu": {
+      "model": "Intel(R) Xeon(R) CPU E5-2640 v4 @ 2.40GHz",
+      "vendor": "GenuineIntel",
+      "family": "6",
+      "stepping": "1",
+      "cores": 20,
+      "threads": 20,
+      "frequency_mhz": 1200.0,
+      "microcode": "0xb000040"
+    },
+    "cache": {
+      "l1d_kb": 32,
+      "l1i_kb": 32,
+      "l2_kb": 256,
+      "l3_kb": 25600
+    },
+    "memory": {
+      "total_mb": 64302,
+      "type": "Unknown",
+      "swap_mb": 8191
+    },
+    "storage": {
+      "model": "",
+      "serial": "",
+      "size_gb": 0.0,
+      "wwn": "",
+      "root_uuid": "7651566b-18f1-4830-8bce-1cfef8e2b192"
+    },
+    "network": {
+      "mac_addresses": [
+        "58:8a:5a:f8:9a:d4",
+        "58:8a:5a:f8:9a:d6",
+        "02:42:b7:ce:cb:ed"
+      ]
+    },
+    "motherboard": {
+      "vendor": "Dell Inc.",
+      "name": "0VCHW8",
+      "serial": ""
+    },
+    "bios": {
+      "vendor": "Dell Inc.",
+      "version": "2.19.0",
+      "date": "12/12/2023"
+    },
+    "system": {
+      "uuid": "",
+      "product": "PowerEdge C4130",
+      "machine_id": "dfab9a67453a494696429407ddbbc93a"
+    },
+    "gpu": {
+      "model": "NVIDIA Corporation GV100GL [Tesla V100 PCIe 16GB] (rev a1)",
+      "driver": "nvidia"
+    },
+    "thermal": {
+      "x86_pkg_temp": 34.0,
+      "coretemp_temp6_input": 27.0,
+      "coretemp_temp13_input": 27.0,
+      "coretemp_temp3_input": 27.0,
+      "coretemp_temp10_input": 27.0,
+      "coretemp_temp14_input": 27.0,
+      "coretemp_temp4_input": 25.0,
+      "coretemp_temp11_input": 27.0,
+      "coretemp_temp1_input": 34.0,
+      "coretemp_temp5_input": 26.0,
+      "coretemp_temp12_input": 26.0,
+      "coretemp_temp2_input": 27.0,
+      "nvme_temp3_input": 25.85,
+      "nvme_temp1_input": 24.85,
+      "nvme_temp2_input": 38.85,
+      "i350bb_temp1_input": 43.0
+    }
+  }
+}

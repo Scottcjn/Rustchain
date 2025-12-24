@@ -1,11 +1,34 @@
+# Sensitive - never commit
+*founder*
+*premine*
+*genesis*
+*private*key*
+*secret*
+*.env
+*.db
+*.sqlite
+*.key
+*.pem
+
+# Python
 __pycache__/
 *.py[cod]
-.env
-venv/
 *.egg-info/
-*.log
+.eggs/
+dist/
+build/
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
 .DS_Store
 Thumbs.db
-output/
-*.zip
-*.tar.gz
+
+# Logs
+*.log
