@@ -27,3 +27,31 @@ Clone this repo. Connect your relic. Forge history.
 
 > [github.com/Scottcjn/rustchain](https://github.com/Scottcjn/rustchain)
 
+---
+
+## 🙏 Attribution
+
+**A year of development, real vintage hardware, electricity bills, and a dedicated lab went into this.**
+
+If you use this project, please give credit:
+
+```
+RustChain - Proof of Antiquity by Scott (Scottcjn)
+https://github.com/Scottcjn/Rustchain
+```
+
+If this helped you, please:
+- ⭐ **Star this repo** - It helps others find it
+- 📝 **Credit in your project** - Keep the attribution
+- 🔗 **Link back** - Share the love
+
+## 📜 License
+
+MIT License - Free to use, but please keep the copyright notice and attribution.
+
+---
+
+*"Your vintage hardware earns rewards. Make mining meaningful again."*
+
+**DOS boxes, PowerPC G4s, Win95 machines - they all have value. RustChain proves it.**
+
