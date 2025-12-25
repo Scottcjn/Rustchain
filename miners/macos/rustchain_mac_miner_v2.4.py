@@ -27,6 +27,14 @@ except ImportError:
     FINGERPRINT_AVAILABLE = False
     print("[WARN] fingerprint_checks.py not found - fingerprint attestation disabled")
 
+# Import CPU architecture detection
+try:
+    from cpu_architecture_detection import detect_cpu_architecture, calculate_antiquity_multiplier
+    CPU_DETECTION_AVAILABLE = True
+except ImportError:
+    CPU_DETECTION_AVAILABLE = False
+    print("[INFO] cpu_architecture_detection.py not found - using basic detection")
+
 NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://50.28.86.131")
 BLOCK_TIME = 600  # 10 minutes
 LOTTERY_CHECK_INTERVAL = 10  # Check every 10 seconds
@@ -134,12 +142,37 @@ def detect_hardware():
         try:
             result = subprocess.run(['sysctl', '-n', 'machdep.cpu.brand_string'],
                                    capture_output=True, text=True, timeout=5)
-            hw_info["cpu"] = result.stdout.strip()
+            cpu_brand = result.stdout.strip()
+            hw_info["cpu"] = cpu_brand
 
-            if 'core 2' in hw_info["cpu"].lower():
-                hw_info["arch"] = "Core2"
+            # Use comprehensive CPU detection if available
+            if CPU_DETECTION_AVAILABLE:
+                cpu_info = calculate_antiquity_multiplier(cpu_brand)
+                hw_info["arch"] = cpu_info.architecture
+                hw_info["cpu_vendor"] = cpu_info.vendor
+                hw_info["cpu_year"] = cpu_info.microarch_year
+                hw_info["cpu_generation"] = cpu_info.generation
+                hw_info["is_server"] = cpu_info.is_server
+                print(f"[CPU] Detected: {cpu_info.generation} ({cpu_info.architecture}, {cpu_info.microarch_year})")
             else:
-                hw_info["arch"] = "modern"
+                # Fallback: Basic detection for retro Intel architectures
+                cpu_lower = cpu_brand.lower()
+                if 'core 2' in cpu_lower or 'core(tm)2' in cpu_lower:
+                    hw_info["arch"] = "core2"  # 1.3x
+                elif 'xeon' in cpu_lower and ('e5-16' in cpu_lower or 'e5-26' in cpu_lower):
+                    hw_info["arch"] = "ivy_bridge"  # Xeon E5 v2 = Ivy Bridge-E
+                elif 'i7-3' in cpu_lower or 'i5-3' in cpu_lower or 'i3-3' in cpu_lower:
+                    hw_info["arch"] = "ivy_bridge"
+                elif 'i7-2' in cpu_lower or 'i5-2' in cpu_lower or 'i3-2' in cpu_lower:
+                    hw_info["arch"] = "sandy_bridge"
+                elif 'i7-9' in cpu_lower and '900' in cpu_lower:
+                    hw_info["arch"] = "nehalem"
+                elif 'i7-4' in cpu_lower or 'i5-4' in cpu_lower:
+                    hw_info["arch"] = "haswell"
+                elif 'pentium' in cpu_lower:
+                    hw_info["arch"] = "pentium4"
+                else:
+                    hw_info["arch"] = "modern"
         except:
             hw_info["arch"] = "modern"
             hw_info["cpu"] = "Intel Mac"
