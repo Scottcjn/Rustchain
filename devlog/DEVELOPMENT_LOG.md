@@ -301,3 +301,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Systemd service on Sophia NAS (192.168.0.160)
 - Allows G4/G5 Macs to attest through proxy
 
+## Dec 25, 2025 — Elyan Labs LLM Server
+- Custom branded llama-server (12 'Elyan Labs' refs compiled in)
+- GPT-OSS 120B MXFP4 model (116.83B params, MoE 128 experts)
+- Accessible via Tailscale at 100.75.100.89:8080
+- Built with Node.js 20 via nvm for webui compilation
+
