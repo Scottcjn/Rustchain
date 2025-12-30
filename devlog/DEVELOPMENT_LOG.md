@@ -307,3 +307,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Accessible via Tailscale at 100.75.100.89:8080
 - Built with Node.js 20 via nvm for webui compilation
 
+## Dec 30, 2025 — Node.js on G5 (IN PROGRESS)
+- Goal: Run Claude Code on vintage PowerPC hardware
+- 7 major patches: C++20, char8_t, ncrypto, libatomic, OpenSSL BE, V8 PPC64
+- 64-bit mode required (-m64 everywhere)
+- Blocked: GCC 10 on Mac OS X Leopard = 32-bit only libstdc++
+
