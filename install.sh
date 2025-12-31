@@ -149,7 +149,7 @@ download_miner() {
     chmod +x rustchain_miner.py
 }
 
-# Configure wallet
+# Configure wallet (sets WALLET_NAME global)
 configure_wallet() {
     echo ""
     echo -e "${CYAN}[?] Enter your wallet name (or press Enter for auto-generated):${NC}"
@@ -159,6 +159,9 @@ configure_wallet() {
         wallet_name="miner-$(hostname)-$(date +%s | tail -c 6)"
         echo -e "${YELLOW}[*] Using auto-generated wallet: ${wallet_name}${NC}"
     fi
+
+    # Set global for use by other functions
+    WALLET_NAME="$wallet_name"
 
     # Save config
     cat > "$INSTALL_DIR/config.json" << EOF
@@ -174,11 +177,12 @@ EOF
 # Create start script
 create_start_script() {
     local python_cmd=$1
+    local wallet=$2
 
     cat > "$INSTALL_DIR/start.sh" << EOF
 #!/bin/bash
 cd "$INSTALL_DIR"
-$python_cmd rustchain_miner.py
+$python_cmd rustchain_miner.py --wallet "$wallet"
 EOF
     chmod +x "$INSTALL_DIR/start.sh"
 
@@ -224,7 +228,7 @@ main() {
     configure_wallet
 
     # Create start script
-    create_start_script "$python_cmd"
+    create_start_script "$python_cmd" "$WALLET_NAME"
 
     # Test connection
     test_connection
