@@ -319,3 +319,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - Synthesis model combines responses
 - NUMA-bound: each model on different NUMA node
 
+## Dec 31, 2025 — GPU Offload v3 Working!
+- Model stays on POWER8 (any size up to 500GB)
+- Q4_K tensors sent to C4130, dequantized on V100 CUDA
+- Protocol v3: magic 0x47505533, persistent connections
+- First dequant: 485ms (kernel compile), subsequent: 8-35ms
+
