@@ -313,3 +313,9 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 - 64-bit mode required (-m64 everywhere)
 - Blocked: GCC 10 on Mac OS X Leopard = 32-bit only libstdc++
 
+## Dec 31, 2025 — PostMath Consensus System
+- 4 models running simultaneously on POWER8
+- Each model provides different 'perspective' on same prompt
+- Synthesis model combines responses
+- NUMA-bound: each model on different NUMA node
+
