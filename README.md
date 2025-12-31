@@ -9,8 +9,31 @@ RustChain is a preservation-first blockchain powered by **Proof-of-Antiquity (Po
 
 - 🧠 **PoA:** Block scoring based on BIOS date, entropy lag, and hardware rarity
 - 🛠️ **Validator toolkit in Python**
-- 🏷️ **NFT Badge System** (“DOS WiFi Alchemist”, “QuickBasic Listener”, “Bondi G3 Flamekeeper”)
+- 🏷️ **NFT Badge System** ("DOS WiFi Alchemist", "QuickBasic Listener", "Bondi G3 Flamekeeper")
 - 🧩 **Lightweight:** Forge blocks on DOS, macOS 9, or even Win95
+
+## ⚡ Quick Start - Start Mining in 60 Seconds
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install.sh | bash
+```
+
+**That's it.** The installer:
+- Auto-detects your platform (Linux, macOS, PPC, POWER8)
+- Downloads the correct miner
+- Configures your wallet
+- Connects to the network
+
+**Supported Hardware:**
+| Platform | Antiquity Multiplier |
+|----------|---------------------|
+| PowerPC G4 | 2.5x |
+| PowerPC G5 | 2.0x |
+| IBM POWER8 | 1.5x |
+| Apple Silicon | 1.2x |
+| Modern x86_64 | 1.0x |
+
+*Yes, your old G4 Mac earns MORE than a modern PC. That's the point.*
 
 ## 📄 Quick Links
 
