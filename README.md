@@ -1,3 +1,5 @@
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![PowerPC](https://img.shields.io/badge/PowerPC-G4%2FG5-orange)](https://github.com/Scottcjn/Rustchain) [![Blockchain](https://img.shields.io/badge/Blockchain-PoA-green)](https://github.com/Scottcjn/Rustchain)
+
 # 🧱 RustChain: Proof-of-Antiquity Blockchain
 
 > “Every relic has a story. Every block, a tribute.”  
