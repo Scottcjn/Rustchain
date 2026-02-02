@@ -169,6 +169,12 @@ install_deps() {
     local python_cmd=$1
     echo -e "${YELLOW}[*] Setting up Python virtual environment...${NC}"
     
+    # Check for git
+    { command -v git >/dev/null 2>&1; } || { 
+        echo -e "${YELLOW}[*] git not found, attempting to install...${NC}"
+        sudo apt-get update && sudo apt-get install -y git || true
+    }
+
     # Create virtualenv
     if ! $python_cmd -m venv "$VENV_DIR" 2>/dev/null; then
         echo -e "${YELLOW}[*] venv module not available, trying virtualenv...${NC}"
@@ -183,16 +189,20 @@ install_deps() {
     
     echo -e "${GREEN}[+] Virtual environment created${NC}"
     
-    # Activate virtualenv and install dependencies
-    local venv_python="$VENV_DIR/bin/python"
-    local venv_pip="$VENV_DIR/bin/pip"
-    
-    echo -e "${YELLOW}[*] Installing dependencies in virtualenv...${NC}"
-    $venv_pip install --upgrade pip 2>/dev/null || true
-    $venv_pip install requests 2>/dev/null || {
-        echo -e "${RED}[!] Could not install requests. Please check your internet connection.${NC}"
-        exit 1
-    }
+    # Install dependencies
+    if [ -t 0 ]; then
+        echo -e "${YELLOW}[*] Installing dependencies...${NC}"
+        {
+            $venv_pip install --upgrade pip 2>/dev/null || true
+            $venv_pip install requests 2>/dev/null
+        } || {
+            echo -e "${RED}[!] Could not install requests. Please check your internet connection.${NC}"
+            exit 1
+        }
+    else
+        echo -e "${YELLOW}[*] Non-interactive: Installing dependencies (this may take a moment)...${NC}"
+        $venv_pip install requests >/dev/null 2>&1 || true
+    fi
     
     echo -e "${GREEN}[+] Dependencies installed in isolated environment${NC}"
 }
@@ -241,6 +251,9 @@ configure_wallet() {
     if [ -n "$WALLET_ARG" ]; then
         wallet_name="$WALLET_ARG"
         echo -e "${GREEN}[+] Using wallet: ${wallet_name}${NC}"
+    elif [ ! -t 0 ]; then
+        wallet_name="miner-$(hostname)-$(date +%s | tail -c 6)"
+        echo -e "${YELLOW}[*] Non-interactive: Using auto-generated wallet: ${wallet_name}${NC}"
     else
         echo ""
         echo -e "${CYAN}[?] Enter your wallet name (or press Enter for auto-generated):${NC}"
@@ -417,8 +430,14 @@ main() {
 
     # Setup auto-start service
     echo ""
-    echo -e "${CYAN}[?] Set up auto-start on boot? (y/n):${NC}"
-    read -r setup_autostart < /dev/tty
+    local setup_autostart="n"
+    if [ -t 0 ]; then
+        echo -e "${CYAN}[?] Set up auto-start on boot? (y/n):${NC}"
+        read -r setup_autostart < /dev/tty
+    else
+        echo -e "${YELLOW}[*] Non-interactive: Skipping auto-start setup.${NC}"
+    fi
+
     if [ "$setup_autostart" = "y" ] || [ "$setup_autostart" = "Y" ]; then
         local os=$(uname -s)
         case "$os" in
@@ -472,8 +491,12 @@ main() {
 
     # Ask to start now if service wasn't set up
     if [ "$setup_autostart" != "y" ] && [ "$setup_autostart" != "Y" ]; then
-        echo -e "${CYAN}[?] Start mining now? (y/n):${NC}"
-        read -r start_now < /dev/tty
+        local start_now="n"
+        if [ -t 0 ]; then
+            echo -e "${CYAN}[?] Start mining now? (y/n):${NC}"
+            read -r start_now < /dev/tty
+        fi
+
         if [ "$start_now" = "y" ] || [ "$start_now" = "Y" ]; then
             echo -e "${GREEN}[+] Starting miner...${NC}"
             cd "$INSTALL_DIR"
