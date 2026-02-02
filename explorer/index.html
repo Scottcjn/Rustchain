@@ -181,6 +181,17 @@
         const API_BASE = 'https://50.28.86.131';
         let allMiners = [];
 
+        // Escape HTML to prevent XSS
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
         // Format timestamp to relative time
         function timeAgo(timestamp) {
             const now = Math.floor(Date.now() / 1000);
@@ -240,14 +251,14 @@
             tbody.innerHTML = miners.map(m => `
                 <tr class="hover:bg-gray-700/50 transition">
                     <td class="p-3">
-                        <span class="font-mono text-sm truncate block max-w-[200px]" title="${m.miner}">${m.miner}</span>
+                        <span class="font-mono text-sm truncate block max-w-[200px]" title="${escapeHtml(m.miner)}">${escapeHtml(m.miner)}</span>
                     </td>
                     <td class="p-3">
-                        <span class="arch-badge ${getArchClass(m.device_arch, m.device_family)}">${m.device_arch}</span>
-                        <span class="text-gray-500 text-xs ml-2">${m.device_family}</span>
+                        <span class="arch-badge ${getArchClass(m.device_arch, m.device_family)}">${escapeHtml(m.device_arch)}</span>
+                        <span class="text-gray-500 text-xs ml-2">${escapeHtml(m.device_family)}</span>
                     </td>
                     <td class="p-3 text-center">
-                        <span class="text-amber-400 font-bold">${m.antiquity_multiplier}x</span>
+                        <span class="text-amber-400 font-bold">${escapeHtml(m.antiquity_multiplier)}x</span>
                     </td>
                     <td class="p-3 text-gray-400 text-sm">${timeAgo(m.last_attest)}</td>
                     <td class="p-3 text-center">${getStatusIndicator(m.last_attest)}</td>
@@ -311,19 +322,19 @@
                 
                 resultDiv.innerHTML = `
                     <div class="bg-gray-700 rounded-lg p-4">
-                        <div class="text-lg font-bold mb-2">Wallet: <span class="text-rust">${balance.miner_id}</span></div>
+                        <div class="text-lg font-bold mb-2">Wallet: <span class="text-rust">${escapeHtml(balance.miner_id)}</span></div>
                         <div class="grid grid-cols-2 gap-4">
                             <div>
                                 <div class="text-gray-400 text-sm">Balance</div>
-                                <div class="text-2xl font-bold text-green-400">${balance.amount_rtc.toFixed(4)} RTC</div>
+                                <div class="text-2xl font-bold text-green-400">${escapeHtml(balance.amount_rtc.toFixed(4))} RTC</div>
                             </div>
                             ${minerInfo ? `
                             <div>
                                 <div class="text-gray-400 text-sm">Mining Status</div>
                                 <div class="flex items-center gap-2">
                                     ${getStatusIndicator(minerInfo.last_attest)}
-                                    <span class="arch-badge ${getArchClass(minerInfo.device_arch, minerInfo.device_family)}">${minerInfo.device_arch}</span>
-                                    <span class="text-amber-400">${minerInfo.antiquity_multiplier}x</span>
+                                    <span class="arch-badge ${getArchClass(minerInfo.device_arch, minerInfo.device_family)}">${escapeHtml(minerInfo.device_arch)}</span>
+                                    <span class="text-amber-400">${escapeHtml(minerInfo.antiquity_multiplier)}x</span>
                                 </div>
                             </div>
                             ` : '<div><div class="text-gray-400 text-sm">Mining Status</div><div class="text-gray-500">Not actively mining</div></div>'}
@@ -341,21 +352,13 @@
             tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-500">Loading balances...</td></tr>';
 
             try {
-                // Get balances for all known miners
-                const balances = await Promise.all(
-                    allMiners.map(async m => {
-                        try {
-                            const res = await fetch(`${API_BASE}/wallet/balance?miner_id=${encodeURIComponent(m.miner)}`);
-                            const data = await res.json();
-                            return { miner: m.miner, balance: data.amount_rtc };
-                        } catch {
-                            return { miner: m.miner, balance: 0 };
-                        }
-                    })
-                );
-
-                // Sort by balance descending
-                balances.sort((a, b) => b.balance - a.balance);
+                // Batch fetch all balances in a single request
+                const res = await fetch(`${API_BASE}/api/balances`);
+                const balancesData = await res.json();
+                
+                // Convert to array and sort by balance descending
+                const balances = (Array.isArray(balancesData) ? balancesData : Object.entries(balancesData).map(([miner, balance]) => ({ miner, balance: balance.amount_rtc || balance })))
+                    .sort((a, b) => (b.balance || b.amount_rtc || 0) - (a.balance || a.amount_rtc || 0));
                 const top20 = balances.slice(0, 20);
 
                 if (!top20.length) {
@@ -365,11 +368,13 @@
 
                 tbody.innerHTML = top20.map((b, i) => {
                     const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`;
+                    const balance = b.balance || b.amount_rtc || 0;
+                    const miner = b.miner || b.miner_id || '';
                     return `
                         <tr class="hover:bg-gray-700/50 transition">
                             <td class="p-3 text-center text-xl">${medal}</td>
-                            <td class="p-3 font-mono text-sm truncate max-w-[250px]" title="${b.miner}">${b.miner}</td>
-                            <td class="p-3 text-right font-bold text-green-400">${b.balance.toFixed(4)}</td>
+                            <td class="p-3 font-mono text-sm truncate max-w-[250px]" title="${escapeHtml(miner)}">${escapeHtml(miner)}</td>
+                            <td class="p-3 text-right font-bold text-green-400">${Number(balance).toFixed(4)}</td>
                         </tr>
                     `;
                 }).join('');
