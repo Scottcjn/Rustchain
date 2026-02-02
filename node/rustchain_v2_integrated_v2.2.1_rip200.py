@@ -569,8 +569,7 @@ def init_db():
                 nonce TEXT PRIMARY KEY,
                 miner TEXT,
                 issued_at INTEGER,
-                expires_at INTEGER NOT NULL,
-                used INTEGER DEFAULT 0
+                expires_at INTEGER NOT NULL
             )
         """)
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
@@ -582,7 +581,7 @@ def init_db():
         for col, default in [("settled", "0"), ("settled_ts", "NULL")]:
             try:
                 c.execute(f"ALTER TABLE epoch_state ADD COLUMN {col} INTEGER DEFAULT {default}")
-            except:
+            except sqlite3.OperationalError:
                 pass
 
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
@@ -591,7 +590,7 @@ def init_db():
         # Schema migration for balances
         try:
             c.execute("ALTER TABLE balances ADD COLUMN amount_i64 INTEGER DEFAULT 0")
-        except:
+        except sqlite3.OperationalError:
             pass
 
         # Security & Hardware Attestation tables
@@ -1466,6 +1465,20 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None):
             return False, f'Hardware bound to {bound_miner[:16]}...', bound_miner
 
 
+@app.route('/attest/nonce', methods=['POST'])
+def issue_nonce():
+    """Issue a server-side nonce for attestation replay protection."""
+    nonce = secrets.token_hex(16)
+    expires_at = int(time.time()) + 300  # 5-minute validity
+    body = request.get_json(force=True, silent=True) or {}
+    miner = body.get('miner', 'unknown')
+    
+    with sqlite3.connect(DB_PATH) as c:
+        c.execute("INSERT INTO nonces (nonce, miner, issued_at, expires_at) VALUES (?, ?, ?, ?)",
+                  (nonce, miner, int(time.time()), expires_at))
+        c.commit()
+    return jsonify({"nonce": nonce, "expires_at": expires_at})
+
 @app.route('/attest/submit', methods=['POST'])
 def submit_attestation():
     """Submit hardware attestation with fingerprint validation"""
@@ -1496,15 +1509,13 @@ def submit_attestation():
 
     # 1. NONCE VALIDATION & REPLAY PROTECTION
     if not nonce:
-        # Backward compatibility: legacy miners might not use nonces? 
-        # (The reviewer said they use miner-generated ones).
         return jsonify({"error": "missing_nonce"}), 401
     
     with sqlite3.connect(DB_PATH) as c:
         row = c.execute("SELECT expires_at FROM nonces WHERE nonce = ?", (nonce,)).fetchone()
         if row:
             expires_at = row[0]
-            # Consume nonce immediately
+            # Consume nonce BEFORE checking expiry -- prevents retry attacks on expired nonces
             c.execute("DELETE FROM nonces WHERE nonce = ?", (nonce,))
             c.commit()
 
@@ -1512,13 +1523,18 @@ def submit_attestation():
                 return jsonify({"error": "expired_nonce"}), 401
         else:
             # Fallback for miner-generated nonces (Legacy Compatibility)
+            # Accept if it's a valid hex token (standard secrets.token_hex output)
+            is_valid_hex = False
             try:
-                nonce_ts = int(nonce)
-                if abs(int(time.time()) - nonce_ts) > 60:
-                    return jsonify({"error": "legacy_nonce_out_of_window"}), 401
-                print(f"[WARN] Accepted legacy miner-generated nonce from {miner}")
+                if isinstance(nonce, str) and len(nonce) >= 16:
+                    int(nonce, 16)
+                    is_valid_hex = True
             except (ValueError, TypeError):
-                # If not a timestamp and not in our DB, reject
+                pass
+                
+            if is_valid_hex:
+                print(f"[WARN] Accepted legacy miner-generated nonce from {miner}")
+            else:
                 return jsonify({"error": "invalid_nonce_or_replay"}), 401
 
     # 2. BASIC VALIDATION
