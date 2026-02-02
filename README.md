@@ -31,12 +31,75 @@
 
 ## ⚡ Quick Start
 
-### One-Line Install
+### One-Line Install (Recommended)
 ```bash
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install.sh | bash
 ```
 
-The installer auto-detects your platform and configures everything.
+The installer:
+- ✅ Auto-detects your platform (Linux/macOS, x86_64/ARM/PowerPC)
+- ✅ Creates an isolated Python virtualenv (no system pollution)
+- ✅ Downloads the correct miner for your hardware
+- ✅ Sets up auto-start on boot (systemd/launchd)
+- ✅ Provides easy uninstall
+
+### Installation with Options
+
+**Install with a specific wallet:**
+```bash
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install.sh | bash -s -- --wallet my-miner-wallet
+```
+
+**Uninstall:**
+```bash
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install.sh | bash -s -- --uninstall
+```
+
+### Supported Platforms
+- ✅ Ubuntu 20.04+, Debian 11+, Fedora 38+ (x86_64, ppc64le)
+- ✅ macOS 12+ (Intel, Apple Silicon, PowerPC)
+- ✅ IBM POWER8 systems
+
+### After Installation
+
+**Check your wallet balance:**
+```bash
+# Note: Using -sk flags because the node may use a self-signed SSL certificate
+curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_NAME"
+```
+
+**List active miners:**
+```bash
+curl -sk https://50.28.86.131/api/miners
+```
+
+**Check node health:**
+```bash
+curl -sk https://50.28.86.131/health
+```
+
+**Get current epoch:**
+```bash
+curl -sk https://50.28.86.131/epoch
+```
+
+**Manage the miner service:**
+
+*Linux (systemd):*
+```bash
+systemctl --user status rustchain-miner    # Check status
+systemctl --user stop rustchain-miner      # Stop mining
+systemctl --user start rustchain-miner     # Start mining
+journalctl --user -u rustchain-miner -f    # View logs
+```
+
+*macOS (launchd):*
+```bash
+launchctl list | grep rustchain            # Check status
+launchctl stop com.rustchain.miner         # Stop mining
+launchctl start com.rustchain.miner        # Start mining
+tail -f ~/.rustchain/miner.log             # View logs
+```
 
 ### Manual Install
 ```bash
@@ -135,19 +198,19 @@ This provides cryptographic proof that RustChain state existed at a specific tim
 
 ```bash
 # Check network health
-curl http://50.28.86.131/health
+curl -sk https://50.28.86.131/health
 
 # Get current epoch
-curl http://50.28.86.131/epoch
+curl -sk https://50.28.86.131/epoch
 
 # List active miners
-curl http://50.28.86.131/api/miners
+curl -sk https://50.28.86.131/api/miners
 
 # Check wallet balance
-curl "http://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET"
+curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET"
 
 # Block explorer
-open http://50.28.86.131/explorer
+open https://50.28.86.131/explorer
 ```
 
 ## 🖥️ Supported Platforms
