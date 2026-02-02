@@ -210,7 +210,7 @@ curl -sk https://50.28.86.131/api/miners
 curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET"
 
 # Block explorer
-open http://50.28.86.131/explorer
+open https://50.28.86.131/explorer
 ```
 
 ## 🖥️ Supported Platforms

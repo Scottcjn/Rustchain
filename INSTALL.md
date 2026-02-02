@@ -158,9 +158,9 @@ curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_NAME"
 Example output:
 ```json
 {
-  "wallet": "my-miner-wallet",
-  "balance": 12.456,
-  "pending": 0.12
+  "miner_id": "my-miner-wallet",
+  "amount_rtc": 12.456,
+  "amount_i64": 12456000
 }
 ```
 
