@@ -1,0 +1,32 @@
+{
+  "name": "rtc-payment-widget",
+  "version": "1.0.0",
+  "description": "Embeddable payment widget for accepting RTC (RustChain Token) payments",
+  "main": "src/rtc-pay.js",
+  "scripts": {
+    "build": "terser src/rtc-pay.js -o dist/rtc-pay.min.js -c -m",
+    "serve": "python3 -m http.server 8080"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Scottcjn/Rustchain.git"
+  },
+  "keywords": [
+    "rustchain",
+    "rtc",
+    "cryptocurrency",
+    "payment",
+    "widget",
+    "blockchain",
+    "ed25519"
+  ],
+  "author": "RustChain Contributors",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Scottcjn/Rustchain/issues"
+  },
+  "homepage": "https://github.com/Scottcjn/Rustchain#readme",
+  "devDependencies": {
+    "terser": "^5.31.0"
+  }
+}
