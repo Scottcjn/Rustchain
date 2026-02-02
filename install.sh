@@ -3,14 +3,17 @@
 # RustChain Miner - One-Line Installer
 # curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install.sh | bash
 #
-# Supports: Linux (x86_64, ppc64le), macOS (Intel, PPC), POWER8
+# Supports: Linux (x86_64, ppc64le), macOS (Intel, Apple Silicon, PPC), POWER8
+# Features: virtualenv isolation, systemd/launchd auto-start, clean uninstall
 #
 
 set -e
 
 REPO_BASE="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners"
 INSTALL_DIR="$HOME/.rustchain"
+VENV_DIR="$INSTALL_DIR/venv"
 NODE_URL="https://50.28.86.131"
+SERVICE_NAME="rustchain-miner"
 
 # Colors
 RED='\033[0;31m'
@@ -18,6 +21,71 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
+
+# Parse command line arguments
+UNINSTALL=false
+WALLET_ARG=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --uninstall)
+            UNINSTALL=true
+            shift
+            ;;
+        --wallet)
+            WALLET_ARG="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--uninstall] [--wallet WALLET_NAME]"
+            exit 1
+            ;;
+    esac
+done
+
+# Uninstall mode
+if [ "$UNINSTALL" = true ]; then
+    echo -e "${CYAN}[*] Uninstalling RustChain miner...${NC}"
+    
+    # Stop and remove systemd service (Linux)
+    if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
+        if systemctl --user list-unit-files | grep -q "$SERVICE_NAME.service"; then
+            echo -e "${YELLOW}[*] Stopping systemd service...${NC}"
+            systemctl --user stop "$SERVICE_NAME.service" 2>/dev/null || true
+            systemctl --user disable "$SERVICE_NAME.service" 2>/dev/null || true
+            rm -f "$HOME/.config/systemd/user/$SERVICE_NAME.service"
+            systemctl --user daemon-reload 2>/dev/null || true
+            echo -e "${GREEN}[+] Systemd service removed${NC}"
+        fi
+    fi
+    
+    # Stop and remove launchd service (macOS)
+    if [ "$(uname -s)" = "Darwin" ]; then
+        PLIST_PATH="$HOME/Library/LaunchAgents/com.rustchain.miner.plist"
+        if [ -f "$PLIST_PATH" ]; then
+            echo -e "${YELLOW}[*] Stopping launchd service...${NC}"
+            launchctl unload "$PLIST_PATH" 2>/dev/null || true
+            rm -f "$PLIST_PATH"
+            echo -e "${GREEN}[+] Launchd service removed${NC}"
+        fi
+    fi
+    
+    # Remove installation directory
+    if [ -d "$INSTALL_DIR" ]; then
+        echo -e "${YELLOW}[*] Removing installation directory...${NC}"
+        rm -rf "$INSTALL_DIR"
+        echo -e "${GREEN}[+] Installation directory removed${NC}"
+    fi
+    
+    # Remove symlink
+    if [ -L "/usr/local/bin/rustchain-mine" ]; then
+        rm -f "/usr/local/bin/rustchain-mine" 2>/dev/null || true
+    fi
+    
+    echo -e "${GREEN}[✓] RustChain miner uninstalled successfully${NC}"
+    exit 0
+fi
 
 echo -e "${CYAN}"
 echo "╔═══════════════════════════════════════════════════════════════╗"
@@ -99,18 +167,34 @@ check_python() {
 # Install dependencies
 install_deps() {
     local python_cmd=$1
-    echo -e "${YELLOW}[*] Checking dependencies...${NC}"
-
-    # Try to install requests if missing
-    $python_cmd -c "import requests" 2>/dev/null || {
-        echo -e "${YELLOW}[*] Installing requests module...${NC}"
-        $python_cmd -m pip install requests --user 2>/dev/null || \
-        pip install requests --user 2>/dev/null || \
-        pip3 install requests --user 2>/dev/null || {
-            echo -e "${RED}[!] Could not install requests. Please install manually:${NC}"
-            echo "    pip install requests"
+    echo -e "${YELLOW}[*] Setting up Python virtual environment...${NC}"
+    
+    # Create virtualenv
+    if ! $python_cmd -m venv "$VENV_DIR" 2>/dev/null; then
+        echo -e "${YELLOW}[*] venv module not available, trying virtualenv...${NC}"
+        # Try installing virtualenv if not available
+        $python_cmd -m pip install --user virtualenv 2>/dev/null || pip install --user virtualenv 2>/dev/null || true
+        $python_cmd -m virtualenv "$VENV_DIR" 2>/dev/null || {
+            echo -e "${RED}[!] Could not create virtual environment${NC}"
+            echo -e "${RED}[!] Please install python3-venv or virtualenv${NC}"
+            exit 1
         }
+    fi
+    
+    echo -e "${GREEN}[+] Virtual environment created${NC}"
+    
+    # Activate virtualenv and install dependencies
+    local venv_python="$VENV_DIR/bin/python"
+    local venv_pip="$VENV_DIR/bin/pip"
+    
+    echo -e "${YELLOW}[*] Installing dependencies in virtualenv...${NC}"
+    $venv_pip install --upgrade pip 2>/dev/null || true
+    $venv_pip install requests 2>/dev/null || {
+        echo -e "${RED}[!] Could not install requests. Please check your internet connection.${NC}"
+        exit 1
     }
+    
+    echo -e "${GREEN}[+] Dependencies installed in isolated environment${NC}"
 }
 
 # Download miner files
@@ -151,13 +235,21 @@ download_miner() {
 
 # Configure wallet (sets WALLET_NAME global)
 configure_wallet() {
-    echo ""
-    echo -e "${CYAN}[?] Enter your wallet name (or press Enter for auto-generated):${NC}"
-    read -r wallet_name
+    local wallet_name=""
+    
+    # Use wallet from argument if provided
+    if [ -n "$WALLET_ARG" ]; then
+        wallet_name="$WALLET_ARG"
+        echo -e "${GREEN}[+] Using wallet: ${wallet_name}${NC}"
+    else
+        echo ""
+        echo -e "${CYAN}[?] Enter your wallet name (or press Enter for auto-generated):${NC}"
+        read -r wallet_name
 
-    if [ -z "$wallet_name" ]; then
-        wallet_name="miner-$(hostname)-$(date +%s | tail -c 6)"
-        echo -e "${YELLOW}[*] Using auto-generated wallet: ${wallet_name}${NC}"
+        if [ -z "$wallet_name" ]; then
+            wallet_name="miner-$(hostname)-$(date +%s | tail -c 6)"
+            echo -e "${YELLOW}[*] Using auto-generated wallet: ${wallet_name}${NC}"
+        fi
     fi
 
     # Set global for use by other functions
@@ -176,13 +268,13 @@ EOF
 
 # Create start script
 create_start_script() {
-    local python_cmd=$1
-    local wallet=$2
+    local wallet=$1
+    local venv_python="$VENV_DIR/bin/python"
 
     cat > "$INSTALL_DIR/start.sh" << EOF
 #!/bin/bash
 cd "$INSTALL_DIR"
-$python_cmd rustchain_miner.py --wallet "$wallet"
+$venv_python rustchain_miner.py --wallet "$wallet"
 EOF
     chmod +x "$INSTALL_DIR/start.sh"
 
@@ -192,9 +284,104 @@ EOF
     fi
 }
 
+# Setup systemd service (Linux)
+setup_systemd_service() {
+    local wallet=$1
+    local venv_python="$VENV_DIR/bin/python"
+    
+    echo -e "${YELLOW}[*] Setting up systemd service for auto-start...${NC}"
+    
+    # Create systemd user directory if it doesn't exist
+    mkdir -p "$HOME/.config/systemd/user"
+    
+    # Create service file
+    cat > "$HOME/.config/systemd/user/$SERVICE_NAME.service" << EOF
+[Unit]
+Description=RustChain Miner - Proof of Antiquity
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$venv_python $INSTALL_DIR/rustchain_miner.py --wallet $wallet
+Restart=always
+RestartSec=10
+StandardOutput=append:$INSTALL_DIR/miner.log
+StandardError=append:$INSTALL_DIR/miner.log
+
+[Install]
+WantedBy=default.target
+EOF
+    
+    # Reload systemd and enable service
+    systemctl --user daemon-reload
+    systemctl --user enable "$SERVICE_NAME.service"
+    systemctl --user start "$SERVICE_NAME.service"
+    
+    echo -e "${GREEN}[+] Systemd service installed and started${NC}"
+    echo -e "${CYAN}[i] Service commands:${NC}"
+    echo -e "    Start:   systemctl --user start $SERVICE_NAME"
+    echo -e "    Stop:    systemctl --user stop $SERVICE_NAME"
+    echo -e "    Status:  systemctl --user status $SERVICE_NAME"
+    echo -e "    Logs:    journalctl --user -u $SERVICE_NAME -f"
+}
+
+# Setup launchd service (macOS)
+setup_launchd_service() {
+    local wallet=$1
+    local venv_python="$VENV_DIR/bin/python"
+    
+    echo -e "${YELLOW}[*] Setting up launchd service for auto-start...${NC}"
+    
+    # Create LaunchAgents directory if it doesn't exist
+    mkdir -p "$HOME/Library/LaunchAgents"
+    
+    # Create plist file
+    cat > "$HOME/Library/LaunchAgents/com.rustchain.miner.plist" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rustchain.miner</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$venv_python</string>
+        <string>-u</string>  <!-- Unbuffered output for real-time logging -->
+        <string>$INSTALL_DIR/rustchain_miner.py</string>
+        <string>--wallet</string>
+        <string>$wallet</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>$INSTALL_DIR</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$INSTALL_DIR/miner.log</string>
+    <key>StandardErrorPath</key>
+    <string>$INSTALL_DIR/miner.log</string>
+</dict>
+</plist>
+EOF
+    
+    # Load the service
+    launchctl load "$HOME/Library/LaunchAgents/com.rustchain.miner.plist"
+    
+    echo -e "${GREEN}[+] Launchd service installed and started${NC}"
+    echo -e "${CYAN}[i] Service commands:${NC}"
+    echo -e "    Start:   launchctl start com.rustchain.miner"
+    echo -e "    Stop:    launchctl stop com.rustchain.miner"
+    echo -e "    Status:  launchctl list | grep rustchain"
+    echo -e "    Logs:    tail -f $INSTALL_DIR/miner.log"
+}
+
 # Test connection
 test_connection() {
     echo -e "${YELLOW}[*] Testing connection to RustChain node...${NC}"
+    # Note: Using -k to bypass SSL verification as node may use self-signed cert
     if curl -sSk "$NODE_URL/health" | grep -q '"ok":true'; then
         echo -e "${GREEN}[+] Node connection successful!${NC}"
         return 0
@@ -218,7 +405,7 @@ main() {
     fi
     echo -e "${GREEN}[+] Using: ${python_cmd}${NC}"
 
-    # Install deps
+    # Install deps in virtualenv
     install_deps "$python_cmd"
 
     # Download miner
@@ -227,33 +414,70 @@ main() {
     # Configure
     configure_wallet
 
-    # Create start script
-    create_start_script "$python_cmd" "$WALLET_NAME"
+    # Create start script (now uses virtualenv python)
+    create_start_script "$WALLET_NAME"
 
     # Test connection
     test_connection
+
+    # Setup auto-start service
+    echo ""
+    echo -e "${CYAN}[?] Set up auto-start on boot? (y/n):${NC}"
+    read -r setup_autostart
+    if [ "$setup_autostart" = "y" ] || [ "$setup_autostart" = "Y" ]; then
+        local os=$(uname -s)
+        case "$os" in
+            Linux)
+                if command -v systemctl &>/dev/null; then
+                    setup_systemd_service "$WALLET_NAME"
+                else
+                    echo -e "${YELLOW}[!] systemd not found. Auto-start not configured.${NC}"
+                fi
+                ;;
+            Darwin)
+                setup_launchd_service "$WALLET_NAME"
+                ;;
+            *)
+                echo -e "${YELLOW}[!] Auto-start not supported on this platform${NC}"
+                ;;
+        esac
+    fi
 
     echo ""
     echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║              Installation Complete!                           ║${NC}"
     echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "${CYAN}To start mining:${NC}"
+    echo -e "${CYAN}To start mining manually:${NC}"
     echo -e "  ${YELLOW}cd $INSTALL_DIR && ./start.sh${NC}"
     echo ""
-    echo -e "${CYAN}Or if symlink was created:${NC}"
-    echo -e "  ${YELLOW}rustchain-mine${NC}"
+    if [ -L "/usr/local/bin/rustchain-mine" ]; then
+        echo -e "${CYAN}Or use the convenience command:${NC}"
+        echo -e "  ${YELLOW}rustchain-mine${NC}"
+        echo ""
+    fi
+    echo -e "${CYAN}Check your wallet balance:${NC}"
+    echo -e "  ${YELLOW}curl -sk $NODE_URL/wallet/$WALLET_NAME/balance${NC}"
+    echo ""
+    echo -e "${CYAN}View wallet transactions:${NC}"
+    echo -e "  ${YELLOW}curl -sk $NODE_URL/wallet/$WALLET_NAME/transactions${NC}"
     echo ""
     echo -e "${CYAN}Miner files installed to:${NC} $INSTALL_DIR"
+    echo -e "${CYAN}Python environment:${NC} Isolated virtualenv at $VENV_DIR"
+    echo ""
+    echo -e "${CYAN}To uninstall:${NC}"
+    echo -e "  ${YELLOW}curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install.sh | bash -s -- --uninstall${NC}"
     echo ""
 
-    # Ask to start now
-    echo -e "${CYAN}[?] Start mining now? (y/n):${NC}"
-    read -r start_now
-    if [ "$start_now" = "y" ] || [ "$start_now" = "Y" ]; then
-        echo -e "${GREEN}[+] Starting miner...${NC}"
-        cd "$INSTALL_DIR"
-        exec $python_cmd rustchain_miner.py
+    # Ask to start now if service wasn't set up
+    if [ "$setup_autostart" != "y" ] && [ "$setup_autostart" != "Y" ]; then
+        echo -e "${CYAN}[?] Start mining now? (y/n):${NC}"
+        read -r start_now
+        if [ "$start_now" = "y" ] || [ "$start_now" = "Y" ]; then
+            echo -e "${GREEN}[+] Starting miner...${NC}"
+            cd "$INSTALL_DIR"
+            exec "$VENV_DIR/bin/python" rustchain_miner.py --wallet "$WALLET_NAME"
+        fi
     fi
 }
 
