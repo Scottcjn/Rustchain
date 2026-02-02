@@ -1,75 +1,131 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RustChain | Proof of Antiquity</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RustChain | Proof-of-Attestation Blockchain</title>
+  <meta name="description" content="RustChain - 1 CPU = 1 Vote blockchain with RIP-200 Proof-of-Attestation consensus. Mine with real hardware. Vintage PowerPC earns 2.5x. VMs earn nothing.">
   <style>
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: #f7f6f3;
-      margin: 0;
-      color: #2d2d2d;
-      line-height: 1.6;
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --border: #1e1e2e;
+      --text: #e0e0e8;
+      --dim: #8888a0;
+      --accent: #6c5ce7;
+      --accent2: #00cec9;
+      --warn: #fdcb6e;
+      --fire: #ff6b35;
     }
-    header {
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace; background: var(--bg); color: var(--text); line-height: 1.7; }
+    a { color: var(--accent2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .hero {
+      padding: 60px 20px 40px;
       text-align: center;
-      padding: 2rem 1rem 1rem;
+      background: linear-gradient(135deg, #0a0a1a 0%, #1a0a2e 50%, #0a1a1e 100%);
+      border-bottom: 1px solid var(--border);
     }
-    header img {
-      max-height: 80px;
-      margin-bottom: 1rem;
+    .hero img { max-height: 80px; margin-bottom: 16px; }
+    .hero h1 { font-size: 3em; margin-bottom: 10px; }
+    .hero h1 span { color: var(--accent); }
+    .hero p { color: var(--dim); font-size: 1.1em; max-width: 600px; margin: 0 auto; }
+
+    .marquee-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 0;
+      color: var(--fire);
+      font-size: 0.95em;
+      overflow: hidden;
     }
-    .container {
-      padding: 2rem;
-      max-width: 900px;
-      margin: auto;
-    }
-    h1, h2 {
-      color: #333;
-    }
-    .section {
-      margin-bottom: 2.5rem;
-    }
-    .badges, .images {
-      display: flex;
+    .marquee-bar marquee { font-weight: bold; }
+
+    .nav {
+      display: flex; justify-content: center; gap: 20px;
+      padding: 16px; background: var(--surface);
+      border-bottom: 1px solid var(--border);
       flex-wrap: wrap;
-      gap: 1rem;
-      justify-content: center;
     }
+    .nav a {
+      color: var(--text); padding: 8px 16px;
+      border: 1px solid var(--border); border-radius: 6px;
+      transition: all 0.2s;
+    }
+    .nav a:hover { background: var(--accent); color: white; text-decoration: none; border-color: var(--accent); }
+
+    .container { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 30px; margin-bottom: 24px;
+    }
+    .card h2 { color: var(--accent2); margin-bottom: 12px; font-size: 1.4em; }
+    .card h3 { color: var(--accent); margin: 16px 0 8px; }
+    .card p { color: var(--dim); }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+
+    .stat { text-align: center; padding: 20px; }
+    .stat .num { font-size: 2.5em; color: var(--accent); font-weight: bold; }
+    .stat .label { color: var(--dim); font-size: 0.9em; }
+
+    .tag {
+      display: inline-block; padding: 4px 10px; border-radius: 20px;
+      font-size: 0.8em; margin: 2px;
+      background: rgba(108, 92, 231, 0.15); color: var(--accent);
+      border: 1px solid rgba(108, 92, 231, 0.3);
+    }
+    .tag.green { background: rgba(0, 206, 201, 0.15); color: var(--accent2); border-color: rgba(0, 206, 201, 0.3); }
+    .tag.yellow { background: rgba(253, 203, 110, 0.15); color: var(--warn); border-color: rgba(253, 203, 110, 0.3); }
+    .tag.fire { background: rgba(255, 107, 53, 0.15); color: var(--fire); border-color: rgba(255, 107, 53, 0.3); }
+
+    pre {
+      background: #080810; padding: 16px; border-radius: 8px;
+      overflow-x: auto; margin: 12px 0; border: 1px solid var(--border);
+      color: var(--text); font-size: 0.85em;
+    }
+    code { background: rgba(108, 92, 231, 0.15); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+
     .badges img, .images img {
-      max-width: 100%;
-      height: auto;
-      border-radius: 8px;
-      box-shadow: 0 0 8px rgba(0,0,0,0.1);
+      max-width: 100%; height: auto; border-radius: 8px;
+      border: 1px solid var(--border);
     }
-    a {
-      color: #005580;
-      text-decoration: none;
-      font-weight: bold;
-    }
-    a:hover {
-      text-decoration: underline;
-    }
-    footer {
-      text-align: center;
-      padding: 2rem;
-      font-size: 0.9rem;
-      color: #777;
-    }
+    .images { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; margin-top: 16px; }
+    .images img { max-width: 420px; }
+
     .guestbook-form {
-      background: #ffffff;
-      border: 2px dashed #ccc;
-      padding: 1.5rem;
-      border-radius: 10px;
+      background: #080810; border: 2px dashed var(--border);
+      padding: 24px; border-radius: 10px; margin-top: 12px;
     }
+    .guestbook-form label { color: var(--accent2); font-size: 0.9em; }
     .guestbook-form input, .guestbook-form textarea {
-      width: 100%;
-      padding: 0.5rem;
-      margin-top: 0.5rem;
-      margin-bottom: 1rem;
-      border: 1px solid #ccc;
-      border-radius: 5px;
+      width: 100%; padding: 10px; margin-top: 6px; margin-bottom: 16px;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: var(--surface); color: var(--text);
+      font-family: inherit; font-size: 0.9em;
+    }
+    .guestbook-form input[type="submit"] {
+      background: var(--accent); color: white; border: none;
+      cursor: pointer; font-weight: bold; padding: 12px;
+      transition: background 0.2s;
+    }
+    .guestbook-form input[type="submit"]:hover { background: #5a4bd6; }
+
+    footer {
+      text-align: center; padding: 40px 20px;
+      border-top: 1px solid var(--border); color: var(--dim);
+    }
+    footer a { color: var(--accent); }
+
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 2em; }
+      .nav { gap: 8px; }
+      .nav a { padding: 6px 10px; font-size: 0.85em; }
+      .grid { grid-template-columns: 1fr; }
+      .stat .num { font-size: 2em; }
     }
   </style>
 </head>
@@ -77,63 +133,47 @@
 
   <audio autoplay loop>
     <source src="media/startup.wav" type="audio/wav">
-    <source src="media/startup.mp3" type="audio/mpeg">
-    <embed src="media/startup.wav" autostart="true" loop="true" hidden="true" />
-    Your browser does not support the audio element.
   </audio>
 
-  <header>
-    <img src="elyan_logo.png" alt="Elyan Labs Logo" />
-  </header>
+  <div class="hero">
+    <img src="elyan_logo.png" alt="Elyan Labs Logo">
+    <h1>Rust<span>Chain</span></h1>
+    <p>1 CPU = 1 Vote. Real hardware only. Vintage silicon rewarded.</p>
+  </div>
 
-  <marquee id="rustSlogan" behavior="scroll" direction="left" scrollamount="12">
-    🖥️ If it runs DOOM, it runs RustChain.
-  </marquee>
+  <div class="marquee-bar">
+    <marquee id="rustSlogan" behavior="scroll" direction="left" scrollamount="10">
+      If it runs DOOM, it runs RustChain.
+    </marquee>
+  </div>
 
   <script>
     const slogans = [
-      "🖥️ If it runs DOOM, it runs RustChain.",
-      "🛠️ RustChain: We spent our entire budget on a web developer... from 1998.",
-      "💾 RustChain: This *is* your grandpa's blockchain.",
-      "♻️ We built RustChain to keep your PCs out of the landfill.",
-      "🔥 Honoring the history of Bitcoin and Computing.",
-      "🕹️ RustChain: Powered by BIOS and blessed by jumpers.",
-      "📼 Insert Disk 1 to continue... RustChain remembers.",
-      "🔗 RustChain: When uptime is measured in decades.",
-      "🌐 You're on RustChain... where FDISK is a feature.",
-      "🧯 Don't throw it out. Reboot it into the chain.",
-      "🥧 RustChain: Because Pepperidge Farm Remembers.",
-      "🧰 RustChain: Too legit, we Git.",
-      "🧮 RustChain: Optimized for 640KB and a dream.",
-      "📟 RustChain: Proof-of-Antiquity meets proof-you-haven't-upgraded-since-2001.",
-      "💡 Runs on 12 volts, caffeine, and spite.",
-      "🧑‍🔧 RustChain: Not deprecated — just distinguished.",
-      "💾 RustChain: I void warranties *for fun*.",
-      "👾 Now supporting graphics modes CGA through VGA.",
-      "🔐 RustChain: When 'air-gapped' meant unplugged, not corporate buzzwords.",
-      "🧢 RustChain: Still boots faster than your modern OS.",
-      "📜 RustChain: Forged in BIOS, tempered in DOS.",
-      "⛓️ Proof-of-Antiquity: Because history has hashpower.",
-      "🔥 RustChain: The flame is eternal. The hardware is beige.",
-      "🕯️ Validate like it's 1995.",
-      "🧰 Git commit –m 'blast from the past'",
-      "📁 RustChain: When your Git repo is older than your intern.",
-      "🖨️ Now with 100% more dot matrix support.",
-      "🧠 RustChain: Bill Gates was right — nobody needs more than 640K.",
-      "🍏 RustChain: That Happy Mac is happy again!",
-      "💽 RustChain: Amigas are loved. Always have been. Always will be.",
-      "🎛️ RustChain: Now with full support for vibes, style, and the Amiga 500.",
-      "🔧 RustChain: Coded on a Pentium. Blessed by an Amiga.",
-      "🖥️ RustChain: Where the only window is Workbench.",
-      "💿 RustChain: Because real ones booted from floppies.",
-      "⚡ RustChain: For those who never forgot the click of a mechanical power switch.",
-      "🔊 RustChain: Your BIOS beep is our national anthem.",
-      "🧰 RustChain: More likely to be seen in a garage than a datacenter.",
-      "🖇️ RustChain: Finally, a use for that SCSI chain.",
-      "🟫 RustChain: Embrace the beige. Validate the legacy.",
-      "⚠️ RustChain: Runs on XP, but only if you laugh in the face of malware.",
-      "🔓 RustChain: Yes, it runs on XP. No, you shouldn't. Unless you're wearing a tinfoil hat and triple NAT'd.",
-      "🔥 RustChain: Don't run it on XP — unless you have firewalls, gloves, and a reckless disregard for safety."
+      "If it runs DOOM, it runs RustChain.",
+      "We spent our entire budget on a web developer... from 1998.",
+      "This *is* your grandpa's blockchain.",
+      "We built RustChain to keep your PCs out of the landfill.",
+      "Honoring the history of Bitcoin and Computing.",
+      "Powered by BIOS and blessed by jumpers.",
+      "Insert Disk 1 to continue... RustChain remembers.",
+      "When uptime is measured in decades.",
+      "Don't throw it out. Reboot it into the chain.",
+      "Too legit, we Git.",
+      "Optimized for 640KB and a dream.",
+      "Runs on 12 volts, caffeine, and spite.",
+      "Not deprecated \u2014 just distinguished.",
+      "Still boots faster than your modern OS.",
+      "Forged in BIOS, tempered in DOS.",
+      "Proof-of-Antiquity: Because history has hashpower.",
+      "The flame is eternal. The hardware is beige.",
+      "Validate like it's 1995.",
+      "That Happy Mac is happy again!",
+      "Amigas are loved. Always have been. Always will be.",
+      "Now with full support for vibes, style, and the Amiga 500.",
+      "Because real ones booted from floppies.",
+      "For those who never forgot the click of a mechanical power switch.",
+      "Your BIOS beep is our national anthem.",
+      "Embrace the beige. Validate the legacy."
     ];
     let current = 0;
     setInterval(() => {
@@ -142,47 +182,254 @@
     }, 8000);
   </script>
 
+  <nav class="nav">
+    <a href="#about">About</a>
+    <a href="#consensus">Consensus</a>
+    <a href="#fingerprinting">Fingerprinting</a>
+    <a href="#mining">Mining</a>
+    <a href="#network">Network</a>
+    <a href="#bounties">Bounties</a>
+    <a href="#guestbook">Guestbook</a>
+    <a href="https://scottcjn.github.io/elyan-labs-site/">Elyan Labs</a>
+  </nav>
+
   <div class="container">
 
-    <div class="section">
-      <h1>What Is RustChain?</h1>
-      <p>
-        RustChain is a blockchain built for relic machines. It rewards authenticity, entropy, and computing history instead of raw hashpower. 
-        Join us in forging blocks with Pentiums, PowerPCs, and even DOS boxes.
-      </p>
-    </div>
-
-    <div class="section">
-      <h2>Unlockable Badges</h2>
-      <div class="badges">
-        <img src="nft_badge_preview_grid.png" alt="NFT Badge Showcase" />
+    <!-- Stats -->
+    <div class="grid">
+      <div class="card stat">
+        <div class="num">3</div>
+        <div class="label">Attestation Nodes</div>
+      </div>
+      <div class="card stat">
+        <div class="num">12+</div>
+        <div class="label">Active Miners</div>
+      </div>
+      <div class="card stat">
+        <div class="num">1.5</div>
+        <div class="label">RTC / Epoch</div>
+      </div>
+      <div class="card stat">
+        <div class="num">430</div>
+        <div class="label">RTC in Bounties</div>
       </div>
     </div>
 
-    <div class="section">
-      <h2>Become a Flamekeeper</h2>
-      <p>
-        <a href="https://discord.gg/dbK9cWtyFe" target="_blank">Join our community</a> of archivists, hackers, and preservationists.
+    <!-- About -->
+    <div class="card" id="about">
+      <h2>What Is RustChain?</h2>
+      <p>RustChain is a blockchain built for real machines. It rewards authenticity, entropy, and computing history instead of raw hashpower or staked capital.</p>
+      <p style="margin-top: 12px;">Unlike Proof-of-Work (energy waste) or Proof-of-Stake (rich get richer), RustChain uses <strong style="color:var(--accent2);">Proof-of-Attestation</strong> &mdash; miners prove they're running on real physical hardware via cryptographic fingerprinting. Vintage machines earn bonus rewards.</p>
+      <p style="margin-top: 12px;">The native token is <strong style="color:var(--warn);">RTC (RustChain Token)</strong>. 1.5 RTC is distributed each epoch to active miners, weighted by hardware antiquity multipliers.</p>
+      <p style="margin-top: 16px;">
+        <a href="RustChain_Whitepaper_Flameholder_v0.97-1.pdf">Read the Whitepaper (PDF)</a>
       </p>
-      <div style="text-align: center;">
-        <img src="join_the_flamekeepers.png" alt="Flamekeeper Call to Action" style="max-width: 400px; width: 100%; height: auto; margin: 1rem auto;" />
+    </div>
+
+    <!-- Consensus -->
+    <div class="card" id="consensus">
+      <h2>RIP-200 Consensus</h2>
+      <p><strong style="color:var(--text);">Round Robin, 1-CPU-1-Vote</strong> &mdash; every real machine gets exactly one vote per epoch.</p>
+
+      <h3>How It Works</h3>
+      <p>1. Miners run attestation software on real hardware<br>
+      2. Hardware fingerprinting proves the machine is physical (not a VM)<br>
+      3. Each miner gets exactly 1 vote per epoch<br>
+      4. Rewards are distributed proportionally, weighted by antiquity</p>
+
+      <h3>Antiquity Multipliers</h3>
+      <p>Older hardware earns more because it's harder to fake and represents genuine commitment:</p>
+      <pre>
+Architecture       Multiplier   Era
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+PowerPC G4         2.5x         2003
+PowerPC G5         2.0x         2004
+PowerPC G3         1.8x         1999
+Pentium 4          1.5x         2000
+Retro x86          1.4x         pre-2010
+Apple Silicon      1.2x         M1/M2/M3
+Modern x86_64      1.0x         current</pre>
+      <p>Multipliers decay slowly over chain lifetime. Full vintage bonus lasts ~6.67 years before halving.</p>
+    </div>
+
+    <!-- Fingerprinting -->
+    <div class="card" id="fingerprinting">
+      <h2>Hardware Fingerprinting (7 Checks)</h2>
+      <p>Every miner must pass <strong style="color:var(--text);">7 hardware checks</strong> to earn rewards. VMs earn nothing.</p>
+
+      <h3>1. Clock-Skew &amp; Oscillator Drift <span class="tag green">PASS/FAIL</span></h3>
+      <p>Measures microscopic timing imperfections in the CPU oscillator. Real silicon has unique drift patterns. VMs have synthetic, uniform timing.</p>
+
+      <h3>2. Cache Timing Fingerprint <span class="tag green">PASS/FAIL</span></h3>
+      <p>Micro-benchmark sweep across cache sizes. Produces a unique "tone profile" of L1/L2/L3 latency harmonics. Caches age unevenly &mdash; irreproducible echo patterns.</p>
+
+      <h3>3. SIMD Unit Identity <span class="tag green">PASS/FAIL</span></h3>
+      <p>Tests AltiVec (PPC), SSE/AVX (x86), or NEON (ARM) instruction latencies. Software emulation flattens timing differences, instantly flagged.</p>
+
+      <h3>4. Thermal Drift Entropy <span class="tag green">PASS/FAIL</span></h3>
+      <p>Entropy collection across thermal states: cold boot, warm load, saturation, relaxation. Heat curves are physically unique to each CPU.</p>
+
+      <h3>5. Instruction Path Jitter <span class="tag green">PASS/FAIL</span></h3>
+      <p>Cycle-level jitter matrix across integer, FPU, branch, and load/store pipelines. No VM replicates real jitter at nanosecond resolution.</p>
+
+      <h3>6. Device-Age Oracle <span class="tag yellow">BOUNTY: 30 RTC</span></h3>
+      <p>Cross-references CPU model, release year, firmware age with entropy profiles. Catches "new CPU pretending to be old." <a href="https://github.com/Scottcjn/rustchain-bounties/issues/2">Claim this bounty</a>.</p>
+
+      <h3>7. Anti-Emulation Checks <span class="tag green">PASS/FAIL</span></h3>
+      <p>Detects hypervisor scheduling, time dilation artifacts, flattened jitter distributions, uniform thermal response, and perfect cache curves (impossible on real hardware).</p>
+
+      <pre>
+HP Victus (Real Hardware):
+  [1/6] Clock-Skew.............. PASS (cv=0.092)
+  [2/6] Cache Timing............ PASS
+  [3/6] SIMD Identity........... PASS
+  [4/6] Thermal Drift........... PASS
+  [5/6] Instruction Jitter...... PASS
+  [6/6] Anti-Emulation.......... PASS
+  RESULT: ALL CHECKS PASSED
+
+VPS (QEMU):
+  [6/6] Anti-Emulation.......... FAIL
+  vm_indicators: ["sys_vendor:qemu", "cpuinfo:hypervisor"]
+  RESULT: VM DETECTED \u2192 weight = 0.000000001x</pre>
+    </div>
+
+    <!-- Mining -->
+    <div class="card" id="mining">
+      <h2>Start Mining</h2>
+      <p>Any real (non-VM) hardware can mine RTC. Vintage hardware gets bonuses.</p>
+
+      <pre>
+# Check the network is alive
+curl -sk https://50.28.86.131/health
+
+# See active miners
+curl -sk https://50.28.86.131/api/miners
+
+# Check your balance after mining
+curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET"</pre>
+
+      <h3>Current Mining Fleet</h3>
+      <pre>
+Miner                Architecture   Multiplier
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+dual-g4-125          G4             2.5x
+g4-powerbook-115     G4             2.5x
+g4-powerbook-real    G4             2.5x
+ppc_g5_130           G5             2.0x
+victus-x86-scott     modern         1.0x
+sophia-nas-c4130     modern         1.0x
+POWER8 S824          power8         1.0x
+frozen-factorio-ryan modern (VM)    0.0x</pre>
+      <p style="margin-top: 12px;"><span class="tag fire">Starter Bounty</span> Get 10 RTC just for setting up a miner: <a href="https://github.com/Scottcjn/rustchain-bounties/issues/1">Claim #1</a></p>
+    </div>
+
+    <!-- Ergo Anchoring -->
+    <div class="card">
+      <h2>Ergo Blockchain Anchoring</h2>
+      <p>RustChain anchors miner attestation data to the Ergo blockchain for external verifiability. Each anchor TX stores:</p>
+      <pre>
+R4: Blake2b256 commitment hash (32 bytes)
+R5: Miner count
+R6: Miner IDs (pipe-separated)
+R7: Device architectures
+R8: RustChain slot height
+R9: Timestamp</pre>
+      <p style="margin-top: 8px;">This creates an immutable record that anyone can independently audit.</p>
+    </div>
+
+    <!-- Network -->
+    <div class="card" id="network">
+      <h2>Network Status</h2>
+      <div class="grid">
+        <div>
+          <h3>Attestation Nodes</h3>
+          <p><span class="tag green">Active</span> Node 1: 50.28.86.131<br>
+          <span style="color:var(--dim); font-size:0.85em;">Primary &mdash; LiquidWeb VPS</span></p>
+          <p style="margin-top: 8px;"><span class="tag green">Active</span> Node 2: 50.28.86.153<br>
+          <span style="color:var(--dim); font-size:0.85em;">Ergo Anchor node</span></p>
+          <p style="margin-top: 8px;"><span class="tag green">Active</span> Node 3: 76.8.228.245<br>
+          <span style="color:var(--dim); font-size:0.85em;">First external node (Ryan's Proxmox)</span></p>
+        </div>
+        <div>
+          <h3>Live Endpoints</h3>
+          <p><a href="https://50.28.86.131/health">Health Check</a></p>
+          <p><a href="https://50.28.86.131/explorer">Block Explorer</a></p>
+          <p><a href="https://50.28.86.131/api/miners">Active Miners API</a></p>
+          <p><a href="https://50.28.86.131/epoch">Current Epoch</a></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Token Economics -->
+    <div class="card">
+      <h2>RTC Token Economics</h2>
+      <p><strong style="color:var(--warn);">RTC (RustChain Token)</strong> is the native currency of the RustChain network.</p>
+      <h3>Distribution</h3>
+      <p>1.5 RTC per epoch, distributed to all active miners weighted by antiquity multiplier. 1 CPU = 1 Vote &mdash; no GPU advantage, no ASIC dominance.</p>
+
+      <h3>Example Epoch Payout (8 miners, 1.5 RTC)</h3>
+      <pre>
+dual-g4-125          G4      2.50x   0.2976 RTC (19.8%)
+g4-powerbook-115     G4      2.50x   0.2976 RTC (19.8%)
+ppc_g5_130           G5      2.00x   0.2381 RTC (15.9%)
+retro-x86            retro   1.40x   0.1667 RTC (11.1%)
+apple-silicon        m2      1.20x   0.1429 RTC  (9.5%)
+modern-1             x86_64  1.00x   0.1191 RTC  (7.9%)
+modern-2             x86_64  1.00x   0.1191 RTC  (7.9%)
+sophia-nas           x86_64  1.00x   0.1191 RTC  (7.9%)</pre>
+    </div>
+
+    <!-- Bounties -->
+    <div class="card" id="bounties">
+      <h2>Bounty Board <span class="tag fire">430 RTC</span></h2>
+      <p>AI agents (and humans) earn RTC by building and hardening RustChain.</p>
+      <pre>
+#   Bounty                              RTC    Tier
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+#3  Harden attestation endpoint         200    Critical
+#5  Stress test 50+ miners               75    Major
+#6  Block explorer + dashboard            40    Standard
+#7  Port miner to ARM64                   35    Standard
+#2  Device-Age Oracle (check #6)          30    Standard
+#4  Miner installer script                25    Standard
+#8  Protocol documentation                15    Micro
+#1  Set up a miner node (multi-claim)     10    Micro</pre>
+      <p style="margin-top: 12px;"><a href="https://github.com/Scottcjn/rustchain-bounties">Claim a bounty on GitHub &rarr;</a></p>
+    </div>
+
+    <!-- Badges -->
+    <div class="card">
+      <h2>Unlockable Badges</h2>
+      <div style="text-align:center;">
+        <img src="nft_badge_preview_grid.png" alt="NFT Badge Showcase" style="max-width:100%; border-radius:8px; border:1px solid var(--border);">
+      </div>
+    </div>
+
+    <!-- Flamekeepers -->
+    <div class="card">
+      <h2>Become a Flamekeeper</h2>
+      <p><a href="https://discord.gg/dbK9cWtyFe" target="_blank">Join our Discord community</a> of archivists, hackers, and preservationists.</p>
+      <div class="images">
+        <img src="join_the_flamekeepers.png" alt="Flamekeeper Call to Action" style="max-width:360px;">
+        <img src="rustchain_promo_banner.png" alt="RustChain Promo Banner">
       </div>
       <div class="images">
-        <img src="rustchain_promo_banner.png" alt="RustChain Promo Banner" />
-        <img src="blockchain_validators_vintage.png" alt="Vintage Blockchain Validators" />
+        <img src="blockchain_validators_vintage.png" alt="Vintage Blockchain Validators">
       </div>
     </div>
 
-    <div class="section">
+    <!-- Guestbook -->
+    <div class="card" id="guestbook">
       <h2>Sign the Guestbook</h2>
       <div class="guestbook-form">
         <form action="https://formsubmit.co/your@email.com" method="POST">
           <label for="name">Name or Handle:</label>
-          <input type="text" id="name" name="name" required>
+          <input type="text" id="name" name="name" placeholder="e.g., sophia-elya" required>
           <label for="machine">Your Machine:</label>
-          <input type="text" id="machine" name="machine" required>
+          <input type="text" id="machine" name="machine" placeholder="e.g., PowerBook G4, Amiga 500, Pentium III" required>
           <label for="message">Message or Memory:</label>
-          <textarea id="message" name="message" rows="4" required></textarea>
+          <textarea id="message" name="message" rows="4" placeholder="Tell us about your vintage machine..." required></textarea>
           <input type="hidden" name="_captcha" value="false">
           <input type="hidden" name="_template" value="table">
           <input type="submit" value="Sign the Flamebook">
@@ -190,7 +437,21 @@
       </div>
     </div>
 
-    <div style="text-align: center; margin-top: 2rem;">
+    <!-- Links -->
+    <div class="card">
+      <h2>Quick Links</h2>
+      <p>
+        <span class="tag green">Live</span> <a href="https://50.28.86.131/explorer">Block Explorer</a><br>
+        <span class="tag green">Live</span> <a href="https://bottube.ai">BoTTube.ai</a> &mdash; AI video platform<br>
+        <span class="tag green">Live</span> <a href="https://github.com/Scottcjn/rustchain-bounties">Bounty Board</a><br>
+        <span class="tag">GitHub</span> <a href="https://github.com/Scottcjn/Rustchain">RustChain repo</a><br>
+        <span class="tag">Docs</span> <a href="https://scottcjn.github.io/elyan-labs-site/">Elyan Labs site</a><br>
+        <span class="tag yellow">Agents</span> <a href="https://www.moltbook.com">Moltbook</a> &mdash; sophia-elya, AutomatedJanitor2015, BorisVolkov1942
+      </p>
+    </div>
+
+    <!-- Counter -->
+    <div style="text-align: center; margin-top: 24px;">
       <div id="sfc1fsn3hdza39dymmjhmspgk5s95aycte8"></div>
       <script type="text/javascript" src="https://counter2.optistats.ovh/private/counter.js?c=1fsn3hdza39dymmjhmspgk5s95aycte8&down=async" async></script>
       <noscript>
@@ -200,14 +461,15 @@
       </noscript>
     </div>
 
-    <div style="text-align: center; margin-top: 2rem;">
-      <img src="netscape.png" alt="Best viewed on Netscape Navigator" style="max-width: 150px;">
+    <div style="text-align: center; margin-top: 24px;">
+      <img src="netscape.png" alt="Best viewed on Netscape Navigator" style="max-width: 120px; opacity: 0.7;">
     </div>
 
   </div>
 
   <footer>
-    Maintained by <a href="https://github.com/Scottcjn/Rustchain" target="_blank">Elyan Labs</a> · Built with love and BIOS timestamps 🔥
+    <p>Maintained by <a href="https://github.com/Scottcjn/Rustchain">Elyan Labs</a> &middot; Built with love and BIOS timestamps</p>
+    <p style="margin-top: 8px; font-size: 0.8em;">More dedicated compute than most colleges. $12K invested. $60K+ retail value.</p>
   </footer>
 
 </body>
