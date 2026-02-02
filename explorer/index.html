@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Explorer - Miner Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        rust: '#B7410E',
+                        rustDark: '#8B3205',
+                        rustLight: '#D4652F'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 5px rgba(183, 65, 14, 0.5); }
+            50% { box-shadow: 0 0 20px rgba(183, 65, 14, 0.8); }
+        }
+        .glow-active { animation: pulse-glow 2s infinite; }
+        .arch-badge { @apply px-2 py-1 rounded text-xs font-bold; }
+        .vintage { @apply bg-amber-500 text-black; }
+        .modern { @apply bg-slate-500 text-white; }
+        .apple { @apply bg-gray-800 text-white; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+    <!-- Header -->
+    <header class="bg-gradient-to-r from-rustDark to-rust p-4 shadow-lg">
+        <div class="container mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <div class="text-4xl">⛓️</div>
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-bold">RustChain Explorer</h1>
+                    <p class="text-sm text-orange-200">RIP-200 Proof-of-Attestation Network</p>
+                </div>
+            </div>
+            <div id="nodeStatus" class="flex items-center gap-2 bg-black/30 px-4 py-2 rounded-lg">
+                <span class="w-3 h-3 rounded-full bg-green-500 glow-active"></span>
+                <span class="text-sm">Node Online</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto p-4 space-y-6">
+        <!-- Stats Overview -->
+        <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-gray-800 rounded-xl p-4 border border-rust/30">
+                <div class="text-3xl font-bold text-rust" id="epochNumber">-</div>
+                <div class="text-gray-400 text-sm">Current Epoch</div>
+            </div>
+            <div class="bg-gray-800 rounded-xl p-4 border border-rust/30">
+                <div class="text-3xl font-bold text-green-400" id="activeMiners">-</div>
+                <div class="text-gray-400 text-sm">Active Miners</div>
+            </div>
+            <div class="bg-gray-800 rounded-xl p-4 border border-rust/30">
+                <div class="text-3xl font-bold text-amber-400" id="epochPot">-</div>
+                <div class="text-gray-400 text-sm">Epoch Pot (RTC)</div>
+            </div>
+            <div class="bg-gray-800 rounded-xl p-4 border border-rust/30">
+                <div class="text-3xl font-bold text-blue-400" id="currentSlot">-</div>
+                <div class="text-gray-400 text-sm">Current Slot</div>
+            </div>
+        </section>
+
+        <!-- Search -->
+        <section class="bg-gray-800 rounded-xl p-4 border border-rust/30">
+            <h2 class="text-xl font-bold mb-3 flex items-center gap-2">
+                <span>🔍</span> Search Miner
+            </h2>
+            <div class="flex flex-col md:flex-row gap-3">
+                <input type="text" id="searchInput" 
+                    placeholder="Enter wallet/miner ID..." 
+                    class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-rust">
+                <button onclick="searchMiner()" 
+                    class="bg-rust hover:bg-rustDark px-6 py-2 rounded-lg font-bold transition">
+                    Search
+                </button>
+            </div>
+            <div id="searchResult" class="mt-4 hidden"></div>
+        </section>
+
+        <!-- Tabs -->
+        <div class="flex gap-2 border-b border-gray-700">
+            <button onclick="showTab('miners')" id="tab-miners" 
+                class="px-4 py-2 border-b-2 border-rust text-rust font-bold">
+                ⛏️ Active Miners
+            </button>
+            <button onclick="showTab('leaderboard')" id="tab-leaderboard" 
+                class="px-4 py-2 border-b-2 border-transparent text-gray-400 hover:text-white">
+                🏆 Leaderboard
+            </button>
+        </div>
+
+        <!-- Active Miners Table -->
+        <section id="panel-miners" class="bg-gray-800 rounded-xl overflow-hidden border border-rust/30">
+            <div class="p-4 border-b border-gray-700">
+                <h2 class="text-xl font-bold">Active Miners</h2>
+                <p class="text-gray-400 text-sm">Real-time view of miners attesting to the network</p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-900">
+                        <tr>
+                            <th class="text-left p-3 text-gray-400">Miner ID</th>
+                            <th class="text-left p-3 text-gray-400">Architecture</th>
+                            <th class="text-center p-3 text-gray-400">Multiplier</th>
+                            <th class="text-left p-3 text-gray-400">Last Attestation</th>
+                            <th class="text-center p-3 text-gray-400">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="minersTable" class="divide-y divide-gray-700">
+                        <tr><td colspan="5" class="p-4 text-center text-gray-500">Loading miners...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Leaderboard -->
+        <section id="panel-leaderboard" class="bg-gray-800 rounded-xl overflow-hidden border border-rust/30 hidden">
+            <div class="p-4 border-b border-gray-700">
+                <h2 class="text-xl font-bold">🏆 Balance Leaderboard</h2>
+                <p class="text-gray-400 text-sm">Top RTC holders on the network</p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-900">
+                        <tr>
+                            <th class="text-center p-3 text-gray-400 w-16">Rank</th>
+                            <th class="text-left p-3 text-gray-400">Miner ID</th>
+                            <th class="text-right p-3 text-gray-400">Balance (RTC)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaderboardTable" class="divide-y divide-gray-700">
+                        <tr><td colspan="3" class="p-4 text-center text-gray-500">Loading leaderboard...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Node Info -->
+        <section class="bg-gray-800 rounded-xl p-4 border border-rust/30">
+            <h2 class="text-xl font-bold mb-3">📡 Node Information</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                    <div class="text-gray-400">Version</div>
+                    <div id="nodeVersion" class="font-mono">-</div>
+                </div>
+                <div>
+                    <div class="text-gray-400">Uptime</div>
+                    <div id="nodeUptime" class="font-mono">-</div>
+                </div>
+                <div>
+                    <div class="text-gray-400">Database</div>
+                    <div id="nodeDb" class="font-mono">-</div>
+                </div>
+                <div>
+                    <div class="text-gray-400">Tip Age</div>
+                    <div id="nodeTip" class="font-mono">-</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 border-t border-gray-700 p-4 mt-8">
+        <div class="container mx-auto text-center text-gray-400 text-sm">
+            <p>RustChain Explorer • Built for <a href="https://github.com/Scottcjn/rustchain-bounties/issues/6" class="text-rust hover:underline">Bounty #6</a></p>
+            <p class="mt-1">Node: <code class="bg-gray-700 px-2 py-0.5 rounded">https://50.28.86.131</code></p>
+        </div>
+    </footer>
+
+    <script>
+        const API_BASE = 'https://50.28.86.131';
+        let allMiners = [];
+
+        // Format timestamp to relative time
+        function timeAgo(timestamp) {
+            const now = Math.floor(Date.now() / 1000);
+            const diff = now - timestamp;
+            if (diff < 60) return `${diff}s ago`;
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+            return `${Math.floor(diff / 86400)}d ago`;
+        }
+
+        // Format uptime
+        function formatUptime(seconds) {
+            const hours = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            return `${hours}h ${mins}m`;
+        }
+
+        // Get architecture badge class
+        function getArchClass(arch, family) {
+            if (family === 'PowerPC') return 'vintage';
+            if (family === 'Apple Silicon') return 'apple';
+            return 'modern';
+        }
+
+        // Get status indicator
+        function getStatusIndicator(lastAttest) {
+            const now = Math.floor(Date.now() / 1000);
+            const diff = now - lastAttest;
+            if (diff < 120) return '<span class="w-3 h-3 rounded-full bg-green-500 inline-block glow-active"></span>';
+            if (diff < 600) return '<span class="w-3 h-3 rounded-full bg-yellow-500 inline-block"></span>';
+            return '<span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span>';
+        }
+
+        // Fetch miners
+        async function fetchMiners() {
+            try {
+                const res = await fetch(`${API_BASE}/api/miners`);
+                allMiners = await res.json();
+                renderMinersTable(allMiners);
+                document.getElementById('activeMiners').textContent = allMiners.length;
+            } catch (e) {
+                console.error('Failed to fetch miners:', e);
+            }
+        }
+
+        // Render miners table
+        function renderMinersTable(miners) {
+            const tbody = document.getElementById('minersTable');
+            if (!miners.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">No active miners</td></tr>';
+                return;
+            }
+            
+            // Sort by last attestation (most recent first)
+            miners.sort((a, b) => b.last_attest - a.last_attest);
+            
+            tbody.innerHTML = miners.map(m => `
+                <tr class="hover:bg-gray-700/50 transition">
+                    <td class="p-3">
+                        <span class="font-mono text-sm truncate block max-w-[200px]" title="${m.miner}">${m.miner}</span>
+                    </td>
+                    <td class="p-3">
+                        <span class="arch-badge ${getArchClass(m.device_arch, m.device_family)}">${m.device_arch}</span>
+                        <span class="text-gray-500 text-xs ml-2">${m.device_family}</span>
+                    </td>
+                    <td class="p-3 text-center">
+                        <span class="text-amber-400 font-bold">${m.antiquity_multiplier}x</span>
+                    </td>
+                    <td class="p-3 text-gray-400 text-sm">${timeAgo(m.last_attest)}</td>
+                    <td class="p-3 text-center">${getStatusIndicator(m.last_attest)}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Fetch epoch info
+        async function fetchEpoch() {
+            try {
+                const res = await fetch(`${API_BASE}/epoch`);
+                const data = await res.json();
+                document.getElementById('epochNumber').textContent = data.epoch;
+                document.getElementById('epochPot').textContent = data.epoch_pot.toFixed(1);
+                document.getElementById('currentSlot').textContent = data.slot;
+            } catch (e) {
+                console.error('Failed to fetch epoch:', e);
+            }
+        }
+
+        // Fetch node health
+        async function fetchHealth() {
+            try {
+                const res = await fetch(`${API_BASE}/health`);
+                const data = await res.json();
+                document.getElementById('nodeVersion').textContent = data.version;
+                document.getElementById('nodeUptime').textContent = formatUptime(data.uptime_s);
+                document.getElementById('nodeDb').textContent = data.db_rw ? '✅ Read/Write' : '❌ Read-Only';
+                document.getElementById('nodeTip').textContent = `${data.tip_age_slots} slots`;
+                
+                const statusEl = document.getElementById('nodeStatus');
+                if (data.ok) {
+                    statusEl.innerHTML = '<span class="w-3 h-3 rounded-full bg-green-500 glow-active"></span><span class="text-sm">Node Online</span>';
+                } else {
+                    statusEl.innerHTML = '<span class="w-3 h-3 rounded-full bg-red-500"></span><span class="text-sm">Node Issues</span>';
+                }
+            } catch (e) {
+                console.error('Failed to fetch health:', e);
+            }
+        }
+
+        // Search miner
+        async function searchMiner() {
+            const input = document.getElementById('searchInput').value.trim();
+            const resultDiv = document.getElementById('searchResult');
+            
+            if (!input) {
+                resultDiv.classList.add('hidden');
+                return;
+            }
+
+            resultDiv.classList.remove('hidden');
+            resultDiv.innerHTML = '<div class="text-gray-400">Searching...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/wallet/balance?miner_id=${encodeURIComponent(input)}`);
+                const balance = await res.json();
+                
+                // Find in miners list
+                const minerInfo = allMiners.find(m => m.miner === input || m.miner.includes(input));
+                
+                resultDiv.innerHTML = `
+                    <div class="bg-gray-700 rounded-lg p-4">
+                        <div class="text-lg font-bold mb-2">Wallet: <span class="text-rust">${balance.miner_id}</span></div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <div class="text-gray-400 text-sm">Balance</div>
+                                <div class="text-2xl font-bold text-green-400">${balance.amount_rtc.toFixed(4)} RTC</div>
+                            </div>
+                            ${minerInfo ? `
+                            <div>
+                                <div class="text-gray-400 text-sm">Mining Status</div>
+                                <div class="flex items-center gap-2">
+                                    ${getStatusIndicator(minerInfo.last_attest)}
+                                    <span class="arch-badge ${getArchClass(minerInfo.device_arch, minerInfo.device_family)}">${minerInfo.device_arch}</span>
+                                    <span class="text-amber-400">${minerInfo.antiquity_multiplier}x</span>
+                                </div>
+                            </div>
+                            ` : '<div><div class="text-gray-400 text-sm">Mining Status</div><div class="text-gray-500">Not actively mining</div></div>'}
+                        </div>
+                    </div>
+                `;
+            } catch (e) {
+                resultDiv.innerHTML = '<div class="text-red-400">Failed to search. Please try again.</div>';
+            }
+        }
+
+        // Fetch leaderboard
+        async function fetchLeaderboard() {
+            const tbody = document.getElementById('leaderboardTable');
+            tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-500">Loading balances...</td></tr>';
+
+            try {
+                // Get balances for all known miners
+                const balances = await Promise.all(
+                    allMiners.map(async m => {
+                        try {
+                            const res = await fetch(`${API_BASE}/wallet/balance?miner_id=${encodeURIComponent(m.miner)}`);
+                            const data = await res.json();
+                            return { miner: m.miner, balance: data.amount_rtc };
+                        } catch {
+                            return { miner: m.miner, balance: 0 };
+                        }
+                    })
+                );
+
+                // Sort by balance descending
+                balances.sort((a, b) => b.balance - a.balance);
+                const top20 = balances.slice(0, 20);
+
+                if (!top20.length) {
+                    tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-500">No data available</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = top20.map((b, i) => {
+                    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`;
+                    return `
+                        <tr class="hover:bg-gray-700/50 transition">
+                            <td class="p-3 text-center text-xl">${medal}</td>
+                            <td class="p-3 font-mono text-sm truncate max-w-[250px]" title="${b.miner}">${b.miner}</td>
+                            <td class="p-3 text-right font-bold text-green-400">${b.balance.toFixed(4)}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (e) {
+                console.error('Failed to fetch leaderboard:', e);
+                tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-red-400">Failed to load leaderboard</td></tr>';
+            }
+        }
+
+        // Tab switching
+        function showTab(tab) {
+            document.querySelectorAll('[id^="panel-"]').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('[id^="tab-"]').forEach(el => {
+                el.classList.remove('border-rust', 'text-rust', 'font-bold');
+                el.classList.add('border-transparent', 'text-gray-400');
+            });
+            
+            document.getElementById(`panel-${tab}`).classList.remove('hidden');
+            const tabBtn = document.getElementById(`tab-${tab}`);
+            tabBtn.classList.add('border-rust', 'text-rust', 'font-bold');
+            tabBtn.classList.remove('border-transparent', 'text-gray-400');
+
+            if (tab === 'leaderboard') {
+                fetchLeaderboard();
+            }
+        }
+
+        // Search on Enter
+        document.getElementById('searchInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchMiner();
+        });
+
+        // Initial load
+        async function init() {
+            await Promise.all([
+                fetchMiners(),
+                fetchEpoch(),
+                fetchHealth()
+            ]);
+        }
+
+        init();
+
+        // Refresh every 30 seconds
+        setInterval(() => {
+            fetchMiners();
+            fetchEpoch();
+            fetchHealth();
+        }, 30000);
+    </script>
+</body>
+</html>
