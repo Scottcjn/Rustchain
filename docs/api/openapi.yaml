@@ -1,0 +1,500 @@
+openapi: 3.0.3
+info:
+  title: RustChain Node API
+  description: |
+    API specification for RustChain blockchain nodes.
+    
+    RustChain is a blockchain that supports multiple hardware architectures with
+    antiquity-weighted mining rewards. This API provides endpoints for querying
+    chain state, miner information, wallet balances, and submitting signed transfers.
+    
+    ## Authentication
+    Currently, the API does not require authentication for read operations.
+    Write operations (transfers) require cryptographic signatures.
+    
+    ## Base URL
+    Production: `https://50.28.86.131`
+    
+    **Note:** The server uses a self-signed TLS certificate.
+  version: 2.2.1
+  contact:
+    name: RustChain Development Team
+    url: https://github.com/Scottcjn/Rustchain
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://50.28.86.131
+    description: RustChain Mainnet Node
+
+tags:
+  - name: Health
+    description: Node health and status endpoints
+  - name: Chain
+    description: Blockchain statistics and information
+  - name: Miners
+    description: Miner registry and attestation data
+  - name: Wallet
+    description: Balance queries and transfers
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Node health check
+      description: |
+        Returns the health status of the RustChain node including database 
+        connectivity, chain tip age, uptime, and version information.
+      operationId: getHealth
+      responses:
+        '200':
+          description: Health status response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                ok: true
+                version: "2.2.1-rip200"
+                uptime_s: 97300
+                db_rw: true
+                tip_age_slots: 0
+                backup_age_hours: 16.589909323586358
+
+  /api/stats:
+    get:
+      tags:
+        - Chain
+      summary: Chain statistics
+      description: |
+        Returns comprehensive blockchain statistics including total balance,
+        miner count, current epoch, supported features, and security settings.
+      operationId: getStats
+      responses:
+        '200':
+          description: Chain statistics response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+              example:
+                chain_id: "rustchain-mainnet-v2"
+                version: "2.2.1-security-hardened"
+                epoch: 61
+                block_time: 600
+                total_miners: 11614
+                total_balance: 5213.41835243
+                pending_withdrawals: 0
+                features:
+                  - "RIP-0005"
+                  - "RIP-0008"
+                  - "RIP-0009"
+                  - "RIP-0142"
+                  - "RIP-0143"
+                  - "RIP-0144"
+                security:
+                  - "no_mock_sigs"
+                  - "mandatory_admin_key"
+                  - "replay_protection"
+                  - "validated_json"
+
+  /api/miners:
+    get:
+      tags:
+        - Miners
+      summary: List all miners
+      description: |
+        Returns a list of all registered miners with their hardware information,
+        antiquity multipliers, entropy scores, and last attestation timestamps.
+        
+        The `antiquity_multiplier` reflects the age-based reward bonus:
+        - Vintage hardware (PowerPC, etc.): 2.0-2.5x
+        - Modern hardware (x86-64, Apple Silicon): 0.8x
+      operationId: getMiners
+      responses:
+        '200':
+          description: List of miners
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Miner'
+              example:
+                - miner: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
+                  hardware_type: "PowerPC G4 (Vintage)"
+                  device_family: "PowerPC"
+                  device_arch: "G4"
+                  antiquity_multiplier: 2.5
+                  entropy_score: 0.0
+                  last_attest: 1770062200
+                - miner: "modern-sophia-Pow-9862e3be"
+                  hardware_type: "x86-64 (Modern)"
+                  device_family: "x86_64"
+                  device_arch: "modern"
+                  antiquity_multiplier: 0.8
+                  entropy_score: 0.0
+                  last_attest: 1770062191
+
+  /wallet/balance:
+    get:
+      tags:
+        - Wallet
+      summary: Get wallet balance
+      description: |
+        Returns the current balance for a specific miner ID.
+        Balance is returned in both raw integer format (`amount_i64`) 
+        and decimal RTC format (`amount_rtc`).
+      operationId: getBalance
+      parameters:
+        - name: miner_id
+          in: query
+          required: true
+          description: The unique identifier of the miner
+          schema:
+            type: string
+          example: "modern-sophia-Pow-9862e3be"
+      responses:
+        '200':
+          description: Balance response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+              example:
+                miner_id: "modern-sophia-Pow-9862e3be"
+                amount_i64: 42653071
+                amount_rtc: 0.42653071
+        '400':
+          description: Missing miner_id parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                ok: false
+                error: "miner_id required"
+
+  /wallet/transfer/signed:
+    post:
+      tags:
+        - Wallet
+      summary: Submit signed transfer
+      description: |
+        Submits a cryptographically signed transfer transaction.
+        
+        The transaction must include:
+        - Source and destination addresses
+        - Transfer amount (positive value required)
+        - Ed25519 signature over the transaction data
+        - Public key for signature verification
+        - Nonce for replay protection
+        
+        ## Signing Process
+        1. Construct the transaction payload
+        2. Sign with Ed25519 private key
+        3. Submit with hex-encoded signature and public key
+      operationId: submitTransfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignedTransferRequest'
+            example:
+              from_address: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
+              to_address: "modern-sophia-Pow-9862e3be"
+              amount_rtc: 1.5
+              nonce: 42
+              signature: "a1b2c3d4e5f6..."
+              public_key: "abc123def456..."
+      responses:
+        '200':
+          description: Transfer submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+              example:
+                ok: true
+                tx_hash: "0xabc123..."
+                from_address: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
+                to_address: "modern-sophia-Pow-9862e3be"
+                amount_rtc: 1.5
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing_fields:
+                  summary: Missing required fields
+                  value:
+                    error: "Missing required fields (from_address, to_address, signature, public_key, nonce)"
+                invalid_amount:
+                  summary: Invalid amount
+                  value:
+                    error: "Amount must be positive"
+                invalid_signature:
+                  summary: Invalid signature
+                  value:
+                    error: "Invalid signature"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Internal server error"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - ok
+        - version
+        - uptime_s
+        - db_rw
+        - tip_age_slots
+      properties:
+        ok:
+          type: boolean
+          description: Overall health status
+          example: true
+        version:
+          type: string
+          description: Node software version
+          example: "2.2.1-rip200"
+        uptime_s:
+          type: integer
+          format: int64
+          description: Node uptime in seconds
+          example: 97300
+        db_rw:
+          type: boolean
+          description: Database read/write status
+          example: true
+        tip_age_slots:
+          type: integer
+          description: Age of chain tip in slots (0 = fully synced)
+          example: 0
+        backup_age_hours:
+          type: number
+          format: double
+          description: Hours since last backup
+          example: 16.589909323586358
+
+    StatsResponse:
+      type: object
+      required:
+        - chain_id
+        - version
+        - epoch
+        - block_time
+        - total_miners
+        - total_balance
+      properties:
+        chain_id:
+          type: string
+          description: Unique chain identifier
+          example: "rustchain-mainnet-v2"
+        version:
+          type: string
+          description: Chain version with security flags
+          example: "2.2.1-security-hardened"
+        epoch:
+          type: integer
+          description: Current epoch number
+          example: 61
+        block_time:
+          type: integer
+          description: Target block time in seconds
+          example: 600
+        total_miners:
+          type: integer
+          description: Total number of registered miners
+          example: 11614
+        total_balance:
+          type: number
+          format: double
+          description: Total RTC balance across all accounts
+          example: 5213.41835243
+        pending_withdrawals:
+          type: integer
+          description: Number of pending withdrawal requests
+          example: 0
+        features:
+          type: array
+          description: List of enabled RIP (RustChain Improvement Proposal) features
+          items:
+            type: string
+          example:
+            - "RIP-0005"
+            - "RIP-0008"
+            - "RIP-0009"
+            - "RIP-0142"
+            - "RIP-0143"
+            - "RIP-0144"
+        security:
+          type: array
+          description: Active security features
+          items:
+            type: string
+          example:
+            - "no_mock_sigs"
+            - "mandatory_admin_key"
+            - "replay_protection"
+            - "validated_json"
+
+    Miner:
+      type: object
+      required:
+        - miner
+        - hardware_type
+        - device_family
+        - device_arch
+        - antiquity_multiplier
+        - last_attest
+      properties:
+        miner:
+          type: string
+          description: Unique miner identifier
+          example: "modern-sophia-Pow-9862e3be"
+        hardware_type:
+          type: string
+          description: Human-readable hardware description
+          example: "x86-64 (Modern)"
+        device_family:
+          type: string
+          description: Device family category
+          enum:
+            - PowerPC
+            - x86_64
+            - x86
+            - Apple Silicon
+          example: "x86_64"
+        device_arch:
+          type: string
+          description: Specific architecture identifier
+          example: "modern"
+        antiquity_multiplier:
+          type: number
+          format: double
+          description: |
+            Reward multiplier based on hardware age.
+            Vintage hardware (PowerPC) receives higher multipliers (2.0-2.5x)
+            while modern hardware receives 0.8x.
+          minimum: 0
+          example: 0.8
+        entropy_score:
+          type: number
+          format: double
+          description: Hardware entropy contribution score
+          example: 0.0
+        last_attest:
+          type: integer
+          format: int64
+          description: Unix timestamp of last attestation
+          example: 1770062191
+
+    BalanceResponse:
+      type: object
+      required:
+        - miner_id
+        - amount_i64
+        - amount_rtc
+      properties:
+        miner_id:
+          type: string
+          description: Miner identifier
+          example: "modern-sophia-Pow-9862e3be"
+        amount_i64:
+          type: integer
+          format: int64
+          description: Balance in smallest unit (1 RTC = 100,000,000 units)
+          example: 42653071
+        amount_rtc:
+          type: number
+          format: double
+          description: Balance in RTC (decimal format)
+          example: 0.42653071
+
+    SignedTransferRequest:
+      type: object
+      required:
+        - from_address
+        - to_address
+        - signature
+        - public_key
+        - nonce
+      properties:
+        from_address:
+          type: string
+          description: Source miner/wallet address
+          example: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
+        to_address:
+          type: string
+          description: Destination miner/wallet address
+          example: "modern-sophia-Pow-9862e3be"
+        amount_rtc:
+          type: number
+          format: double
+          description: Amount to transfer in RTC (must be positive)
+          minimum: 0
+          exclusiveMinimum: true
+          example: 1.5
+        nonce:
+          type: integer
+          format: int64
+          description: Transaction nonce for replay protection
+          example: 42
+        signature:
+          type: string
+          description: Hex-encoded Ed25519 signature
+          example: "a1b2c3d4e5f6..."
+        public_key:
+          type: string
+          description: Hex-encoded Ed25519 public key
+          example: "abc123def456..."
+
+    TransferResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          description: Success status
+          example: true
+        tx_hash:
+          type: string
+          description: Transaction hash
+          example: "0xabc123..."
+        from_address:
+          type: string
+          description: Source address
+          example: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
+        to_address:
+          type: string
+          description: Destination address
+          example: "modern-sophia-Pow-9862e3be"
+        amount_rtc:
+          type: number
+          format: double
+          description: Transferred amount
+          example: 1.5
+
+    ErrorResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          description: Always false for errors
+          example: false
+        error:
+          type: string
+          description: Error message
+          example: "miner_id required"
