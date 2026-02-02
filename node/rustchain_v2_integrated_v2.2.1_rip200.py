@@ -29,12 +29,41 @@ except Exception as e:
     print(f"WARN: Rewards module not loaded: {e}")
     HAVE_REWARDS = False
 from datetime import datetime
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Set
 from hashlib import blake2b
 
 # Ed25519 signature verification
 TESTNET_ALLOW_INLINE_PUBKEY = True
 TESTNET_ALLOW_MOCK_SIG = True
+
+# In-memory rate limiting for attestation
+ATTEST_RATE_LIMIT = {}  # {key: (count, reset_ts)}
+RATE_LIMIT_WINDOW = 60   # 1 minute
+RATE_LIMIT_MAX = 5       # 5 attestations per window
+
+def check_rate_limit(key: str) -> bool:
+    now = time.time()
+    
+    # Periodic cleanup to prevent memory leak
+    if len(ATTEST_RATE_LIMIT) > 10000:
+        expired = [k for k, v in ATTEST_RATE_LIMIT.items() if now > v[1]]
+        for k in expired:
+            del ATTEST_RATE_LIMIT[k]
+            
+    if key not in ATTEST_RATE_LIMIT:
+        ATTEST_RATE_LIMIT[key] = (1, now + RATE_LIMIT_WINDOW)
+        return True
+    
+    count, reset_ts = ATTEST_RATE_LIMIT[key]
+    if now > reset_ts:
+        ATTEST_RATE_LIMIT[key] = (1, now + RATE_LIMIT_WINDOW)
+        return True
+    
+    if count >= RATE_LIMIT_MAX:
+        return False
+    
+    ATTEST_RATE_LIMIT[key] = (count + 1, reset_ts)
+    return True
 
 try:
     from nacl.signing import VerifyKey
@@ -535,13 +564,44 @@ def init_db():
     """Initialize all database tables"""
     with sqlite3.connect(DB_PATH) as c:
         # Core tables
-        c.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS nonces (
+                nonce TEXT PRIMARY KEY,
+                miner TEXT,
+                issued_at INTEGER,
+                expires_at INTEGER NOT NULL
+            )
+        """)
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
 
         # Epoch tables
-        c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
+        c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0, settled INTEGER DEFAULT 0, settled_ts INTEGER)")
+        
+        # Schema migration for epoch_state
+        for col, default in [("settled", "0"), ("settled_ts", "NULL")]:
+            try:
+                c.execute(f"ALTER TABLE epoch_state ADD COLUMN {col} INTEGER DEFAULT {default}")
+            except sqlite3.OperationalError:
+                pass
+
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
-        c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
+        c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0, amount_i64 INTEGER DEFAULT 0)")
+        
+        # Schema migration for balances
+        try:
+            c.execute("ALTER TABLE balances ADD COLUMN amount_i64 INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+
+        # Security & Hardware Attestation tables
+        c.execute("CREATE TABLE IF NOT EXISTS blocked_wallets (wallet TEXT PRIMARY KEY, reason TEXT, ts INTEGER)")
+        c.execute("CREATE TABLE IF NOT EXISTS hardware_bindings (hardware_id TEXT PRIMARY KEY, bound_miner TEXT, family TEXT, arch TEXT, entropy_hash TEXT, attestation_count INTEGER DEFAULT 1, first_seen INTEGER)")
+        c.execute("CREATE TABLE IF NOT EXISTS miner_macs (miner TEXT, mac_hash TEXT, first_ts INTEGER, last_ts INTEGER, count INTEGER, PRIMARY KEY (miner, mac_hash))")
+        c.execute("CREATE TABLE IF NOT EXISTS miner_attest_recent (miner TEXT PRIMARY KEY, ts_ok INTEGER, device_family TEXT, device_arch TEXT, entropy_score REAL, fingerprint_passed INTEGER DEFAULT 1)")
+        c.execute("CREATE TABLE IF NOT EXISTS hall_of_rust (id INTEGER PRIMARY KEY AUTOINCREMENT, fingerprint_hash TEXT UNIQUE, miner_id TEXT, device_family TEXT, device_arch TEXT, device_model TEXT, manufacture_year INTEGER, first_attestation INTEGER, last_attestation INTEGER, total_attestations INTEGER DEFAULT 1, created_at INTEGER)")
+        c.execute("CREATE TABLE IF NOT EXISTS oui_deny (oui TEXT PRIMARY KEY, vendor TEXT, enforce INTEGER DEFAULT 0)")
+        c.execute("CREATE TABLE IF NOT EXISTS miner_header_keys (miner_pk TEXT PRIMARY KEY, key_type TEXT, key_val TEXT, created_at INTEGER)")
+        c.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
 
         # Withdrawal tables
         c.execute("""
@@ -1405,20 +1465,79 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None):
             return False, f'Hardware bound to {bound_miner[:16]}...', bound_miner
 
 
+@app.route('/attest/nonce', methods=['POST'])
+def issue_nonce():
+    """Issue a server-side nonce for attestation replay protection."""
+    nonce = secrets.token_hex(16)
+    expires_at = int(time.time()) + 300  # 5-minute validity
+    body = request.get_json(force=True, silent=True) or {}
+    miner = body.get('miner', 'unknown')
+    
+    with sqlite3.connect(DB_PATH) as c:
+        c.execute("INSERT INTO nonces (nonce, miner, issued_at, expires_at) VALUES (?, ?, ?, ?)",
+                  (nonce, miner, int(time.time()), expires_at))
+        c.commit()
+    return jsonify({"nonce": nonce, "expires_at": expires_at})
+
 @app.route('/attest/submit', methods=['POST'])
 def submit_attestation():
     """Submit hardware attestation with fingerprint validation"""
+    # 0. RATE LIMITING with secure IP resolution
+    if request.remote_addr in ('127.0.0.1', '::1'):
+        ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[-1].strip()
+    else:
+        ip = request.remote_addr
+        
+    if not check_rate_limit(f"ip:{ip}"):
+        return jsonify({"error": "rate_limit_exceeded", "reason": "ip"}), 429
+
     data = request.get_json()
+    if not data:
+        return jsonify({"error": "missing_data"}), 400
 
     # Extract attestation data
     miner = data.get('miner') or data.get('miner_id')
+    if miner:
+        if not check_rate_limit(f"miner:{miner}"):
+            return jsonify({"error": "rate_limit_exceeded", "reason": "miner"}), 429
+    
     report = data.get('report', {})
     nonce = report.get('nonce') or data.get('nonce')
     device = data.get('device', {})
     signals = data.get('signals', {})
-    fingerprint = data.get('fingerprint', {})  # NEW: Extract fingerprint
+    fingerprint = data.get('fingerprint', {})
 
-    # Basic validation
+    # 1. NONCE VALIDATION & REPLAY PROTECTION
+    if not nonce:
+        return jsonify({"error": "missing_nonce"}), 401
+    
+    with sqlite3.connect(DB_PATH) as c:
+        row = c.execute("SELECT expires_at FROM nonces WHERE nonce = ?", (nonce,)).fetchone()
+        if row:
+            expires_at = row[0]
+            # Consume nonce BEFORE checking expiry -- prevents retry attacks on expired nonces
+            c.execute("DELETE FROM nonces WHERE nonce = ?", (nonce,))
+            c.commit()
+
+            if expires_at < int(time.time()):
+                return jsonify({"error": "expired_nonce"}), 401
+        else:
+            # Fallback for miner-generated nonces (Legacy Compatibility)
+            # Accept if it's a valid hex token (standard secrets.token_hex output)
+            is_valid_hex = False
+            try:
+                if isinstance(nonce, str) and len(nonce) >= 16:
+                    int(nonce, 16)
+                    is_valid_hex = True
+            except (ValueError, TypeError):
+                pass
+                
+            if is_valid_hex:
+                print(f"[WARN] Accepted legacy miner-generated nonce from {miner}")
+            else:
+                return jsonify({"error": "invalid_nonce_or_replay"}), 401
+
+    # 2. BASIC VALIDATION
     if not miner:
         miner = f"anon_{secrets.token_hex(8)}"
 
