@@ -29,12 +29,34 @@ except Exception as e:
     print(f"WARN: Rewards module not loaded: {e}")
     HAVE_REWARDS = False
 from datetime import datetime
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Set
 from hashlib import blake2b
 
 # Ed25519 signature verification
 TESTNET_ALLOW_INLINE_PUBKEY = True
 TESTNET_ALLOW_MOCK_SIG = True
+
+# In-memory rate limiting for attestation
+ATTEST_RATE_LIMIT = {}  # {key: (count, reset_ts)}
+RATE_LIMIT_WINDOW = 60   # 1 minute
+RATE_LIMIT_MAX = 5       # 5 attestations per window
+
+def check_rate_limit(key: str) -> bool:
+    now = time.time()
+    if key not in ATTEST_RATE_LIMIT:
+        ATTEST_RATE_LIMIT[key] = (1, now + RATE_LIMIT_WINDOW)
+        return True
+    
+    count, reset_ts = ATTEST_RATE_LIMIT[key]
+    if now > reset_ts:
+        ATTEST_RATE_LIMIT[key] = (1, now + RATE_LIMIT_WINDOW)
+        return True
+    
+    if count >= RATE_LIMIT_MAX:
+        return False
+    
+    ATTEST_RATE_LIMIT[key] = (count + 1, reset_ts)
+    return True
 
 try:
     from nacl.signing import VerifyKey
@@ -539,9 +561,19 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
 
         # Epoch tables
-        c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
+        c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0, settled INTEGER DEFAULT 0, settled_ts INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
-        c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
+        c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0, amount_i64 INTEGER DEFAULT 0)")
+
+        # Security & Hardware Attestation tables
+        c.execute("CREATE TABLE IF NOT EXISTS blocked_wallets (wallet TEXT PRIMARY KEY, reason TEXT, ts INTEGER)")
+        c.execute("CREATE TABLE IF NOT EXISTS hardware_bindings (hardware_id TEXT PRIMARY KEY, bound_miner TEXT, family TEXT, arch TEXT, entropy_hash TEXT, attestation_count INTEGER DEFAULT 1, first_seen INTEGER)")
+        c.execute("CREATE TABLE IF NOT EXISTS miner_macs (miner TEXT, mac_hash TEXT, first_ts INTEGER, last_ts INTEGER, count INTEGER, PRIMARY KEY (miner, mac_hash))")
+        c.execute("CREATE TABLE IF NOT EXISTS miner_attest_recent (miner TEXT PRIMARY KEY, ts_ok INTEGER, device_family TEXT, device_arch TEXT, entropy_score REAL, fingerprint_passed INTEGER DEFAULT 1)")
+        c.execute("CREATE TABLE IF NOT EXISTS hall_of_rust (id INTEGER PRIMARY KEY AUTOINCREMENT, fingerprint_hash TEXT UNIQUE, miner_id TEXT, device_family TEXT, device_arch TEXT, device_model TEXT, manufacture_year INTEGER, first_attestation INTEGER, last_attestation INTEGER, total_attestations INTEGER DEFAULT 1, created_at INTEGER)")
+        c.execute("CREATE TABLE IF NOT EXISTS oui_deny (oui TEXT PRIMARY KEY, vendor TEXT, enforce INTEGER DEFAULT 0)")
+        c.execute("CREATE TABLE IF NOT EXISTS miner_header_keys (miner_pk TEXT PRIMARY KEY, key_type TEXT, key_val TEXT, created_at INTEGER)")
+        c.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
 
         # Withdrawal tables
         c.execute("""
@@ -1408,17 +1440,45 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None):
 @app.route('/attest/submit', methods=['POST'])
 def submit_attestation():
     """Submit hardware attestation with fingerprint validation"""
+    # 0. RATE LIMITING
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if not check_rate_limit(f"ip:{ip}"):
+        return jsonify({"error": "rate_limit_exceeded", "reason": "ip"}), 429
+
     data = request.get_json()
+    if not data:
+        return jsonify({"error": "missing_data"}), 400
 
     # Extract attestation data
     miner = data.get('miner') or data.get('miner_id')
+    if miner:
+        if not check_rate_limit(f"miner:{miner}"):
+            return jsonify({"error": "rate_limit_exceeded", "reason": "miner"}), 429
+    
     report = data.get('report', {})
     nonce = report.get('nonce') or data.get('nonce')
     device = data.get('device', {})
     signals = data.get('signals', {})
-    fingerprint = data.get('fingerprint', {})  # NEW: Extract fingerprint
+    fingerprint = data.get('fingerprint', {})
 
-    # Basic validation
+    # 1. NONCE VALIDATION & REPLAY PROTECTION
+    if not nonce:
+        return jsonify({"error": "missing_nonce"}), 401
+    
+    with sqlite3.connect(DB_PATH) as c:
+        row = c.execute("SELECT expires_at FROM nonces WHERE nonce = ?", (nonce,)).fetchone()
+        if not row:
+            return jsonify({"error": "invalid_nonce_or_replay"}), 401
+        
+        expires_at = row[0]
+        # Consume nonce immediately
+        c.execute("DELETE FROM nonces WHERE nonce = ?", (nonce,))
+        c.commit()
+
+        if expires_at < int(time.time()):
+            return jsonify({"error": "expired_nonce"}), 401
+
+    # 2. BASIC VALIDATION
     if not miner:
         miner = f"anon_{secrets.token_hex(8)}"
 
