@@ -17,6 +17,7 @@ Usage:
 
 import hashlib
 import json
+import secrets
 import time
 from typing import Optional, Dict, Any, Union
 from dataclasses import dataclass
@@ -28,6 +29,11 @@ from urllib3.util.retry import Retry
 import nacl.signing
 import nacl.encoding
 from nacl.signing import SigningKey
+
+# PBKDF2 for proper seed derivation
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.backends import default_backend
 
 # BIP39 for seed phrase handling
 try:
@@ -74,13 +80,23 @@ class RTCWallet:
             raise ValueError("Must provide seed_phrase or private_key")
     
     def _init_from_seed(self, seed_phrase: str):
-        """Initialize from BIP39 seed phrase."""
-        if not HAS_MNEMONIC:
-            # Fallback: hash the seed phrase
-            seed = hashlib.sha256(seed_phrase.encode()).digest()
-        else:
+        """Initialize from BIP39 seed phrase using PBKDF2HMAC derivation."""
+        if HAS_MNEMONIC:
             mnemo = Mnemonic("english")
-            seed = mnemo.to_seed(seed_phrase)[:32]
+            entropy = mnemo.to_entropy(seed_phrase)
+        else:
+            # Fallback: use seed phrase directly
+            entropy = seed_phrase.encode()
+        
+        # Derive Ed25519 key using PBKDF2HMAC with rustchain-specific salt
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=b"rustchain-ed25519",
+            iterations=100000,
+            backend=default_backend()
+        )
+        seed = kdf.derive(entropy if isinstance(entropy, bytes) else bytes(entropy))
         
         self._signing_key = SigningKey(seed)
         self._verify_key = self._signing_key.verify_key
@@ -92,8 +108,9 @@ class RTCWallet:
     
     @property
     def address(self) -> str:
-        """Get wallet address (public key hex)."""
-        return self._verify_key.encode(encoder=nacl.encoding.HexEncoder).decode()
+        """Get wallet address in RTC format (RTC + truncated hash of pubkey)."""
+        pubkey_bytes = self._verify_key.encode()
+        return f"RTC{hashlib.sha256(pubkey_bytes).hexdigest()[:40]}"
     
     @property
     def public_key(self) -> bytes:
@@ -178,7 +195,7 @@ class RTCPaymentHandler:
             data = response.json()
             if 'payment' in data:
                 return data['payment']
-        except:
+        except (ValueError, json.JSONDecodeError):
             pass
         
         return None
@@ -207,13 +224,15 @@ class RTCPaymentHandler:
         
         # Create signed transfer
         timestamp = int(time.time())
+        tx_nonce = secrets.token_hex(16)  # Cryptographically secure nonce
         
-        # Build transfer message
+        # Build transfer message with correct field names for RustChain API
         transfer_data = {
-            'from': self.wallet.address,
-            'to': recipient,
-            'amount': amount,
+            'from_address': self.wallet.address,
+            'to_address': recipient,
+            'amount_rtc': amount,
             'timestamp': timestamp,
+            'nonce': tx_nonce,
             'memo': f"x402:{nonce}"
         }
         
@@ -221,13 +240,13 @@ class RTCPaymentHandler:
         message = json.dumps(transfer_data, sort_keys=True)
         signature = self.wallet.sign(message)
         
-        # Submit to chain
+        # Submit to chain with signature and public key
         response = requests.post(
             f"{self.node_url}/wallet/transfer/signed",
             json={
                 **transfer_data,
                 'signature': signature.hex(),
-                'public_key': self.wallet.address
+                'public_key': self.wallet.public_key.hex()
             },
             timeout=30,
             verify=self.verify_ssl
