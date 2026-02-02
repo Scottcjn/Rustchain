@@ -94,7 +94,7 @@ def verify_rtc_signature(message: bytes, signature: bytes, public_key: bytes) ->
 def verify_payment_on_chain(tx_hash: str, expected_amount: float, recipient: str) -> bool:
     """
     Verify a payment transaction on the RustChain ledger.
-    Uses balance checking since /transaction/{tx_hash} endpoint doesn't exist.
+    Queries the ledger for the specific transaction by hash.
     
     Args:
         tx_hash: Transaction hash to verify
@@ -105,17 +105,35 @@ def verify_payment_on_chain(tx_hash: str, expected_amount: float, recipient: str
         True if payment is valid and confirmed
     """
     try:
+        # Query ledger for the specific transaction
         response = requests.get(
-            f"{RTC_NODE}/wallet/balance",
-            params={"miner_id": recipient},
+            f"{RTC_NODE}/ledger",
+            params={"tx_hash": tx_hash},
             timeout=5,
             verify=False  # Self-signed cert
         )
-        if response.ok:
-            balance = response.json().get("balance_rtc", 0)
-            # Payment exists if recipient has balance
-            # In production, store pre-payment balance for comparison
-            return True
+        if not response.ok:
+            return False
+        
+        ledger_data = response.json()
+        transactions = ledger_data.get("transactions", [])
+        
+        # Find the transaction by hash
+        for tx in transactions:
+            if tx.get("tx_hash") == tx_hash or tx.get("hash") == tx_hash:
+                # Verify recipient matches
+                tx_recipient = tx.get("to_address") or tx.get("recipient")
+                if tx_recipient != recipient:
+                    return False
+                
+                # Verify amount is sufficient
+                tx_amount = tx.get("amount_rtc") or tx.get("amount", 0)
+                if float(tx_amount) < expected_amount:
+                    return False
+                
+                return True
+        
+        # Transaction not found in ledger
         return False
     except (requests.RequestException, ValueError, json.JSONDecodeError):
         return False

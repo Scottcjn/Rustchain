@@ -284,10 +284,12 @@ class RTCPaymentHandler:
         proof_message = f"{receipt.nonce}:{receipt.tx_hash}"
         signature = self.wallet.sign(proof_message)
         
+        # Send raw public key hex (not wallet address) for signature verification
+        # Server expects hex bytes for Ed25519 verification
         return {
             'X-Payment-TX': receipt.tx_hash,
             'X-Payment-Signature': signature.hex(),
-            'X-Payment-Sender': self.wallet.address,
+            'X-Payment-Sender': self.wallet.public_key.hex(),
             'X-Payment-Nonce': receipt.nonce
         }
     
