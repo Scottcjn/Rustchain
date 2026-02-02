@@ -43,6 +43,13 @@ RATE_LIMIT_MAX = 5       # 5 attestations per window
 
 def check_rate_limit(key: str) -> bool:
     now = time.time()
+    
+    # Periodic cleanup to prevent memory leak
+    if len(ATTEST_RATE_LIMIT) > 10000:
+        expired = [k for k, v in ATTEST_RATE_LIMIT.items() if now > v[1]]
+        for k in expired:
+            del ATTEST_RATE_LIMIT[k]
+            
     if key not in ATTEST_RATE_LIMIT:
         ATTEST_RATE_LIMIT[key] = (1, now + RATE_LIMIT_WINDOW)
         return True
@@ -557,13 +564,35 @@ def init_db():
     """Initialize all database tables"""
     with sqlite3.connect(DB_PATH) as c:
         # Core tables
-        c.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS nonces (
+                nonce TEXT PRIMARY KEY,
+                miner TEXT,
+                issued_at INTEGER,
+                expires_at INTEGER NOT NULL,
+                used INTEGER DEFAULT 0
+            )
+        """)
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
 
         # Epoch tables
         c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0, settled INTEGER DEFAULT 0, settled_ts INTEGER)")
+        
+        # Schema migration for epoch_state
+        for col, default in [("settled", "0"), ("settled_ts", "NULL")]:
+            try:
+                c.execute(f"ALTER TABLE epoch_state ADD COLUMN {col} INTEGER DEFAULT {default}")
+            except:
+                pass
+
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0, amount_i64 INTEGER DEFAULT 0)")
+        
+        # Schema migration for balances
+        try:
+            c.execute("ALTER TABLE balances ADD COLUMN amount_i64 INTEGER DEFAULT 0")
+        except:
+            pass
 
         # Security & Hardware Attestation tables
         c.execute("CREATE TABLE IF NOT EXISTS blocked_wallets (wallet TEXT PRIMARY KEY, reason TEXT, ts INTEGER)")
@@ -1440,8 +1469,12 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None):
 @app.route('/attest/submit', methods=['POST'])
 def submit_attestation():
     """Submit hardware attestation with fingerprint validation"""
-    # 0. RATE LIMITING
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    # 0. RATE LIMITING with secure IP resolution
+    if request.remote_addr in ('127.0.0.1', '::1'):
+        ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[-1].strip()
+    else:
+        ip = request.remote_addr
+        
     if not check_rate_limit(f"ip:{ip}"):
         return jsonify({"error": "rate_limit_exceeded", "reason": "ip"}), 429
 
@@ -1463,20 +1496,30 @@ def submit_attestation():
 
     # 1. NONCE VALIDATION & REPLAY PROTECTION
     if not nonce:
+        # Backward compatibility: legacy miners might not use nonces? 
+        # (The reviewer said they use miner-generated ones).
         return jsonify({"error": "missing_nonce"}), 401
     
     with sqlite3.connect(DB_PATH) as c:
         row = c.execute("SELECT expires_at FROM nonces WHERE nonce = ?", (nonce,)).fetchone()
-        if not row:
-            return jsonify({"error": "invalid_nonce_or_replay"}), 401
-        
-        expires_at = row[0]
-        # Consume nonce immediately
-        c.execute("DELETE FROM nonces WHERE nonce = ?", (nonce,))
-        c.commit()
+        if row:
+            expires_at = row[0]
+            # Consume nonce immediately
+            c.execute("DELETE FROM nonces WHERE nonce = ?", (nonce,))
+            c.commit()
 
-        if expires_at < int(time.time()):
-            return jsonify({"error": "expired_nonce"}), 401
+            if expires_at < int(time.time()):
+                return jsonify({"error": "expired_nonce"}), 401
+        else:
+            # Fallback for miner-generated nonces (Legacy Compatibility)
+            try:
+                nonce_ts = int(nonce)
+                if abs(int(time.time()) - nonce_ts) > 60:
+                    return jsonify({"error": "legacy_nonce_out_of_window"}), 401
+                print(f"[WARN] Accepted legacy miner-generated nonce from {miner}")
+            except (ValueError, TypeError):
+                # If not a timestamp and not in our DB, reject
+                return jsonify({"error": "invalid_nonce_or_replay"}), 401
 
     # 2. BASIC VALIDATION
     if not miner:
