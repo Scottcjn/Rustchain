@@ -244,7 +244,7 @@ configure_wallet() {
     else
         echo ""
         echo -e "${CYAN}[?] Enter your wallet name (or press Enter for auto-generated):${NC}"
-        read -r wallet_name
+        read -r wallet_name < /dev/tty
 
         if [ -z "$wallet_name" ]; then
             wallet_name="miner-$(hostname)-$(date +%s | tail -c 6)"
@@ -252,18 +252,13 @@ configure_wallet() {
         fi
     fi
 
+    if [[ ! "$wallet_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        echo -e "${RED}[!] Wallet name must be alphanumeric (hyphens and underscores allowed)${NC}"
+        exit 1
+    fi
+
     # Set global for use by other functions
     WALLET_NAME="$wallet_name"
-
-    # Save config
-    cat > "$INSTALL_DIR/config.json" << EOF
-{
-    "wallet": "$wallet_name",
-    "node_url": "$NODE_URL",
-    "auto_start": true
-}
-EOF
-    echo -e "${GREEN}[+] Config saved to $INSTALL_DIR/config.json${NC}"
 }
 
 # Create start script
@@ -423,7 +418,7 @@ main() {
     # Setup auto-start service
     echo ""
     echo -e "${CYAN}[?] Set up auto-start on boot? (y/n):${NC}"
-    read -r setup_autostart
+    read -r setup_autostart < /dev/tty
     if [ "$setup_autostart" = "y" ] || [ "$setup_autostart" = "Y" ]; then
         local os=$(uname -s)
         case "$os" in
@@ -457,10 +452,16 @@ main() {
         echo ""
     fi
     echo -e "${CYAN}Check your wallet balance:${NC}"
-    echo -e "  ${YELLOW}curl -sk $NODE_URL/wallet/$WALLET_NAME/balance${NC}"
+    echo -e "  ${YELLOW}curl -sk \"$NODE_URL/wallet/balance?miner_id=$WALLET_NAME\"${NC}"
     echo ""
-    echo -e "${CYAN}View wallet transactions:${NC}"
-    echo -e "  ${YELLOW}curl -sk $NODE_URL/wallet/$WALLET_NAME/transactions${NC}"
+    echo -e "${CYAN}View active miners:${NC}"
+    echo -e "  ${YELLOW}curl -sk $NODE_URL/api/miners${NC}"
+    echo ""
+    echo -e "${CYAN}Check node health:${NC}"
+    echo -e "  ${YELLOW}curl -sk $NODE_URL/health${NC}"
+    echo ""
+    echo -e "${CYAN}Check current epoch:${NC}"
+    echo -e "  ${YELLOW}curl -sk $NODE_URL/epoch${NC}"
     echo ""
     echo -e "${CYAN}Miner files installed to:${NC} $INSTALL_DIR"
     echo -e "${CYAN}Python environment:${NC} Isolated virtualenv at $VENV_DIR"
@@ -472,7 +473,7 @@ main() {
     # Ask to start now if service wasn't set up
     if [ "$setup_autostart" != "y" ] && [ "$setup_autostart" != "Y" ]; then
         echo -e "${CYAN}[?] Start mining now? (y/n):${NC}"
-        read -r start_now
+        read -r start_now < /dev/tty
         if [ "$start_now" = "y" ] || [ "$start_now" = "Y" ]; then
             echo -e "${GREEN}[+] Starting miner...${NC}"
             cd "$INSTALL_DIR"

@@ -65,12 +65,22 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install.sh |
 **Check your wallet balance:**
 ```bash
 # Note: Using -sk flags because the node may use a self-signed SSL certificate
-curl -sk https://50.28.86.131/wallet/YOUR_WALLET_NAME/balance
+curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
-**View wallet transactions:**
+**List active miners:**
 ```bash
-curl -sk https://50.28.86.131/wallet/YOUR_WALLET_NAME/transactions
+curl -sk https://50.28.86.131/api/miners
+```
+
+**Check node health:**
+```bash
+curl -sk https://50.28.86.131/health
+```
+
+**Get current epoch:**
+```bash
+curl -sk https://50.28.86.131/epoch
 ```
 
 **Manage the miner service:**
@@ -188,16 +198,16 @@ This provides cryptographic proof that RustChain state existed at a specific tim
 
 ```bash
 # Check network health
-curl http://50.28.86.131/health
+curl -sk https://50.28.86.131/health
 
 # Get current epoch
-curl http://50.28.86.131/epoch
+curl -sk https://50.28.86.131/epoch
 
 # List active miners
-curl http://50.28.86.131/api/miners
+curl -sk https://50.28.86.131/api/miners
 
 # Check wallet balance
-curl "http://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET"
+curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET"
 
 # Block explorer
 open http://50.28.86.131/explorer

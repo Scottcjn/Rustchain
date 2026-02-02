@@ -82,7 +82,6 @@ After installation, you'll have the following structure at `~/.rustchain/`:
 │   └── lib/                # Installed packages (requests, etc.)
 ├── rustchain_miner.py      # Main miner script
 ├── fingerprint_checks.py   # Hardware attestation module
-├── config.json             # Miner configuration
 ├── start.sh                # Convenience start script
 └── miner.log               # Miner logs (if auto-start enabled)
 ```
@@ -153,7 +152,7 @@ tail -f ~/.rustchain/miner.log
 ### Balance Check
 ```bash
 # Note: Using -k flag because node may use self-signed SSL certificate
-curl -sk https://50.28.86.131/wallet/YOUR_WALLET_NAME/balance
+curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 Example output:
@@ -165,14 +164,19 @@ Example output:
 }
 ```
 
-### Transaction History
+### Active Miners
 ```bash
-curl -sk https://50.28.86.131/wallet/YOUR_WALLET_NAME/transactions
+curl -sk https://50.28.86.131/api/miners
 ```
 
-### Mining Statistics
+### Node Health
 ```bash
-curl -sk https://50.28.86.131/miner/YOUR_WALLET_NAME/stats
+curl -sk https://50.28.86.131/health
+```
+
+### Current Epoch
+```bash
+curl -sk https://50.28.86.131/epoch
 ```
 
 ## Manual Operation
@@ -307,24 +311,9 @@ cat ~/.rustchain/miner.log
 
 **Check:**
 1. Miner is actually running: `systemctl --user status rustchain-miner` or `launchctl list | grep rustchain`
-2. Wallet balance: `curl -sk https://50.28.86.131/wallet/YOUR_WALLET_NAME/balance`
+2. Wallet balance: `curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_NAME"`
 3. Miner logs for errors: `journalctl --user -u rustchain-miner -f` or `tail -f ~/.rustchain/miner.log`
 4. Hardware attestation passes: Look for "fingerprint validation" messages in logs
-
-## Advanced Configuration
-
-### Custom Node URL
-
-Edit `~/.rustchain/config.json`:
-```json
-{
-  "wallet": "your-wallet-name",
-  "node_url": "https://your-custom-node.com",
-  "auto_start": true
-}
-```
-
-Then restart the miner.
 
 ### Running Multiple Miners
 
