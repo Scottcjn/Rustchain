@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Hardware Museum</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(1.02); }
+        }
+        .attestation-pulse { animation: pulse 2s ease-in-out infinite; }
+        .arch-badge { @apply px-2 py-1 rounded text-xs font-bold; }
+        .arch-g4 { @apply bg-orange-500 text-white; }
+        .arch-g5 { @apply bg-amber-500 text-black; }
+        .arch-x86 { @apply bg-blue-500 text-white; }
+        .arch-arm { @apply bg-green-500 text-white; }
+        .arch-sparc { @apply bg-purple-500 text-white; }
+        .arch-68k { @apply bg-red-500 text-white; }
+        .card-hover:hover { transform: translateY(-4px); box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        .timeline-dot { @apply w-4 h-4 rounded-full border-4 border-gray-800 absolute left-1/2 -translate-x-1/2; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+    <!-- Navigation -->
+    <nav class="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <h1 class="text-xl font-bold text-orange-400">🏛️ RustChain Hardware Museum</h1>
+                    <a href="index.html" class="text-sm text-gray-400 hover:text-white">← Explorer</a>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span id="nodeStatus" class="text-sm">Loading...</span>
+                    <span id="lastUpdate" class="text-xs text-gray-500"></span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="bg-gradient-to-r from-orange-900/30 to-purple-900/30 py-12">
+        <div class="max-w-7xl mx-auto px-4 text-center">
+            <h2 class="text-4xl font-bold mb-4">The Machines That Power RustChain</h2>
+            <p class="text-gray-400 max-w-2xl mx-auto">A living museum of vintage and exotic hardware earning cryptocurrency through proof-of-work attestation.</p>
+            <div class="flex justify-center gap-8 mt-8">
+                <div class="text-center">
+                    <div id="totalMiners" class="text-4xl font-bold text-orange-400">-</div>
+                    <div class="text-sm text-gray-400">Active Machines</div>
+                </div>
+                <div class="text-center">
+                    <div id="totalArchitectures" class="text-4xl font-bold text-purple-400">-</div>
+                    <div class="text-sm text-gray-400">Architectures</div>
+                </div>
+                <div class="text-center">
+                    <div id="networkMultiplier" class="text-4xl font-bold text-green-400">-</div>
+                    <div class="text-sm text-gray-400">Avg Multiplier</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Live Attestation Feed -->
+    <section class="bg-gray-800/50 py-4 border-b border-gray-700 overflow-hidden">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex items-center space-x-4">
+                <span class="text-sm font-semibold text-green-400">🔴 LIVE</span>
+                <div id="attestationFeed" class="flex-1 overflow-hidden whitespace-nowrap">
+                    <span class="text-gray-400 text-sm">Waiting for attestations...</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <main class="max-w-7xl mx-auto px-4 py-8">
+        <!-- Architecture Distribution -->
+        <section class="mb-12">
+            <h3 class="text-2xl font-bold mb-6">🥧 Network Diversity</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <canvas id="archChart" height="300"></canvas>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <h4 class="font-semibold mb-4">Architecture Breakdown</h4>
+                    <div id="archStats" class="space-y-3">
+                        <div class="text-gray-400">Loading...</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Hall of Firsts -->
+        <section class="mb-12">
+            <h3 class="text-2xl font-bold mb-6">🏆 Hall of Firsts</h3>
+            <div id="hallOfFirsts" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-gray-800 rounded-lg p-4 text-center">
+                    <div class="text-3xl mb-2">⏳</div>
+                    <div class="text-sm text-gray-400">Loading pioneers...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Machine Gallery -->
+        <section class="mb-12">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold">🖥️ Machine Gallery</h3>
+                <div class="flex gap-2">
+                    <button onclick="filterArch('all')" class="px-3 py-1 bg-gray-700 rounded text-sm hover:bg-gray-600">All</button>
+                    <button onclick="filterArch('vintage')" class="px-3 py-1 bg-orange-600 rounded text-sm hover:bg-orange-500">Vintage</button>
+                    <button onclick="filterArch('modern')" class="px-3 py-1 bg-blue-600 rounded text-sm hover:bg-blue-500">Modern</button>
+                </div>
+            </div>
+            <div id="machineGallery" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="bg-gray-800 rounded-lg p-6 text-center">
+                    <div class="text-4xl mb-4">⏳</div>
+                    <div class="text-gray-400">Loading machines...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Timeline -->
+        <section class="mb-12">
+            <h3 class="text-2xl font-bold mb-6">📅 Network Timeline</h3>
+            <div id="timeline" class="relative">
+                <div class="absolute left-1/2 top-0 bottom-0 w-0.5 bg-gray-700"></div>
+                <div class="space-y-8 relative">
+                    <div class="text-center text-gray-400 py-8">Loading timeline...</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Machine Detail Modal -->
+    <div id="machineModal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div class="p-6">
+                <div class="flex justify-between items-start mb-6">
+                    <div>
+                        <h3 id="modalTitle" class="text-2xl font-bold">Machine Details</h3>
+                        <p id="modalSubtitle" class="text-gray-400">Loading...</p>
+                    </div>
+                    <button onclick="closeModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+                </div>
+                <div id="modalContent" class="space-y-6">
+                    <div class="text-center py-8 text-gray-400">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://50.28.86.131';
+        let miners = [];
+        let archChart = null;
+        let currentFilter = 'all';
+
+        // Architecture metadata
+        const ARCH_META = {
+            'powerpc_g4': { name: 'PowerPC G4', color: '#f97316', era: '1999-2006', multiplier: 2.5, category: 'vintage', 
+                           image: '🖥️', funFact: 'Used in Power Mac G4 "Quicksilver" and PowerBook G4' },
+            'powerpc_g5': { name: 'PowerPC G5', color: '#f59e0b', era: '2003-2006', multiplier: 2.0, category: 'vintage',
+                           image: '🗄️', funFact: 'Last PowerPC Mac, also used in early PS3 dev kits' },
+            'powerpc_g3': { name: 'PowerPC G3', color: '#fb923c', era: '1997-2003', multiplier: 1.8, category: 'vintage',
+                           image: '🍎', funFact: 'Powered the iconic iMac G3 "Bondi Blue"' },
+            'x86_64': { name: 'x86-64', color: '#3b82f6', era: '2003-present', multiplier: 1.0, category: 'modern',
+                       image: '💻', funFact: 'The workhorse of modern computing' },
+            'arm64': { name: 'ARM64', color: '#22c55e', era: '2020-present', multiplier: 1.0, category: 'modern',
+                      image: '🍏', funFact: 'Powers Apple Silicon and modern mobile devices' },
+            'sparc': { name: 'SPARC', color: '#a855f7', era: '1987-2017', multiplier: 2.5, category: 'exotic',
+                      image: '☀️', funFact: 'Sun Microsystems workstations, ultra-reliable' },
+            'm68k': { name: 'Motorola 68K', color: '#ef4444', era: '1979-1994', multiplier: 3.0, category: 'vintage',
+                     image: '📟', funFact: 'Original Mac, Amiga, Atari ST architecture' },
+            'mips': { name: 'MIPS', color: '#8b5cf6', era: '1985-2010', multiplier: 2.5, category: 'exotic',
+                     image: '🔮', funFact: 'SGI workstations, early gaming consoles' },
+            'unknown': { name: 'Unknown', color: '#6b7280', era: 'N/A', multiplier: 1.0, category: 'modern',
+                        image: '❓', funFact: 'Unidentified architecture' }
+        };
+
+        async function fetchData() {
+            try {
+                const [healthRes, minersRes, epochRes] = await Promise.all([
+                    fetch(`${API_BASE}/health`).then(r => r.json()).catch(() => null),
+                    fetch(`${API_BASE}/api/miners`).then(r => r.json()).catch(() => []),
+                    fetch(`${API_BASE}/epoch`).then(r => r.json()).catch(() => null)
+                ]);
+
+                // Update status
+                document.getElementById('nodeStatus').innerHTML = healthRes?.status === 'healthy' 
+                    ? '<span class="text-green-400">● Node Healthy</span>'
+                    : '<span class="text-red-400">● Node Issue</span>';
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+
+                // Process miners
+                miners = Array.isArray(minersRes) ? minersRes : [];
+                
+                // Update hero stats
+                document.getElementById('totalMiners').textContent = miners.length;
+                const architectures = new Set(miners.map(m => getArchCategory(m.device_arch)));
+                document.getElementById('totalArchitectures').textContent = architectures.size;
+                const avgMult = miners.length > 0 
+                    ? (miners.reduce((sum, m) => sum + (m.antiquity_multiplier || 1), 0) / miners.length).toFixed(2)
+                    : '-';
+                document.getElementById('networkMultiplier').textContent = avgMult + 'x';
+
+                // Update all sections
+                updateArchChart();
+                updateArchStats();
+                updateMachineGallery();
+                updateHallOfFirsts();
+                updateTimeline();
+                simulateAttestationFeed();
+
+            } catch (error) {
+                console.error('Fetch error:', error);
+            }
+        }
+
+        function getArchCategory(arch) {
+            if (!arch) return 'unknown';
+            arch = arch.toLowerCase();
+            if (arch.includes('g4') || arch.includes('ppc7') || arch.includes('powerpc') && arch.includes('74')) return 'powerpc_g4';
+            if (arch.includes('g5') || arch.includes('ppc9') || arch.includes('powerpc') && arch.includes('97')) return 'powerpc_g5';
+            if (arch.includes('g3') || arch.includes('ppc7') && arch.includes('45')) return 'powerpc_g3';
+            if (arch.includes('sparc')) return 'sparc';
+            if (arch.includes('68k') || arch.includes('68000') || arch.includes('m68')) return 'm68k';
+            if (arch.includes('mips')) return 'mips';
+            if (arch.includes('arm64') || arch.includes('aarch64')) return 'arm64';
+            if (arch.includes('x86_64') || arch.includes('amd64') || arch.includes('x64')) return 'x86_64';
+            return 'unknown';
+        }
+
+        function updateArchChart() {
+            const archCounts = {};
+            miners.forEach(m => {
+                const arch = getArchCategory(m.device_arch);
+                archCounts[arch] = (archCounts[arch] || 0) + 1;
+            });
+
+            const labels = Object.keys(archCounts).map(a => ARCH_META[a]?.name || a);
+            const data = Object.values(archCounts);
+            const colors = Object.keys(archCounts).map(a => ARCH_META[a]?.color || '#6b7280');
+
+            if (archChart) archChart.destroy();
+            archChart = new Chart(document.getElementById('archChart'), {
+                type: 'doughnut',
+                data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0 }] },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { color: '#9ca3af' } }
+                    }
+                }
+            });
+        }
+
+        function updateArchStats() {
+            const archCounts = {};
+            miners.forEach(m => {
+                const arch = getArchCategory(m.device_arch);
+                archCounts[arch] = (archCounts[arch] || 0) + 1;
+            });
+
+            const html = Object.entries(archCounts)
+                .sort((a, b) => b[1] - a[1])
+                .map(([arch, count]) => {
+                    const meta = ARCH_META[arch] || ARCH_META.unknown;
+                    const pct = ((count / miners.length) * 100).toFixed(1);
+                    return `
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xl">${meta.image}</span>
+                                <span>${meta.name}</span>
+                                <span class="text-xs text-gray-500">${meta.era}</span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="font-mono">${count}</span>
+                                <span class="text-gray-500">(${pct}%)</span>
+                                <span class="text-xs" style="color: ${meta.color}">${meta.multiplier}x</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            document.getElementById('archStats').innerHTML = html || '<div class="text-gray-400">No data</div>';
+        }
+
+        function updateMachineGallery() {
+            let filtered = miners;
+            if (currentFilter === 'vintage') {
+                filtered = miners.filter(m => ['powerpc_g4', 'powerpc_g5', 'powerpc_g3', 'm68k'].includes(getArchCategory(m.device_arch)));
+            } else if (currentFilter === 'modern') {
+                filtered = miners.filter(m => ['x86_64', 'arm64'].includes(getArchCategory(m.device_arch)));
+            }
+
+            const html = filtered.map(m => {
+                const arch = getArchCategory(m.device_arch);
+                const meta = ARCH_META[arch] || ARCH_META.unknown;
+                const mult = m.antiquity_multiplier || meta.multiplier || 1;
+                const isVintage = meta.category === 'vintage' || meta.category === 'exotic';
+                
+                return `
+                    <div onclick="showMachineDetail('${m.miner_id}')" 
+                         class="bg-gray-800 rounded-xl p-6 cursor-pointer card-hover transition-all duration-300 ${isVintage ? 'border border-orange-500/30' : ''}">
+                        <div class="text-center mb-4">
+                            <div class="text-6xl mb-2">${meta.image}</div>
+                            <span class="inline-block px-3 py-1 rounded-full text-sm font-bold" 
+                                  style="background: ${meta.color}20; color: ${meta.color}">
+                                ${meta.name}
+                            </span>
+                        </div>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Wallet</span>
+                                <span class="font-mono">${(m.miner_id || '').slice(0, 12)}...</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Multiplier</span>
+                                <span class="font-bold ${mult > 1 ? 'text-orange-400' : 'text-gray-300'}">${mult.toFixed(1)}x</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Era</span>
+                                <span>${meta.era}</span>
+                            </div>
+                        </div>
+                        ${isVintage ? '<div class="mt-3 text-xs text-orange-400 text-center">✨ Vintage Hardware</div>' : ''}
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('machineGallery').innerHTML = html || '<div class="text-gray-400 text-center py-8">No machines found</div>';
+        }
+
+        function updateHallOfFirsts() {
+            // Simulated hall of firsts (would need historical data in production)
+            const firsts = [
+                { title: 'First Miner', icon: '🥇', value: miners[0]?.miner_id?.slice(0, 8) || 'N/A', desc: 'Genesis Node' },
+                { title: 'First G4', icon: '🍊', value: 'PowerMac G4', desc: 'Quicksilver 2002' },
+                { title: 'First External', icon: '🌐', value: 'Remote Node', desc: 'Network Expansion' },
+                { title: 'Most Vintage', icon: '👴', value: miners.reduce((oldest, m) => {
+                    const mult = m.antiquity_multiplier || 1;
+                    return mult > (oldest?.antiquity_multiplier || 0) ? m : oldest;
+                }, null)?.miner_id?.slice(0, 8) || 'N/A', desc: 'Highest Multiplier' }
+            ];
+
+            const html = firsts.map(f => `
+                <div class="bg-gray-800 rounded-lg p-4 text-center border border-yellow-500/20">
+                    <div class="text-3xl mb-2">${f.icon}</div>
+                    <div class="font-bold">${f.title}</div>
+                    <div class="text-sm font-mono text-yellow-400">${f.value}</div>
+                    <div class="text-xs text-gray-500">${f.desc}</div>
+                </div>
+            `).join('');
+
+            document.getElementById('hallOfFirsts').innerHTML = html;
+        }
+
+        function updateTimeline() {
+            const events = [
+                { date: 'Genesis', title: 'RustChain Launched', desc: 'First block mined', icon: '🚀' },
+                { date: 'Week 1', title: 'First External Node', desc: 'Network grows beyond local', icon: '🌐' },
+                { date: 'Week 2', title: 'Vintage Hardware Joins', desc: 'PowerPC G4 starts mining', icon: '🍊' },
+                { date: 'Today', title: `${miners.length} Active Miners`, desc: 'Network continues growing', icon: '📈' }
+            ];
+
+            const html = events.map((e, i) => `
+                <div class="flex items-center ${i % 2 === 0 ? 'flex-row' : 'flex-row-reverse'}">
+                    <div class="w-5/12 ${i % 2 === 0 ? 'text-right pr-8' : 'text-left pl-8'}">
+                        <div class="text-sm text-gray-500">${e.date}</div>
+                        <div class="font-bold">${e.title}</div>
+                        <div class="text-sm text-gray-400">${e.desc}</div>
+                    </div>
+                    <div class="timeline-dot bg-orange-500"></div>
+                    <div class="w-5/12 text-4xl ${i % 2 === 0 ? 'pl-8' : 'pr-8 text-right'}">${e.icon}</div>
+                </div>
+            `).join('');
+
+            document.getElementById('timeline').querySelector('.space-y-8').innerHTML = html;
+        }
+
+        function simulateAttestationFeed() {
+            if (miners.length === 0) return;
+            
+            const feed = document.getElementById('attestationFeed');
+            const randomMiner = miners[Math.floor(Math.random() * miners.length)];
+            const arch = getArchCategory(randomMiner.device_arch);
+            const meta = ARCH_META[arch] || ARCH_META.unknown;
+            
+            const entry = document.createElement('span');
+            entry.className = 'inline-block mr-8 attestation-pulse';
+            entry.innerHTML = `<span style="color: ${meta.color}">${meta.image} ${meta.name}</span> <span class="text-gray-500">${randomMiner.miner_id?.slice(0, 8)}...</span> <span class="text-green-400">attested</span>`;
+            
+            feed.insertBefore(entry, feed.firstChild);
+            if (feed.children.length > 10) feed.removeChild(feed.lastChild);
+        }
+
+        function filterArch(filter) {
+            currentFilter = filter;
+            updateMachineGallery();
+        }
+
+        function showMachineDetail(minerId) {
+            const miner = miners.find(m => m.miner_id === minerId);
+            if (!miner) return;
+
+            const arch = getArchCategory(miner.device_arch);
+            const meta = ARCH_META[arch] || ARCH_META.unknown;
+
+            document.getElementById('modalTitle').textContent = meta.name + ' Miner';
+            document.getElementById('modalSubtitle').textContent = miner.miner_id;
+
+            document.getElementById('modalContent').innerHTML = `
+                <div class="text-center">
+                    <div class="text-8xl mb-4">${meta.image}</div>
+                    <span class="inline-block px-4 py-2 rounded-full font-bold" style="background: ${meta.color}30; color: ${meta.color}">
+                        ${meta.multiplier}x Multiplier
+                    </span>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-gray-700/50 rounded-lg p-4">
+                        <div class="text-sm text-gray-400">Architecture</div>
+                        <div class="font-bold">${miner.device_arch || 'Unknown'}</div>
+                    </div>
+                    <div class="bg-gray-700/50 rounded-lg p-4">
+                        <div class="text-sm text-gray-400">Era</div>
+                        <div class="font-bold">${meta.era}</div>
+                    </div>
+                    <div class="bg-gray-700/50 rounded-lg p-4">
+                        <div class="text-sm text-gray-400">Device Family</div>
+                        <div class="font-bold">${miner.device_family || 'Unknown'}</div>
+                    </div>
+                    <div class="bg-gray-700/50 rounded-lg p-4">
+                        <div class="text-sm text-gray-400">Category</div>
+                        <div class="font-bold capitalize">${meta.category}</div>
+                    </div>
+                </div>
+
+                <div class="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4">
+                    <div class="text-sm text-orange-400 font-semibold mb-1">💡 Fun Fact</div>
+                    <div class="text-gray-300">${meta.funFact}</div>
+                </div>
+
+                <div class="text-center text-sm text-gray-500">
+                    Full attestation history and reward tracking coming soon...
+                </div>
+            `;
+
+            document.getElementById('machineModal').classList.remove('hidden');
+            document.getElementById('machineModal').classList.add('flex');
+        }
+
+        function closeModal() {
+            document.getElementById('machineModal').classList.add('hidden');
+            document.getElementById('machineModal').classList.remove('flex');
+        }
+
+        // Close modal on backdrop click
+        document.getElementById('machineModal').addEventListener('click', (e) => {
+            if (e.target.id === 'machineModal') closeModal();
+        });
+
+        // Initialize
+        fetchData();
+        setInterval(fetchData, 30000);
+        setInterval(simulateAttestationFeed, 5000);
+    </script>
+</body>
+</html>
