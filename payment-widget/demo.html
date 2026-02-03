@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RustChain Payment Widget Demo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      color: #e0e0e0;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+    
+    header {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+    
+    .logo {
+      width: 80px;
+      height: 80px;
+      background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+    }
+    
+    .logo svg {
+      width: 48px;
+      height: 48px;
+      color: white;
+    }
+    
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+      background: linear-gradient(90deg, #f97316, #fbbf24);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .subtitle {
+      color: #888;
+      font-size: 1.1rem;
+    }
+    
+    .demo-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 30px;
+      margin-bottom: 60px;
+    }
+    
+    .demo-card {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 30px;
+      transition: transform 0.3s, box-shadow 0.3s;
+    }
+    
+    .demo-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    }
+    
+    .demo-card h3 {
+      color: #fff;
+      font-size: 1.3rem;
+      margin-bottom: 10px;
+    }
+    
+    .demo-card p {
+      color: #888;
+      margin-bottom: 20px;
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+    
+    .demo-card .widget-container {
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 12px;
+      display: flex;
+      justify-content: center;
+    }
+    
+    .code-section {
+      background: #0d0d1a;
+      border-radius: 16px;
+      padding: 30px;
+      margin-bottom: 40px;
+    }
+    
+    .code-section h2 {
+      color: #fff;
+      margin-bottom: 20px;
+      font-size: 1.5rem;
+    }
+    
+    pre {
+      background: #1a1a2e;
+      padding: 20px;
+      border-radius: 12px;
+      overflow-x: auto;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    
+    code {
+      color: #f97316;
+      font-family: 'Fira Code', 'Monaco', monospace;
+    }
+    
+    .code-comment {
+      color: #6b7280;
+    }
+    
+    .code-string {
+      color: #34d399;
+    }
+    
+    .code-keyword {
+      color: #818cf8;
+    }
+    
+    .code-tag {
+      color: #60a5fa;
+    }
+    
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+      margin-top: 40px;
+    }
+    
+    .feature {
+      display: flex;
+      gap: 15px;
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 12px;
+    }
+    
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    
+    .feature-icon svg {
+      width: 20px;
+      height: 20px;
+      color: white;
+    }
+    
+    .feature h4 {
+      color: #fff;
+      margin-bottom: 5px;
+    }
+    
+    .feature p {
+      color: #888;
+      font-size: 0.9rem;
+    }
+    
+    footer {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      margin-top: 60px;
+    }
+    
+    footer a {
+      color: #f97316;
+      text-decoration: none;
+    }
+    
+    footer a:hover {
+      text-decoration: underline;
+    }
+    
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      background: rgba(249, 115, 22, 0.2);
+      color: #f97316;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-left: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <h1>RustChain Payment Widget</h1>
+      <p class="subtitle">Accept RTC cryptocurrency payments on any website</p>
+    </header>
+
+    <div class="demo-grid">
+      <div class="demo-card">
+        <h3>Simple Payment Button</h3>
+        <p>Basic integration with just a data attribute. Amount and recipient are configured inline.</p>
+        <div class="widget-container">
+          <div id="rtc-pay" 
+               data-to="RTCeafc6f14eab6d5c5362fe651e5e6c23581892a37" 
+               data-amount="5" 
+               data-memo="Demo Payment">
+          </div>
+        </div>
+      </div>
+
+      <div class="demo-card">
+        <h3>Donation Button</h3>
+        <p>Perfect for accepting donations with custom button text.</p>
+        <div class="widget-container">
+          <div class="rtc-pay" 
+               data-to="RTCeafc6f14eab6d5c5362fe651e5e6c23581892a37" 
+               data-amount="10" 
+               data-label="Donate 10 RTC"
+               data-memo="Donation">
+          </div>
+        </div>
+      </div>
+
+      <div class="demo-card">
+        <h3>E-commerce Checkout</h3>
+        <p>Integrate with your checkout flow with callback notifications.</p>
+        <div class="widget-container">
+          <div data-rtc-pay 
+               data-to="RTCeafc6f14eab6d5c5362fe651e5e6c23581892a37" 
+               data-amount="25" 
+               data-memo="Order #12345"
+               data-label="Pay 25 RTC"
+               data-callback="https://your-site.com/api/payment-webhook">
+          </div>
+        </div>
+      </div>
+
+      <div class="demo-card">
+        <h3>Programmatic Usage</h3>
+        <p>Full control via JavaScript API for dynamic amounts.</p>
+        <div class="widget-container">
+          <button id="custom-pay-btn" class="rtc-pay-btn" style="background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+            Custom Integration
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <section class="code-section">
+      <h2>Quick Start</h2>
+      <pre><code><span class="code-comment">&lt;!-- 1. Include the widget script --&gt;</span>
+<span class="code-tag">&lt;script</span> <span class="code-keyword">src</span>=<span class="code-string">"rustchain-pay.js"</span><span class="code-tag">&gt;&lt;/script&gt;</span>
+
+<span class="code-comment">&lt;!-- 2. Add a payment button with data attributes --&gt;</span>
+<span class="code-tag">&lt;div</span> <span class="code-keyword">id</span>=<span class="code-string">"rtc-pay"</span>
+     <span class="code-keyword">data-to</span>=<span class="code-string">"RTCyour_wallet_address_here"</span>
+     <span class="code-keyword">data-amount</span>=<span class="code-string">"10"</span>
+     <span class="code-keyword">data-memo</span>=<span class="code-string">"Payment for services"</span><span class="code-tag">&gt;</span>
+<span class="code-tag">&lt;/div&gt;</span>
+
+<span class="code-comment">&lt;!-- That's it! The widget auto-initializes. --&gt;</span></code></pre>
+    </section>
+
+    <section class="code-section">
+      <h2>JavaScript API</h2>
+      <pre><code><span class="code-comment">// Create a payment widget programmatically</span>
+<span class="code-keyword">const</span> rtcPay = <span class="code-keyword">new</span> RustChainPay({
+  nodeUrl: <span class="code-string">'https://50.28.86.131'</span>,
+  onSuccess: (result) => {
+    console.log(<span class="code-string">'Payment successful!'</span>, result.tx_hash);
+  },
+  onError: (error) => {
+    console.error(<span class="code-string">'Payment failed:'</span>, error);
+  },
+  onCancel: () => {
+    console.log(<span class="code-string">'Payment cancelled'</span>);
+  }
+});
+
+<span class="code-comment">// Open payment modal directly</span>
+rtcPay.openPaymentModal({
+  to: <span class="code-string">'RTCyour_wallet_address'</span>,
+  amount: <span class="code-number">15</span>,
+  memo: <span class="code-string">'Custom payment'</span>,
+  callback: <span class="code-string">'https://your-api.com/webhook'</span>
+});
+
+<span class="code-comment">// Or attach to an existing element</span>
+rtcPay.createButton(<span class="code-string">'#my-button-container'</span>, {
+  to: <span class="code-string">'RTCyour_wallet_address'</span>,
+  amount: <span class="code-number">5</span>,
+  label: <span class="code-string">'Buy Now - 5 RTC'</span>
+});</code></pre>
+    </section>
+
+    <section class="code-section">
+      <h2>Security Features</h2>
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <div>
+            <h4>Client-Side Signing</h4>
+            <p>Private keys never leave the browser. All Ed25519 signing happens locally.</p>
+          </div>
+        </div>
+        
+        <div class="feature">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+          </div>
+          <div>
+            <h4>AES-256-GCM Keystores</h4>
+            <p>Supports encrypted keystore files with password protection.</p>
+          </div>
+        </div>
+        
+        <div class="feature">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 6v6l4 2"/>
+            </svg>
+          </div>
+          <div>
+            <h4>Nonce Protection</h4>
+            <p>Cryptographically secure nonces prevent replay attacks.</p>
+          </div>
+        </div>
+        
+        <div class="feature">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+            </svg>
+          </div>
+          <div>
+            <h4>Zero Dependencies</h4>
+            <p>Self-contained widget with bundled crypto. No external CDN risks.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <p>RustChain Payment Widget &bull; <a href="https://github.com/Scottcjn/Rustchain">GitHub</a> &bull; MIT License</p>
+      <p style="margin-top: 10px">Network: <a href="https://50.28.86.131/explorer/">RustChain Explorer</a></p>
+    </footer>
+  </div>
+
+  <!-- Include the widget -->
+  <script src="rustchain-pay.js"></script>
+  
+  <!-- Custom integration example -->
+  <script>
+    document.getElementById('custom-pay-btn').addEventListener('click', function() {
+      const rtcPay = new RustChainPay({
+        onSuccess: function(result) {
+          alert('Payment successful! TX: ' + result.tx_hash);
+        },
+        onError: function(error) {
+          console.error('Payment error:', error);
+        }
+      });
+      
+      rtcPay.openPaymentModal({
+        to: 'RTCeafc6f14eab6d5c5362fe651e5e6c23581892a37',
+        amount: 15,
+        memo: 'Programmatic payment demo'
+      });
+    });
+  </script>
+</body>
+</html>
