@@ -7,6 +7,10 @@ Bounty #17 Implementation
 
 import math
 import logging
+import sqlite3
+import argparse
+import json
+import sys
 from typing import Dict, Tuple
 
 # Architecture Profile Database
@@ -61,6 +65,20 @@ ARCH_PROFILES = {
         "drift_typical": 300
     }
 }
+
+def migrate_db(db_path: str):
+    """Adds arch_validation_score column if it doesn't exist"""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("ALTER TABLE miner_attest_recent ADD COLUMN arch_validation_score REAL DEFAULT 1.0")
+            print(f"[DB] Migrated {db_path}: added arch_validation_score")
+    except sqlite3.OperationalError as e:
+        if "duplicate column name" in str(e).lower():
+            pass # Already exists
+        else:
+            print(f"[DB] Error migrating {db_path}: {e}")
+    except Exception as e:
+        print(f"[DB] Connection failed for {db_path}: {e}")
 
 def validate_arch_consistency(claimed_arch: str, fingerprint_data: Dict) -> Tuple[float, str]:
     """
@@ -142,24 +160,40 @@ def validate_arch_consistency(claimed_arch: str, fingerprint_data: Dict) -> Tupl
     return round(score, 2), reason
 
 if __name__ == "__main__":
-    # Test cases
-    test_data = {
-        "checks": {
-            "simd_identity": {"data": {"has_altivec": True, "has_sse": False}},
-            "cache_timing": {"data": {"l2_l1_ratio": 3.5, "l3_l2_ratio": 1.1}},
-            "clock_drift": {"data": {"cv": 0.005, "drift_stdev": 450}},
-            "thermal_drift": {"data": {"drift_ratio": 1.03}}
+    parser = argparse.ArgumentParser(description="RustChain Architecture Validation")
+    parser.add_argument("--claimed", type=str, help="Claimed architecture")
+    parser.add_argument("--fingerprint", type=str, help="Path to fingerprint JSON")
+    parser.add_argument("--json", action="store_true", help="Output result as JSON")
+    parser.add_argument("--migrate", type=str, help="Path to SQLite DB to migrate")
+    args = parser.parse_args()
+
+    if args.migrate:
+        migrate_db(args.migrate)
+        if not args.claimed: sys.exit(0)
+
+    # Test data or load from file
+    if args.fingerprint:
+        try:
+            with open(args.fingerprint, "r") as f:
+                data = json.load(f)
+        except Exception as e:
+            print(f"Error loading fingerprint: {e}")
+            sys.exit(1)
+    else:
+        # Default test cases
+        data = {
+            "checks": {
+                "simd_identity": {"data": {"has_altivec": True, "has_sse": False}},
+                "cache_timing": {"data": {"l2_l1_ratio": 3.5, "l3_l2_ratio": 1.1}},
+                "clock_drift": {"data": {"cv": 0.005, "drift_stdev": 450}},
+                "thermal_drift": {"data": {"drift_ratio": 1.03}}
+            }
         }
-    }
     
-    print(f"G4 Test: {validate_arch_consistency('PowerPC G4', test_data)}")
+    claimed = args.claimed if args.claimed else "PowerPC G4"
+    score, reason = validate_arch_consistency(claimed, data)
     
-    fake_g4 = {
-        "checks": {
-            "simd_identity": {"data": {"has_altivec": False, "has_sse": True}},
-            "cache_timing": {"data": {"l2_l1_ratio": 1.01, "l3_l2_ratio": 1.01}},
-            "clock_drift": {"data": {"cv": 0.00001, "drift_stdev": 5}},
-            "thermal_drift": {"data": {"drift_ratio": 1.0001}}
-        }
-    }
-    print(f"Fake G4 (Zen 4): {validate_arch_consistency('PowerPC G4', fake_g4)}")
+    if args.json:
+        print(json.dumps({"score": score, "reason": reason, "claimed": claimed}))
+    else:
+        print(f"Arch: {claimed} -> Score: {score}, Reason: {reason}")
