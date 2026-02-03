@@ -103,6 +103,15 @@ except ImportError as e:
     HW_PROOF_AVAILABLE = False
     print(f"[INIT] Hardware proof module not found: {e}")
 
+# Bounty #17: Architecture Cross-Validation
+try:
+    from arch_validation import validate_arch_consistency
+    ARCH_VALIDATION_AVAILABLE = True
+    print("[INIT] ✓ Architecture cross-validation module loaded")
+except ImportError:
+    ARCH_VALIDATION_AVAILABLE = False
+    print("[INIT] Architecture cross-validation module not found")
+
 app = Flask(__name__)
 
 # Register Hall of Rust blueprint (tables initialized after DB_PATH is set)
@@ -597,7 +606,7 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS blocked_wallets (wallet TEXT PRIMARY KEY, reason TEXT, ts INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS hardware_bindings (hardware_id TEXT PRIMARY KEY, bound_miner TEXT, family TEXT, arch TEXT, entropy_hash TEXT, attestation_count INTEGER DEFAULT 1, first_seen INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS miner_macs (miner TEXT, mac_hash TEXT, first_ts INTEGER, last_ts INTEGER, count INTEGER, PRIMARY KEY (miner, mac_hash))")
-        c.execute("CREATE TABLE IF NOT EXISTS miner_attest_recent (miner TEXT PRIMARY KEY, ts_ok INTEGER, device_family TEXT, device_arch TEXT, entropy_score REAL, fingerprint_passed INTEGER DEFAULT 1)")
+        c.execute("CREATE TABLE IF NOT EXISTS miner_attest_recent (miner TEXT PRIMARY KEY, ts_ok INTEGER, device_family TEXT, device_arch TEXT, entropy_score REAL, fingerprint_passed INTEGER DEFAULT 1, arch_validation_score REAL DEFAULT 1.0)")
         c.execute("CREATE TABLE IF NOT EXISTS hall_of_rust (id INTEGER PRIMARY KEY AUTOINCREMENT, fingerprint_hash TEXT UNIQUE, miner_id TEXT, device_family TEXT, device_arch TEXT, device_model TEXT, manufacture_year INTEGER, first_attestation INTEGER, last_attestation INTEGER, total_attestations INTEGER DEFAULT 1, created_at INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS oui_deny (oui TEXT PRIMARY KEY, vendor TEXT, enforce INTEGER DEFAULT 0)")
         c.execute("CREATE TABLE IF NOT EXISTS miner_header_keys (miner_pk TEXT PRIMARY KEY, key_type TEXT, key_val TEXT, created_at INTEGER)")
@@ -810,13 +819,13 @@ def auto_induct_to_hall(miner: str, device: dict):
     except Exception as e:
         print(f"[HALL] Auto-induct error: {e}")
 
-def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False):
+def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False, arch_score: float = 1.0):
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
-            INSERT OR REPLACE INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (miner, now, device.get("family","unknown"), device.get("arch","unknown"), 0.0, 1 if fingerprint_passed else 0))
+            INSERT OR REPLACE INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, arch_validation_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (miner, now, device.get("family","unknown"), device.get("arch","unknown"), 0.0, 1 if fingerprint_passed else 0, arch_score))
         conn.commit()
     # Auto-induct to Hall of Rust
     auto_induct_to_hall(miner, device)
@@ -1612,8 +1621,21 @@ def submit_attestation():
         print(f"[VM_CHECK] Miner: {miner} - VM DETECTED (zero rewards): {vm_reason}")
         fingerprint_passed = False  # Mark as failed for zero weight
 
+    # Bounty #17: Architecture Cross-Validation
+    arch_score = 1.0
+    if ARCH_VALIDATION_AVAILABLE:
+        claimed_arch = device.get("arch", device.get("device_arch", "unknown"))
+        arch_score, arch_reason = validate_arch_consistency(claimed_arch, fingerprint)
+        print(f"[ARCH_VALIDATION] Miner: {miner}")
+        print(f"[ARCH_VALIDATION]   Claimed: {claimed_arch}")
+        print(f"[ARCH_VALIDATION]   Score: {arch_score}")
+        print(f"[ARCH_VALIDATION]   Reason: {arch_reason}")
+        
+        if arch_score < 0.3:
+            print(f"[ARCH_VALIDATION] WARNING: Significant architecture mismatch detected!")
+
     # Record successful attestation (with fingerprint status)
-    record_attestation_success(miner, device, fingerprint_passed)
+    record_attestation_success(miner, device, fingerprint_passed, arch_score)
 
     # Record MACs if provided
     if macs:
