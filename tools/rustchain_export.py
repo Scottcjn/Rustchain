@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-RustChain Data Export Pipeline
-==============================
+RustChain Data Export Tool
+==========================
 Bounty #49 Implementation
 """
 
@@ -13,162 +13,161 @@ import time
 import sqlite3
 import argparse
 import requests
+import hashlib
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Iterator
 
 # Configuration
 DEFAULT_API_URL = "http://127.0.0.1:8099"
 DEFAULT_DB_PATH = "./rustchain_v2.db"
 
 class RustChainExporter:
-    def __init__(self, api_url: str = None, db_path: str = None):
+    def __init__(self, api_url: str = None, db_path: str = None, admin_key: str = None):
         self.api_url = api_url or DEFAULT_API_URL
         self.db_path = db_path or DEFAULT_DB_PATH
+        self.admin_key = admin_key or os.environ.get("RC_ADMIN_KEY")
         self.use_db = os.path.exists(self.db_path)
+
+    def _verify_auth(self):
+        if not self.admin_key:
+            raise PermissionError("RC_ADMIN_KEY not set. Authorization required for data export.")
 
     def _fetch_from_api(self, endpoint: str) -> Any:
         try:
-            resp = requests.get(f"{self.api_url}{endpoint}", timeout=10)
+            self._verify_auth()
+            resp = requests.get(
+                f"{self.api_url}{endpoint}", 
+                headers={"X-Admin-Key": self.admin_key},
+                timeout=30
+            )
             if resp.status_code == 200:
                 return resp.json()
+            elif resp.status_code == 401:
+                print("Unauthorized: Invalid RC_ADMIN_KEY")
         except Exception as e:
             print(f"API Error ({endpoint}): {e}")
         return None
 
-    def _query_db(self, query: str, params: tuple = ()) -> List[Dict]:
+    def _stream_query_db(self, query: str, params: tuple = ()) -> Iterator[Dict]:
+        """Stream query results to save memory"""
+        self._verify_auth()
         if not self.use_db:
-            return []
+            return
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute(query, params)
-                return [dict(row) for row in cursor.fetchall()]
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            while True:
+                rows = cursor.fetchmany(1000)
+                if not rows:
+                    break
+                for row in rows:
+                    yield dict(row)
+            conn.close()
         except Exception as e:
             print(f"DB Error: {e}")
-            return []
 
-    def export_miners(self) -> List[Dict]:
-        """Export all miner IDs, architectures, and last attestation info"""
-        if self.use_db:
-            return self._query_db("""
-                SELECT miner, device_arch, device_family, ts_ok, arch_validation_score
-                FROM miner_attest_recent
-            """)
-        else:
-            data = self._fetch_from_api("/api/miners")
-            return data.get("miners", []) if data else []
+    def _escape_csv(self, value: Any) -> str:
+        """Protect against CSV injection"""
+        s = str(value)
+        if s.startswith(('=', '+', '-', '@')):
+            return "'" + s
+        return s
 
-    def export_epochs(self) -> List[Dict]:
-        """Export epoch history"""
-        if self.use_db:
-            return self._query_db("SELECT * FROM epoch_state ORDER BY epoch DESC")
-        return [] # Limited API support for full history
+    def export_miners(self) -> Iterator[Dict]:
+        return self._stream_query_db("""
+            SELECT miner, device_arch, device_family, ts_ok, arch_validation_score
+            FROM miner_attest_recent
+        """)
 
-    def export_balances(self) -> List[Dict]:
-        """Export current RTC balances"""
-        if self.use_db:
-            return self._query_db("SELECT miner_pk, balance_rtc, amount_i64 FROM balances")
-        return []
+    def export_epochs(self) -> Iterator[Dict]:
+        return self._stream_query_db("SELECT * FROM epoch_state ORDER BY epoch DESC")
 
-    def export_rewards(self) -> List[Dict]:
-        """Export per-miner per-epoch reward amounts"""
-        if self.use_db:
-            try:
-                return self._query_db("SELECT * FROM epoch_rewards ORDER BY epoch DESC")
-            except:
-                return []
-        return []
+    def export_balances(self) -> Iterator[Dict]:
+        return self._stream_query_db("SELECT miner_pk, balance_rtc, amount_i64 FROM balances")
 
-    def export_ledger(self) -> List[Dict]:
-        """Export full transaction/reward ledger"""
-        if self.use_db:
-            try:
-                return self._query_db("SELECT * FROM ledger ORDER BY ts DESC")
-            except:
-                return []
-        return []
+    def export_attestations(self, start_date: str = None, end_date: str = None) -> Iterator[Dict]:
+        query = "SELECT * FROM hall_of_rust"
+        params = []
+        if start_date or end_date:
+            query += " WHERE "
+            if start_date:
+                start_ts = int(datetime.fromisoformat(start_date).timestamp())
+                query += "first_attestation >= ?"
+                params.append(start_ts)
+            if end_date:
+                if start_date: query += " AND "
+                end_ts = int(datetime.fromisoformat(end_date).timestamp())
+                query += "last_attestation <= ?"
+                params.append(end_ts)
+        return self._stream_query_db(query, tuple(params))
 
-    def export_attestations(self, start_date: str = None, end_date: str = None) -> List[Dict]:
-        """Export detailed attestation logs from Hall of Rust"""
-        if self.use_db:
-            query = "SELECT * FROM hall_of_rust"
-            params = []
-            if start_date or end_date:
-                query += " WHERE "
-                if start_date:
-                    start_ts = int(datetime.fromisoformat(start_date).timestamp())
-                    query += "first_attestation >= ?"
-                    params.append(start_ts)
-                if end_date:
-                    if start_date: query += " AND "
-                    end_ts = int(datetime.fromisoformat(end_date).timestamp())
-                    query += "last_attestation <= ?"
-                    params.append(end_ts)
-            return self._query_db(query, tuple(params))
-        return []
-
-    def save(self, data: List[Dict], filename: str, fmt: str, output_dir: str):
-        if not data:
-            print(f"No data to export for {filename}")
-            return
-
+    def save_stream(self, data_iterator: Iterator[Dict], filename: str, fmt: str, output_dir: str):
         os.makedirs(output_dir, exist_ok=True)
         base_path = Path(output_dir) / filename
         
+        first_row = next(data_iterator, None)
+        if first_row is None:
+            print(f"No data to export for {filename}")
+            return
+
         if fmt == "json":
+            # For streaming JSON we use an array format but it's less memory efficient 
+            # than JSONL unless we write one by one
             with open(base_path.with_suffix(".json"), 'w') as f:
-                json.dump(data, f, indent=2)
+                f.write("[\n")
+                f.write(json.dumps(first_row, indent=2))
+                for entry in data_iterator:
+                    f.write(",\n")
+                    f.write(json.dumps(entry, indent=2))
+                f.write("\n]")
         elif fmt == "jsonl":
             with open(base_path.with_suffix(".jsonl"), 'w') as f:
-                for entry in data:
+                f.write(json.dumps(first_row) + "\n")
+                for entry in data_iterator:
                     f.write(json.dumps(entry) + "\n")
         elif fmt == "csv":
-            if not data: return
-            keys = data[0].keys()
+            keys = first_row.keys()
             with open(base_path.with_suffix(".csv"), 'w', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=keys)
                 writer.writeheader()
-                writer.writerows(data)
+                # Escape the first row
+                writer.writerow({k: self._escape_csv(v) for k, v in first_row.items()})
+                for entry in data_iterator:
+                    writer.writerow({k: self._escape_csv(v) for k, v in entry.items()})
         
-        print(f"Exported {len(data)} records to {base_path}.{fmt}")
+        print(f"Exported data to {base_path}.{fmt}")
 
 def main():
     parser = argparse.ArgumentParser(description="RustChain Data Export Tool")
     parser.add_argument("--format", choices=["csv", "json", "jsonl"], default="csv", help="Export format")
     parser.add_argument("--output", default="exports/", help="Output directory")
-    parser.add_argument("--api", help="Node API URL")
+    parser.add_argument("--key", help="RC_ADMIN_KEY for authentication")
     parser.add_argument("--db", help="Local SQLite DB path")
     parser.add_argument("--from", dest="start_date", help="Start date (YYYY-MM-DD)")
     parser.add_argument("--to", dest="end_date", help="End date (YYYY-MM-DD)")
 
     args = parser.parse_args()
     
-    exporter = RustChainExporter(api_url=args.api, db_path=args.db)
-    
-    print(f"Starting RustChain data export (Format: {args.format})...")
-    
-    # Run exports
-    miners = exporter.export_miners()
-    exporter.save(miners, "miners", args.format, args.output)
-    
-    epochs = exporter.export_epochs()
-    exporter.save(epochs, "epochs", args.format, args.output)
-    
-    balances = exporter.export_balances()
-    exporter.save(balances, "balances", args.format, args.output)
-    
-    rewards = exporter.export_rewards()
-    exporter.save(rewards, "rewards", args.format, args.output)
-    
-    ledger = exporter.export_ledger()
-    exporter.save(ledger, "ledger", args.format, args.output)
-    
-    attestations = exporter.export_attestations(args.start_date, args.end_date)
-    exporter.save(attestations, "attestations", args.format, args.output)
-    
-    print("Export complete.")
+    try:
+        exporter = RustChainExporter(db_path=args.db, admin_key=args.key)
+        print(f"Starting RustChain data export (Format: {args.format})...")
+        
+        # Run exports
+        exporter.save_stream(exporter.export_miners(), "miners", args.format, args.output)
+        exporter.save_stream(exporter.export_epochs(), "epochs", args.format, args.output)
+        exporter.save_stream(exporter.export_balances(), "balances", args.format, args.output)
+        exporter.save_stream(exporter.export_attestations(args.start_date, args.end_date), "attestations", args.format, args.output)
+        
+        print("Export complete.")
+    except PermissionError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
