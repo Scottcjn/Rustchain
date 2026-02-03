@@ -914,7 +914,17 @@ def validate_fingerprint_data(fingerprint: dict) -> tuple:
         details = rom_data.get("detection_details", [])
         return False, f"known_emulator_rom:{details}"
 
-    # 4. Check all_passed flag
+    # 4. Thermal drift check
+    thermal_passed, thermal_data = get_check_status(checks.get("thermal_drift"))
+    if thermal_passed == False:
+        return False, "no_thermal_variance"
+    
+    # 5. Instruction jitter check
+    jitter_passed, jitter_data = get_check_status(checks.get("instruction_jitter"))
+    if jitter_passed == False:
+        return False, "no_instruction_jitter"
+
+    # 6. Check all_passed flag
     if fingerprint.get("all_passed") == False:
         failed_checks = []
         for k, v in checks.items():
