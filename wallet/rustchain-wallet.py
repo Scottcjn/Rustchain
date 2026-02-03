@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 # Configuration
-NODE_URL = os.environ.get('RUSTCHAIN_NODE_URL', 'http://127.0.0.1:8099')
+NODE_URL = os.environ.get('RUSTCHAIN_NODE_URL', 'https://50.28.86.131')
 WALLET_DIR = Path.home() / ".rustchain" / "wallets"
 KDF_ITERATIONS = 100000
 
@@ -108,6 +108,9 @@ class WalletManager:
         
         with open(self.path, 'w') as f:
             json.dump(wallet_data, f, indent=2)
+        
+        # Security: set strict permissions (chmod 0600)
+        os.chmod(self.path, 0o600)
             
         return address, mnemonic_str
 
