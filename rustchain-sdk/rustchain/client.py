@@ -165,4 +165,4 @@ class AsyncRustChainClient(RustChainBase):
 
     async def check_eligibility(self, miner_id: str) -> bool:
         """Check if a miner is eligible/enrolled (helper)."""
-        return await self.get_miner(miner_id) is not None
+        return (await self.get_miner(miner_id)) is not None
