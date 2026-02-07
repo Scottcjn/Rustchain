@@ -21,9 +21,9 @@ from rip_200_round_robin_1cpu1vote import (
 )
 
 # Constants
-UNIT = 100_000_000  # uRTC per 1 RTC
+UNIT = 1_000_000  # uRTC per 1 RTC
 DB_PATH = "/root/rustchain/rustchain_v2.db"
-PER_EPOCH_URTC = int(1.5 * UNIT)  # 150,000,000 uRTC
+PER_EPOCH_URTC = int(1.5 * UNIT)  # 1,500,000 uRTC
 BLOCK_TIME = 600
 GENESIS_TIMESTAMP = 1728000000  # Placeholder - will be set from server
 

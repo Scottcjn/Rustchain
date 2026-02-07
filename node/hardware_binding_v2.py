@@ -62,13 +62,28 @@ def compare_entropy_profiles(stored: Dict, current: Dict) -> Tuple[bool, float, 
     """
     Compare two entropy profiles.
     Returns: (is_similar, similarity_score, reason)
+    
+    Per-field tolerances: clock_cv is highly volatile on real hardware
+    (varies 100%+ between runs due to CPU freq scaling, turbo, interrupts).
+    It is useful for detecting emulators (cv < 0.0001 = too uniform) but
+    NOT reliable for binding comparison. Use wide tolerance for volatile fields.
     """
     if not stored or not current:
         return True, 1.0, 'no_baseline'  # First time, accept
     
+    # Per-field tolerance: volatile fields get much wider tolerance
+    FIELD_TOLERANCE = {
+        'clock_cv': 5.0,       # 500% - too volatile for binding (affected by load, freq scaling)
+        'cache_l1': 0.30,      # 30% - relatively stable
+        'cache_l2': 0.30,      # 30% - relatively stable
+        'thermal_ratio': 0.50, # 50% - moderately volatile (ambient temp)
+        'jitter_cv': 2.0,      # 200% - volatile (background processes)
+    }
+    
     differences = []
     total_diff = 0
     count = 0
+    hard_fails = 0
     
     for key in ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']:
         stored_val = float(stored.get(key, 0))
@@ -76,30 +91,32 @@ def compare_entropy_profiles(stored: Dict, current: Dict) -> Tuple[bool, float, 
         
         if stored_val > 0:
             diff = abs(stored_val - current_val) / stored_val
-            total_diff += diff
+            field_tol = FIELD_TOLERANCE.get(key, ENTROPY_TOLERANCE)
+            total_diff += min(diff, 1.0)  # Cap at 100% for averaging
             count += 1
             
-            if diff > ENTROPY_TOLERANCE:
+            if diff > field_tol:
                 differences.append(f'{key}:{diff:.1%}')
+                # Only stable fields count as hard failures
+                if field_tol <= ENTROPY_TOLERANCE:
+                    hard_fails += 1
     
     # FIX: Handle no-fingerprint miners (both profiles are zeros)
     if count == 0:
-        # Check if current profile is also all zeros
         current_count = sum(1 for key in ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']
                           if float(current.get(key, 0)) > 0)
         if current_count == 0:
-            # Both stored and current are zeros = no fingerprint data, accept
             return True, 1.0, 'no_fingerprint_data'
         else:
-            # Stored is zeros but current has data = suspicious, but accept for now
             return True, 0.5, 'stored_empty_current_has_data' 
     
     avg_diff = total_diff / count
     similarity = 1.0 - avg_diff
     
-    if avg_diff > 0.5:  # More than 50% different = likely spoof
+    # Only reject if STABLE fields (cache, non-volatile) exceed tolerance
+    if hard_fails >= 2:  # Multiple stable fields differ = likely spoof
         return False, similarity, f'entropy_mismatch:{differences}'
-    elif avg_diff > ENTROPY_TOLERANCE:
+    elif differences:
         return True, similarity, f'entropy_drift:{differences}'  # Flag but accept
     else:
         return True, similarity, 'entropy_ok'
@@ -108,7 +125,19 @@ def check_entropy_collision(entropy_profile: Dict, exclude_serial: str = None) -
     """
     Check if this entropy profile matches any OTHER serial.
     This detects serial spoofing (same hardware, different serial).
+    
+    Requires at least 2 non-zero comparable fields for a valid collision.
+    Profiles with only clock_cv populated are too low-quality to detect collisions
+    (clock_cv varies too much between runs and is similar across machines).
     """
+    # Count non-zero fields in current profile
+    nonzero_fields = sum(1 for k in ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']
+                        if float(entropy_profile.get(k, 0)) > 0)
+    
+    if nonzero_fields < 2:
+        # Not enough entropy data to detect collisions reliably
+        return None
+    
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT serial_hash, entropy_profile FROM hardware_bindings_v2')
@@ -120,9 +149,15 @@ def check_entropy_collision(entropy_profile: Dict, exclude_serial: str = None) -
             
             if stored_json:
                 stored = json.loads(stored_json)
+                # Also require stored profile to have enough data
+                stored_nonzero = sum(1 for k in ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']
+                                    if float(stored.get(k, 0)) > 0)
+                if stored_nonzero < 2:
+                    continue
+                
                 is_similar, score, _ = compare_entropy_profiles(stored, entropy_profile)
                 
-                if is_similar and score > 0.85:  # Very similar to existing
+                if is_similar and score > 0.90:  # Very similar to existing
                     return serial_hash  # Collision detected!
     
     return None
