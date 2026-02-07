@@ -149,6 +149,10 @@ detect_platform() {
                 aarch64)
                     echo "linux"
                     ;;
+                arm*)
+                    echo -e "${RED}[!] 32-bit ARM is not supported. Please use an ARM64 (aarch64) system.${NC}"
+                    exit 1
+                    ;;
                 ppc64le|ppc64)
                     if grep -q "POWER8" /proc/cpuinfo 2>/dev/null; then echo "power8"
                     else echo "ppc"
