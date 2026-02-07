@@ -663,8 +663,10 @@ def init_db():
 
 # Hardware multipliers
 HARDWARE_WEIGHTS = {
-    "PowerPC": {"G4": 2.5, "G5": 2.0},
-    "x86": {"default": 1.0},
+    "PowerPC": {"G4": 2.5, "G5": 2.0, "G3": 1.8, "power8": 2.0, "power9": 1.5, "default": 1.5},
+    "Apple Silicon": {"M1": 1.2, "M2": 1.2, "M3": 1.1, "default": 1.2},
+    "x86": {"retro": 1.4, "core2": 1.3, "default": 1.0},
+    "x86_64": {"default": 1.0},
     "ARM": {"default": 1.0}
 }
 
@@ -1647,6 +1649,41 @@ def submit_attestation():
     # Record MACs if provided
     if macs:
         record_macs(miner, macs)
+
+    # AUTO-ENROLL: Automatically enroll miner in current epoch on successful attestation
+    # This eliminates the need for miners to make a separate POST /epoch/enroll call
+    try:
+        epoch = slot_to_epoch(current_slot())
+        family = device.get("family", device.get("device_family", "x86"))
+        arch_for_weight = device.get("arch", device.get("device_arch", "default"))
+        hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight, 1.0)
+        
+        # VM miners get minimal weight
+        if not fingerprint_passed:
+            enroll_weight = 0.000000001
+        else:
+            enroll_weight = hw_weight
+        
+        miner_id = data.get("miner_id", miner)
+        
+        with sqlite3.connect(DB_PATH) as enroll_conn:
+            enroll_conn.execute(
+                "INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
+                (miner,)
+            )
+            enroll_conn.execute(
+                "INSERT OR REPLACE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+                (epoch, miner, enroll_weight)
+            )
+            enroll_conn.execute(
+                "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
+                (miner_id, miner)
+            )
+            enroll_conn.commit()
+        
+        print(f"[AUTO-ENROLL] {miner[:20]}... enrolled in epoch {epoch} weight={enroll_weight}")
+    except Exception as e:
+        print(f"[AUTO-ENROLL] Error enrolling {miner[:20]}...: {e}")
 
     # Phase 1: Hardware Proof Validation (Logging Only)
     if HW_PROOF_AVAILABLE:
