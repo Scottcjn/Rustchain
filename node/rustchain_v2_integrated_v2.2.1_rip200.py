@@ -1654,9 +1654,9 @@ def submit_attestation():
     # This eliminates the need for miners to make a separate POST /epoch/enroll call
     try:
         epoch = slot_to_epoch(current_slot())
-        family = device.get("family", device.get("device_family", "x86"))
-        arch_for_weight = device.get("arch", device.get("device_arch", "default"))
-        hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight, 1.0)
+        family = device.get("device_family") or device.get("family") or "x86"
+        arch_for_weight = device.get("device_arch") or device.get("arch") or "default"
+        hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight, HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0))
         
         # VM miners get minimal weight
         if not fingerprint_passed:
@@ -1681,9 +1681,9 @@ def submit_attestation():
             )
             enroll_conn.commit()
         
-        print(f"[AUTO-ENROLL] {miner[:20]}... enrolled in epoch {epoch} weight={enroll_weight}")
+        app.logger.info(f"[AUTO-ENROLL] {miner[:20]}... enrolled epoch {epoch} weight={enroll_weight} family={family} arch={arch_for_weight} hw_weight={hw_weight}")
     except Exception as e:
-        print(f"[AUTO-ENROLL] Error enrolling {miner[:20]}...: {e}")
+        app.logger.error(f"[AUTO-ENROLL] Error enrolling {miner[:20]}...: {e}")
 
     # Phase 1: Hardware Proof Validation (Logging Only)
     if HW_PROOF_AVAILABLE:
@@ -2644,38 +2644,22 @@ def api_miners():
             arch = (r["device_arch"] or "unknown").lower()
             fam = (r["device_family"] or "unknown").lower()
             
-            # Calculate antiquity multiplier and hardware classification
-            # Museum System: Carfax for PCs - vintage hardware cataloging
-            hw_type = "Modern"  # Default
+            # Calculate antiquity multiplier from HARDWARE_WEIGHTS (single source of truth)
+            title_fam = r["device_family"] or "unknown"
+            title_arch = r["device_arch"] or "unknown"
+            mult = HARDWARE_WEIGHTS.get(title_fam, {}).get(title_arch, HARDWARE_WEIGHTS.get(title_fam, {}).get("default", 1.0))
 
-            if "powerpc" in fam or "ppc" in fam or "g5" in fam:  # Match PowerPC variants
-                if arch == "g3":
-                    mult = 3.0
-                    hw_type = "PowerPC G3 (Vintage)"
-                elif arch == "g4":
-                    mult = 2.5
-                    hw_type = "PowerPC G4 (Vintage)"
-                elif arch == "g5":
-                    mult = 2.0
-                    hw_type = "PowerPC G5 (Vintage)"
-                else:
-                    mult = 2.0
-                    hw_type = "PowerPC (Vintage)"
-            elif "arm" in fam.lower() or "apple" in arch.lower() or arch in ("m1", "m2", "m3", "apple_silicon"):
-                mult = 0.8  # Modern Apple Silicon - no PoA bonus
+            # Hardware type label for display
+            if "powerpc" in fam or "ppc" in fam:
+                hw_type = f"PowerPC {title_arch.upper()} (Vintage)" if arch in ("g3","g4","g5") else f"PowerPC (Vintage)"
+            elif "apple" in fam.lower() or arch in ("m1", "m2", "m3", "apple_silicon"):
                 hw_type = "Apple Silicon (Modern)"
             elif "x86" in fam.lower() or "modern" in fam.lower():
-                if "trashcan" in arch.lower() or "mac pro" in arch.lower():
-                    mult = 1.5
-                    hw_type = "Mac Trashcan x86 (Retro)"
-                elif "core2" in arch.lower() or "retro" in arch.lower():
-                    mult = 1.5
-                    hw_type = "x86 Core2/Retro (Vintage)"
+                if "retro" in arch or "core2" in arch:
+                    hw_type = "x86 Retro (Vintage)"
                 else:
-                    mult = 0.8  # Modern x86 penalty
                     hw_type = "x86-64 (Modern)"
             else:
-                mult = 1.0
                 hw_type = "Unknown/Other"
 
             miners.append({
