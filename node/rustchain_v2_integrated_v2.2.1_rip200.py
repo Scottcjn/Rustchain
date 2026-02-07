@@ -1199,8 +1199,8 @@ def finalize_epoch(epoch, per_block_rtc):
                     raise ValueError(f"Reward overflow for miner {pk}: {amount_i64}")
 
                 c.execute(
-                    "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
-                    (amount_i64, pk)
+                    "UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?",
+                    (amount_i64, amount_i64, pk)
                 )
 
                 # Update metrics with decimal value for accuracy
@@ -2549,14 +2549,19 @@ def genesis_export():
 
 @app.route('/balance/<miner_pk>', methods=['GET'])
 def get_balance(miner_pk):
-    """Get miner balance"""
+    """Get miner balance - checks both miner_pk and miner_id columns"""
     with sqlite3.connect(DB_PATH) as c:
-        row = c.execute("SELECT balance_rtc FROM balances WHERE miner_pk = ?", (miner_pk,)).fetchone()
-        balance = row[0] if row else 0.0
+        # Try miner_pk first (old-style wallets), then miner_id (new-style)
+        row = c.execute("SELECT COALESCE(amount_i64, 0) FROM balances WHERE miner_pk = ?", (miner_pk,)).fetchone()
+        if not row or row[0] == 0:
+            row = c.execute("SELECT COALESCE(amount_i64, 0) FROM balances WHERE miner_id = ?", (miner_pk,)).fetchone()
+        balance_i64 = row[0] if row else 0
+        balance_rtc = balance_i64 / 1000000.0
 
         return jsonify({
             "miner_pk": miner_pk,
-            "balance_rtc": balance
+            "balance_rtc": balance_rtc,
+            "amount_i64": balance_i64
         })
 
 @app.route('/api/stats', methods=['GET'])
@@ -3341,7 +3346,7 @@ def confirm_pending():
                 # Execute the actual transfer
                 c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (to_m,))
                 c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?", (amount, from_m))
-                c.execute("UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?", (amount, to_m))
+                c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?", (amount, amount, to_m))
                 
                 # Log to IMMUTABLE ledger (the real chain!)
                 c.execute("""
@@ -3477,7 +3482,7 @@ def wallet_transfer_OLD():
 
         c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (to_miner,))
         c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?", (amount_i64, from_miner))
-        c.execute("UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?", (amount_i64, to_miner))
+        c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?", (amount_i64, amount_i64, to_miner))
 
         sender_new = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_miner,)).fetchone()[0]
         recipient_new = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (to_miner,)).fetchone()[0]
@@ -3803,7 +3808,7 @@ def wallet_transfer_signed():
         # Execute transfer
         c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (to_address,))
         c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?", (amount_i64, from_address))
-        c.execute("UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?", (amount_i64, to_address))
+        c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?", (amount_i64, amount_i64, to_address))
         
         # Record in ledger
         now = int(time.time())
