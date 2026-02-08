@@ -6,7 +6,7 @@ This guide covers installation and setup of the RustChain miner on Linux and mac
 
 ### Default Installation
 ```bash
-curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 ```
 
 The installer will:
@@ -20,7 +20,7 @@ The installer will:
 
 ### Installation with Specific Wallet
 ```bash
-curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install.sh | bash -s -- --wallet my-miner-wallet
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet my-miner-wallet
 ```
 
 This skips the interactive wallet prompt and uses the specified wallet name.
@@ -205,7 +205,7 @@ Note: The convenience command is only available if `/usr/local/bin` was writable
 
 ### Complete Uninstall
 ```bash
-curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install.sh | bash -s -- --uninstall
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --uninstall
 ```
 
 This will:
@@ -328,10 +328,10 @@ To run multiple miners on different hardware:
 To update to the latest version:
 ```bash
 # Uninstall old version
-curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install.sh | bash -s -- --uninstall
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --uninstall
 
 # Install new version
-curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install.sh | bash -s -- --wallet YOUR_WALLET_NAME
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet YOUR_WALLET_NAME
 ```
 
 ## Getting Help

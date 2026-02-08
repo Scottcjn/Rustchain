@@ -34,7 +34,7 @@
 
 ### One-Line Install (Recommended)
 ```bash
-curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 ```
 
 The installer:
@@ -48,12 +48,12 @@ The installer:
 
 **Install with a specific wallet:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install.sh | bash -s -- --wallet my-miner-wallet
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet my-miner-wallet
 ```
 
 **Uninstall:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install.sh | bash -s -- --uninstall
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --uninstall
 ```
 
 ### Supported Platforms
