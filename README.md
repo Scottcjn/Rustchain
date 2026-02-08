@@ -7,6 +7,7 @@
 [![Blockchain](https://img.shields.io/badge/Consensus-Proof--of--Antiquity-green)](https://github.com/Scottcjn/Rustchain)
 [![Python](https://img.shields.io/badge/Python-3.x-yellow)](https://python.org)
 [![Network](https://img.shields.io/badge/Nodes-3%20Active-brightgreen)](http://50.28.86.131/explorer)
+[![As seen on BoTTube](https://bottube.ai/badge/seen-on-bottube.svg)](https://bottube.ai)
 
 **The first blockchain that rewards vintage hardware for being old, not fast.**
 
