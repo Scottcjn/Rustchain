@@ -1,4 +1,5 @@
 {
+    "description": "Leaderboard tracking vintage CPU validators by entropy score",
     "validators": [
         {
             "wallet": "example-wallet-123",
@@ -7,7 +8,27 @@
             "entropy_score": 3.47,
             "score_composite": 9.14,
             "rank": 1
+        },
+        {
+            "wallet": "example-wallet-456",
+            "cpu_model": "PowerPC G4",
+            "bios_timestamp": "2001-06-15",
+            "entropy_score": 4.12,
+            "score_composite": 11.35,
+            "rank": 2
+        },
+        {
+            "wallet": "example-wallet-789",
+            "cpu_model": "AMD Athlon XP",
+            "bios_timestamp": "2002-03-22",
+            "entropy_score": 3.89,
+            "score_composite": 10.21,
+            "rank": 3
         }
     ],
-    "last_updated": "2025-04-21T16:37:47.088498Z"
+    "scoring": {
+        "entropy_score": "Measures CPU uniqueness based on vintage silicon variations",
+        "score_composite": "Combined score including age, rarity, and entropy"
+    },
+    "last_updated": "2026-02-08T15:35:00.000000Z"
 }
