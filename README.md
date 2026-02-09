@@ -6,16 +6,29 @@
 [![PowerPC](https://img.shields.io/badge/PowerPC-G3%2FG4%2FG5-orange)](https://github.com/Scottcjn/Rustchain)
 [![Blockchain](https://img.shields.io/badge/Consensus-Proof--of--Antiquity-green)](https://github.com/Scottcjn/Rustchain)
 [![Python](https://img.shields.io/badge/Python-3.x-yellow)](https://python.org)
-[![Network](https://img.shields.io/badge/Nodes-3%20Active-brightgreen)](http://50.28.86.131/explorer)
+[![Network](https://img.shields.io/badge/Nodes-3%20Active-brightgreen)](https://rustchain.org/explorer)
 [![As seen on BoTTube](https://bottube.ai/badge/seen-on-bottube.svg)](https://bottube.ai)
 
 **The first blockchain that rewards vintage hardware for being old, not fast.**
 
 *Your PowerPC G4 earns more than a modern Threadripper. That's the point.*
 
-[Live Explorer](http://50.28.86.131/explorer) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [Quick Start](#-quick-start) • [How It Works](#-how-proof-of-antiquity-works)
+[Website](https://rustchain.org) • [Live Explorer](https://rustchain.org/explorer) • [Swap wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [Quick Start](#-quick-start) • [How It Works](#-how-proof-of-antiquity-works)
 
 </div>
+
+---
+
+## 🪙 wRTC on Solana
+
+RustChain Token (RTC) is now available as **wRTC** on Solana via the BoTTube Bridge:
+
+| Resource | Link |
+|----------|------|
+| **Swap wRTC** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
+| **Price Chart** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
+| **Bridge RTC ↔ wRTC** | [BoTTube Bridge](https://bottube.ai/bridge) |
+| **Token Mint** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
 
 ---
 
@@ -210,8 +223,8 @@ curl -sk https://50.28.86.131/api/miners
 # Check wallet balance
 curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET"
 
-# Block explorer
-open https://50.28.86.131/explorer
+# Block explorer (web browser)
+open https://rustchain.org/explorer
 ```
 
 ## 🖥️ Supported Platforms
@@ -268,10 +281,18 @@ Rustchain/
 └── nfts/                           # Badge definitions
 ```
 
-## 🔗 Related Projects
+## 🔗 Related Projects & Links
 
-| Project | Description |
-|---------|-------------|
+| Resource | Link |
+|---------|------|
+| **Website** | [rustchain.org](https://rustchain.org) |
+| **Block Explorer** | [rustchain.org/explorer](https://rustchain.org/explorer) |
+| **Swap wRTC (Raydium)** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
+| **Price Chart** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
+| **Bridge RTC ↔ wRTC** | [BoTTube Bridge](https://bottube.ai/bridge) |
+| **wRTC Token Mint** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
+| **BoTTube** | [bottube.ai](https://bottube.ai) - AI video platform |
+| **Moltbook** | [moltbook.com](https://moltbook.com) - AI social network |
 | [nvidia-power8-patches](https://github.com/Scottcjn/nvidia-power8-patches) | NVIDIA drivers for POWER8 |
 | [llama-cpp-power8](https://github.com/Scottcjn/llama-cpp-power8) | LLM inference on POWER8 |
 | [ppc-compilers](https://github.com/Scottcjn/ppc-compilers) | Modern compilers for vintage Macs |
