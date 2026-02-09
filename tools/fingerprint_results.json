@@ -1,0 +1,87 @@
+{
+  "system": {
+    "platform": "Linux",
+    "machine": "aarch64",
+    "processor": "aarch64",
+    "version": "#91-Ubuntu SMP PREEMPT_DYNAMIC Tue Nov 18 13:53:54 UTC 2025"
+  },
+  "timestamp": 1770358319,
+  "results": {
+    "clock_drift": {
+      "passed": true,
+      "data": {
+        "mean_ns": 1409497,
+        "stdev_ns": 31366,
+        "cv": 0.022254,
+        "drift_stdev": 35698
+      }
+    },
+    "cache_timing": {
+      "passed": true,
+      "data": {
+        "l1_ns": 48.99,
+        "l2_ns": 49.58,
+        "l3_ns": 51.81,
+        "l2_l1_ratio": 1.012,
+        "l3_l2_ratio": 1.045
+      }
+    },
+    "simd_identity": {
+      "passed": true,
+      "data": {
+        "arch": "aarch64",
+        "simd_flags_count": 31,
+        "has_sse": false,
+        "has_avx": false,
+        "has_altivec": false,
+        "has_neon": false,
+        "sample_flags": [
+          "fp",
+          "asimd",
+          "evtstrm",
+          "aes",
+          "pmull",
+          "sha1",
+          "sha2",
+          "crc32",
+          "atomics",
+          "fphp"
+        ]
+      }
+    },
+    "thermal_drift": {
+      "passed": true,
+      "data": {
+        "cold_avg_ns": 4550063,
+        "hot_avg_ns": 4542299,
+        "cold_stdev": 64032,
+        "hot_stdev": 68631,
+        "drift_ratio": 0.9983
+      }
+    },
+    "instruction_jitter": {
+      "passed": true,
+      "data": {
+        "int_avg_ns": 619079,
+        "fp_avg_ns": 504182,
+        "branch_avg_ns": 319678,
+        "int_stdev": 15987,
+        "fp_stdev": 11697,
+        "branch_stdev": 11532
+      }
+    },
+    "anti_emulation": {
+      "passed": false,
+      "data": {
+        "vm_indicators": [
+          "/sys/class/dmi/id/product_name:qemu",
+          "/sys/class/dmi/id/sys_vendor:qemu",
+          "/proc/scsi/scsi:qemu"
+        ],
+        "indicator_count": 3,
+        "is_likely_vm": true,
+        "fail_reason": "vm_detected"
+      }
+    }
+  }
+}

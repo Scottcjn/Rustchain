@@ -1,0 +1,40 @@
+================================================================================
+RustChain Hardware Fingerprint Preflight Validator
+================================================================================
+System: Linux aarch64
+CPU: aarch64
+--------------------------------------------------------------------------------
+[*] Running Clock-Skew & Oscillator Drift...
+    Status: PASS
+    Coefficient of Variation (CV): 0.022254 (Min required: 0.0001)
+
+[*] Running Cache Timing Fingerprint...
+    Status: PASS
+    L2/L1 Latency Ratio: 1.012
+    L3/L2 Latency Ratio: 1.045
+    [!] WARNING: Flat cache hierarchy detected.
+
+[*] Running SIMD Unit Identity...
+    Status: PASS
+    SIMD: SSE=False, AVX=False, AltiVec=False, NEON=False
+
+[*] Running Thermal Drift Entropy...
+    Status: PASS
+
+[*] Running Instruction Path Jitter...
+    Status: PASS
+
+[*] Running Anti-Emulation Behavioral Checks...
+    Status: FAIL
+    [!] VM Indicators Found: /sys/class/dmi/id/product_name:qemu, /sys/class/dmi/id/sys_vendor:qemu, /proc/scsi/scsi:qemu
+
+--------------------------------------------------------------------------------
+TEST SUMMARY: FAILED
+--------------------------------------------------------------------------------
+Failed checks: anti_emulation
+
+Actionable Recommendations:
+- Review the VM indicators listed in the diagnostic section above.
+
+================================================================================
+[*] Results exported to fingerprint_results.json
