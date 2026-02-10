@@ -90,5 +90,38 @@ def send(from_wallet, to, amount, memo):
     except Exception as e:
         click.echo(f"Transaction failed: {e}")
 
+@cli.command()
+@click.argument('wallet_id')
+def history(wallet_id):
+    """View transaction history for a wallet."""
+    try:
+        r = requests.get(f"{NODE_URL}/wallet/ledger?miner_id={wallet_id}", verify=VERIFY_SSL)
+        data = r.json()
+        if "transactions" in data and data["transactions"]:
+            click.echo(f"--- Transaction History for {wallet_id} ---")
+            for tx in data["transactions"][:10]:
+                tx_type = "IN" if tx.get("to") == wallet_id else "OUT"
+                click.echo(f"[{tx.get('timestamp', 'N/A')}] {tx_type} | {tx.get('amount_rtc', 0):.4f} RTC | Memo: {tx.get('memo', 'N/A')}")
+        else:
+            click.echo("No transactions found for this wallet.")
+    except Exception as e:
+        click.echo(f"Error fetching history: {e}")
+
+@cli.command()
+def network():
+    """Show network status and active miners."""
+    try:
+        health = requests.get(f"{NODE_URL}/health", verify=VERIFY_SSL).json()
+        epoch = requests.get(f"{NODE_URL}/epoch", verify=VERIFY_SSL).json()
+        miners = requests.get(f"{NODE_URL}/api/miners", verify=VERIFY_SSL).json()
+        
+        click.echo("--- RustChain Network Status ---")
+        click.echo(f"Status: {health.get('status', 'Unknown')}")
+        click.echo(f"Current Epoch: {epoch.get('epoch', 'N/A')} (Slot: {epoch.get('slot', 'N/A')})")
+        click.echo(f"Active Miners: {len(miners)}")
+        click.echo(f"Epoch Pot: {epoch.get('epoch_pot', 0)} RTC")
+    except Exception as e:
+        click.echo(f"Error fetching network status: {e}")
+
 if __name__ == '__main__':
     cli()
