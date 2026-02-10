@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>RustChain Epoch Visualizer</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background: #0d1117; color: #c9d1d9; font-family: sans-serif; text-align: center; }
+        .container { max-width: 900px; margin: auto; padding: 20px; }
+        canvas { background: #161b22; border-radius: 10px; margin-top: 20px; }
+        .stats { display: flex; justify-content: space-around; margin-top: 20px; font-size: 1.2em; }
+        .pot { color: #3fb950; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⛏️ RustChain Epoch Settlement</h1>
+        <div class="stats">
+            <div>Epoch: <span id="epoch-num">--</span></div>
+            <div>Pot: <span class="pot"><span id="pot-size">--</span> RTC</span></div>
+            <div>Miners: <span id="miner-count">--</span></div>
+        </div>
+        <canvas id="minerChart" width="800" height="400"></canvas>
+        <p>Live visualization of antiquity-weighted reward distribution.</p>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('minerChart').getContext('2d');
+        let chart;
+
+        async function updateData() {
+            try {
+                const epoch = await fetch('https://50.28.86.131/epoch').then(r => r.json());
+                const miners = await fetch('https://50.28.86.131/api/miners').then(r => r.json());
+
+                document.getElementById('epoch-num').innerText = epoch.epoch;
+                document.getElementById('pot-size').innerText = epoch.epoch_pot;
+                document.getElementById('miner-count').innerText = miners.length;
+
+                const labels = miners.map(m => m.miner.substring(0, 10) + '...');
+                const weights = miners.map(m => m.antiquity_multiplier);
+                const colors = miners.map(m => {
+                    if (m.device_arch === 'G4') return '#f85149';
+                    if (m.device_arch === 'G5') return '#f0883e';
+                    if (m.device_arch === 'modern') return '#58a6ff';
+                    return '#8b949e';
+                });
+
+                if (chart) chart.destroy();
+                chart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Antiquity Multiplier',
+                            data: weights,
+                            backgroundColor: colors
+                        }]
+                    },
+                    options: {
+                        animation: { duration: 2000 },
+                        scales: { y: { beginAtZero: true, grid: { color: '#30363d' } } }
+                    }
+                });
+            } catch (e) { console.error("Update failed", e); }
+        }
+
+        updateData();
+        setInterval(updateData, 30000);
+    </script>
+</body>
+</html>
