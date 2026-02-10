@@ -40,15 +40,16 @@ class RustChainCrypto:
         )
         
         from_address = RustChainCrypto.get_address(pub_bytes.hex())
-        timestamp = int(time.time())
+        nonce = int(time.time() * 1000) # Use ms timestamp as nonce
         
         # Canonical transaction data for signing
+        # The node expects specific keys
         tx_data = {
-            "from": from_address,
-            "to": to_address,
+            "from_address": from_address,
+            "to_address": to_address,
             "amount_rtc": float(amount_rtc),
             "memo": memo,
-            "timestamp": timestamp,
+            "nonce": nonce,
             "public_key": pub_bytes.hex()
         }
         
