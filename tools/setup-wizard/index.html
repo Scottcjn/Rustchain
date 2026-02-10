@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Miner Setup Wizard</title>
+    <style>
+        body { font-family: 'Courier New', Courier, monospace; background-color: #0d1117; color: #c9d1d9; padding: 20px; line-height: 1.6; }
+        .container { max-width: 800px; margin: auto; border: 1px solid #30363d; padding: 30px; border-radius: 10px; background: #161b22; }
+        h1 { color: #58a6ff; text-align: center; }
+        .step { margin-bottom: 30px; display: none; }
+        .step.active { display: block; }
+        .code-block { background: #010409; padding: 15px; border-radius: 5px; color: #7ee787; position: relative; overflow-x: auto; }
+        button { background: #238636; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #2ea043; }
+        .nav-buttons { display: flex; justify-content: space-between; margin-top: 20px; }
+        .status { color: #8b949e; font-size: 0.9em; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🐸 RustChain Miner Setup</h1>
+        
+        <!-- Step 1: Detect Platform -->
+        <div id="step1" class="step active">
+            <h2>Step 1: System Detection</h2>
+            <p>We are detecting your hardware profile to provide the best mining commands.</p>
+            <div class="code-block" id="platform-info">Detecting...</div>
+            <p>Recommended Architecture: <strong id="rec-arch">Pending...</strong></p>
+        </div>
+
+        <!-- Step 2: Dependencies -->
+        <div id="step2" class="step">
+            <h2>Step 2: Install Dependencies</h2>
+            <p>Run this command in your terminal to prepare your environment:</p>
+            <div class="code-block">
+                sudo apt-get update && sudo apt-get install -y python3 python3-venv python3-pip curl
+            </div>
+        </div>
+
+        <!-- Step 3: Fast Install -->
+        <div id="step3" class="step">
+            <h2>Step 3: One-Line Installation</h2>
+            <p>Copy and paste this command to download and set up the miner:</p>
+            <div class="code-block" id="install-cmd">
+                curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
+            </div>
+        </div>
+
+        <!-- Step 4: Verification -->
+        <div id="step4" class="step">
+            <h2>Step 4: Verify Attestation</h2>
+            <p>Check if your miner is successfully attesting to the network:</p>
+            <div class="code-block">
+                curl -sk https://50.28.86.131/api/miners | grep YOUR_WALLET_NAME
+            </div>
+            <p class="status">Note: Use -k if the node uses a self-signed certificate.</p>
+        </div>
+
+        <div class="nav-buttons">
+            <button id="prevBtn" style="background: #30363d;">Previous</button>
+            <button id="nextBtn">Next Step</button>
+        </div>
+    </div>
+
+    <script>
+        let currentStep = 1;
+        const totalSteps = 4;
+
+        function updateUI() {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById(`step${currentStep}`).classList.add('active');
+            
+            document.getElementById('prevBtn').style.visibility = currentStep === 1 ? 'hidden' : 'visible';
+            document.getElementById('nextBtn').innerText = currentStep === totalSteps ? 'Finish' : 'Next Step';
+        }
+
+        document.getElementById('nextBtn').onclick = () => {
+            if (currentStep < totalSteps) {
+                currentStep++;
+                updateUI();
+            } else {
+                alert("Setup complete! Happy mining! 🐸");
+            }
+        };
+
+        document.getElementById('prevBtn').onclick = () => {
+            if (currentStep > 1) {
+                currentStep--;
+                updateUI();
+            }
+        };
+
+        // Simple Platform Detection
+        const ua = navigator.userAgent;
+        let platform = "Linux / x86_64";
+        if (ua.indexOf("Mac") !== -1) platform = "macOS / Apple Silicon";
+        if (ua.indexOf("Arm") !== -1 || ua.indexOf("aarch64") !== -1) platform = "Linux / ARM64 (Raspberry Pi)";
+        
+        document.getElementById('platform-info').innerText = ua;
+        document.getElementById('rec-arch').innerText = platform;
+
+    </script>
+</body>
+</html>
