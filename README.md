@@ -13,7 +13,7 @@
 
 *Your PowerPC G4 earns more than a modern Threadripper. That's the point.*
 
-[Live Explorer](http://50.28.86.131/explorer) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [Quick Start](#-quick-start) • [How It Works](#-how-proof-of-antiquity-works)
+[Live Explorer](https://rustchain.org/explorer) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [wRTC Guide](docs/wrtc.md) • [Quick Start](#-quick-start) • [How It Works](#-how-proof-of-antiquity-works)
 
 </div>
 
