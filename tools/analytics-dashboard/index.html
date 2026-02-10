@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>RustChain Reward Analytics</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background: #0d1117; color: #c9d1d9; font-family: sans-serif; padding: 20px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .card { background: #161b22; padding: 20px; border-radius: 10px; border: 1px solid #30363d; }
+        h1 { text-align: center; color: #58a6ff; }
+    </style>
+</head>
+<body>
+    <h1>📊 RTC Reward Analytics Dashboard</h1>
+    <div class="grid">
+        <div class="card">
+            <h3>Arch Distribution (Miners)</h3>
+            <canvas id="archChart"></canvas>
+        </div>
+        <div class="card">
+            <h3>Reward Distribution (Estimated)</h3>
+            <canvas id="rewardChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        async function loadDashboard() {
+            const miners = await fetch('https://50.28.86.131/api/miners').then(r => r.json());
+            
+            const archStats = {};
+            miners.forEach(m => {
+                archStats[m.device_arch] = (archStats[m.device_arch] || 0) + 1;
+            });
+
+            new Chart(document.getElementById('archChart'), {
+                type: 'pie',
+                data: {
+                    labels: Object.keys(archStats),
+                    datasets: [{
+                        data: Object.values(archStats),
+                        backgroundColor: ['#f85149', '#f0883e', '#58a6ff', '#3fb950']
+                    }]
+                }
+            });
+
+            const totalWeight = miners.reduce((acc, m) => acc + m.antiquity_multiplier, 0);
+            const rewardData = miners.map(m => (m.antiquity_multiplier / totalWeight) * 1.5);
+
+            new Chart(document.getElementById('rewardChart'), {
+                type: 'bar',
+                data: {
+                    labels: miners.map(m => m.miner.substring(0,8)),
+                    datasets: [{
+                        label: 'RTC per Epoch',
+                        data: rewardData,
+                        backgroundColor: '#3fb950'
+                    }]
+                }
+            });
+        }
+        loadDashboard();
+    </script>
+</body>
+</html>
