@@ -5,6 +5,7 @@ Allows G4 to connect via different port
 """
 
 from flask import Flask, request, jsonify
+from node.agent_registration import register_agent
 import requests
 import json
 
@@ -40,6 +41,21 @@ def proxy(path):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/register_agent', methods=['POST'])
+def register_agent_route():
+    """Register an AI agent and its hardware binding."""
+    if not request.json:
+        return jsonify({'error': 'Missing JSON payload'}), 400
+    
+    success, reason, details = register_agent(request.json)
+    
+    if success:
+        return jsonify({'status': 'ok', 'reason': reason, 'details': details}), 200
+    else:
+        # 409 Conflict if hardware is already bound, 400 for bad data
+        status_code = 409 if 'bound' in reason or 'collision' in reason else 400
+        return jsonify({'status': 'error', 'reason': reason, 'details': details}), status_code
+
 @app.route('/status')
 def status():
     """Proxy status"""
@@ -53,7 +69,7 @@ def status():
 def home():
     return jsonify({
         'service': 'RustChain G4 Proxy',
-        'endpoints': ['/api/register', '/api/mine', '/api/stats', '/status']
+        'endpoints': ['/api/register', '/api/mine', '/api/stats', '/api/register_agent', '/status']
     })
 
 if __name__ == '__main__':
