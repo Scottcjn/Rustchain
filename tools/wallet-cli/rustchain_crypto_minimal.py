@@ -42,9 +42,8 @@ class RustChainCrypto:
         from_address = RustChainCrypto.get_address(pub_bytes.hex())
         nonce = int(time.time() * 1000) # Use ms timestamp as nonce
         
-        # Canonical transaction data for signing
-        # The node expects specific keys
-        tx_data = {
+        # Payload for the API
+        payload = {
             "from_address": from_address,
             "to_address": to_address,
             "amount_rtc": float(amount_rtc),
@@ -52,10 +51,21 @@ class RustChainCrypto:
             "nonce": nonce,
             "public_key": pub_bytes.hex()
         }
+
+        # Data format used for signing (must match server's recreatated tx_data)
+        # Note: Server uses "from", "to", "amount" instead of "from_address" etc.
+        signing_data = {
+            "from": from_address,
+            "to": to_address,
+            "amount": float(amount_rtc),
+            "memo": memo,
+            "nonce": nonce
+        }
         
-        message = json.dumps(tx_data, sort_keys=True).encode()
+        # Use separators=(",", ":") to match server's JSON formatting
+        message = json.dumps(signing_data, sort_keys=True, separators=(",", ":")).encode()
         signature = private_key.sign(message)
         
-        tx_data["signature"] = signature.hex()
-        return tx_data
+        payload["signature"] = signature.hex()
+        return payload
 
