@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Reward Analytics Dashboard</title>
+    <meta name="description" content="Track RTC reward distribution and miner earnings over time">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>📊</text></svg>">
+    
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+        }
+    </style>
+</head>
+<body class="gradient-bg text-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-5xl font-bold mb-4 flex items-center justify-center gap-3">
+                <span>📊</span>
+                <span>RTC Reward Analytics</span>
+            </h1>
+            <p class="text-gray-300 text-lg">Track reward distribution and earnings trends</p>
+        </header>
+
+        <!-- Summary Cards -->
+        <div class="grid md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                <div class="text-gray-400 text-sm mb-1">Total RTC Distributed</div>
+                <div class="text-3xl font-bold text-green-400" id="total-distributed">-- RTC</div>
+                <div class="text-xs text-gray-500 mt-1">All time</div>
+            </div>
+            <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                <div class="text-gray-400 text-sm mb-1">Active Miners</div>
+                <div class="text-3xl font-bold text-blue-400" id="active-miners">--</div>
+                <div class="text-xs text-gray-500 mt-1">Currently earning</div>
+            </div>
+            <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                <div class="text-gray-400 text-sm mb-1">Avg Epoch Reward</div>
+                <div class="text-3xl font-bold text-purple-400" id="avg-reward">-- RTC</div>
+                <div class="text-xs text-gray-500 mt-1">Per miner per epoch</div>
+            </div>
+            <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                <div class="text-gray-400 text-sm mb-1">Vintage Bonus Share</div>
+                <div class="text-3xl font-bold text-orange-400" id="vintage-share">--%</div>
+                <div class="text-xs text-gray-500 mt-1">PowerPC/SPARC rewards</div>
+            </div>
+        </div>
+
+        <!-- Charts Row 1 -->
+        <div class="grid md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                <h2 class="text-2xl font-bold mb-4">Reward Distribution by Architecture</h2>
+                <canvas id="arch-pie-chart" height="300"></canvas>
+            </div>
+            
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                <h2 class="text-2xl font-bold mb-4">Multiplier Impact</h2>
+                <canvas id="multiplier-bar-chart" height="300"></canvas>
+            </div>
+        </div>
+
+        <!-- Charts Row 2 -->
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-6 mb-8">
+            <h2 class="text-2xl font-bold mb-4">Top Earners</h2>
+            <canvas id="top-earners-chart" height="200"></canvas>
+        </div>
+
+        <!-- Earnings Calculator -->
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-6 mb-8">
+            <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                <span>🧮</span>
+                <span>Earnings Calculator</span>
+            </h2>
+            <div class="grid md:grid-cols-4 gap-4 mb-6">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Hardware Type</label>
+                    <select id="calc-hardware" class="w-full bg-gray-700 border border-gray-600 rounded p-2">
+                        <option value="2.5">PowerPC G4 (2.5x)</option>
+                        <option value="2.0">PowerPC G5 / SPARC (2.0x)</option>
+                        <option value="1.5">ARM64 (1.5x)</option>
+                        <option value="1.0">Modern x86 (1.0x)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Active Miners</label>
+                    <input type="number" id="calc-miners" value="12" class="w-full bg-gray-700 border border-gray-600 rounded p-2">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Epoch Pot (RTC)</label>
+                    <input type="number" id="calc-pot" value="1.5" step="0.1" class="w-full bg-gray-700 border border-gray-600 rounded p-2">
+                </div>
+                <div class="flex items-end">
+                    <button onclick="calculateRewards()" class="w-full bg-blue-600 hover:bg-blue-700 rounded p-2 font-semibold">
+                        Calculate
+                    </button>
+                </div>
+            </div>
+            <div id="calc-results" class="hidden">
+                <div class="bg-gray-900 rounded p-4">
+                    <div class="grid md:grid-cols-3 gap-4 text-center">
+                        <div>
+                            <div class="text-gray-400 text-sm">Per Epoch</div>
+                            <div class="text-2xl font-bold text-green-400" id="calc-per-epoch">--</div>
+                        </div>
+                        <div>
+                            <div class="text-gray-400 text-sm">Per Day (~24h)</div>
+                            <div class="text-2xl font-bold text-cyan-400" id="calc-per-day">--</div>
+                        </div>
+                        <div>
+                            <div class="text-gray-400 text-sm">Per Month (~30 days)</div>
+                            <div class="text-2xl font-bold text-purple-400" id="calc-per-month">--</div>
+                        </div>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-3 text-center">
+                        * Assuming consistent network conditions and 100% uptime
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Miner Leaderboard -->
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-6 mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">Miner Leaderboard</h2>
+                <button onclick="exportCSV()" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-sm">
+                    📥 Export CSV
+                </button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="border-b border-gray-700">
+                        <tr class="text-left text-gray-400">
+                            <th class="pb-2">Rank</th>
+                            <th class="pb-2">Miner ID</th>
+                            <th class="pb-2">Hardware</th>
+                            <th class="pb-2">Balance</th>
+                            <th class="pb-2">Multiplier</th>
+                            <th class="pb-2">Share</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaderboard-tbody" class="divide-y divide-gray-700">
+                        <!-- Rows will be inserted here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="text-center text-gray-500 text-sm mt-8">
+            <p>RustChain Reward Analytics Dashboard · Bounty #41</p>
+            <p class="mt-2">
+                <a href="https://github.com/Scottcjn/Rustchain" target="_blank" class="hover:text-gray-300">GitHub</a> ·
+                <a href="https://discord.gg/VqVVS2CW9Q" target="_blank" class="hover:text-gray-300">Discord</a>
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        const NODE_URL = 'https://50.28.86.131';
+        let miners = [];
+        let charts = {};
+        
+        // Fetch data
+        async function fetchMiners() {
+            try {
+                const response = await fetch(`${NODE_URL}/api/miners`, { mode: 'cors' });
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.miners || [];
+                }
+            } catch (e) {
+                console.error('Error fetching miners:', e);
+            }
+            return [];
+        }
+        
+        async function fetchBalance(minerId) {
+            try {
+                const response = await fetch(`${NODE_URL}/wallet/balance?miner_id=${minerId}`, { mode: 'cors' });
+                if (response.ok) {
+                    const data = await response.json();
+                    return parseFloat(data.balance || 0);
+                }
+            } catch (e) {
+                console.error(`Error fetching balance for ${minerId}:`, e);
+            }
+            return 0;
+        }
+        
+        // Load all data
+        async function loadData() {
+            console.log('Loading data...');
+            
+            const minersData = await fetchMiners();
+            if (minersData.length === 0) return;
+            
+            // Fetch balances for all miners
+            miners = await Promise.all(minersData.map(async miner => {
+                const balance = await fetchBalance(miner.id || miner.miner_id);
+                return {
+                    ...miner,
+                    balance,
+                    multiplier: miner.antiquity_multiplier || 1.0
+                };
+            }));
+            
+            // Sort by balance
+            miners.sort((a, b) => b.balance - a.balance);
+            
+            updateDashboard();
+        }
+        
+        // Update all dashboard elements
+        function updateDashboard() {
+            updateSummaryCards();
+            renderArchPieChart();
+            renderMultiplierBarChart();
+            renderTopEarnersChart();
+            renderLeaderboard();
+        }
+        
+        // Summary cards
+        function updateSummaryCards() {
+            const totalDistributed = miners.reduce((sum, m) => sum + m.balance, 0);
+            const avgReward = totalDistributed / miners.length || 0;
+            
+            // Calculate vintage share
+            const vintageMiners = miners.filter(m => {
+                const arch = (m.architecture || m.hardware || '').toLowerCase();
+                return arch.includes('powerpc') || arch.includes('sparc');
+            });
+            const vintageRewards = vintageMiners.reduce((sum, m) => sum + m.balance, 0);
+            const vintageShare = (vintageRewards / totalDistributed * 100) || 0;
+            
+            document.getElementById('total-distributed').textContent = totalDistributed.toFixed(2) + ' RTC';
+            document.getElementById('active-miners').textContent = miners.length;
+            document.getElementById('avg-reward').textContent = avgReward.toFixed(4) + ' RTC';
+            document.getElementById('vintage-share').textContent = vintageShare.toFixed(1) + '%';
+        }
+        
+        // Architecture pie chart
+        function renderArchPieChart() {
+            const ctx = document.getElementById('arch-pie-chart').getContext('2d');
+            
+            if (charts.archPie) charts.archPie.destroy();
+            
+            const archRewards = {};
+            miners.forEach(miner => {
+                const arch = simplifyArch(miner.architecture || miner.hardware);
+                archRewards[arch] = (archRewards[arch] || 0) + miner.balance;
+            });
+            
+            charts.archPie = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: Object.keys(archRewards),
+                    datasets: [{
+                        data: Object.values(archRewards),
+                        backgroundColor: [
+                            '#f59e0b',
+                            '#10b981',
+                            '#3b82f6',
+                            '#a855f7',
+                            '#6b7280'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#e5e7eb' }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percent = (context.parsed / total * 100).toFixed(1);
+                                    return `${context.label}: ${context.parsed.toFixed(2)} RTC (${percent}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Multiplier bar chart
+        function renderMultiplierBarChart() {
+            const ctx = document.getElementById('multiplier-bar-chart').getContext('2d');
+            
+            if (charts.multiplierBar) charts.multiplierBar.destroy();
+            
+            const multipliers = {
+                '2.5x (G4)': 0,
+                '2.0x (G5/SPARC)': 0,
+                '1.5x (ARM)': 0,
+                '1.0x (Modern)': 0
+            };
+            
+            miners.forEach(miner => {
+                const mult = miner.multiplier;
+                if (mult >= 2.5) multipliers['2.5x (G4)']++;
+                else if (mult >= 2.0) multipliers['2.0x (G5/SPARC)']++;
+                else if (mult >= 1.5) multipliers['1.5x (ARM)']++;
+                else multipliers['1.0x (Modern)']++;
+            });
+            
+            charts.multiplierBar = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(multipliers),
+                    datasets: [{
+                        label: 'Number of Miners',
+                        data: Object.values(multipliers),
+                        backgroundColor: [
+                            '#f59e0b',
+                            '#a855f7',
+                            '#10b981',
+                            '#3b82f6'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.parsed.y} miners with ${context.label}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: '#9ca3af' },
+                            grid: { color: '#374151' }
+                        },
+                        x: {
+                            ticks: { color: '#9ca3af' },
+                            grid: { color: '#374151' }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Top earners horizontal bar chart
+        function renderTopEarnersChart() {
+            const ctx = document.getElementById('top-earners-chart').getContext('2d');
+            
+            if (charts.topEarners) charts.topEarners.destroy();
+            
+            const top10 = miners.slice(0, 10);
+            
+            charts.topEarners = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: top10.map(m => (m.id || m.miner_id || 'Unknown').substring(0, 12) + '...'),
+                    datasets: [{
+                        label: 'Total RTC Earned',
+                        data: top10.map(m => m.balance),
+                        backgroundColor: '#10b981'
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.parsed.x.toFixed(4)} RTC`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            ticks: { color: '#9ca3af' },
+                            grid: { color: '#374151' }
+                        },
+                        y: {
+                            ticks: { color: '#9ca3af' },
+                            grid: { color: '#374151' }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Leaderboard table
+        function renderLeaderboard() {
+            const tbody = document.getElementById('leaderboard-tbody');
+            tbody.innerHTML = '';
+            
+            const totalWeight = miners.reduce((sum, m) => sum + m.multiplier, 0);
+            
+            miners.forEach((miner, i) => {
+                const row = document.createElement('tr');
+                const minerId = (miner.id || miner.miner_id || 'Unknown').substring(0, 16) + '...';
+                const hardware = simplifyArch(miner.architecture || miner.hardware).substring(0, 20);
+                const share = (miner.multiplier / totalWeight * 100).toFixed(2);
+                
+                const rankIcon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+                
+                row.innerHTML = `
+                    <td class="py-2 font-bold">${rankIcon}</td>
+                    <td class="py-2 font-mono text-xs">${minerId}</td>
+                    <td class="py-2">${hardware}</td>
+                    <td class="py-2 font-bold text-green-400">${miner.balance.toFixed(4)} RTC</td>
+                    <td class="py-2 text-orange-400">${miner.multiplier.toFixed(2)}x</td>
+                    <td class="py-2">${share}%</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+        
+        // Earnings calculator
+        function calculateRewards() {
+            const multiplier = parseFloat(document.getElementById('calc-hardware').value);
+            const totalMiners = parseInt(document.getElementById('calc-miners').value);
+            const pot = parseFloat(document.getElementById('calc-pot').value);
+            
+            // Simplified calculation: assume even distribution of multipliers
+            const avgMultiplier = 1.5; // Rough average
+            const totalWeight = avgMultiplier * totalMiners;
+            const myWeight = multiplier;
+            const myShare = myWeight / totalWeight;
+            
+            const perEpoch = pot * myShare;
+            const perDay = perEpoch; // 1 epoch ≈ 24h
+            const perMonth = perEpoch * 30;
+            
+            document.getElementById('calc-per-epoch').textContent = perEpoch.toFixed(4) + ' RTC';
+            document.getElementById('calc-per-day').textContent = perDay.toFixed(4) + ' RTC';
+            document.getElementById('calc-per-month').textContent = perMonth.toFixed(4) + ' RTC';
+            document.getElementById('calc-results').classList.remove('hidden');
+        }
+        
+        // Export CSV
+        function exportCSV() {
+            let csv = 'Rank,Miner ID,Hardware,Balance (RTC),Multiplier,Share (%)\n';
+            
+            const totalWeight = miners.reduce((sum, m) => sum + m.multiplier, 0);
+            
+            miners.forEach((miner, i) => {
+                const minerId = miner.id || miner.miner_id || 'Unknown';
+                const hardware = simplifyArch(miner.architecture || miner.hardware);
+                const share = (miner.multiplier / totalWeight * 100).toFixed(2);
+                
+                csv += `${i + 1},"${minerId}","${hardware}",${miner.balance.toFixed(4)},${miner.multiplier.toFixed(2)},${share}\n`;
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `rustchain-rewards-${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+        
+        // Helper: simplify architecture names
+        function simplifyArch(arch) {
+            if (!arch) return 'Unknown';
+            arch = arch.toLowerCase();
+            if (arch.includes('powerpc') || arch.includes('g4') || arch.includes('g5')) return 'PowerPC';
+            if (arch.includes('arm')) return 'ARM';
+            if (arch.includes('x86') || arch.includes('intel') || arch.includes('amd')) return 'x86/Modern';
+            if (arch.includes('sparc')) return 'SPARC';
+            return 'Other';
+        }
+        
+        // Initialize
+        loadData();
+        setInterval(loadData, 300000); // Refresh every 5 minutes
+    </script>
+</body>
+</html>
