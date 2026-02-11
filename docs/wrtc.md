@@ -127,11 +127,11 @@ For reference and verification:
 
 ## Need Help?
 
-- **RustChain Community**: [Join Discord/Telegram]
-- **BoTTube Support**: Visit https://bottube.ai
-- **Report Scams**: Contact the RustChain team immediately
+- **RustChain Repository**: https://github.com/Scottcjn/Rustchain
+- **BoTTube Support**: https://bottube.ai
+- **Report Issues**: Open an issue on the [RustChain GitHub](https://github.com/Scottcjn/Rustchain/issues)
 
 ---
 
-**Last Updated**: February 2026  
+**Last Updated**: February 11, 2026  
 **Maintained by**: RustChain Community
