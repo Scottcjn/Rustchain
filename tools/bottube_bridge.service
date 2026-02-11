@@ -1,0 +1,61 @@
+[Unit]
+Description=BoTTube <-> RustChain Bridge Daemon
+Documentation=https://github.com/Scottcjn/Rustchain/blob/main/DEPLOYMENT_GUIDE.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bottube
+Group=bottube
+
+# Working directory
+WorkingDirectory=/var/lib/bottube-bridge
+
+# Environment variables
+Environment="BOTTUBE_CONFIG=/etc/bottube/bottube_config.yaml"
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONDONTWRITEBYTECODE=1"
+
+# Credentials (source from secure location)
+EnvironmentFile=-/etc/bottube/bottube-bridge.env
+
+# Main process
+ExecStart=/usr/local/bin/bottube-bridge
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=300s
+StartLimitBurst=5
+
+# Resource limits
+MemoryLimit=512M
+CPUQuota=50%
+TasksMax=100
+
+# Security settings
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+ReadWritePaths=/var/lib/bottube-bridge /var/log/bottube-bridge.log
+
+# Capabilities
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bottube-bridge
+
+# Process timeouts
+TimeoutStopSec=30s
+TimeoutStartSec=30s
+
+# State
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

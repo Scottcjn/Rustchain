@@ -1,0 +1,194 @@
+# BoTTube <-> RustChain Bridge Configuration
+# Production configuration for the reward bridge daemon
+
+# BoTTube API Configuration
+bottube:
+  # API key for BoTTube authentication
+  # Generate with: bottube register my-bridge-agent
+  api_key: ${BOTTUBE_API_KEY}
+  
+  # BoTTube API endpoint
+  endpoint: https://bottube.ai/api
+  
+  # Health check endpoint
+  health_endpoint: https://bottube.ai/api/health
+
+# RustChain Configuration
+rustchain:
+  # RustChain node endpoint
+  endpoint: https://50.28.86.131
+  
+  # Bridge wallet address (should have RTC balance for distributions)
+  bridge_wallet: ${RUSTCHAIN_BRIDGE_WALLET}
+  
+  # Node credentials (if required)
+  username: ${RUSTCHAIN_USER}
+  password: ${RUSTCHAIN_PASS}
+  
+  # SSL verification (set to true in production)
+  verify_ssl: false
+  
+  # Connection timeout
+  timeout_seconds: 10
+
+# Reward Rates - RTC per activity unit
+reward_rates:
+  # RTC per 1000 views
+  per_view: 0.00001
+  
+  # RTC per new subscriber
+  per_subscriber: 0.01
+  
+  # RTC per like received
+  per_like_received: 0.0001
+  
+  # RTC per video upload
+  per_upload: 0.05
+  
+  # RTC per comment received
+  per_comment_received: 0.00005
+  
+  # Tip-based rewards (pass-through)
+  tip_passthrough_percentage: 95.0
+
+# Rate Limiting - Anti-abuse measures
+rate_limits:
+  # Maximum RTC per creator per day
+  max_rtc_per_creator_per_day: 10.0
+  
+  # Maximum transactions per creator per day
+  max_transactions_per_creator_per_day: 10
+  
+  # Cooldown between transactions for same creator (seconds)
+  transaction_cooldown_seconds: 60
+  
+  # Burst limit (credits allowed in 1-hour window)
+  hourly_credit_limit: 5.0
+  
+  # Minimum time between polls for same creator (seconds)
+  min_recheck_interval_seconds: 300
+
+# Anti-Abuse Settings
+anti_abuse:
+  # Minimum video duration in seconds
+  min_video_length_seconds: 30
+  
+  # Minimum creator account age in days
+  min_creator_account_age_days: 7
+  
+  # Minimum number of videos before earning
+  min_video_count: 1
+  
+  # Maximum credit multiplier for new creators (first 30 days)
+  new_creator_multiplier: 0.5
+  
+  # Suspicious activity detection
+  detection:
+    # Consecutive views threshold (flag if exceeded in 1 minute)
+    max_views_per_minute: 1000
+    
+    # Flag if like/view ratio exceeds this
+    max_like_view_ratio: 0.5
+    
+    # Maximum subscribers gained in 24 hours for new account
+    max_subscriber_spike_per_day: 100
+
+# Polling Configuration
+polling:
+  # Interval between API polls (seconds)
+  interval_seconds: 60
+  
+  # Maximum creators to process per cycle
+  max_creators: 100
+  
+  # Health check interval (seconds)
+  health_check_interval_seconds: 300
+  
+  # Retry pending transfers interval (seconds)
+  retry_interval_seconds: 600
+  
+  # Timeout for API requests (seconds)
+  api_timeout_seconds: 30
+
+# Ed25519 Signing Configuration
+signing:
+  # Path to Ed25519 private key (created if not exists)
+  key_path: ~/.bottube/signing_key
+  
+  # Algorithm (must be ed25519)
+  algorithm: ed25519
+
+# Prometheus Metrics Configuration
+metrics:
+  # Metrics server port
+  port: 8000
+  
+  # Metrics endpoint path
+  path: /metrics
+  
+  # Enable detailed metrics
+  detailed: true
+
+# Logging Configuration
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: INFO
+  
+  # Log file path
+  file: /var/log/bottube-bridge.log
+  
+  # Maximum log file size (MB)
+  max_size_mb: 100
+  
+  # Number of backup log files to keep
+  backup_count: 10
+  
+  # Log format
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Database Configuration (for persistent state)
+database:
+  # SQLite database for tracking state
+  path: /var/lib/bottube-bridge/bridge.db
+  
+  # Enable automatic backups
+  auto_backup: true
+  
+  # Backup interval (seconds)
+  backup_interval_seconds: 3600
+
+# Alerting Configuration
+alerting:
+  # Enable alerting on errors
+  enabled: true
+  
+  # Email alerts (optional)
+  email:
+    enabled: false
+    from: bridge@bottube.ai
+    to: admin@bottube.ai
+    smtp_server: localhost
+    smtp_port: 25
+  
+  # Discord webhook (optional)
+  discord:
+    enabled: false
+    webhook_url: ${DISCORD_WEBHOOK}
+  
+  # Alert thresholds
+  error_rate_threshold: 0.05  # 5% error rate triggers alert
+  pending_transfer_timeout_hours: 24  # Alert if transfer pending > 24h
+
+# Development/Testing Mode
+development:
+  # Enable dry-run mode (logs transactions but doesn't send)
+  dry_run: false
+  
+  # Reduced polling interval for testing
+  test_interval_seconds: 10
+  
+  # Test creators to monitor (empty = all)
+  test_creators: []
+  
+  # Reduced rate limits for testing
+  test_daily_limit: 100.0
