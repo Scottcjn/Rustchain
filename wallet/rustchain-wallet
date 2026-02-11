@@ -1,0 +1,291 @@
+#!/usr/bin/env python3
+"""
+RustChain Wallet CLI
+Command-line tool for managing RTC wallets
+"""
+
+import click
+import requests
+import json
+import sys
+from pathlib import Path
+from datetime import datetime
+from getpass import getpass
+from rustchain_crypto import RustChainWallet, WalletKeystore, verify_transaction
+
+
+# Configuration
+NODE_URL = "https://50.28.86.131"
+KEYSTORE_DIR = Path.home() / ".rustchain" / "wallets"
+VERIFY_SSL = False
+
+
+@click.group()
+@click.version_option(version='1.0.0')
+def cli():
+    """RustChain Wallet CLI - Manage your RTC tokens from the command line"""
+    pass
+
+
+@cli.command()
+@click.argument('wallet_name')
+@click.option('--password', prompt=True, hide_input=True, confirmation_prompt=True,
+              help='Wallet encryption password')
+def create(wallet_name, password):
+    """Create a new wallet with BIP39 seed phrase"""
+    
+    keystore_path = KEYSTORE_DIR / f"{wallet_name}.json"
+    
+    if keystore_path.exists():
+        click.secho(f"Error: Wallet '{wallet_name}' already exists!", fg='red')
+        sys.exit(1)
+    
+    click.echo("Generating new wallet...")
+    
+    # Generate wallet
+    wallet = RustChainWallet()
+    
+    # Encrypt and save
+    keystore = WalletKeystore.encrypt_keystore(wallet, password, wallet_name)
+    saved_path = WalletKeystore.save_keystore(keystore, KEYSTORE_DIR)
+    
+    click.secho(f"\n✓ Wallet created successfully!", fg='green')
+    click.echo(f"Wallet name: {wallet_name}")
+    click.echo(f"Address: {wallet.address}")
+    click.echo(f"Keystore: {saved_path}")
+    
+    click.secho("\n🔐 BACKUP YOUR SEED PHRASE!", fg='yellow', bold=True)
+    click.echo("Write down these 24 words in order and store them securely:")
+    click.secho(f"\n{wallet.seed_phrase}\n", fg='cyan')
+    click.echo("This is your ONLY backup. You cannot recover your wallet without it!")
+
+
+@cli.command()
+@click.argument('wallet_id')
+def balance(wallet_id):
+    """Check RTC balance for a wallet"""
+    
+    try:
+        url = f"{NODE_URL}/wallet/balance"
+        params = {'miner_id': wallet_id}
+        response = requests.get(url, params=params, verify=VERIFY_SSL)
+        
+        if response.status_code == 200:
+            data = response.json()
+            balance_rtc = data.get('balance', 0)
+            
+            click.echo(f"Wallet: {wallet_id}")
+            click.secho(f"Balance: {balance_rtc:.4f} RTC", fg='green', bold=True)
+        else:
+            click.secho(f"Error: {response.status_code} - {response.text}", fg='red')
+            
+    except Exception as e:
+        click.secho(f"Error checking balance: {e}", fg='red')
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument('to_address')
+@click.argument('amount', type=float)
+@click.option('--from', 'from_wallet', required=True, help='Wallet name to send from')
+@click.option('--password', prompt=True, hide_input=True, help='Wallet password')
+def send(to_address, amount, from_wallet, password):
+    """Send RTC to another address"""
+    
+    keystore_path = KEYSTORE_DIR / f"{from_wallet}.json"
+    
+    if not keystore_path.exists():
+        click.secho(f"Error: Wallet '{from_wallet}' not found!", fg='red')
+        sys.exit(1)
+    
+    try:
+        # Load and decrypt wallet
+        keystore = WalletKeystore.load_keystore(keystore_path)
+        wallet = WalletKeystore.decrypt_keystore(keystore, password)
+        
+        # Create transaction
+        tx_data = {
+            'from_addr': wallet.address,
+            'to_addr': to_address,
+            'amount': amount,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        
+        # Sign transaction
+        signed_tx = wallet.sign_transaction(tx_data)
+        
+        # Send to node
+        url = f"{NODE_URL}/wallet/transfer/signed"
+        response = requests.post(url, json=signed_tx, verify=VERIFY_SSL)
+        
+        if response.status_code == 200:
+            result = response.json()
+            click.secho(f"\n✓ Transfer successful!", fg='green')
+            click.echo(f"From: {wallet.address}")
+            click.echo(f"To: {to_address}")
+            click.echo(f"Amount: {amount} RTC")
+            if 'tx_hash' in result:
+                click.echo(f"TX Hash: {result['tx_hash']}")
+        else:
+            click.secho(f"Error: {response.status_code} - {response.text}", fg='red')
+            
+    except ValueError as e:
+        click.secho(f"Error: {e}", fg='red')
+        sys.exit(1)
+    except Exception as e:
+        click.secho(f"Error sending transfer: {e}", fg='red')
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument('wallet_name')
+@click.argument('seed_phrase')
+@click.option('--password', prompt=True, hide_input=True, confirmation_prompt=True,
+              help='Wallet encryption password')
+def import_wallet(wallet_name, seed_phrase, password):
+    """Import wallet from 24-word seed phrase"""
+    
+    keystore_path = KEYSTORE_DIR / f"{wallet_name}.json"
+    
+    if keystore_path.exists():
+        click.secho(f"Error: Wallet '{wallet_name}' already exists!", fg='red')
+        sys.exit(1)
+    
+    try:
+        # Restore wallet from seed
+        wallet = RustChainWallet(seed_phrase=seed_phrase)
+        
+        # Encrypt and save
+        keystore = WalletKeystore.encrypt_keystore(wallet, password, wallet_name)
+        saved_path = WalletKeystore.save_keystore(keystore, KEYSTORE_DIR)
+        
+        click.secho(f"\n✓ Wallet imported successfully!", fg='green')
+        click.echo(f"Wallet name: {wallet_name}")
+        click.echo(f"Address: {wallet.address}")
+        click.echo(f"Keystore: {saved_path}")
+        
+    except ValueError as e:
+        click.secho(f"Error: {e}", fg='red')
+        sys.exit(1)
+
+
+# Alias for import (since "import" is a Python keyword, we call the function import_wallet)
+cli.add_command(import_wallet, name='import')
+
+
+@cli.command()
+@click.argument('wallet_name')
+@click.option('--password', prompt=True, hide_input=True, help='Wallet password')
+@click.option('--show-seed', is_flag=True, help='Show seed phrase (DANGEROUS!)')
+def export(wallet_name, password, show_seed):
+    """Export wallet keystore or seed phrase"""
+    
+    keystore_path = KEYSTORE_DIR / f"{wallet_name}.json"
+    
+    if not keystore_path.exists():
+        click.secho(f"Error: Wallet '{wallet_name}' not found!", fg='red')
+        sys.exit(1)
+    
+    try:
+        keystore = WalletKeystore.load_keystore(keystore_path)
+        
+        if show_seed:
+            # Decrypt to show seed
+            wallet = WalletKeystore.decrypt_keystore(keystore, password)
+            
+            click.secho("\n⚠️  WARNING: Keep this seed phrase SECRET!", fg='red', bold=True)
+            click.echo(f"\nSeed phrase for '{wallet_name}':")
+            click.secho(f"\n{wallet.seed_phrase}\n", fg='cyan')
+        else:
+            # Just show keystore JSON
+            click.echo(f"\nKeystore for '{wallet_name}':")
+            click.echo(json.dumps(keystore, indent=2))
+            
+    except ValueError as e:
+        click.secho(f"Error: {e}", fg='red')
+        sys.exit(1)
+
+
+@cli.command()
+def miners():
+    """List active miners on the network"""
+    
+    try:
+        url = f"{NODE_URL}/api/miners"
+        response = requests.get(url, verify=VERIFY_SSL)
+        
+        if response.status_code == 200:
+            data = response.json()
+            miners_list = data.get('miners', [])
+            
+            click.echo(f"\nActive Miners: {len(miners_list)}\n")
+            
+            for miner in miners_list:
+                click.echo(f"  • {miner.get('miner_id', 'unknown')}")
+                click.echo(f"    Balance: {miner.get('balance', 0):.4f} RTC")
+                if 'hardware' in miner:
+                    click.echo(f"    Hardware: {miner['hardware']}")
+                click.echo()
+        else:
+            click.secho(f"Error: {response.status_code}", fg='red')
+            
+    except Exception as e:
+        click.secho(f"Error fetching miners: {e}", fg='red')
+
+
+@cli.command()
+def epoch():
+    """Show current epoch information"""
+    
+    try:
+        url = f"{NODE_URL}/epoch"
+        response = requests.get(url, verify=VERIFY_SSL)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            click.echo("\nCurrent Epoch:")
+            click.secho(f"  Epoch: {data.get('epoch', 'unknown')}", fg='cyan')
+            click.echo(f"  Block Height: {data.get('block_height', 0)}")
+            click.echo(f"  Timestamp: {data.get('timestamp', 'unknown')}")
+            click.echo()
+        else:
+            click.secho(f"Error: {response.status_code}", fg='red')
+            
+    except Exception as e:
+        click.secho(f"Error fetching epoch: {e}", fg='red')
+
+
+@cli.command()
+def list():
+    """List all wallets in keystore directory"""
+    
+    if not KEYSTORE_DIR.exists():
+        click.echo("No wallets found.")
+        return
+    
+    keystores = list(KEYSTORE_DIR.glob("*.json"))
+    
+    if not keystores:
+        click.echo("No wallets found.")
+        return
+    
+    click.echo(f"\nWallets in {KEYSTORE_DIR}:\n")
+    
+    for keystore_path in keystores:
+        try:
+            keystore = WalletKeystore.load_keystore(keystore_path)
+            wallet_name = keystore.get('wallet_name', keystore_path.stem)
+            address = keystore.get('address', 'unknown')
+            
+            click.echo(f"  • {wallet_name}")
+            click.echo(f"    Address: {address}")
+            click.echo(f"    File: {keystore_path.name}")
+            click.echo()
+        except Exception:
+            click.echo(f"  • {keystore_path.stem} (corrupted)")
+            click.echo()
+
+
+if __name__ == '__main__':
+    cli()
