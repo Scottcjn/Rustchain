@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Epoch Settlement Visualizer</title>
+    <meta name="description" content="Watch RustChain epoch settlements happen in real-time">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>⏱️</text></svg>">
+    
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        }
+        
+        .miner-dot {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            position: absolute;
+            animation: pulse 2s infinite;
+            cursor: pointer;
+            transition: transform 0.3s;
+        }
+        
+        .miner-dot:hover {
+            transform: scale(1.2);
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        
+        @keyframes settlement {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.5); }
+            100% { opacity: 0; transform: scale(0); }
+        }
+        
+        .settling {
+            animation: settlement 2s ease-out forwards;
+        }
+        
+        .arch-powerpc { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        .arch-x86 { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+        .arch-arm { background: linear-gradient(135deg, #10b981, #059669); }
+        .arch-sparc { background: linear-gradient(135deg, #a855f7, #9333ea); }
+        .arch-other { background: linear-gradient(135deg, #6b7280, #4b5563); }
+        
+        .reward-bar {
+            transition: width 1s ease-out;
+        }
+        
+        #canvas-container {
+            position: relative;
+            min-height: 400px;
+            border: 2px solid #374151;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+<body class="gradient-bg text-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-5xl font-bold mb-4 flex items-center justify-center gap-3">
+                <span>⏱️</span>
+                <span>Epoch Settlement Visualizer</span>
+            </h1>
+            <p class="text-gray-400 text-lg">Watch RustChain rewards distribute in real-time</p>
+        </header>
+
+        <!-- Epoch Info -->
+        <div class="grid md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                <div class="text-gray-400 text-sm mb-1">Current Epoch</div>
+                <div class="text-3xl font-bold text-purple-400" id="current-epoch">--</div>
+            </div>
+            <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                <div class="text-gray-400 text-sm mb-1">Time Until Settlement</div>
+                <div class="text-3xl font-bold text-cyan-400" id="countdown">--:--:--</div>
+            </div>
+            <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                <div class="text-gray-400 text-sm mb-1">Epoch Pot</div>
+                <div class="text-3xl font-bold text-green-400" id="epoch-pot">1.5 RTC</div>
+            </div>
+            <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                <div class="text-gray-400 text-sm mb-1">Active Miners</div>
+                <div class="text-3xl font-bold text-blue-400" id="miner-count">--</div>
+            </div>
+        </div>
+
+        <!-- Mining Visualization -->
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-6 mb-8">
+            <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                <span>⛏️</span>
+                <span>Live Mining Activity</span>
+            </h2>
+            <div id="canvas-container" class="relative">
+                <!-- Miner dots will be rendered here -->
+            </div>
+            <div class="mt-4 flex flex-wrap gap-3 text-sm">
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 rounded-full arch-powerpc"></div>
+                    <span>PowerPC (2.5x-2.0x)</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 rounded-full arch-arm"></div>
+                    <span>ARM (1.5x)</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 rounded-full arch-x86"></div>
+                    <span>x86/Modern (1.0x)</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 rounded-full arch-sparc"></div>
+                    <span>SPARC (2.0x)</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Weight Distribution -->
+        <div class="grid md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                <h2 class="text-2xl font-bold mb-4">Multiplier Weights</h2>
+                <div id="multipliers" class="space-y-3">
+                    <!-- Weight bars will be inserted here -->
+                </div>
+            </div>
+            
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                <h2 class="text-2xl font-bold mb-4">Reward Distribution</h2>
+                <canvas id="reward-chart" height="250"></canvas>
+            </div>
+        </div>
+
+        <!-- Settlement Animation -->
+        <div id="settlement-panel" class="bg-gray-800 rounded-lg border-2 border-green-500 p-6 mb-8 hidden">
+            <h2 class="text-2xl font-bold mb-4 text-green-400">🎉 Epoch Settling!</h2>
+            <div class="text-lg text-gray-300 mb-4">Distributing rewards proportionally...</div>
+            <div id="settlement-rewards" class="space-y-2">
+                <!-- Settlement details will be shown here -->
+            </div>
+        </div>
+
+        <!-- Miner Details -->
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+            <h2 class="text-2xl font-bold mb-4">Miner Details</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm" id="miner-table">
+                    <thead class="border-b border-gray-700">
+                        <tr class="text-left text-gray-400">
+                            <th class="pb-2">Miner ID</th>
+                            <th class="pb-2">Hardware</th>
+                            <th class="pb-2">Multiplier</th>
+                            <th class="pb-2">Weight Share</th>
+                            <th class="pb-2">Expected Reward</th>
+                        </tr>
+                    </thead>
+                    <tbody id="miner-tbody" class="divide-y divide-gray-700">
+                        <!-- Miner rows will be inserted here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="text-center text-gray-500 text-sm mt-8">
+            <p>RustChain Epoch Settlement Visualizer · Bounty #43</p>
+            <p class="mt-2">
+                <a href="https://github.com/Scottcjn/Rustchain" target="_blank" class="hover:text-gray-300">GitHub</a> ·
+                <a href="https://discord.gg/VqVVS2CW9Q" target="_blank" class="hover:text-gray-300">Discord</a>
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        const NODE_URL = 'https://50.28.86.131';
+        const EPOCH_DURATION = 144 * 600; // 144 blocks × 600s = 24 hours
+        const EPOCH_POT = 1.5; // RTC per epoch
+        
+        let miners = [];
+        let epochData = null;
+        let rewardChart = null;
+        let settlementTimer = null;
+        
+        // Architecture color mapping
+        const archColors = {
+            'PowerPC': 'arch-powerpc',
+            'PowerPC G4': 'arch-powerpc',
+            'PowerPC G5': 'arch-powerpc',
+            'ARM': 'arch-arm',
+            'ARM64': 'arch-arm',
+            'x86_64': 'arch-x86',
+            'x86': 'arch-x86',
+            'SPARC': 'arch-sparc',
+            'default': 'arch-other'
+        };
+        
+        // Fetch data
+        async function fetchMiners() {
+            try {
+                const response = await fetch(`${NODE_URL}/api/miners`, { mode: 'cors' });
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.miners || [];
+                }
+            } catch (e) {
+                console.error('Error fetching miners:', e);
+            }
+            return [];
+        }
+        
+        async function fetchEpoch() {
+            try {
+                const response = await fetch(`${NODE_URL}/epoch`, { mode: 'cors' });
+                if (response.ok) {
+                    return await response.json();
+                }
+            } catch (e) {
+                console.error('Error fetching epoch:', e);
+            }
+            return null;
+        }
+        
+        // Calculate weights and rewards
+        function calculateRewards(minersList) {
+            let totalWeight = 0;
+            const minersWithWeights = minersList.map(miner => {
+                const multiplier = miner.antiquity_multiplier || 1.0;
+                totalWeight += multiplier;
+                return { ...miner, multiplier, weight: 0, reward: 0 };
+            });
+            
+            minersWithWeights.forEach(miner => {
+                miner.weight = (miner.multiplier / totalWeight) * 100;
+                miner.reward = (miner.multiplier / totalWeight) * EPOCH_POT;
+            });
+            
+            return minersWithWeights;
+        }
+        
+        // Render miner dots
+        function renderMinerDots(minersList) {
+            const container = document.getElementById('canvas-container');
+            container.innerHTML = '';
+            
+            const width = container.offsetWidth;
+            const height = 400;
+            
+            minersList.forEach((miner, i) => {
+                const dot = document.createElement('div');
+                dot.className = 'miner-dot';
+                
+                // Determine color based on architecture
+                let archClass = 'arch-other';
+                const arch = miner.architecture || miner.hardware || '';
+                for (const [key, value] of Object.entries(archColors)) {
+                    if (arch.includes(key)) {
+                        archClass = value;
+                        break;
+                    }
+                }
+                dot.classList.add(archClass);
+                
+                // Position randomly but not overlapping
+                const x = (i * 80 + 50) % (width - 60);
+                const y = Math.floor((i * 80) / (width - 60)) * 80 + 50;
+                dot.style.left = `${x}px`;
+                dot.style.top = `${y}px`;
+                dot.style.animation = `fadeIn 0.5s ease-out ${i * 0.1}s both`;
+                
+                // Tooltip
+                dot.title = `${miner.id || miner.miner_id || 'Unknown'}\n${arch}\n${miner.multiplier}x multiplier`;
+                
+                container.appendChild(dot);
+            });
+        }
+        
+        // Render multiplier bars
+        function renderMultipliers(minersList) {
+            const container = document.getElementById('multipliers');
+            container.innerHTML = '';
+            
+            const archCounts = {};
+            minersList.forEach(miner => {
+                const arch = miner.architecture || miner.hardware || 'Other';
+                const simplified = arch.includes('PowerPC') ? 'PowerPC' :
+                                  arch.includes('ARM') ? 'ARM' :
+                                  arch.includes('x86') ? 'x86/Modern' :
+                                  arch.includes('SPARC') ? 'SPARC' : 'Other';
+                archCounts[simplified] = (archCounts[simplified] || 0) + 1;
+            });
+            
+            Object.entries(archCounts).sort((a, b) => b[1] - a[1]).forEach(([arch, count]) => {
+                const percent = (count / minersList.length * 100).toFixed(1);
+                const div = document.createElement('div');
+                div.innerHTML = `
+                    <div class="flex justify-between text-sm mb-1">
+                        <span>${arch}</span>
+                        <span class="font-bold">${count} miners (${percent}%)</span>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-4">
+                        <div class="reward-bar h-4 rounded-full ${getArchColor(arch)}" style="width: ${percent}%"></div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+        
+        function getArchColor(arch) {
+            if (arch.includes('PowerPC')) return 'bg-orange-500';
+            if (arch.includes('ARM')) return 'bg-green-500';
+            if (arch.includes('x86')) return 'bg-blue-500';
+            if (arch.includes('SPARC')) return 'bg-purple-500';
+            return 'bg-gray-500';
+        }
+        
+        // Render reward chart
+        function renderRewardChart(minersList) {
+            const ctx = document.getElementById('reward-chart').getContext('2d');
+            
+            if (rewardChart) {
+                rewardChart.destroy();
+            }
+            
+            const archRewards = {};
+            minersList.forEach(miner => {
+                const arch = miner.architecture || miner.hardware || 'Other';
+                const simplified = arch.includes('PowerPC') ? 'PowerPC' :
+                                  arch.includes('ARM') ? 'ARM' :
+                                  arch.includes('x86') ? 'x86/Modern' :
+                                  arch.includes('SPARC') ? 'SPARC' : 'Other';
+                archRewards[simplified] = (archRewards[simplified] || 0) + miner.reward;
+            });
+            
+            rewardChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(archRewards),
+                    datasets: [{
+                        data: Object.values(archRewards),
+                        backgroundColor: [
+                            '#f59e0b',
+                            '#10b981',
+                            '#3b82f6',
+                            '#a855f7',
+                            '#6b7280'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#e5e7eb'
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.label}: ${context.parsed.toFixed(4)} RTC`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Render miner table
+        function renderMinerTable(minersList) {
+            const tbody = document.getElementById('miner-tbody');
+            tbody.innerHTML = '';
+            
+            minersList.forEach(miner => {
+                const row = document.createElement('tr');
+                const minerId = (miner.id || miner.miner_id || 'Unknown').substring(0, 16) + '...';
+                const hardware = (miner.architecture || miner.hardware || 'Unknown').substring(0, 20);
+                
+                row.innerHTML = `
+                    <td class="py-2 font-mono text-xs">${minerId}</td>
+                    <td class="py-2">${hardware}</td>
+                    <td class="py-2 font-bold text-orange-400">${miner.multiplier.toFixed(2)}x</td>
+                    <td class="py-2">${miner.weight.toFixed(2)}%</td>
+                    <td class="py-2 font-bold text-green-400">${miner.reward.toFixed(4)} RTC</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+        
+        // Countdown timer
+        function updateCountdown() {
+            if (!epochData) return;
+            
+            const now = Math.floor(Date.now() / 1000);
+            const epochStart = epochData.epoch_start_time || 0;
+            const elapsed = now - epochStart;
+            const remaining = Math.max(0, EPOCH_DURATION - elapsed);
+            
+            const hours = Math.floor(remaining / 3600);
+            const minutes = Math.floor((remaining % 3600) / 60);
+            const seconds = remaining % 60;
+            
+            document.getElementById('countdown').textContent = 
+                `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            
+            // Trigger settlement animation when countdown reaches 0
+            if (remaining === 0 && !settlementTimer) {
+                triggerSettlement();
+            }
+        }
+        
+        // Settlement animation
+        function triggerSettlement() {
+            const panel = document.getElementById('settlement-panel');
+            const rewards = document.getElementById('settlement-rewards');
+            
+            panel.classList.remove('hidden');
+            rewards.innerHTML = '<div class="text-center text-gray-400">Calculating rewards...</div>';
+            
+            setTimeout(() => {
+                rewards.innerHTML = '';
+                miners.forEach(miner => {
+                    const div = document.createElement('div');
+                    div.className = 'flex justify-between py-1';
+                    div.innerHTML = `
+                        <span class="font-mono text-sm">${(miner.id || miner.miner_id || 'Unknown').substring(0, 20)}...</span>
+                        <span class="font-bold text-green-400">+${miner.reward.toFixed(4)} RTC</span>
+                    `;
+                    rewards.appendChild(div);
+                });
+                
+                // Add settling animation to miner dots
+                document.querySelectorAll('.miner-dot').forEach(dot => {
+                    dot.classList.add('settling');
+                });
+            }, 1000);
+            
+            // Hide panel after 5 seconds
+            settlementTimer = setTimeout(() => {
+                panel.classList.add('hidden');
+                settlementTimer = null;
+            }, 6000);
+        }
+        
+        // Main update function
+        async function updateVisualization() {
+            console.log('Updating visualization...');
+            
+            const [minersData, epochInfo] = await Promise.all([
+                fetchMiners(),
+                fetchEpoch()
+            ]);
+            
+            if (minersData.length > 0) {
+                miners = calculateRewards(minersData);
+                epochData = epochInfo;
+                
+                // Update UI
+                document.getElementById('current-epoch').textContent = epochInfo?.epoch || '--';
+                document.getElementById('miner-count').textContent = miners.length;
+                
+                renderMinerDots(miners);
+                renderMultipliers(miners);
+                renderRewardChart(miners);
+                renderMinerTable(miners);
+            }
+        }
+        
+        // Initialize
+        updateVisualization();
+        setInterval(updateVisualization, 60000); // Update every minute
+        setInterval(updateCountdown, 1000); // Update countdown every second
+    </script>
+</body>
+</html>
