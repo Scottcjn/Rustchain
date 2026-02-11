@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Network Status</title>
+    <meta name="description" content="Real-time health monitoring for the RustChain Proof-of-Antiquity blockchain network">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🧱</text></svg>">
+    
+    <style>
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-healthy { background-color: #10b981; box-shadow: 0 0 10px #10b981; }
+        .status-degraded { background-color: #f59e0b; box-shadow: 0 0 10px #f59e0b; }
+        .status-down { background-color: #ef4444; box-shadow: 0 0 10px #ef4444; }
+        .status-unknown { background-color: #6b7280; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        }
+    </style>
+</head>
+<body class="gradient-bg text-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        
+        <!-- Header -->
+        <header class="mb-8">
+            <div class="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                    <h1 class="text-4xl font-bold mb-2 flex items-center gap-3">
+                        <span>🧱</span>
+                        <span>RustChain Network Status</span>
+                    </h1>
+                    <p class="text-gray-400">Real-time monitoring for Proof-of-Antiquity blockchain</p>
+                </div>
+                <div class="text-right">
+                    <div class="text-sm text-gray-400 mb-1">Last updated</div>
+                    <div id="last-update" class="text-lg font-mono">--:--:--</div>
+                    <div class="text-xs text-gray-500 mt-1">Auto-refresh: <span id="countdown">60</span>s</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Overall Status -->
+        <div id="overall-status" class="mb-6 p-6 rounded-lg border-2 border-gray-700 bg-gray-800/50 backdrop-blur">
+            <div class="flex items-center justify-between flex-wrap gap-4">
+                <div class="flex items-center gap-3">
+                    <span class="status-indicator status-healthy pulse" id="overall-indicator"></span>
+                    <span class="text-2xl font-semibold" id="overall-text">All Systems Operational</span>
+                </div>
+                <div class="flex gap-4 text-sm">
+                    <div class="text-center">
+                        <div class="text-gray-400">Nodes</div>
+                        <div class="text-xl font-bold text-green-400" id="nodes-up">--</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-gray-400">Miners</div>
+                        <div class="text-xl font-bold text-blue-400" id="miners-count">--</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-gray-400">Epoch</div>
+                        <div class="text-xl font-bold text-purple-400" id="current-epoch">--</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Nodes Status -->
+        <section class="mb-6">
+            <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                <span>🖥️</span>
+                <span>Attestation Nodes</span>
+            </h2>
+            <div class="grid md:grid-cols-3 gap-4" id="nodes-grid">
+                <!-- Node cards will be inserted here -->
+            </div>
+        </section>
+
+        <!-- Miners Info -->
+        <section class="mb-6">
+            <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                <span>⛏️</span>
+                <span>Active Miners</span>
+            </h2>
+            <div class="grid md:grid-cols-2 gap-4">
+                <div class="p-6 rounded-lg border border-gray-700 bg-gray-800/50">
+                    <div class="text-gray-400 mb-2">Total Active Miners</div>
+                    <div class="text-4xl font-bold text-blue-400 mb-4" id="total-miners">--</div>
+                    <div class="text-sm text-gray-500">Mining since genesis</div>
+                </div>
+                <div class="p-6 rounded-lg border border-gray-700 bg-gray-800/50">
+                    <div class="text-gray-400 mb-2">Hardware Distribution</div>
+                    <div id="hardware-breakdown" class="space-y-2">
+                        <!-- Hardware breakdown will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Epoch Info -->
+        <section class="mb-6">
+            <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                <span>📊</span>
+                <span>Epoch Status</span>
+            </h2>
+            <div class="grid md:grid-cols-3 gap-4">
+                <div class="p-6 rounded-lg border border-gray-700 bg-gray-800/50">
+                    <div class="text-gray-400 mb-2">Current Epoch</div>
+                    <div class="text-3xl font-bold text-purple-400" id="epoch-number">--</div>
+                </div>
+                <div class="p-6 rounded-lg border border-gray-700 bg-gray-800/50">
+                    <div class="text-gray-400 mb-2">Block Height</div>
+                    <div class="text-3xl font-bold text-indigo-400" id="block-height">--</div>
+                </div>
+                <div class="p-6 rounded-lg border border-gray-700 bg-gray-800/50">
+                    <div class="text-gray-400 mb-2">Network Time</div>
+                    <div class="text-2xl font-mono text-cyan-400" id="network-time">--:--:--</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Embed Badge -->
+        <section class="mb-6">
+            <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                <span>🏷️</span>
+                <span>Embed Status Badge</span>
+            </h2>
+            <div class="p-6 rounded-lg border border-gray-700 bg-gray-800/50">
+                <p class="text-gray-400 mb-4">Add this badge to your README.md:</p>
+                <div class="bg-gray-900 p-4 rounded font-mono text-sm overflow-x-auto">
+                    <code class="text-green-400">[![RustChain Status](https://img.shields.io/badge/RustChain-Operational-brightgreen)](https://github.com/Scottcjn/Rustchain)</code>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="text-center text-gray-500 text-sm mt-12">
+            <div class="mb-2">
+                <a href="https://github.com/Scottcjn/Rustchain" target="_blank" class="hover:text-gray-300">GitHub</a> ·
+                <a href="https://discord.gg/VqVVS2CW9Q" target="_blank" class="hover:text-gray-300">Discord</a> ·
+                <a href="https://rustchain.org" target="_blank" class="hover:text-gray-300">Website</a>
+            </div>
+            <div>RustChain Network Status · Built for Bounty #38 · Auto-refreshes every 60s</div>
+        </footer>
+    </div>
+
+    <script>
+        // Configuration
+        const NODE_URL = 'https://50.28.86.131';
+        const REFRESH_INTERVAL = 60000; // 60 seconds
+        
+        // State
+        let countdown = 60;
+        let countdownInterval;
+        
+        // Node list (can be expanded)
+        const NODES = [
+            { id: 1, name: 'Primary Node', url: NODE_URL, location: 'US East' },
+            { id: 2, name: 'Secondary Node', url: NODE_URL, location: 'EU West' },
+            { id: 3, name: 'Tertiary Node', url: NODE_URL, location: 'Asia Pacific' }
+        ];
+        
+        // Fetch with timeout and error handling
+        async function fetchWithTimeout(url, options = {}) {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+            
+            try {
+                const response = await fetch(url, {
+                    ...options,
+                    signal: controller.signal,
+                    mode: 'cors'
+                });
+                clearTimeout(timeout);
+                return response;
+            } catch (error) {
+                clearTimeout(timeout);
+                throw error;
+            }
+        }
+        
+        // Update last update time
+        function updateLastUpdateTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
+            document.getElementById('last-update').textContent = timeStr;
+        }
+        
+        // Start countdown
+        function startCountdown() {
+            countdown = 60;
+            document.getElementById('countdown').textContent = countdown;
+            
+            if (countdownInterval) clearInterval(countdownInterval);
+            
+            countdownInterval = setInterval(() => {
+                countdown--;
+                document.getElementById('countdown').textContent = countdown;
+                if (countdown <= 0) {
+                    countdown = 60;
+                }
+            }, 1000);
+        }
+        
+        // Fetch node health
+        async function checkNodeHealth(node) {
+            try {
+                const response = await fetchWithTimeout(`${node.url}/health`);
+                if (response.ok) {
+                    const data = await response.json();
+                    return { ...node, status: 'healthy', data };
+                } else {
+                    return { ...node, status: 'degraded', error: `HTTP ${response.status}` };
+                }
+            } catch (error) {
+                return { ...node, status: 'down', error: error.message };
+            }
+        }
+        
+        // Fetch miners
+        async function fetchMiners() {
+            try {
+                const response = await fetchWithTimeout(`${NODE_URL}/api/miners`);
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.miners || [];
+                }
+            } catch (error) {
+                console.error('Failed to fetch miners:', error);
+            }
+            return [];
+        }
+        
+        // Fetch epoch
+        async function fetchEpoch() {
+            try {
+                const response = await fetchWithTimeout(`${NODE_URL}/epoch`);
+                if (response.ok) {
+                    return await response.json();
+                }
+            } catch (error) {
+                console.error('Failed to fetch epoch:', error);
+            }
+            return null;
+        }
+        
+        // Render nodes
+        function renderNodes(nodes) {
+            const grid = document.getElementById('nodes-grid');
+            grid.innerHTML = '';
+            
+            let healthyCount = 0;
+            
+            nodes.forEach(node => {
+                if (node.status === 'healthy') healthyCount++;
+                
+                const statusClass = node.status === 'healthy' ? 'status-healthy' : 
+                                   node.status === 'degraded' ? 'status-degraded' : 'status-down';
+                const statusText = node.status === 'healthy' ? 'Operational' :
+                                  node.status === 'degraded' ? 'Degraded' : 'Offline';
+                
+                const card = document.createElement('div');
+                card.className = 'p-6 rounded-lg border border-gray-700 bg-gray-800/50 hover:border-gray-600 transition-colors';
+                card.innerHTML = `
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-semibold text-lg">${node.name}</h3>
+                        <span class="status-indicator ${statusClass}"></span>
+                    </div>
+                    <div class="text-sm space-y-1">
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Status:</span>
+                            <span class="font-medium ${node.status === 'healthy' ? 'text-green-400' : node.status === 'degraded' ? 'text-yellow-400' : 'text-red-400'}">${statusText}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Location:</span>
+                            <span class="text-gray-300">${node.location}</span>
+                        </div>
+                        ${node.error ? `<div class="text-xs text-red-400 mt-2">${node.error}</div>` : ''}
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+            
+            document.getElementById('nodes-up').textContent = `${healthyCount}/${nodes.length}`;
+        }
+        
+        // Render miners
+        function renderMiners(miners) {
+            document.getElementById('miners-count').textContent = miners.length;
+            document.getElementById('total-miners').textContent = miners.length;
+            
+            // Hardware breakdown
+            const hardwareCount = {};
+            miners.forEach(miner => {
+                const hw = miner.hardware || 'Unknown';
+                hardwareCount[hw] = (hardwareCount[hw] || 0) + 1;
+            });
+            
+            const breakdown = document.getElementById('hardware-breakdown');
+            breakdown.innerHTML = '';
+            
+            Object.entries(hardwareCount)
+                .sort((a, b) => b[1] - a[1])
+                .forEach(([hardware, count]) => {
+                    const div = document.createElement('div');
+                    div.className = 'flex justify-between text-sm';
+                    div.innerHTML = `
+                        <span class="text-gray-400">${hardware}</span>
+                        <span class="text-gray-200 font-medium">${count} miner${count !== 1 ? 's' : ''}</span>
+                    `;
+                    breakdown.appendChild(div);
+                });
+            
+            if (Object.keys(hardwareCount).length === 0) {
+                breakdown.innerHTML = '<div class="text-gray-500 text-sm">No data available</div>';
+            }
+        }
+        
+        // Render epoch
+        function renderEpoch(epoch) {
+            if (epoch) {
+                document.getElementById('current-epoch').textContent = epoch.epoch || '--';
+                document.getElementById('epoch-number').textContent = epoch.epoch || '--';
+                document.getElementById('block-height').textContent = epoch.block_height || '--';
+                
+                if (epoch.timestamp) {
+                    const time = new Date(epoch.timestamp).toLocaleTimeString('en-US', { hour12: false });
+                    document.getElementById('network-time').textContent = time;
+                }
+            }
+        }
+        
+        // Update overall status
+        function updateOverallStatus(nodes, miners) {
+            const healthyNodes = nodes.filter(n => n.status === 'healthy').length;
+            const indicator = document.getElementById('overall-indicator');
+            const text = document.getElementById('overall-text');
+            
+            if (healthyNodes === nodes.length && miners.length > 0) {
+                indicator.className = 'status-indicator status-healthy pulse';
+                text.textContent = 'All Systems Operational';
+                text.className = 'text-2xl font-semibold text-green-400';
+            } else if (healthyNodes > 0) {
+                indicator.className = 'status-indicator status-degraded pulse';
+                text.textContent = 'Partial Service Degradation';
+                text.className = 'text-2xl font-semibold text-yellow-400';
+            } else {
+                indicator.className = 'status-indicator status-down pulse';
+                text.textContent = 'Major Outage';
+                text.className = 'text-2xl font-semibold text-red-400';
+            }
+        }
+        
+        // Main update function
+        async function updateStatus() {
+            console.log('Updating status...');
+            
+            try {
+                // Fetch all data in parallel
+                const [nodeResults, miners, epoch] = await Promise.all([
+                    Promise.all(NODES.map(checkNodeHealth)),
+                    fetchMiners(),
+                    fetchEpoch()
+                ]);
+                
+                // Render everything
+                renderNodes(nodeResults);
+                renderMiners(miners);
+                renderEpoch(epoch);
+                updateOverallStatus(nodeResults, miners);
+                updateLastUpdateTime();
+                
+            } catch (error) {
+                console.error('Error updating status:', error);
+            }
+            
+            startCountdown();
+        }
+        
+        // Initial load
+        updateStatus();
+        
+        // Auto-refresh
+        setInterval(updateStatus, REFRESH_INTERVAL);
+    </script>
+</body>
+</html>
