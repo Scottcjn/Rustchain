@@ -1,0 +1,7 @@
+{
+  "node_url": "https://50.28.86.131",
+  "discord_webhook": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+  "top_n": 10,
+  "frequency_hours": 24,
+  "cache_file": "leaderboard-cache.json"
+}
