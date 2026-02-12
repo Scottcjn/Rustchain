@@ -2987,6 +2987,11 @@ def metrics():
 @app.route('/rewards/settle', methods=['POST'])
 def api_rewards_settle():
     """Settle rewards for a specific epoch (admin/cron callable)"""
+    # SECURITY: settling rewards mutates chain state; require admin key.
+    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    if admin_key != os.environ.get("RC_ADMIN_KEY", ""):
+        return jsonify({"ok": False, "reason": "admin_required"}), 401
+
     body = request.get_json(force=True, silent=True) or {}
     epoch = int(body.get("epoch", -1))
     if epoch < 0:
