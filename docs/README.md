@@ -15,6 +15,7 @@
 | [Contributing Guide](./CONTRIBUTING.md) | Contribution workflow, PR checklist, and bounty submission notes |
 | [Reward Analytics Dashboard](./REWARD_ANALYTICS_DASHBOARD.md) | Charts and API for RTC reward transparency |
 | [Cross-Node Sync Validator](./CROSS_NODE_SYNC_VALIDATOR.md) | Multi-node consistency checks and discrepancy reports |
+| [Discord Leaderboard Bot](./DISCORD_LEADERBOARD_BOT.md) | Webhook bot setup and usage |
 
 ## Live Network
 
@@ -64,3 +65,4 @@ Active bounties: [github.com/Scottcjn/rustchain-bounties](https://github.com/Sco
 
 ---
 *Documentation maintained by the RustChain community.*
+
