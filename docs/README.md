@@ -1,4 +1,4 @@
-# RustChain Documentation
+﻿# RustChain Documentation
 
 > **RustChain** is a Proof-of-Antiquity blockchain that rewards vintage hardware with higher mining multipliers. The network uses 6 hardware fingerprint checks to prevent VMs and emulators from earning rewards.
 
@@ -7,7 +7,8 @@
 | Document | Description |
 |----------|-------------|
 | [Protocol Specification](./PROTOCOL.md) | Full RIP-200 consensus protocol |
-| [API Reference](./API.md) | All endpoints with curl examples |
+| [API Reference](./API.md) | Complete public endpoint index + curl examples |
+| [OpenAPI Spec](./api/openapi.yaml) | Machine-readable API schema |
 | [Glossary](./GLOSSARY.md) | Terms and definitions |
 | [Tokenomics](./tokenomics_v1.md) | RTC supply and distribution |
 
@@ -33,18 +34,18 @@ curl -sk https://50.28.86.131/epoch | jq .
 ## Architecture Overview
 
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Vintage Miner  │────▶│ Attestation Node │────▶│  Ergo Anchor    │
-│  (G4/G5/SPARC)  │     │  (50.28.86.131)  │     │ (Immutability)  │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-        │                        │
-        │ Hardware Fingerprint   │ Epoch Settlement
-        │ (6 checks)             │ Hash
-        ▼                        ▼
-   ┌─────────┐              ┌─────────┐
-   │ RTC     │              │ Ergo    │
-   │ Rewards │              │ Chain   │
-   └─────────┘              └─────────┘
+鈹屸攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?    鈹屸攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?    鈹屸攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?
+鈹? Vintage Miner  鈹傗攢鈹€鈹€鈹€鈻垛攤 Attestation Node 鈹傗攢鈹€鈹€鈹€鈻垛攤  Ergo Anchor    鈹?
+鈹? (G4/G5/SPARC)  鈹?    鈹? (50.28.86.131)  鈹?    鈹?(Immutability)  鈹?
+鈹斺攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?    鈹斺攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?    鈹斺攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?
+        鈹?                       鈹?
+        鈹?Hardware Fingerprint   鈹?Epoch Settlement
+        鈹?(6 checks)             鈹?Hash
+        鈻?                       鈻?
+   鈹屸攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?             鈹屸攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?
+   鈹?RTC     鈹?             鈹?Ergo    鈹?
+   鈹?Rewards 鈹?             鈹?Chain   鈹?
+   鈹斺攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?             鈹斺攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?
 ```
 
 ## Getting Started
@@ -59,3 +60,4 @@ Active bounties: [github.com/Scottcjn/rustchain-bounties](https://github.com/Sco
 
 ---
 *Documentation maintained by the RustChain community.*
+
