@@ -2678,6 +2678,8 @@ def api_miners():
 @app.route('/admin/oui_deny/list', methods=['GET'])
 def list_oui_deny():
     """List all denied OUIs"""
+    if not is_admin(request):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
     with sqlite3.connect(DB_PATH) as conn:
         rows = conn.execute("SELECT oui, vendor, added_ts, enforce FROM oui_deny ORDER BY vendor").fetchall()
     return jsonify({
@@ -2689,6 +2691,8 @@ def list_oui_deny():
 @app.route('/admin/oui_deny/add', methods=['POST'])
 def add_oui_deny():
     """Add OUI to denylist"""
+    if not is_admin(request):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
@@ -2714,6 +2718,8 @@ def add_oui_deny():
 @app.route('/admin/oui_deny/remove', methods=['POST'])
 def remove_oui_deny():
     """Remove OUI from denylist"""
+    if not is_admin(request):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
