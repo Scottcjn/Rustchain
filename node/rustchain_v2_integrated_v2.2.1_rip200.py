@@ -5,6 +5,7 @@ Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
 import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math
 from flask import Flask, request, jsonify, g
+from node.payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
 
 # Hardware Binding v2.0 - Anti-Spoof with Entropy Validation
 try:
@@ -3082,17 +3083,16 @@ def wallet_transfer_v2():
             "hint": "Use /wallet/transfer/signed for user transfers"
         }), 401
 
-    data = request.get_json()
-    from_miner = data.get('from_miner')
-    to_miner = data.get('to_miner')
-    amount_rtc = float(data.get('amount_rtc', 0))
-    reason = data.get('reason', 'admin_transfer')
-    
-    if not all([from_miner, to_miner]):
-        return jsonify({"error": "Missing from_miner or to_miner"}), 400
-    
-    if amount_rtc <= 0:
-        return jsonify({"error": "Amount must be positive"}), 400
+    data = request.get_json(silent=True)
+    pre = validate_wallet_transfer_admin(data)
+    if not pre.ok:
+        # Hardening: malformed/edge payloads should never produce server 500s.
+        return jsonify({"error": pre.error, "details": pre.details}), 400
+
+    from_miner = pre.details["from_miner"]
+    to_miner = pre.details["to_miner"]
+    amount_rtc = pre.details["amount_rtc"]
+    reason = str((data or {}).get('reason', 'admin_transfer'))
     
     amount_i64 = int(amount_rtc * 1000000)
     now = int(time.time())
@@ -3712,44 +3712,22 @@ def wallet_transfer_signed():
     - memo: optional memo
     """
     data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return jsonify({"error": "Invalid JSON body"}), 400
+    pre = validate_wallet_transfer_signed(data)
+    if not pre.ok:
+        return jsonify({"error": pre.error, "details": pre.details}), 400
 
     # Extract client IP (handle nginx proxy)
     client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
     if client_ip and "," in client_ip:
         client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     
-    from_address = str(data.get("from_address", "")).strip()
-    to_address = str(data.get("to_address", "")).strip()
-    nonce = data.get("nonce")
+    from_address = pre.details["from_address"]
+    to_address = pre.details["to_address"]
+    nonce_int = pre.details["nonce"]
     signature = str(data.get("signature", "")).strip()
     public_key = str(data.get("public_key", "")).strip()
     memo = str(data.get("memo", ""))
-
-    try:
-        amount_rtc = float(data.get("amount_rtc", 0))
-    except (TypeError, ValueError):
-        return jsonify({"error": "amount_rtc must be a valid number"}), 400
-
-    if not math.isfinite(amount_rtc):
-        return jsonify({"error": "amount_rtc must be finite"}), 400
-    
-    # Validate required fields
-    if not all([from_address, to_address, signature, public_key, nonce]):
-        return jsonify({"error": "Missing required fields (from_address, to_address, signature, public_key, nonce)"}), 400
-    
-    if amount_rtc <= 0:
-        return jsonify({"error": "Amount must be positive"}), 400
-
-    if not (from_address.startswith("RTC") and len(from_address) == 43):
-        return jsonify({"error": "Invalid from_address format"}), 400
-
-    if not (to_address.startswith("RTC") and len(to_address) == 43):
-        return jsonify({"error": "Invalid to_address format"}), 400
-
-    if from_address == to_address:
-        return jsonify({"error": "from_address and to_address must differ"}), 400
+    amount_rtc = pre.details["amount_rtc"]
 
     # Verify public key matches from_address
     expected_address = address_from_pubkey(public_key)
@@ -3760,14 +3738,6 @@ def wallet_transfer_signed():
             "got": from_address
         }), 400
     
-    try:
-        nonce_int = int(str(nonce))
-    except (TypeError, ValueError):
-        return jsonify({"error": "nonce must be an integer-like value"}), 400
-
-    if nonce_int <= 0:
-        return jsonify({"error": "nonce must be > 0"}), 400
-
     nonce = str(nonce_int)
 
     # Recreate the signed message (must match client signing format)
