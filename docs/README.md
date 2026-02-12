@@ -10,6 +10,7 @@
 | [API Reference](./API.md) | All endpoints with curl examples |
 | [Glossary](./GLOSSARY.md) | Terms and definitions |
 | [Tokenomics](./tokenomics_v1.md) | RTC supply and distribution |
+| [FAQ & Troubleshooting](./FAQ_TROUBLESHOOTING.md) | Common setup/runtime issues and recovery steps |
 
 ## Live Network
 
