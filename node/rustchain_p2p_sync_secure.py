@@ -475,9 +475,8 @@ class SecureBlockSync:
         logging.info(f"Applied block {block_data.get('block_index')} from peer")
 
     def get_blocks_for_sync(self, start_height, limit=100):
-        """Get headers/epochs from local chain for serving to peers (RustChain PoA)"""
+        """Get RustChain headers formatted as validator-compatible block records."""
         with sqlite3.connect(self.db_path) as conn:
-            # RustChain uses headers table instead of blocks
             cursor = conn.execute("""
                 SELECT slot, miner_id, message_hex, signature_hex, pubkey_hex, ts
                 FROM headers
@@ -485,19 +484,38 @@ class SecureBlockSync:
                 ORDER BY slot ASC
                 LIMIT ?
             """, (start_height, limit))
+            rows = cursor.fetchall()
 
-            blocks = []
-            for row in cursor.fetchall():
-                blocks.append({
-                    'block_index': row[0],  # slot = epoch/block
-                    'slot': row[0],
-                    'miner': row[1],
-                    'message_hex': row[2],
-                    'signature': row[3],
-                    'pubkey_hex': row[4],
-                    'timestamp': row[5],
-                    'block_hash': row[3][:16] if row[3] else None  # Use signature prefix as hash
-                })
+        blocks = []
+        previous_hash = "0" * 64
+
+        for slot, miner_id, message_hex, signature_hex, pubkey_hex, ts in rows:
+            # Attestation headers do not include tx payloads; keep schema-compatible list.
+            transactions = []
+            block_string = json.dumps({
+                'block_index': slot,
+                'previous_hash': previous_hash,
+                'timestamp': ts,
+                'miner': miner_id,
+                'transactions': transactions,
+            }, sort_keys=True)
+            block_hash = hashlib.sha256(block_string.encode()).hexdigest()
+
+            blocks.append({
+                'block_index': slot,
+                'slot': slot,
+                'miner': miner_id,
+                'message_hex': message_hex,
+                'signature': signature_hex,
+                'pubkey_hex': pubkey_hex,
+                'timestamp': ts,
+                'transactions': transactions,
+                'previous_hash': previous_hash,
+                'hash': block_hash,
+                'block_hash': block_hash,
+            })
+
+            previous_hash = block_hash
 
         return blocks
 
