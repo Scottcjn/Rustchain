@@ -2058,7 +2058,7 @@ def kv_set(key, val):
 def is_admin(req):
     """Check if request has valid admin API key"""
     need = os.environ.get("RC_ADMIN_KEY", "")
-    got = req.headers.get("X-API-Key", "")
+    got = req.headers.get("X-Admin-Key", "") or req.headers.get("X-API-Key", "")
     return need and got and (need == got)
 
 @app.route('/admin/oui_deny/enforce', methods=['POST'])
