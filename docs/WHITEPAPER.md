@@ -34,7 +34,7 @@ RustChain introduces **Proof-of-Antiquity (PoA)**, a novel blockchain consensus 
 
 ### 1.1 The E-Waste Problem
 
-The global electronics industry produces over 50 million metric tons of e-waste annually, with the majority originating from planned obsolescence in computing hardware. Functional vintage computers—capable machines that served their owners reliably for decades—are discarded in favor of marginally faster modern equivalents.
+The global electronics industry generates **~62 million metric tons of e-waste (2022)**, driven in part by rapid device replacement cycles and planned obsolescence in computing hardware. *(Source: Global E-waste Monitor 2024).* Functional vintage computers—capable machines that served their owners reliably for decades—are discarded in favor of marginally faster modern equivalents.
 
 Traditional blockchain consensus mechanisms exacerbate this problem:
 
@@ -815,15 +815,16 @@ The Proof-of-Antiquity mechanism proves that blockchain can align economic incen
 
 ### External
 
-7. Ergo Platform: https://ergoplatform.org
-8. BLAKE2 Hash Function: https://www.blake2.net
-9. Ed25519 Signatures: https://ed25519.cr.yp.to
+7. Global E-waste Monitor 2024 (UNITAR/ITU): https://ewastemonitor.info/
+8. Ergo Platform: https://ergoplatform.org
+9. BLAKE2 Hash Function: https://www.blake2.net
+10. Ed25519 Signatures: https://ed25519.cr.yp.to
 
 ### Hardware Documentation
 
-10. PowerPC G4 (MPC7450) Technical Reference
-11. Intel CPUID Instruction Reference
-12. ARM NEON Programmer's Guide
+11. PowerPC G4 (MPC7450) Technical Reference
+12. Intel CPUID Instruction Reference
+13. ARM NEON Programmer's Guide
 
 ---
 
