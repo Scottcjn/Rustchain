@@ -1,12 +1,32 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
 
+# Get the current directory to make paths relative
+current_dir = os.getcwd()
 
 a = Analysis(
-    ['C:\\Users\\Muhammet\\.gemini\\antigravity\\scratch\\rustchain-installer\\src\\rustchain_windows_miner.py'],
-    pathex=['C:\\Users\\Muhammet\\.gemini\\antigravity\\scratch\\rustchain-installer\\src'],
+    ['src/rustchain_windows_miner.py'],
+    pathex=['src'],
     binaries=[],
-    datas=[('C:\\Users\\Muhammet\\.gemini\\antigravity\\scratch\\rustchain-installer\\src\\config_manager.py', '.'), ('C:\\Users\\Muhammet\\.gemini\\antigravity\\scratch\\rustchain-installer\\src\\tray_icon.py', '.'), ('C:\\Users\\Muhammet\\.gemini\\antigravity\\scratch\\rustchain-installer\\assets\\rustchain.ico', 'assets')],
-    hiddenimports=['requests', 'urllib3', 'pystray', 'PIL', 'PIL.Image', 'PIL.ImageDraw', 'PIL.ImageFont', 'pystray._win32', 'config_manager', 'tray_icon'],
+    datas=[
+        ('src/config_manager.py', '.'),
+        ('src/tray_icon.py', '.'),
+        ('src/fingerprint_checks_win.py', '.'),
+        ('assets/rustchain.ico', 'assets')
+    ],
+    hiddenimports=[
+        'requests', 
+        'urllib3', 
+        'pystray', 
+        'PIL', 
+        'PIL.Image', 
+        'PIL.ImageDraw', 
+        'PIL.ImageFont', 
+        'pystray._win32', 
+        'config_manager', 
+        'tray_icon',
+        'fingerprint_checks_win'
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -35,5 +55,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['C:\\Users\\Muhammet\\.gemini\\antigravity\\scratch\\rustchain-installer\\assets\\rustchain.ico'],
+    icon=['assets/rustchain.ico'],
 )

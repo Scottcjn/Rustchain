@@ -39,6 +39,11 @@ try:
 except ImportError:
     TRAY_AVAILABLE = False
 
+try:
+    from fingerprint_checks_win import validate_all_checks_win
+except ImportError:
+    validate_all_checks_win = None
+
 # --- Logging Setup ---
 LOG_DIR = Path(os.environ.get("APPDATA", Path.home())) / "RustChain" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -247,6 +252,14 @@ class RustChainMiner:
             logger.error(f"Attestation challenge failed: {e}")
             return False
 
+        # Perform hardware fingerprint checks
+        fingerprint_data = {}
+        if validate_all_checks_win:
+            passed, fingerprint_results = validate_all_checks_win()
+            fingerprint_data = fingerprint_results
+            if not passed:
+                logger.warning("Hardware fingerprint checks failed! Rewards may be reduced.")
+        
         entropy = self._collect_entropy()
         self.last_entropy = entropy
 
@@ -256,7 +269,8 @@ class RustChainMiner:
                 (nonce + self.wallet_address + json.dumps(entropy, sort_keys=True)).encode()
             ).hexdigest(),
             "derived": entropy,
-            "entropy_score": entropy.get("variance_ns", 0.0)
+            "entropy_score": entropy.get("variance_ns", 0.0),
+            "fingerprint": fingerprint_data
         }
 
         attestation = {

@@ -4,7 +4,7 @@
 
 ### 1. Install Dependencies
 ```cmd
-cd C:\Users\Muhammet\.gemini\antigravity\scratch\rustchain-installer
+cd miners\windows\installer
 pip install -r requirements.txt
 ```
 
@@ -16,7 +16,7 @@ python build_miner.py
 
 ### 3. Build the Installer (requires Inno Setup 6)
 ```cmd
-"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" rustchain_setup.iss
+iscc rustchain_setup.iss
 ```
 → Produces `output\RustChainSetup_v1.0.0.exe`
 
