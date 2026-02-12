@@ -4,6 +4,8 @@ RustChain v2 - Integrated Server
 Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
 import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math
+import ipaddress
+from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g
 
 # Hardware Binding v2.0 - Anti-Spoof with Entropy Validation
@@ -2594,6 +2596,29 @@ def get_stats():
 @app.route("/api/nodes")
 def api_nodes():
     """Return list of all registered attestation nodes"""
+    def _is_admin() -> bool:
+        need = os.environ.get("RC_ADMIN_KEY", "")
+        got = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+        return bool(need and got and need == got)
+
+    def _should_redact_url(u: str) -> bool:
+        try:
+            host = (urlparse(u).hostname or "").strip()
+            if not host:
+                return False
+            ip = ipaddress.ip_address(host)
+            # ip.is_private does not include CGNAT (100.64/10), so handle explicitly.
+            if ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
+                return True
+            if ip.is_private:
+                return True
+            if ip.version == 4 and ip in ipaddress.ip_network("100.64.0.0/10"):
+                return True
+            return False
+        except Exception:
+            # Non-IP hosts (DNS names) are assumed public.
+            return False
+
     nodes = []
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -2614,11 +2639,17 @@ def api_nodes():
     # Also add live status check
     import requests
     for node in nodes:
+        raw_url = node.get("url") or ""
         try:
-            resp = requests.get(f"{node['url']}/health", timeout=3, verify=False)
+            resp = requests.get(f"{raw_url}/health", timeout=3, verify=False)
             node["online"] = resp.status_code == 200
         except:
             node["online"] = False
+
+        # SECURITY: don't leak private/VPN URLs to unauthenticated clients.
+        if (not _is_admin()) and raw_url and _should_redact_url(raw_url):
+            node["url"] = None
+            node["url_redacted"] = True
     
     return jsonify({"nodes": nodes, "count": len(nodes)})
 
