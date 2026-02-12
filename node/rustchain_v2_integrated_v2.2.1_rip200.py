@@ -3,7 +3,7 @@
 RustChain v2 - Integrated Server
 Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
-import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii
+import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math
 from flask import Flask, request, jsonify, g
 
 # Hardware Binding v2.0 - Anti-Spoof with Entropy Validation
@@ -3711,20 +3711,29 @@ def wallet_transfer_signed():
     - public_key: sender public key (must match from_address)
     - memo: optional memo
     """
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
 
     # Extract client IP (handle nginx proxy)
     client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
     if client_ip and "," in client_ip:
         client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     
-    from_address = data.get("from_address", "").strip()
-    to_address = data.get("to_address", "").strip()
-    amount_rtc = float(data.get("amount_rtc", 0))
+    from_address = str(data.get("from_address", "")).strip()
+    to_address = str(data.get("to_address", "")).strip()
     nonce = data.get("nonce")
-    signature = data.get("signature", "").strip()
-    public_key = data.get("public_key", "").strip()
-    memo = data.get("memo", "")
+    signature = str(data.get("signature", "")).strip()
+    public_key = str(data.get("public_key", "")).strip()
+    memo = str(data.get("memo", ""))
+
+    try:
+        amount_rtc = float(data.get("amount_rtc", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "amount_rtc must be a valid number"}), 400
+
+    if not math.isfinite(amount_rtc):
+        return jsonify({"error": "amount_rtc must be finite"}), 400
     
     # Validate required fields
     if not all([from_address, to_address, signature, public_key, nonce]):
@@ -3732,7 +3741,16 @@ def wallet_transfer_signed():
     
     if amount_rtc <= 0:
         return jsonify({"error": "Amount must be positive"}), 400
-    
+
+    if not (from_address.startswith("RTC") and len(from_address) == 43):
+        return jsonify({"error": "Invalid from_address format"}), 400
+
+    if not (to_address.startswith("RTC") and len(to_address) == 43):
+        return jsonify({"error": "Invalid to_address format"}), 400
+
+    if from_address == to_address:
+        return jsonify({"error": "from_address and to_address must differ"}), 400
+
     # Verify public key matches from_address
     expected_address = address_from_pubkey(public_key)
     if from_address != expected_address:
@@ -3742,6 +3760,16 @@ def wallet_transfer_signed():
             "got": from_address
         }), 400
     
+    try:
+        nonce_int = int(str(nonce))
+    except (TypeError, ValueError):
+        return jsonify({"error": "nonce must be an integer-like value"}), 400
+
+    if nonce_int <= 0:
+        return jsonify({"error": "nonce must be > 0"}), 400
+
+    nonce = str(nonce_int)
+
     # Recreate the signed message (must match client signing format)
     tx_data = {
         "from": from_address,
