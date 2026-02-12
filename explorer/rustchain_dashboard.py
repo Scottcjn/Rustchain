@@ -429,6 +429,160 @@ DASHBOARD_HTML = """
 </html>
 """
 
+REWARD_ANALYTICS_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RustChain Reward Analytics</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 18px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(120deg, #102a43, #243b53);
+            color: #f0f4f8;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 14px;
+            padding: 18px;
+            margin-bottom: 16px;
+        }
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .card {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 10px;
+            padding: 12px;
+        }
+        .card .k { font-size: 12px; opacity: 0.8; }
+        .card .v { font-size: 24px; font-weight: 700; margin-top: 4px; }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .panel {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px;
+            padding: 12px;
+            min-height: 320px;
+        }
+        .panel h3 { margin: 0 0 8px 0; font-size: 16px; }
+        .hint { font-size: 12px; opacity: 0.8; margin-top: 8px; }
+        a { color: #9ad1ff; }
+        @media (max-width: 900px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>RTC Reward Analytics Dashboard</h1>
+        <div>Data source: local node DB + node API. Auto-refresh every 30 seconds.</div>
+        <div class="cards">
+            <div class="card"><div class="k">Current Epoch</div><div class="v" id="m-epoch">-</div></div>
+            <div class="card"><div class="k">Epoch Pot (RTC)</div><div class="v" id="m-pot">-</div></div>
+            <div class="card"><div class="k">Tracked Epochs</div><div class="v" id="m-epochs">-</div></div>
+            <div class="card"><div class="k">Tracked Miners</div><div class="v" id="m-miners">-</div></div>
+        </div>
+        <div class="hint"><a href="/">Back to mining dashboard</a></div>
+    </div>
+
+    <div class="grid">
+        <div class="panel">
+            <h3>Reward Distribution Per Epoch (RTC)</h3>
+            <canvas id="epochChart"></canvas>
+        </div>
+        <div class="panel">
+            <h3>Top Miner Earnings Over Time</h3>
+            <canvas id="minerLineChart"></canvas>
+        </div>
+        <div class="panel">
+            <h3>Architecture Reward Breakdown</h3>
+            <canvas id="archChart"></canvas>
+        </div>
+        <div class="panel">
+            <h3>Multiplier Impact (Current Epoch Model)</h3>
+            <canvas id="multiplierChart"></canvas>
+            <div class="hint">Compares equal-share baseline vs weight-adjusted share from current enrollment.</div>
+        </div>
+    </div>
+</div>
+
+<script>
+let epochChart, minerLineChart, archChart, multiplierChart;
+
+function ensureCharts() {
+    if (!epochChart) epochChart = new Chart(document.getElementById('epochChart'), { type: 'bar', data: { labels: [], datasets: [{ label: 'RTC', data: [], backgroundColor: '#60a5fa' }] } });
+    if (!minerLineChart) minerLineChart = new Chart(document.getElementById('minerLineChart'), { type: 'line', data: { labels: [], datasets: [] }, options: { responsive: true } });
+    if (!archChart) archChart = new Chart(document.getElementById('archChart'), { type: 'doughnut', data: { labels: [], datasets: [{ data: [], backgroundColor: ['#f59e0b', '#10b981', '#38bdf8', '#a78bfa', '#f43f5e', '#94a3b8'] }] } });
+    if (!multiplierChart) multiplierChart = new Chart(document.getElementById('multiplierChart'), { type: 'bar', data: { labels: [], datasets: [{ label: 'Equal Share', data: [], backgroundColor: '#38bdf8' }, { label: 'Weighted Share', data: [], backgroundColor: '#f59e0b' }] } });
+}
+
+function shortMiner(id) {
+    if (!id) return 'unknown';
+    return id.length > 14 ? id.slice(0, 12) + '..' : id;
+}
+
+async function refresh() {
+    const res = await fetch('/api/reward-analytics');
+    const data = await res.json();
+    ensureCharts();
+
+    document.getElementById('m-epoch').textContent = data.current_epoch ?? '-';
+    document.getElementById('m-pot').textContent = (data.epoch_pot_rtc ?? 0).toFixed(3);
+    document.getElementById('m-epochs').textContent = (data.epoch_distribution || []).length;
+    document.getElementById('m-miners').textContent = (data.miner_series || []).length;
+
+    const epochLabels = (data.epoch_distribution || []).map(x => `E${x.epoch}`);
+    const epochVals = (data.epoch_distribution || []).map(x => x.reward_rtc);
+    epochChart.data.labels = epochLabels;
+    epochChart.data.datasets[0].data = epochVals;
+    epochChart.update();
+
+    const palette = ['#38bdf8', '#f59e0b', '#10b981', '#f43f5e', '#a78bfa', '#fb7185', '#22d3ee'];
+    const series = data.miner_series || [];
+    minerLineChart.data.labels = epochLabels;
+    minerLineChart.data.datasets = series.map((s, i) => ({
+        label: shortMiner(s.miner_id),
+        data: s.values,
+        borderColor: palette[i % palette.length],
+        backgroundColor: palette[i % palette.length],
+        tension: 0.2
+    }));
+    minerLineChart.update();
+
+    archChart.data.labels = (data.architecture_breakdown || []).map(x => x.arch);
+    archChart.data.datasets[0].data = (data.architecture_breakdown || []).map(x => x.reward_rtc);
+    archChart.update();
+
+    multiplierChart.data.labels = (data.multiplier_impact || []).map(x => shortMiner(x.miner_id));
+    multiplierChart.data.datasets[0].data = (data.multiplier_impact || []).map(x => x.base_share_rtc);
+    multiplierChart.data.datasets[1].data = (data.multiplier_impact || []).map(x => x.weighted_share_rtc);
+    multiplierChart.update();
+}
+
+refresh();
+setInterval(refresh, 30000);
+</script>
+</body>
+</html>
+"""
+
 @app.route('/')
 def dashboard():
     """Main dashboard page"""
@@ -662,6 +816,156 @@ def api_wallet_lookup(wallet_address):
     except Exception as e:
         print(f"Error in wallet lookup: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/reward-analytics')
+def reward_analytics_dashboard():
+    """Reward analytics dashboard page."""
+    return render_template_string(REWARD_ANALYTICS_HTML)
+
+
+@app.route('/api/reward-analytics')
+def api_reward_analytics():
+    """Reward analytics from epoch rewards + enrollment weight model."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            current_epoch = 0
+            epoch_pot = 0.0
+
+            try:
+                epoch_resp = requests.get(f"{NODE_API}/epoch", timeout=5)
+                epoch_data = epoch_resp.json()
+                current_epoch = int(epoch_data.get("epoch", 0))
+                epoch_pot = float(epoch_data.get("epoch_pot", 0.0))
+            except Exception:
+                pass
+
+            epoch_distribution = []
+            miner_series = []
+            architecture_breakdown = []
+            multiplier_impact = []
+
+            # 1) Reward distribution per epoch.
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT epoch, SUM(share_i64) / 1000000.0 AS reward_rtc
+                    FROM epoch_rewards
+                    GROUP BY epoch
+                    ORDER BY epoch DESC
+                    LIMIT 20
+                    """
+                ).fetchall()
+                rows = list(reversed(rows))
+                epoch_distribution = [{"epoch": int(r["epoch"]), "reward_rtc": round(float(r["reward_rtc"] or 0.0), 6)} for r in rows]
+            except Exception:
+                epoch_distribution = []
+
+            epoch_labels = [r["epoch"] for r in epoch_distribution]
+
+            # 2) Per-miner earnings over time (top 6 miners over selected epochs).
+            if epoch_labels:
+                try:
+                    top_miners = conn.execute(
+                        """
+                        SELECT miner_id, SUM(share_i64) AS total_i64
+                        FROM epoch_rewards
+                        WHERE epoch BETWEEN ? AND ?
+                        GROUP BY miner_id
+                        ORDER BY total_i64 DESC
+                        LIMIT 6
+                        """,
+                        (epoch_labels[0], epoch_labels[-1]),
+                    ).fetchall()
+                    for miner_row in top_miners:
+                        miner_id = miner_row["miner_id"]
+                        per_epoch = conn.execute(
+                            """
+                            SELECT epoch, SUM(share_i64) / 1000000.0 AS reward_rtc
+                            FROM epoch_rewards
+                            WHERE miner_id = ? AND epoch BETWEEN ? AND ?
+                            GROUP BY epoch
+                            """,
+                            (miner_id, epoch_labels[0], epoch_labels[-1]),
+                        ).fetchall()
+                        mapped = {int(r["epoch"]): float(r["reward_rtc"] or 0.0) for r in per_epoch}
+                        miner_series.append(
+                            {
+                                "miner_id": miner_id,
+                                "values": [round(mapped.get(ep, 0.0), 6) for ep in epoch_labels],
+                            }
+                        )
+                except Exception:
+                    miner_series = []
+
+            # 3) Architecture breakdown.
+            try:
+                arch_rows = conn.execute(
+                    """
+                    WITH miner_arch AS (
+                        SELECT miner, MAX(device_arch) AS arch
+                        FROM miner_attest_recent
+                        GROUP BY miner
+                    )
+                    SELECT COALESCE(ma.arch, 'unknown') AS arch, SUM(er.share_i64) / 1000000.0 AS reward_rtc
+                    FROM epoch_rewards er
+                    LEFT JOIN miner_arch ma ON ma.miner = er.miner_id
+                    GROUP BY COALESCE(ma.arch, 'unknown')
+                    ORDER BY reward_rtc DESC
+                    LIMIT 8
+                    """
+                ).fetchall()
+                architecture_breakdown = [
+                    {"arch": (r["arch"] or "unknown"), "reward_rtc": round(float(r["reward_rtc"] or 0.0), 6)}
+                    for r in arch_rows
+                ]
+            except Exception:
+                architecture_breakdown = []
+
+            # 4) Multiplier impact based on current epoch enrollment.
+            if current_epoch > 0 and epoch_pot > 0:
+                try:
+                    enroll_rows = conn.execute(
+                        """
+                        SELECT miner_pk AS miner_id, weight
+                        FROM epoch_enroll
+                        WHERE epoch = ?
+                        ORDER BY weight DESC
+                        LIMIT 10
+                        """,
+                        (current_epoch,),
+                    ).fetchall()
+                    if enroll_rows:
+                        total_weight = sum(float(r["weight"] or 0.0) for r in enroll_rows) or 1.0
+                        base_share = epoch_pot / len(enroll_rows)
+                        for r in enroll_rows:
+                            w = float(r["weight"] or 0.0)
+                            weighted_share = epoch_pot * (w / total_weight)
+                            multiplier_impact.append(
+                                {
+                                    "miner_id": r["miner_id"],
+                                    "weight": round(w, 6),
+                                    "base_share_rtc": round(base_share, 6),
+                                    "weighted_share_rtc": round(weighted_share, 6),
+                                }
+                            )
+                except Exception:
+                    multiplier_impact = []
+
+        return jsonify(
+            {
+                "current_epoch": current_epoch,
+                "epoch_pot_rtc": epoch_pot,
+                "epoch_distribution": epoch_distribution,
+                "miner_series": miner_series,
+                "architecture_breakdown": architecture_breakdown,
+                "multiplier_impact": multiplier_impact,
+                "generated_at": int(time.time()),
+            }
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 def format_uptime(seconds):
     """Format uptime in human-readable format"""
