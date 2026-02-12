@@ -1,4 +1,4 @@
-# RustChain Documentation
+﻿# RustChain Documentation
 
 > **RustChain** is a Proof-of-Antiquity blockchain that rewards vintage hardware with higher mining multipliers. The network uses 6 hardware fingerprint checks to prevent VMs and emulators from earning rewards.
 
@@ -10,6 +10,7 @@
 | [API Reference](./API.md) | All endpoints with curl examples |
 | [Glossary](./GLOSSARY.md) | Terms and definitions |
 | [Tokenomics](./tokenomics_v1.md) | RTC supply and distribution |
+| [Discord Leaderboard Bot](./DISCORD_LEADERBOARD_BOT.md) | Webhook bot setup and usage |
 
 ## Live Network
 
@@ -33,18 +34,12 @@ curl -sk https://50.28.86.131/epoch | jq .
 ## Architecture Overview
 
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Vintage Miner  │────▶│ Attestation Node │────▶│  Ergo Anchor    │
-│  (G4/G5/SPARC)  │     │  (50.28.86.131)  │     │ (Immutability)  │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-        │                        │
-        │ Hardware Fingerprint   │ Epoch Settlement
-        │ (6 checks)             │ Hash
-        ▼                        ▼
-   ┌─────────┐              ┌─────────┐
-   │ RTC     │              │ Ergo    │
-   │ Rewards │              │ Chain   │
-   └─────────┘              └─────────┘
+[Vintage Miner] --> [Attestation Node] --> [Ergo Anchor]
+   (G4/G5/etc)      (50.28.86.131)       (immutability)
+
+      | hardware fingerprint (6 checks)
+      v
+   [RTC rewards]                     [Ergo chain proof]
 ```
 
 ## Getting Started
@@ -59,3 +54,4 @@ Active bounties: [github.com/Scottcjn/rustchain-bounties](https://github.com/Sco
 
 ---
 *Documentation maintained by the RustChain community.*
+
