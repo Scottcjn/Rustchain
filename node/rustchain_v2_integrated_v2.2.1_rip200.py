@@ -3500,6 +3500,11 @@ def wallet_transfer_OLD():
 @app.route('/wallet/ledger', methods=['GET'])
 def api_wallet_ledger():
     """Get transaction ledger (optionally filtered by miner)"""
+    # SECURITY: ledger entries include transfer reasons + wallet identifiers; require admin key.
+    admin_key = request.headers.get("X-Admin-Key", "")
+    if admin_key != os.environ.get("RC_ADMIN_KEY", ""):
+        return jsonify({"ok": False, "reason": "admin_required"}), 401
+
     miner_id = request.args.get("miner_id", "").strip()
 
     with sqlite3.connect(DB_PATH) as db:
@@ -3541,6 +3546,11 @@ def api_wallet_ledger():
 @app.route('/wallet/balances/all', methods=['GET'])
 def api_wallet_balances_all():
     """Get all miner balances"""
+    # SECURITY: exporting all balances is sensitive; require admin key.
+    admin_key = request.headers.get("X-Admin-Key", "")
+    if admin_key != os.environ.get("RC_ADMIN_KEY", ""):
+        return jsonify({"ok": False, "reason": "admin_required"}), 401
+
     with sqlite3.connect(DB_PATH) as db:
         rows = db.execute(
             "SELECT miner_id, amount_i64 FROM balances ORDER BY amount_i64 DESC"
