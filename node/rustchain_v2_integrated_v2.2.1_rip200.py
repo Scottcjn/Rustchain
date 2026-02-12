@@ -5,6 +5,14 @@ Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
 import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math
 from flask import Flask, request, jsonify, g
+from node.attest_nonce import (
+    cleanup_expired as attest_cleanup_expired,
+    consume_challenge as attest_consume_challenge,
+    ensure_tables as attest_ensure_tables,
+    issue_challenge as attest_issue_challenge,
+    mark_nonce_used as attest_mark_nonce_used,
+    validate_nonce_freshness as attest_validate_nonce_freshness,
+)
 
 # Hardware Binding v2.0 - Anti-Spoof with Entropy Validation
 try:
@@ -514,6 +522,11 @@ DB_PATH = "./rustchain_v2.db"
 # Set Flask app config for DB_PATH
 app.config["DB_PATH"] = DB_PATH
 
+# Attestation replay protection defaults
+ATTEST_NONCE_SKEW_SECONDS = int(os.environ.get("RC_ATTEST_NONCE_SKEW_SECONDS", "60"))
+ATTEST_NONCE_TTL_SECONDS = int(os.environ.get("RC_ATTEST_NONCE_TTL_SECONDS", "3600"))
+ATTEST_CHALLENGE_TTL_SECONDS = int(os.environ.get("RC_ATTEST_CHALLENGE_TTL_SECONDS", "120"))
+
 # Initialize Hall of Rust tables
 try:
     from hall_of_rust import init_hall_tables
@@ -659,6 +672,13 @@ def init_db():
                   (int(time.time()),))
         c.execute("INSERT OR IGNORE INTO gov_threshold(id, threshold) VALUES(1, 3)")
         c.execute("INSERT OR IGNORE INTO checkpoints_meta(k, v) VALUES('chain_id', 'rustchain-mainnet-candidate')")
+
+        # Attestation replay-protection tables
+        try:
+            attest_ensure_tables(c)
+        except Exception as e:
+            print(f"[INIT] used_nonces init: {e}")
+
         c.commit()
 
 # Hardware multipliers
@@ -1539,10 +1559,40 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
             return False, f'Hardware bound to {bound_miner[:16]}...', bound_miner
 
 
+@app.route("/attest/challenge", methods=["GET"])
+def attest_challenge():
+    """Issue a short-lived server nonce for challenge-response attestation (optional)."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            attest_ensure_tables(conn)
+            attest_cleanup_expired(conn)
+            ch = attest_issue_challenge(conn, ttl_seconds=ATTEST_CHALLENGE_TTL_SECONDS)
+        return jsonify(
+            {
+                "ok": True,
+                "challenge": ch.nonce,
+                "expires_at": ch.expires_at,
+                "server_ts": int(time.time()),
+            }
+        )
+    except Exception as e:
+        return jsonify({"ok": False, "error": "challenge_issue_failed", "details": str(e)}), 500
+
+
 @app.route('/attest/submit', methods=['POST'])
 def submit_attestation():
     """Submit hardware attestation with fingerprint validation"""
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
+
+    # Best-effort cleanup of expired nonce/challenge rows.
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            attest_ensure_tables(conn)
+            attest_cleanup_expired(conn)
+    except Exception:
+        pass
 
     # Extract client IP (handle nginx proxy)
     client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
@@ -1571,6 +1621,41 @@ def submit_attestation():
     # Basic validation
     if not miner:
         miner = f"anon_{secrets.token_hex(8)}"
+
+    # Optional server-issued challenge/response (backward compatible).
+    challenge = (report.get("challenge") if isinstance(report, dict) else None) or data.get("challenge")
+    if challenge:
+        try:
+            with sqlite3.connect(DB_PATH) as conn:
+                attest_ensure_tables(conn)
+                ok = attest_consume_challenge(conn, str(challenge))
+            if not ok:
+                return jsonify({"ok": False, "error": "invalid_challenge"}), 400
+        except Exception:
+            return jsonify({"ok": False, "error": "challenge_check_failed"}), 500
+    else:
+        print("[ATTEST] WARN: no challenge provided (backward compatible mode)")
+
+    # Timestamp freshness + replay prevention for nonce (timestamp-based).
+    if nonce:
+        ok_fresh, reason = attest_validate_nonce_freshness(str(nonce), skew_seconds=ATTEST_NONCE_SKEW_SECONDS)
+        if not ok_fresh:
+            return jsonify({"ok": False, "error": "nonce_invalid", "reason": reason}), 400
+        try:
+            with sqlite3.connect(DB_PATH) as conn:
+                attest_ensure_tables(conn)
+                ok_used, why = attest_mark_nonce_used(
+                    conn,
+                    miner_id=str(miner),
+                    nonce=str(nonce),
+                    ttl_seconds=ATTEST_NONCE_TTL_SECONDS,
+                )
+            if not ok_used:
+                return jsonify({"ok": False, "error": "nonce_replay", "reason": why}), 409
+        except Exception:
+            return jsonify({"ok": False, "error": "nonce_check_failed"}), 500
+    else:
+        print("[ATTEST] WARN: no nonce provided (cannot enforce freshness / replay checks)")
 
     # SECURITY: Check blocked wallets
     with sqlite3.connect(DB_PATH) as conn:
