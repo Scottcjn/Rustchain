@@ -74,6 +74,19 @@ except ImportError as e:
     HW_PROOF_AVAILABLE = False
     print(f"[INIT] Hardware proof module not found: {e}")
 
+# Temporal entropy validation (bounty #19)
+try:
+    from temporal_entropy_validation import (
+        init_temporal_tables,
+        build_temporal_snapshot,
+        record_and_validate_temporal,
+    )
+    TEMPORAL_VALIDATION_AVAILABLE = True
+    print("[INIT] ✓ Temporal entropy validation module loaded")
+except ImportError as e:
+    TEMPORAL_VALIDATION_AVAILABLE = False
+    print(f"[INIT] Temporal entropy module not found: {e}")
+
 app = Flask(__name__)
 
 # Register Hall of Rust blueprint (tables initialized after DB_PATH is set)
@@ -659,6 +672,10 @@ def init_db():
                   (int(time.time()),))
         c.execute("INSERT OR IGNORE INTO gov_threshold(id, threshold) VALUES(1, 3)")
         c.execute("INSERT OR IGNORE INTO checkpoints_meta(k, v) VALUES('chain_id', 'rustchain-mainnet-candidate')")
+
+        # Temporal entropy history/flags tables.
+        if TEMPORAL_VALIDATION_AVAILABLE:
+            init_temporal_tables(c)
         c.commit()
 
 # Hardware multipliers
@@ -782,16 +799,48 @@ def auto_induct_to_hall(miner: str, device: dict):
     except Exception as e:
         print(f"[HALL] Auto-induct error: {e}")
 
-def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False, source_ip: str = None):
+def record_attestation_success(
+    miner: str,
+    device: dict,
+    fingerprint_passed: bool = False,
+    source_ip: str = None,
+    temporal_snapshot: Optional[dict] = None,
+):
     now = int(time.time())
+    epoch = slot_to_epoch(current_slot())
+    temporal_result = {
+        "status": "disabled",
+        "consistency_score": 1.0,
+        "review_required": False,
+        "reasons": [],
+    }
+    entropy_score = 0.0
+    if isinstance(temporal_snapshot, dict):
+        try:
+            entropy_score = float(temporal_snapshot.get("entropy_score", 0.0))
+        except Exception:
+            entropy_score = 0.0
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
             INSERT OR REPLACE INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, source_ip)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (miner, now, device.get("device_family", device.get("family", "unknown")), device.get("device_arch", device.get("arch", "unknown")), 0.0, 1 if fingerprint_passed else 0, source_ip))
+        """, (miner, now, device.get("device_family", device.get("family", "unknown")), device.get("device_arch", device.get("arch", "unknown")), entropy_score, 1 if fingerprint_passed else 0, source_ip))
+
+        if TEMPORAL_VALIDATION_AVAILABLE and temporal_snapshot:
+            temporal_result = record_and_validate_temporal(
+                conn,
+                miner=miner,
+                ts_ok=now,
+                epoch=epoch,
+                snapshot=temporal_snapshot,
+                source_ip=source_ip,
+            )
+
         conn.commit()
     # Auto-induct to Hall of Rust
     auto_induct_to_hall(miner, device)
+    return temporal_result
 # =============================================================================
 # FINGERPRINT VALIDATION (RIP-PoA Anti-Emulation)
 # =============================================================================
@@ -1643,8 +1692,18 @@ def submit_attestation():
         print(f"[VM_CHECK] Miner: {miner} - VM DETECTED (zero rewards): {vm_reason}")
         fingerprint_passed = False  # Mark as failed for zero weight
 
-    # Record successful attestation (with fingerprint status)
-    record_attestation_success(miner, device, fingerprint_passed, client_ip)
+    temporal_snapshot = None
+    if TEMPORAL_VALIDATION_AVAILABLE:
+        temporal_snapshot = build_temporal_snapshot(device, fingerprint, signals)
+
+    # Record successful attestation (with fingerprint + temporal status)
+    temporal_result = record_attestation_success(
+        miner,
+        device,
+        fingerprint_passed,
+        client_ip,
+        temporal_snapshot=temporal_snapshot,
+    )
 
     # Record MACs if provided
     if macs:
@@ -1663,6 +1722,13 @@ def submit_attestation():
             enroll_weight = 0.000000001
         else:
             enroll_weight = hw_weight
+
+        # Temporal anomalies are eligible but down-weighted and flagged for review.
+        if temporal_result.get("review_required"):
+            enroll_weight = min(enroll_weight, 0.25)
+            app.logger.warning(
+                f"[TEMPORAL] {miner[:20]}... flagged review reasons={temporal_result.get('reasons', [])}"
+            )
         
         miner_id = data.get("miner_id", miner)
         
@@ -1714,7 +1780,8 @@ def submit_attestation():
         "status": "accepted",
         "device": device,
         "fingerprint_passed": fingerprint_passed,
-        "macs_recorded": len(macs) if macs else 0
+        "macs_recorded": len(macs) if macs else 0,
+        "temporal_consistency": temporal_result,
     })
 
 # ============= EPOCH ENDPOINTS =============
@@ -2632,12 +2699,28 @@ def api_miners():
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         # Get all miners attested in the last hour
-        rows = c.execute("""
-            SELECT miner, ts_ok, device_family, device_arch, entropy_score
-            FROM miner_attest_recent 
-            WHERE ts_ok > ?
-            ORDER BY ts_ok DESC
-        """, (now - 3600,)).fetchall()
+        try:
+            rows = c.execute("""
+                SELECT m.miner, m.ts_ok, m.device_family, m.device_arch, m.entropy_score,
+                       COALESCE(t.status, 'unknown') as temporal_status,
+                       COALESCE(t.review_required, 0) as temporal_review_required,
+                       COALESCE(t.consistency_score, 1.0) as temporal_consistency_score
+                FROM miner_attest_recent m
+                LEFT JOIN miner_temporal_flags t ON t.miner = m.miner
+                WHERE m.ts_ok > ?
+                ORDER BY m.ts_ok DESC
+            """, (now - 3600,)).fetchall()
+        except sqlite3.OperationalError:
+            # Backward compatibility for nodes that have not created temporal tables yet.
+            rows = c.execute("""
+                SELECT miner, ts_ok, device_family, device_arch, entropy_score,
+                       'unknown' as temporal_status,
+                       0 as temporal_review_required,
+                       1.0 as temporal_consistency_score
+                FROM miner_attest_recent
+                WHERE ts_ok > ?
+                ORDER BY ts_ok DESC
+            """, (now - 3600,)).fetchall()
         
         miners = []
         for r in rows:
@@ -2669,7 +2752,10 @@ def api_miners():
                 "device_arch": r["device_arch"],
                 "hardware_type": hw_type,  # Museum System classification
                 "entropy_score": r["entropy_score"] or 0.0,
-                "antiquity_multiplier": mult
+                "antiquity_multiplier": mult,
+                "temporal_status": r["temporal_status"],
+                "temporal_review_required": bool(r["temporal_review_required"]),
+                "temporal_consistency_score": r["temporal_consistency_score"],
             })
     
     return jsonify(miners)
