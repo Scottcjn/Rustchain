@@ -340,3 +340,13 @@ MIT License - Free to use, but please keep the copyright notice and attribution.
 **DOS boxes, PowerPC G4s, Win95 machines - they all have value. RustChain proves it.**
 
 </div>
+
+## 🚀 Quick Start
+
+```bash
+pip install rustchain
+rustchain --help
+```
+
+---
+*Documentation improved for better onboarding*
