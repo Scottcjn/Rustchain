@@ -34,6 +34,18 @@ RustChain Token (RTC) is now available as **wRTC** on Solana via the BoTTube Bri
 
 ---
 
+## 📄 Academic Publications
+
+| Paper | DOI | Topic |
+|-------|-----|-------|
+| **RustChain: One CPU, One Vote** | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623592.svg)](https://doi.org/10.5281/zenodo.18623592) | Proof of Antiquity consensus, hardware fingerprinting |
+| **Non-Bijunctive Permutation Collapse** | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623920.svg)](https://doi.org/10.5281/zenodo.18623920) | AltiVec vec_perm for LLM attention (27-96x advantage) |
+| **PSE Hardware Entropy** | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623922.svg)](https://doi.org/10.5281/zenodo.18623922) | POWER8 mftb entropy for behavioral divergence |
+| **Neuromorphic Prompt Translation** | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623594.svg)](https://doi.org/10.5281/zenodo.18623594) | Emotional prompting for 20% video diffusion gains |
+| **RAM Coffers** | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18321905.svg)](https://doi.org/10.5281/zenodo.18321905) | NUMA-distributed weight banking for LLM inference |
+
+---
+
 ## 🎯 What Makes RustChain Different
 
 | Traditional PoW | Proof-of-Antiquity |
