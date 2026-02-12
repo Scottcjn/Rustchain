@@ -6,7 +6,10 @@ import json
 import sys
 from typing import Any
 
-from node.payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
+try:
+    from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
+except ImportError:
+    from node.payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
 
 
 def read_payload(path: str) -> Any:
@@ -36,4 +39,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

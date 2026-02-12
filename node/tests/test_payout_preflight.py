@@ -1,6 +1,9 @@
 import unittest
 
-from node.payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
+try:
+    from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
+except ImportError:
+    from node.payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
 
 
 class PayoutPreflightTests(unittest.TestCase):
@@ -51,4 +54,3 @@ class PayoutPreflightTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

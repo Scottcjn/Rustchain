@@ -5,7 +5,11 @@ Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
 import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math
 from flask import Flask, request, jsonify, g
-from node.payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
+try:
+    # Deployment compatibility: production may run this file as a single script.
+    from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
+except ImportError:
+    from node.payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
 
 # Hardware Binding v2.0 - Anti-Spoof with Entropy Validation
 try:
