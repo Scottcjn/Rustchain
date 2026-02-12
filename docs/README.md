@@ -8,6 +8,7 @@
 |----------|-------------|
 | [Protocol Specification](./PROTOCOL.md) | Full RIP-200 consensus protocol |
 | [API Reference](./API.md) | All endpoints with curl examples |
+| [Wallet User Guide](./WALLET_GUIDE.md) | Create and manage RTC wallets |
 | [Glossary](./GLOSSARY.md) | Terms and definitions |
 | [Tokenomics](./tokenomics_v1.md) | RTC supply and distribution |
 
