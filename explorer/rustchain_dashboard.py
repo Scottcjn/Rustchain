@@ -189,6 +189,15 @@ DASHBOARD_HTML = """
         .sys-stat .value { font-size: 1.8em; font-weight: bold; }
     </style>
     <script>
+        function escapeHtml(s) {
+            return String(s)
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('\"', '&quot;')
+                .replaceAll(\"'\", '&#39;');
+        }
+
         function updateDashboard() {
             fetch('/api/stats')
                 .then(r => r.json())
@@ -212,12 +221,12 @@ DASHBOARD_HTML = """
                     const minersTable = document.getElementById('miners-tbody');
                     minersTable.innerHTML = data.active_miners.map(m => `
                         <tr>
-                            <td class="mono">${m.wallet_short}...</td>
+                            <td class="mono">${escapeHtml(m.wallet_short)}...</td>
                             <td><span class="badge badge-${m.arch}">${m.arch.toUpperCase()}</span></td>
                             <td><strong>${m.weight}x</strong></td>
                             <td class="green">${m.balance.toFixed(6)} RTC</td>
-                            <td class="mono">${m.last_seen}</td>
-                            <td class="blue">${m.age_on_network || 'New'}</td>
+                            <td class="mono">${escapeHtml(m.last_seen)}</td>
+                            <td class="blue">${escapeHtml(m.age_on_network || 'New')}</td>
                             <td><span class="badge badge-active pulse">ACTIVE</span></td>
                         </tr>
                     `).join('');
@@ -227,8 +236,8 @@ DASHBOARD_HTML = """
                     blocksTable.innerHTML = data.recent_blocks.map(b => `
                         <tr>
                             <td><strong>${b.height}</strong></td>
-                            <td class="mono">${b.hash_short}...</td>
-                            <td>${b.timestamp}</td>
+                            <td class="mono">${escapeHtml(b.hash_short)}...</td>
+                            <td>${escapeHtml(b.timestamp)}</td>
                             <td><span class="badge">${b.miners_count} miners</span></td>
                             <td class="green">${b.reward} RTC</td>
                         </tr>
@@ -249,23 +258,23 @@ DASHBOARD_HTML = """
                     if (data.found) {
                         resultDiv.innerHTML = `
                             <h3>✅ Wallet Found</h3>
-                            <p><strong>Address:</strong> <span class="mono">${data.wallet}</span></p>
-                            <p><strong>Balance:</strong> <span class="green">${data.balance} RTC</span></p>
-                            <p><strong>Weight:</strong> ${data.weight}x (${data.tier})</p>
-                            <p><strong>Age on Network:</strong> ${data.age_on_network || 'Unknown'}</p>
+                            <p><strong>Address:</strong> <span class="mono">${escapeHtml(data.wallet)}</span></p>
+                            <p><strong>Balance:</strong> <span class="green">${escapeHtml(data.balance)} RTC</span></p>
+                            <p><strong>Weight:</strong> ${escapeHtml(data.weight)}x (${escapeHtml(data.tier)})</p>
+                            <p><strong>Age on Network:</strong> ${escapeHtml(data.age_on_network || 'Unknown')}</p>
                             <p><strong>Status:</strong> ${data.enrolled ? '✅ Enrolled in current epoch' : '⏸️ Not currently enrolled'}</p>
-                            <p><strong>Last Seen:</strong> ${data.last_seen || 'Never'}</p>
+                            <p><strong>Last Seen:</strong> ${escapeHtml(data.last_seen || 'Never')}</p>
                         `;
                     } else {
                         resultDiv.innerHTML = `
                             <h3>❌ Wallet Not Found</h3>
-                            <p>No miner found with address: <span class="mono">${wallet}</span></p>
+                            <p>No miner found with address: <span class="mono">${escapeHtml(wallet)}</span></p>
                         `;
                     }
                     resultDiv.style.display = 'block';
                 })
                 .catch(err => {
-                    document.getElementById('search-result').innerHTML = `<h3>❌ Error</h3><p>${err}</p>`;
+                    document.getElementById('search-result').innerHTML = `<h3>❌ Error</h3><p>${escapeHtml(err)}</p>`;
                     document.getElementById('search-result').style.display = 'block';
                 });
         }
