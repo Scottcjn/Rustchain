@@ -7,6 +7,11 @@ import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, gl
 import ipaddress
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g
+try:
+    # Deployment compatibility: production may run this file as a single script.
+    from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
+except ImportError:
+    from node.payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
 
 # Hardware Binding v2.0 - Anti-Spoof with Entropy Validation
 try:
@@ -3123,17 +3128,16 @@ def wallet_transfer_v2():
             "hint": "Use /wallet/transfer/signed for user transfers"
         }), 401
 
-    data = request.get_json()
-    from_miner = data.get('from_miner')
-    to_miner = data.get('to_miner')
-    amount_rtc = float(data.get('amount_rtc', 0))
-    reason = data.get('reason', 'admin_transfer')
-    
-    if not all([from_miner, to_miner]):
-        return jsonify({"error": "Missing from_miner or to_miner"}), 400
-    
-    if amount_rtc <= 0:
-        return jsonify({"error": "Amount must be positive"}), 400
+    data = request.get_json(silent=True)
+    pre = validate_wallet_transfer_admin(data)
+    if not pre.ok:
+        # Hardening: malformed/edge payloads should never produce server 500s.
+        return jsonify({"error": pre.error, "details": pre.details}), 400
+
+    from_miner = pre.details["from_miner"]
+    to_miner = pre.details["to_miner"]
+    amount_rtc = pre.details["amount_rtc"]
+    reason = str((data or {}).get('reason', 'admin_transfer'))
     
     amount_i64 = int(amount_rtc * 1000000)
     now = int(time.time())
@@ -3771,44 +3775,22 @@ def wallet_transfer_signed():
     - memo: optional memo
     """
     data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return jsonify({"error": "Invalid JSON body"}), 400
+    pre = validate_wallet_transfer_signed(data)
+    if not pre.ok:
+        return jsonify({"error": pre.error, "details": pre.details}), 400
 
     # Extract client IP (handle nginx proxy)
     client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
     if client_ip and "," in client_ip:
         client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     
-    from_address = str(data.get("from_address", "")).strip()
-    to_address = str(data.get("to_address", "")).strip()
-    nonce = data.get("nonce")
+    from_address = pre.details["from_address"]
+    to_address = pre.details["to_address"]
+    nonce_int = pre.details["nonce"]
     signature = str(data.get("signature", "")).strip()
     public_key = str(data.get("public_key", "")).strip()
     memo = str(data.get("memo", ""))
-
-    try:
-        amount_rtc = float(data.get("amount_rtc", 0))
-    except (TypeError, ValueError):
-        return jsonify({"error": "amount_rtc must be a valid number"}), 400
-
-    if not math.isfinite(amount_rtc):
-        return jsonify({"error": "amount_rtc must be finite"}), 400
-    
-    # Validate required fields
-    if not all([from_address, to_address, signature, public_key, nonce]):
-        return jsonify({"error": "Missing required fields (from_address, to_address, signature, public_key, nonce)"}), 400
-    
-    if amount_rtc <= 0:
-        return jsonify({"error": "Amount must be positive"}), 400
-
-    if not (from_address.startswith("RTC") and len(from_address) == 43):
-        return jsonify({"error": "Invalid from_address format"}), 400
-
-    if not (to_address.startswith("RTC") and len(to_address) == 43):
-        return jsonify({"error": "Invalid to_address format"}), 400
-
-    if from_address == to_address:
-        return jsonify({"error": "from_address and to_address must differ"}), 400
+    amount_rtc = pre.details["amount_rtc"]
 
     # Verify public key matches from_address
     expected_address = address_from_pubkey(public_key)
@@ -3819,14 +3801,6 @@ def wallet_transfer_signed():
             "got": from_address
         }), 400
     
-    try:
-        nonce_int = int(str(nonce))
-    except (TypeError, ValueError):
-        return jsonify({"error": "nonce must be an integer-like value"}), 400
-
-    if nonce_int <= 0:
-        return jsonify({"error": "nonce must be > 0"}), 400
-
     nonce = str(nonce_int)
 
     # Recreate the signed message (must match client signing format)
@@ -3859,61 +3833,74 @@ def wallet_transfer_signed():
                 "used_at": nonce_row[0]
             }), 400
     
+    # SECURITY/HARDENING: signed transfers should follow the same 2-phase commit
+    # semantics as admin transfers (pending_ledger + delayed confirmation). This
+    # prevents bypassing the 24h pending window via the signed endpoint.
     amount_i64 = int(amount_rtc * 1000000)
-    
+    now = int(time.time())
+    confirms_at = now + CONFIRMATION_DELAY_SECONDS
+    current_epoch = current_slot()
+
+    # Deterministic tx hash derived from the signed message + signature.
+    tx_hash = hashlib.sha256(message + bytes.fromhex(signature)).hexdigest()[:32]
+
     conn = sqlite3.connect(DB_PATH)
     try:
         c = conn.cursor()
-        
+
         # Check sender balance (using from_address as wallet ID)
         row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_address,)).fetchone()
         sender_balance = row[0] if row else 0
-        
-        if sender_balance < amount_i64:
+
+        # Calculate pending debits (uncommitted outgoing transfers)
+        pending_debits = c.execute("""
+            SELECT COALESCE(SUM(amount_i64), 0) FROM pending_ledger
+            WHERE from_miner = ? AND status = 'pending'
+        """, (from_address,)).fetchone()[0]
+
+        available_balance = sender_balance - pending_debits
+
+        if available_balance < amount_i64:
             return jsonify({
-                "error": "Insufficient balance",
+                "error": "Insufficient available balance",
                 "balance_rtc": sender_balance / 1000000,
+                "pending_debits_rtc": pending_debits / 1000000,
+                "available_rtc": available_balance / 1000000,
                 "requested_rtc": amount_rtc
             }), 400
-        
-        # Execute transfer
-        c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (to_address,))
-        c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?", (amount_i64, from_address))
-        c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?", (amount_i64, amount_i64, to_address))
-        
-        # Record in ledger
-        now = int(time.time())
-        c.execute(
-            "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
-            (now, current_slot(), from_address, -amount_i64, f"transfer_out:{to_address[:20]}:{memo[:30]}")
-        )
-        c.execute(
-            "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
-            (now, current_slot(), to_address, amount_i64, f"transfer_in:{from_address[:20]}:{memo[:30]}")
-        )
-        
-        sender_new = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_address,)).fetchone()[0]
-        recipient_new = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (to_address,)).fetchone()[0]
-        
-        # SECURITY: Record nonce to prevent replay
+
+        # Insert into pending_ledger (NOT direct balance update!)
+        reason = f"signed_transfer:{memo[:80]}"
+        c.execute("""
+            INSERT INTO pending_ledger
+            (ts, epoch, from_miner, to_miner, amount_i64, reason, status, created_at, confirms_at, tx_hash)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+        """, (now, current_epoch, from_address, to_address, amount_i64, reason, now, confirms_at, tx_hash))
+
+        pending_id = c.lastrowid
+
+        # SECURITY: Record nonce to prevent replay (store at enqueue time)
         c.execute(
             "INSERT INTO transfer_nonces (from_address, nonce, used_at) VALUES (?, ?, ?)",
-            (from_address, str(nonce), int(time.time()))
+            (from_address, str(nonce), now)
         )
-        
+
         conn.commit()
-        
+
         return jsonify({
             "ok": True,
+            "verified": True,
+            "signature_type": "Ed25519",
+            "replay_protected": True,
+            "phase": "pending",
+            "pending_id": pending_id,
+            "tx_hash": tx_hash,
             "from_address": from_address,
             "to_address": to_address,
             "amount_rtc": amount_rtc,
-            "sender_balance_rtc": sender_new / 1000000,
-            "recipient_balance_rtc": recipient_new / 1000000,
-            "memo": memo,
-            "verified": True,
-            "signature_type": "Ed25519",
-            "replay_protected": True
+            "confirms_at": confirms_at,
+            "confirms_in_hours": CONFIRMATION_DELAY_SECONDS / 3600,
+            "message": f"Transfer pending. Will confirm in {CONFIRMATION_DELAY_SECONDS // 3600} hours unless voided."
         })
     finally:
         conn.close()
