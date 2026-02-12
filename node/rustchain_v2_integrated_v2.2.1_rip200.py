@@ -3770,61 +3770,74 @@ def wallet_transfer_signed():
                 "used_at": nonce_row[0]
             }), 400
     
+    # SECURITY/HARDENING: signed transfers should follow the same 2-phase commit
+    # semantics as admin transfers (pending_ledger + delayed confirmation). This
+    # prevents bypassing the 24h pending window via the signed endpoint.
     amount_i64 = int(amount_rtc * 1000000)
-    
+    now = int(time.time())
+    confirms_at = now + CONFIRMATION_DELAY_SECONDS
+    current_epoch = current_slot()
+
+    # Deterministic tx hash derived from the signed message + signature.
+    tx_hash = hashlib.sha256(message + bytes.fromhex(signature)).hexdigest()[:32]
+
     conn = sqlite3.connect(DB_PATH)
     try:
         c = conn.cursor()
-        
+
         # Check sender balance (using from_address as wallet ID)
         row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_address,)).fetchone()
         sender_balance = row[0] if row else 0
-        
-        if sender_balance < amount_i64:
+
+        # Calculate pending debits (uncommitted outgoing transfers)
+        pending_debits = c.execute("""
+            SELECT COALESCE(SUM(amount_i64), 0) FROM pending_ledger
+            WHERE from_miner = ? AND status = 'pending'
+        """, (from_address,)).fetchone()[0]
+
+        available_balance = sender_balance - pending_debits
+
+        if available_balance < amount_i64:
             return jsonify({
-                "error": "Insufficient balance",
+                "error": "Insufficient available balance",
                 "balance_rtc": sender_balance / 1000000,
+                "pending_debits_rtc": pending_debits / 1000000,
+                "available_rtc": available_balance / 1000000,
                 "requested_rtc": amount_rtc
             }), 400
-        
-        # Execute transfer
-        c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (to_address,))
-        c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?", (amount_i64, from_address))
-        c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?", (amount_i64, amount_i64, to_address))
-        
-        # Record in ledger
-        now = int(time.time())
-        c.execute(
-            "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
-            (now, current_slot(), from_address, -amount_i64, f"transfer_out:{to_address[:20]}:{memo[:30]}")
-        )
-        c.execute(
-            "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
-            (now, current_slot(), to_address, amount_i64, f"transfer_in:{from_address[:20]}:{memo[:30]}")
-        )
-        
-        sender_new = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_address,)).fetchone()[0]
-        recipient_new = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (to_address,)).fetchone()[0]
-        
-        # SECURITY: Record nonce to prevent replay
+
+        # Insert into pending_ledger (NOT direct balance update!)
+        reason = f"signed_transfer:{memo[:80]}"
+        c.execute("""
+            INSERT INTO pending_ledger
+            (ts, epoch, from_miner, to_miner, amount_i64, reason, status, created_at, confirms_at, tx_hash)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+        """, (now, current_epoch, from_address, to_address, amount_i64, reason, now, confirms_at, tx_hash))
+
+        pending_id = c.lastrowid
+
+        # SECURITY: Record nonce to prevent replay (store at enqueue time)
         c.execute(
             "INSERT INTO transfer_nonces (from_address, nonce, used_at) VALUES (?, ?, ?)",
-            (from_address, str(nonce), int(time.time()))
+            (from_address, str(nonce), now)
         )
-        
+
         conn.commit()
-        
+
         return jsonify({
             "ok": True,
+            "verified": True,
+            "signature_type": "Ed25519",
+            "replay_protected": True,
+            "phase": "pending",
+            "pending_id": pending_id,
+            "tx_hash": tx_hash,
             "from_address": from_address,
             "to_address": to_address,
             "amount_rtc": amount_rtc,
-            "sender_balance_rtc": sender_new / 1000000,
-            "recipient_balance_rtc": recipient_new / 1000000,
-            "memo": memo,
-            "verified": True,
-            "signature_type": "Ed25519",
-            "replay_protected": True
+            "confirms_at": confirms_at,
+            "confirms_in_hours": CONFIRMATION_DELAY_SECONDS / 3600,
+            "message": f"Transfer pending. Will confirm in {CONFIRMATION_DELAY_SECONDS // 3600} hours unless voided."
         })
     finally:
         conn.close()
