@@ -550,6 +550,32 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
 
+        # Pending transfers (2-phase commit)
+        # NOTE: Production DBs may already have a different balances schema; this table is additive.
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pending_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts INTEGER NOT NULL,
+                epoch INTEGER NOT NULL,
+                from_miner TEXT NOT NULL,
+                to_miner TEXT NOT NULL,
+                amount_i64 INTEGER NOT NULL,
+                reason TEXT,
+                status TEXT DEFAULT 'pending',
+                created_at INTEGER NOT NULL,
+                confirms_at INTEGER NOT NULL,
+                tx_hash TEXT,
+                voided_by TEXT,
+                voided_reason TEXT,
+                confirmed_at INTEGER
+            )
+            """
+        )
+        c.execute("CREATE INDEX IF NOT EXISTS idx_pending_ledger_status ON pending_ledger(status)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_pending_ledger_confirms_at ON pending_ledger(confirms_at)")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_ledger_tx_hash ON pending_ledger(tx_hash)")
+
         # Withdrawal tables
         c.execute("""
             CREATE TABLE IF NOT EXISTS withdrawals (
