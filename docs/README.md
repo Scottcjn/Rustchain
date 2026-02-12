@@ -10,6 +10,8 @@
 | [API Reference](./API.md) | All endpoints with curl examples |
 | [Glossary](./GLOSSARY.md) | Terms and definitions |
 | [Tokenomics](./tokenomics_v1.md) | RTC supply and distribution |
+| [Wallet User Guide](./WALLET_USER_GUIDE.md) | Wallet basics, balance checks, and safe operations |
+| [Contributing Guide](./CONTRIBUTING.md) | Contribution workflow, PR checklist, and bounty submission notes |
 
 ## Live Network
 
