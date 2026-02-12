@@ -2909,18 +2909,17 @@ def ops_readiness():
     # Tip age
     try:
         with _db() as db:
-            r = db.execute("SELECT slot, header_json FROM headers ORDER BY slot DESC LIMIT 1").fetchone()
-            if r:
-                h = json.loads(r["header_json"])
-                ts = int(h.get("ts") or h.get("timestamp") or 0)
-                age = max(0, int(time.time()) - ts) if ts else 999999
-            else:
-                age = 999999
+            # Headers table stores a server-side `ts` column (see /headers/tip).
+            # Avoid relying on a `header_json` column which may not exist.
+            r = db.execute("SELECT ts FROM headers ORDER BY slot DESC LIMIT 1").fetchone()
+            ts = int(r["ts"]) if (r and r["ts"]) else 0
+            age = max(0, int(time.time()) - ts) if ts else 999999
         ok_age = age < 1200  # 20 minutes max
         out["checks"].append({"name": "tip_age_s", "ok": ok_age, "val": age})
         out["ok"] &= ok_age
     except Exception as e:
-        out["checks"].append({"name": "tip_age_s", "ok": False, "err": str(e)})
+        # Avoid leaking internal DB/schema details.
+        out["checks"].append({"name": "tip_age_s", "ok": False, "err": "unavailable"})
         out["ok"] = False
 
     # Headers count
@@ -2935,7 +2934,7 @@ def ops_readiness():
         out["checks"].append({"name": "headers_count", "ok": ok_cnt, "val": cnt_val})
         out["ok"] &= ok_cnt
     except Exception as e:
-        out["checks"].append({"name": "headers_count", "ok": False, "err": str(e)})
+        out["checks"].append({"name": "headers_count", "ok": False, "err": "unavailable"})
         out["ok"] = False
 
     # Metrics presence (optional - graceful degradation)
@@ -2949,7 +2948,7 @@ def ops_readiness():
         out["checks"].append({"name": "metrics_keys", "ok": okm, "keys": mm})
         out["ok"] &= okm
     except Exception as e:
-        out["checks"].append({"name": "metrics_keys", "ok": False, "err": str(e)})
+        out["checks"].append({"name": "metrics_keys", "ok": False, "err": "unavailable"})
         out["ok"] = False
 
     return jsonify(out), (200 if out["ok"] else 503)
