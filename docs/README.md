@@ -14,6 +14,7 @@
 | [Wallet User Guide](./WALLET_USER_GUIDE.md) | Wallet basics, balance checks, and safe operations |
 | [Contributing Guide](./CONTRIBUTING.md) | Contribution workflow, PR checklist, and bounty submission notes |
 | [Reward Analytics Dashboard](./REWARD_ANALYTICS_DASHBOARD.md) | Charts and API for RTC reward transparency |
+| [Cross-Node Sync Validator](./CROSS_NODE_SYNC_VALIDATOR.md) | Multi-node consistency checks and discrepancy reports |
 
 ## Live Network
 
