@@ -3629,7 +3629,7 @@ except Exception as e:
 
 
 # Windows Miner Download Endpoints
-from flask import send_file
+from flask import send_file, Response
 
 @app.route("/download/installer")
 def download_installer():
@@ -3933,10 +3933,69 @@ def download_test():
 
 @app.route("/download/test-bat")
 def download_test_bat():
-    return send_file("/root/rustchain/test_miner.bat",
-                    as_attachment=True,
-                    download_name="test_miner.bat",
-                    mimetype="application/x-bat")
+    """
+    Serve a diagnostic runner .bat.
+
+    Hardening: the bat downloads the python script over HTTP (to avoid TLS
+    certificate issues on some Windows installs), so embed a SHA256 hash of the
+    expected script so the bat can verify integrity before executing.
+    """
+    py_path = "/root/rustchain/test_miner_minimal.py"
+    try:
+        h = hashlib.sha256()
+        with open(py_path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        expected_sha256 = h.hexdigest().upper()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 404
+
+    # Keep legacy HTTP download URL, but verify hash before running.
+    bat = f"""@echo off
+setlocal enabledelayedexpansion
+title RustChain Miner Diagnostic Test
+color 0E
+cls
+
+echo ===========================================================
+echo          RUSTCHAIN MINER DIAGNOSTIC TEST
+echo ===========================================================
+echo.
+echo Downloading diagnostic test...
+echo.
+
+powershell -Command "Invoke-WebRequest -Uri 'http://50.28.86.131:8088/download/test' -OutFile 'test_miner_minimal.py'"
+if errorlevel 1 (
+  echo [error] download failed
+  exit /b 1
+)
+
+set EXPECTED_SHA256={expected_sha256}
+set HASH=
+for /f "skip=1 tokens=1" %%A in ('certutil -hashfile test_miner_minimal.py SHA256') do (
+  if not defined HASH set HASH=%%A
+)
+
+if /i not "!HASH!"=="!EXPECTED_SHA256!" (
+  echo [error] SHA256 mismatch
+  echo expected: !EXPECTED_SHA256!
+  echo got:      !HASH!
+  exit /b 1
+)
+
+echo.
+echo Running diagnostic test...
+echo.
+python test_miner_minimal.py
+
+echo.
+echo Done.
+pause
+"""
+
+    resp = Response(bat, mimetype="application/x-bat")
+    resp.headers["Content-Disposition"] = "attachment; filename=test_miner.bat"
+    return resp
 
 
 
