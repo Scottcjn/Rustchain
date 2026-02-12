@@ -3181,6 +3181,10 @@ def wallet_transfer_v2():
 @app.route('/pending/list', methods=['GET'])
 def list_pending():
     """List all pending transfers"""
+    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    if admin_key != os.environ.get("RC_ADMIN_KEY", ""):
+        return jsonify({"error": "Unauthorized"}), 401
+
     status_filter = request.args.get('status', 'pending')
     limit = min(int(request.args.get('limit', 100)), 500)
     
@@ -3384,6 +3388,10 @@ def confirm_pending():
 @app.route('/pending/integrity', methods=['GET'])
 def check_integrity():
     """Check balance integrity: sum of ledger should match balances"""
+    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    if admin_key != os.environ.get("RC_ADMIN_KEY", ""):
+        return jsonify({"error": "Unauthorized"}), 401
+
     with sqlite3.connect(DB_PATH) as db:
         # Sum all ledger deltas per miner
         ledger_sums = dict(db.execute("""
