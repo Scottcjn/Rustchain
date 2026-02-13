@@ -1,7 +1,14 @@
+import os
+import sys
 import unittest
 
 
-import test_fingerprints
+try:
+    import test_fingerprints
+except ModuleNotFoundError:
+    # Allow running tests from repo root (node/ isn't on sys.path by default).
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    import test_fingerprints
 
 
 class TestFingerprintPreflight(unittest.TestCase):
@@ -41,4 +48,3 @@ class TestFingerprintPreflight(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
