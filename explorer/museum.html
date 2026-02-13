@@ -107,9 +107,9 @@
             <div class="flex justify-between items-center mb-6">
                 <h3 class="text-2xl font-bold">🖥️ Machine Gallery</h3>
                 <div class="flex gap-2">
-                    <button onclick="filterArch('all')" class="px-3 py-1 bg-gray-700 rounded text-sm hover:bg-gray-600">All</button>
-                    <button onclick="filterArch('vintage')" class="px-3 py-1 bg-orange-600 rounded text-sm hover:bg-orange-500">Vintage</button>
-                    <button onclick="filterArch('modern')" class="px-3 py-1 bg-blue-600 rounded text-sm hover:bg-blue-500">Modern</button>
+                    <button data-arch-filter="all" class="px-3 py-1 bg-gray-700 rounded text-sm hover:bg-gray-600">All</button>
+                    <button data-arch-filter="vintage" class="px-3 py-1 bg-orange-600 rounded text-sm hover:bg-orange-500">Vintage</button>
+                    <button data-arch-filter="modern" class="px-3 py-1 bg-blue-600 rounded text-sm hover:bg-blue-500">Modern</button>
                 </div>
             </div>
             <div id="machineGallery" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -141,7 +141,7 @@
                         <h3 id="modalTitle" class="text-2xl font-bold">Machine Details</h3>
                         <p id="modalSubtitle" class="text-gray-400">Loading...</p>
                     </div>
-                    <button onclick="closeModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+                    <button id="closeModalBtn" class="text-gray-400 hover:text-white text-2xl">&times;</button>
                 </div>
                 <div id="modalContent" class="space-y-6">
                     <div class="text-center py-8 text-gray-400">Loading...</div>
@@ -317,10 +317,13 @@
                 const mult = m.antiquity_multiplier || meta.multiplier || 1;
                 const isVintage = meta.category === 'vintage' || meta.category === 'exotic';
                 
-                const minerId = escapeHtml(m.miner || '');
+                // IMPORTANT: never embed untrusted strings into inline JS event handlers.
+                // Use data attributes + addEventListener to avoid DOM XSS.
+                const minerIdRaw = String(m.miner || '');
+                const minerIdEsc = escapeHtml(minerIdRaw);
                 return `
-                    <div onclick="showMachineDetail('${minerId}')" 
-                         class="bg-gray-800 rounded-xl p-6 cursor-pointer card-hover transition-all duration-300 ${isVintage ? 'border border-orange-500/30' : ''}">
+                    <div data-miner-id="${minerIdEsc}"
+                         class="machine-card bg-gray-800 rounded-xl p-6 cursor-pointer card-hover transition-all duration-300 ${isVintage ? 'border border-orange-500/30' : ''}">
                         <div class="text-center mb-4">
                             <div class="text-6xl mb-2">${meta.image}</div>
                             <span class="inline-block px-3 py-1 rounded-full text-sm font-bold" 
@@ -331,7 +334,7 @@
                         <div class="space-y-2 text-sm">
                             <div class="flex justify-between">
                                 <span class="text-gray-400">Wallet</span>
-                                <span class="font-mono">${minerId.slice(0, 12)}...</span>
+                                <span class="font-mono">${escapeHtml(minerIdRaw.slice(0, 12))}...</span>
                             </div>
                             <div class="flex justify-between">
                                 <span class="text-gray-400">Multiplier</span>
@@ -348,6 +351,14 @@
             }).join('');
 
             document.getElementById('machineGallery').innerHTML = html || '<div class="text-gray-400 text-center py-8">No machines found</div>';
+
+            // Attach click handlers after render (prevents inline handler injection).
+            document.querySelectorAll('.machine-card[data-miner-id]').forEach((el) => {
+                el.addEventListener('click', () => {
+                    const id = el.getAttribute('data-miner-id') || '';
+                    showMachineDetail(id);
+                });
+            });
         }
 
         function updateHallOfFirsts() {
@@ -476,6 +487,12 @@
             document.getElementById('machineModal').classList.add('hidden');
             document.getElementById('machineModal').classList.remove('flex');
         }
+
+        // Avoid inline onclick handlers (hardening / CSP friendliness).
+        document.querySelectorAll('button[data-arch-filter]').forEach((btn) => {
+            btn.addEventListener('click', () => filterArch(btn.getAttribute('data-arch-filter') || 'all'));
+        });
+        document.getElementById('closeModalBtn').addEventListener('click', closeModal);
 
         // Close modal on backdrop click
         document.getElementById('machineModal').addEventListener('click', (e) => {
