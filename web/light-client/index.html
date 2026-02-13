@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RustChain Light Client</title>
+    <link rel="stylesheet" href="/light-client/app.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="top">
+        <div class="brand">
+          <div class="brand-title">RustChain</div>
+          <div class="brand-sub">Light Client (Signed Transfers)</div>
+        </div>
+        <div class="meta">
+          <div class="pill" id="nodeOriginPill"></div>
+          <a class="pill pill-link" href="/explorer">Explorer</a>
+        </div>
+      </header>
+
+      <section class="grid">
+        <section class="card">
+          <h2>Wallet</h2>
+
+          <div class="row">
+            <button id="btnGenerate">Generate 24-word Seed</button>
+            <button class="ghost" id="btnLock">Lock</button>
+          </div>
+
+          <label class="label" for="mnemonic">Mnemonic (24 words)</label>
+          <textarea id="mnemonic" rows="4" spellcheck="false" placeholder="paste 24 words here"></textarea>
+
+          <div class="row">
+            <button id="btnLoad">Load Wallet</button>
+            <button class="ghost" id="btnCopyAddress">Copy Address</button>
+          </div>
+
+          <div class="kv">
+            <div class="k">Address</div>
+            <div class="v mono" id="addr">-</div>
+            <div class="k">Public Key</div>
+            <div class="v mono" id="pub">-</div>
+          </div>
+
+          <p class="hint">
+            No private key is sent to the server. Transfers are signed locally in your browser.
+          </p>
+        </section>
+
+        <section class="card">
+          <h2>Balance</h2>
+          <div class="row">
+            <button id="btnBalance">Refresh</button>
+            <div class="pill" id="balancePill">- RTC</div>
+          </div>
+          <div class="log mono" id="balanceLog"></div>
+        </section>
+
+        <section class="card">
+          <h2>Send (Signed)</h2>
+
+          <label class="label" for="to">To Address (RTC...)</label>
+          <input id="to" class="mono" placeholder="RTC........................................" />
+
+          <div class="row">
+            <div class="col">
+              <label class="label" for="amount">Amount (RTC)</label>
+              <input id="amount" inputmode="decimal" placeholder="1" />
+            </div>
+            <div class="col">
+              <label class="label" for="memo">Memo (optional)</label>
+              <input id="memo" placeholder="hello" />
+            </div>
+          </div>
+
+          <div class="row">
+            <button id="btnSend">Sign & Send</button>
+          </div>
+
+          <div class="log mono" id="sendLog"></div>
+
+          <p class="hint">
+            Nonce uses current time in milliseconds to avoid replay collisions.
+          </p>
+        </section>
+      </section>
+
+      <footer class="foot">
+        <span class="muted">Route:</span> <span class="mono">/light</span>
+        <span class="muted">Static:</span> <span class="mono">/light-client/...</span>
+      </footer>
+    </main>
+
+    <script src="/light-client/vendor/nacl-fast.min.js"></script>
+    <script src="/light-client/app.js"></script>
+  </body>
+</html>
+

@@ -98,7 +98,7 @@ def settle_epoch_via_api(epoch):
             if data.get("ok"):
                 eligible = data.get("eligible", 0)
                 distributed = data.get("distributed_rtc", 0)
-                print(f"✓ Settled epoch {epoch}: {eligible} miners, {distributed:.4f} RTC")
+                print(f"[OK] Settled epoch {epoch}: {eligible} miners, {distributed:.4f} RTC")
                 return True
             else:
                 error = data.get("error", "unknown")
