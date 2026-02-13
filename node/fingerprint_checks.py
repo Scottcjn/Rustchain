@@ -339,7 +339,17 @@ def _estimate_release_year(cpu_model: str) -> Tuple[Optional[int], Dict]:
     m = re.search(r"i[3579]-\s*(\d{4,5})", cpu_l)
     if m:
         num = m.group(1)
-        gen_digits = num[:2] if len(num) == 5 else num[:1]
+        # Handle 10th/11th gen 4-digit mobile parts like 10510U/1165G7:
+        # treat the first 2 digits as the generation when >= 10.
+        if len(num) == 5:
+            gen_digits = num[:2]
+        elif len(num) == 4:
+            # 4-digit model numbers are usually 2nd-9th gen desktop parts (e.g. 4770 -> gen4),
+            # but can also be 10th/11th gen mobile parts (e.g. 10510U/1165G7).
+            first2 = int(num[:2])
+            gen_digits = num[:2] if 10 <= first2 <= 14 else num[:1]
+        else:
+            gen_digits = num[:1]
         try:
             gen = int(gen_digits)
         except ValueError:

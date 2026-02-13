@@ -29,6 +29,27 @@ class TestDeviceAgeOracle(unittest.TestCase):
         self.assertEqual(data["mismatch_reasons"], [])
         self.assertGreaterEqual(data["confidence"], 0.5)
 
+    def test_intel_11th_gen_mobile_4digit_parsing(self):
+        cpuinfo = "\n".join(
+            [
+                "model name\t: Intel(R) Core(TM) i7-1165G7 @ 2.80GHz",
+                "flags\t\t: fpu sse sse2 sse4_1 sse4_2 avx avx2",
+            ]
+        )
+
+        def fake_read(path, max_bytes=0):
+            if path == "/proc/cpuinfo":
+                return cpuinfo
+            return None
+
+        with mock.patch.object(fingerprint_checks, "_read_text_file", side_effect=fake_read), mock.patch.object(
+            fingerprint_checks.platform, "machine", return_value="x86_64"
+        ):
+            passed, data = fingerprint_checks.check_device_age_oracle()
+
+        self.assertTrue(passed)
+        self.assertEqual(data["estimated_release_year"], 2021)
+
     def test_spoofed_vintage_claim_on_x86_fails(self):
         cpuinfo = "\n".join(
             [
