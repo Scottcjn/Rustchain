@@ -3930,21 +3930,7 @@ def wallet_transfer_signed():
     if not verify_rtc_signature(public_key, message, signature):
         return jsonify({"error": "Invalid signature"}), 401
     
-    # Signature valid - process the transfer
-    
-    # SECURITY: Replay protection - check nonce not already used
-    with sqlite3.connect(DB_PATH) as nonce_conn:
-        nonce_row = nonce_conn.execute(
-            "SELECT used_at FROM transfer_nonces WHERE from_address = ? AND nonce = ?",
-            (from_address, str(nonce))
-        ).fetchone()
-        if nonce_row:
-            return jsonify({
-                "error": "Nonce already used (replay attack detected)",
-                "code": "REPLAY_DETECTED",
-                "nonce": nonce,
-                "used_at": nonce_row[0]
-            }), 400
+    # Signature valid - process the transfer (2-phase commit + replay protection).
     
     # SECURITY/HARDENING: signed transfers should follow the same 2-phase commit
     # semantics as admin transfers (pending_ledger + delayed confirmation). This
@@ -3961,6 +3947,20 @@ def wallet_transfer_signed():
     try:
         c = conn.cursor()
 
+        # SECURITY: Replay protection (atomic)
+        # Unique constraint (from_address, nonce) prevents races from slipping
+        # between a read-check and an insert.
+        c.execute(
+            "INSERT OR IGNORE INTO transfer_nonces (from_address, nonce, used_at) VALUES (?, ?, ?)",
+            (from_address, nonce, now),
+        )
+        if c.execute("SELECT changes()").fetchone()[0] == 0:
+            return jsonify({
+                "error": "Nonce already used (replay attack detected)",
+                "code": "REPLAY_DETECTED",
+                "nonce": nonce,
+            }), 400
+
         # Check sender balance (using from_address as wallet ID)
         sender_balance = _balance_i64_for_wallet(c, from_address)
 
@@ -3973,6 +3973,8 @@ def wallet_transfer_signed():
         available_balance = sender_balance - pending_debits
 
         if available_balance < amount_i64:
+            # Undo nonce reservation.
+            conn.rollback()
             return jsonify({
                 "error": "Insufficient available balance",
                 "balance_rtc": sender_balance / 1000000,
@@ -3990,12 +3992,6 @@ def wallet_transfer_signed():
         """, (now, current_epoch, from_address, to_address, amount_i64, reason, now, confirms_at, tx_hash))
 
         pending_id = c.lastrowid
-
-        # SECURITY: Record nonce to prevent replay (store at enqueue time)
-        c.execute(
-            "INSERT INTO transfer_nonces (from_address, nonce, used_at) VALUES (?, ?, ?)",
-            (from_address, str(nonce), now)
-        )
 
         conn.commit()
 
