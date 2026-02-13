@@ -278,15 +278,38 @@ def verify_payment_proof(
         True if payment is verified
     """
     # Replay protection: treat each on-chain payment tx as single-use for access.
-    # Allow idempotent retries of the exact same proof (same tx_hash + nonce).
-    spent = _spent_tx_cache.get(proof.get("tx_hash", ""))
+    #
+    # IMPORTANT: "idempotent retry" must only apply to the exact same proof *and*
+    # the exact same access parameters (recipient + expected_amount). Otherwise,
+    # a caller could "pay once for a cheap endpoint" then reuse the same tx_hash
+    # to access a more expensive endpoint, bypassing amount checks.
+    tx_hash = str(proof.get("tx_hash", ""))
+    nonce = str(proof.get("nonce", ""))
+    sender_hex = str(proof.get("sender", ""))
+    sig_hex = str(proof.get("signature", ""))
+
+    spent = _spent_tx_cache.get(tx_hash)
     if spent:
-        if str(spent.get("nonce", "")) == str(proof.get("nonce", "")):
-            return True
-        return False
+        ts = float(spent.get("timestamp", 0) or 0)
+        if time.time() - ts > SPENT_TX_TTL:
+            # Expired -> treat as not-spent (and allow re-validation via chain).
+            try:
+                del _spent_tx_cache[tx_hash]
+            except KeyError:
+                pass
+        else:
+            if (
+                str(spent.get("nonce", "")) == nonce
+                and str(spent.get("recipient", "")) == str(recipient)
+                and str(spent.get("expected_amount", "")) == str(expected_amount)
+                and str(spent.get("sender", "")) == sender_hex
+                and str(spent.get("signature", "")) == sig_hex
+            ):
+                return True
+            return False
 
     # Check cache first
-    cache_key = f"{proof['tx_hash']}:{proof['nonce']}"
+    cache_key = f"{tx_hash}:{nonce}"
     if cache_key in _payment_cache:
         cached = _payment_cache[cache_key]
         if time.time() - cached['timestamp'] < CACHE_TTL:
@@ -310,7 +333,14 @@ def verify_payment_proof(
             return False
         
         _payment_cache[cache_key] = {'valid': True, 'timestamp': time.time()}
-        _spent_tx_cache[proof['tx_hash']] = {'timestamp': time.time(), 'nonce': str(proof.get('nonce', ''))}
+        _spent_tx_cache[proof['tx_hash']] = {
+            'timestamp': time.time(),
+            'nonce': nonce,
+            'recipient': str(recipient),
+            'expected_amount': str(expected_amount),
+            'sender': sender_hex,
+            'signature': sig_hex,
+        }
         return True
         
     except Exception as e:

@@ -62,6 +62,25 @@ class TestReplayProtection(unittest.TestCase):
             self.assertEqual(args[2], "RTCdest")
             self.assertEqual(kwargs.get("expected_sender"), expected_sender)
 
+    def test_idempotent_retry_does_not_bypass_amount_or_recipient(self):
+        proof = {
+            "tx_hash": "abc123",
+            "nonce": "n1",
+            "signature": "00" * 64,
+            "sender": "11" * 32,
+        }
+
+        with mock.patch.object(mw, "verify_rtc_signature", return_value=True), mock.patch.object(
+            mw, "verify_payment_on_chain", return_value=True
+        ):
+            self.assertTrue(mw.verify_payment_proof(proof, expected_amount=0.1, recipient="RTC_A"))
+
+            # Same proof should NOT allow upgrading to a more expensive endpoint.
+            self.assertFalse(mw.verify_payment_proof(proof, expected_amount=1.0, recipient="RTC_A"))
+
+            # Same proof should NOT allow changing recipient.
+            self.assertFalse(mw.verify_payment_proof(proof, expected_amount=0.1, recipient="RTC_B"))
+
 
 if __name__ == "__main__":
     unittest.main()
