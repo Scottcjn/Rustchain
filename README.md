@@ -345,3 +345,14 @@ MIT License - Free to use, but please keep the copyright notice and attribution.
 **DOS boxes, PowerPC G4s, Win95 machines - they all have value. RustChain proves it.**
 
 </div>
+
+🌏 中文简介
+RustChain 是一个基于"古老证明"（Proof-of-Antiquity）的区块链协议，它奖励老旧硬件的真实性、熵耐久性和数字保存能力。
+核心理念：你的旧 PowerPC G4 比现代 Threadripper 赚得更多。这就是意义所在。
+主要特性
+• 为老旧硬件提供挖矿奖励
+• 支持 Python 3.8+ 和 PowerPC 架构
+• 基于时间的熵积分系统
+• 去中心化网络
+了解更多：英文文档
+Contributed by eelaine-wzw
