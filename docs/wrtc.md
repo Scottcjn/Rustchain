@@ -24,7 +24,7 @@
 
 | Check | Canonical Value | Verification |
 |-------|-----------------|--------------|
-| **Token Mint** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` | Must match exactly - 43 characters, base58 |
+| **Token Mint** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` | Must match exactly - 44 characters, base58 |
 | **Decimals** | `6` | wRTC uses 6 decimal places |
 | **Official Bridge** | `https://bottube.ai/bridge/wrtc` | Bookmark this URL |
 | **Official Swap** | `https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` | Verify mint in URL |

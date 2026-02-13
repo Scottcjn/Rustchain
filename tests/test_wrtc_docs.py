@@ -64,9 +64,9 @@ class TestWRTCDocumentation:
         )
 
     def test_mint_address_length(self):
-        """Verify mint address has correct length (32 bytes = ~43-44 base58 chars)."""
-        assert len(self.CANONICAL_MINT) == 43, (
-            f"Mint address must be 43 characters, got {len(self.CANONICAL_MINT)}"
+        """Verify mint address has correct length (Solana pubkeys are typically 43-44 base58 chars)."""
+        assert len(self.CANONICAL_MINT) == 44, (
+            f"Mint address must be 44 characters, got {len(self.CANONICAL_MINT)}"
         )
 
     def test_mint_address_in_documentation(self, docs_content: str):
@@ -75,21 +75,18 @@ class TestWRTCDocumentation:
             f"Canonical mint address {self.CANONICAL_MINT} must appear in documentation"
         )
 
-    def test_mint_address_consistency(self, docs_content: str):
-        """Verify all mint addresses in docs match canonical."""
-        # Find all potential Solana mint addresses (base58, 32-44 chars)
-        mint_pattern = r'[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{32,44}'
-        found_mints = set(re.findall(mint_pattern, docs_content))
-        
-        # Filter to likely mint addresses (43 chars is standard)
-        likely_mints = {m for m in found_mints if len(m) == 43}
-        
-        # All 43-char base58 strings should be the canonical mint
-        for mint in likely_mints:
-            assert mint == self.CANONICAL_MINT, (
-                f"Found non-canonical mint address: {mint}. "
-                f"All 43-char addresses should be {self.CANONICAL_MINT}"
-            )
+    def test_mint_addresses_in_urls_match_canonical(self, docs_content: str):
+        """Verify any swap URLs in docs use the canonical mint (avoid typosquatting)."""
+        # Only validate mints that appear in URL query params; docs may include other
+        # Solana addresses (pool IDs, example wallets, etc.) that are not mint addresses.
+        output_mint_pattern = (
+            r'outputMint='
+            r'([123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{32,44})'
+        )
+        found = set(re.findall(output_mint_pattern, docs_content))
+        assert found == {self.CANONICAL_MINT}, (
+            f"All outputMint params must use the canonical mint. Found: {sorted(found)}"
+        )
 
     # =========================================================================
     # Section 3: Required Sections Tests
