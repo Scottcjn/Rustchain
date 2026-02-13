@@ -2136,7 +2136,9 @@ def reject_v1_mine():
 @app.route('/withdraw/register', methods=['POST'])
 def register_withdrawal_key():
     """Register sr25519 public key for withdrawals"""
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
 
     # Extract client IP (handle nginx proxy)
     client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
@@ -2153,14 +2155,30 @@ def register_withdrawal_key():
     except ValueError:
         return jsonify({"error": "Invalid pubkey hex"}), 400
 
+    # SECURITY: prevent unauthenticated key overwrite (withdrawal takeover).
+    # First-time registration is allowed. Rotation requires admin key.
+    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    is_admin = admin_key == os.environ.get("RC_ADMIN_KEY", "")
+
+    now = int(time.time())
     with sqlite3.connect(DB_PATH) as c:
-        c.execute("""
-            INSERT INTO miner_keys (miner_pk, pubkey_sr25519, registered_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT(miner_pk) DO UPDATE SET
-            pubkey_sr25519 = ?, registered_at = ?
-        """, (miner_pk, pubkey_sr25519, int(time.time()),
-              pubkey_sr25519, int(time.time())))
+        row = c.execute(
+            "SELECT pubkey_sr25519 FROM miner_keys WHERE miner_pk = ?",
+            (miner_pk,),
+        ).fetchone()
+
+        if row and row[0] and row[0] != pubkey_sr25519:
+            if not is_admin:
+                return jsonify({"error": "pubkey already registered; admin required to rotate"}), 409
+            c.execute(
+                "UPDATE miner_keys SET pubkey_sr25519 = ?, registered_at = ? WHERE miner_pk = ?",
+                (pubkey_sr25519, now, miner_pk),
+            )
+        else:
+            c.execute(
+                "INSERT OR IGNORE INTO miner_keys (miner_pk, pubkey_sr25519, registered_at) VALUES (?, ?, ?)",
+                (miner_pk, pubkey_sr25519, now),
+            )
 
     return jsonify({
         "miner_pk": miner_pk,
