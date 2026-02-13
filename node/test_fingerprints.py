@@ -26,6 +26,10 @@ from typing import Any, Dict, List, Optional, Tuple
 HERE = Path(__file__).resolve().parent
 PROFILE_DIR = HERE / "fingerprint_reference_profiles"
 
+# Ensure we import the intended node-local modules (avoid PYTHONPATH shadowing).
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+
 
 def _now_iso() -> str:
     # RFC3339-ish, stable and human-readable.
@@ -169,6 +173,7 @@ def run_checks(include_rom_check: bool) -> Tuple[bool, Dict[str, Any]]:
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Run RustChain hardware fingerprint checks (preflight).")
     ap.add_argument("--json-out", help="Write full results JSON to this path.")
+    ap.add_argument("--redact", action="store_true", help="Redact host/cwd identifiers in JSON output.")
     ap.add_argument("--no-rom", action="store_true", help="Skip ROM check even if available.")
     ap.add_argument("--list-profiles", action="store_true", help="List built-in reference profiles.")
     ap.add_argument("--compare", help="Compare results to a built-in profile name (e.g. modern_x86).")
@@ -206,6 +211,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     }
 
     envelope["recommendations"] = _recommendations(results)
+
+    if args.redact:
+        envelope["meta"]["hostname"] = None
+        envelope["meta"]["cwd"] = None
 
     if args.compare:
         try:
