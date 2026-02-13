@@ -102,7 +102,23 @@ def verify_rtc_signature(message: bytes, signature: bytes, public_key: bytes) ->
         return False
 
 
-def verify_payment_on_chain(tx_hash: str, expected_amount: float, recipient: str) -> bool:
+def _derive_wallet_address_from_pubkey(public_key: bytes) -> str:
+    """
+    Match rtc_payment_client.RTCWallet.address:
+      address = "RTC" + sha256(pubkey_bytes).hexdigest()[:40]
+    """
+    return f"RTC{hashlib.sha256(public_key).hexdigest()[:40]}"
+
+
+def _tx_sender_field(tx: dict) -> Optional[str]:
+    for k in ("from_address", "from", "sender", "payer", "miner", "miner_id"):
+        v = tx.get(k)
+        if v:
+            return str(v)
+    return None
+
+
+def verify_payment_on_chain(tx_hash: str, expected_amount: float, recipient: str, expected_sender: str) -> bool:
     """
     Verify a payment transaction on the RustChain ledger.
     Queries the ledger for the specific transaction by hash.
@@ -111,6 +127,7 @@ def verify_payment_on_chain(tx_hash: str, expected_amount: float, recipient: str
         tx_hash: Transaction hash to verify
         expected_amount: Expected payment amount in RTC
         recipient: Expected recipient wallet address
+        expected_sender: Expected sender wallet address (derived from payer public key)
         
     Returns:
         True if payment is valid and confirmed
@@ -132,6 +149,13 @@ def verify_payment_on_chain(tx_hash: str, expected_amount: float, recipient: str
         # Find the transaction by hash
         for tx in transactions:
             if tx.get("tx_hash") == tx_hash or tx.get("hash") == tx_hash:
+                # Verify sender matches (prevents "use someone else's tx" replay/impersonation).
+                tx_sender = _tx_sender_field(tx)
+                if not tx_sender:
+                    return False
+                if tx_sender != expected_sender:
+                    return False
+
                 # Verify recipient matches
                 tx_recipient = tx.get("to_address") or tx.get("recipient")
                 if tx_recipient != recipient:
@@ -277,9 +301,11 @@ def verify_payment_proof(
         if not verify_rtc_signature(message, signature, public_key):
             _payment_cache[cache_key] = {'valid': False, 'timestamp': time.time()}
             return False
+
+        expected_sender = _derive_wallet_address_from_pubkey(public_key)
         
         # Verify on-chain
-        if not verify_payment_on_chain(proof['tx_hash'], expected_amount, recipient):
+        if not verify_payment_on_chain(proof['tx_hash'], expected_amount, recipient, expected_sender=expected_sender):
             _payment_cache[cache_key] = {'valid': False, 'timestamp': time.time()}
             return False
         
