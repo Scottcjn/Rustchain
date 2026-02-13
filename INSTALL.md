@@ -348,7 +348,49 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 3. The miner runs as your user (not root)
 4. Services are user-level (systemd --user, ~/Library/LaunchAgents)
 5. All logs are stored in your home directory
-6. **SSL Certificate:** The RustChain node (50.28.86.131) may use a self-signed SSL certificate. The `-k` flag in curl commands bypasses certificate verification. This is a known limitation of the current infrastructure. In production, you should verify the node's identity through other means (community consensus, explorer verification, etc.).
+6. **SSL Certificate:** The RustChain node (50.28.86.131) may use a self-signed SSL certificate. The `-k` flag in curl commands bypasses certificate verification. This is a known limitation of the current infrastructure.
+
+Here's how I check it on my machine:
+
+```bash
+# This shows you the cert fingerprint
+openssl s_client -connect 50.28.86.131:443 < /dev/null 2>/dev/null | openssl x509 -fingerprint -sha256 -noout
+```
+
+You can compare that fingerprint with what other folks in the Discord are seeing, or check if Scott posts the "official" fingerprint somewhere.
+
+If you're really paranoid (like me!), you can save the cert locally and use it for verification:
+
+```bash
+# Save the cert once
+openssl s_client -connect 50.28.86.131:443 < /dev/null 2>/dev/null | openssl x509 > ~/.rustchain/rustchain-cert.pem
+
+# Then use it instead of -k
+curl --cacert ~/.rustchain/rustchain-cert.pem "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_NAME"
+```
+
+This way you're not blindly trusting any old server that might be pretending to be the RustChain node. Better safe than sorry!
+
+Here's how I check it on my machine:
+
+```bash
+# This shows you the cert fingerprint
+openssl s_client -connect 50.28.86.131:443 < /dev/null 2>/dev/null | openssl x509 -fingerprint -sha256 -noout
+```
+
+You can compare that fingerprint with what other folks in the Discord are seeing, or check if Scott posts the "official" fingerprint somewhere.
+
+If you're really paranoid (like me!), you can save the cert locally and use it for verification:
+
+```bash
+# Save the cert once
+openssl s_client -connect 50.28.86.131:443 < /dev/null 2>/dev/null | openssl x509 > ~/.rustchain/rustchain-cert.pem
+
+# Then use it instead of -k
+curl --cacert ~/.rustchain/rustchain-cert.pem "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_NAME"
+```
+
+This way you're not blindly trusting any old server that might be pretending to be the RustChain node. Better safe than sorry! In production, you should verify the node's identity through other means (community consensus, explorer verification, etc.).
 
 ## Contributing
 
