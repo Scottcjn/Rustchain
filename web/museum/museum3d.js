@@ -1,4 +1,7 @@
-﻿(() => {
+import * as THREE from './vendor/three.module.js';
+import { OrbitControls } from './vendor/OrbitControls.js';
+
+(() => {
   const canvas = document.getElementById('c');
   const statusChip = document.getElementById('statusChip');
   const recenterBtn = document.getElementById('recenterBtn');
@@ -19,7 +22,7 @@
   renderer.setClearColor(0x0f1318, 1);
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
 
-  const controls = new THREE.OrbitControls(camera, canvas);
+  const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.target.set(0, 4, 0);
