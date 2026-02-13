@@ -9,6 +9,7 @@
   "timeout_s": 10,
   "interval_s": 300,
   "alert_cooldown_s": 600,
+  "sample_retention_days": 7,
   "miner_drop_threshold": 2,
   "miner_stale_s": 7200,
   "status_json_path": "~/.rustchain/node_monitor_status.json",

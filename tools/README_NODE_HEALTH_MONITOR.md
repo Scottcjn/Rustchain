@@ -53,6 +53,7 @@ systemctl enable --now rustchain-node-monitor.service
 
 ## Notes
 
+- The config is assumed to be trusted input. If you ever run this as a service that accepts untrusted config, the node URL polling becomes an SSRF risk.
 - If nodes use self-signed TLS, set `"insecure_ssl": true` in config (or pass `--insecure-ssl`).
 - The miner freshness check is best-effort and adapts to multiple likely `/api/miners` schemas.
-
+- The local SQLite `samples` table is pruned by default (keeps 7 days). Configure via `sample_retention_days` / `--sample-retention-days`.

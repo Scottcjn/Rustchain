@@ -112,6 +112,18 @@ def ensure_db(path: Path) -> None:
         db.commit()
 
 
+def prune_samples(db_path: Path, retention_days: int) -> None:
+    if retention_days <= 0:
+        return
+    cutoff = time.time() - (retention_days * 86400)
+    try:
+        with sqlite3.connect(str(db_path)) as db:
+            db.execute("DELETE FROM samples WHERE ts < ?", (cutoff,))
+            db.commit()
+    except Exception:
+        return
+
+
 def should_alert(db_path: Path, key: str, state: str, cooldown_s: int) -> bool:
     now = time.time()
     with sqlite3.connect(str(db_path)) as db:
@@ -253,9 +265,11 @@ def monitor_once(
     state_db: Path,
     discord_webhook: Optional[str],
     alert_cooldown_s: int,
+    sample_retention_days: int,
     prev_miner_counts: Dict[str, int],
 ) -> Dict[str, Any]:
     ensure_db(state_db)
+    prune_samples(state_db, sample_retention_days)
 
     snap: Dict[str, Any] = {"meta": {"updated_utc": utc_iso(), "insecure_ssl": insecure_ssl}, "nodes": []}
 
@@ -345,6 +359,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--miner-stale-s", type=int, default=2 * 3600, help="Alert if miner age exceeds this (default 2h).")
     ap.add_argument("--miner-drop", type=int, default=2, help="Alert if miner count drops by >= this (default 2).")
     ap.add_argument("--alert-cooldown-s", type=int, default=600, help="Debounce repeated alerts (default 10m).")
+    ap.add_argument("--sample-retention-days", type=int, default=7, help="Keep samples for N days (default 7, 0=keep forever).")
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
@@ -358,6 +373,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     miner_stale_s = int(cfg.get("miner_stale_s", args.miner_stale_s))
     miner_drop = int(cfg.get("miner_drop_threshold", args.miner_drop))
     alert_cooldown_s = int(cfg.get("alert_cooldown_s", args.alert_cooldown_s))
+    sample_retention_days = int(cfg.get("sample_retention_days", args.sample_retention_days))
 
     insecure_ssl = bool(cfg.get("insecure_ssl", args.insecure_ssl))
     timeout_s = int(cfg.get("timeout_s", args.timeout_s))
@@ -384,6 +400,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 state_db=state_db,
                 discord_webhook=webhook,
                 alert_cooldown_s=alert_cooldown_s,
+                sample_retention_days=sample_retention_days,
                 prev_miner_counts=prev_miner_counts,
             )
             state.update(snap)
