@@ -317,10 +317,13 @@
                 const mult = m.antiquity_multiplier || meta.multiplier || 1;
                 const isVintage = meta.category === 'vintage' || meta.category === 'exotic';
                 
-                const minerId = escapeHtml(m.miner || '');
+                // IMPORTANT: never embed untrusted strings into inline JS event handlers.
+                // Use data attributes + addEventListener to avoid DOM XSS.
+                const minerIdRaw = String(m.miner || '');
+                const minerIdEsc = escapeHtml(minerIdRaw);
                 return `
-                    <div onclick="showMachineDetail('${minerId}')" 
-                         class="bg-gray-800 rounded-xl p-6 cursor-pointer card-hover transition-all duration-300 ${isVintage ? 'border border-orange-500/30' : ''}">
+                    <div data-miner-id="${minerIdEsc}"
+                         class="machine-card bg-gray-800 rounded-xl p-6 cursor-pointer card-hover transition-all duration-300 ${isVintage ? 'border border-orange-500/30' : ''}">
                         <div class="text-center mb-4">
                             <div class="text-6xl mb-2">${meta.image}</div>
                             <span class="inline-block px-3 py-1 rounded-full text-sm font-bold" 
@@ -331,7 +334,7 @@
                         <div class="space-y-2 text-sm">
                             <div class="flex justify-between">
                                 <span class="text-gray-400">Wallet</span>
-                                <span class="font-mono">${minerId.slice(0, 12)}...</span>
+                                <span class="font-mono">${escapeHtml(minerIdRaw.slice(0, 12))}...</span>
                             </div>
                             <div class="flex justify-between">
                                 <span class="text-gray-400">Multiplier</span>
@@ -348,6 +351,14 @@
             }).join('');
 
             document.getElementById('machineGallery').innerHTML = html || '<div class="text-gray-400 text-center py-8">No machines found</div>';
+
+            // Attach click handlers after render (prevents inline handler injection).
+            document.querySelectorAll('.machine-card[data-miner-id]').forEach((el) => {
+                el.addEventListener('click', () => {
+                    const id = el.getAttribute('data-miner-id') || '';
+                    showMachineDetail(id);
+                });
+            });
         }
 
         function updateHallOfFirsts() {
