@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PoC: XSS via data-memo (Payment Widget)</title>
+  </head>
+  <body>
+    <h1>PoC: XSS via <code>data-memo</code></h1>
+    <p>
+      Vulnerable behavior (before patch): memo was injected into modal HTML via <code>innerHTML</code>.
+    </p>
+    <p>
+      Expected behavior (after patch): memo is rendered via <code>textContent</code> and should not execute.
+    </p>
+
+    <div
+      id="rtc-pay"
+      data-to="RTC0123456789abcdef0123456789abcdef01234567"
+      data-amount="1"
+      data-memo="Order &lt;img src=x onerror=alert('xss-memo')&gt;"
+    ></div>
+
+    <script src="../rustchain-pay.js"></script>
+  </body>
+</html>
+

@@ -463,6 +463,32 @@
     <polyline points="20 6 9 17 4 12"/>
   </svg>`;
 
+  function isValidRtcAddress(addr) {
+    return /^RTC[0-9a-fA-F]{40}$/.test(String(addr || '').trim());
+  }
+
+  function normalizeAmount(x) {
+    const n = typeof x === 'number' ? x : Number(String(x || '').trim());
+    if (!Number.isFinite(n) || n <= 0) return null;
+    // Keep transport/display stable; chain should enforce canonical semantics.
+    return Math.round(n * 1e6) / 1e6;
+  }
+
+  function safeCallbackUrl(url, allowAnyOrigin) {
+    if (!url) return null;
+    let u;
+    try {
+      u = new URL(String(url), window.location.href);
+    } catch (e) {
+      return null;
+    }
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+    if (u.username || u.password) return null;
+    if (allowAnyOrigin) return u.toString();
+    if (u.origin !== window.location.origin) return null;
+    return u.toString();
+  }
+
   class RustChainPay {
     constructor(config = {}) {
       this.nodeUrl = config.nodeUrl || DEFAULT_NODE;
@@ -493,22 +519,45 @@
 
       const config = {
         to: el.dataset.to || options.to,
-        amount: parseFloat(el.dataset.amount || options.amount || 0),
+        amount: normalizeAmount(el.dataset.amount || options.amount || 0),
         memo: el.dataset.memo || options.memo || '',
         label: el.dataset.label || options.label || `Pay ${el.dataset.amount || options.amount || ''} RTC`,
-        callback: el.dataset.callback || options.callback
+        callback: el.dataset.callback || options.callback,
+        allowIframe: String(el.dataset.allowIframe || options.allowIframe || 'false').toLowerCase() === 'true',
+        allowCallbackAnyOrigin: String(el.dataset.allowCallbackAnyOrigin || options.allowCallbackAnyOrigin || 'false').toLowerCase() === 'true',
       };
 
       const btn = document.createElement('button');
       btn.className = 'rtc-pay-btn';
-      btn.innerHTML = `${LOGO_SVG} ${config.label}`;
-      btn.onclick = () => this.openPaymentModal(config);
+      btn.innerHTML = LOGO_SVG;
+      btn.appendChild(document.createTextNode(' ' + String(config.label || 'Pay RTC')));
+      btn.addEventListener('click', () => this.openPaymentModal(config));
       
       el.appendChild(btn);
       return btn;
     }
 
     openPaymentModal(config) {
+      // Anti-clickjacking / consent hardening: default deny in iframes unless explicitly allowed.
+      if (window.top !== window.self && !config.allowIframe) {
+        this.onError(new Error('Widget blocked in iframe (set data-allow-iframe=\"true\" to override).'));
+        return;
+      }
+
+      // Validate config before rendering anything.
+      const to = String(config.to || '').trim();
+      if (!isValidRtcAddress(to)) {
+        this.onError(new Error('Invalid recipient address format.'));
+        return;
+      }
+      const amount = normalizeAmount(config.amount);
+      if (amount === null) {
+        this.onError(new Error('Invalid amount.'));
+        return;
+      }
+      const memoRaw = String(config.memo || '');
+      const memo = memoRaw.length > 200 ? memoRaw.slice(0, 200) + '...' : memoRaw;
+
       // Create modal
       const overlay = document.createElement('div');
       overlay.className = 'rtc-modal-overlay';
@@ -521,10 +570,10 @@
           </div>
           <div class="rtc-modal-body">
             <div class="rtc-payment-summary">
-              <p class="rtc-payment-amount">${config.amount} RTC</p>
+              <p class="rtc-payment-amount" id="rtc-summary-amount"></p>
               <p class="rtc-payment-label">Payment Amount</p>
-              ${config.memo ? `<p class="rtc-payment-to">Memo: ${config.memo}</p>` : ''}
-              <p class="rtc-payment-to">To: ${config.to}</p>
+              <p class="rtc-payment-to" id="rtc-summary-memo" style="display:none"></p>
+              <p class="rtc-payment-to" id="rtc-summary-to"></p>
             </div>
             
             <div class="rtc-error" style="display: none"></div>
@@ -565,6 +614,15 @@
 
       document.body.appendChild(overlay);
 
+      // Fill summary fields using textContent to prevent DOM injection.
+      overlay.querySelector('#rtc-summary-amount').textContent = `${amount} RTC`;
+      overlay.querySelector('#rtc-summary-to').textContent = `To: ${to}`;
+      if (memo) {
+        const memoEl = overlay.querySelector('#rtc-summary-memo');
+        memoEl.textContent = `Memo: ${memo}`;
+        memoEl.style.display = 'block';
+      }
+
       // Event handlers
       const modal = overlay.querySelector('.rtc-modal');
       const closeBtn = overlay.querySelector('.rtc-modal-close');
@@ -583,22 +641,22 @@
         this.onCancel();
       };
 
-      closeBtn.onclick = close;
-      overlay.onclick = (e) => {
+      closeBtn.addEventListener('click', close);
+      overlay.addEventListener('click', (e) => {
         if (e.target === overlay) close();
-      };
+      });
 
       tabs.forEach(tab => {
-        tab.onclick = () => {
+        tab.addEventListener('click', () => {
           activeTab = tab.dataset.tab;
           tabs.forEach(t => t.classList.toggle('active', t === tab));
           tabContents.forEach(c => {
             c.style.display = c.dataset.content === activeTab ? 'block' : 'none';
           });
-        };
+        });
       });
 
-      fileInput.onchange = (e) => {
+      fileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) {
           const reader = new FileReader();
@@ -614,9 +672,9 @@
           };
           reader.readAsText(file);
         }
-      };
+      });
 
-      submitBtn.onclick = async () => {
+      submitBtn.addEventListener('click', async () => {
         errorDiv.style.display = 'none';
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<span class="rtc-spinner"></span> Processing...';
@@ -641,12 +699,13 @@
             wallet = await decryptKeystore(keystoreData, password);
           }
 
-          const result = await this._sendPayment(wallet, config);
+          const safeConfig = { ...config, to, amount, memo };
+          const result = await this._sendPayment(wallet, safeConfig);
           this._showSuccess(overlay, result);
           this.onSuccess(result);
 
-          if (config.callback) {
-            this._notifyCallback(config.callback, result);
+          if (safeConfig.callback) {
+            this._notifyCallback(safeConfig.callback, result, safeConfig);
           }
 
         } catch (err) {
@@ -654,7 +713,7 @@
           submitBtn.disabled = false;
           submitBtn.innerHTML = 'Sign & Send Payment';
         }
-      };
+      });
     }
 
     async _sendPayment(wallet, config) {
@@ -721,17 +780,22 @@
         <div class="rtc-success">
           <div class="rtc-success-icon">${CHECK_SVG}</div>
           <h3 class="rtc-success-title">Payment Successful!</h3>
-          <p class="rtc-success-tx">TX: ${result.tx_hash}</p>
+          <p class="rtc-success-tx" id="rtc-success-tx"></p>
         </div>
-        <button class="rtc-btn-primary" onclick="this.closest('.rtc-modal-overlay').remove()">
-          Done
-        </button>
+        <button class="rtc-btn-primary" id="rtc-success-done">Done</button>
       `;
+      body.querySelector('#rtc-success-tx').textContent = `TX: ${String(result.tx_hash || '')}`;
+      body.querySelector('#rtc-success-done').addEventListener('click', () => {
+        const ov = body.closest('.rtc-modal-overlay');
+        if (ov) ov.remove();
+      });
     }
 
-    async _notifyCallback(callbackUrl, result) {
+    async _notifyCallback(callbackUrl, result, config) {
       try {
-        await fetch(callbackUrl, {
+        const safeUrl = safeCallbackUrl(callbackUrl, !!(config && config.allowCallbackAnyOrigin));
+        if (!safeUrl) throw new Error('Invalid callback URL (must be same-origin unless explicitly allowed).');
+        await fetch(safeUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(result)
