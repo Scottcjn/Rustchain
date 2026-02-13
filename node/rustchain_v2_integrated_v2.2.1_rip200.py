@@ -82,8 +82,11 @@ except ImportError as e:
     print(f"[INIT] Hardware proof module not found: {e}")
 
 app = Flask(__name__)
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+# Supports running from repo `node/` dir or a flat deployment directory (e.g. /root/rustchain).
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(_BASE_DIR, "..")) if os.path.basename(_BASE_DIR) == "node" else _BASE_DIR
 LIGHTCLIENT_DIR = os.path.join(REPO_ROOT, "web", "light-client")
+MUSEUM_DIR = os.path.join(REPO_ROOT, "web", "museum")
 
 # Register Hall of Rust blueprint (tables initialized after DB_PATH is set)
 try:
@@ -1533,34 +1536,25 @@ Blocks per Epoch: ${epoch.blocks_per_epoch}</span>`;
 @app.route("/museum", methods=["GET"])
 def museum_2d():
     """2D hardware museum UI (static files served from repo)."""
-    import os as _os
     from flask import send_from_directory as _send_from_directory
 
-    root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), ".."))
-    museum_dir = _os.path.join(root, "web", "museum")
-    return _send_from_directory(museum_dir, "museum.html")
+    return _send_from_directory(MUSEUM_DIR, "museum.html")
 
 
 @app.route("/museum/3d", methods=["GET"])
 def museum_3d():
     """3D hardware museum UI (served as static file)."""
-    import os as _os
     from flask import send_from_directory as _send_from_directory
 
-    root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), ".."))
-    museum_dir = _os.path.join(root, "web", "museum")
-    return _send_from_directory(museum_dir, "museum3d.html")
+    return _send_from_directory(MUSEUM_DIR, "museum3d.html")
 
 
 @app.route("/museum/assets/<path:filename>", methods=["GET"])
 def museum_assets(filename: str):
     """Static assets for museum UI."""
-    import os as _os
     from flask import send_from_directory as _send_from_directory
 
-    root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), ".."))
-    museum_dir = _os.path.join(root, "web", "museum")
-    return _send_from_directory(museum_dir, filename)
+    return _send_from_directory(MUSEUM_DIR, filename)
 
 # ============= ATTESTATION ENDPOINTS =============
 
