@@ -94,11 +94,11 @@ def settle_epoch_rip200(db_path, epoch: int):
         own_conn = False
 
     try:
-        # SECURITY: prevent concurrent settlement from double-crediting rewards.
-        # We need the lock *before* we check whether the epoch is settled.
+        # Serialize settlement to prevent double-credit if two workers try to settle
+        # the same epoch concurrently (race condition).
         db.execute("BEGIN IMMEDIATE")
 
-        # Check if already settled
+        # Check if already settled (inside the transaction for correctness).
         st = db.execute("SELECT settled FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
         if st and int(st[0]) == 1:
             db.rollback()
@@ -116,6 +116,7 @@ def settle_epoch_rip200(db_path, epoch: int):
         )
 
         if not rewards:
+            db.rollback()
             return {"ok": False, "error": "no_eligible_miners", "epoch": epoch}
 
         # Credit rewards to miners
@@ -177,12 +178,12 @@ def settle_epoch_rip200(db_path, epoch: int):
             "chain_age_years": round(get_chain_age_years(current), 2)
         }
     except Exception:
+        # Any failure after BEGIN IMMEDIATE should release the lock and avoid partial writes.
         try:
             db.rollback()
         except Exception:
             pass
         raise
-
     finally:
         if own_conn:
             db.close()
