@@ -1,0 +1,103 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RustChain Hardware Museum (2D)</title>
+  <meta name="description" content="A live hardware museum of RustChain miners." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/museum/assets/museum.css" />
+</head>
+<body>
+  <div class="bg"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="sigil">RC</div>
+      <div>
+        <div class="brand-title">RustChain Hardware Museum</div>
+        <div class="brand-sub">Live 2D gallery powered by /api/miners</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <a class="nav-link" href="/explorer">Explorer</a>
+      <a class="nav-link is-active" href="/museum">2D Museum</a>
+      <a class="nav-link" href="/museum/3d">3D Museum</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <div class="hero-left">
+        <h1 class="h1">Machines, not VMs.</h1>
+        <p class="lead">A curated view of attested miners, their architectures, and antiquity multipliers.</p>
+        <div class="cta-row">
+          <button id="refreshBtn" class="btn">Refresh</button>
+          <button id="exportBtn" class="btn btn-ghost">Export JSON</button>
+        </div>
+      </div>
+      <div class="hero-right">
+        <div class="stat-grid" id="stats"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Collection</div>
+          <div class="panel-sub" id="subtitle">Loading miners...</div>
+        </div>
+
+        <div class="filters">
+          <input id="q" class="input" placeholder="Search miner id / arch / family" />
+          <select id="wing" class="select">
+            <option value="">All wings</option>
+            <option value="vintage">Vintage</option>
+            <option value="modern">Modern</option>
+            <option value="other">Other</option>
+          </select>
+          <select id="sort" class="select">
+            <option value="last_desc">Last attest (newest)</option>
+            <option value="mult_desc">Multiplier (high)</option>
+            <option value="entropy_desc">Entropy (high)</option>
+            <option value="miner_asc">Miner id (A-Z)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="panel-body">
+        <div class="viz">
+          <div class="viz-card">
+            <div class="viz-title">Architecture Mix</div>
+            <div id="archChart" class="chart"></div>
+          </div>
+          <div class="viz-card">
+            <div class="viz-title">Timeline (First Attest)</div>
+            <div id="timeline" class="timeline"></div>
+          </div>
+        </div>
+
+        <div id="cards" class="cards"></div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="modal" class="modal">
+    <form method="dialog" class="modal-card">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title" id="mTitle"></div>
+          <div class="modal-sub" id="mSub"></div>
+        </div>
+        <button class="x" aria-label="Close">Close</button>
+      </div>
+      <div class="modal-body" id="mBody"></div>
+    </form>
+  </dialog>
+
+  <script src="/museum/assets/museum.js"></script>
+</body>
+</html>

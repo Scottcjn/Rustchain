@@ -1295,6 +1295,11 @@ def explorer():
         <div class="header">
             <h1>RustChain v2 Explorer</h1>
             <p>Integrated Server with Epoch Rewards, Withdrawals, and Finality</p>
+            <p style="margin-top:10px;">
+              <a href="/museum" style="color:#007bff;text-decoration:none;font-weight:700;">Hardware Museum (2D)</a>
+              &nbsp;|&nbsp;
+              <a href="/museum/3d" style="color:#007bff;text-decoration:none;font-weight:700;">Hardware Museum (3D)</a>
+            </p>
         </div>
 
         <div class="stats-grid" id="stats">
@@ -1480,6 +1485,40 @@ Blocks per Epoch: ${epoch.blocks_per_epoch}</span>`;
 </body>
 </html>"""
     return html
+
+# ============= MUSEUM STATIC UI (2D/3D) =============
+
+@app.route("/museum", methods=["GET"])
+def museum_2d():
+    """2D hardware museum UI (static files served from repo)."""
+    import os as _os
+    from flask import send_from_directory as _send_from_directory
+
+    root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), ".."))
+    museum_dir = _os.path.join(root, "web", "museum")
+    return _send_from_directory(museum_dir, "museum.html")
+
+
+@app.route("/museum/3d", methods=["GET"])
+def museum_3d():
+    """3D hardware museum UI (served as static file)."""
+    import os as _os
+    from flask import send_from_directory as _send_from_directory
+
+    root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), ".."))
+    museum_dir = _os.path.join(root, "web", "museum")
+    return _send_from_directory(museum_dir, "museum3d.html")
+
+
+@app.route("/museum/assets/<path:filename>", methods=["GET"])
+def museum_assets(filename: str):
+    """Static assets for museum UI."""
+    import os as _os
+    from flask import send_from_directory as _send_from_directory
+
+    root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), ".."))
+    museum_dir = _os.path.join(root, "web", "museum")
+    return _send_from_directory(museum_dir, filename)
 
 # ============= ATTESTATION ENDPOINTS =============
 
@@ -2742,9 +2781,22 @@ def api_miners():
             else:
                 hw_type = "Unknown/Other"
 
+            # Best-effort: join time (first attestation) from history table if present.
+            first_attest = None
+            try:
+                row2 = c.execute(
+                    "SELECT MIN(ts_ok) AS first_ts FROM miner_attest_history WHERE miner = ?",
+                    (r["miner"],),
+                ).fetchone()
+                if row2 and row2[0]:
+                    first_attest = int(row2[0])
+            except Exception:
+                first_attest = None
+
             miners.append({
                 "miner": r["miner"],
                 "last_attest": r["ts_ok"],
+                "first_attest": first_attest,
                 "device_family": r["device_family"],
                 "device_arch": r["device_arch"],
                 "hardware_type": hw_type,  # Museum System classification
@@ -2753,6 +2805,96 @@ def api_miners():
             })
     
     return jsonify(miners)
+
+
+@app.route("/api/miner/<miner_id>/attestations", methods=["GET"])
+def api_miner_attestations(miner_id: str):
+    """Best-effort attestation history for a single miner (museum detail view)."""
+    limit = int(request.args.get("limit", "120") or 120)
+    limit = max(1, min(limit, 500))
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        # Ensure table exists (avoid 500s on older schemas).
+        ok = c.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='miner_attest_history'"
+        ).fetchone()
+        if not ok:
+            return jsonify({"ok": False, "error": "miner_attest_history_missing"}), 404
+
+        rows = c.execute(
+            """
+            SELECT ts_ok, device_family, device_arch
+            FROM miner_attest_history
+            WHERE miner = ?
+            ORDER BY ts_ok DESC
+            LIMIT ?
+            """,
+            (miner_id, limit),
+        ).fetchall()
+
+    items = [
+        {
+            "ts_ok": int(r["ts_ok"]),
+            "device_family": r["device_family"],
+            "device_arch": r["device_arch"],
+        }
+        for r in rows
+    ]
+    return jsonify({"ok": True, "miner": miner_id, "count": len(items), "attestations": items})
+
+
+@app.route("/api/balances", methods=["GET"])
+def api_balances():
+    """Return wallet balances (best-effort across schema variants)."""
+    limit = int(request.args.get("limit", "2000") or 2000)
+    limit = max(1, min(limit, 5000))
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        cols = set()
+        try:
+            for r in c.execute("PRAGMA table_info(balances)").fetchall():
+                cols.add(str(r["name"]))
+        except Exception:
+            cols = set()
+
+        # Current schema: balances(miner_id, amount_i64, ...)
+        if "miner_id" in cols and "amount_i64" in cols:
+            rows = c.execute(
+                "SELECT miner_id, amount_i64 FROM balances ORDER BY amount_i64 DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            out = [
+                {
+                    "miner_id": r["miner_id"],
+                    "amount_i64": int(r["amount_i64"] or 0),
+                    "amount_rtc": (int(r["amount_i64"] or 0) / UNIT),
+                }
+                for r in rows
+            ]
+            return jsonify({"ok": True, "count": len(out), "balances": out})
+
+        # Legacy schema: balances(miner_pk, balance_rtc)
+        if "miner_pk" in cols and "balance_rtc" in cols:
+            rows = c.execute(
+                "SELECT miner_pk, balance_rtc FROM balances ORDER BY balance_rtc DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            out = [
+                {
+                    "miner_id": r["miner_pk"],
+                    "amount_rtc": float(r["balance_rtc"] or 0.0),
+                }
+                for r in rows
+            ]
+            return jsonify({"ok": True, "count": len(out), "balances": out})
+
+    return jsonify({"ok": False, "error": "balances_unavailable"}), 500
 
 
 @app.route('/admin/oui_deny/list', methods=['GET'])
