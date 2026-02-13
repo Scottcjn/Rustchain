@@ -110,7 +110,7 @@ class PayoutWorker:
                         WHERE withdrawal_id = ?
                     """, (int(time.time()), tx_hash, withdrawal_id))
 
-                logger.info(f"✓ Withdrawal {withdrawal_id} completed: {tx_hash}")
+                logger.info(f"[OK] Withdrawal {withdrawal_id} completed: {tx_hash}")
                 self.stats['processed'] += 1
                 self.stats['total_rtc'] += withdrawal['amount']
                 return True
