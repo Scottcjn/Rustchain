@@ -79,7 +79,7 @@
                 <input type="text" id="searchInput" 
                     placeholder="Enter wallet/miner ID..." 
                     class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-rust">
-                <button onclick="searchMiner()" 
+                <button id="searchBtn"
                     class="bg-rust hover:bg-rustDark px-6 py-2 rounded-lg font-bold transition">
                     Search
                 </button>
@@ -89,11 +89,11 @@
 
         <!-- Tabs -->
         <div class="flex gap-2 border-b border-gray-700">
-            <button onclick="showTab('miners')" id="tab-miners" 
+            <button data-tab="miners" id="tab-miners" 
                 class="px-4 py-2 border-b-2 border-rust text-rust font-bold">
                 ⛏️ Active Miners
             </button>
-            <button onclick="showTab('leaderboard')" id="tab-leaderboard" 
+            <button data-tab="leaderboard" id="tab-leaderboard" 
                 class="px-4 py-2 border-b-2 border-transparent text-gray-400 hover:text-white">
                 🏆 Leaderboard
             </button>
@@ -405,6 +405,12 @@
         // Search on Enter
         document.getElementById('searchInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') searchMiner();
+        });
+        document.getElementById('searchBtn').addEventListener('click', () => searchMiner());
+
+        // Avoid inline onclick handlers (hardening / CSP friendliness).
+        document.querySelectorAll('button[data-tab]').forEach((btn) => {
+            btn.addEventListener('click', () => showTab(btn.getAttribute('data-tab')));
         });
 
         // Initial load
