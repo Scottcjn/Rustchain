@@ -311,6 +311,11 @@ Rustchain/
 | [llama-cpp-power8](https://github.com/Scottcjn/llama-cpp-power8) | LLM inference on POWER8 |
 | [ppc-compilers](https://github.com/Scottcjn/ppc-compilers) | Modern compilers for vintage Macs |
 
+## 📝 Articles
+
+- [Proof of Antiquity: A Blockchain That Rewards Vintage Hardware](https://dev.to/scottcjn/proof-of-antiquity-a-blockchain-that-rewards-vintage-hardware-4ii3) - Dev.to
+- [I Run LLMs on a 768GB IBM POWER8 Server](https://dev.to/scottcjn/i-run-llms-on-a-768gb-ibm-power8-server-and-its-faster-than-you-think-1o) - Dev.to
+
 ## 🙏 Attribution
 
 **A year of development, real vintage hardware, electricity bills, and a dedicated lab went into this.**
