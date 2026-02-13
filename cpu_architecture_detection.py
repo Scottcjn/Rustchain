@@ -20,7 +20,7 @@ from typing import Tuple, Optional, Dict
 from dataclasses import dataclass
 from datetime import datetime
 
-CURRENT_YEAR = 2025
+CURRENT_YEAR = 2026
 
 
 @dataclass
