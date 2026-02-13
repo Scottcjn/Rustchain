@@ -1,0 +1,52 @@
+name: Build Windows Miner
+
+on:
+  push:
+    branches: [ bounty-53-windows-installer ]
+  pull_request:
+    branches: [ bounty-53-windows-installer ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller requests pystray pillow
+          pip install -r miners/windows/installer/requirements.txt
+          
+      - name: Build with PyInstaller
+        shell: pwsh
+        run: |
+          cd miners/windows/installer
+          pyinstaller RustChainMiner.spec
+          
+      - name: Build Inno Setup Installer
+        shell: pwsh
+        run: |
+          cd miners/windows/installer
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" rustchain_setup.iss
+          
+      - name: Calculate Checksums
+        shell: pwsh
+        run: |
+          if (Test-Path "miners/windows/installer/output") {
+            cd miners/windows/installer/output
+            Get-FileHash -Path *.exe -Algorithm SHA256 | Out-File -FilePath checksums.txt
+          }
+          
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: RustChain-Windows-Installer
+          path: |
+            miners/windows/installer/output/*.exe
+            miners/windows/installer/output/checksums.txt

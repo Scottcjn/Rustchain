@@ -42,18 +42,38 @@ rustchain-installer/
 └── README.md                        ← This file
 ```
 
-## What the Installer Does
+## Expected Runtime Behavior
 
-1. **Wallet Name** — Asks during setup, saves to `%APPDATA%\RustChain\config.json`
-2. **Shortcuts** — Start Menu: Start / Dashboard / Stop / Logs / Uninstall
-3. **Desktop Icon** — Optional
-4. **Auto-Start** — Optional: adds to `HKCU\...\Run` registry key
-5. **Tray Icon** — Right-click for Start/Stop/Show/Logs/Exit
-6. **Logging** — Writes to `%APPDATA%\RustChain\logs\`
-7. **No Admin Required** — Installs to `%LOCALAPPDATA%\RustChain`
+- **Config Storage:** Settings (wallet name, node URL) are stored in `%APPDATA%\RustChain\config.json`.
+- **Logs:** Miner logs and error reports are saved in `%APPDATA%\RustChain\logs\`.
+- **Auto-Start:** If enabled, a shortcut is added to the Windows Registry (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`) to launch the miner on login.
+- **Tray Icon:** The miner runs in the background. Right-click the RustChain icon in the system tray to Start/Stop the engine, open the Dashboard, or View Logs.
+- **Uninstallation:** Can be removed cleanly via the "Uninstall RustChain Miner" shortcut in the Start Menu or through Windows "Add or Remove Programs". This removes the executable, registry keys, and shortcuts.
 
-## Notes
+---
 
-- **SSL:** All connections use `verify=False` (self-signed cert on node `50.28.86.131`)
-- **Icon:** Place your `.ico` file at `assets/rustchain.ico` before building
-- **Size Target:** < 50 MB for the final `.exe`
+## 🛠️ Operator Runbook
+
+### Start / Stop
+- **Method A:** Use the **Start Menu** shortcuts.
+- **Method B:** Right-click the **System Tray icon** and select "Start Engine" or "Stop Engine".
+- **Method C:** Use the provided `.bat` scripts in the install directory.
+
+### Updating the Miner
+1. Download the latest `RustChainSetup.exe`.
+2. Run the installer. It will overwrite the existing executable while preserving your `config.json` (wallet name).
+3. Restart the miner from the Start Menu.
+
+### Failure Recovery
+1. **Miner won't start:** Check `%APPDATA%\RustChain\logs\miner.log` for error messages.
+2. **"Node unreachable":** Verify your internet connection and ensure `node_url` in `config.json` is set to `https://50.28.86.131`.
+3. **Hardware Fingerprint Failed:** Ensure you are running on real hardware. Virtual machines and emulators are restricted.
+
+---
+
+## Technical Notes
+
+- **Network:** Default node is `https://50.28.86.131`.
+- **Security:** TLS verification is currently set to `verify=False` to support the node's self-signed certificate.
+- **Builds:** Automated Windows builds are handled via GitHub Actions (see `.github/workflows/windows-build.yml`).
+
