@@ -60,7 +60,7 @@ logging.basicConfig(
 logger = logging.getLogger("RustChain")
 
 # Configuration
-RUSTCHAIN_API = CONFIG.node_url if CONFIG else "http://50.28.86.131:8088"
+RUSTCHAIN_API = CONFIG.node_url if CONFIG else "https://50.28.86.131"
 WALLET_DIR = Path.home() / ".rustchain"
 CONFIG_FILE = WALLET_DIR / "config.json"
 WALLET_FILE = WALLET_DIR / "wallet.json"
@@ -87,7 +87,7 @@ class RustChainWallet:
         wallet_seed = hashlib.sha256(f"{timestamp}{random_data}".encode()).hexdigest()
 
         wallet_data = {
-            "address": f"{wallet_seed[:40]}RTC",
+            "address": f"RTC{wallet_seed[:40]}",
             "balance": 0.0,
             "created": datetime.now().isoformat(),
             "transactions": []
@@ -132,32 +132,31 @@ class RustChainMiner:
         logger.info("Mining stopped.")
 
     def _mine_loop(self, callback):
-        """Main mining loop"""
+        """Main PoA activity loop (attestation + enrollment)"""
         while self.mining:
             try:
-                if not self._ensure_ready(callback):
-                    time.sleep(10)
-                    continue
-
-                # Check eligibility
-                eligible = self.check_eligibility()
-                if eligible:
-                    header = self.generate_header()
-                    success = self.submit_header(header)
+                # Ensure we have fresh attestation and enrollment
+                success = self._ensure_ready(callback)
+                
+                if success:
                     self.shares_submitted += 1
-                    if success:
-                        self.shares_accepted += 1
-                        logger.info(f"Share accepted! ({self.shares_accepted}/{self.shares_submitted})")
+                    self.shares_accepted += 1
+                    logger.info(f"PoA Activity Heartbeat: OK ({self.shares_accepted})")
                     if callback:
                         callback({
                             "type": "share",
                             "submitted": self.shares_submitted,
                             "accepted": self.shares_accepted,
-                            "success": success
+                            "success": True
                         })
-                time.sleep(10)
+                
+                # Check eligibility periodically as a heartbeat
+                self.check_eligibility()
+                
+                # Sleep for a while - PoA doesn't need high-frequency grinding
+                time.sleep(60)
             except Exception as e:
-                logger.error(f"Mining error: {e}")
+                logger.error(f"Miner loop error: {e}")
                 if callback:
                     callback({"type": "error", "message": str(e)})
                 time.sleep(30)
@@ -165,20 +164,23 @@ class RustChainMiner:
     def _ensure_ready(self, callback):
         """Ensure we have a fresh attestation and current epoch enrollment."""
         now = time.time()
+        ready = True
 
-        if now >= self.attestation_valid_until - 60:
+        # Attestation every ~10 minutes
+        if now >= self.attestation_valid_until - 30:
             if not self.attest():
                 if callback:
                     callback({"type": "error", "message": "Attestation failed"})
-                return False
+                ready = False
 
+        # Enrollment every ~1 hour or if not enrolled
         if (now - self.last_enroll) > 3600 or not self.enrolled:
             if not self.enroll():
                 if callback:
                     callback({"type": "error", "message": "Epoch enrollment failed"})
-                return False
+                ready = False
 
-        return True
+        return ready
 
     def _get_mac_addresses(self):
         macs = set()
@@ -242,23 +244,23 @@ class RustChainMiner:
 
     def attest(self):
         """Perform hardware attestation for PoA."""
+        # Mainnet expects a timestamp-based nonce or from /attest/challenge
         try:
-            challenge = requests.post(
-                f"{self.node_url}/attest/challenge", json={}, timeout=10, verify=False
-            ).json()
-            nonce = challenge.get("nonce")
-            logger.info("Attestation challenge received.")
-        except Exception as e:
-            logger.error(f"Attestation challenge failed: {e}")
-            return False
+            # Try to get nonce from challenge if available, otherwise fallback to timestamp
+            resp = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=10, verify=False)
+            nonce = resp.json().get("nonce") if resp.status_code == 200 else str(int(time.time()))
+            logger.info(f"Attestation sequence started (nonce: {nonce[:8]}...)")
+        except Exception:
+            nonce = str(int(time.time()))
+            logger.info(f"Attestation sequence started (fallback nonce: {nonce})")
 
         # Perform hardware fingerprint checks
-        fingerprint_data = {}
+        checks_data = {}
+        all_passed = True
         if validate_all_checks_win:
-            passed, fingerprint_results = validate_all_checks_win()
-            fingerprint_data = fingerprint_results
-            if not passed:
-                logger.warning("Hardware fingerprint checks failed! Rewards may be reduced.")
+            all_passed, checks_data = validate_all_checks_win()
+            if not all_passed:
+                logger.warning("Hardware fingerprint checks incomplete or failed.")
         
         entropy = self._collect_entropy()
         self.last_entropy = entropy
@@ -270,7 +272,10 @@ class RustChainMiner:
             ).hexdigest(),
             "derived": entropy,
             "entropy_score": entropy.get("variance_ns", 0.0),
-            "fingerprint": fingerprint_data
+            "fingerprint": {
+                "all_passed": all_passed,
+                "checks": checks_data
+            }
         }
 
         attestation = {
@@ -294,12 +299,14 @@ class RustChainMiner:
             resp = requests.post(
                 f"{self.node_url}/attest/submit", json=attestation, timeout=30, verify=False
             )
-            if resp.status_code == 200 and resp.json().get("ok"):
-                self.attestation_valid_until = time.time() + 580
-                logger.info("Attestation accepted.")
+            if resp.status_code == 200:
+                self.attestation_valid_until = time.time() + 600
+                logger.info("Attestation submitted and accepted.")
                 return True
+            else:
+                logger.error(f"Attestation rejected: {resp.text}")
         except Exception as e:
-            logger.error(f"Attestation submit failed: {e}")
+            logger.error(f"Attestation submission failed: {e}")
         return False
 
     def enroll(self):

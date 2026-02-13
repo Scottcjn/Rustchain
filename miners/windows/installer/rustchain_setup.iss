@@ -72,7 +72,7 @@ begin
     Lines.Add('  "wallet_name": "' + WalletPage.Values[0] + '",');
     Lines.Add('  "auto_start": false,');
     Lines.Add('  "minimize_to_tray": true,');
-    Lines.Add('  "node_url": "http://50.28.86.131:8088",');
+    Lines.Add('  "node_url": "https://50.28.86.131",');
     Lines.Add('  "log_level": "INFO",');
     Lines.Add('  "version": "1.0.0"');
     Lines.Add('}');
