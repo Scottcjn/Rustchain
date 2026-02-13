@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PoC: XSS via data-label (Payment Widget)</title>
+  </head>
+  <body>
+    <h1>PoC: XSS via <code>data-label</code></h1>
+    <p>
+      This page demonstrates the injection vector that existed when the widget rendered
+      <code>data-label</code> via <code>innerHTML</code>. In the hardened version, the label is rendered
+      via a text node and should not execute HTML/JS.
+    </p>
+
+    <div
+      id="rtc-pay"
+      data-to="RTC0123456789abcdef0123456789abcdef01234567"
+      data-amount="1"
+      data-label="Pay 1 RTC &lt;img src=x onerror=alert('xss-label')&gt;"
+    ></div>
+
+    <script src="../rustchain-pay.js"></script>
+  </body>
+</html>
+

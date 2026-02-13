@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PoC: Iframe Block (Payment Widget)</title>
+  </head>
+  <body>
+    <h1>PoC: Iframe Block</h1>
+    <p>
+      The hardened widget blocks execution in iframes by default (anti-clickjacking).
+      To allow, set <code>data-allow-iframe="true"</code>.
+    </p>
+
+    <iframe
+      title="Widget iframe"
+      style="width: 100%; height: 220px; border: 1px solid #ccc"
+      srcdoc='
+        <!doctype html>
+        <html>
+          <body>
+            <div id="rtc-pay" data-to="RTC0123456789abcdef0123456789abcdef01234567" data-amount="1"></div>
+            <script src="../rustchain-pay.js"></script>
+          </body>
+        </html>
+      '
+    ></iframe>
+  </body>
+</html>
+

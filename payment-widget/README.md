@@ -1,4 +1,4 @@
-# RustChain Payment Widget (rustchain-pay.js)
+﻿# RustChain Payment Widget (rustchain-pay.js)
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-1.0.0-orange" alt="Version">
@@ -8,18 +8,16 @@
 
 A lightweight, embeddable JavaScript widget for accepting **RTC (RustChain Token)** payments on any website. Similar to Stripe's checkout button, but for RustChain's Proof-of-Antiquity cryptocurrency.
 
-## ✨ Features
+## Features
+- Client-side signing (private keys never leave the browser)
+- Zero dependencies (bundled TweetNaCl.js)
+- Modal checkout UI
+- Data-attribute integration or JS API
+- Seed phrase and keystore support
+- Responsive (desktop and mobile)
+- Callback/webhook notification (restricted by default)
 
-- **🔒 Client-Side Signing** - Private keys never leave the browser
-- **📦 Zero Dependencies** - Self-contained with bundled TweetNaCl.js
-- **🎨 Beautiful UI** - Modern, responsive modal design
-- **⚡ Easy Integration** - Single script tag, auto-initializes
-- **🔑 Multiple Auth Methods** - Supports seed phrases and encrypted keystores
-- **📱 Responsive** - Works on desktop and mobile
-- **🔗 Callback Support** - Webhook notifications for payment confirmation
-
-## 🚀 Quick Start
-
+## Quick Start
 ### Method 1: Data Attributes (Easiest)
 
 ```html
@@ -68,8 +66,7 @@ document.getElementById('pay-btn').onclick = () => {
 </script>
 ```
 
-## 📖 API Reference
-
+## API Reference
 ### `RustChainPay` Class
 
 #### Constructor Options
@@ -128,6 +125,9 @@ console.log(balance.amount_rtc); // e.g., 150.5
 | `data-memo` | No | Payment memo/description |
 | `data-label` | No | Custom button text |
 | `data-callback` | No | Webhook URL for payment notification |
+| `data-allow-iframe` | No | Set to `true` to allow running inside an iframe (default: blocked) |
+| `data-allowed-origins` | No | Comma-separated origin allowlist (defense-in-depth) |
+| `data-allow-callback-any-origin` | No | Set to `true` to allow cross-origin callback URLs (default: same-origin only) |
 
 ### Success Callback Payload
 
@@ -142,7 +142,14 @@ console.log(balance.amount_rtc); // e.g., 150.5
 }
 ```
 
-## 🔐 Security
+## Security
+
+### Embed Hardening (Defense-in-Depth)
+
+- DOM injection hardening: widget renders user-provided fields via `textContent`/text nodes, not `innerHTML`.
+- Iframe default-deny: widget refuses to run in iframes unless `data-allow-iframe="true"` is set.
+- Optional origin allowlist: `data-allowed-origins` can restrict which `window.location.origin` values are allowed.
+- Callback restriction: `data-callback` is same-origin only by default; set `data-allow-callback-any-origin="true"` to override.
 
 ### Client-Side Signing
 
@@ -177,8 +184,7 @@ Supports RustChain's encrypted keystore format:
 }
 ```
 
-## 🎨 Customization
-
+## Customization
 ### CSS Variables
 
 Override the default styles:
@@ -216,8 +222,7 @@ document.getElementById('pay').onclick = () => {
 </script>
 ```
 
-## 🌐 Webhook Integration
-
+## Webhook Integration
 Set `data-callback` or pass `callback` in options to receive POST notifications:
 
 ```javascript
@@ -246,8 +251,7 @@ app.post('/payment-webhook', (req, res) => {
 });
 ```
 
-## 🔧 Development
-
+## Development
 ### Building from Source
 
 The widget is self-contained. To modify:
@@ -264,8 +268,7 @@ python3 -m http.server 8000
 # Open http://localhost:8000/demo.html
 ```
 
-## 📋 Browser Support
-
+## Browser Support
 - Chrome 60+
 - Firefox 55+
 - Safari 11+
@@ -273,8 +276,7 @@ python3 -m http.server 8000
 
 Requires Web Crypto API support.
 
-## 🔗 Resources
-
+## Resources
 - **RustChain Repo**: [github.com/Scottcjn/Rustchain](https://github.com/Scottcjn/Rustchain)
 - **Network Explorer**: [50.28.86.131/explorer](https://50.28.86.131/explorer/)
 - **Bounties**: [github.com/Scottcjn/rustchain-bounties](https://github.com/Scottcjn/rustchain-bounties)
@@ -284,8 +286,7 @@ Requires Web Crypto API support.
   - `GET /wallet/balance?miner_id=ADDRESS` - Check balance
   - `POST /wallet/transfer/signed` - Submit signed transfer
 
-## 📜 License
-
+## License
 MIT License - Free for commercial and non-commercial use.
 
 ---
