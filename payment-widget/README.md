@@ -30,7 +30,9 @@ A lightweight, embeddable JavaScript widget for accepting **RTC (RustChain Token
 <div id="rtc-pay" 
      data-to="RTCyour_wallet_address_here" 
      data-amount="10" 
-     data-memo="Payment for services">
+     data-memo="Payment for services"
+     data-allow-iframe="false"
+     data-allow-callback-any-origin="false">
 </div>
 ```
 
@@ -128,6 +130,8 @@ console.log(balance.amount_rtc); // e.g., 150.5
 | `data-memo` | No | Payment memo/description |
 | `data-label` | No | Custom button text |
 | `data-callback` | No | Webhook URL for payment notification |
+| `data-allow-iframe` | No | Set to `true` to allow running inside an iframe (default: blocked) |
+| `data-allow-callback-any-origin` | No | Set to `true` to allow cross-origin callback URLs (default: same-origin only) |
 
 ### Success Callback Payload
 
@@ -143,6 +147,11 @@ console.log(balance.amount_rtc); // e.g., 150.5
 ```
 
 ## 🔐 Security
+
+### Embed Hardening
+- The widget renders user-controlled fields via `textContent`/text nodes, not `innerHTML`.
+- By default the widget blocks running inside iframes unless `data-allow-iframe="true"` is set.
+- Callback URL (`data-callback`) is same-origin only by default; set `data-allow-callback-any-origin="true"` to override.
 
 ### Client-Side Signing
 
