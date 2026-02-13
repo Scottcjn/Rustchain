@@ -28,7 +28,7 @@ RustChain Token (RTC) is now available as **wRTC** on Solana via the BoTTube Bri
 | **Swap wRTC** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
 | **Price Chart** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
 | **Bridge RTC ↔ wRTC** | [BoTTube Bridge](https://bottube.ai/bridge) |
-| **Onboarding Tutorial** | [wRTC Bridge + Swap Safety Guide](docs/WRTC_ONBOARDING_TUTORIAL.md) |
+| **Onboarding Tutorial** | [wRTC Bridge + Swap Safety Guide](docs/wrtc.md) |
 | **External Reference** | [Grokipedia Search: RustChain](https://grokipedia.com/search?q=RustChain) |
 | **Token Mint** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
 
