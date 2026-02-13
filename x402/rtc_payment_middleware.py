@@ -17,18 +17,17 @@ import json
 import secrets
 import time
 from typing import Optional, Callable
-from flask import request, Response, g
 import requests
-import nacl.signing
-import nacl.encoding
 
 # RustChain node endpoint
 RTC_NODE = "https://50.28.86.131"
 
 # Payment verification cache (in production, use Redis)
 _payment_cache = {}
+_spent_tx_cache = {}  # tx_hash -> {"timestamp": float, "nonce": str}
 _rate_limits = {}  # Global rate limit state for cleanup
 CACHE_TTL = 300  # 5 minutes
+SPENT_TX_TTL = 24 * 3600  # 24 hours (prevents replay while bounding memory)
 RATE_LIMIT_TTL = 120  # 2 minutes for rate limit cleanup
 
 
@@ -43,6 +42,14 @@ def _cleanup_cache():
     ]
     for key in expired_payments:
         del _payment_cache[key]
+
+    # Clean spent tx cache (replay protection store)
+    expired_spent = [
+        key for key, val in _spent_tx_cache.items()
+        if now - val.get('timestamp', 0) > SPENT_TX_TTL
+    ]
+    for key in expired_spent:
+        del _spent_tx_cache[key]
     
     # Clean rate limits - remove entries from old minutes
     current_minute = int(now // 60)
@@ -82,6 +89,10 @@ def verify_rtc_signature(message: bytes, signature: bytes, public_key: bytes) ->
         True if signature is valid, False otherwise
     """
     try:
+        # Lazy import so helper tests can run without pynacl installed.
+        import nacl.signing
+        import nacl.exceptions
+
         verify_key = nacl.signing.VerifyKey(public_key)
         verify_key.verify(message, signature)
         return True
@@ -91,7 +102,23 @@ def verify_rtc_signature(message: bytes, signature: bytes, public_key: bytes) ->
         return False
 
 
-def verify_payment_on_chain(tx_hash: str, expected_amount: float, recipient: str) -> bool:
+def _derive_wallet_address_from_pubkey(public_key: bytes) -> str:
+    """
+    Match rtc_payment_client.RTCWallet.address:
+      address = "RTC" + sha256(pubkey_bytes).hexdigest()[:40]
+    """
+    return f"RTC{hashlib.sha256(public_key).hexdigest()[:40]}"
+
+
+def _tx_sender_field(tx: dict) -> Optional[str]:
+    for k in ("from_address", "from", "sender", "payer", "miner", "miner_id"):
+        v = tx.get(k)
+        if v:
+            return str(v)
+    return None
+
+
+def verify_payment_on_chain(tx_hash: str, expected_amount: float, recipient: str, expected_sender: str) -> bool:
     """
     Verify a payment transaction on the RustChain ledger.
     Queries the ledger for the specific transaction by hash.
@@ -100,6 +127,7 @@ def verify_payment_on_chain(tx_hash: str, expected_amount: float, recipient: str
         tx_hash: Transaction hash to verify
         expected_amount: Expected payment amount in RTC
         recipient: Expected recipient wallet address
+        expected_sender: Expected sender wallet address (derived from payer public key)
         
     Returns:
         True if payment is valid and confirmed
@@ -121,6 +149,13 @@ def verify_payment_on_chain(tx_hash: str, expected_amount: float, recipient: str
         # Find the transaction by hash
         for tx in transactions:
             if tx.get("tx_hash") == tx_hash or tx.get("hash") == tx_hash:
+                # Verify sender matches (prevents "use someone else's tx" replay/impersonation).
+                tx_sender = _tx_sender_field(tx)
+                if not tx_sender:
+                    return False
+                if tx_sender != expected_sender:
+                    return False
+
                 # Verify recipient matches
                 tx_recipient = tx.get("to_address") or tx.get("recipient")
                 if tx_recipient != recipient:
@@ -150,7 +185,7 @@ def create_402_response(
     currency: str = "RTC",
     network: str = "rustchain",
     nonce: Optional[str] = None
-) -> Response:
+) -> "Response":
     """
     Create an HTTP 402 Payment Required response with x402 headers.
     
@@ -166,6 +201,9 @@ def create_402_response(
     """
     nonce = nonce or generate_payment_nonce()
     
+    # Lazy import so pure verification helpers can be used without Flask installed.
+    from flask import Response
+
     response = Response(
         json.dumps({
             "error": "Payment Required",
@@ -239,8 +277,39 @@ def verify_payment_proof(
     Returns:
         True if payment is verified
     """
+    # Replay protection: treat each on-chain payment tx as single-use for access.
+    #
+    # IMPORTANT: "idempotent retry" must only apply to the exact same proof *and*
+    # the exact same access parameters (recipient + expected_amount). Otherwise,
+    # a caller could "pay once for a cheap endpoint" then reuse the same tx_hash
+    # to access a more expensive endpoint, bypassing amount checks.
+    tx_hash = str(proof.get("tx_hash", ""))
+    nonce = str(proof.get("nonce", ""))
+    sender_hex = str(proof.get("sender", ""))
+    sig_hex = str(proof.get("signature", ""))
+
+    spent = _spent_tx_cache.get(tx_hash)
+    if spent:
+        ts = float(spent.get("timestamp", 0) or 0)
+        if time.time() - ts > SPENT_TX_TTL:
+            # Expired -> treat as not-spent (and allow re-validation via chain).
+            try:
+                del _spent_tx_cache[tx_hash]
+            except KeyError:
+                pass
+        else:
+            if (
+                str(spent.get("nonce", "")) == nonce
+                and str(spent.get("recipient", "")) == str(recipient)
+                and str(spent.get("expected_amount", "")) == str(expected_amount)
+                and str(spent.get("sender", "")) == sender_hex
+                and str(spent.get("signature", "")) == sig_hex
+            ):
+                return True
+            return False
+
     # Check cache first
-    cache_key = f"{proof['tx_hash']}:{proof['nonce']}"
+    cache_key = f"{tx_hash}:{nonce}"
     if cache_key in _payment_cache:
         cached = _payment_cache[cache_key]
         if time.time() - cached['timestamp'] < CACHE_TTL:
@@ -255,13 +324,23 @@ def verify_payment_proof(
         if not verify_rtc_signature(message, signature, public_key):
             _payment_cache[cache_key] = {'valid': False, 'timestamp': time.time()}
             return False
+
+        expected_sender = _derive_wallet_address_from_pubkey(public_key)
         
         # Verify on-chain
-        if not verify_payment_on_chain(proof['tx_hash'], expected_amount, recipient):
+        if not verify_payment_on_chain(proof['tx_hash'], expected_amount, recipient, expected_sender=expected_sender):
             _payment_cache[cache_key] = {'valid': False, 'timestamp': time.time()}
             return False
         
         _payment_cache[cache_key] = {'valid': True, 'timestamp': time.time()}
+        _spent_tx_cache[proof['tx_hash']] = {
+            'timestamp': time.time(),
+            'nonce': nonce,
+            'recipient': str(recipient),
+            'expected_amount': str(expected_amount),
+            'sender': sender_hex,
+            'signature': sig_hex,
+        }
         return True
         
     except Exception as e:
@@ -294,6 +373,8 @@ def require_rtc_payment(
     def decorator(f: Callable) -> Callable:
         @functools.wraps(f)
         def wrapper(*args, **kwargs):
+            # Lazy import so module can be imported for pure helpers/tests without Flask installed.
+            from flask import request, Response, g
             global _rate_limits
             
             # Periodic cache cleanup to prevent memory leaks
