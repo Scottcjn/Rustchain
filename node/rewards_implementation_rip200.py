@@ -6,19 +6,51 @@ Replaces VRF lottery with 1 CPU = 1 vote deterministic consensus
 
 import sqlite3
 import time
-from flask import request, jsonify
+import os
+try:
+    from flask import request, jsonify
+except ImportError:
+    # Unit tests and some offline tooling don't require Flask.
+    request = None
+
+    def jsonify(obj):
+        return obj
 
 # Import RIP-200 functions
-import sys
-sys.path.insert(0, '/root/rustchain')
-from rip_200_round_robin_1cpu1vote import (
-    get_time_aged_multiplier,
-    get_chain_age_years,
-    calculate_epoch_rewards_time_aged,
-    get_round_robin_producer,
-    get_attested_miners,
-    check_eligibility_round_robin
-)
+try:
+    # Normal case: this module is imported/run from the RustChain repo where
+    # `rip_200_round_robin_1cpu1vote.py` is on the import path.
+    from rip_200_round_robin_1cpu1vote import (
+        get_time_aged_multiplier,
+        get_chain_age_years,
+        calculate_epoch_rewards_time_aged,
+        get_round_robin_producer,
+        get_attested_miners,
+        check_eligibility_round_robin,
+    )
+except ImportError:
+    try:
+        # Local/unit-test fallback where modules live under `node/`.
+        from node.rip_200_round_robin_1cpu1vote import (
+            get_time_aged_multiplier,
+            get_chain_age_years,
+            calculate_epoch_rewards_time_aged,
+            get_round_robin_producer,
+            get_attested_miners,
+            check_eligibility_round_robin,
+        )
+    except ImportError:
+        # Legacy deployment fallback that runs from /root/rustchain.
+        import sys
+        sys.path.insert(0, os.environ.get("RUSTCHAIN_ROOT", "/root/rustchain"))
+        from rip_200_round_robin_1cpu1vote import (
+            get_time_aged_multiplier,
+            get_chain_age_years,
+            calculate_epoch_rewards_time_aged,
+            get_round_robin_producer,
+            get_attested_miners,
+            check_eligibility_round_robin,
+        )
 
 # Constants
 UNIT = 1_000_000  # uRTC per 1 RTC
@@ -54,16 +86,22 @@ def settle_epoch_rip200(db_path, epoch: int):
     """
     # Handle both connection and path
     if isinstance(db_path, str):
-        db = sqlite3.connect(db_path)
+        # timeout helps concurrent settle attempts fail fast rather than hang forever.
+        db = sqlite3.connect(db_path, timeout=10)
         own_conn = True
     else:
         db = db_path
         own_conn = False
 
     try:
+        # SECURITY: prevent concurrent settlement from double-crediting rewards.
+        # We need the lock *before* we check whether the epoch is settled.
+        db.execute("BEGIN IMMEDIATE")
+
         # Check if already settled
         st = db.execute("SELECT settled FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
         if st and int(st[0]) == 1:
+            db.rollback()
             return {"ok": True, "epoch": epoch, "already_settled": True}
 
         # Calculate current slot for age calculation
@@ -138,6 +176,12 @@ def settle_epoch_rip200(db_path, epoch: int):
             "miners": miners_data,
             "chain_age_years": round(get_chain_age_years(current), 2)
         }
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        raise
 
     finally:
         if own_conn:
