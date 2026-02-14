@@ -137,6 +137,14 @@ pip install -r requirements.txt
 python3 rustchain_universal_miner.py --wallet YOUR_WALLET_NAME
 ```
 
+### 🎮 Discord Rich Presence
+Show off your vintage hardware and earnings in your Discord status!
+
+```bash
+pip install pypresence
+python3 tools/discord_rpc.py --wallet YOUR_WALLET_NAME --hardware "PowerPC G4"
+```
+
 ## 💰 Antiquity Multipliers
 
 Your hardware's age determines your mining rewards:
