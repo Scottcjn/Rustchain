@@ -350,6 +350,22 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 5. All logs are stored in your home directory
 6. **SSL Certificate:** The RustChain node (50.28.86.131) may use a self-signed SSL certificate. The `-k` flag in curl commands bypasses certificate verification. This is a known limitation of the current infrastructure. In production, you should verify the node's identity through other means (community consensus, explorer verification, etc.).
 
+To view the certificate SHA-256 fingerprint:
+
+```bash
+openssl s_client -connect 50.28.86.131:443 < /dev/null 2>/dev/null | openssl x509 -fingerprint -sha256 -noout
+```
+
+If you want to avoid using `-k`, you can save the certificate locally and pin it:
+
+```bash
+# Save the cert once (overwrite if it changes)
+openssl s_client -connect 50.28.86.131:443 < /dev/null 2>/dev/null | openssl x509 > ~/.rustchain/rustchain-cert.pem
+
+# Then use it instead of -k
+curl --cacert ~/.rustchain/rustchain-cert.pem "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_NAME"
+```
+
 ## Contributing
 
 Found a bug or want to improve the installer? Submit a PR to:

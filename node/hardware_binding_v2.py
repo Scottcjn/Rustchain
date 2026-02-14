@@ -5,11 +5,13 @@ Serial + Entropy Profile = Unforgeable Hardware Identity
 """
 import hashlib
 import json
+import os
 import sqlite3
 import time
 from typing import Tuple, Dict, Optional
 
-DB_PATH = '/root/rustchain/rustchain_v2.db'
+# Allow overrides for local dev / non-Linux environments.
+DB_PATH = os.environ.get('RUSTCHAIN_DB_PATH') or os.environ.get('DB_PATH') or '/root/rustchain/rustchain_v2.db'
 ENTROPY_TOLERANCE = 0.30  # 30% tolerance for entropy drift
 
 def init_hardware_bindings_v2():
@@ -257,8 +259,15 @@ def bind_hardware_v2(
             'attestations': attest_count + 1
         }
 
-# Initialize on import
-init_hardware_bindings_v2()
+# Initialize on import.
+# If DB path is explicitly configured and init fails, fail fast (safer for prod).
+# If using the default Linux path on non-Linux / local dev, don't crash the whole node.
+try:
+    init_hardware_bindings_v2()
+except Exception as e:
+    if os.environ.get('RUSTCHAIN_DB_PATH') or os.environ.get('DB_PATH'):
+        raise
+    print(f'[HW_BIND_V2] Init skipped (default DB_PATH): {e}')
 
 if __name__ == '__main__':
     print('Hardware Binding v2.0 module ready')

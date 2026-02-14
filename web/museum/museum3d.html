@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RustChain Hardware Museum (3D)</title>
+  <meta name="description" content="A live 3D hardware museum of RustChain miners." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/museum/assets/museum3d.css" />
+</head>
+<body>
+  <div class="hud">
+    <div class="hud-top">
+      <div class="brand">
+        <div class="sigil">RC</div>
+        <div>
+          <div class="brand-title">RustChain Hardware Museum</div>
+          <div class="brand-sub">3D WebGL exhibit</div>
+        </div>
+      </div>
+      <nav class="nav">
+        <a class="nav-link" href="/explorer">Explorer</a>
+        <a class="nav-link" href="/museum">2D Museum</a>
+        <a class="nav-link is-active" href="/museum/3d">3D Museum</a>
+      </nav>
+    </div>
+
+    <div class="hud-bottom">
+      <div class="chip" id="statusChip">Loading…</div>
+      <div class="chip mono">Controls: drag to orbit, scroll to zoom, click a machine</div>
+      <button class="chip btn" id="recenterBtn">Recenter</button>
+    </div>
+  </div>
+
+  <aside class="panel" id="panel" hidden>
+    <div class="panel-head">
+      <div>
+        <div class="panel-title" id="pTitle">Machine</div>
+        <div class="panel-sub mono" id="pSub"></div>
+      </div>
+      <button class="x mono" id="closeBtn">Close</button>
+    </div>
+    <div class="panel-body" id="pBody"></div>
+  </aside>
+
+  <canvas id="c"></canvas>
+
+  <script type="module" src="/museum/assets/museum3d.js"></script>
+</body>
+</html>

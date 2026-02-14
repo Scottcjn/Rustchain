@@ -1,0 +1,19 @@
+{
+  "nodes": [
+    "https://50.28.86.131",
+    "https://50.28.86.153",
+    "http://76.8.228.245:8099"
+  ],
+  "discord_webhook": "https://discord.com/api/webhooks/....",
+  "insecure_ssl": true,
+  "timeout_s": 10,
+  "interval_s": 300,
+  "alert_cooldown_s": 600,
+  "sample_retention_days": 7,
+  "miner_drop_threshold": 2,
+  "miner_stale_s": 7200,
+  "status_json_path": "~/.rustchain/node_monitor_status.json",
+  "serve_port": 8081,
+  "bind": "127.0.0.1"
+}
+

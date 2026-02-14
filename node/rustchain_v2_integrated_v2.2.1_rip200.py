@@ -6,7 +6,7 @@ Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math
 import ipaddress
 from urllib.parse import urlparse
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort
 try:
     # Deployment compatibility: production may run this file as a single script.
     from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
@@ -76,12 +76,17 @@ except ImportError:
 try:
     from rip_proof_of_antiquity_hardware import server_side_validation, calculate_entropy_score
     HW_PROOF_AVAILABLE = True
-    print("[INIT] ✓ Hardware proof validation module loaded")
+    print("[INIT] [OK] Hardware proof validation module loaded")
 except ImportError as e:
     HW_PROOF_AVAILABLE = False
     print(f"[INIT] Hardware proof module not found: {e}")
 
 app = Flask(__name__)
+# Supports running from repo `node/` dir or a flat deployment directory (e.g. /root/rustchain).
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(_BASE_DIR, "..")) if os.path.basename(_BASE_DIR) == "node" else _BASE_DIR
+LIGHTCLIENT_DIR = os.path.join(REPO_ROOT, "web", "light-client")
+MUSEUM_DIR = os.path.join(REPO_ROOT, "web", "museum")
 
 # Register Hall of Rust blueprint (tables initialized after DB_PATH is set)
 try:
@@ -114,6 +119,33 @@ def _after(resp):
     except Exception:
         pass
     resp.headers["X-Request-Id"] = getattr(g, "request_id", "-")
+    return resp
+
+
+# ============================================================================
+# LIGHT CLIENT (static, served from node origin to avoid CORS)
+# ============================================================================
+
+@app.route("/light")
+def light_client_entry():
+    # Avoid caching during bounty iteration.
+    resp = send_from_directory(LIGHTCLIENT_DIR, "index.html")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.route("/light-client/<path:subpath>")
+def light_client_static(subpath: str):
+    # Minimal path traversal protection; send_from_directory already protects,
+    # but keep behavior explicit.
+    if ".." in subpath or subpath.startswith(("/", "\\")):
+        abort(404)
+    resp = send_from_directory(LIGHTCLIENT_DIR, subpath)
+    # Let browser cache vendor JS, but keep default safe.
+    if subpath.startswith("vendor/"):
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+    else:
+        resp.headers["Cache-Control"] = "no-store"
     return resp
 
 # OpenAPI 3.0.3 Specification
@@ -516,7 +548,8 @@ epoch_gauge = Gauge('rustchain_current_epoch', 'Current epoch')
 withdrawal_queue_size = Gauge('rustchain_withdrawal_queue', 'Pending withdrawals')
 
 # Database setup
-DB_PATH = "./rustchain_v2.db"
+# Allow env override for local dev / different deployments.
+DB_PATH = os.environ.get("RUSTCHAIN_DB_PATH") or os.environ.get("DB_PATH") or "./rustchain_v2.db"
 
 # Set Flask app config for DB_PATH
 app.config["DB_PATH"] = DB_PATH
@@ -569,6 +602,18 @@ def init_db():
                 voided_by TEXT,
                 voided_reason TEXT,
                 confirmed_at INTEGER
+            )
+            """
+        )
+
+        # Replay protection for signed transfers
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS transfer_nonces (
+                from_address TEXT NOT NULL,
+                nonce TEXT NOT NULL,
+                used_at INTEGER NOT NULL,
+                PRIMARY KEY (from_address, nonce)
             )
             """
         )
@@ -1295,6 +1340,11 @@ def explorer():
         <div class="header">
             <h1>RustChain v2 Explorer</h1>
             <p>Integrated Server with Epoch Rewards, Withdrawals, and Finality</p>
+            <p style="margin-top:10px;">
+              <a href="/museum" style="color:#007bff;text-decoration:none;font-weight:700;">Hardware Museum (2D)</a>
+              &nbsp;|&nbsp;
+              <a href="/museum/3d" style="color:#007bff;text-decoration:none;font-weight:700;">Hardware Museum (3D)</a>
+            </p>
         </div>
 
         <div class="stats-grid" id="stats">
@@ -1480,6 +1530,31 @@ Blocks per Epoch: ${epoch.blocks_per_epoch}</span>`;
 </body>
 </html>"""
     return html
+
+# ============= MUSEUM STATIC UI (2D/3D) =============
+
+@app.route("/museum", methods=["GET"])
+def museum_2d():
+    """2D hardware museum UI (static files served from repo)."""
+    from flask import send_from_directory as _send_from_directory
+
+    return _send_from_directory(MUSEUM_DIR, "museum.html")
+
+
+@app.route("/museum/3d", methods=["GET"])
+def museum_3d():
+    """3D hardware museum UI (served as static file)."""
+    from flask import send_from_directory as _send_from_directory
+
+    return _send_from_directory(MUSEUM_DIR, "museum3d.html")
+
+
+@app.route("/museum/assets/<path:filename>", methods=["GET"])
+def museum_assets(filename: str):
+    """Static assets for museum UI."""
+    from flask import send_from_directory as _send_from_directory
+
+    return _send_from_directory(MUSEUM_DIR, filename)
 
 # ============= ATTESTATION ENDPOINTS =============
 
@@ -2742,9 +2817,22 @@ def api_miners():
             else:
                 hw_type = "Unknown/Other"
 
+            # Best-effort: join time (first attestation) from history table if present.
+            first_attest = None
+            try:
+                row2 = c.execute(
+                    "SELECT MIN(ts_ok) AS first_ts FROM miner_attest_history WHERE miner = ?",
+                    (r["miner"],),
+                ).fetchone()
+                if row2 and row2[0]:
+                    first_attest = int(row2[0])
+            except Exception:
+                first_attest = None
+
             miners.append({
                 "miner": r["miner"],
                 "last_attest": r["ts_ok"],
+                "first_attest": first_attest,
                 "device_family": r["device_family"],
                 "device_arch": r["device_arch"],
                 "hardware_type": hw_type,  # Museum System classification
@@ -2753,6 +2841,96 @@ def api_miners():
             })
     
     return jsonify(miners)
+
+
+@app.route("/api/miner/<miner_id>/attestations", methods=["GET"])
+def api_miner_attestations(miner_id: str):
+    """Best-effort attestation history for a single miner (museum detail view)."""
+    limit = int(request.args.get("limit", "120") or 120)
+    limit = max(1, min(limit, 500))
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        # Ensure table exists (avoid 500s on older schemas).
+        ok = c.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='miner_attest_history'"
+        ).fetchone()
+        if not ok:
+            return jsonify({"ok": False, "error": "miner_attest_history_missing"}), 404
+
+        rows = c.execute(
+            """
+            SELECT ts_ok, device_family, device_arch
+            FROM miner_attest_history
+            WHERE miner = ?
+            ORDER BY ts_ok DESC
+            LIMIT ?
+            """,
+            (miner_id, limit),
+        ).fetchall()
+
+    items = [
+        {
+            "ts_ok": int(r["ts_ok"]),
+            "device_family": r["device_family"],
+            "device_arch": r["device_arch"],
+        }
+        for r in rows
+    ]
+    return jsonify({"ok": True, "miner": miner_id, "count": len(items), "attestations": items})
+
+
+@app.route("/api/balances", methods=["GET"])
+def api_balances():
+    """Return wallet balances (best-effort across schema variants)."""
+    limit = int(request.args.get("limit", "2000") or 2000)
+    limit = max(1, min(limit, 5000))
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        cols = set()
+        try:
+            for r in c.execute("PRAGMA table_info(balances)").fetchall():
+                cols.add(str(r["name"]))
+        except Exception:
+            cols = set()
+
+        # Current schema: balances(miner_id, amount_i64, ...)
+        if "miner_id" in cols and "amount_i64" in cols:
+            rows = c.execute(
+                "SELECT miner_id, amount_i64 FROM balances ORDER BY amount_i64 DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            out = [
+                {
+                    "miner_id": r["miner_id"],
+                    "amount_i64": int(r["amount_i64"] or 0),
+                    "amount_rtc": (int(r["amount_i64"] or 0) / UNIT),
+                }
+                for r in rows
+            ]
+            return jsonify({"ok": True, "count": len(out), "balances": out})
+
+        # Legacy schema: balances(miner_pk, balance_rtc)
+        if "miner_pk" in cols and "balance_rtc" in cols:
+            rows = c.execute(
+                "SELECT miner_pk, balance_rtc FROM balances ORDER BY balance_rtc DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            out = [
+                {
+                    "miner_id": r["miner_pk"],
+                    "amount_rtc": float(r["balance_rtc"] or 0.0),
+                }
+                for r in rows
+            ]
+            return jsonify({"ok": True, "count": len(out), "balances": out})
+
+    return jsonify({"ok": False, "error": "balances_unavailable"}), 500
 
 
 @app.route('/admin/oui_deny/list', methods=['GET'])
@@ -3710,8 +3888,8 @@ try:
     # Start background sync
     block_sync.start()
 
-    print("[P2P] ✅ Endpoints registered successfully")
-    print("[P2P] ✅ Block sync started")
+    print("[P2P] [OK] Endpoints registered successfully")
+    print("[P2P] [OK] Block sync started")
 
 except ImportError as e:
     print(f"[P2P] Module not available: {e}")
@@ -3803,6 +3981,33 @@ def address_from_pubkey(public_key_hex: str) -> str:
     pubkey_hash = hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
     return f"RTC{pubkey_hash}"
 
+def _balance_i64_for_wallet(c: sqlite3.Cursor, wallet_id: str) -> int:
+    """
+    Return wallet balance in micro-units (i64), tolerant to historical schema.
+
+    Known schemas:
+    - balances(miner_id TEXT PRIMARY KEY, amount_i64 INTEGER)
+    - balances(miner_pk TEXT PRIMARY KEY, balance_rtc REAL)
+    """
+    # New schema (micro units)
+    try:
+        row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (wallet_id,)).fetchone()
+        if row and row[0] is not None:
+            return int(row[0])
+    except Exception:
+        pass
+
+    # Legacy schema (RTC float)
+    for col, key in (("balance_rtc", "miner_pk"), ("balance_rtc", "miner_id"), ("amount_rtc", "miner_id")):
+        try:
+            row = c.execute(f"SELECT {col} FROM balances WHERE {key} = ?", (wallet_id,)).fetchone()
+            if row and row[0] is not None:
+                return int(round(float(row[0]) * 1000000))
+        except Exception:
+            continue
+
+    return 0
+
 
 @app.route("/wallet/transfer/signed", methods=["POST"])
 def wallet_transfer_signed():
@@ -3861,21 +4066,7 @@ def wallet_transfer_signed():
     if not verify_rtc_signature(public_key, message, signature):
         return jsonify({"error": "Invalid signature"}), 401
     
-    # Signature valid - process the transfer
-    
-    # SECURITY: Replay protection - check nonce not already used
-    with sqlite3.connect(DB_PATH) as nonce_conn:
-        nonce_row = nonce_conn.execute(
-            "SELECT used_at FROM transfer_nonces WHERE from_address = ? AND nonce = ?",
-            (from_address, str(nonce))
-        ).fetchone()
-        if nonce_row:
-            return jsonify({
-                "error": "Nonce already used (replay attack detected)",
-                "code": "REPLAY_DETECTED",
-                "nonce": nonce,
-                "used_at": nonce_row[0]
-            }), 400
+    # Signature valid - process the transfer (2-phase commit + replay protection).
     
     # SECURITY/HARDENING: signed transfers should follow the same 2-phase commit
     # semantics as admin transfers (pending_ledger + delayed confirmation). This
@@ -3892,9 +4083,22 @@ def wallet_transfer_signed():
     try:
         c = conn.cursor()
 
+        # SECURITY: Replay protection (atomic)
+        # Unique constraint (from_address, nonce) prevents races from slipping
+        # between a read-check and an insert.
+        c.execute(
+            "INSERT OR IGNORE INTO transfer_nonces (from_address, nonce, used_at) VALUES (?, ?, ?)",
+            (from_address, nonce, now),
+        )
+        if c.execute("SELECT changes()").fetchone()[0] == 0:
+            return jsonify({
+                "error": "Nonce already used (replay attack detected)",
+                "code": "REPLAY_DETECTED",
+                "nonce": nonce,
+            }), 400
+
         # Check sender balance (using from_address as wallet ID)
-        row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_address,)).fetchone()
-        sender_balance = row[0] if row else 0
+        sender_balance = _balance_i64_for_wallet(c, from_address)
 
         # Calculate pending debits (uncommitted outgoing transfers)
         pending_debits = c.execute("""
@@ -3905,6 +4109,8 @@ def wallet_transfer_signed():
         available_balance = sender_balance - pending_debits
 
         if available_balance < amount_i64:
+            # Undo nonce reservation.
+            conn.rollback()
             return jsonify({
                 "error": "Insufficient available balance",
                 "balance_rtc": sender_balance / 1000000,
@@ -3922,12 +4128,6 @@ def wallet_transfer_signed():
         """, (now, current_epoch, from_address, to_address, amount_i64, reason, now, confirms_at, tx_hash))
 
         pending_id = c.lastrowid
-
-        # SECURITY: Record nonce to prevent replay (store at enqueue time)
-        c.execute(
-            "INSERT INTO transfer_nonces (from_address, nonce, used_at) VALUES (?, ?, ?)",
-            (from_address, str(nonce), now)
-        )
 
         conn.commit()
 
@@ -3979,8 +4179,8 @@ if __name__ == "__main__":
     print("RustChain v2.2.1 - SECURITY HARDENED - Mainnet Candidate")
     print("=" * 70)
     print(f"Chain ID: {CHAIN_ID}")
-    print(f"SR25519 Available: {SR25519_AVAILABLE} ✓")
-    print(f"Admin Key Length: {len(ADMIN_KEY)} chars ✓")
+    print(f"SR25519 Available: {SR25519_AVAILABLE}")
+    print(f"Admin Key Length: {len(ADMIN_KEY)} chars")
     print("")
     print("Features:")
     print("  - RIP-0005 (Epochs)")
@@ -3991,10 +4191,10 @@ if __name__ == "__main__":
     print("  - RIP-0144 (Genesis Freeze)")
     print("")
     print("Security:")
-    print("  ✓ No mock signature verification")
-    print("  ✓ Mandatory admin key (32+ chars)")
-    print("  ✓ Withdrawal replay protection (nonce tracking)")
-    print("  ✓ No force=True JSON parsing")
+    print("  [OK] No mock signature verification")
+    print("  [OK] Mandatory admin key (32+ chars)")
+    print("  [OK] Withdrawal replay protection (nonce tracking)")
+    print("  [OK] No force=True JSON parsing")
     print("")
     print("=" * 70)
     print()
