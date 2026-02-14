@@ -1,49 +1,17 @@
-# RustChain Miner Windows Installer
+# RustChain Miner (Windows)
 
-This folder contains the build scripts and source code for the RustChain Miner Windows Installer.
+This directory contains the Windows miner and a buildable installer.
 
-## Deliverables
+## Contents
 
-1.  **`RustChainMinerInstaller.exe`**: A single-file executable installer (built with PyInstaller).
-    - Bundles a portable Python 3.10 environment.
-    - Prompts for Wallet Name during installation.
-    - Installs 'requests' in the isolated environment.
-    - Sets up Start Menu shortcuts.
-    - Sets up Auto-start on boot via Scheduled Tasks.
-2.  **`rustchain_miner.iss`**: Inno Setup script for a professional installer (alternative to the Python-based one).
-3.  **`bundle_installer.py`**: Source code for the Python-based installer wrapper.
-4.  **`build_installer.ps1`**: PowerShell script to rebuild the installer.
+- `rustchain_windows_miner.py`: legacy Windows GUI miner (run from source).
+- `fingerprint_checks.py`: hardware fingerprint helpers used by miners.
+- `installer/`: packaged build pipeline for a Windows `.exe` plus an Inno Setup installer.
+  - `installer/src/rustchain_windows_miner.py`: packaged miner (GUI + PoA loop).
+  - `installer/build_miner.py` and `installer/RustChainMiner.spec`: PyInstaller build.
+  - `installer/rustchain_setup.iss`: Inno Setup script (produces `RustChainSetup_vX.Y.Z.exe`).
+  - `installer/scripts/*.bat`: Start/Stop/Open Logs helpers.
 
-## Features
+## Build (Windows)
 
-- **Portability**: Uses an embeddable Python version (3.10) so the user doesn't need to install Python manually.
-- **Persistence**: Automatically creates a Scheduled Task to run the miner on logon.
-- **Shortcuts**: Creates "Start Miner", "Stop Miner", and "Logs" shortcuts in the Start Menu.
-- **Size**: The final installer is approximately 15-20MB, well under the 50MB requirement.
-
-## How to Build
-
-If you need to rebuild the installer:
-
-1.  Ensure Python 3.8+ is installed.
-2.  Install PyInstaller: `pip install pyinstaller`.
-3.  Run the build script:
-    ```powershell
-    .\build_installer.ps1
-    ```
-    The output `.exe` will be in the `dist` folder.
-
-## Manual Installation Logic (Inno Setup)
-
-If you prefer using Inno Setup:
-1.  Install [Inno Setup 6](https://jrsoftware.org/isdl.php).
-2.  Open `rustchain_miner.iss`.
-3.  Click "Compile".
-4.  The installer will be generated in the `Output` folder.
-
-## Repository Files Included
-
-- `rustchain_miner.py`: The local x86 miner script.
-- `fingerprint_checks.py`: RIP-PoA hardware fingerprinting.
-- `python-3.10.11-embed-amd64.zip`: Bundled Python environment.
-- `get-pip.py`: For installing dependencies in the portable environment.
+Follow `installer/README.md`.
