@@ -32,3 +32,9 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Windows miner build artifacts
+Rustchain/miners/windows/dist/
+Rustchain/miners/windows/release/
+Rustchain/miners/windows/python-3.11.5*.exe
+Rustchain/miners/windows/python-3.11.5-embed-win32.zip
