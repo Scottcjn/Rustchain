@@ -3,7 +3,7 @@
 RustChain v2 - Integrated Server
 Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
-import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math
+import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math, re
 import ipaddress
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g
@@ -550,6 +550,22 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
 
+        # AI agent vanity wallets (bounty #30)
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_wallets (
+                wallet_id TEXT PRIMARY KEY,
+                agent_name TEXT NOT NULL,
+                hw_hash TEXT NOT NULL,
+                agent_pubkey_hex TEXT NOT NULL,
+                vanity_nonce TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            )
+            """
+        )
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_wallets_hw_hash ON agent_wallets(hw_hash)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_agent_wallets_agent_name ON agent_wallets(agent_name)")
+
         # Pending transfers (2-phase commit)
         # NOTE: Production DBs may already have a different balances schema; this table is additive.
         c.execute(
@@ -693,6 +709,134 @@ def init_db():
         c.execute("INSERT OR IGNORE INTO gov_threshold(id, threshold) VALUES(1, 3)")
         c.execute("INSERT OR IGNORE INTO checkpoints_meta(k, v) VALUES('chain_id', 'rustchain-mainnet-candidate')")
         c.commit()
+
+# ============================================================================
+# AI AGENT VANITY WALLETS (bounty #30)
+# ============================================================================
+
+_AGENT_NAME_RE = re.compile(r"^[a-zA-Z0-9]{3,20}$")
+_AGENT_RESERVED = {
+    "admin",
+    "root",
+    "system",
+    "rustchain",
+    "sophia",
+    "elya",
+    "scott",
+}
+
+
+def _agent_hw_hash(fingerprint: dict) -> str:
+    # Bind on canonical JSON to avoid accidental key-order differences.
+    msg = json.dumps(fingerprint, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(msg).hexdigest()[:16]
+
+
+def _agent_wallet_id(agent_name: str, hw_hash: str, vanity_nonce: str) -> str:
+    nonce = str(vanity_nonce or "0")
+    suffix = hashlib.sha256(f"{agent_name}|{hw_hash}|{nonce}".encode()).hexdigest()[:6]
+    return f"RTC-{agent_name}-{suffix}"
+
+
+@app.route("/agent/register", methods=["POST"])
+def agent_register():
+    """
+    Register an AI agent + hardware binding and mint a deterministic vanity wallet id.
+
+    Request JSON:
+      - agent_name: 3-20 chars [a-zA-Z0-9]
+      - agent_pubkey_hex: Ed25519 pubkey hex (64 hex chars)
+      - hardware_fingerprint: dict (client-collected fingerprint payload)
+      - vanity_nonce: optional string/int for vanity mining
+    """
+    data = request.get_json(silent=True) or {}
+    agent_name = str(data.get("agent_name", "")).strip()
+    pub_hex = str(data.get("agent_pubkey_hex", "")).strip()
+    fp = data.get("hardware_fingerprint")
+    vanity_nonce = data.get("vanity_nonce", "0")
+
+    if not _AGENT_NAME_RE.match(agent_name):
+        return jsonify({"error": "invalid_agent_name", "hint": "3-20 alphanumeric"}), 400
+    if agent_name.lower() in _AGENT_RESERVED:
+        return jsonify({"error": "reserved_agent_name"}), 400
+    if not isinstance(fp, dict) or not fp:
+        return jsonify({"error": "invalid_hardware_fingerprint"}), 400
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", pub_hex or ""):
+        return jsonify({"error": "invalid_agent_pubkey_hex"}), 400
+
+    hw_hash = _agent_hw_hash(fp)
+    wallet_id = _agent_wallet_id(agent_name, hw_hash, str(vanity_nonce))
+    now = int(time.time())
+
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        # Enforce one agent per hardware (hw_hash unique).
+        row = c.execute(
+            "SELECT wallet_id, agent_name, agent_pubkey_hex, vanity_nonce, created_at FROM agent_wallets WHERE hw_hash = ?",
+            (hw_hash,),
+        ).fetchone()
+        if row:
+            return jsonify(
+                {
+                    "ok": True,
+                    "already_registered": True,
+                    "wallet_id": row[0],
+                    "agent_name": row[1],
+                    "hw_hash": hw_hash,
+                    "agent_pubkey_hex": row[2],
+                    "vanity_nonce": row[3],
+                    "created_at": row[4],
+                }
+            )
+
+        try:
+            c.execute(
+                """
+                INSERT INTO agent_wallets(wallet_id, agent_name, hw_hash, agent_pubkey_hex, vanity_nonce, created_at)
+                VALUES(?, ?, ?, ?, ?, ?)
+                """,
+                (wallet_id, agent_name, hw_hash, pub_hex.lower(), str(vanity_nonce), now),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "agent_wallet_conflict"}), 409
+
+    return jsonify(
+        {
+            "ok": True,
+            "wallet_id": wallet_id,
+            "agent_name": agent_name,
+            "hw_hash": hw_hash,
+            "agent_pubkey_hex": pub_hex.lower(),
+            "vanity_nonce": str(vanity_nonce),
+            "created_at": now,
+        }
+    )
+
+
+@app.route("/agent/wallet/<agent_name>", methods=["GET"])
+def agent_wallet_lookup(agent_name: str):
+    agent_name = str(agent_name or "").strip()
+    if not _AGENT_NAME_RE.match(agent_name):
+        return jsonify({"error": "invalid_agent_name"}), 400
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT wallet_id, agent_name, hw_hash, agent_pubkey_hex, vanity_nonce, created_at FROM agent_wallets WHERE agent_name = ? ORDER BY created_at DESC LIMIT 1",
+            (agent_name,),
+        ).fetchone()
+    if not row:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify(
+        {
+            "ok": True,
+            "wallet_id": row[0],
+            "agent_name": row[1],
+            "hw_hash": row[2],
+            "agent_pubkey_hex": row[3],
+            "vanity_nonce": row[4],
+            "created_at": row[5],
+        }
+    )
 
 # Hardware multipliers
 HARDWARE_WEIGHTS = {
