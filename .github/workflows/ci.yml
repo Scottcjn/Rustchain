@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          pip install flake8 ruff
+          
+      - name: Run ruff linter
+        run: |
+          ruff check . --output-format=github
+          
+      - name: Run flake8
+        run: |
+          flake8 . --max-line-length=100 --extend-ignore=E203,W503 --output-format=github
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-cov requests
+          
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ --cov=. --cov-report=xml --cov-report=term --cov-report=github
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Run bandit security scan
+        run: |
+          pip install bandit safety
+          bandit -r . -f github --exclude tests/,docs/
+          
+      - name: Run safety check
+        run: |
+          pip install safety
+          safety check --json --output=github
