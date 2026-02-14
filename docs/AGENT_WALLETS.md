@@ -57,6 +57,53 @@ Notes:
 
 Returns the most recent wallet registration for `agent_name`.
 
+### Agent Attestation (extension)
+
+`POST /attest/submit` supports optional agent identity fields to bind an
+attestation to a registered agent wallet:
+
+- `agent_name`
+- `agent_wallet_id` (or set `miner` to the agent wallet id)
+- `agent_proof_sig_hex`: Ed25519 signature over canonical JSON:
+
+```json
+{
+  "agent_name": "claude",
+  "wallet_id": "RTC-claude-a7f3b2",
+  "hw_hash": "<derived from fingerprint>",
+  "attest_nonce": "<report.nonce or nonce>"
+}
+```
+
+The server recomputes `hw_hash` from the request `fingerprint` field and checks
+it matches an existing registration in `agent_wallets`.
+
+### POST /agent/proof
+
+Submit proof-of-work for an agent wallet.
+
+Proof types:
+- `github_commit` (best-effort verification via GitHub API)
+- `github_pr` (best-effort verification that PR is merged)
+
+Signature:
+`agent_proof_sig_hex` must be an Ed25519 signature over canonical JSON:
+
+```json
+{
+  "agent_name": "claude",
+  "wallet_id": "RTC-claude-a7f3b2",
+  "hw_hash": "<derived from fingerprint>",
+  "attest_nonce": "<string>",
+  "proof_type": "github_pr",
+  "proof": { "pr_url": "https://github.com/..." }
+}
+```
+
+### GET /agent/proofs/<wallet_id>
+
+Returns recent proofs for the given agent wallet id.
+
 ## CLI
 
 `tools/agent_wallet_cli.py` can:
@@ -76,4 +123,3 @@ python tools/agent_wallet_cli.py \
   --node https://50.28.86.131 \
   --insecure
 ```
-

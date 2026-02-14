@@ -76,7 +76,7 @@ except ImportError:
 try:
     from rip_proof_of_antiquity_hardware import server_side_validation, calculate_entropy_score
     HW_PROOF_AVAILABLE = True
-    print("[INIT] ✓ Hardware proof validation module loaded")
+    print("[INIT] [OK] Hardware proof validation module loaded")
 except ImportError as e:
     HW_PROOF_AVAILABLE = False
     print(f"[INIT] Hardware proof module not found: {e}")
@@ -544,11 +544,59 @@ def init_db():
         # Core tables
         c.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ip_rate_limit (
+                client_ip TEXT NOT NULL,
+                miner_id TEXT NOT NULL,
+                ts INTEGER NOT NULL,
+                PRIMARY KEY (client_ip, miner_id)
+            )
+            """
+        )
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ip_rate_limit_ts ON ip_rate_limit(ts)")
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS blocked_wallets (
+                wallet TEXT PRIMARY KEY,
+                reason TEXT,
+                blocked_at INTEGER
+            )
+            """
+        )
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hardware_bindings (
+                hardware_id TEXT PRIMARY KEY,
+                bound_miner TEXT NOT NULL,
+                device_arch TEXT,
+                device_model TEXT,
+                bound_at INTEGER,
+                attestation_count INTEGER DEFAULT 0
+            )
+            """
+        )
+        c.execute("CREATE INDEX IF NOT EXISTS idx_hw_bindings_bound_miner ON hardware_bindings(bound_miner)")
 
         # Epoch tables
         c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
+
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS miner_attest_recent (
+                miner TEXT PRIMARY KEY,
+                ts_ok INTEGER NOT NULL,
+                device_family TEXT,
+                device_arch TEXT,
+                entropy_score REAL,
+                fingerprint_passed INTEGER,
+                source_ip TEXT
+            )
+            """
+        )
+        c.execute("CREATE INDEX IF NOT EXISTS idx_miner_attest_recent_ts ON miner_attest_recent(ts_ok)")
 
         # AI agent vanity wallets (bounty #30)
         c.execute(
@@ -565,6 +613,40 @@ def init_db():
         )
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_wallets_hw_hash ON agent_wallets(hw_hash)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_agent_wallets_agent_name ON agent_wallets(agent_name)")
+
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_attestations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts INTEGER NOT NULL,
+                wallet_id TEXT NOT NULL,
+                agent_name TEXT NOT NULL,
+                hw_hash TEXT NOT NULL,
+                client_ip TEXT,
+                attest_nonce TEXT
+            )
+            """
+        )
+        c.execute("CREATE INDEX IF NOT EXISTS idx_agent_att_wallet ON agent_attestations(wallet_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_agent_att_ts ON agent_attestations(ts)")
+
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_pow (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts INTEGER NOT NULL,
+                wallet_id TEXT NOT NULL,
+                agent_name TEXT NOT NULL,
+                proof_type TEXT NOT NULL,
+                proof_json TEXT NOT NULL,
+                verified INTEGER NOT NULL DEFAULT 0,
+                verify_details TEXT,
+                sig_hex TEXT NOT NULL
+            )
+            """
+        )
+        c.execute("CREATE INDEX IF NOT EXISTS idx_agent_pow_wallet ON agent_pow(wallet_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_agent_pow_ts ON agent_pow(ts)")
 
         # Pending transfers (2-phase commit)
         # NOTE: Production DBs may already have a different balances schema; this table is additive.
@@ -737,6 +819,52 @@ def _agent_wallet_id(agent_name: str, hw_hash: str, vanity_nonce: str) -> str:
     suffix = hashlib.sha256(f"{agent_name}|{hw_hash}|{nonce}".encode()).hexdigest()[:6]
     return f"RTC-{agent_name}-{suffix}"
 
+def _canonical_json_bytes(obj: dict) -> bytes:
+    return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
+
+
+def _verify_ed25519_detached_hex(public_key_hex: str, message: bytes, signature_hex: str) -> bool:
+    if not HAVE_NACL:
+        return False
+    try:
+        vk = VerifyKey(bytes.fromhex(public_key_hex))
+        sig = bytes.fromhex(signature_hex)
+        vk.verify(message, sig)
+        return True
+    except Exception:
+        return False
+
+
+def _verify_agent_context(agent_name: str, wallet_id: str, fingerprint: dict):
+    """
+    Verify an agent is registered for the given hardware fingerprint and owns
+    the signing key (Ed25519 proof signature).
+    """
+    if not _AGENT_NAME_RE.match(agent_name):
+        return False, ("invalid_agent_name", {})
+    if not isinstance(fingerprint, dict) or not fingerprint:
+        return False, ("invalid_fingerprint", {})
+    if not (wallet_id.startswith("RTC-") and len(wallet_id) <= 64):
+        return False, ("invalid_wallet_id", {})
+    hw = _agent_hw_hash(fingerprint)
+
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT wallet_id, agent_name, hw_hash, agent_pubkey_hex FROM agent_wallets WHERE hw_hash = ?",
+            (hw,),
+        ).fetchone()
+    if not row:
+        return False, ("agent_not_registered", {"hw_hash": hw})
+
+    reg_wallet_id, reg_agent_name, reg_hw, reg_pub = row
+    if reg_agent_name != agent_name or reg_wallet_id != wallet_id or reg_hw != hw:
+        return False, (
+            "agent_mismatch",
+            {"expected_wallet_id": reg_wallet_id, "expected_agent_name": reg_agent_name, "hw_hash": hw},
+        )
+
+    return True, ("", {"hw_hash": hw, "agent_pubkey_hex": reg_pub})
+
 
 @app.route("/agent/register", methods=["POST"])
 def agent_register():
@@ -812,6 +940,130 @@ def agent_register():
             "created_at": now,
         }
     )
+
+
+@app.route("/agent/proof", methods=["POST"])
+def agent_submit_proof():
+    """
+    Agent proof-of-work submission.
+
+    Required:
+      - agent_name
+      - wallet_id
+      - fingerprint (dict)  (must match registration hw_hash)
+      - agent_proof_sig_hex (Ed25519 signature over canonical JSON:
+          {agent_name,wallet_id,hw_hash,attest_nonce})
+      - proof_type: github_commit | github_pr
+      - proof: dict
+    """
+    data = request.get_json(silent=True) or {}
+    agent_name = str(data.get("agent_name", "")).strip()
+    wallet_id = str(data.get("wallet_id", "")).strip()
+    fingerprint = data.get("fingerprint") or {}
+    proof_sig = str(data.get("agent_proof_sig_hex", "")).strip()
+    attest_nonce = str(data.get("attest_nonce", "")).strip()
+    proof_type = str(data.get("proof_type", "")).strip()
+    proof = data.get("proof") or {}
+
+    if not re.fullmatch(r"[0-9a-fA-F]{128}", proof_sig or ""):
+        return jsonify({"ok": False, "error": "invalid_agent_proof_sig"}), 400
+
+    ok, (err, details) = _verify_agent_context(agent_name, wallet_id, fingerprint)
+    if not ok:
+        return jsonify({"ok": False, "error": err, "details": details}), 401
+
+    if proof_type not in ("github_commit", "github_pr"):
+        return jsonify({"ok": False, "error": "unsupported_proof_type"}), 400
+    if not isinstance(proof, dict) or not proof:
+        return jsonify({"ok": False, "error": "invalid_proof"}), 400
+
+    # Signature binds proof payload so third parties can't submit fake proofs.
+    msg = _canonical_json_bytes(
+        {
+            "agent_name": agent_name,
+            "wallet_id": wallet_id,
+            "hw_hash": details.get("hw_hash", ""),
+            "attest_nonce": str(attest_nonce or ""),
+            "proof_type": proof_type,
+            "proof": proof,
+        }
+    )
+    if not _verify_ed25519_detached_hex(details.get("agent_pubkey_hex", ""), msg, proof_sig):
+        return jsonify({"ok": False, "error": "invalid_agent_proof"}), 401
+
+    verified = 0
+    verify_details = ""
+
+    # Best-effort verification against public GitHub API (no token required).
+    try:
+        import requests
+
+        if proof_type == "github_commit":
+            repo = str(proof.get("repo", "")).strip()  # owner/name
+            sha = str(proof.get("commit", "")).strip()
+            if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo) or not re.fullmatch(r"[0-9a-fA-F]{7,40}", sha):
+                raise ValueError("bad_commit_proof")
+            r = requests.get(f"https://api.github.com/repos/{repo}/commits/{sha}", timeout=8)
+            verified = 1 if r.status_code == 200 else 0
+            verify_details = f"http={r.status_code}"
+        elif proof_type == "github_pr":
+            pr_url = str(proof.get("pr_url", "")).strip()
+            m = re.match(r"^https://github.com/([^/]+)/([^/]+)/pull/(\\d+)", pr_url)
+            if not m:
+                raise ValueError("bad_pr_url")
+            owner, repo, num = m.group(1), m.group(2), m.group(3)
+            r = requests.get(f"https://api.github.com/repos/{owner}/{repo}/pulls/{num}", timeout=8)
+            if r.status_code == 200:
+                j = r.json()
+                verified = 1 if j.get("merged_at") else 0
+                verify_details = f"http=200 merged={bool(j.get('merged_at'))}"
+            else:
+                verified = 0
+                verify_details = f"http={r.status_code}"
+    except Exception as e:
+        verify_details = f"verify_error:{type(e).__name__}"
+
+    now = int(time.time())
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            """
+            INSERT INTO agent_pow(ts, wallet_id, agent_name, proof_type, proof_json, verified, verify_details, sig_hex)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (now, wallet_id, agent_name, proof_type, json.dumps(proof, sort_keys=True), int(verified), verify_details[:400], proof_sig),
+        )
+        conn.commit()
+
+    return jsonify(
+        {
+            "ok": True,
+            "wallet_id": wallet_id,
+            "agent_name": agent_name,
+            "proof_type": proof_type,
+            "verified": bool(verified),
+            "verify_details": verify_details,
+        }
+    )
+
+
+@app.route("/agent/proofs/<wallet_id>", methods=["GET"])
+def agent_list_proofs(wallet_id: str):
+    wallet_id = str(wallet_id or "").strip()
+    if not wallet_id:
+        return jsonify({"error": "missing_wallet_id"}), 400
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute(
+            "SELECT ts, proof_type, verified, verify_details, proof_json FROM agent_pow WHERE wallet_id = ? ORDER BY id DESC LIMIT 50",
+            (wallet_id,),
+        ).fetchall()
+    out = []
+    for ts, ptype, ver, vdet, pjson in rows:
+        try:
+            proof_obj = json.loads(pjson)
+        except Exception:
+            proof_obj = {"raw": pjson}
+        out.append({"ts": ts, "proof_type": ptype, "verified": bool(ver), "verify_details": vdet, "proof": proof_obj})
+    return jsonify({"ok": True, "wallet_id": wallet_id, "proofs": out})
 
 
 @app.route("/agent/wallet/<agent_name>", methods=["GET"])
@@ -1744,6 +1996,54 @@ def submit_attestation():
         }), 429
     signals = data.get('signals', {})
     fingerprint = data.get('fingerprint', {})  # NEW: Extract fingerprint
+
+    # Optional agent attestation extension (bounty #30 milestone 2)
+    agent_ctx = data.get("agent") if isinstance(data.get("agent"), dict) else {}
+    agent_name = str(agent_ctx.get("agent_name", "")).strip() or str(data.get("agent_name", "")).strip()
+    agent_wallet_id = str(agent_ctx.get("wallet_id", "")).strip() or str(data.get("agent_wallet_id", "")).strip()
+    agent_proof_sig = str(agent_ctx.get("agent_proof_sig_hex", "")).strip() or str(data.get("agent_proof_sig_hex", "")).strip()
+    # Use report nonce for proof binding if present.
+    attest_nonce = str(nonce or "")
+
+    is_agent_attest = bool(agent_name or agent_wallet_id or (isinstance(miner, str) and miner.startswith("RTC-")))
+    if is_agent_attest:
+        # Default miner id to the agent wallet id.
+        if agent_wallet_id and not miner:
+            miner = agent_wallet_id
+        # If miner provided, require it match the agent wallet id (when present).
+        if agent_wallet_id and miner and str(miner) != agent_wallet_id:
+            return jsonify({"ok": False, "error": "agent_wallet_mismatch", "expected": agent_wallet_id, "got": miner}), 400
+        if not agent_wallet_id:
+            agent_wallet_id = str(miner or "")
+
+        if not re.fullmatch(r"[0-9a-fA-F]{128}", agent_proof_sig or ""):
+            return jsonify({"ok": False, "error": "invalid_agent_proof_sig", "code": "AGENT_PROOF_INVALID"}), 400
+
+        ok, (err, details) = _verify_agent_context(agent_name, agent_wallet_id, fingerprint)
+        if not ok:
+            return jsonify({"ok": False, "error": err, "details": details, "code": "AGENT_PROOF_INVALID"}), 401
+
+        msg = _canonical_json_bytes(
+            {
+                "agent_name": agent_name,
+                "wallet_id": agent_wallet_id,
+                "hw_hash": details.get("hw_hash", ""),
+                "attest_nonce": attest_nonce,
+            }
+        )
+        if not _verify_ed25519_detached_hex(details.get("agent_pubkey_hex", ""), msg, agent_proof_sig):
+            return jsonify({"ok": False, "error": "invalid_agent_proof", "details": {"hw_hash": details.get("hw_hash", "")}, "code": "AGENT_PROOF_INVALID"}), 401
+
+        # Persist a lightweight agent attestation record for audit.
+        try:
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute(
+                    "INSERT INTO agent_attestations(ts, wallet_id, agent_name, hw_hash, client_ip, attest_nonce) VALUES(?, ?, ?, ?, ?, ?)",
+                    (int(time.time()), agent_wallet_id, agent_name, details.get("hw_hash", ""), client_ip, attest_nonce),
+                )
+                conn.commit()
+        except Exception:
+            pass
 
     # Basic validation
     if not miner:
@@ -3854,8 +4154,8 @@ try:
     # Start background sync
     block_sync.start()
 
-    print("[P2P] ✅ Endpoints registered successfully")
-    print("[P2P] ✅ Block sync started")
+    print("[P2P] [OK] Endpoints registered successfully")
+    print("[P2P] [OK] Block sync started")
 
 except ImportError as e:
     print(f"[P2P] Module not available: {e}")
@@ -4123,8 +4423,8 @@ if __name__ == "__main__":
     print("RustChain v2.2.1 - SECURITY HARDENED - Mainnet Candidate")
     print("=" * 70)
     print(f"Chain ID: {CHAIN_ID}")
-    print(f"SR25519 Available: {SR25519_AVAILABLE} ✓")
-    print(f"Admin Key Length: {len(ADMIN_KEY)} chars ✓")
+    print(f"SR25519 Available: {SR25519_AVAILABLE}")
+    print(f"Admin Key Length: {len(ADMIN_KEY)} chars")
     print("")
     print("Features:")
     print("  - RIP-0005 (Epochs)")
@@ -4135,10 +4435,10 @@ if __name__ == "__main__":
     print("  - RIP-0144 (Genesis Freeze)")
     print("")
     print("Security:")
-    print("  ✓ No mock signature verification")
-    print("  ✓ Mandatory admin key (32+ chars)")
-    print("  ✓ Withdrawal replay protection (nonce tracking)")
-    print("  ✓ No force=True JSON parsing")
+    print("  [OK] No mock signature verification")
+    print("  [OK] Mandatory admin key (32+ chars)")
+    print("  [OK] Withdrawal replay protection (nonce tracking)")
+    print("  [OK] No force=True JSON parsing")
     print("")
     print("=" * 70)
     print()
