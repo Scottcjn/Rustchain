@@ -79,6 +79,19 @@ curl -sk https://50.28.86.131/epoch
 - Keep PRs focused — one issue per PR
 - Test against the live node, not just local mocks
 
+## BCOS (Beacon Certified Open Source)
+
+RustChain uses BCOS checks to keep contributions auditable and license-clean without forcing rewrites of legacy code.
+
+- **Tier label required (non-doc PRs)**: Add `BCOS-L1` or `BCOS-L2` (also accepted: `bcos:l1`, `bcos:l2`).
+- **Doc-only exception**: PRs that only touch `docs/**`, `*.md`, or common image/PDF files do not require a tier label.
+- **SPDX required (new code files only)**: Newly added code files must include an SPDX header near the top, e.g. `# SPDX-License-Identifier: MIT`.
+- **Evidence artifacts**: CI uploads `bcos-artifacts` (SBOM, license report, hashes, and a machine-readable attestation JSON).
+
+When to pick a tier:
+- `BCOS-L1`: normal features, refactors, non-sensitive changes.
+- `BCOS-L2`: security-sensitive changes, transfer/wallet logic, consensus/rewards, auth/crypto, supply-chain touching changes.
+
 ## Start Mining
 
 Don't just code — mine! Install the miner and earn RTC while you contribute:
