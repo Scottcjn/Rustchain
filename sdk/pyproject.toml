@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rustchain-sdk"
+version = "0.1.0"
+description = "Official Python SDK for the RustChain Proof-of-Antiquity network."
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "requests>=2.25.0",
+]
+authors = [
+    {name = "nighthawks", email = "night@example.com"},
+]
+license = {text = "MIT"}
+
+[project.urls]
+Homepage = "https://github.com/nighthawks0/rustchain-sdk"
+Repository = "https://github.com/Scottcjn/Rustchain"
