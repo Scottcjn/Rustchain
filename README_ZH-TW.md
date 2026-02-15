@@ -86,7 +86,8 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 ### 支援平台
 - ✅ Ubuntu 20.04+、Debian 11+、Fedora 38+（x86_64、ppc64le）
-- ✅ macOS 12+（Intel、Apple Silicon、PowerPC）
+- ✅ macOS 12+（Intel、Apple Silicon）
+- ✅ Mac OS X 10.4–10.5（PowerPC：Tiger／Leopard）
 - ✅ IBM POWER8 系統
 
 ### 安裝完成後
@@ -287,7 +288,8 @@ Rustchain/
 ├── rustchain_universal_miner.py    # 主礦工程式（所有平台）
 ├── rustchain_v2_integrated.py      # 完整節點實作
 ├── fingerprint_checks.py           # 硬體驗證
-├── install.sh                      # 一行安裝程式
+├── install-miner.sh                # 推薦：礦工一行安裝程式
+├── install.sh                      # 進階／完整安裝腳本
 ├── docs/
 │   ├── RustChain_Whitepaper_*.pdf  # 技術白皮書
 │   └── chain_architecture.md       # 架構文件

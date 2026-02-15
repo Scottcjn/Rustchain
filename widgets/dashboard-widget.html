@@ -206,7 +206,7 @@
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-label">Current Epoch</div>
-                <div class="stat-value" id="epoch"><div class="loading"></div></div>
+                <div class="stat-value loading" id="epoch">--</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Network Health</div>
@@ -219,11 +219,11 @@
             </div>
             <div class="stat-card">
                 <div class="stat-label">Active Miners</div>
-                <div class="stat-value" id="miners-count"><div class="loading"></div></div>
+                <div class="stat-value loading" id="miners-count">--</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Total RTC</div>
-                <div class="stat-value" id="total-rtc"><div class="loading"></div></div>
+                <div class="stat-value loading" id="total-rtc">--</div>
             </div>
         </div>
 
@@ -239,7 +239,7 @@
 
         <div class="footer">
             <div class="refresh-info">Auto-refresh: <span id="countdown">60</span>s</div>
-            <a href="https://50.28.86.131" target="_blank" class="explorer-link">View Explorer →</a>
+            <a href="https://50.28.86.131" target="_blank" rel="noopener noreferrer" class="explorer-link">View Explorer →</a>
         </div>
     </div>
 
@@ -256,7 +256,6 @@
                 }).catch(() => null);
                 
                 if (healthRes && healthRes.ok) {
-                    const health = await healthRes.text();
                     document.getElementById('health-dot').className = 'health-dot healthy';
                     document.getElementById('health-text').textContent = 'Online';
                 } else {
@@ -300,14 +299,26 @@
                     const totalRTC = miners.length * 10; // Placeholder calculation
                     document.getElementById('total-rtc').textContent = `~${totalRTC.toLocaleString()}`;
                     
-                    // Display top miners
+                    // Display top miners (using DOM APIs to prevent XSS)
                     const minersList = document.getElementById('miners-list');
-                    minersList.innerHTML = miners.slice(0, 5).map(m => `
-                        <div class="miner-item">
-                            <span class="miner-name" title="${m.miner}">${m.miner}</span>
-                            <span class="miner-type">${m.hardware_type || 'Unknown'}</span>
-                        </div>
-                    `).join('');
+                    minersList.innerHTML = '';
+                    miners.slice(0, 5).forEach(m => {
+                        const item = document.createElement('div');
+                        item.className = 'miner-item';
+
+                        const nameSpan = document.createElement('span');
+                        nameSpan.className = 'miner-name';
+                        nameSpan.title = m.miner || '';
+                        nameSpan.textContent = m.miner || '';
+
+                        const typeSpan = document.createElement('span');
+                        typeSpan.className = 'miner-type';
+                        typeSpan.textContent = m.hardware_type || 'Unknown';
+
+                        item.appendChild(nameSpan);
+                        item.appendChild(typeSpan);
+                        minersList.appendChild(item);
+                    });
                     
                     document.getElementById('miners-updated').textContent = 'Just now';
                 } else {
