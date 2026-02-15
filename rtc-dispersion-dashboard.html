@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RTC Dispersion Dashboard | RustChain</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 40px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            backdrop-filter: blur(10px);
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #f093fb 0%, #f5576c 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            color: #a0a0a0;
+            font-size: 1.1em;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .card h3 {
+            color: #f093fb;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card .value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .card .sub {
+            color: #a0a0a0;
+            font-size: 0.9em;
+        }
+
+        .chart-container {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 40px;
+        }
+
+        .chart-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 20px;
+        }
+
+        .chart-box {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .chart-box h4 {
+            margin-bottom: 15px;
+            color: #f093fb;
+        }
+
+        .table-container {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 40px;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        th {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        tr:hover {
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .wallet-address {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #a0a0a0;
+            font-size: 1.2em;
+        }
+
+        .loading::after {
+            content: "...";
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: "."; }
+            40% { content: ".."; }
+            60%, 100% { content: "..."; }
+        }
+
+        .refresh-btn {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1em;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .refresh-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #a0a0a0;
+            font-size: 0.9em;
+        }
+
+        @media (max-width: 768px) {
+            .chart-row {
+                grid-template-columns: 1fr;
+            }
+
+            .header h1 {
+                font-size: 1.8em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🪙 RTC Dispersion Dashboard</h1>
+            <p>Live wallet tracking and token distribution analysis</p>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="card">
+                <h3>📊 Total Supply</h3>
+                <div class="value" id="total-supply">Loading...</div>
+                <div class="sub">8,388,608 RTC (2²³)</div>
+            </div>
+
+            <div class="card">
+                <h3>💰 Circulating Supply</h3>
+                <div class="value" id="circulating-supply">Loading...</div>
+                <div class="sub" id="pct-minted">Loading...</div>
+            </div>
+
+            <div class="card">
+                <h3>👥 Community Wallets</h3>
+                <div class="value" id="community-wallets">Loading...</div>
+                <div class="sub">Active holders</div>
+            </div>
+
+            <div class="card">
+                <h3>🏦 Gini Coefficient</h3>
+                <div class="value" id="gini-coefficient">Loading...</div>
+                <div class="sub">0 = equal, 1 = concentrated</div>
+            </div>
+
+            <div class="card">
+                <h3>🎯 Top 10 Concentration</h3>
+                <div class="value" id="top10-concentration">Loading...</div>
+                <div class="sub">% held by top 10 wallets</div>
+            </div>
+
+            <div class="card">
+                <h3>🏆 Current Epoch</h3>
+                <div class="value" id="current-epoch">Loading...</div>
+                <div class="sub" id="epoch-enrolled">Loading...</div>
+            </div>
+        </div>
+
+        <div class="chart-row">
+            <div class="chart-box">
+                <h4>🥧 Founder vs Community Distribution</h4>
+                <canvas id="distribution-chart"></canvas>
+            </div>
+
+            <div class="chart-box">
+                <h4>📈 Distribution Curve (Lorenz)</h4>
+                <canvas id="lorenz-chart"></canvas>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <h3>🏆 Top 20 Wallets</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Wallet Address</th>
+                        <th>Balance (RTC)</th>
+                        <th>% of Supply</th>
+                        <th>Hardware</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboard-tbody">
+                    <tr>
+                        <td colspan="5" class="loading">Loading wallet data</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div style="text-align: center;">
+            <button class="refresh-btn" onclick="loadData()">🔄 Refresh Data</button>
+        </div>
+
+        <div class="footer">
+            <p>Data updates every 60 seconds | Last update: <span id="last-update">Loading...</span></p>
+            <p>🔗 <a href="https://rustchain.org/explorer" target="_blank" style="color: #667eea;">RustChain Explorer</a> | <a href="https://github.com/Scottcjn/Rustchain" target="_blank" style="color: #667eea;">GitHub</a></p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://50.28.86.131';
+        const TOTAL_SUPPLY = 8388608; // 2^23
+
+        // Known founder wallets
+        const FOUNDER_WALLETS = new Set([
+            'founder_community',
+            'founder_dev_fund',
+            'founder_team_bounty',
+            'founder_founders'
+        ]);
+
+        let distributionChart = null;
+        let lorenzChart = null;
+
+        async function fetchMiners() {
+            try {
+                const response = await fetch(`${API_BASE}/api/miners`);
+                return await response.json();
+            } catch (error) {
+                console.error('Error fetching miners:', error);
+                return [];
+            }
+        }
+
+        async function fetchEpoch() {
+            try {
+                const response = await fetch(`${API_BASE}/epoch`);
+                return await response.json();
+            } catch (error) {
+                console.error('Error fetching epoch:', error);
+                return {};
+            }
+        }
+
+        function calculateMetrics(miners) {
+            // Calculate balances
+            const balances = miners.map(m => parseFloat(m.balance || 0));
+
+            // Calculate circulating supply
+            const circulatingSupply = balances.reduce((a, b) => a + b, 0);
+
+            // Identify community vs founder
+            let communityBalance = 0;
+            let founderBalance = 0;
+            let communityWallets = 0;
+
+            miners.forEach(m => {
+                const isFounder = FOUNDER_WALLETS.has(m.miner.toLowerCase());
+                const balance = parseFloat(m.balance || 0);
+
+                if (isFounder) {
+                    founderBalance += balance;
+                } else {
+                    communityBalance += balance;
+                    if (balance > 0) communityWallets++;
+                }
+            });
+
+            // Calculate Gini coefficient
+            const gini = calculateGini(balances);
+
+            // Calculate top 10 concentration
+            const sortedBalances = balances.sort((a, b) => b - a);
+            const top10Balance = sortedBalances.slice(0, 10).reduce((a, b) => a + b, 0);
+            const top10Concentration = (top10Balance / circulatingSupply) * 100;
+
+            return {
+                totalSupply: TOTAL_SUPPLY,
+                circulatingSupply,
+                pctMinted: (circulatingSupply / TOTAL_SUPPLY) * 100,
+                communityWallets,
+                founderBalance,
+                communityBalance,
+                gini,
+                top10Concentration
+            };
+        }
+
+        function calculateGini(balances) {
+            const n = balances.length;
+            if (n === 0) return 0;
+
+            const sorted = [...balances].sort((a, b) => a - b);
+            const mean = sorted.reduce((a, b) => a + b, 0) / n;
+
+            let gini = 0;
+            for (let i = 0; i < n; i++) {
+                for (let j = 0; j < n; j++) {
+                    gini += Math.abs(sorted[i] - sorted[j]);
+                }
+            }
+
+            gini = gini / (2 * n * n * mean);
+            return gini || 0;
+        }
+
+        function calculateLorenzCurve(balances) {
+            const sorted = [...balances].sort((a, b) => a - b);
+            const n = sorted.length;
+            const total = sorted.reduce((a, b) => a + b, 0);
+
+            const cumulative = [];
+            let cumSum = 0;
+            sorted.forEach(b => {
+                cumSum += b;
+                cumulative.push(cumSum / total);
+            });
+
+            const xValues = Array.from({length: n}, (_, i) => (i + 1) / n);
+            const yValues = cumulative;
+
+            return { x: xValues, y: yValues };
+        }
+
+        function formatNumber(num) {
+            return num.toLocaleString('en-US', {maximumFractionDigits: 2});
+        }
+
+        function updateDashboard(metrics, miners, epoch) {
+            // Update metrics cards
+            document.getElementById('total-supply').textContent = formatNumber(metrics.totalSupply);
+            document.getElementById('circulating-supply').textContent = formatNumber(metrics.circulatingSupply);
+            document.getElementById('pct-minted').textContent = metrics.pctMinted.toFixed(1) + '%';
+            document.getElementById('community-wallets').textContent = metrics.communityWallets;
+            document.getElementById('gini-coefficient').textContent = metrics.gini.toFixed(4);
+            document.getElementById('top10-concentration').textContent = metrics.top10Concentration.toFixed(1) + '%';
+            document.getElementById('current-epoch').textContent = epoch.epoch || 'Loading...';
+            document.getElementById('epoch-enrolled').textContent = epoch.enrolled_miners || 'Loading...';
+
+            // Update leaderboard
+            const tbody = document.getElementById('leaderboard-tbody');
+            tbody.innerHTML = '';
+
+            const sortedMiners = [...miners].sort((a, b) => {
+                const balA = parseFloat(a.balance || 0);
+                const balB = parseFloat(b.balance || 0);
+                return balB - balA;
+            });
+
+            sortedMiners.slice(0, 20).forEach((miner, index) => {
+                const balance = parseFloat(miner.balance || 0);
+                const pct = (balance / metrics.circulatingSupply) * 100;
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td class="wallet-address" title="${miner.miner}">${miner.miner.substring(0, 20)}...</td>
+                    <td style="text-align: right; font-weight: bold; color: #4ade80;">${formatNumber(balance)}</td>
+                    <td style="text-align: right;">${pct.toFixed(2)}%</td>
+                    <td>${miner.hardware_type || 'Unknown'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            // Update distribution chart
+            if (distributionChart) {
+                distributionChart.data.datasets[0].data = [
+                    metrics.founderBalance,
+                    metrics.communityBalance
+                ];
+                distributionChart.update();
+            }
+
+            // Update Lorenz curve
+            if (lorenzChart) {
+                const lorenz = calculateLorenzCurve(miners.map(m => parseFloat(m.balance || 0)));
+                lorenzChart.data.datasets[0].data = lorenz.y;
+                lorenzChart.data.labels = lorenz.x;
+                lorenzChart.update();
+            }
+
+            // Update last update time
+            const now = new Date();
+            document.getElementById('last-update').textContent = now.toLocaleTimeString();
+        }
+
+        function initCharts() {
+            // Distribution pie chart
+            const distCtx = document.getElementById('distribution-chart').getContext('2d');
+            distributionChart = new Chart(distCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Founder Wallets', 'Community'],
+                    datasets: [{
+                        data: [0, 0],
+                        backgroundColor: [
+                            'rgba(240, 147, 43, 0.8)',
+                            'rgba(75, 192, 192, 0.8)'
+                        ],
+                        borderColor: '#1a1a2e',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: '#e0e0e0',
+                                font: { size: 14 }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Lorenz curve
+            const lorenzCtx = document.getElementById('lorenz-chart').getContext('2d');
+            lorenzChart = new Chart(lorenzCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Lorenz Curve',
+                        data: [],
+                        borderColor: '#f093fb',
+                        backgroundColor: 'rgba(240, 147, 43, 0.1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.1
+                    }, {
+                        label: 'Perfect Equality',
+                        data: [],
+                        borderColor: '#4ade80',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: { display: true, text: 'Population %', color: '#e0e0e0' },
+                            ticks: { color: '#a0a0a0' },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        },
+                        y: {
+                            title: { display: true, text: 'RTC %', color: '#e0e0e0' },
+                            ticks: { color: '#a0a0a0' },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#e0e0e0' }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function loadData() {
+            const tbody = document.getElementById('leaderboard-tbody');
+            tbody.innerHTML = '<tr><td colspan="5" class="loading">Loading wallet data</td></tr>';
+
+            try {
+                const [miners, epoch] = await Promise.all([
+                    fetchMiners(),
+                    fetchEpoch()
+                ]);
+
+                const metrics = calculateMetrics(miners);
+                updateDashboard(metrics, miners, epoch);
+            } catch (error) {
+                console.error('Error loading data:', error);
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #ef4444;">Failed to load data</td></tr>';
+            }
+        }
+
+        // Initialize charts
+        initCharts();
+
+        // Load initial data
+        loadData();
+
+        // Auto-refresh every 60 seconds
+        setInterval(loadData, 60000);
+    </script>
+</body>
+</html>
