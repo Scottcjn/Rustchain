@@ -1,46 +1,40 @@
 import httpx
 from typing import Dict, Any, Optional
-from .models import Stats
+from .models import Stats, Miner
 from .identity import Identity
 
-class AsyncRustChainClient:
+class RustChainClient:
     def __init__(self, base_url: str, verify: bool = False, identity: Optional[Identity] = None):
         self.base_url = base_url.rstrip("/")
-        self.client = httpx.AsyncClient(base_url=self.base_url, verify=verify)
+        self.client = httpx.Client(base_url=self.base_url, verify=verify)
         self.identity = identity
 
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.client.aclose()
-
-    async def get_health(self) -> Dict[str, Any]:
-        resp = await self.client.get("/health")
+    def get_health(self) -> Dict[str, Any]:
+        resp = self.client.get("/health")
         resp.raise_for_status()
         return resp.json()
 
-    async def get_stats(self) -> Stats:
-        resp = await self.client.get("/api/stats")
+    def get_stats(self) -> Stats:
+        resp = self.client.get("/api/stats")
         resp.raise_for_status()
         return Stats(**resp.json())
 
-    async def get_balance(self, miner_id: str) -> float:
-        resp = await self.client.get("/wallet/balance", params={"miner_id": miner_id})
+    def get_balance(self, miner_id: str) -> float:
+        resp = self.client.get("/wallet/balance", params={"miner_id": miner_id})
         resp.raise_for_status()
         return resp.json().get("amount_rtc", 0.0)
 
-    async def get_nonce(self, address: str) -> int:
-        resp = await self.client.get(f"/wallet/nonce/{address}")
+    def get_nonce(self, address: str) -> int:
+        resp = self.client.get(f"/wallet/nonce/{address}")
         resp.raise_for_status()
         return resp.json().get("nonce", 0)
 
-    async def signed_transfer(self, to_address: str, amount_rtc: float, identity: Optional[Identity] = None):
+    def signed_transfer(self, to_address: str, amount_rtc: float, identity: Optional[Identity] = None):
         id_to_use = identity or self.identity
         if not id_to_use:
             raise ValueError("Identity required for signed transfer")
 
-        nonce = await self.get_nonce(id_to_use.address)
+        nonce = self.get_nonce(id_to_use.address)
 
         # 构建负载并签名
         payload = f"{id_to_use.address}{to_address}{amount_rtc}{nonce}".encode()
@@ -55,5 +49,4 @@ class AsyncRustChainClient:
             "signature": signature,
             "public_key": id_to_use.address # 在 Ed25519 中公钥即地址
         }
-        resp = await self.client.post("/wallet/transfer/signed", json=data)
-        return resp.json()
+        return self.client.post("/wallet/transfer/signed", json=data).json()
