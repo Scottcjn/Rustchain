@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Miner Leaderboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        
+        header {
+            text-align: center;
+            padding: 30px 0;
+        }
+        h1 { font-size: 2.5em; margin-bottom: 10px; }
+        .subtitle { color: #8892b0; font-size: 1.1em; }
+        
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 25px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .stat-value { font-size: 2.5em; font-weight: bold; color: #64ffda; }
+        .stat-label { color: #8892b0; margin-top: 5px; }
+        
+        /* Leaderboard Table */
+        .leaderboard {
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-top: 30px;
+        }
+        .leaderboard-header {
+            display: grid;
+            grid-template-columns: 80px 120px 1fr 100px 100px 120px;
+            padding: 15px 20px;
+            background: rgba(100,255,218,0.1);
+            font-weight: 600;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .leaderboard-row {
+            display: grid;
+            grid-template-columns: 80px 120px 1fr 100px 100px 120px;
+            padding: 15px 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            align-items: center;
+        }
+        .leaderboard-row:hover { background: rgba(255,255,255,0.02); }
+        
+        .rank { font-size: 1.2em; font-weight: bold; }
+        .rank-1 { color: #ffd700; }
+        .rank-2 { color: #c0c0c0; }
+        .rank-3 { color: #cd7f32; }
+        
+        .miner-id { font-family: monospace; font-size: 0.9em; }
+        
+        .hardware-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+        .hw-vintage { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; }
+        .hw-modern { background: rgba(100,255,218,0.2); color: #64ffda; }
+        
+        .multiplier { font-weight: bold; color: #64ffda; }
+        .earnings { font-weight: bold; }
+        
+        /* Refresh Button */
+        .refresh-btn {
+            background: linear-gradient(135deg, #64ffda, #00bfa5);
+            color: #000;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        .refresh-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(100,255,218,0.3); }
+        
+        .last-update { color: #8892b0; font-size: 0.9em; margin-top: 15px; }
+        
+        /* Loading */
+        .loading { text-align: center; padding: 50px; color: #8892b0; }
+        
+        /* Empty State */
+        .empty-state { text-align: center; padding: 50px; color: #8892b0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⛏️ RustChain Miner Leaderboard</h1>
+            <p class="subtitle">Top Earners & Most Interesting Hardware</p>
+        </header>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="total-miners">-</div>
+                <div class="stat-label">Total Miners</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="total-rtc">-</div>
+                <div class="stat-label">RTC Distributed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="unique-arch">-</div>
+                <div class="stat-label">Unique Architectures</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="newest-miner">-</div>
+                <div class="stat-label">Newest Miner</div>
+            </div>
+        </div>
+        
+        <div class="leaderboard">
+            <div class="leaderboard-header">
+                <div>Rank</div>
+                <div>Miner</div>
+                <div>Hardware</div>
+                <div>Multiplier</div>
+                <div>Epochs</div>
+                <div>Est. Earnings</div>
+            </div>
+            <div id="leaderboard-body">
+                <div class="loading">Loading miner data...</div>
+            </div>
+        </div>
+        
+        <div style="text-align: center;">
+            <button class="refresh-btn" onclick="loadData()">🔄 Refresh Data</button>
+            <p class="last-update" id="last-update"></p>
+        </div>
+    </div>
+    
+    <script>
+        const API_URL = 'https://50.28.86.131';
+        
+        async function loadData() {
+            const body = document.getElementById('leaderboard-body');
+            body.innerHTML = '<div class="loading">Loading...</div>';
+            
+            try {
+                // Fetch miners data
+                const minersResp = await fetch(`${API_URL}/api/miners`);
+                const miners = await minersResp.json();
+                
+                // Fetch epoch data
+                const epochResp = await fetch(`${API_URL}/epoch`);
+                const epoch = await epochResp.json();
+                
+                // Process and sort miners
+                const sortedMiners = miners.map(m => ({
+                    ...m,
+                    earnings: estimateEarnings(m, epoch)
+                })).sort((a, b) => b.earnings - a.earnings);
+                
+                // Update stats
+                updateStats(miners, sortedMiners);
+                
+                // Render leaderboard
+                renderLeaderboard(sortedMiners);
+                
+                // Update timestamp
+                document.getElementById('last-update').textContent = 
+                    `Last updated: ${new Date().toLocaleString()}`;
+                    
+            } catch (error) {
+                console.error('Error loading data:', error);
+                body.innerHTML = `<div class="empty-state">
+                    Unable to load data from RustChain API<br>
+                    <small>${error.message}</small>
+                </div>`;
+            }
+        }
+        
+        function estimateEarnings(miner, epoch) {
+            // Estimate based on multiplier and epochs active
+            const baseEarnings = 0.1; // Base per epoch
+            const multiplier = miner.antiquity_multiplier || 1;
+            const epochsActive = miner.epochs_active || 100;
+            return Math.round(baseEarnings * multiplier * epochsActive * 10) / 10;
+        }
+        
+        function updateStats(miners, sorted) {
+            document.getElementById('total-miners').textContent = miners.length;
+            
+            const totalEarnings = sorted.reduce((sum, m) => sum + m.earnings, 0);
+            document.getElementById('total-rtc').textContent = Math.round(totalEarnings);
+            
+            const architectures = new Set(miners.map(m => m.device_arch));
+            document.getElementById('unique-arch').textContent = architectures.size;
+            
+            const newest = sorted.sort((a, b) => b.last_attest - a.last_attest)[0];
+            document.getElementById('newest-miner').textContent = 
+                newest ? newest.device_arch : '-';
+        }
+        
+        function renderLeaderboard(miners) {
+            const body = document.getElementById('leaderboard-body');
+            
+            if (miners.length === 0) {
+                body.innerHTML = '<div class="empty-state">No miners found</div>';
+                return;
+            }
+            
+            let html = '';
+            miners.forEach((miner, index) => {
+                const rank = index + 1;
+                const rankClass = rank <= 3 ? `rank-${rank}` : '';
+                const hardwareClass = isVintage(miner.device_arch) ? 'hw-vintage' : 'hw-modern';
+                const hardwareLabel = isVintage(miner.device_arch) ? '🏆 Vintage' : '⚡ Modern';
+                
+                html += `
+                    <div class="leaderboard-row">
+                        <div class="rank ${rankClass}">#${rank}</div>
+                        <div class="miner-id">${miner.miner.substring(0, 8)}...</div>
+                        <div><span class="hardware-badge ${hardwareClass}">${hardwareLabel}</span></div>
+                        <div class="multiplier">${miner.antiquity_multiplier || 1.0}x</div>
+                        <div>${miner.epochs_active || '-'}</div>
+                        <div class="earnings">~${miner.earnings} RTC</div>
+                    </div>
+                `;
+            });
+            
+            body.innerHTML = html;
+        }
+        
+        function isVintage(arch) {
+            const vintage = ['G4', 'G5', 'PowerPC', '68030', '68040', 'Pentium', '386', '486'];
+            return vintage.some(v => arch && arch.toUpperCase().includes(v));
+        }
+        
+        // Auto-refresh every 60 seconds
+        loadData();
+        setInterval(loadData, 60000);
+    </script>
+</body>
+</html>
