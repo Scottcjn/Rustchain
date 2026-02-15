@@ -1,0 +1,81 @@
+# Ruff configuration for RustChain
+
+# Exclude files and directories
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+    # Legacy and deprecated code
+    "deprecated/",
+]
+
+# Line length
+line-length = 120
+
+# Indent width
+indent-width = 4
+
+# Target Python version
+target-version = "py310"
+
+[lint]
+# Select rules
+select = [
+    "E",      # pycodestyle errors
+    "F",      # Pyflakes
+    "W",      # pycodestyle warnings
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+]
+
+# Ignore specific rules
+ignore = [
+    "E501",   # Line too long (we use 120 chars)
+    "E402",   # Module level import not at top
+    "E741",   # Ambiguous variable name
+    "B008",   # Do not perform function calls in argument defaults
+    "C901",   # Too complex
+]
+
+# Allow autofix for enabled rules
+fixable = ["ALL"]
+unfixable = []
+
+[format]
+# Use double quotes for strings
+quote-style = "double"
+
+# Indent with spaces
+indent-style = "space"
+
+# Skip magic trailing comma
+skip-magic-trailing-comma = false
+
+# Line ending
+line-ending = "auto"
+
+[lint.per-file-ignores]
+# Allow longer lines in test files
+"tests/**/*.py" = ["E501", "S101"]
+
+# Ignore specific files
+"node/rustchain_v2_integrated_v2.2.1_rip200.py" = ["E501", "C901"]
+"deprecated/**/*.py" = ["F401"]

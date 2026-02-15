@@ -1,0 +1,16 @@
+# Test dependencies
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+
+# Linting
+ruff>=0.1.0
+
+# Type checking
+mypy>=1.5.0
+
+# Security scanning
+bandit[toml]>=1.7.5
+
+# Code coverage
+coverage>=7.3.0

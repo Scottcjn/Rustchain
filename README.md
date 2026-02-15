@@ -8,6 +8,7 @@
 [![Python](https://img.shields.io/badge/Python-3.x-yellow)](https://python.org)
 [![Network](https://img.shields.io/badge/Nodes-3%20Active-brightgreen)](https://rustchain.org/explorer)
 [![As seen on BoTTube](https://bottube.ai/badge/seen-on-bottube.svg)](https://bottube.ai)
+[![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
 
 **The first blockchain that rewards vintage hardware for being old, not fast.**
 
