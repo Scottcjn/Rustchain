@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rustchain-sdk"
+version = "0.1.0"
+description = "Python SDK for RustChain Blockchain"
+requires-python = ">=3.8"
+dependencies = [
+    "httpx>=0.24.0",
+    "pydantic>=2.0.0",
+    "pynacl>=1.5.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-asyncio", "respx"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["rips/python/rustchain"]

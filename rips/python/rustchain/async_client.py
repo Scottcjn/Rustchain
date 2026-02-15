@@ -1,13 +1,13 @@
 import httpx
-from typing import Dict, Any, Optional
-from .models import Stats
+from typing import Dict, Any, List, Optional
+from .models import Stats, Miner, Epoch, AttestationResponse
 from .identity import Identity
 
 class AsyncRustChainClient:
-    def __init__(self, base_url: str, verify: bool = False, identity: Optional[Identity] = None):
+    def __init__(self, base_url: str, identity: Optional[Identity] = None, verify: bool = False):
         self.base_url = base_url.rstrip("/")
-        self.client = httpx.AsyncClient(base_url=self.base_url, verify=verify)
         self.identity = identity
+        self.client = httpx.AsyncClient(base_url=self.base_url, verify=verify)
 
     async def __aenter__(self):
         return self
@@ -25,6 +25,16 @@ class AsyncRustChainClient:
         resp.raise_for_status()
         return Stats(**resp.json())
 
+    async def get_epoch(self) -> Epoch:
+        resp = await self.client.get("/epoch")
+        resp.raise_for_status()
+        return Epoch(**resp.json())
+
+    async def get_miners(self) -> List[Miner]:
+        resp = await self.client.get("/api/miners")
+        resp.raise_for_status()
+        return [Miner(**m) for m in resp.json()]
+
     async def get_balance(self, miner_id: str) -> float:
         resp = await self.client.get("/wallet/balance", params={"miner_id": miner_id})
         resp.raise_for_status()
@@ -32,28 +42,45 @@ class AsyncRustChainClient:
 
     async def get_nonce(self, address: str) -> int:
         resp = await self.client.get(f"/wallet/nonce/{address}")
+        if resp.status_code == 404:
+            return 0
         resp.raise_for_status()
         return resp.json().get("nonce", 0)
 
-    async def signed_transfer(self, to_address: str, amount_rtc: float, identity: Optional[Identity] = None):
+    async def signed_transfer(self, to_address: str, amount_rtc: float, identity: Optional[Identity] = None) -> Dict[str, Any]:
         id_to_use = identity or self.identity
         if not id_to_use:
             raise ValueError("Identity required for signed transfer")
 
         nonce = await self.get_nonce(id_to_use.address)
-
-        # 构建负载并签名
         payload = f"{id_to_use.address}{to_address}{amount_rtc}{nonce}".encode()
         signature = id_to_use.sign(payload)
 
-        # 提交请求
         data = {
             "from_address": id_to_use.address,
             "to_address": to_address,
             "amount_rtc": amount_rtc,
             "nonce": nonce,
             "signature": signature,
-            "public_key": id_to_use.address # 在 Ed25519 中公钥即地址
+            "public_key": id_to_use.address
         }
         resp = await self.client.post("/wallet/transfer/signed", json=data)
+        resp.raise_for_status()
         return resp.json()
+
+    async def submit_attestation(self, fingerprint: Dict[str, Any], identity: Optional[Identity] = None) -> AttestationResponse:
+        id_to_use = identity or self.identity
+        if not id_to_use:
+            raise ValueError("Identity required for attestation")
+
+        payload = str(fingerprint).encode()
+        signature = id_to_use.sign(payload)
+
+        data = {
+            "miner_id": id_to_use.address,
+            "fingerprint": fingerprint,
+            "signature": signature
+        }
+        resp = await self.client.post("/attest/submit", json=data)
+        resp.raise_for_status()
+        return AttestationResponse(**resp.json())
