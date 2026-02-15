@@ -2,7 +2,7 @@
 """
 RIP-PoA Hardware Fingerprint Validation
 ========================================
-7 Required Checks for RTC Reward Approval
+Core Fingerprint Checks for RTC Reward Approval
 ALL MUST PASS for antiquity multiplier rewards
 
 Checks:
@@ -11,8 +11,9 @@ Checks:
 3. SIMD Unit Identity
 4. Thermal Drift Entropy
 5. Instruction Path Jitter
-6. Anti-Emulation Behavioral Checks
-7. ROM Fingerprint (retro platforms only)
+6. Device-Age Oracle Fields (Historicity Attestation)
+7. Anti-Emulation Behavioral Checks
+8. ROM Fingerprint (retro platforms only; optional)
 """
 
 import hashlib
@@ -269,8 +270,229 @@ def check_instruction_jitter(samples: int = 100) -> Tuple[bool, Dict]:
     return valid, data
 
 
+def _read_text_file(path: str, max_bytes: int = 1024 * 64) -> Optional[str]:
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read(max_bytes)
+    except Exception:
+        return None
+
+
+def _run_cmd(args: List[str], timeout_s: int = 5) -> Optional[str]:
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout_s)
+        if result.returncode != 0:
+            return None
+        return result.stdout.strip()
+    except Exception:
+        return None
+
+
+def _parse_linux_cpuinfo(cpuinfo_text: str) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+
+    # Common keys across x86, ARM, PPC Linux.
+    key_map = {
+        "model name": "cpu_model",
+        "processor": "processor",
+        "cpu": "cpu_model",
+        "hardware": "hardware",
+        "cpu family": "cpu_family",
+        "model": "model",
+        "stepping": "stepping",
+        "flags": "flags",
+        "features": "flags",
+    }
+
+    for raw in cpuinfo_text.splitlines():
+        if ":" not in raw:
+            continue
+        k, v = raw.split(":", 1)
+        k = k.strip().lower()
+        v = v.strip()
+        if k in key_map and v:
+            # Prefer first seen for most fields; flags can be long but first is fine.
+            out.setdefault(key_map[k], v)
+
+    return out
+
+
+def _estimate_release_year(cpu_model: str) -> Tuple[Optional[int], Dict]:
+    """
+    Best-effort mapping. Keep it conservative: only return a year when we're confident.
+    """
+    import re
+
+    cpu_l = (cpu_model or "").lower()
+    details: Dict = {"matched": None}
+
+    # Apple Silicon
+    m = re.search(r"apple\s+m(\d)\b", cpu_l)
+    if m:
+        gen = int(m.group(1))
+        # Approximate launch years.
+        year_map = {1: 2020, 2: 2022, 3: 2023, 4: 2025}
+        details["matched"] = f"apple_m{gen}"
+        return year_map.get(gen), details
+
+    # Intel Core i3/i5/i7/i9 model numbers: i7-4770, i5-6500, i9-13900, etc.
+    m = re.search(r"i[3579]-\s*(\d{4,5})", cpu_l)
+    if m:
+        num = m.group(1)
+        # Handle 10th/11th gen 4-digit mobile parts like 10510U/1165G7:
+        # treat the first 2 digits as the generation when >= 10.
+        if len(num) == 5:
+            gen_digits = num[:2]
+        elif len(num) == 4:
+            # 4-digit model numbers are usually 2nd-9th gen desktop parts (e.g. 4770 -> gen4),
+            # but can also be 10th/11th gen mobile parts (e.g. 10510U/1165G7).
+            first2 = int(num[:2])
+            gen_digits = num[:2] if 10 <= first2 <= 14 else num[:1]
+        else:
+            gen_digits = num[:1]
+        try:
+            gen = int(gen_digits)
+        except ValueError:
+            gen = None
+
+        # Rough mapping of Intel Core generation to year (launch year, not exact SKU).
+        intel_gen_year = {
+            2: 2011,
+            3: 2012,
+            4: 2013,
+            5: 2014,
+            6: 2015,
+            7: 2016,
+            8: 2017,
+            9: 2018,
+            10: 2019,
+            11: 2021,
+            12: 2021,
+            13: 2022,
+            14: 2023,
+        }
+        if gen is not None and gen in intel_gen_year:
+            details["matched"] = f"intel_core_gen{gen}"
+            return intel_gen_year[gen], details
+
+    # AMD Ryzen: 1700/2600/3600/5600/7600 etc.
+    m = re.search(r"ryzen\s+\d\s+(\d{4})", cpu_l)
+    if m:
+        sku = m.group(1)
+        series = int(sku[0])  # 1/2/3/4/5/7/8...
+        ryzen_year = {
+            1: 2017,
+            2: 2018,
+            3: 2019,
+            4: 2022,
+            5: 2020,
+            6: 2021,
+            7: 2022,
+            8: 2024,
+            9: 2025,
+        }
+        if series in ryzen_year:
+            details["matched"] = f"amd_ryzen_{series}xxx"
+            return ryzen_year[series], details
+
+    # Vintage families (best-effort)
+    if "g5" in cpu_l:
+        details["matched"] = "ppc_g5_family"
+        return 2003, details
+    if "powerpc" in cpu_l or "ppc" in cpu_l or "g4" in cpu_l:
+        details["matched"] = "ppc_g4_family"
+        return 1999, details
+    if "sparc" in cpu_l or "ultrasparc" in cpu_l:
+        details["matched"] = "sparc_family"
+        return 1995, details
+
+    return None, details
+
+
+def check_device_age_oracle() -> Tuple[bool, Dict]:
+    """
+    Check 6: Device-Age Oracle Fields (Historicity Attestation)
+
+    Collect CPU + firmware age signals and flag obvious spoofing attempts (new CPU pretending to be old).
+    """
+    arch = platform.machine().lower()
+
+    cpuinfo_text = _read_text_file("/proc/cpuinfo") or ""
+    cpuinfo = _parse_linux_cpuinfo(cpuinfo_text) if cpuinfo_text else {}
+
+    cpu_model = cpuinfo.get("cpu_model") or cpuinfo.get("processor") or ""
+    flags_raw = (cpuinfo.get("flags") or "").lower()
+    flags = flags_raw.split() if flags_raw else []
+
+    # macOS fallback
+    if not cpu_model:
+        cpu_model = _run_cmd(["sysctl", "-n", "machdep.cpu.brand_string"]) or ""
+
+    release_year, year_details = _estimate_release_year(cpu_model)
+
+    bios_date = _read_text_file("/sys/class/dmi/id/bios_date", max_bytes=256)
+    bios_version = _read_text_file("/sys/class/dmi/id/bios_version", max_bytes=256)
+
+    mismatch_reasons: List[str] = []
+    cpu_l = cpu_model.lower()
+
+    # Architecture vs claimed CPU family mismatches are strong spoofing signals.
+    if arch in ("x86_64", "amd64", "x86") and any(s in cpu_l for s in ("powerpc", " g4", " g5", "sparc", "m68k")):
+        mismatch_reasons.append("arch_x86_but_claims_vintage_non_x86")
+    if "ppc" in arch or "powerpc" in arch:
+        if any(s in cpu_l for s in ("intel", "amd", "ryzen")):
+            mismatch_reasons.append("arch_ppc_but_claims_x86")
+    if "arm" in arch or "aarch64" in arch:
+        if "intel" in cpu_l and "apple" not in cpu_l:
+            mismatch_reasons.append("arch_arm_but_claims_intel")
+
+    # Flag modern x86 SIMD on a "vintage" claim (helps catch simple string spoofing).
+    if any(s in cpu_l for s in ("powerpc", "g4", "g5", "sparc", "m68k")) and any(
+        f.startswith("avx") or f.startswith("sse") for f in flags
+    ):
+        mismatch_reasons.append("vintage_claim_but_modern_simd_flags")
+
+    # Confidence score (0..1). Keep it simple and explainable.
+    confidence = 0.2
+    if cpu_model:
+        confidence += 0.4
+    if release_year is not None:
+        confidence += 0.2
+    if bios_date:
+        confidence += 0.2
+    if mismatch_reasons:
+        confidence -= 0.5
+
+    confidence = max(0.0, min(1.0, round(confidence, 2)))
+
+    data = {
+        "arch": arch,
+        "cpu_model": cpu_model,
+        "cpu_family": cpuinfo.get("cpu_family"),
+        "model": cpuinfo.get("model"),
+        "stepping": cpuinfo.get("stepping"),
+        "flags_sample": flags[:20],
+        "estimated_release_year": release_year,
+        "release_year_details": year_details,
+        "bios_date": (bios_date or "").strip() if bios_date else None,
+        "bios_version": (bios_version or "").strip() if bios_version else None,
+        "mismatch_reasons": mismatch_reasons,
+        "confidence": confidence,
+    }
+
+    # Fail only when we have strong evidence of spoofing or we couldn't collect CPU identity at all.
+    if not cpu_model:
+        data["fail_reason"] = "cpu_model_unavailable"
+        return False, data
+    if mismatch_reasons:
+        data["fail_reason"] = "device_age_oracle_mismatch"
+        return False, data
+
+    return True, data
+
+
 def check_anti_emulation() -> Tuple[bool, Dict]:
-    """Check 6: Anti-Emulation Behavioral Checks"""
+    """Check 7: Anti-Emulation Behavioral Checks"""
     vm_indicators = []
 
     vm_paths = [
@@ -317,7 +539,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
 
 def check_rom_fingerprint() -> Tuple[bool, Dict]:
     """
-    Check 7: ROM Fingerprint (for retro platforms)
+    Check 8: ROM Fingerprint (for retro platforms)
 
     Detects if running with a known emulator ROM dump.
     Real vintage hardware should have unique/variant ROMs.
@@ -400,7 +622,7 @@ def check_rom_fingerprint() -> Tuple[bool, Dict]:
 
 
 def validate_all_checks(include_rom_check: bool = True) -> Tuple[bool, Dict]:
-    """Run all 7 fingerprint checks. ALL MUST PASS for RTC approval."""
+    """Run all core fingerprint checks (and optional ROM check)."""
     results = {}
     all_passed = True
 
@@ -410,6 +632,7 @@ def validate_all_checks(include_rom_check: bool = True) -> Tuple[bool, Dict]:
         ("simd_identity", "SIMD Unit Identity", check_simd_identity),
         ("thermal_drift", "Thermal Drift Entropy", check_thermal_drift),
         ("instruction_jitter", "Instruction Path Jitter", check_instruction_jitter),
+        ("device_age_oracle", "Device-Age Oracle Fields", check_device_age_oracle),
         ("anti_emulation", "Anti-Emulation Checks", check_anti_emulation),
     ]
 
