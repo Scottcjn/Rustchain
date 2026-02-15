@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -28,9 +28,10 @@
     </div>
 
     <div class="hud-bottom">
-      <div class="chip" id="statusChip">Loading…</div>
-      <div class="chip mono">Controls: drag to orbit, scroll to zoom, click a machine</div>
-      <button class="chip btn" id="recenterBtn">Recenter</button>
+      <div class="chip" id="statusChip">Loading...</div>
+      <div class="chip mono" id="controlsChip">Controls: drag to orbit, scroll to zoom, click a machine</div>
+      <button class="chip btn" id="modeBtn" type="button">Walk Mode</button>
+      <button class="chip btn" id="recenterBtn" type="button">Recenter</button>
     </div>
   </div>
 
@@ -40,7 +41,7 @@
         <div class="panel-title" id="pTitle">Machine</div>
         <div class="panel-sub mono" id="pSub"></div>
       </div>
-      <button class="x mono" id="closeBtn">Close</button>
+      <button class="x mono" id="closeBtn" type="button">Close</button>
     </div>
     <div class="panel-body" id="pBody"></div>
   </aside>

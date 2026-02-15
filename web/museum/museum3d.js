@@ -1,10 +1,12 @@
-import * as THREE from './vendor/three.module.js';
+﻿import * as THREE from './vendor/three.module.js';
 import { OrbitControls } from './vendor/OrbitControls.js';
 
 (() => {
   const canvas = document.getElementById('c');
   const statusChip = document.getElementById('statusChip');
+  const controlsChip = document.getElementById('controlsChip');
   const recenterBtn = document.getElementById('recenterBtn');
+  const modeBtn = document.getElementById('modeBtn');
 
   const panel = document.getElementById('panel');
   const pTitle = document.getElementById('pTitle');
@@ -96,21 +98,18 @@ import { OrbitControls } from './vendor/OrbitControls.js';
   const wingOther = makeWing('EXOTIC', 28, 0, 0x3a7a62);
 
   // Machine instances
-  const machines = new Map(); // miner_id -> {group, orb, base, data, last_attest}
+  const machines = new Map(); // miner_id -> {group, orb, data, last_attest, pulse, baseColor}
   const clickable = [];
+
+  // Activity = recent attest.
+  const ACTIVE_WINDOW_S = 90;
+  const ACTIVE_GLOW = 0x26d07c;
 
   function colorFor(m) {
     const t = String(m.hardware_type || '').toLowerCase();
     if (t.includes('vintage') || t.includes('retro') || t.includes('powerpc')) return 0xd6b25e;
     if (t.includes('modern') || t.includes('apple silicon') || t.includes('x86-64')) return 0x4b7bd8;
     return 0x3a7a62;
-  }
-
-  function wingFor(m) {
-    const t = String(m.hardware_type || '').toLowerCase();
-    if (t.includes('vintage') || t.includes('retro') || t.includes('powerpc')) return wingVintage;
-    if (t.includes('modern') || t.includes('apple silicon') || t.includes('x86-64')) return wingModern;
-    return wingOther;
   }
 
   function makePedestal(color) {
@@ -123,13 +122,13 @@ import { OrbitControls } from './vendor/OrbitControls.js';
     base.position.y = 0.3;
     g.add(base);
 
-    const rim = new THREE.Mesh(
+    const r = new THREE.Mesh(
       new THREE.TorusGeometry(1.05, 0.05, 10, 40),
       new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.25, emissive: color, emissiveIntensity: 0.15 })
     );
-    rim.rotation.x = Math.PI / 2;
-    rim.position.y = 0.62;
-    g.add(rim);
+    r.rotation.x = Math.PI / 2;
+    r.position.y = 0.62;
+    g.add(r);
 
     return g;
   }
@@ -303,16 +302,16 @@ import { OrbitControls } from './vendor/OrbitControls.js';
   function upsertMachine(m, x, z) {
     const id = String(m.miner);
     const existing = machines.get(id);
-    const color = colorFor(m);
+    const baseColor = colorFor(m);
 
     if (!existing) {
       const group = new THREE.Group();
       group.position.set(x, 0, z);
 
-      const pedestal = makePedestal(color);
+      const pedestal = makePedestal(baseColor);
       group.add(pedestal);
 
-      const orb = makeOrb(color);
+      const orb = makeOrb(baseColor);
       group.add(orb);
 
       const label = makeTextSprite(shortId(id), { bg: 'rgba(15,19,24,0.70)' });
@@ -323,7 +322,7 @@ import { OrbitControls } from './vendor/OrbitControls.js';
       clickable.push(group);
 
       scene.add(group);
-      machines.set(id, { group, orb, data: m, last_attest: m.last_attest || 0, pulse: 0 });
+      machines.set(id, { group, orb, data: m, last_attest: m.last_attest || 0, pulse: 0, baseColor });
       return;
     }
 
@@ -336,19 +335,108 @@ import { OrbitControls } from './vendor/OrbitControls.js';
 
     existing.last_attest = cur;
     existing.data = m;
+    existing.baseColor = baseColor;
   }
 
   function shortId(id) {
     if (id.length <= 10) return id;
-    return id.slice(0, 6) + '…' + id.slice(-3);
+    return id.slice(0, 6) + '...' + id.slice(-3);
   }
+
+  // Walk mode (WASD) + touch D-pad
+  const isTouch = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window);
+  const dpad = document.createElement('div');
+  dpad.className = 'dpad';
+  dpad.hidden = true;
+  dpad.innerHTML = [
+    '<span class="spacer"></span>',
+    '<button type="button" data-k="w">W</button>',
+    '<span class="spacer"></span>',
+    '<button type="button" data-k="a">A</button>',
+    '<button type="button" data-k="s">S</button>',
+    '<button type="button" data-k="d">D</button>',
+    '<span class="spacer"></span>',
+    '<span class="spacer"></span>',
+    '<span class="spacer"></span>',
+  ].join('');
+  document.body.appendChild(dpad);
+
+  const move = { w: 0, a: 0, s: 0, d: 0 };
+  function setMove(key, down) {
+    if (!(key in move)) return;
+    move[key] = down ? 1 : 0;
+  }
+
+  function onKey(e, down) {
+    const k = String(e.key || '').toLowerCase();
+    if (k === 'w' || k === 'arrowup') setMove('w', down);
+    if (k === 's' || k === 'arrowdown') setMove('s', down);
+    if (k === 'a' || k === 'arrowleft') setMove('a', down);
+    if (k === 'd' || k === 'arrowright') setMove('d', down);
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (navMode !== 'walk') return;
+    onKey(e, true);
+  });
+  window.addEventListener('keyup', (e) => {
+    if (navMode !== 'walk') return;
+    onKey(e, false);
+  });
+
+  dpad.addEventListener('pointerdown', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('button[data-k]') : null;
+    if (!btn) return;
+    e.preventDefault();
+    setMove(btn.getAttribute('data-k'), true);
+    btn.setPointerCapture(e.pointerId);
+  });
+  dpad.addEventListener('pointerup', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('button[data-k]') : null;
+    if (!btn) return;
+    e.preventDefault();
+    setMove(btn.getAttribute('data-k'), false);
+  });
+  dpad.addEventListener('pointercancel', () => {
+    setMove('w', false);
+    setMove('a', false);
+    setMove('s', false);
+    setMove('d', false);
+  });
+
+  let navMode = 'orbit';
+  function setMode(m) {
+    navMode = m;
+    if (navMode === 'walk') {
+      modeBtn.textContent = 'Orbit Mode';
+      controlsChip.textContent = isTouch ? 'Walk: use D-pad + drag to look, tap a machine' : 'Walk: WASD + drag to look, click a machine';
+      dpad.hidden = !isTouch;
+    } else {
+      modeBtn.textContent = 'Walk Mode';
+      controlsChip.textContent = 'Controls: drag to orbit, scroll to zoom, click a machine';
+      dpad.hidden = true;
+      setMove('w', false);
+      setMove('a', false);
+      setMove('s', false);
+      setMove('d', false);
+    }
+  }
+  modeBtn.addEventListener('click', () => setMode(navMode === 'orbit' ? 'walk' : 'orbit'));
 
   async function refresh() {
     try {
       const miners = await api('/api/miners');
       const list = Array.isArray(miners) ? miners : (miners?.miners || []);
       placeMachines(list);
-      setStatus(`Loaded ${list.length} miners | ${new Date().toLocaleTimeString()}`);
+
+      const now = Date.now() / 1000;
+      let active = 0;
+      for (const m of list) {
+        const la = Number(m.last_attest || 0);
+        if (la && (now - la) <= ACTIVE_WINDOW_S) active++;
+      }
+
+      setStatus(`Loaded ${list.length} miners | active ${active} | ${new Date().toLocaleTimeString()}`);
     } catch (e) {
       setStatus(`Load failed: ${String(e)}`);
     }
@@ -357,9 +445,33 @@ import { OrbitControls } from './vendor/OrbitControls.js';
   let tNext = 0;
   function tick() {
     const dt = clock.getDelta();
+
+    // Walk mode: move camera + target together.
+    if (navMode === 'walk') {
+      const speed = 8.0; // units/sec
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      forward.y = 0;
+      if (forward.lengthSq() > 1e-6) forward.normalize();
+
+      const up = new THREE.Vector3(0, 1, 0);
+      const right = new THREE.Vector3().crossVectors(forward, up).normalize();
+
+      const f = move.w - move.s;
+      const s = move.d - move.a;
+      if (f !== 0 || s !== 0) {
+        const delta = new THREE.Vector3();
+        delta.addScaledVector(forward, f * speed * dt);
+        delta.addScaledVector(right, s * speed * dt);
+        camera.position.add(delta);
+        controls.target.add(delta);
+      }
+    }
+
     controls.update();
 
-    // Idle animation + pulse
+    // Idle animation + pulse + active glow
+    const nowS = Date.now() / 1000;
     for (const rec of machines.values()) {
       const g = rec.group;
       const orb = rec.orb;
@@ -368,15 +480,23 @@ import { OrbitControls } from './vendor/OrbitControls.js';
       orb.position.y = 2.0 + Math.sin(t * 1.6 + g.position.x * 0.05) * 0.18;
       orb.rotation.y += dt * 0.3;
 
+      const la = Number(rec.last_attest || 0);
+      const isActive = la && (nowS - la) <= ACTIVE_WINDOW_S;
+      const baseEmissive = isActive ? ACTIVE_GLOW : rec.baseColor;
+      orb.material.emissive.setHex(baseEmissive);
+
       if (rec.pulse > 0) {
         rec.pulse = Math.max(0, rec.pulse - dt * 1.2);
-        const s = 1 + rec.pulse * 0.55;
-        orb.scale.set(s, s, s);
-        orb.material.emissiveIntensity = 0.35 + rec.pulse * 1.1;
+        const scale = 1 + rec.pulse * 0.55;
+        orb.scale.set(scale, scale, scale);
+        orb.material.emissiveIntensity = (isActive ? 0.9 : 0.35) + rec.pulse * 1.1;
       } else {
         orb.scale.set(1, 1, 1);
-        orb.material.emissiveIntensity = 0.35;
+        orb.material.emissiveIntensity = isActive ? 0.9 : 0.35;
       }
+
+      // Keep base color in sync too.
+      orb.material.color.setHex(rec.baseColor);
     }
 
     // soft refresh
@@ -390,6 +510,7 @@ import { OrbitControls } from './vendor/OrbitControls.js';
   }
 
   recenter();
+  setMode('orbit');
   refresh().then(() => {
     tNext = performance.now() + 10_000;
     tick();
