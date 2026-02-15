@@ -8,6 +8,11 @@ import ipaddress
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort
 try:
+    import requests  # best-effort GitHub proof verification
+    HAVE_REQUESTS = True
+except Exception:
+    HAVE_REQUESTS = False
+try:
     # Deployment compatibility: production may run this file as a single script.
     from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
 except ImportError:
@@ -49,6 +54,9 @@ try:
     HAVE_NACL = True
 except Exception:
     HAVE_NACL = False
+if not HAVE_NACL:
+    print("FATAL: PyNaCl is required for Ed25519 verification (pip install pynacl)", file=sys.stderr)
+    sys.exit(1)
 try:
     from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST
     PROMETHEUS_AVAILABLE = True
@@ -590,6 +598,17 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_ip_rate_limit_ts ON ip_rate_limit(ts)")
         c.execute(
             """
+            CREATE TABLE IF NOT EXISTS agent_ip_rate_limit (
+                client_ip TEXT NOT NULL,
+                action TEXT NOT NULL,
+                ts INTEGER NOT NULL
+            )
+            """
+        )
+        c.execute("CREATE INDEX IF NOT EXISTS idx_agent_ip_rate_limit_ts ON agent_ip_rate_limit(ts)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_agent_ip_rate_limit_ip ON agent_ip_rate_limit(client_ip)")
+        c.execute(
+            """
             CREATE TABLE IF NOT EXISTS blocked_wallets (
                 wallet TEXT PRIMARY KEY,
                 reason TEXT,
@@ -645,7 +664,11 @@ def init_db():
             """
         )
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_wallets_hw_hash ON agent_wallets(hw_hash)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_agent_wallets_agent_name ON agent_wallets(agent_name)")
+        # Make agent_name globally unique.
+        try:
+            c.execute("CREATE UNIQUE INDEX IF NOT EXISTS uidx_agent_wallets_agent_name ON agent_wallets(agent_name)")
+        except Exception:
+            pass
 
         c.execute(
             """
@@ -846,6 +869,18 @@ _AGENT_RESERVED = {
     "admin",
     "root",
     "system",
+    "founder",
+    "community",
+    "dev",
+    "team",
+    "bounty",
+    "bottube",
+    "moltbook",
+    "beacon",
+    "janitor",
+    "miner",
+    "node",
+    "frozen",
     "rustchain",
     "sophia",
     "elya",
@@ -899,14 +934,13 @@ def _verify_agent_context(agent_name: str, wallet_id: str, fingerprint: dict):
             (hw,),
         ).fetchone()
     if not row:
+        # Avoid leaking too much detail to unauthenticated callers.
         return False, ("agent_not_registered", {"hw_hash": hw})
 
     reg_wallet_id, reg_agent_name, reg_hw, reg_pub = row
     if reg_agent_name != agent_name or reg_wallet_id != wallet_id or reg_hw != hw:
-        return False, (
-            "agent_mismatch",
-            {"expected_wallet_id": reg_wallet_id, "expected_agent_name": reg_agent_name, "hw_hash": hw},
-        )
+        # Do not leak registered identity info.
+        return False, ("agent_mismatch", {"hw_hash": hw})
 
     return True, ("", {"hw_hash": hw, "agent_pubkey_hex": reg_pub})
 
@@ -923,6 +957,21 @@ def agent_register():
       - vanity_nonce: optional string/int for vanity mining
     """
     data = request.get_json(silent=True) or {}
+    # Extract client IP (handle nginx proxy)
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+
+    ip_ok, ip_reason = check_agent_ip_rate_limit(client_ip, "agent_register")
+    if not ip_ok:
+        return jsonify({"ok": False, "error": "rate_limited", "reason": ip_reason}), 429
+
+    # Security: require admin key for now (prevents public name squatting / spam registrations).
+    need = os.environ.get("RC_ADMIN_KEY", "")
+    got = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    if not need or got != need:
+        return jsonify({"ok": False, "error": "unauthorized", "hint": "X-Admin-Key required"}), 401
+
     agent_name = str(data.get("agent_name", "")).strip()
     pub_hex = str(data.get("agent_pubkey_hex", "")).strip()
     fp = data.get("hardware_fingerprint")
@@ -934,8 +983,15 @@ def agent_register():
         return jsonify({"error": "reserved_agent_name"}), 400
     if not isinstance(fp, dict) or not fp:
         return jsonify({"error": "invalid_hardware_fingerprint"}), 400
+    # Require structured fingerprint checks (don't accept arbitrary JSON).
+    if "checks" not in fp:
+        return jsonify({"error": "invalid_hardware_fingerprint", "hint": "missing fingerprint.checks"}), 400
     if not re.fullmatch(r"[0-9a-fA-F]{64}", pub_hex or ""):
         return jsonify({"error": "invalid_agent_pubkey_hex"}), 400
+
+    fp_ok, fp_reason = validate_fingerprint_data(fp, claimed_device={})
+    if not fp_ok:
+        return jsonify({"error": "fingerprint_rejected", "reason": fp_reason}), 400
 
     hw_hash = _agent_hw_hash(fp)
     wallet_id = _agent_wallet_id(agent_name, hw_hash, str(vanity_nonce))
@@ -1002,6 +1058,13 @@ def agent_submit_proof():
       - proof: dict
     """
     data = request.get_json(silent=True) or {}
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+    ip_ok, ip_reason = check_agent_ip_rate_limit(client_ip, "agent_proof")
+    if not ip_ok:
+        return jsonify({"ok": False, "error": "rate_limited", "reason": ip_reason}), 429
+
     agent_name = str(data.get("agent_name", "")).strip()
     wallet_id = str(data.get("wallet_id", "")).strip()
     fingerprint = data.get("fingerprint") or {}
@@ -1041,8 +1104,8 @@ def agent_submit_proof():
 
     # Best-effort verification against public GitHub API (no token required).
     try:
-        import requests
-
+        if not HAVE_REQUESTS:
+            raise RuntimeError("requests_unavailable")
         if proof_type == "github_commit":
             repo = str(proof.get("repo", "")).strip()  # owner/name
             sha = str(proof.get("commit", "")).strip()
@@ -1053,7 +1116,7 @@ def agent_submit_proof():
             verify_details = f"http={r.status_code}"
         elif proof_type == "github_pr":
             pr_url = str(proof.get("pr_url", "")).strip()
-            m = re.match(r"^https://github.com/([^/]+)/([^/]+)/pull/(\\d+)", pr_url)
+            m = re.match(r"^https://github\\.com/([^/]+)/([^/]+)/pull/(\\d+)", pr_url)
             if not m:
                 raise ValueError("bad_pr_url")
             owner, repo, num = m.group(1), m.group(2), m.group(3)
@@ -1460,6 +1523,29 @@ def check_ip_rate_limit(client_ip, miner_id):
             print(f"[RATE_LIMIT] IP {client_ip} has {unique_count} unique miners (limit {ATTEST_IP_LIMIT})")
             return False, f"ip_rate_limit:{unique_count}_miners_from_same_ip"
     
+    return True, "ok"
+
+# ── Agent endpoints: per-IP request rate limiting ──
+AGENT_IP_WINDOW = 600  # 10 minutes
+AGENT_IP_LIMIT = 60    # max requests per 10 minutes per IP
+
+def check_agent_ip_rate_limit(client_ip: str, action: str) -> tuple:
+    """Rate limit agent endpoints per source IP (SQLite-backed). Returns (ok, reason)."""
+    now = int(time.time())
+    cutoff = now - AGENT_IP_WINDOW
+    ip = str(client_ip or "")
+    action = str(action or "unknown")[:32]
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM agent_ip_rate_limit WHERE ts < ?", (cutoff,))
+        conn.execute("INSERT INTO agent_ip_rate_limit (client_ip, action, ts) VALUES (?, ?, ?)", (ip, action, now))
+        row = conn.execute(
+            "SELECT COUNT(1) FROM agent_ip_rate_limit WHERE client_ip = ? AND ts >= ?",
+            (ip, cutoff),
+        ).fetchone()
+        cnt = int(row[0] if row else 0)
+        if cnt > AGENT_IP_LIMIT:
+            return False, f"agent_ip_rate_limit:{cnt}_per_{AGENT_IP_WINDOW}s"
     return True, "ok"
 
 
@@ -2117,8 +2203,8 @@ def submit_attestation():
                     (int(time.time()), agent_wallet_id, agent_name, details.get("hw_hash", ""), client_ip, attest_nonce),
                 )
                 conn.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[AGENT] WARN: failed to persist agent_attestations: {type(e).__name__}", file=sys.stderr)
 
     # Basic validation
     if not miner:
