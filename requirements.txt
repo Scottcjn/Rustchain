@@ -1,0 +1,16 @@
+# CI Pipeline Dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+requests>=2.28.0
+
+# Type checking
+mypy>=1.0.0
+types-requests>=2.28.0
+
+# Linting
+flake8>=6.0.0
+ruff>=0.1.0
+
+# Security scanning
+bandit>=1.7.0
+safety>=2.0.0
