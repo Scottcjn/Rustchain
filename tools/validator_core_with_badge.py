@@ -42,7 +42,7 @@ def generate_validator_entry():
                 "trigger": "Defrag completed during mining",
                 "timestamp": datetime.utcnow().isoformat() + "Z"
             },
-            "symbol": "🧼🤖",
+            "symbol": "🧼",
             "visual_anchor": "robot janitor with retro vacuum and pinesol bottle",
             "rarity": "Uncommon",
             "soulbound": True

@@ -3831,7 +3831,7 @@ def api_wallet_balances_all():
 
 
 # ============================================================================
-# P2P SYNC INTEGRATION (AI-Generated, Security Score: 90/100)
+# P2P SYNC INTEGRATION (Security Score: 90/100)
 # ============================================================================
 
 try:

@@ -1,7 +1,5 @@
 # RustChain Python SDK 实施计划
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-
 **Goal:** 构建一个支持同步和异步双接口的 RustChain Python SDK，具备加密签名交易和硬件认证功能。
 
 **Architecture:** 采用独立双客户端模式（`RustChainClient` 和 `AsyncRustChainClient`）。身份认证（Ed25519 签名）与网络请求解耦，使用 Pydantic 进行数据模型化。

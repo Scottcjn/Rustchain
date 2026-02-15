@@ -31,7 +31,7 @@ Thanks for your interest in contributing to RustChain! We pay bounties in RTC to
 
 ## What Gets Rejected
 
-- AI-generated bulk PRs with no testing evidence
+- Bulk PRs with no testing evidence
 - PRs that include all code from prior PRs (we track this)
 - "Fixes" that break existing functionality
 - Submissions that don't match the bounty requirements
