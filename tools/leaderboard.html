@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Miner Leaderboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0a;
+            --surface: #1a1a1a;
+            --primary: #00ff41;
+            --text: #e0e0e0;
+            --gold: #ffd700;
+            --silver: #c0c0c0;
+            --bronze: #cd7f32;
+        }
+
+        body {
+            font-family: 'Space Mono', monospace;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin: 0;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .card {
+            background: var(--surface);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            text-align: center;
+        }
+
+        .card h3 {
+            margin: 0 0 10px 0;
+            font-size: 0.8rem;
+            color: #888;
+            text-transform: uppercase;
+        }
+
+        .card .value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--primary);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--surface);
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid #333;
+        }
+
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #333;
+        }
+
+        th {
+            background: #252525;
+            color: #888;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            cursor: pointer;
+        }
+
+        th:hover {
+            color: var(--primary);
+        }
+
+        tr:hover {
+            background: #222;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .badge-vintage { background: var(--gold); color: black; }
+        .badge-modern { background: var(--silver); color: black; }
+
+        .rank { font-weight: bold; width: 40px; }
+        .rank-1 { color: var(--gold); }
+        .rank-2 { color: var(--silver); }
+        .rank-3 { color: var(--bronze); }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--primary);
+        }
+
+        .error {
+            color: #ff4141;
+            text-align: center;
+            padding: 20px;
+        }
+
+        footer {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 0.8rem;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>RustChain Leaderboard</h1>
+            <p>Live stats from the Proof-of-Antiquity network</p>
+        </header>
+
+        <div class="stats-grid" id="stats">
+            <div class="card">
+                <h3>Total Miners</h3>
+                <div class="value" id="stat-miners">-</div>
+            </div>
+            <div class="card">
+                <h3>Active Epoch</h3>
+                <div class="value" id="stat-epoch">-</div>
+            </div>
+            <div class="card">
+                <h3>Architecture Diversity</h3>
+                <div class="value" id="stat-diversity">-</div>
+            </div>
+            <div class="card">
+                <h3>Best Multiplier</h3>
+                <div class="value" id="stat-multiplier">-</div>
+            </div>
+        </div>
+
+        <div id="leaderboard-wrapper">
+            <table id="leaderboard">
+                <thead>
+                    <tr>
+                        <th onclick="sortTable(0)">Rank</th>
+                        <th onclick="sortTable(1)">Miner</th>
+                        <th onclick="sortTable(2)">Hardware</th>
+                        <th onclick="sortTable(3)">Multiplier</th>
+                        <th onclick="sortTable(4)">Last Activity</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboard-body">
+                    <tr>
+                        <td colspan="5" class="loading">Initializing connection to Node 1...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <footer>
+            Data fetched from https://50.28.86.131/api/miners • Update every 60s
+        </footer>
+    </div>
+
+    <script>
+        const API_MINERS = 'https://50.28.86.131/api/miners';
+        const API_EPOCH = 'https://50.28.86.131/epoch';
+
+        async function fetchData() {
+            try {
+                const [minersRes, epochRes] = await Promise.all([
+                    fetch(API_MINERS).catch(() => null),
+                    fetch(API_EPOCH).catch(() => null)
+                ]);
+
+                if (!minersRes) throw new Error('Could not connect to RustChain node');
+
+                const miners = await minersRes.json();
+                const epochData = await epochRes.json();
+
+                updateStats(miners, epochData);
+                updateTable(miners);
+            } catch (err) {
+                document.getElementById('leaderboard-body').innerHTML = `
+                    <tr><td colspan="5" class="error">Error: ${err.message}<br>Make sure you've accepted the self-signed certificate at https://50.28.86.131</td></tr>
+                `;
+            }
+        }
+
+        function updateStats(miners, epochData) {
+            document.getElementById('stat-miners').textContent = miners.length;
+            document.getElementById('stat-epoch').textContent = epochData.epoch || '-';
+            
+            const archs = new Set(miners.map(m => m.device_arch));
+            document.getElementById('stat-diversity').textContent = archs.size;
+
+            const maxMult = Math.max(...miners.map(m => m.antiquity_multiplier));
+            document.getElementById('stat-multiplier').textContent = maxMult.toFixed(1) + 'x';
+        }
+
+        function updateTable(miners) {
+            miners.sort((a, b) => b.antiquity_multiplier - a.antiquity_multiplier);
+
+            const tbody = document.getElementById('leaderboard-body');
+            tbody.innerHTML = '';
+
+            miners.forEach((m, i) => {
+                const tr = document.createElement('tr');
+                const isVintage = m.hardware_type.includes('Vintage');
+                const timeAgo = Math.floor((Date.now() / 1000) - m.last_attest);
+                
+                tr.innerHTML = `
+                    <td class="rank rank-${i+1}">${i + 1}</td>
+                    <td title="${m.miner}">${m.miner.substring(0, 12)}...</td>
+                    <td>
+                        ${m.device_family} ${m.device_arch}
+                        <span class="badge ${isVintage ? 'badge-vintage' : 'badge-modern'}">${isVintage ? 'Vintage' : 'Modern'}</span>
+                    </td>
+                    <td style="color: var(--primary)">${m.antiquity_multiplier.toFixed(1)}x</td>
+                    <td>${timeAgo}s ago</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function sortTable(n) {
+            const table = document.getElementById("leaderboard");
+            let rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+            switching = true;
+            dir = "asc";
+            while (switching) {
+                switching = false;
+                rows = table.rows;
+                for (i = 1; i < (rows.length - 1); i++) {
+                    shouldSwitch = false;
+                    x = rows[i].getElementsByTagName("TD")[n];
+                    y = rows[i + 1].getElementsByTagName("TD")[n];
+                    if (dir == "asc") {
+                        if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    } else if (dir == "desc") {
+                        if (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    }
+                }
+                if (shouldSwitch) {
+                    rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+                    switching = true;
+                    switchcount ++;
+                } else {
+                    if (switchcount == 0 && dir == "asc") {
+                        dir = "desc";
+                        switching = true;
+                    }
+                }
+            }
+        }
+
+        fetchData();
+        setInterval(fetchData, 60000);
+    </script>
+</body>
+</html>

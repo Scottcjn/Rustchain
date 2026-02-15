@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Mining Earnings Calculator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Space+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #050505;
+            --card: #111;
+            --primary: #00ff41;
+            --text: #fff;
+            --muted: #888;
+            --border: #222;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        h1 { font-weight: 800; letter-spacing: -1px; margin: 0; font-size: 2.5rem; }
+        p { color: var(--muted); margin-top: 10px; }
+
+        .calculator {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+
+        .input-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--muted);
+            text-transform: uppercase;
+        }
+
+        select, input {
+            width: 100%;
+            background: #000;
+            border: 1px solid var(--border);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            font-size: 1.1rem;
+            font-family: 'Space Mono', monospace;
+            box-sizing: border-box;
+        }
+
+        .results {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 1px solid var(--border);
+        }
+
+        .stat-box {
+            background: #000;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .stat-box .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; margin-bottom: 5px; }
+        .stat-box .value { font-size: 1.8rem; font-family: 'Space Mono', monospace; color: var(--primary); font-weight: bold; }
+        .stat-box .sub { font-size: 0.9rem; color: var(--muted); }
+
+        .sensitivity {
+            margin-top: 40px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            font-family: 'Space Mono', monospace;
+        }
+
+        th { text-align: left; color: var(--muted); padding: 10px; border-bottom: 1px solid var(--border); }
+        td { padding: 12px 10px; border-bottom: 1px solid #1a1a1a; }
+
+        .info-bar {
+            background: #1a1a00;
+            color: #ffcc00;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            font-size: 0.8rem;
+            color: #444;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>RustChain Earnings</h1>
+            <p>Calculate your Proof-of-Antiquity rewards</p>
+        </header>
+
+        <div id="loading-bar" class="info-bar">
+            <span>📡</span> Syncing live network data from Node 1...
+        </div>
+
+        <div class="calculator">
+            <div class="input-group">
+                <label>Select Your Hardware</label>
+                <select id="hardware-select">
+                    <option value="2.5">PowerPC G4 (2.5x)</option>
+                    <option value="2.0" selected>PowerPC G5 / POWER8 (2.0x)</option>
+                    <option value="1.8">PowerPC G3 (1.8x)</option>
+                    <option value="1.15">Apple Silicon M1/M2/M3 (1.15x)</option>
+                    <option value="1.0">Modern x86_64 PC (1.0x)</option>
+                    <option value="0.000000001">VM / Emulated (~0x)</option>
+                </select>
+            </div>
+
+            <div class="results">
+                <div class="stat-box">
+                    <div class="label">Daily Earnings</div>
+                    <div class="value" id="res-day">0.00</div>
+                    <div class="sub" id="res-day-usd">$0.00</div>
+                </div>
+                <div class="stat-box">
+                    <div class="label">Monthly Earnings</div>
+                    <div class="value" id="res-month">0.00</div>
+                    <div class="sub" id="res-month-usd">$0.00</div>
+                </div>
+                <div class="stat-box">
+                    <div class="label">Per Epoch (10m)</div>
+                    <div class="value" id="res-epoch">0.00</div>
+                    <div class="sub">1.5 RTC pool</div>
+                </div>
+                <div class="stat-box">
+                    <div class="label">Annual Projection</div>
+                    <div class="value" id="res-year">0.00</div>
+                    <div class="sub" id="res-year-usd">$0.00</div>
+                </div>
+            </div>
+
+            <div class="sensitivity">
+                <label>Sensitivity: Earnings vs Network Size</label>
+                <table id="sens-table">
+                    <thead>
+                        <tr>
+                            <th>Active Miners</th>
+                            <th>RTC / Day</th>
+                            <th>USD / Month</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sens-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <footer>
+            Reference rate: $0.10 per RTC • Epoch: 600s • Base Pool: 1.5 RTC
+        </footer>
+    </div>
+
+    <script>
+        const API_MINERS = 'https://50.28.86.131/api/miners';
+        const REF_RATE = 0.10;
+        const EPOCHS_PER_DAY = (24 * 60) / 10;
+        const POOL_PER_EPOCH = 1.5;
+
+        let networkSum = 20.0; // Fallback sum if API fails
+
+        async function init() {
+            try {
+                const res = await fetch(API_MINERS);
+                const miners = await res.json();
+                networkSum = miners.reduce((acc, m) => acc + m.antiquity_multiplier, 0);
+                document.getElementById('loading-bar').style.display = 'none';
+            } catch (e) {
+                document.getElementById('loading-bar').innerHTML = "⚠️ Using cached network stats (Node unreachable)";
+            }
+            calculate();
+        }
+
+        function calculate() {
+            const mult = parseFloat(document.getElementById('hardware-select').value);
+            
+            // Formula: (mult / (networkSum + mult)) * 1.5
+            // Note: Assuming the user's miner is NEW and ADDED to the sum
+            const epochEarn = (mult / (networkSum + mult)) * POOL_PER_EPOCH;
+            const dayEarn = epochEarn * EPOCHS_PER_DAY;
+            const monthEarn = dayEarn * 30.42;
+            const yearEarn = dayEarn * 365;
+
+            document.getElementById('res-epoch').textContent = epochEarn.toFixed(4) + ' RTC';
+            document.getElementById('res-day').textContent = dayEarn.toFixed(2) + ' RTC';
+            document.getElementById('res-month').textContent = monthEarn.toFixed(0) + ' RTC';
+            document.getElementById('res-year').textContent = yearEarn.toLocaleString(undefined, {maximumFractionDigits:0}) + ' RTC';
+
+            document.getElementById('res-day-usd').textContent = '$' + (dayEarn * REF_RATE).toFixed(2);
+            document.getElementById('res-month-usd').textContent = '$' + (monthEarn * REF_RATE).toFixed(2);
+            document.getElementById('res-year-usd').textContent = '$' + (yearEarn * REF_RATE).toLocaleString(undefined, {maximumFractionDigits:0});
+
+            updateSensitivity(mult);
+        }
+
+        function updateSensitivity(mult) {
+            const tbody = document.getElementById('sens-body');
+            tbody.innerHTML = '';
+            
+            const scenarios = [5, 10, 25, 50, 100, 250];
+            scenarios.forEach(count => {
+                // Approximate network sum assuming average multiplier of 1.3
+                const avgMult = 1.3;
+                const projectedSum = count * avgMult;
+                const eVal = (mult / (projectedSum + mult)) * POOL_PER_EPOCH * EPOCHS_PER_DAY;
+                
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${count} miners</td>
+                    <td>${eVal.toFixed(2)} RTC</td>
+                    <td style="color:var(--primary)">$${(eVal * 30.42 * REF_RATE).toFixed(2)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        document.getElementById('hardware-select').addEventListener('change', calculate);
+        init();
+    </script>
+</body>
+</html>
