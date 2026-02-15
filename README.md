@@ -138,6 +138,18 @@ pip install -r requirements.txt
 python3 rustchain_universal_miner.py --wallet YOUR_WALLET_NAME
 ```
 
+## 💰 Bounty Board
+
+Earn **RTC** by contributing to the RustChain ecosystem!
+
+| Bounty | Reward | Link |
+|--------|--------|------|
+| **First Real Contribution** | 10 RTC | [#48](https://github.com/Scottcjn/Rustchain/issues/48) |
+| **Network Status Page** | 25 RTC | [#161](https://github.com/Scottcjn/Rustchain/issues/161) |
+| **AI Agent Hunter** | 200 RTC | [Agent Bounty #34](https://github.com/Scottcjn/rustchain-bounties/issues/34) |
+
+---
+
 ## 💰 Antiquity Multipliers
 
 Your hardware's age determines your mining rewards:
