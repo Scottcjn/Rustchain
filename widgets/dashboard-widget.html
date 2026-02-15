@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Dashboard Widget</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .widget {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 400px;
+            width: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .logo {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+        .title {
+            color: #fff;
+            font-size: 24px;
+            font-weight: 700;
+        }
+        .subtitle {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 12px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 16px;
+            transition: transform 0.2s, background 0.2s;
+        }
+        .stat-card:hover {
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.12);
+        }
+        .stat-label {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .stat-value {
+            color: #fff;
+            font-size: 24px;
+            font-weight: 700;
+        }
+        .stat-value.loading {
+            background: linear-gradient(90deg, rgba(255,255,255,0.1) 25%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.1) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 4px;
+            height: 32px;
+            width: 80px;
+        }
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        .health-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .health-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        .health-dot.healthy {
+            background: #00ff88;
+            box-shadow: 0 0 10px #00ff88;
+        }
+        .health-dot.unhealthy {
+            background: #ff4757;
+            box-shadow: 0 0 10px #ff4757;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .miners-section {
+            margin-top: 20px;
+        }
+        .miners-header {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .miners-list {
+            max-height: 200px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.2) transparent;
+        }
+        .miner-item {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+        .miner-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .miner-name {
+            color: #fff;
+            font-weight: 500;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .miner-type {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 11px;
+            padding: 2px 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+        .footer {
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .refresh-info {
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 11px;
+        }
+        .explorer-link {
+            color: #f093fb;
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+        .explorer-link:hover {
+            color: #f5576c;
+        }
+        @media (max-width: 420px) {
+            .widget { padding: 20px; }
+            .stat-value { font-size: 20px; }
+            .title { font-size: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="widget">
+        <div class="header">
+            <div class="logo">⛓️</div>
+            <div>
+                <div class="title">RustChain</div>
+                <div class="subtitle">Real-time Network Stats</div>
+            </div>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Current Epoch</div>
+                <div class="stat-value" id="epoch"><div class="loading"></div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Network Health</div>
+                <div class="stat-value">
+                    <div class="health-indicator">
+                        <div class="health-dot" id="health-dot"></div>
+                        <span id="health-text">--</span>
+                    </div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Active Miners</div>
+                <div class="stat-value" id="miners-count"><div class="loading"></div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total RTC</div>
+                <div class="stat-value" id="total-rtc"><div class="loading"></div></div>
+            </div>
+        </div>
+
+        <div class="miners-section">
+            <div class="miners-header">
+                <span>🏆 Top Miners</span>
+                <span id="miners-updated"></span>
+            </div>
+            <div class="miners-list" id="miners-list">
+                <div class="miner-item"><span class="miner-name">Loading...</span></div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <div class="refresh-info">Auto-refresh: <span id="countdown">60</span>s</div>
+            <a href="https://50.28.86.131" target="_blank" class="explorer-link">View Explorer →</a>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://50.28.86.131';
+        let countdown = 60;
+
+        async function fetchData() {
+            try {
+                // Fetch health
+                const healthRes = await fetch(`${API_BASE}/health`, { 
+                    mode: 'cors',
+                    headers: { 'Accept': 'application/json' }
+                }).catch(() => null);
+                
+                if (healthRes && healthRes.ok) {
+                    const health = await healthRes.text();
+                    document.getElementById('health-dot').className = 'health-dot healthy';
+                    document.getElementById('health-text').textContent = 'Online';
+                } else {
+                    document.getElementById('health-dot').className = 'health-dot unhealthy';
+                    document.getElementById('health-text').textContent = 'Offline';
+                }
+            } catch (e) {
+                document.getElementById('health-dot').className = 'health-dot unhealthy';
+                document.getElementById('health-text').textContent = 'Error';
+            }
+
+            try {
+                // Fetch epoch
+                const epochRes = await fetch(`${API_BASE}/epoch`, {
+                    mode: 'cors',
+                    headers: { 'Accept': 'application/json' }
+                }).catch(() => null);
+                
+                if (epochRes && epochRes.ok) {
+                    const epochData = await epochRes.json();
+                    document.getElementById('epoch').textContent = `#${epochData.epoch || epochData}`;
+                } else {
+                    document.getElementById('epoch').textContent = '--';
+                }
+            } catch (e) {
+                document.getElementById('epoch').textContent = '--';
+            }
+
+            try {
+                // Fetch miners
+                const minersRes = await fetch(`${API_BASE}/api/miners`, {
+                    mode: 'cors',
+                    headers: { 'Accept': 'application/json' }
+                }).catch(() => null);
+                
+                if (minersRes && minersRes.ok) {
+                    const miners = await minersRes.json();
+                    document.getElementById('miners-count').textContent = miners.length;
+                    
+                    // Calculate total RTC (estimated from miner count)
+                    const totalRTC = miners.length * 10; // Placeholder calculation
+                    document.getElementById('total-rtc').textContent = `~${totalRTC.toLocaleString()}`;
+                    
+                    // Display top miners
+                    const minersList = document.getElementById('miners-list');
+                    minersList.innerHTML = miners.slice(0, 5).map(m => `
+                        <div class="miner-item">
+                            <span class="miner-name" title="${m.miner}">${m.miner}</span>
+                            <span class="miner-type">${m.hardware_type || 'Unknown'}</span>
+                        </div>
+                    `).join('');
+                    
+                    document.getElementById('miners-updated').textContent = 'Just now';
+                } else {
+                    document.getElementById('miners-count').textContent = '--';
+                    document.getElementById('total-rtc').textContent = '--';
+                }
+            } catch (e) {
+                document.getElementById('miners-count').textContent = '--';
+                document.getElementById('total-rtc').textContent = '--';
+            }
+        }
+
+        function updateCountdown() {
+            countdown--;
+            document.getElementById('countdown').textContent = countdown;
+            if (countdown <= 0) {
+                countdown = 60;
+                fetchData();
+            }
+        }
+
+        // Initial fetch
+        fetchData();
+        
+        // Auto-refresh every 60 seconds
+        setInterval(updateCountdown, 1000);
+    </script>
+</body>
+</html>
