@@ -54,7 +54,17 @@ from .node import (
     RustChainNode,
 )
 
+from .identity import Identity
+from .models import Miner, Stats
+from .client import RustChainClient
+from .async_client import AsyncRustChainClient
+
 __all__ = [
+    "Identity",
+    "Miner",
+    "Stats",
+    "RustChainClient",
+    "AsyncRustChainClient",
     # Core Types
     "HardwareTier",
     "HardwareInfo",
