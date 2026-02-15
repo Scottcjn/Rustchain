@@ -1,0 +1,17 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["node", "."]
+
+[tool.ruff]
+line-length = 120
+select = ["E", "F", "W", "B", "I"]
+ignore = []
+exclude = ["deprecated", "node_backups"]
+
+[tool.ruff.lint]
+ignore = ["E501"] # Ignore long lines for legacy code
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+exclude = ["deprecated", "node_backups"]
