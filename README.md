@@ -297,6 +297,13 @@ Rustchain/
 └── nfts/                           # Badge definitions
 ```
 
+## ✅ Beacon Certified Open Source (BCOS)
+
+RustChain accepts AI-assisted PRs, but we require *evidence* and *review* so maintainers don't drown in low-quality code generation.
+
+Read the draft spec:
+- `docs/BEACON_CERTIFIED_OPEN_SOURCE.md`
+
 ## 🔗 Related Projects & Links
 
 | Resource | Link |
