@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  rustchain-exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile.exporter
+    container_name: rustchain-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    networks:
+      - monitoring
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: rustchain-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    networks:
+      - monitoring
+    depends_on:
+      - rustchain-exporter
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: rustchain-grafana
+    restart: unless-stopped
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-dashboard.json:/etc/grafana/provisioning/dashboards/rustchain.json:ro
+      - ./grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=rustchain
+      - GF_INSTALL_PLUGINS=
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  monitoring:
+    driver: bridge
