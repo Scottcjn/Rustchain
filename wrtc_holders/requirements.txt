@@ -1,0 +1,2 @@
+# Requirements for wRTC Holder Snapshot Tool
+requests>=2.31.0
