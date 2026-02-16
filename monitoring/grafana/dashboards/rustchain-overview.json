@@ -1,0 +1,68 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Node Up",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "targets": [{"expr": "up{job=\"rustchain-node\"}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}}
+    },
+    {
+      "type": "stat",
+      "title": "Active Miners",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "targets": [{"expr": "active_miners", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "Attestation Rate (5m)",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "targets": [{"expr": "rate(attestations_total[5m])", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "Transfer Rate (5m)",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "targets": [{"expr": "rate(wallet_transfers_total[5m])", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "API Latency P95",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Epoch Rewards",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "targets": [{"expr": "rate(epoch_rewards_total[5m])", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Attestations vs Transfers",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+      "targets": [
+        {"expr": "rate(attestations_total[5m])", "legendFormat": "attestations", "refId": "A"},
+        {"expr": "rate(wallet_transfers_total[5m])", "legendFormat": "transfers", "refId": "B"}
+      ]
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["rustchain", "bounty-21"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "RustChain Monitoring Overview",
+  "uid": "rustchain-overview",
+  "version": 1,
+  "weekStart": ""
+}

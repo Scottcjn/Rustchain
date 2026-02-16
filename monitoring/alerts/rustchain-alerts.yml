@@ -1,0 +1,38 @@
+groups:
+  - name: rustchain-alerts
+    rules:
+      - alert: RustChainNodeDown
+        expr: up{job="rustchain-node"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RustChain node is down"
+          description: "Prometheus cannot scrape /metrics on RustChain for over 2 minutes."
+
+      - alert: RustChainHighApiLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API latency (p95 > 1s)"
+          description: "RustChain API p95 latency has been above 1 second for 5 minutes."
+
+      - alert: MinerCountDrop
+        expr: (max_over_time(active_miners[30m]) - active_miners) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Active miner count dropped"
+          description: "Active miners dropped by more than 5 compared with the last 30 minutes."
+
+      - alert: UnusualTransferVolume
+        expr: rate(wallet_transfers_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Unusual transfer volume"
+          description: "Transfer transaction rate is unusually high (>10 tx/s over 5m)."

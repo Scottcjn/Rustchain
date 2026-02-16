@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts/rustchain-alerts.yml
+
+scrape_configs:
+  - job_name: rustchain-node
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['host.docker.internal:8099']
+
+  - job_name: rustchain-health
+    metrics_path: /health
+    static_configs:
+      - targets: ['host.docker.internal:8099']
