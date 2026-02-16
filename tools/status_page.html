@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RustChain Network Status</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Space+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
             --bg: #0a0a0a;
@@ -28,7 +29,7 @@
         }
 
         .container {
-            max-width: 900px;
+            max-width: 1000px;
             width: 100%;
         }
 
@@ -53,36 +54,13 @@
             gap: 8px;
         }
 
-        .pulse {
-            width: 8px;
-            height: 8px;
-            background: currentColor;
-            border-radius: 50%;
-            box-shadow: 0 0 8px currentColor;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% { transform: scale(0.95); opacity: 0.5; }
-            50% { transform: scale(1.1); opacity: 1; }
-            100% { transform: scale(0.95); opacity: 0.5; }
-        }
-
-        .node-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 20px;
-        }
-
         .node-card {
             background: var(--card);
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 24px;
-            transition: transform 0.2s;
+            margin-bottom: 20px;
         }
-
-        .node-card:hover { transform: translateY(-2px); border-color: #333; }
 
         .node-header {
             display: flex;
@@ -90,9 +68,6 @@
             align-items: flex-start;
             margin-bottom: 20px;
         }
-
-        .node-info h2 { margin: 0; font-size: 1.2rem; }
-        .node-url { font-family: 'Space Mono', monospace; font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
 
         .node-status {
             display: flex;
@@ -104,43 +79,30 @@
 
         .status-dot { width: 10px; height: 10px; border-radius: 50%; }
         .status-online { background: var(--success); box-shadow: 0 0 10px var(--success); }
-        .status-slow { background: var(--warning); box-shadow: 0 0 10px var(--warning); }
         .status-offline { background: var(--error); box-shadow: 0 0 10px var(--error); }
 
         .stats-row {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
             gap: 20px;
-            padding-top: 20px;
-            border-top: 1px solid var(--border);
+            margin-bottom: 20px;
         }
 
         .stat-item .label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
         .stat-item .value { font-family: 'Space Mono', monospace; font-weight: bold; font-size: 1.1rem; }
 
-        .uptime-bar {
-            height: 4px;
-            background: #222;
-            border-radius: 2px;
-            margin-top: 10px;
-            overflow: hidden;
-            display: flex;
-            gap: 2px;
+        .chart-container {
+            height: 150px;
+            margin-top: 20px;
+            border-top: 1px solid var(--border);
+            padding-top: 20px;
         }
-
-        .uptime-segment { flex: 1; height: 100%; background: var(--success); opacity: 0.3; }
-        .uptime-segment.active { opacity: 1; }
 
         footer {
             margin-top: 60px;
             text-align: center;
             color: var(--muted);
             font-size: 0.8rem;
-        }
-
-        @media (max-width: 600px) {
-            .node-header { flex-direction: column; gap: 12px; }
-            .stats-row { grid-template-columns: 1fr 1fr; }
         }
     </style>
 </head>
@@ -149,148 +111,141 @@
         <header>
             <h1>Network Status</h1>
             <div class="overall-status" id="overall-status">
-                <div class="pulse"></div>
-                <span id="overall-text">All Systems Operational</span>
+                <span id="overall-text">Systems Check...</span>
             </div>
         </header>
 
-        <div class="node-grid" id="node-grid">
-            <!-- Node cards will be injected here -->
-        </div>
+        <div id="node-grid"></div>
 
         <footer>
-            Live polling every 60 seconds • Self-signed certs ignored via proxy • <a href="https://rustchain.org" style="color:var(--success)">rustchain.org</a>
+            Live polling every 60s • Data stored in localStorage • <a href="https://rustchain.org" style="color:var(--success)">rustchain.org</a>
         </footer>
     </div>
 
     <script>
         const NODES = [
-            { id: 1, name: "Node 1 (Primary)", url: "https://50.28.86.131/health", api: "https://50.28.86.131" },
-            { id: 2, name: "Node 2 (Ergo Anchor)", url: "https://50.28.86.153/health", api: "https://50.28.86.153" },
-            { id: 3, name: "Node 3 (External)", url: "http://76.8.228.245:8099/health", api: "http://76.8.228.245:8099" }
+            { id: 1, name: "Node 1 (Primary)", url: "https://50.28.86.131/health" },
+            { id: 2, name: "Node 2 (Ergo Anchor)", url: "https://50.28.86.153/health" },
+            { id: 3, name: "Node 3 (External)", url: "http://76.8.228.245:8099/health" }
         ];
 
-        async function checkNode(node) {
-            const start = performance.now();
-            try {
-                // For a real production page, we'd use a simple CORS proxy or backend
-                // This fetches directly, assuming the nodes have CORS enabled for status pages
-                const response = await fetch(node.url, { mode: 'cors' }).catch(() => null);
-                const duration = Math.round(performance.now() - start);
+        const charts = {};
+
+        function initCharts() {
+            NODES.forEach(node => {
+                const ctx = document.getElementById(`chart-${node.id}`).getContext('2d');
+                charts[node.id] = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Response Time (ms)',
+                            data: [],
+                            borderColor: '#00ff41',
+                            backgroundColor: 'rgba(0, 255, 65, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { display: false },
+                            y: { beginAtZero: true, grid: { color: '#222' }, ticks: { color: '#555' } }
+                        }
+                    }
+                });
                 
-                if (!response || !response.ok) {
-                    return { status: 'offline', response_time: duration };
-                }
-
-                const data = await response.json();
-                
-                // Also get epoch and miners from Node 1 if this is Node 1
-                let extra = {};
-                if (node.id === 1) {
-                    const [e, m] = await Promise.all([
-                        fetch(node.api + '/epoch').then(r => r.json()).catch(() => ({})),
-                        fetch(node.api + '/api/miners').then(r => r.json()).catch(() => ([]))
-                    ]);
-                    extra = { epoch: e.epoch, miners: m.length };
-                }
-
-                return {
-                    status: duration > 2000 ? 'slow' : 'online',
-                    response_time: duration,
-                    version: data.version,
-                    uptime: Math.round(data.uptime_s / 3600),
-                    ...extra
-                };
-            } catch (e) {
-                return { status: 'offline', response_time: 0 };
-            }
-        }
-
-        function createNodeCard(node) {
-            const card = document.createElement('div');
-            card.className = 'node-card';
-            card.id = `node-${node.id}`;
-            card.innerHTML = `
-                <div class="node-header">
-                    <div class="node-info">
-                        <h2>${node.name}</h2>
-                        <div class="node-url">${node.url}</div>
-                    </div>
-                    <div class="node-status" id="status-container-${node.id}">
-                        <div class="status-dot"></div>
-                        <span class="status-label">Checking...</span>
-                    </div>
-                </div>
-                <div class="stats-row">
-                    <div class="stat-item">
-                        <div class="label">Response Time</div>
-                        <div class="value" id="resp-${node.id}">-</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="label">Uptime</div>
-                        <div class="value" id="uptime-${node.id}">-</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="label">Epoch / Miners</div>
-                        <div class="value" id="meta-${node.id}">-</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="label">Version</div>
-                        <div class="value" id="ver-${node.id}" style="font-size:0.8rem">-</div>
-                    </div>
-                </div>
-                <div class="uptime-bar" id="bar-${node.id}">
-                    ${Array(30).fill('<div class="uptime-segment active"></div>').join('')}
-                </div>
-            `;
-            return card;
+                // Load history from localStorage
+                const history = JSON.parse(localStorage.getItem(`node_history_${node.id}`) || '[]');
+                history.forEach(point => {
+                    charts[node.id].data.labels.push("");
+                    charts[node.id].data.datasets[0].data.push(point);
+                });
+                charts[node.id].update();
+            });
         }
 
         async function updateStatus() {
-            let anyDown = false;
-            
+            let allOk = true;
             for (const node of NODES) {
-                const result = await checkNode(node);
-                
-                const statusContainer = document.getElementById(`status-container-${node.id}`);
-                const dot = statusContainer.querySelector('.status-dot');
-                const label = statusContainer.querySelector('.status-label');
-                
-                dot.className = `status-dot status-${result.status}`;
-                label.textContent = result.status.toUpperCase();
-                label.style.color = result.status === 'online' ? 'var(--success)' : 
-                                   result.status === 'slow' ? 'var(--warning)' : 'var(--error)';
+                const start = performance.now();
+                let status = 'offline';
+                let responseTime = 0;
+                let version = '-';
 
-                document.getElementById(`resp-${node.id}`).textContent = result.response_time > 0 ? `${result.response_time}ms` : 'timeout';
-                document.getElementById(`uptime-${node.id}`).textContent = result.uptime ? `${result.uptime}h` : '-';
-                
-                if (result.epoch) {
-                    document.getElementById(`meta-${node.id}`).textContent = `${result.epoch} / ${result.miners}`;
-                } else {
-                    document.getElementById(`meta-${node.id}`).textContent = 'N/A';
+                try {
+                    const res = await fetch(node.url).catch(() => null);
+                    responseTime = Math.round(performance.now() - start);
+                    if (res && res.ok) {
+                        const data = await res.json();
+                        status = 'online';
+                        version = data.version;
+                    } else {
+                        allOk = false;
+                    }
+                } catch (e) {
+                    allOk = false;
                 }
-                
-                document.getElementById(`ver-${node.id}`).textContent = result.version || '-';
 
-                if (result.status === 'offline') anyDown = true;
+                document.getElementById(`dot-${node.id}`).className = `status-dot status-${status}`;
+                document.getElementById(`label-${node.id}`).textContent = status.toUpperCase();
+                document.getElementById(`resp-${node.id}`).textContent = responseTime > 0 ? `${responseTime}ms` : 'N/A';
+                document.getElementById(`ver-${node.id}`).textContent = version;
+
+                // Update chart
+                const chart = charts[node.id];
+                if (chart.data.datasets[0].data.length > 30) {
+                    chart.data.labels.shift();
+                    chart.data.datasets[0].data.shift();
+                }
+                chart.data.labels.push("");
+                chart.data.datasets[0].data.push(status === 'online' ? responseTime : 0);
+                chart.update();
+
+                // Save to localStorage
+                const history = chart.data.datasets[0].data;
+                localStorage.setItem(`node_history_${node.id}`, JSON.stringify(history));
             }
 
-            const overallText = document.getElementById('overall-text');
-            const overallStatus = document.getElementById('overall-status');
-            if (anyDown) {
-                overallText.textContent = "Partial System Outage";
-                overallStatus.style.color = "var(--warning)";
-                overallStatus.style.background = "rgba(255, 204, 0, 0.1)";
-            } else {
-                overallText.textContent = "All Systems Operational";
-                overallStatus.style.color = "var(--success)";
-                overallStatus.style.background = "rgba(0, 255, 65, 0.1)";
-            }
+            document.getElementById('overall-text').textContent = allOk ? "All Systems Operational" : "Partial Outage";
         }
 
         const grid = document.getElementById('node-grid');
-        NODES.forEach(n => grid.appendChild(createNodeCard(n)));
+        NODES.forEach(node => {
+            grid.innerHTML += `
+                <div class="node-card">
+                    <div class="node-header">
+                        <div>
+                            <h2>${node.name}</h2>
+                            <div style="font-size:0.7rem; color:var(--muted)">${node.url}</div>
+                        </div>
+                        <div class="node-status">
+                            <div class="status-dot" id="dot-${node.id}"></div>
+                            <span id="label-${node.id}">CHECKING...</span>
+                        </div>
+                    </div>
+                    <div class="stats-row">
+                        <div class="stat-item">
+                            <div class="label">Latency</div>
+                            <div class="value" id="resp-${node.id}">-</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="label">Version</div>
+                            <div class="value" id="ver-${node.id}">-</div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="chart-${node.id}"></canvas>
+                    </div>
+                </div>
+            `;
+        });
 
+        initCharts();
         updateStatus();
         setInterval(updateStatus, 60000);
     </script>
