@@ -20,8 +20,9 @@ services:
       # Optional: mount local config
       # - ./config:/app/config:ro
     ports:
-      # Expose dashboard port (for direct access without nginx)
-      - "8099:8099"
+      # Internal only - access via nginx on port 80/443
+      # Uncomment below for direct access (bypasses nginx security)
+      # - "8099:8099"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8099/health"]
       interval: 30s

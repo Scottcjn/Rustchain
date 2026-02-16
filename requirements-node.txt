@@ -1,7 +1,7 @@
-# RustChain Node Dependencies
-Flask>=2.3.0
-requests>=2.31.0
-psutil>=5.9.0
+# RustChain Node Dependencies (pinned versions for reproducibility)
+Flask==3.0.2
+requests==2.31.0
+psutil==5.9.8
 
 # Optional: Enhanced features
-gunicorn>=21.2.0  # Production WSGI server
+gunicorn==21.2.0  # Production WSGI server
