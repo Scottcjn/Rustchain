@@ -4,6 +4,7 @@ RustChain Prometheus Exporter
 Exposes RustChain node metrics in Prometheus format
 """
 import time
+import os
 import requests
 from prometheus_client import start_http_server, Gauge, Counter, Info
 import logging
@@ -12,9 +13,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger('rustchain-exporter')
 
 # Configuration
-RUSTCHAIN_NODE = "https://50.28.86.131"
-EXPORTER_PORT = 9100
-SCRAPE_INTERVAL = 30  # seconds
+RUSTCHAIN_NODE = os.environ.get('RUSTCHAIN_NODE', 'https://50.28.86.131')
+EXPORTER_PORT = int(os.environ.get('EXPORTER_PORT', 9100))
+SCRAPE_INTERVAL = int(os.environ.get('SCRAPE_INTERVAL', 30))  # seconds
+TLS_VERIFY = os.environ.get('TLS_VERIFY', 'true').lower() in ('true', '1', 'yes')
+TLS_CA_BUNDLE = os.environ.get('TLS_CA_BUNDLE', None)  # Optional CA cert path
 
 # Prometheus metrics
 node_health = Gauge('rustchain_node_health', 'Node health status (1=healthy, 0=unhealthy)')
@@ -41,7 +44,12 @@ def fetch_json(endpoint):
     """Fetch JSON data from RustChain node API"""
     try:
         url = f"{RUSTCHAIN_NODE}{endpoint}"
-        response = requests.get(url, verify=False, timeout=10)
+        # Determine verification behavior
+        verify = TLS_VERIFY
+        if TLS_CA_BUNDLE:
+            verify = TLS_CA_BUNDLE
+        
+        response = requests.get(url, verify=verify, timeout=10)
         response.raise_for_status()
         return response.json()
     except Exception as e:

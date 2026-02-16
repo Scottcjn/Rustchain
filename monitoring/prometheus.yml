@@ -12,5 +12,6 @@ alerting:
     - static_configs:
         - targets: []
 
-rule_files:
-  - '/etc/prometheus/alerts.yml'
+# Optional: uncomment after adding alerts.yml
+# rule_files:
+#   - '/etc/prometheus/alerts.yml'
