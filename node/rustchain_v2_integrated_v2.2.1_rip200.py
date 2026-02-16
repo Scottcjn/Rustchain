@@ -4207,14 +4207,19 @@ if __name__ == "__main__":
     try:
         from rustchain_p2p_init import init_p2p
         p2p_node = init_p2p(app, DB_PATH)
-
-        # New: GPU Render Protocol (Bounty #30)
-        from node.gpu_render_endpoints import register_gpu_render_endpoints
-        register_gpu_render_endpoints(app, DB_PATH, ADMIN_KEY)
     except ImportError as e:
         print(f"[P2P] Not available: {e}")
     except Exception as e:
         print(f"[P2P] Init failed: {e}")
+
+    # New: GPU Render Protocol (Bounty #30)
+    try:
+        from node.gpu_render_endpoints import register_gpu_render_endpoints
+        register_gpu_render_endpoints(app, DB_PATH, ADMIN_KEY)
+    except ImportError as e:
+        print(f"[GPU] Endpoint module not available: {e}")
+    except Exception as e:
+        print(f"[GPU] Endpoint init failed: {e}")
     print("=" * 70)
     print("RustChain v2.2.1 - SECURITY HARDENED - Mainnet Candidate")
     print("=" * 70)
