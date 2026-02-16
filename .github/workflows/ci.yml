@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install linting tools
+        run: pip install ruff
+      
+      - name: Run ruff linter
+        run: ruff check . --config pyproject.toml || true
+        # Lenient: don't fail on existing code lint issues
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install mypy
+        run: pip install mypy
+      
+      - name: Run mypy (gradual)
+        run: |
+          mypy node/fingerprint_checks.py \
+               node/rewards_implementation_rip200.py \
+               --ignore-missing-imports \
+               --no-error-summary || true
+        # Gradual adoption - check new files only
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-cov httpx
+          pip install -r tests/requirements.txt || true
+      
+      - name: Run tests
+        run: |
+          pytest tests/ -v --tb=short --cov=node --cov-report=term-missing || pytest tests/ -v --tb=short
+      
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: htmlcov/
+        if: always()
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install bandit
+        run: pip install bandit
+      
+      - name: Run bandit security scan
+        run: |
+          bandit -r node/ -ll -ii --exclude node/tests || true
+        # Report issues but don't fail build (legacy code)
+
+  build-check:
+    name: Build Check
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test, security]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Verify imports
+        run: |
+          python -c "import ast; ast.parse(open('node/rustchain_v2_integrated_v2.2.1_rip200.py').read())"
+          echo "✅ Main node file parses successfully"
+      
+      - name: Check syntax
+        run: |
+          python -m py_compile node/fingerprint_checks.py
+          python -m py_compile node/rewards_implementation_rip200.py
+          python -m py_compile node/rip_200_round_robin_1cpu1vote.py
+          echo "✅ Core files compile successfully"

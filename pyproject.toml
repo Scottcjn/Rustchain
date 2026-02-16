@@ -1,0 +1,44 @@
+[project]
+name = "rustchain"
+version = "2.2.1"
+description = "RustChain Proof-of-Antiquity blockchain node"
+requires-python = ">=3.9"
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+# Lenient config for legacy code
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line too long
+    "E402",  # module level import not at top
+    "F401",  # unused import
+    "F841",  # unused variable
+    "W503",  # line break before binary operator
+]
+
+# Exclude legacy files
+exclude = [
+    "deprecated/",
+    "*.pyc",
+    "__pycache__",
+]
+
+[tool.mypy]
+python_version = "3.9"
+ignore_missing_imports = true
+warn_return_any = false
+warn_unused_ignores = false
+check_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.bandit]
+exclude_dirs = ["tests", "deprecated"]
+skips = ["B101", "B311"]  # Skip assert and random warnings
