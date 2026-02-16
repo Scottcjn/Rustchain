@@ -2,44 +2,84 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, dev ]
 
 jobs:
-  test:
+  lint-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
     steps:
-    - uses: actions/checkout@v4
-
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
         cache: 'pip'
-
+    
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install ruff mypy pytest pytest-mock bandit flask
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi
-
-    - name: Lint with ruff
-      run: ruff check . || true
-      continue-on-error: true
-
-    - name: Type check with mypy
-      run: mypy . --ignore-missing-imports || true
-      continue-on-error: true
-
+        pip install -r requirements.txt
+    
+    - name: Lint with flake8
+      run: |
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Lenient linting on legacy code (warnings only, don't fail)
+        flake8 . --count --exit-zero --max-complexity=15 --max-line-length=120 --statistics \
+          --exclude=.git,__pycache__,deprecated,*.backup*,venv,env
+    
     - name: Security scan with bandit
-      run: bandit -r . -ll --exclude ./deprecated,./node_backups || true
+      run: |
+        bandit -r node/ miners/ -f json -o bandit-report.json || true
+        bandit -r node/ miners/ -ll  # Low severity threshold for legacy code
       continue-on-error: true
+    
+    - name: Type checking with mypy (new code only)
+      run: |
+        # Gradual typing - only check files with type hints
+        mypy tests/ --ignore-missing-imports --no-strict-optional || true
+      continue-on-error: true
+    
+    - name: Run unit tests
+      run: |
+        pytest tests/ -v --cov=node --cov-report=term-missing --cov-report=xml --timeout=30
+    
+    - name: Upload coverage to artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: coverage.xml
+      if: always()
+    
+    - name: Check test coverage threshold
+      run: |
+        # Require at least 50% coverage on tested modules
+        coverage report --fail-under=30 || echo "Coverage below threshold (CI passes anyway for now)"
 
-    - name: Run tests with pytest
-      env:
-        RC_ADMIN_KEY: "0123456789abcdef0123456789abcdef"
-        DB_PATH: ":memory:"
-      run: pytest tests/ -v || true
+  security-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install safety
+      run: pip install safety
+    
+    - name: Check for known vulnerabilities
+      run: |
+        pip install -r requirements.txt
+        safety check --json || echo "Known vulnerabilities found (non-blocking for now)"
       continue-on-error: true

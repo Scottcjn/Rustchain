@@ -1,3 +1,5 @@
+[![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
+
 <div align="center">
 
 # 🧱 RustChain: Proof-of-Antiquity Blockchain
