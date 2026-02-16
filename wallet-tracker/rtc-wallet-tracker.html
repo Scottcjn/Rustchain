@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RTC Wallet Distribution Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 30px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 0.9em;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+
+        .stat-card h3 {
+            font-size: 0.9em;
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+
+        .stat-card .value {
+            font-size: 2em;
+            font-weight: bold;
+        }
+
+        .whale-alert {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            color: white;
+            display: none;
+        }
+
+        .whale-alert.active {
+            display: block;
+        }
+
+        .whale-alert h3 {
+            margin-bottom: 15px;
+        }
+
+        .whale-alert ul {
+            list-style: none;
+        }
+
+        .whale-alert li {
+            margin-bottom: 8px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 30px;
+        }
+
+        @media (max-width: 1000px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .card h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+
+        .table-container {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: #667eea;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .founder {
+            background: #fff3cd;
+        }
+
+        .founder-label {
+            background: #ffc107;
+            color: #333;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .whale-row {
+            background: #f8d7da;
+        }
+
+        .whale-label {
+            background: #dc3545;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 20px;
+        }
+
+        .gini-container {
+            text-align: center;
+            padding: 20px;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .gini-value {
+            font-size: 3em;
+            font-weight: bold;
+        }
+
+        .gini-description {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-top: 10px;
+        }
+
+        .last-update {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .refresh-btn {
+            display: block;
+            margin: 20px auto;
+            padding: 12px 30px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .refresh-btn:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .refresh-btn:active {
+            transform: translateY(0);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #667eea;
+            font-size: 1.2em;
+        }
+
+        .error {
+            text-align: center;
+            padding: 40px;
+            color: #dc3545;
+            font-size: 1.2em;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+
+        .badge-founder {
+            background: #ffc107;
+            color: #333;
+        }
+
+        .badge-whale {
+            background: #dc3545;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🪙 RTC Wallet Distribution Tracker</h1>
+        <p class="subtitle">Real-time RustChain token distribution analysis</p>
+
+        <div id="loading" class="loading">
+            ⏳ Loading wallet data...
+        </div>
+
+        <div id="error" class="error" style="display: none;">
+            ❌ Failed to load data. Please refresh the page.
+        </div>
+
+        <div id="content" style="display: none;">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Total Wallets</h3>
+                    <div class="value" id="total-wallets">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Supply</h3>
+                    <div class="value" id="total-supply">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>In Circulation</h3>
+                    <div class="value" id="in-circulation">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>% Minted</h3>
+                    <div class="value" id="percent-minted">0%</div>
+                </div>
+            </div>
+
+            <div class="whale-alert" id="whale-alert">
+                <h3>🐋 Whale Alert!</h3>
+                <ul id="whale-list"></ul>
+            </div>
+
+            <div class="main-content">
+                <div class="card">
+                    <h2>📊 Top Holders</h2>
+                    <div class="table-container">
+                        <table id="holders-table">
+                            <thead>
+                                <tr>
+                                    <th>Rank</th>
+                                    <th>Wallet ID</th>
+                                    <th>Balance</th>
+                                    <th>% Supply</th>
+                                </tr>
+                            </thead>
+                            <tbody id="holders-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="card">
+                        <h2>📈 Distribution Analysis</h2>
+                        <div class="gini-container">
+                            <div class="gini-value" id="gini-coefficient">0.00</div>
+                            <div class="gini-description">Gini Coefficient (0 = equality, 1 = concentration)</div>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="distribution-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h2>📈 Supply Breakdown</h2>
+                        <div class="chart-container">
+                            <canvas id="supply-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button class="refresh-btn" onclick="loadData()">🔄 Refresh Data</button>
+
+            <p class="last-update" id="last-update">Last updated: Never</p>
+        </div>
+    </div>
+
+    <script>
+        const MINERS_API_URL = 'https://50.28.86.131/api/miners';
+        const BALANCE_API_URL = 'https://50.28.86.131/wallet/balance';
+        const TOTAL_SUPPLY = 8300000;
+        const WHALE_THRESHOLD = 0.01; // 1% of supply
+
+        const FOUNDER_WALLETS = {
+            'founder_community': 'Community Fund',
+            'founder_dev_fund': 'Development Fund',
+            'founder_team_bounty': 'Team & Bounties',
+            'founder_founders': 'Founders Pool'
+        };
+
+        let distributionChart = null;
+        let supplyChart = null;
+        let refreshInterval = null;
+
+        async function getBalance(minerId) {
+            try {
+                const response = await fetch(`${BALANCE_API_URL}?miner_id=${encodeURIComponent(minerId)}`);
+                const data = await response.json();
+                return data.amount_rtc || 0;
+            } catch (err) {
+                console.error(`Error fetching balance for ${minerId}:`, err);
+                return 0;
+            }
+        }
+
+        async function loadData() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const content = document.getElementById('content');
+
+            loading.style.display = 'block';
+            error.style.display = 'none';
+            content.style.display = 'none';
+
+            try {
+                // Fetch miners list
+                const minersResponse = await fetch(MINERS_API_URL);
+                if (!minersResponse.ok) throw new Error('Failed to fetch miners');
+
+                const miners = await minersResponse.json();
+                console.log(`Found ${miners.length} miners`);
+
+                // Fetch balances for all miners
+                const wallets = [];
+                const balancePromises = miners.map(async (miner) => {
+                    const balance = await getBalance(miner.miner);
+                    if (balance > 0) {
+                        wallets.push({
+                            id: miner.miner,
+                            balance: balance
+                        });
+                    }
+                });
+
+                await Promise.all(balancePromises);
+                console.log(`Found ${wallets.length} wallets with balance`);
+
+                if (wallets.length > 0) {
+                    processData(wallets);
+                    loading.style.display = 'none';
+                    content.style.display = 'block';
+                } else {
+                    loading.innerHTML = '⚠️ No wallets with balance found yet. Mining has not started or all wallets are empty.';
+                }
+
+                document.getElementById('last-update').textContent =
+                    'Last updated: ' + new Date().toLocaleString();
+
+            } catch (err) {
+                console.error('Error:', err);
+                loading.style.display = 'none';
+                error.style.display = 'block';
+            }
+        }
+
+        function processData(wallets) {
+            // Sort by balance (descending)
+            wallets.sort((a, b) => b.balance - a.balance);
+
+            // Calculate statistics
+            const totalWallets = wallets.length;
+            const inCirculation = wallets.reduce((sum, w) => sum + w.balance, 0);
+            const percentMinted = ((inCirculation / TOTAL_SUPPLY) * 100).toFixed(2);
+
+            // Update stats
+            document.getElementById('total-wallets').textContent = totalWallets;
+            document.getElementById('total-supply').textContent = formatNumber(TOTAL_SUPPLY);
+            document.getElementById('in-circulation').textContent = formatNumber(inCirculation);
+            document.getElementById('percent-minted').textContent = percentMinted + '%';
+
+            // Calculate Gini coefficient
+            const gini = calculateGini(wallets.map(w => w.balance));
+            document.getElementById('gini-coefficient').textContent = gini.toFixed(4);
+
+            // Identify whales and founders
+            const whales = [];
+            let founderBalance = 0;
+            let communityBalance = 0;
+
+            wallets.forEach(w => {
+                const percent = w.balance / TOTAL_SUPPLY;
+
+                if (percent >= WHALE_THRESHOLD) {
+                    whales.push(w);
+                }
+
+                if (FOUNDER_WALLETS[w.id]) {
+                    w.founder = true;
+                    w.founderLabel = FOUNDER_WALLETS[w.id];
+                    founderBalance += w.balance;
+                } else {
+                    communityBalance += w.balance;
+                }
+            });
+
+            // Display whale alert
+            const whaleAlert = document.getElementById('whale-alert');
+            const whaleList = document.getElementById('whale-list');
+
+            if (whales.length > 0) {
+                whaleAlert.classList.add('active');
+                whaleList.innerHTML = whales.map(w => `
+                    <li>
+                        <strong>${w.id}</strong><br>
+                        Balance: ${formatNumber(w.balance)} (${(w.balance / TOTAL_SUPPLY * 100).toFixed(2)}%)
+                        ${w.founder ? '<span class="badge-founder">' + w.founderLabel + '</span>' : ''}
+                    </li>
+                `).join('');
+            } else {
+                whaleAlert.classList.remove('active');
+            }
+
+            // Update holders table
+            const holdersBody = document.getElementById('holders-body');
+            holdersBody.innerHTML = wallets.slice(0, 50).map((w, i) => {
+                const percent = w.balance / TOTAL_SUPPLY;
+                const isWhale = percent >= WHALE_THRESHOLD;
+                return `
+                    <tr class="${w.founder ? 'founder' : ''} ${isWhale ? 'whale-row' : ''}">
+                        <td>${i + 1}</td>
+                        <td>
+                            ${w.id}
+                            ${w.founder ? '<span class="badge badge-founder">' + w.founderLabel + '</span>' : ''}
+                            ${isWhale ? '<span class="badge badge-whale">WHALE</span>' : ''}
+                        </td>
+                        <td>${formatNumber(w.balance)}</td>
+                        <td>${(percent * 100).toFixed(4)}%</td>
+                    </tr>
+                `;
+            }).join('');
+
+            // Update distribution chart (top 20 holders)
+            updateDistributionChart(wallets.slice(0, 20), inCirculation);
+
+            // Update supply breakdown chart
+            updateSupplyChart(founderBalance, communityBalance, TOTAL_SUPPLY - inCirculation);
+        }
+
+        function calculateGini(balances) {
+            if (balances.length === 0) return 0;
+
+            balances.sort((a, b) => a - b);
+
+            const n = balances.length;
+            const sum = balances.reduce((a, b) => a + b, 0);
+
+            if (sum === 0) return 0;
+
+            let numerator = 0;
+            for (let i = 0; i < n; i++) {
+                numerator += (i + 1) * balances[i];
+            }
+
+            const gini = (2 * numerator) / (n * sum) - (n + 1) / n;
+            return Math.max(0, gini);
+        }
+
+        function updateDistributionChart(wallets, total) {
+            const ctx = document.getElementById('distribution-chart').getContext('2d');
+
+            if (distributionChart) {
+                distributionChart.destroy();
+            }
+
+            const labels = wallets.map(w => w.founder ? w.founderLabel : w.id.substring(0, 16) + '...');
+            const data = wallets.map(w => w.balance);
+            const others = total - wallets.reduce((sum, w) => sum + w.balance, 0);
+
+            distributionChart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: [...labels, 'Others'],
+                    datasets: [{
+                        data: [...data, others],
+                        backgroundColor: [
+                            ...generateColors(wallets.length),
+                            '#ccc'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                boxWidth: 12
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const value = context.raw;
+                                    const percent = ((value / total) * 100).toFixed(2);
+                                    return formatNumber(value) + ' (' + percent + '%)';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateSupplyChart(founder, community, unminted) {
+            const ctx = document.getElementById('supply-chart').getContext('2d');
+
+            if (supplyChart) {
+                supplyChart.destroy();
+            }
+
+            supplyChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Founder Wallets', 'Community Wallets', 'Unminted'],
+                    datasets: [{
+                        data: [founder, community, unminted],
+                        backgroundColor: ['#ffc107', '#667eea', '#e0e0e0']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const value = context.raw;
+                                    const percent = ((value / TOTAL_SUPPLY) * 100).toFixed(2);
+                                    return context.label + ': ' + formatNumber(value) + ' (' + percent + '%)';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function generateColors(count) {
+            const colors = [
+                '#667eea', '#764ba2', '#f093fb', '#f5576c',
+                '#4facfe', '#00f2fe', '#43e97b', '#38f9d7',
+                '#fa709a', '#fee140', '#30cfd0', '#c43a30',
+                '#d4fc79', '#96e6a1', '#ff9a9e', '#fecfef',
+                '#a8edea', '#fed6e3', '#ffecd2', '#fcb69f'
+            ];
+
+            return Array.from({ length: count }, (_, i) => colors[i % colors.length]);
+        }
+
+        function formatNumber(num) {
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(2) + 'M';
+            } else if (num >= 1000) {
+                return num.toLocaleString('en-US');
+            }
+            return num.toString();
+        }
+
+        // Initial load
+        loadData();
+
+        // Auto-refresh every 5 minutes
+        refreshInterval = setInterval(loadData, 5 * 60 * 1000);
+    </script>
+</body>
+</html>

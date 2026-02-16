@@ -1,0 +1,152 @@
+name: BCOS Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  label-gate:
+    name: Review Tier Label Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require BCOS label for non-doc PRs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+            const prNumber = pr.number;
+
+            const allowedLabels = new Set(["BCOS-L1", "BCOS-L2", "bcos:l1", "bcos:l2"]);
+
+            const labels = (pr.labels || []).map(l => l.name);
+            const hasTier = labels.some(l => allowedLabels.has(l));
+
+            // Fetch file list (paginated)
+            const files = [];
+            for await (const resp of github.paginate.iterator(
+              github.rest.pulls.listFiles,
+              { owner, repo, pull_number: prNumber, per_page: 100 }
+            )) {
+              for (const f of resp.data) files.push(f.filename);
+            }
+
+            function isDocOnly(path) {
+              const p = path.toLowerCase();
+              if (p.startsWith("docs/")) return true;
+              if (p.endsWith(".md")) return true;
+              if (p.endsWith(".png") || p.endsWith(".jpg") || p.endsWith(".jpeg") || p.endsWith(".gif") || p.endsWith(".svg")) return true;
+              if (p.endsWith(".pdf")) return true;
+              return false;
+            }
+
+            const nonDoc = files.filter(f => !isDocOnly(f));
+            if (nonDoc.length === 0) {
+              core.info("Doc-only PR: tier label not required.");
+              return;
+            }
+
+            if (!hasTier) {
+              core.setFailed(
+                "BCOS label required for non-doc changes. Add one of: BCOS-L1, BCOS-L2 (or bcos:l1, bcos:l2)."
+              );
+            } else {
+              core.info(`Tier label present: ${labels.join(", ")}`);
+            }
+
+  spdx-and-sbom:
+    name: SPDX + SBOM Artifacts
+    runs-on: ubuntu-latest
+    needs: [label-gate]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install tooling (venv)
+        run: |
+          python -m venv .venv-bcos
+          . .venv-bcos/bin/activate
+          python -m pip install --upgrade pip
+          # SBOM + license report (for evidence; does not change runtime)
+          python -m pip install cyclonedx-bom pip-licenses
+
+      - name: SPDX check (new files)
+        run: |
+          . .venv-bcos/bin/activate
+          python tools/bcos_spdx_check.py --base-ref "origin/${{ github.base_ref }}"
+
+      - name: Generate SBOM (environment)
+        run: |
+          . .venv-bcos/bin/activate
+          mkdir -p artifacts
+          python -m cyclonedx_py environment --format json -o artifacts/sbom_environment.json
+
+      - name: Generate dependency license report
+        run: |
+          . .venv-bcos/bin/activate
+          mkdir -p artifacts
+          pip-licenses --format=json --with-system --with-license-file --output-file artifacts/pip_licenses.json
+
+      - name: Hash artifacts
+        run: |
+          mkdir -p artifacts
+          sha256sum artifacts/* > artifacts/sha256sums.txt
+
+      - name: Generate BCOS attestation
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            const pr = context.payload.pull_request || null;
+            const prNumber = pr ? pr.number : null;
+            const labels = pr ? (pr.labels || []).map(l => l.name) : [];
+            const tier =
+              labels.includes('BCOS-L2') || labels.includes('bcos:l2') ? 'L2' :
+              labels.includes('BCOS-L1') || labels.includes('bcos:l1') ? 'L1' :
+              null;
+
+            const att = {
+              schema: 'bcos-attestation/v0',
+              repo: `${context.repo.owner}/${context.repo.repo}`,
+              pr_number: prNumber,
+              tier: tier,
+              labels: labels,
+              head_sha: context.sha,
+              base_ref: context.payload.pull_request ? context.payload.pull_request.base.ref : context.ref,
+              head_ref: context.payload.pull_request ? context.payload.pull_request.head.ref : context.ref,
+              actor: context.actor,
+              event: context.eventName,
+              run: {
+                id: process.env.GITHUB_RUN_ID,
+                attempt: process.env.GITHUB_RUN_ATTEMPT,
+                workflow: process.env.GITHUB_WORKFLOW,
+                job: process.env.GITHUB_JOB,
+                url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+              },
+              artifacts: [
+                { path: 'artifacts/sbom_environment.json' },
+                { path: 'artifacts/pip_licenses.json' },
+                { path: 'artifacts/sha256sums.txt' },
+              ],
+              generated_at: new Date().toISOString(),
+            };
+
+            fs.mkdirSync('artifacts', { recursive: true });
+            fs.writeFileSync('artifacts/bcos-attestation.json', JSON.stringify(att, null, 2));
+
+      - name: Upload BCOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bcos-artifacts
+          path: artifacts/

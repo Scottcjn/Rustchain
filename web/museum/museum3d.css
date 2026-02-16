@@ -17,6 +17,8 @@ body{margin:0;overflow:hidden;background:#0f1318;color:var(--paper);font-family:
 
 #c{width:100vw;height:100vh;display:block}
 
+.mono{font-family:var(--mono)}
+
 .hud{position:fixed;inset:0;pointer-events:none}
 .hud-top{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:16px}
 .hud-bottom{position:absolute;left:16px;right:16px;bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
@@ -47,3 +49,12 @@ body{margin:0;overflow:hidden;background:#0f1318;color:var(--paper);font-family:
 .k{font-family:var(--mono);font-size:11px;opacity:.7}
 .v{margin-top:6px;font-weight:900;letter-spacing:-.02em;word-break:break-all}
 
+.dpad{position:fixed;left:16px;bottom:86px;display:grid;grid-template-columns:56px 56px 56px;grid-template-rows:56px 56px 56px;gap:10px;pointer-events:auto;z-index:40}
+.dpad[hidden]{display:none}
+.dpad button{width:56px;height:56px;border-radius:18px;border:1px solid var(--line);background:rgba(15,19,24,.60);backdrop-filter:blur(10px);color:var(--paper);font-family:var(--mono);font-size:12px;cursor:pointer}
+.dpad button:active{border-color:rgba(255,255,255,.30);transform:translateY(1px)}
+.dpad .spacer{visibility:hidden}
+
+@media (max-width: 520px){
+  .panel{top:auto;left:16px;right:16px;bottom:16px;width:auto;height:min(56vh, 520px)}
+}
