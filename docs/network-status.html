@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RustChain Network Status</title>
+  <style>
+    :root {
+      --bg: #f4f8fb;
+      --panel: #ffffff;
+      --text: #18212b;
+      --muted: #5a697a;
+      --border: #d9e4ef;
+      --good: #20a464;
+      --warn: #e0a106;
+      --bad: #d94841;
+      --line: #79a9d4;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at 80% 0%, #e7f2ff 0%, var(--bg) 55%);
+      min-height: 100vh;
+    }
+
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 20px 16px 28px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.25rem, 2.8vw, 1.85rem);
+      letter-spacing: 0.02em;
+    }
+
+    .sub {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 8px 20px rgba(16, 42, 67, 0.06);
+    }
+
+    .head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .title {
+      margin: 0;
+      font-size: 1rem;
+      line-height: 1.2;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.04);
+      background: var(--bad);
+    }
+
+    .dot.good { background: var(--good); }
+    .dot.warn { background: var(--warn); }
+
+    .rows {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px 12px;
+      font-size: 0.9rem;
+      margin-bottom: 10px;
+    }
+
+    .k {
+      color: var(--muted);
+    }
+
+    .v {
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      text-align: right;
+    }
+
+    .uptime {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .u-box {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px;
+      text-align: center;
+      background: #fbfdff;
+    }
+
+    .u-label {
+      color: var(--muted);
+      font-size: 0.74rem;
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    .u-val {
+      font-weight: 700;
+      font-size: 0.88rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    canvas {
+      width: 100%;
+      height: 72px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: linear-gradient(180deg, #f8fcff 0%, #fff 100%);
+      display: block;
+    }
+
+    .meta {
+      margin-top: 8px;
+      font-size: 0.77rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    code {
+      font-size: 0.76rem;
+      background: #eef4fa;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1px 5px;
+    }
+
+    .footer {
+      margin-top: 12px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    @media (max-width: 540px) {
+      .rows {
+        grid-template-columns: 1fr;
+      }
+
+      .v {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>RustChain Network Status</h1>
+    <p class="sub" id="refresh-note">Polling every 60s. Loading data...</p>
+    <section class="grid" id="nodes"></section>
+    <p class="footer">
+      Status colors: <span style="color:var(--good);font-weight:600;">green</span> healthy,
+      <span style="color:var(--warn);font-weight:600;">yellow</span> slow (&gt;2000ms),
+      <span style="color:var(--bad);font-weight:600;">red</span> down.
+      History is kept in <code>localStorage</code> for 30 days.
+    </p>
+  </main>
+
+  <script>
+    (function () {
+      const POLL_MS = 60 * 1000;
+      const HISTORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+      const GRAPH_WINDOW_MS = 6 * 60 * 60 * 1000;
+      const REQUEST_TIMEOUT_MS = 10000;
+      const STORAGE_KEY = "rustchain_status_history_v1";
+      const SLOT_SECONDS_FALLBACK = 600;
+
+      const nodes = [
+        { id: "node1", name: "Node 1 (Primary)", base: "https://50.28.86.131" },
+        { id: "node2", name: "Node 2 (Ergo Anchor)", base: "https://50.28.86.153" },
+        { id: "node3", name: "Node 3 (External)", base: "http://76.8.228.245:8099" }
+      ];
+
+      const cardEls = {};
+      let history = loadHistory();
+      let timer = null;
+
+      initCards();
+      pollAll();
+      timer = setInterval(pollAll, POLL_MS);
+
+      function initCards() {
+        const host = document.getElementById("nodes");
+        host.innerHTML = "";
+
+        nodes.forEach((node) => {
+          const card = document.createElement("article");
+          card.className = "card";
+          card.innerHTML =
+            '<div class="head">' +
+              '<h2 class="title">' + escapeHtml(node.name) + "</h2>" +
+              '<span class="status"><span class="dot" id="dot-' + node.id + '"></span><span id="status-' + node.id + '">unknown</span></span>' +
+            "</div>" +
+            '<div class="uptime">' +
+              '<div class="u-box"><span class="u-label">24h</span><span class="u-val" id="u24-' + node.id + '">n/a</span></div>' +
+              '<div class="u-box"><span class="u-label">7d</span><span class="u-val" id="u7-' + node.id + '">n/a</span></div>' +
+              '<div class="u-box"><span class="u-label">30d</span><span class="u-val" id="u30-' + node.id + '">n/a</span></div>' +
+            "</div>" +
+            '<div class="rows">' +
+              '<span class="k">Response Time</span><span class="v" id="ms-' + node.id + '">-</span>' +
+              '<span class="k">Current Epoch</span><span class="v" id="epoch-' + node.id + '">-</span>' +
+              '<span class="k">Active Miners</span><span class="v" id="miners-' + node.id + '">-</span>' +
+              '<span class="k">Last Block Time</span><span class="v" id="block-' + node.id + '">-</span>' +
+            "</div>" +
+            '<canvas id="graph-' + node.id + '" width="600" height="160" aria-label="response time graph" role="img"></canvas>' +
+            '<div class="meta" id="meta-' + node.id + '">' + escapeHtml(node.base) + "</div>";
+
+          host.appendChild(card);
+
+          cardEls[node.id] = {
+            dot: document.getElementById("dot-" + node.id),
+            status: document.getElementById("status-" + node.id),
+            u24: document.getElementById("u24-" + node.id),
+            u7: document.getElementById("u7-" + node.id),
+            u30: document.getElementById("u30-" + node.id),
+            ms: document.getElementById("ms-" + node.id),
+            epoch: document.getElementById("epoch-" + node.id),
+            miners: document.getElementById("miners-" + node.id),
+            block: document.getElementById("block-" + node.id),
+            graph: document.getElementById("graph-" + node.id),
+            meta: document.getElementById("meta-" + node.id)
+          };
+        });
+      }
+
+      async function pollAll() {
+        const startedAt = Date.now();
+        await Promise.all(nodes.map((node) => pollNode(node)));
+
+        const seconds = Math.round((Date.now() - startedAt) / 1000);
+        const refreshEl = document.getElementById("refresh-note");
+        refreshEl.textContent =
+          "Polling every 60s. Last update: " + new Date().toLocaleString() + " (" + seconds + "s run).";
+      }
+
+      async function pollNode(node) {
+        const requests = await Promise.all([
+          fetchJsonWithFallback(node.base, "/health"),
+          fetchJsonWithFallback(node.base, "/epoch"),
+          fetchJsonWithFallback(node.base, "/api/miners"),
+          fetchJsonWithFallback(node.base, "/headers/tip"),
+          fetchJsonWithFallback(node.base, "/api/stats")
+        ]);
+
+        const healthR = requests[0];
+        const epochR = requests[1];
+        const minersR = requests[2];
+        const tipR = requests[3];
+        const statsR = requests[4];
+
+        const health = healthR.ok ? healthR.data : null;
+        const epochData = epochR.ok ? epochR.data : null;
+        const minersData = minersR.ok ? minersR.data : null;
+        const tipData = tipR.ok ? tipR.data : null;
+        const statsData = statsR.ok ? statsR.data : null;
+
+        const responseMs = Number.isFinite(healthR.ms) ? Math.round(healthR.ms) : null;
+        const up = !!(healthR.ok && health && health.ok === true);
+
+        let status = "red";
+        if (up) {
+          status = responseMs !== null && responseMs > 2000 ? "yellow" : "green";
+        }
+
+        const epoch = readNumber(epochData && epochData.epoch, statsData && statsData.epoch);
+        const miners = parseMinerCount(minersData, epochData, statsData);
+        const lastBlockTimeMs = deriveLastBlockTimeMs(tipData, health, statsData);
+
+        pushHistory(node.id, {
+          ts: Date.now(),
+          up: up ? 1 : 0,
+          ms: responseMs === null ? -1 : responseMs
+        });
+
+        renderNode(node, {
+          status,
+          up,
+          responseMs,
+          epoch,
+          miners,
+          lastBlockTimeMs,
+          history: history[node.id] || [],
+          healthError: healthR.error,
+          extraError: !epochR.ok ? epochR.error : !minersR.ok ? minersR.error : "",
+          endpoint: healthR.url || node.base
+        });
+      }
+
+      async function fetchJsonWithFallback(base, path) {
+        const urls = candidateUrls(base, path);
+        let lastError = "request failed";
+
+        for (let i = 0; i < urls.length; i++) {
+          const url = urls[i];
+          const res = await fetchJson(url, REQUEST_TIMEOUT_MS);
+          if (res.ok) {
+            return { ok: true, data: res.data, ms: res.ms, url };
+          }
+          lastError = res.error || lastError;
+        }
+
+        return { ok: false, data: null, ms: null, error: lastError, url: urls[0] || "" };
+      }
+
+      function candidateUrls(base, path) {
+        const cleanBase = String(base || "").replace(/\/+$/, "");
+        const securePage = window.location.protocol === "https:";
+
+        if (securePage && cleanBase.indexOf("http://") === 0) {
+          return [
+            cleanBase.replace("http://", "https://") + path,
+            cleanBase + path
+          ];
+        }
+
+        return [cleanBase + path];
+      }
+
+      async function fetchJson(url, timeoutMs) {
+        const started = performance.now();
+        const controller = new AbortController();
+        const timerId = setTimeout(function () {
+          controller.abort();
+        }, timeoutMs);
+
+        try {
+          const resp = await fetch(url, {
+            method: "GET",
+            mode: "cors",
+            cache: "no-store",
+            signal: controller.signal
+          });
+
+          if (!resp.ok) {
+            throw new Error("HTTP " + resp.status);
+          }
+
+          const data = await resp.json();
+          return {
+            ok: true,
+            data,
+            ms: Math.round(performance.now() - started),
+            error: ""
+          };
+        } catch (err) {
+          return {
+            ok: false,
+            data: null,
+            ms: null,
+            error: err && err.message ? err.message : "request failed"
+          };
+        } finally {
+          clearTimeout(timerId);
+        }
+      }
+
+      function parseMinerCount(minersData, epochData, statsData) {
+        if (Array.isArray(minersData)) {
+          return minersData.length;
+        }
+
+        if (minersData && typeof minersData === "object") {
+          if (Array.isArray(minersData.miners)) {
+            return minersData.miners.length;
+          }
+          if (minersData.miners && typeof minersData.miners === "object") {
+            return Object.keys(minersData.miners).length;
+          }
+          if (Number.isFinite(Number(minersData.enrolled_miners))) {
+            return Number(minersData.enrolled_miners);
+          }
+        }
+
+        const enrolled = readNumber(epochData && epochData.enrolled_miners);
+        if (enrolled !== null) {
+          return enrolled;
+        }
+
+        const total = readNumber(statsData && statsData.total_miners);
+        if (total !== null) {
+          return total;
+        }
+
+        return null;
+      }
+
+      function deriveLastBlockTimeMs(tipData, healthData, statsData) {
+        const now = Date.now();
+
+        if (tipData && Number.isFinite(Number(tipData.tip_age))) {
+          return now - Number(tipData.tip_age) * 1000;
+        }
+
+        if (healthData && Number.isFinite(Number(healthData.tip_age_slots))) {
+          const slotSeconds = readNumber(statsData && statsData.block_time, SLOT_SECONDS_FALLBACK);
+          return now - Number(healthData.tip_age_slots) * slotSeconds * 1000;
+        }
+
+        return null;
+      }
+
+      function renderNode(node, state) {
+        const els = cardEls[node.id];
+        if (!els) {
+          return;
+        }
+
+        const colorClass = state.status === "green" ? "good" : state.status === "yellow" ? "warn" : "";
+        els.dot.className = "dot " + colorClass;
+        els.status.textContent = state.status === "green" ? "healthy" : state.status === "yellow" ? "slow" : "down";
+
+        const uptime24 = computeUptime(history[node.id], 24 * 60 * 60 * 1000);
+        const uptime7 = computeUptime(history[node.id], 7 * 24 * 60 * 60 * 1000);
+        const uptime30 = computeUptime(history[node.id], 30 * 24 * 60 * 60 * 1000);
+
+        els.u24.textContent = formatPct(uptime24);
+        els.u7.textContent = formatPct(uptime7);
+        els.u30.textContent = formatPct(uptime30);
+
+        els.ms.textContent = state.responseMs === null ? "-" : state.responseMs + " ms";
+        els.epoch.textContent = state.epoch === null ? "-" : String(state.epoch);
+        els.miners.textContent = state.miners === null ? "-" : String(state.miners);
+        els.block.textContent = state.lastBlockTimeMs === null ? "-" : formatDateTime(state.lastBlockTimeMs);
+
+        const notes = [];
+        notes.push("Endpoint: " + state.endpoint);
+
+        if (!state.up && state.healthError) {
+          notes.push("Health error: " + state.healthError);
+        }
+
+        if (state.extraError) {
+          notes.push("Aux API error: " + state.extraError);
+        }
+
+        if (window.location.protocol === "https:" && node.base.indexOf("http://") === 0) {
+          notes.push("This node uses HTTP. Browsers may block it on HTTPS pages if HTTPS fallback is unavailable.");
+        }
+
+        els.meta.textContent = notes.join(" | ");
+
+        drawGraph(els.graph, history[node.id]);
+      }
+
+      function computeUptime(samples, windowMs) {
+        if (!Array.isArray(samples) || samples.length === 0) {
+          return null;
+        }
+
+        const cutoff = Date.now() - windowMs;
+        let total = 0;
+        let up = 0;
+
+        for (let i = samples.length - 1; i >= 0; i--) {
+          const s = samples[i];
+          if (!Array.isArray(s) || s.length < 2) {
+            continue;
+          }
+          if (s[0] < cutoff) {
+            break;
+          }
+
+          total += 1;
+          if (s[1] === 1) {
+            up += 1;
+          }
+        }
+
+        if (total === 0) {
+          return null;
+        }
+
+        return (up / total) * 100;
+      }
+
+      function drawGraph(canvas, samples) {
+        if (!canvas || !canvas.getContext) {
+          return;
+        }
+
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        const width = Math.max(240, Math.floor(canvas.clientWidth));
+        const height = Math.max(70, Math.floor(canvas.clientHeight || 72));
+
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+
+        const ctx = canvas.getContext("2d");
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+
+        ctx.strokeStyle = "#e6edf5";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, height - 22);
+        ctx.lineTo(width, height - 22);
+        ctx.stroke();
+
+        if (!Array.isArray(samples) || samples.length === 0) {
+          return;
+        }
+
+        const cutoff = Date.now() - GRAPH_WINDOW_MS;
+        const points = [];
+
+        for (let i = 0; i < samples.length; i++) {
+          const s = samples[i];
+          if (!Array.isArray(s) || s.length < 3) {
+            continue;
+          }
+          const ts = s[0];
+          const ms = s[2];
+          if (ts < cutoff || ms < 0) {
+            continue;
+          }
+          points.push([ts, ms]);
+        }
+
+        if (points.length < 2) {
+          return;
+        }
+
+        let maxMs = 0;
+        for (let i = 0; i < points.length; i++) {
+          if (points[i][1] > maxMs) {
+            maxMs = points[i][1];
+          }
+        }
+
+        maxMs = Math.max(1000, Math.min(10000, maxMs));
+
+        const minX = cutoff;
+        const maxX = Date.now();
+        const chartTop = 8;
+        const chartBottom = height - 24;
+        const chartHeight = chartBottom - chartTop;
+
+        ctx.strokeStyle = "#79a9d4";
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+
+        for (let i = 0; i < points.length; i++) {
+          const p = points[i];
+          const x = ((p[0] - minX) / (maxX - minX)) * width;
+          const y = chartBottom - (Math.min(maxMs, p[1]) / maxMs) * chartHeight;
+
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+
+        ctx.stroke();
+
+        ctx.fillStyle = "#5a697a";
+        ctx.font = "11px Segoe UI, sans-serif";
+        ctx.fillText("6h response (ms)", 8, height - 8);
+      }
+
+      function loadHistory() {
+        const empty = {};
+        nodes.forEach(function (n) {
+          empty[n.id] = [];
+        });
+
+        try {
+          const raw = window.localStorage.getItem(STORAGE_KEY);
+          if (!raw) {
+            return empty;
+          }
+
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== "object") {
+            return empty;
+          }
+
+          nodes.forEach(function (n) {
+            const v = parsed[n.id];
+            empty[n.id] = Array.isArray(v) ? v : [];
+          });
+
+          pruneHistory(empty);
+          return empty;
+        } catch (err) {
+          return empty;
+        }
+      }
+
+      function pushHistory(nodeId, sample) {
+        if (!history[nodeId]) {
+          history[nodeId] = [];
+        }
+
+        history[nodeId].push([sample.ts, sample.up, sample.ms]);
+        pruneHistory(history);
+        saveHistory();
+      }
+
+      function pruneHistory(store) {
+        const cutoff = Date.now() - HISTORY_RETENTION_MS;
+
+        Object.keys(store).forEach(function (k) {
+          const arr = Array.isArray(store[k]) ? store[k] : [];
+          let firstIdx = 0;
+
+          while (firstIdx < arr.length && Array.isArray(arr[firstIdx]) && arr[firstIdx][0] < cutoff) {
+            firstIdx += 1;
+          }
+
+          store[k] = firstIdx > 0 ? arr.slice(firstIdx) : arr;
+        });
+      }
+
+      function saveHistory() {
+        try {
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+        } catch (err) {
+          // Ignore quota/storage errors; live polling still works.
+        }
+      }
+
+      function formatPct(v) {
+        if (v === null || !Number.isFinite(v)) {
+          return "n/a";
+        }
+        return v.toFixed(2) + "%";
+      }
+
+      function formatDateTime(ms) {
+        if (!Number.isFinite(ms)) {
+          return "-";
+        }
+        return new Date(ms).toLocaleString();
+      }
+
+      function readNumber() {
+        for (let i = 0; i < arguments.length; i++) {
+          const n = Number(arguments[i]);
+          if (Number.isFinite(n)) {
+            return n;
+          }
+        }
+        return null;
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      window.addEventListener("resize", function () {
+        nodes.forEach(function (node) {
+          const els = cardEls[node.id];
+          if (els) {
+            drawGraph(els.graph, history[node.id]);
+          }
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
