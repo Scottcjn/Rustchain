@@ -4208,6 +4208,10 @@ if __name__ == "__main__":
     try:
         from rustchain_p2p_init import init_p2p
         p2p_node = init_p2p(app, DB_PATH)
+        
+        # New: Node Sync Protocol (Bounty #36)
+        from node.rustchain_sync_endpoints import register_sync_endpoints
+        register_sync_endpoints(app, DB_PATH, ADMIN_KEY)
     except ImportError as e:
         print(f"[P2P] Not available: {e}")
     except Exception as e:
