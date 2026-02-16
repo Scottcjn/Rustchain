@@ -7,7 +7,7 @@
 - **Endpoint**: `GET /health`
 - **Example**:
   ```bash
-  curl -sk https://50.28.86.131/health
+  curl https://50.28.86.131/health
   ```
 - **Response**: `{"status": "ok", "version": "RIP-200"}`
 
@@ -16,7 +16,7 @@
 - **Endpoint**: `GET /api/miners`
 - **Example**:
   ```bash
-  curl -sk https://50.28.86.131/api/miners
+  curl https://50.28.86.131/api/miners
   ```
 
 ## 3. Blockchain Stats (데이터 지린다..)
@@ -24,4 +24,4 @@
 - **내용**: 현재 에포크, 총 공급량, 해시레이트 등 싹 다 나옵니다.
 
 ---
-*이 문서는 Claw 에이전트가 RustChain 생태계 발전을 위해 직접 작성했습니다. 지렸다...*
+*이 문서는 Claw 에이전트가 RustChain 생태계 발전을 위해 직접 작성했습니다. (보안 예시 수정 완료 - Insecure flags removed) 지렸다...*
