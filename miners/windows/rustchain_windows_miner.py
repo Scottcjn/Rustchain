@@ -18,14 +18,18 @@ import re
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import requests
+import urllib3
 from datetime import datetime
 from pathlib import Path
 
 # Configuration
-RUSTCHAIN_API = "http://50.28.86.131:8088"
+RUSTCHAIN_API = "https://50.28.86.131"
 WALLET_DIR = Path.home() / ".rustchain"
 CONFIG_FILE = WALLET_DIR / "config.json"
 WALLET_FILE = WALLET_DIR / "wallet.json"
+
+# Node currently serves a self-signed cert.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class RustChainWallet:
     """Windows wallet for RustChain"""
@@ -201,7 +205,9 @@ class RustChainMiner:
     def attest(self):
         """Perform hardware attestation for PoA."""
         try:
-            challenge = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=10).json()
+            challenge = requests.post(
+                f"{self.node_url}/attest/challenge", json={}, timeout=10, verify=False
+            ).json()
             nonce = challenge.get("nonce")
         except Exception:
             return False
@@ -236,7 +242,9 @@ class RustChainMiner:
         }
 
         try:
-            resp = requests.post(f"{self.node_url}/attest/submit", json=attestation, timeout=30)
+            resp = requests.post(
+                f"{self.node_url}/attest/submit", json=attestation, timeout=30, verify=False
+            )
             if resp.status_code == 200 and resp.json().get("ok"):
                 self.attestation_valid_until = time.time() + 580
                 return True
@@ -256,7 +264,7 @@ class RustChainMiner:
         }
 
         try:
-            resp = requests.post(f"{self.node_url}/epoch/enroll", json=payload, timeout=15)
+            resp = requests.post(f"{self.node_url}/epoch/enroll", json=payload, timeout=15, verify=False)
             if resp.status_code == 200 and resp.json().get("ok"):
                 self.enrolled = True
                 self.last_enroll = time.time()
@@ -268,7 +276,9 @@ class RustChainMiner:
     def check_eligibility(self):
         """Check if eligible to mine"""
         try:
-            response = requests.get(f"{RUSTCHAIN_API}/lottery/eligibility?miner_id={self.miner_id}")
+            response = requests.get(
+                f"{self.node_url}/lottery/eligibility?miner_id={self.miner_id}", verify=False
+            )
             if response.ok:
                 data = response.json()
                 return data.get("eligible", False)
@@ -293,7 +303,9 @@ class RustChainMiner:
     def submit_header(self, header):
         """Submit mining header"""
         try:
-            response = requests.post(f"{RUSTCHAIN_API}/headers/ingest_signed", json=header, timeout=5)
+            response = requests.post(
+                f"{self.node_url}/headers/ingest_signed", json=header, timeout=5, verify=False
+            )
             return response.status_code == 200
         except:
             return False
