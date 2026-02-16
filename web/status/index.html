@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RustChain Network Status</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --card: #131a2b;
+      --text: #e6ecff;
+      --muted: #a1aecf;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --down: #ef4444;
+      --border: #24304a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(180deg, #090d19, #0d1324);
+      color: var(--text);
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 20px; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    p { margin: 0; color: var(--muted); }
+    .grid { display: grid; gap: 14px; margin-top: 18px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+    }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .node { font-size: 17px; font-weight: 700; }
+    .dot { width: 11px; height: 11px; border-radius: 999px; display: inline-block; margin-right: 6px; }
+    .ok { background: var(--ok); box-shadow: 0 0 10px rgba(34,197,94,.6); }
+    .warn { background: var(--warn); box-shadow: 0 0 10px rgba(245,158,11,.6); }
+    .down { background: var(--down); box-shadow: 0 0 10px rgba(239,68,68,.6); }
+    .kv { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin-top: 10px; font-size: 14px; }
+    .kv div:nth-child(odd) { color: var(--muted); }
+    .charts { margin-top: 16px; }
+    canvas { width: 100%; height: 120px; background: #0c1429; border: 1px solid var(--border); border-radius: 10px; }
+    .foot { margin-top: 14px; font-size: 12px; color: var(--muted); }
+    code { color: #c7d2fe; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>RustChain Network Status</h1>
+    <p>Auto-refresh every 60s. Yellow means slow (&gt;2s), red means down.</p>
+
+    <div id="grid" class="grid"></div>
+
+    <div class="foot">
+      History stored in <code>localStorage</code> (keys: <code>rustchain-status-history-*</code>), retaining 30 days.
+    </div>
+  </div>
+
+  <script>
+    const NODES = [
+      { id: 'primary', label: 'Node 1 (Primary)', health: 'https://50.28.86.131/health', miners: 'https://50.28.86.131/api/miners' },
+      { id: 'anchor', label: 'Node 2 (Ergo Anchor)', health: 'https://50.28.86.153/health', miners: 'https://50.28.86.153/api/miners' },
+      { id: 'external', label: 'Node 3 (External)', health: 'http://76.8.228.245:8099/health', miners: 'http://76.8.228.245:8099/api/miners' }
+    ];
+
+    const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+    const POLL_MS = 60_000;
+
+    function historyKey(nodeId) { return `rustchain-status-history-${nodeId}`; }
+
+    function loadHistory(nodeId) {
+      try {
+        const raw = localStorage.getItem(historyKey(nodeId));
+        const list = raw ? JSON.parse(raw) : [];
+        const now = Date.now();
+        return list.filter(i => now - i.t <= RETENTION_MS);
+      } catch { return []; }
+    }
+
+    function saveHistory(nodeId, list) {
+      localStorage.setItem(historyKey(nodeId), JSON.stringify(list.slice(-10000)));
+    }
+
+    function uptimePct(history, windowMs) {
+      const now = Date.now();
+      const scoped = history.filter(i => now - i.t <= windowMs);
+      if (!scoped.length) return 'n/a';
+      const healthy = scoped.filter(i => i.state !== 'down').length;
+      return `${((healthy / scoped.length) * 100).toFixed(1)}%`;
+    }
+
+    function stateFrom(latency, ok) {
+      if (!ok) return 'down';
+      if (latency > 2000) return 'warn';
+      return 'ok';
+    }
+
+    function fmtAgo(ts) {
+      if (!ts) return 'n/a';
+      const sec = Math.floor((Date.now() - ts) / 1000);
+      if (sec < 60) return `${sec}s ago`;
+      if (sec < 3600) return `${Math.floor(sec/60)}m ago`;
+      return `${Math.floor(sec/3600)}h ago`;
+    }
+
+    async function withTimeout(url, ms = 8000) {
+      const ctrl = new AbortController();
+      const id = setTimeout(() => ctrl.abort(), ms);
+      try {
+        const r = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
+        return r;
+      } finally {
+        clearTimeout(id);
+      }
+    }
+
+    async function pollNode(node) {
+      const started = performance.now();
+      try {
+        const healthRes = await withTimeout(node.health);
+        const health = await healthRes.json();
+        const ms = Math.round(performance.now() - started);
+
+        let minersCount = 'n/a';
+        try {
+          const minersRes = await withTimeout(node.miners, 6000);
+          const miners = await minersRes.json();
+          if (Array.isArray(miners)) minersCount = miners.length;
+          else if (miners && Array.isArray(miners.miners)) minersCount = miners.miners.length;
+          else if (miners && typeof miners.count === 'number') minersCount = miners.count;
+        } catch {}
+
+        return {
+          ok: !!health?.ok,
+          latency: ms,
+          epoch: health?.epoch ?? health?.current_epoch ?? 'n/a',
+          miners: minersCount,
+          lastBlock: health?.last_block_ts ? fmtAgo(health.last_block_ts * 1000) : 'n/a',
+          tipAgeSlots: health?.tip_age_slots ?? 'n/a'
+        };
+      } catch (e) {
+        return { ok: false, latency: null, epoch: 'n/a', miners: 'n/a', lastBlock: 'n/a', tipAgeSlots: 'n/a' };
+      }
+    }
+
+    function drawChart(canvas, history) {
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width = canvas.clientWidth * devicePixelRatio;
+      const h = canvas.height = canvas.clientHeight * devicePixelRatio;
+      ctx.scale(devicePixelRatio, devicePixelRatio);
+      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+
+      const view = history.slice(-120);
+      if (view.length < 2) return;
+
+      const maxLatency = Math.max(2000, ...view.map(v => v.latency || 0));
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      view.forEach((v, i) => {
+        const x = (i / (view.length - 1)) * canvas.clientWidth;
+        const y = canvas.clientHeight - ((v.latency || maxLatency) / maxLatency) * (canvas.clientHeight - 8) - 4;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = '#7dd3fc';
+      ctx.stroke();
+    }
+
+    function dot(state) {
+      const cls = state === 'ok' ? 'ok' : state === 'warn' ? 'warn' : 'down';
+      const txt = state === 'ok' ? 'Healthy' : state === 'warn' ? 'Slow' : 'Down';
+      return `<span><span class="dot ${cls}"></span>${txt}</span>`;
+    }
+
+    async function refresh() {
+      const grid = document.getElementById('grid');
+      const snapshots = await Promise.all(NODES.map(pollNode));
+
+      const cards = NODES.map((node, idx) => {
+        const s = snapshots[idx];
+        const state = stateFrom(s.latency ?? 99999, s.ok);
+        const hist = loadHistory(node.id);
+        hist.push({ t: Date.now(), state, latency: s.latency || 0 });
+        saveHistory(node.id, hist);
+
+        return `
+          <div class="card">
+            <div class="row">
+              <div class="node">${node.label}</div>
+              ${dot(state)}
+            </div>
+            <div class="kv">
+              <div>Response time</div><div>${s.latency ? `${s.latency} ms` : 'timeout'}</div>
+              <div>Current epoch</div><div>${s.epoch}</div>
+              <div>Active miners</div><div>${s.miners}</div>
+              <div>Last block time</div><div>${s.lastBlock}</div>
+              <div>Tip age slots</div><div>${s.tipAgeSlots}</div>
+              <div>Uptime (24h / 7d / 30d)</div>
+              <div>${uptimePct(hist, 24*60*60*1000)} / ${uptimePct(hist, 7*24*60*60*1000)} / ${uptimePct(hist, 30*24*60*60*1000)}</div>
+            </div>
+            <div class="charts"><canvas id="chart-${node.id}"></canvas></div>
+          </div>
+        `;
+      }).join('');
+
+      grid.innerHTML = cards;
+      NODES.forEach(node => drawChart(document.getElementById(`chart-${node.id}`), loadHistory(node.id)));
+    }
+
+    refresh();
+    setInterval(refresh, POLL_MS);
+  </script>
+</body>
+</html>
