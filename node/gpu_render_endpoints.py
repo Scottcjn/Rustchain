@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Author: @createkr (RayBot AI)
+# BCOS-Tier: L1
 import sqlite3
 import time
 import secrets
