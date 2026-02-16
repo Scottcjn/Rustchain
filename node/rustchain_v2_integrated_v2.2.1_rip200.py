@@ -4208,10 +4208,6 @@ if __name__ == "__main__":
     try:
         from rustchain_p2p_init import init_p2p
         p2p_node = init_p2p(app, DB_PATH)
-        
-        # New: Node Sync Protocol (Bounty #36)
-        from node.rustchain_sync_endpoints import register_sync_endpoints
-        register_sync_endpoints(app, DB_PATH, ADMIN_KEY)
     except ImportError as e:
         print(f"[P2P] Not available: {e}")
     except Exception as e:
@@ -4225,6 +4221,15 @@ if __name__ == "__main__":
         print(f"[GPU] Endpoint module not available: {e}")
     except Exception as e:
         print(f"[GPU] Endpoint init failed: {e}")
+
+    # Node Sync Protocol (Bounty #36) - decoupled from P2P init
+    try:
+        from node.rustchain_sync_endpoints import register_sync_endpoints
+        register_sync_endpoints(app, DB_PATH, ADMIN_KEY)
+    except ImportError as e:
+        print(f"[Sync] Not available: {e}")
+    except Exception as e:
+        print(f"[Sync] Init failed: {e}")
     print("=" * 70)
     print("RustChain v2.2.1 - SECURITY HARDENED - Mainnet Candidate")
     print("=" * 70)
