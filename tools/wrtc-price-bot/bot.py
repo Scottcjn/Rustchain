@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Author: @createkr (RayBot AI)
+# BCOS-Tier: L1
 import os
 import logging
 import requests
