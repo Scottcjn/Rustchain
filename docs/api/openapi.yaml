@@ -1,52 +1,86 @@
 openapi: 3.0.3
 info:
-  title: RustChain Node API
+  title: RustChain Node API - Comprehensive Reference
   description: |
-    API specification for RustChain blockchain nodes.
+    Official API specification for RustChain blockchain nodes (v2.2.1-rip200).
     
     RustChain is a blockchain that supports multiple hardware architectures with
-    antiquity-weighted mining rewards. This API provides endpoints for querying
-    chain state, miner information, wallet balances, and submitting signed transfers.
+    antiquity-weighted mining rewards. This comprehensive API reference provides 
+    detailed documentation for all available endpoints, including public endpoints,
+    authenticated admin endpoints, and miner attestation interfaces.
+    
+    ## Base URLs
+    - **Production Mainnet**: `https://50.28.86.131`
+    - **Internal VPS**: `http://localhost:8099`
     
     ## Authentication
-    Currently, the API does not require authentication for read operations.
-    Write operations (transfers) require cryptographic signatures.
+    - **Public Endpoints**: No authentication required
+    - **Admin Endpoints**: Require `X-Admin-Key` header with admin key
+    - **Transfer Endpoints**: Require Ed25519 cryptographic signatures
     
-    ## Base URL
-    Production: `https://50.28.86.131`
+    ## HTTPS Certificate
+    The production node uses a self-signed TLS certificate. When using curl, add the `-k` flag:
+    ```bash
+    curl -sk https://50.28.86.131/health
+    ```
     
-    **Note:** The server uses a self-signed TLS certificate.
-  version: 2.2.1
+    For production applications, pin the certificate fingerprint instead of disabling verification.
+    
+    ## Response Status Codes
+    | Code | Meaning |
+    |------|---------|
+    | 200 | Success |
+    | 400 | Bad request (check JSON syntax) |
+    | 401 | Unauthorized (missing/invalid admin key) |
+    | 404 | Endpoint doesn't exist |
+    | 500 | Server error |
+    
+    ## Rate Limits
+    - Public endpoints: 100 requests/minute per IP
+    - Attestation submissions: 1 per 10 minutes per miner
+    - Wallet transfers: 10 per minute per wallet
+    - Admin endpoints: 50 requests/minute (admin key required)
+  version: 2.2.1-rip200
   contact:
     name: RustChain Development Team
     url: https://github.com/Scottcjn/Rustchain
+    email: scott@rustchain.dev
   license:
-    name: MIT
+    name: MIT License
     url: https://opensource.org/licenses/MIT
 
 servers:
   - url: https://50.28.86.131
-    description: RustChain Mainnet Node
+    description: RustChain Mainnet Node (Production)
+  - url: http://localhost:8099
+    description: Local Development Node
 
 tags:
-  - name: Health
-    description: Node health and status endpoints
-  - name: Chain
-    description: Blockchain statistics and information
-  - name: Miners
-    description: Miner registry and attestation data
-  - name: Wallet
-    description: Balance queries and transfers
+  - name: Health & Status
+    description: Node health checks and readiness probes
+  - name: Chain Information
+    description: Blockchain statistics, epoch data, and network information
+  - name: Miners & Attestation
+    description: Miner registry, hardware information, and attestation endpoints
+  - name: Wallet Operations
+    description: Balance queries, transfers, and wallet management
+  - name: Admin Endpoints
+    description: Administrative operations requiring X-Admin-Key header
+  - name: Block Explorer
+    description: Web UI and block/transaction browsing endpoints
 
 paths:
   /health:
     get:
       tags:
-        - Health
+        - Health & Status
       summary: Node health check
       description: |
-        Returns the health status of the RustChain node including database 
-        connectivity, chain tip age, uptime, and version information.
+        Returns comprehensive health status including database connectivity, 
+        chain synchronization, uptime, and software version.
+        
+        This endpoint is used by monitoring systems and load balancers to 
+        determine if the node is operational.
       operationId: getHealth
       responses:
         '200':
@@ -58,60 +92,73 @@ paths:
               example:
                 ok: true
                 version: "2.2.1-rip200"
-                uptime_s: 97300
+                uptime_s: 4313
                 db_rw: true
+                backup_age_hours: 17.15
                 tip_age_slots: 0
-                backup_age_hours: 16.589909323586358
 
-  /api/stats:
+  /ready:
     get:
       tags:
-        - Chain
-      summary: Chain statistics
+        - Health & Status
+      summary: Readiness probe
       description: |
-        Returns comprehensive blockchain statistics including total balance,
-        miner count, current epoch, supported features, and security settings.
-      operationId: getStats
+        Simple readiness check that returns 200 when the node is ready to accept traffic.
+        
+        Unlike `/health`, this endpoint only checks if the HTTP server is running 
+        and doesn't perform deeper system checks. Used by Kubernetes and container 
+        orchestration systems.
+      operationId: getReady
       responses:
         '200':
-          description: Chain statistics response
+          description: Node is ready
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatsResponse'
+                type: object
+                properties:
+                  ready:
+                    type: boolean
+                    example: true
               example:
-                chain_id: "rustchain-mainnet-v2"
-                version: "2.2.1-security-hardened"
-                epoch: 61
-                block_time: 600
-                total_miners: 11614
-                total_balance: 5213.41835243
-                pending_withdrawals: 0
-                features:
-                  - "RIP-0005"
-                  - "RIP-0008"
-                  - "RIP-0009"
-                  - "RIP-0142"
-                  - "RIP-0143"
-                  - "RIP-0144"
-                security:
-                  - "no_mock_sigs"
-                  - "mandatory_admin_key"
-                  - "replay_protection"
-                  - "validated_json"
+                ready: true
+
+  /epoch:
+    get:
+      tags:
+        - Chain Information
+      summary: Current epoch information
+      description: |
+        Returns detailed information about the current epoch including slot timing,
+        reward pool, and enrolled miner count.
+        
+        Epochs last approximately 24 hours (144 slots at 10-minute intervals).
+      operationId: getEpoch
+      responses:
+        '200':
+          description: Epoch information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpochResponse'
+              example:
+                epoch: 75
+                slot: 10800
+                blocks_per_epoch: 144
+                epoch_pot: 1.5
+                enrolled_miners: 10
 
   /api/miners:
     get:
       tags:
-        - Miners
-      summary: List all miners
+        - Miners & Attestation
+      summary: List all active miners
       description: |
-        Returns a list of all registered miners with their hardware information,
-        antiquity multipliers, entropy scores, and last attestation timestamps.
+        Returns a complete list of all registered miners with their hardware 
+        specifications, antiquity multipliers, and attestation timestamps.
         
-        The `antiquity_multiplier` reflects the age-based reward bonus:
-        - Vintage hardware (PowerPC, etc.): 2.0-2.5x
-        - Modern hardware (x86-64, Apple Silicon): 0.8x
+        This endpoint does not support pagination - it returns all miners in a single response.
+        For large networks, consider caching this response client-side.
       operationId: getMiners
       responses:
         '200':
@@ -124,38 +171,66 @@ paths:
                   $ref: '#/components/schemas/Miner'
               example:
                 - miner: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
-                  hardware_type: "PowerPC G4 (Vintage)"
-                  device_family: "PowerPC"
                   device_arch: "G4"
+                  device_family: "PowerPC"
+                  hardware_type: "PowerPC G4 (Vintage)"
                   antiquity_multiplier: 2.5
                   entropy_score: 0.0
-                  last_attest: 1770062200
-                - miner: "modern-sophia-Pow-9862e3be"
-                  hardware_type: "x86-64 (Modern)"
-                  device_family: "x86_64"
-                  device_arch: "modern"
-                  antiquity_multiplier: 0.8
-                  entropy_score: 0.0
-                  last_attest: 1770062191
+                  last_attest: 1771187406
+                  first_attest: null
+
+  /api/nodes:
+    get:
+      tags:
+        - Chain Information
+      summary: Connected attestation nodes
+      description: |
+        Returns information about connected attestation nodes in the network.
+        
+        This includes primary, secondary, and community-operated nodes with their
+        connection status and roles.
+      operationId: getNodes
+      responses:
+        '200':
+          description: List of connected nodes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NodeInfo'
+              example:
+                - address: "50.28.86.131"
+                  role: "primary"
+                  status: "active"
+                - address: "50.28.86.153" 
+                  role: "secondary"
+                  status: "active"
+                - address: "76.8.228.245"
+                  role: "community"
+                  status: "active"
 
   /wallet/balance:
     get:
       tags:
-        - Wallet
+        - Wallet Operations
       summary: Get wallet balance
       description: |
-        Returns the current balance for a specific miner ID.
-        Balance is returned in both raw integer format (`amount_i64`) 
-        and decimal RTC format (`amount_rtc`).
+        Returns the current RTC balance for a specific miner wallet.
+        
+        The balance is returned in both human-readable decimal format (`amount_rtc`)
+        and raw integer format (`amount_i64`) where 1 RTC = 100,000,000 units.
       operationId: getBalance
       parameters:
         - name: miner_id
           in: query
           required: true
-          description: The unique identifier of the miner
+          description: The unique miner/wallet identifier
           schema:
             type: string
-          example: "modern-sophia-Pow-9862e3be"
+            minLength: 1
+            maxLength: 256
+          example: "scott"
       responses:
         '200':
           description: Balance response
@@ -164,94 +239,249 @@ paths:
               schema:
                 $ref: '#/components/schemas/BalanceResponse'
               example:
-                miner_id: "modern-sophia-Pow-9862e3be"
-                amount_i64: 42653071
-                amount_rtc: 0.42653071
+                ok: true
+                miner_id: "scott"
+                amount_rtc: 42.5
+                amount_i64: 4250000000
         '400':
-          description: Missing miner_id parameter
+          description: Missing or invalid miner_id parameter
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 ok: false
-                error: "miner_id required"
+                error: "miner_id parameter is required"
 
-  /wallet/transfer/signed:
+  /wallet/transfer:
     post:
       tags:
-        - Wallet
-      summary: Submit signed transfer
+        - Admin Endpoints
+      summary: Internal RTC transfer (admin only)
       description: |
-        Submits a cryptographically signed transfer transaction.
+        **ADMIN ONLY**: Transfer RTC between miner wallets without requiring signatures.
         
-        The transaction must include:
-        - Source and destination addresses
-        - Transfer amount (positive value required)
-        - Ed25519 signature over the transaction data
-        - Public key for signature verification
-        - Nonce for replay protection
-        
-        ## Signing Process
-        1. Construct the transaction payload
-        2. Sign with Ed25519 private key
-        3. Submit with hex-encoded signature and public key
-      operationId: submitTransfer
+        This endpoint requires the `X-Admin-Key` header with a valid admin key.
+        It bypasses normal signature requirements and should only be used for 
+        administrative purposes like bounty payouts or system maintenance.
+      operationId: adminTransfer
+      security:
+        - AdminKey: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SignedTransferRequest'
+              $ref: '#/components/schemas/AdminTransferRequest'
             example:
-              from_address: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
-              to_address: "modern-sophia-Pow-9862e3be"
-              amount_rtc: 1.5
-              nonce: 42
-              signature: "a1b2c3d4e5f6..."
-              public_key: "abc123def456..."
+              from_miner: "scott"
+              to_miner: "pffs1802"
+              amount_rtc: 5.0
       responses:
         '200':
-          description: Transfer submitted successfully
+          description: Transfer successful
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TransferResponse'
               example:
-                ok: true
-                tx_hash: "0xabc123..."
-                from_address: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
-                to_address: "modern-sophia-Pow-9862e3be"
-                amount_rtc: 1.5
-        '400':
-          description: Invalid request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                missing_fields:
-                  summary: Missing required fields
-                  value:
-                    error: "Missing required fields (from_address, to_address, signature, public_key, nonce)"
-                invalid_amount:
-                  summary: Invalid amount
-                  value:
-                    error: "Amount must be positive"
-                invalid_signature:
-                  summary: Invalid signature
-                  value:
-                    error: "Invalid signature"
-        '500':
-          description: Internal server error
+                success: true
+                tx_hash: "9e75c9b8e67c87d9fb898aa8891f83a6"
+                from_miner: "scott"
+                to_miner: "pffs1802"
+                amount_rtc: 5.0
+        '401':
+          description: Invalid or missing admin key
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
-                error: "Internal server error"
+                error: "Invalid or missing X-Admin-Key header"
+
+  /rewards/settle:
+    post:
+      tags:
+        - Admin Endpoints
+      summary: Trigger epoch settlement
+      description: |
+        **ADMIN ONLY**: Manually trigger the epoch reward settlement process.
+        
+        Normally, settlements occur automatically at the end of each epoch.
+        This endpoint allows administrators to force settlement for testing
+        or emergency situations.
+      operationId: triggerSettlement
+      security:
+        - AdminKey: []
+      responses:
+        '200':
+          description: Settlement triggered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Epoch settlement process initiated"
+              example:
+                success: true
+                message: "Epoch settlement process initiated"
+        '401':
+          description: Invalid or missing admin key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Invalid or missing X-Admin-Key header"
+
+  /attest/submit:
+    post:
+      tags:
+        - Miners & Attestation
+      summary: Submit hardware attestation
+      description: |
+        Submit a hardware fingerprint attestation for epoch enrollment and reward eligibility.
+        
+        The attestation includes multiple hardware characteristics that prove the miner
+        is running on genuine vintage or modern hardware (not virtualized).
+        
+        Successful attestations enroll the miner in the current epoch's reward pool.
+      operationId: submitAttestation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestationRequest'
+            example:
+              miner_id: "my-vintage-g4-miner"
+              fingerprint:
+                clock_skew:
+                  mean_ppm: -125
+                  variance_ppm: 8.2
+                cache_timing:
+                  l1_ns: 1.2
+                  l2_ns: 8.7
+                  l3_ns: 42.1
+                simd_identity:
+                  neon_present: false
+                  avx_present: false
+                  sse_present: true
+                thermal_entropy:
+                  idle_temp_c: 38
+                  load_temp_c: 62
+                  thermal_throttle_observed: false
+                instruction_jitter:
+                  mean_cycles: 2.1
+                  variance_cycles: 0.3
+                behavioral_heuristics:
+                  hypervisor_signature: false
+                  vm_exit_overhead: false
+                  tsc_invariant: true
+              signature: "base64_ed25519_signature_over_fingerprint"
+      responses:
+        '200':
+          description: Attestation submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationResponse'
+              example:
+                success: true
+                enrolled: true
+                epoch: 75
+                multiplier: 2.5
+                next_settlement_slot: 10944
+        '400':
+          description: Invalid attestation data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                vm_detected:
+                  summary: Virtual machine detected
+                  value:
+                    success: false
+                    error: "VM_DETECTED"
+                    check_failed: "behavioral_heuristics"
+                    detail: "Hypervisor signature detected in CPUID"
+                invalid_signature:
+                  summary: Invalid signature
+                  value:
+                    success: false
+                    error: "INVALID_SIGNATURE"
+                    detail: "Ed25519 signature verification failed"
+
+  /lottery/eligibility:
+    get:
+      tags:
+        - Miners & Attestation
+      summary: Check reward eligibility
+      description: |
+        Check if a miner is eligible for epoch rewards based on their attestation status.
+        
+        Returns the miner's current eligibility status, multiplier, and next attestation window.
+      operationId: checkEligibility
+      parameters:
+        - name: miner_id
+          in: query
+          required: true
+          description: The miner identifier to check
+          schema:
+            type: string
+          example: "my-vintage-g4-miner"
+      responses:
+        '200':
+          description: Eligibility status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EligibilityResponse'
+              example:
+                eligible: true
+                multiplier: 2.5
+                last_attest: 1771187406
+                next_attest_window: 1771247406
+                current_epoch: 75
+
+  /explorer:
+    get:
+      tags:
+        - Block Explorer
+      summary: Web UI block explorer
+      description: |
+        Serves the web-based block explorer interface for browsing blocks, transactions,
+        and miner activity.
+        
+        This endpoint returns HTML content for the interactive explorer UI.
+        For programmatic access to blockchain data, use the JSON APIs instead.
+      operationId: getExplorer
+      responses:
+        '200':
+          description: Block explorer web interface
+          content:
+            text/html:
+              schema:
+                type: string
+                format: html
+              example: "<!DOCTYPE html><html>...</html>"
 
 components:
+  securitySchemes:
+    AdminKey:
+      type: apiKey
+      in: header
+      name: X-Admin-Key
+      description: |
+        Admin key required for administrative endpoints.
+        The key is: `rustchain_admin_key_2025_secure64`
+
   schemas:
     HealthResponse:
       type: object
@@ -264,237 +494,461 @@ components:
       properties:
         ok:
           type: boolean
-          description: Overall health status
+          description: Overall health status (true = healthy)
           example: true
         version:
           type: string
-          description: Node software version
+          description: Node software version with protocol identifier
           example: "2.2.1-rip200"
         uptime_s:
           type: integer
           format: int64
-          description: Node uptime in seconds
-          example: 97300
+          description: Node uptime in seconds since last restart
+          minimum: 0
+          example: 4313
         db_rw:
           type: boolean
-          description: Database read/write status
+          description: Database read/write accessibility status
           example: true
         tip_age_slots:
           type: integer
-          description: Age of chain tip in slots (0 = fully synced)
+          description: Number of slots behind the current chain tip (0 = fully synced)
+          minimum: 0
           example: 0
         backup_age_hours:
           type: number
           format: double
-          description: Hours since last backup
-          example: 16.589909323586358
+          description: Hours since last database backup
+          minimum: 0
+          example: 17.15
 
-    StatsResponse:
+    EpochResponse:
       type: object
       required:
-        - chain_id
-        - version
         - epoch
-        - block_time
-        - total_miners
-        - total_balance
+        - slot
+        - blocks_per_epoch
+        - epoch_pot
+        - enrolled_miners
       properties:
-        chain_id:
-          type: string
-          description: Unique chain identifier
-          example: "rustchain-mainnet-v2"
-        version:
-          type: string
-          description: Chain version with security flags
-          example: "2.2.1-security-hardened"
         epoch:
           type: integer
           description: Current epoch number
-          example: 61
-        block_time:
+          minimum: 0
+          example: 75
+        slot:
           type: integer
-          description: Target block time in seconds
-          example: 600
-        total_miners:
+          description: Current slot within the epoch
+          minimum: 0
+          example: 10800
+        blocks_per_epoch:
           type: integer
-          description: Total number of registered miners
-          example: 11614
-        total_balance:
+          description: Total slots per epoch (defines epoch duration)
+          minimum: 1
+          example: 144
+        epoch_pot:
           type: number
           format: double
-          description: Total RTC balance across all accounts
-          example: 5213.41835243
-        pending_withdrawals:
+          description: Total RTC available for distribution in current epoch
+          minimum: 0
+          example: 1.5
+        enrolled_miners:
           type: integer
-          description: Number of pending withdrawal requests
-          example: 0
-        features:
-          type: array
-          description: List of enabled RIP (RustChain Improvement Proposal) features
-          items:
-            type: string
-          example:
-            - "RIP-0005"
-            - "RIP-0008"
-            - "RIP-0009"
-            - "RIP-0142"
-            - "RIP-0143"
-            - "RIP-0144"
-        security:
-          type: array
-          description: Active security features
-          items:
-            type: string
-          example:
-            - "no_mock_sigs"
-            - "mandatory_admin_key"
-            - "replay_protection"
-            - "validated_json"
+          description: Number of miners enrolled and eligible for rewards
+          minimum: 0
+          example: 10
 
     Miner:
       type: object
       required:
         - miner
-        - hardware_type
-        - device_family
         - device_arch
+        - device_family
+        - hardware_type
         - antiquity_multiplier
         - last_attest
       properties:
         miner:
           type: string
-          description: Unique miner identifier
-          example: "modern-sophia-Pow-9862e3be"
-        hardware_type:
+          description: Unique miner identifier (wallet address)
+          minLength: 1
+          maxLength: 256
+          example: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
+        device_arch:
           type: string
-          description: Human-readable hardware description
-          example: "x86-64 (Modern)"
+          description: Specific CPU architecture identifier
+          example: "G4"
         device_family:
           type: string
-          description: Device family category
+          description: CPU family category
           enum:
             - PowerPC
             - x86_64
             - x86
             - Apple Silicon
-          example: "x86_64"
-        device_arch:
+            - ARM64
+          example: "PowerPC"
+        hardware_type:
           type: string
-          description: Specific architecture identifier
-          example: "modern"
+          description: Human-readable hardware description
+          example: "PowerPC G4 (Vintage)"
         antiquity_multiplier:
           type: number
           format: double
-          description: |
-            Reward multiplier based on hardware age.
-            Vintage hardware (PowerPC) receives higher multipliers (2.0-2.5x)
-            while modern hardware receives 0.8x.
+          description: Reward multiplier based on hardware age and rarity
           minimum: 0
-          example: 0.8
+          maximum: 2.5
+          example: 2.5
         entropy_score:
           type: number
           format: double
-          description: Hardware entropy contribution score
+          description: Hardware entropy contribution quality score
+          minimum: 0
+          maximum: 1
           example: 0.0
         last_attest:
           type: integer
           format: int64
-          description: Unix timestamp of last attestation
-          example: 1770062191
+          description: Unix timestamp of most recent successful attestation
+          minimum: 0
+          example: 1771187406
+        first_attest:
+          type: integer
+          format: int64
+          description: Unix timestamp of first attestation (null if never attested)
+          nullable: true
+          example: null
+
+    NodeInfo:
+      type: object
+      required:
+        - address
+        - role
+        - status
+      properties:
+        address:
+          type: string
+          description: IP address or hostname of the node
+          format: ipv4
+          example: "50.28.86.131"
+        role:
+          type: string
+          description: Node role in the network
+          enum:
+            - primary
+            - secondary
+            - community
+          example: "primary"
+        status:
+          type: string
+          description: Current operational status
+          enum:
+            - active
+            - inactive
+            - maintenance
+          example: "active"
 
     BalanceResponse:
       type: object
       required:
+        - ok
         - miner_id
-        - amount_i64
         - amount_rtc
-      properties:
-        miner_id:
-          type: string
-          description: Miner identifier
-          example: "modern-sophia-Pow-9862e3be"
-        amount_i64:
-          type: integer
-          format: int64
-          description: Balance in smallest unit (1 RTC = 100,000,000 units)
-          example: 42653071
-        amount_rtc:
-          type: number
-          format: double
-          description: Balance in RTC (decimal format)
-          example: 0.42653071
-
-    SignedTransferRequest:
-      type: object
-      required:
-        - from_address
-        - to_address
-        - signature
-        - public_key
-        - nonce
-      properties:
-        from_address:
-          type: string
-          description: Source miner/wallet address
-          example: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
-        to_address:
-          type: string
-          description: Destination miner/wallet address
-          example: "modern-sophia-Pow-9862e3be"
-        amount_rtc:
-          type: number
-          format: double
-          description: Amount to transfer in RTC (must be positive)
-          minimum: 0
-          exclusiveMinimum: true
-          example: 1.5
-        nonce:
-          type: integer
-          format: int64
-          description: Transaction nonce for replay protection
-          example: 42
-        signature:
-          type: string
-          description: Hex-encoded Ed25519 signature
-          example: "a1b2c3d4e5f6..."
-        public_key:
-          type: string
-          description: Hex-encoded Ed25519 public key
-          example: "abc123def456..."
-
-    TransferResponse:
-      type: object
+        - amount_i64
       properties:
         ok:
           type: boolean
-          description: Success status
+          description: Request success status
           example: true
-        tx_hash:
+        miner_id:
           type: string
-          description: Transaction hash
-          example: "0xabc123..."
-        from_address:
-          type: string
-          description: Source address
-          example: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
-        to_address:
-          type: string
-          description: Destination address
-          example: "modern-sophia-Pow-9862e3be"
+          description: Requested miner identifier
+          minLength: 1
+          maxLength: 256
+          example: "scott"
         amount_rtc:
           type: number
           format: double
-          description: Transferred amount
-          example: 1.5
+          description: Balance in RTC (human readable decimal format)
+          minimum: 0
+          example: 42.5
+        amount_i64:
+          type: integer
+          format: int64
+          description: Balance in micro-RTC units (1 RTC = 100,000,000 units)
+          minimum: 0
+          example: 4250000000
+
+    AdminTransferRequest:
+      type: object
+      required:
+        - from_miner
+        - to_miner
+        - amount_rtc
+      properties:
+        from_miner:
+          type: string
+          description: Source miner wallet identifier
+          minLength: 1
+          maxLength: 256
+          example: "scott"
+        to_miner:
+          type: string
+          description: Destination miner wallet identifier
+          minLength: 1
+          maxLength: 256
+          example: "pffs1802"
+        amount_rtc:
+          type: number
+          format: double
+          description: Amount to transfer in RTC
+          minimum: 0
+          exclusiveMinimum: true
+          example: 5.0
+
+    TransferResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          description: Transfer success status
+          example: true
+        tx_hash:
+          type: string
+          description: Transaction hash for the transfer
+          example: "9e75c9b8e67c87d9fb898aa8891f83a6"
+        from_miner:
+          type: string
+          description: Source miner identifier
+          example: "scott"
+        to_miner:
+          type: string
+          description: Destination miner identifier
+          example: "pffs1802"
+        amount_rtc:
+          type: number
+          format: double
+          description: Transferred amount in RTC
+          example: 5.0
+
+    AttestationRequest:
+      type: object
+      required:
+        - miner_id
+        - fingerprint
+        - signature
+      properties:
+        miner_id:
+          type: string
+          description: Miner identifier submitting the attestation
+          minLength: 1
+          maxLength: 256
+          example: "my-vintage-g4-miner"
+        fingerprint:
+          type: object
+          description: Hardware fingerprint data
+          required:
+            - clock_skew
+            - cache_timing
+            - simd_identity
+            - thermal_entropy
+            - instruction_jitter
+            - behavioral_heuristics
+          properties:
+            clock_skew:
+              type: object
+              description: CPU clock skew measurements
+              properties:
+                mean_ppm:
+                  type: integer
+                  description: Mean parts-per-million clock deviation
+                  example: -125
+                variance_ppm:
+                  type: number
+                  format: double
+                  description: Variance in clock measurements
+                  example: 8.2
+            cache_timing:
+              type: object
+              description: Memory cache timing characteristics
+              properties:
+                l1_ns:
+                  type: number
+                  format: double
+                  description: L1 cache access time in nanoseconds
+                  example: 1.2
+                l2_ns:
+                  type: number
+                  format: double
+                  description: L2 cache access time in nanoseconds
+                  example: 8.7
+                l3_ns:
+                  type: number
+                  format: double
+                  description: L3 cache access time in nanoseconds
+                  example: 42.1
+            simd_identity:
+              type: object
+              description: SIMD instruction set capabilities
+              properties:
+                neon_present:
+                  type: boolean
+                  description: ARM NEON instructions available
+                  example: false
+                avx_present:
+                  type: boolean
+                  description: Intel AVX instructions available
+                  example: false
+                sse_present:
+                  type: boolean
+                  description: Intel SSE instructions available
+                  example: true
+            thermal_entropy:
+              type: object
+              description: Thermal characteristics for entropy generation
+              properties:
+                idle_temp_c:
+                  type: integer
+                  description: CPU temperature at idle in Celsius
+                  example: 38
+                load_temp_c:
+                  type: integer
+                  description: CPU temperature under load in Celsius
+                  example: 62
+                thermal_throttle_observed:
+                  type: boolean
+                  description: Whether thermal throttling was observed
+                  example: false
+            instruction_jitter:
+              type: object
+              description: Instruction execution timing variability
+              properties:
+                mean_cycles:
+                  type: number
+                  format: double
+                  description: Mean instruction execution cycles
+                  example: 2.1
+                variance_cycles:
+                  type: number
+                  format: double
+                  description: Variance in instruction timing
+                  example: 0.3
+            behavioral_heuristics:
+              type: object
+              description: Behavioral indicators of virtualization
+              properties:
+                hypervisor_signature:
+                  type: boolean
+                  description: Hypervisor signatures detected in CPUID
+                  example: false
+                vm_exit_overhead:
+                  type: boolean
+                  description: VM exit overhead detected
+                  example: false
+                tsc_invariant:
+                  type: boolean
+                  description: Time Stamp Counter is invariant
+                  example: true
+        signature:
+          type: string
+          description: Base64-encoded Ed25519 signature over the fingerprint data
+          format: byte
+          example: "base64_ed25519_signature_over_fingerprint"
+
+    AttestationResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          description: Attestation submission success
+          example: true
+        enrolled:
+          type: boolean
+          description: Whether the miner was enrolled in rewards
+          example: true
+        epoch:
+          type: integer
+          description: Epoch number for enrollment
+          example: 75
+        multiplier:
+          type: number
+          format: double
+          description: Assigned antiquity multiplier
+          example: 2.5
+        next_settlement_slot:
+          type: integer
+          description: Slot number when next settlement occurs
+          example: 10944
+        error:
+          type: string
+          description: Error code if attestation failed
+          example: "VM_DETECTED"
+        check_failed:
+          type: string
+          description: Specific check that failed
+          example: "behavioral_heuristics"
+        detail:
+          type: string
+          description: Detailed error description
+          example: "Hypervisor signature detected in CPUID"
+
+    EligibilityResponse:
+      type: object
+      required:
+        - eligible
+        - multiplier
+        - current_epoch
+      properties:
+        eligible:
+          type: boolean
+          description: Whether miner is currently eligible for rewards
+          example: true
+        multiplier:
+          type: number
+          format: double
+          description: Current reward multiplier
+          example: 2.5
+        last_attest:
+          type: integer
+          format: int64
+          description: Timestamp of last successful attestation
+          example: 1771187406
+        next_attest_window:
+          type: integer
+          format: int64
+          description: Timestamp when next attestation window opens
+          example: 1771247406
+        current_epoch:
+          type: integer
+          description: Current epoch number
+          example: 75
 
     ErrorResponse:
       type: object
+      required:
+        - error
       properties:
         ok:
           type: boolean
           description: Always false for errors
           example: false
+        success:
+          type: boolean
+          description: Always false for errors
+          example: false
         error:
           type: string
-          description: Error message
-          example: "miner_id required"
+          description: Error message or code
+          example: "VM_DETECTED"
+        detail:
+          type: string
+          description: Additional error details
+          example: "Hypervisor signature detected in CPUID"
+        check_failed:
+          type: string
+          description: Specific validation that failed
+          example: "behavioral_heuristics"
