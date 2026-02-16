@@ -666,6 +666,42 @@ def init_db():
             )
         """)
 
+        # GPU Render Protocol (Bounty #30)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS render_escrow (
+                id INTEGER PRIMARY KEY,
+                job_id TEXT UNIQUE NOT NULL,
+                job_type TEXT NOT NULL,
+                from_wallet TEXT NOT NULL,
+                to_wallet TEXT NOT NULL,
+                amount_rtc REAL NOT NULL,
+                status TEXT DEFAULT 'locked',
+                created_at INTEGER NOT NULL,
+                released_at INTEGER
+            )
+        """)
+
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS gpu_attestations (
+                miner_id TEXT PRIMARY KEY,
+                gpu_model TEXT,
+                vram_gb REAL,
+                cuda_version TEXT,
+                benchmark_score REAL,
+                price_render_minute REAL,
+                price_tts_1k_chars REAL,
+                price_stt_minute REAL,
+                price_llm_1k_tokens REAL,
+                supports_render INTEGER DEFAULT 1,
+                supports_tts INTEGER DEFAULT 0,
+                supports_stt INTEGER DEFAULT 0,
+                supports_llm INTEGER DEFAULT 0,
+                tts_models TEXT,
+                llm_models TEXT,
+                last_attestation INTEGER
+            )
+        """)
+
         # Governance tables (RIP-0142)
         c.execute("""
             CREATE TABLE IF NOT EXISTS gov_rotation_proposals(
@@ -4171,6 +4207,10 @@ if __name__ == "__main__":
     try:
         from rustchain_p2p_init import init_p2p
         p2p_node = init_p2p(app, DB_PATH)
+
+        # New: GPU Render Protocol (Bounty #30)
+        from node.gpu_render_endpoints import register_gpu_render_endpoints
+        register_gpu_render_endpoints(app, DB_PATH, ADMIN_KEY)
     except ImportError as e:
         print(f"[P2P] Not available: {e}")
     except Exception as e:
