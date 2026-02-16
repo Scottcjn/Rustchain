@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Author: @createkr (RayBot AI)
+# BCOS-Tier: L1
 import time
 from flask import request, jsonify
 from node.rustchain_sync import RustChainSyncManager
