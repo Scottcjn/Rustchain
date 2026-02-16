@@ -1,0 +1,48 @@
+services:
+  rustchain:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rustchain-node
+    env_file:
+      - .env
+    environment:
+      RUSTCHAIN_DB_PATH: ${RUSTCHAIN_DB_PATH:-/data/rustchain_v2.db}
+      RC_ADMIN_KEY: ${RC_ADMIN_KEY}
+    volumes:
+      - rustchain_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8099/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: rustchain-nginx
+    depends_on:
+      rustchain:
+        condition: service_healthy
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./deploy/nginx/entrypoint.sh:/entrypoint.sh:ro
+      - rustchain_tls:/etc/nginx/certs
+    command: ["/bin/sh", "/entrypoint.sh"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  rustchain_data:
+  rustchain_tls:
