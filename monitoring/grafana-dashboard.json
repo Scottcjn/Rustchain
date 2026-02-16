@@ -1,0 +1,201 @@
+{
+  "dashboard": {
+    "title": "RustChain Network Monitor",
+    "uid": "rustchain-network",
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Node Health",
+        "type": "stat",
+        "targets": [{"expr": "rustchain_node_health", "refId": "A"}],
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+        "options": {
+          "reduceOptions": {"values": false, "calcs": ["lastNotNull"]},
+          "colorMode": "background",
+          "graphMode": "none",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 1, "color": "green"}
+              ]
+            },
+            "mappings": [
+              {"type": "value", "value": "1", "text": "Healthy"},
+              {"type": "value", "value": "0", "text": "Unhealthy"}
+            ]
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Active Miners",
+        "type": "stat",
+        "targets": [{"expr": "rustchain_active_miners", "refId": "A"}],
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+        "options": {
+          "reduceOptions": {"values": false, "calcs": ["lastNotNull"]},
+          "colorMode": "value",
+          "graphMode": "area",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 5, "color": "yellow"},
+                {"value": 10, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Current Epoch",
+        "type": "stat",
+        "targets": [{"expr": "rustchain_epoch_number", "refId": "A"}],
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+        "options": {
+          "reduceOptions": {"values": false, "calcs": ["lastNotNull"]},
+          "colorMode": "none",
+          "graphMode": "none",
+          "textMode": "value"
+        }
+      },
+      {
+        "id": 4,
+        "title": "Epoch Pot (RTC)",
+        "type": "stat",
+        "targets": [{"expr": "rustchain_epoch_pot", "refId": "A"}],
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+        "options": {
+          "reduceOptions": {"values": false, "calcs": ["lastNotNull"]},
+          "colorMode": "value",
+          "graphMode": "none",
+          "textMode": "value"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "decimals": 2
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Active Miners (24h)",
+        "type": "graph",
+        "targets": [{"expr": "rustchain_active_miners", "refId": "A", "legendFormat": "Active Miners"}],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+        "xaxis": {"mode": "time", "show": true},
+        "yaxis": {"show": true, "min": 0},
+        "legend": {"show": true}
+      },
+      {
+        "id": 6,
+        "title": "RTC Total Supply",
+        "type": "graph",
+        "targets": [{"expr": "rustchain_total_supply_rtc", "refId": "A", "legendFormat": "Total Supply"}],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+        "xaxis": {"mode": "time", "show": true},
+        "yaxis": {"show": true, "min": 0},
+        "legend": {"show": true}
+      },
+      {
+        "id": 7,
+        "title": "Miners by Hardware Type",
+        "type": "piechart",
+        "targets": [{"expr": "rustchain_miners_by_hardware", "refId": "A", "legendFormat": "{{hardware_type}}"}],
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 12},
+        "options": {
+          "legend": {"displayMode": "list", "placement": "right"},
+          "pieType": "pie"
+        }
+      },
+      {
+        "id": 8,
+        "title": "Miners by Architecture",
+        "type": "piechart",
+        "targets": [{"expr": "rustchain_miners_by_arch", "refId": "A", "legendFormat": "{{arch}}"}],
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 12},
+        "options": {
+          "legend": {"displayMode": "list", "placement": "right"},
+          "pieType": "pie"
+        }
+      },
+      {
+        "id": 9,
+        "title": "Average Antiquity Multiplier",
+        "type": "gauge",
+        "targets": [{"expr": "rustchain_avg_antiquity_multiplier", "refId": "A"}],
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 12},
+        "options": {
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 1.0, "color": "green"},
+                {"value": 2.0, "color": "yellow"},
+                {"value": 3.0, "color": "orange"}
+              ]
+            },
+            "min": 1.0,
+            "max": 5.0
+          }
+        }
+      },
+      {
+        "id": 10,
+        "title": "Node Uptime",
+        "type": "graph",
+        "targets": [{"expr": "rustchain_node_uptime_seconds", "refId": "A", "legendFormat": "Uptime"}],
+        "gridPos": {"h": 6, "w": 12, "x": 0, "y": 20},
+        "xaxis": {"mode": "time", "show": true},
+        "yaxis": {"show": true, "format": "s", "min": 0},
+        "legend": {"show": true}
+      },
+      {
+        "id": 11,
+        "title": "Scrape Duration",
+        "type": "graph",
+        "targets": [{"expr": "rustchain_scrape_duration_seconds", "refId": "A", "legendFormat": "Scrape Time"}],
+        "gridPos": {"h": 6, "w": 12, "x": 12, "y": 20},
+        "xaxis": {"mode": "time", "show": true},
+        "yaxis": {"show": true, "format": "s", "min": 0},
+        "legend": {"show": true},
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"params": [5], "type": "gt"},
+              "operator": {"type": "and"},
+              "query": {"params": ["A", "5m", "now"]},
+              "reducer": {"params": [], "type": "avg"},
+              "type": "query"
+            }
+          ],
+          "executionErrorState": "alerting",
+          "frequency": "1m",
+          "handler": 1,
+          "name": "Slow Scrape Alert",
+          "noDataState": "no_data",
+          "notifications": []
+        }
+      }
+    ]
+  }
+}
