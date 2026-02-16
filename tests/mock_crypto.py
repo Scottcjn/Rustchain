@@ -28,7 +28,8 @@ def blake2b256_hex(data):
 
 def address_from_public_key(pubkey_bytes):
     # Returns a mock address format 'RTC...'
-    return f"RTC{hashlib.md5(pubkey_bytes).hexdigest()[:10]}"
+    # Bandit B324: explicitly mark md5 as non-security use in test-only address mock
+    return f"RTC{hashlib.md5(pubkey_bytes, usedforsecurity=False).hexdigest()[:10]}"
 
 def generate_wallet_keypair():
     import secrets
