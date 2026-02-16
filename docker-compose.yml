@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  rustchain-node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rustchain-node
+    restart: unless-stopped
+    environment:
+      - RUSTCHAIN_HOME=/rustchain
+      - RUSTCHAIN_DB=/rustchain/data/rustchain_v2.db
+      - DOWNLOAD_DIR=/rustchain/downloads
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Persistent storage for SQLite database
+      - rustchain-data:/rustchain/data
+      # Downloads directory
+      - rustchain-downloads:/rustchain/downloads
+      # Optional: mount local config
+      # - ./config:/app/config:ro
+    ports:
+      # Expose dashboard port (for direct access without nginx)
+      - "8099:8099"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8099/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - rustchain-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: rustchain-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Nginx configuration
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # SSL certificates (optional - create these first)
+      # - ./ssl/cert.pem:/etc/nginx/ssl/cert.pem:ro
+      # - ./ssl/key.pem:/etc/nginx/ssl/key.pem:ro
+    depends_on:
+      rustchain-node:
+        condition: service_healthy
+    networks:
+      - rustchain-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+volumes:
+  # Named volumes for data persistence
+  rustchain-data:
+    driver: local
+  rustchain-downloads:
+    driver: local
+
+networks:
+  rustchain-net:
+    driver: bridge
