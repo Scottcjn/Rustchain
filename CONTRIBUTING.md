@@ -1,1 +1,0 @@
-# Contributing Guide\n## Setup\n`\.bash\ngit clone https://github.com/Scottcjn/Rustchain.git\ncd Rustchain\npip install -e .\n`\(
