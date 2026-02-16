@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Network Status</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .last-updated {
+            text-align: center;
+            color: white;
+            opacity: 0.8;
+            margin-bottom: 30px;
+            font-size: 0.9rem;
+        }
+        
+        .nodes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .node-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .node-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+        }
+        
+        .node-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .node-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .status-indicator {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-green {
+            background: #10b981;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+        }
+        
+        .status-yellow {
+            background: #f59e0b;
+            box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+        }
+        
+        .status-red {
+            background: #ef4444;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.6;
+            }
+        }
+        
+        .metrics {
+            display: grid;
+            gap: 12px;
+        }
+        
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        
+        .metric:last-child {
+            border-bottom: none;
+        }
+        
+        .metric-label {
+            color: #6b7280;
+            font-size: 0.9rem;
+        }
+        
+        .metric-value {
+            font-weight: 600;
+            color: #111827;
+        }
+        
+        .response-time {
+            color: #10b981;
+        }
+        
+        .response-time.slow {
+            color: #f59e0b;
+        }
+        
+        .response-time.down {
+            color: #ef4444;
+        }
+        
+        .uptime-chart {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 20px;
+        }
+        
+        .chart-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .uptime-bars {
+            display: flex;
+            gap: 2px;
+            height: 60px;
+            margin-bottom: 10px;
+        }
+        
+        .uptime-bar {
+            flex: 1;
+            background: #e5e7eb;
+            border-radius: 2px;
+            position: relative;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .uptime-bar:hover {
+            transform: scaleY(1.1);
+        }
+        
+        .uptime-bar.healthy {
+            background: #10b981;
+        }
+        
+        .uptime-bar.degraded {
+            background: #f59e0b;
+        }
+        
+        .uptime-bar.down {
+            background: #ef4444;
+        }
+        
+        .legend {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            font-size: 0.85rem;
+            color: #6b7280;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        
+        footer {
+            text-align: center;
+            color: white;
+            opacity: 0.8;
+            margin-top: 40px;
+            font-size: 0.9rem;
+        }
+        
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.8rem;
+            }
+            
+            .nodes-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⛓️ RustChain Network Status</h1>
+            <p class="subtitle">Real-time health monitoring of all RustChain nodes</p>
+        </header>
+        
+        <div class="last-updated" id="lastUpdated">
+            Last updated: Loading...
+        </div>
+        
+        <div class="nodes-grid" id="nodesGrid">
+            <!-- Nodes will be injected here -->
+        </div>
+        
+        <div class="uptime-chart">
+            <div class="chart-title">24-Hour Uptime History</div>
+            <div class="uptime-bars" id="uptimeBars">
+                <!-- 24 bars for 24 hours -->
+            </div>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-dot" style="background: #10b981;"></div>
+                    <span>Healthy</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-dot" style="background: #f59e0b;"></div>
+                    <span>Degraded (>2s)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-dot" style="background: #ef4444;"></div>
+                    <span>Down</span>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>🔄 Auto-refresh every 60 seconds | Built for <a href="https://github.com/Scottcjn/Rustchain" style="color: white; text-decoration: underline;">RustChain</a></p>
+        </footer>
+    </div>
+    
+    <script>
+        const NODES = [
+            {
+                name: 'Primary Node',
+                url: 'https://50.28.86.131/health',
+                description: 'Main consensus node'
+            },
+            {
+                name: 'Ergo Anchor',
+                url: 'https://50.28.86.153/health',
+                description: 'Blockchain anchor'
+            },
+            {
+                name: 'External Node',
+                url: 'http://76.8.228.245:8099/health',
+                description: 'Community-hosted'
+            }
+        ];
+        
+        const POLL_INTERVAL = 60000; // 60 seconds
+        const HISTORY_KEY = 'rustchain_status_history';
+        
+        // Load history from localStorage
+        function loadHistory() {
+            try {
+                const data = localStorage.getItem(HISTORY_KEY);
+                return data ? JSON.parse(data) : [];
+            } catch {
+                return [];
+            }
+        }
+        
+        // Save history to localStorage
+        function saveHistory(history) {
+            try {
+                // Keep last 24 hours (24 entries)
+                const trimmed = history.slice(-24);
+                localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+            } catch (e) {
+                console.error('Failed to save history:', e);
+            }
+        }
+        
+        // Fetch node health with timeout
+        async function fetchNodeHealth(node) {
+            const startTime = Date.now();
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 5000);
+                
+                const response = await fetch(node.url, {
+                    signal: controller.signal,
+                    mode: 'cors'
+                });
+                
+                clearTimeout(timeout);
+                const responseTime = Date.now() - startTime;
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                return {
+                    status: 'healthy',
+                    responseTime,
+                    data
+                };
+            } catch (error) {
+                const responseTime = Date.now() - startTime;
+                return {
+                    status: 'down',
+                    responseTime,
+                    error: error.message
+                };
+            }
+        }
+        
+        // Determine status class
+        function getStatusClass(status, responseTime) {
+            if (status === 'down') return 'red';
+            if (responseTime > 2000) return 'yellow';
+            return 'green';
+        }
+        
+        // Format uptime
+        function formatUptime(seconds) {
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            
+            if (days > 0) return `${days}d ${hours}h`;
+            if (hours > 0) return `${hours}h ${minutes}m`;
+            return `${minutes}m`;
+        }
+        
+        // Render node card
+        function renderNodeCard(node, health) {
+            const statusClass = getStatusClass(health.status, health.responseTime);
+            const responseTimeClass = health.responseTime > 2000 ? 'slow' : (health.status === 'down' ? 'down' : '');
+            
+            return `
+                <div class="node-card">
+                    <div class="node-header">
+                        <div>
+                            <div class="node-title">${node.name}</div>
+                            <div style="color: #6b7280; font-size: 0.85rem; margin-top: 4px;">${node.description}</div>
+                        </div>
+                        <div class="status-indicator status-${statusClass}"></div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric">
+                            <span class="metric-label">Status</span>
+                            <span class="metric-value">${health.status === 'healthy' ? '✅ Healthy' : '❌ Down'}</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Response Time</span>
+                            <span class="metric-value response-time ${responseTimeClass}">${health.responseTime}ms</span>
+                        </div>
+                        ${health.data ? `
+                        <div class="metric">
+                            <span class="metric-label">Version</span>
+                            <span class="metric-value">${health.data.version || 'N/A'}</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Uptime</span>
+                            <span class="metric-value">${health.data.uptime_s ? formatUptime(health.data.uptime_s) : 'N/A'}</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Database</span>
+                            <span class="metric-value">${health.data.db_rw ? '✅ R/W' : '❌ Unavailable'}</span>
+                        </div>
+                        ` : `
+                        <div class="metric">
+                            <span class="metric-label">Error</span>
+                            <span class="metric-value" style="color: #ef4444;">${health.error || 'Timeout'}</span>
+                        </div>
+                        `}
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Render uptime bars
+        function renderUptimeBars(history) {
+            const barsContainer = document.getElementById('uptimeBars');
+            barsContainer.innerHTML = '';
+            
+            // Fill with placeholder bars if less than 24 entries
+            const bars = Array(24).fill(null);
+            history.slice(-24).forEach((entry, index) => {
+                bars[bars.length - 24 + index] = entry;
+            });
+            
+            bars.forEach((entry, index) => {
+                const bar = document.createElement('div');
+                bar.className = 'uptime-bar';
+                
+                if (entry) {
+                    const avgResponseTime = entry.nodes.reduce((sum, n) => sum + n.responseTime, 0) / entry.nodes.length;
+                    const anyDown = entry.nodes.some(n => n.status === 'down');
+                    
+                    if (anyDown) {
+                        bar.classList.add('down');
+                    } else if (avgResponseTime > 2000) {
+                        bar.classList.add('degraded');
+                    } else {
+                        bar.classList.add('healthy');
+                    }
+                    
+                    bar.title = `${new Date(entry.timestamp).toLocaleTimeString()} - Avg: ${Math.round(avgResponseTime)}ms`;
+                }
+                
+                barsContainer.appendChild(bar);
+            });
+        }
+        
+        // Poll all nodes
+        async function pollNodes() {
+            document.getElementById('lastUpdated').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+            
+            const results = await Promise.all(
+                NODES.map(async (node) => {
+                    const health = await fetchNodeHealth(node);
+                    return { node, health };
+                })
+            );
+            
+            // Render node cards
+            const nodesGrid = document.getElementById('nodesGrid');
+            nodesGrid.innerHTML = results.map(({ node, health }) => renderNodeCard(node, health)).join('');
+            
+            // Save to history
+            const history = loadHistory();
+            history.push({
+                timestamp: Date.now(),
+                nodes: results.map(r => ({
+                    name: r.node.name,
+                    status: r.health.status,
+                    responseTime: r.health.responseTime
+                }))
+            });
+            saveHistory(history);
+            
+            // Render uptime bars
+            renderUptimeBars(history);
+        }
+        
+        // Initial poll
+        pollNodes();
+        
+        // Set up auto-refresh
+        setInterval(pollNodes, POLL_INTERVAL);
+    </script>
+</body>
+</html>
