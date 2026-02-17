@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  rustchain-node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rustchain-node
+    restart: unless-stopped
+    ports:
+      - "8099:8099"
+    volumes:
+      - ./data:/app/data
+      - ./node:/app/node:ro
+    environment:
+      - RUSTCHAIN_DB_PATH=/app/data/rustchain_v2.db
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+    networks:
+      - rustchain-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8099/api/stats', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  nginx:
+    image: nginx:alpine
+    container_name: rustchain-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/logs:/var/log/nginx
+    depends_on:
+      rustchain-node:
+        condition: service_healthy
+    networks:
+      - rustchain-network
+
+networks:
+  rustchain-network:
+    driver: bridge
+
+volumes:
+  rustchain-data:
