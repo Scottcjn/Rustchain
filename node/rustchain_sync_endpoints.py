@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: MIT
 # Author: @createkr (RayBot AI)
 # BCOS-Tier: L1
+import hashlib
+import hmac
+import os
 import time
 from flask import request, jsonify
 from node.rustchain_sync import RustChainSyncManager
@@ -17,6 +20,12 @@ def register_sync_endpoints(app, db_path, admin_key):
     PEER_TTL_SEC = 3600
     MAX_PEERS_TRACKED = 2000
 
+    SYNC_SIGNATURE_SECRET = os.getenv("RC_SYNC_SHARED_SECRET", admin_key)
+    SIGNATURE_MAX_SKEW_SEC = 300
+    NONCE_TTL_SEC = 600
+    MAX_NONCES_TRACKED = 10000
+    seen_nonces = {}  # nonce -> first_seen_ts
+
     def _cleanup_peer_history(now: float):
         stale = [k for k, ts in last_sync_times.items() if (now - ts) > PEER_TTL_SEC]
         for k in stale:
@@ -28,6 +37,54 @@ def register_sync_endpoints(app, db_path, admin_key):
             drop_n = len(last_sync_times) - MAX_PEERS_TRACKED
             for k, _ in oldest[:drop_n]:
                 last_sync_times.pop(k, None)
+
+    def _cleanup_nonces(now: float):
+        stale = [n for n, ts in seen_nonces.items() if (now - ts) > NONCE_TTL_SEC]
+        for n in stale:
+            seen_nonces.pop(n, None)
+
+        if len(seen_nonces) > MAX_NONCES_TRACKED:
+            oldest = sorted(seen_nonces.items(), key=lambda kv: kv[1])
+            drop_n = len(seen_nonces) - MAX_NONCES_TRACKED
+            for n, _ in oldest[:drop_n]:
+                seen_nonces.pop(n, None)
+
+    def _verify_sync_signature(peer_id: str, now: float):
+        if not SYNC_SIGNATURE_SECRET:
+            return False, "Signature secret not configured"
+
+        ts_raw = request.headers.get("X-Sync-Timestamp")
+        nonce = request.headers.get("X-Sync-Nonce")
+        signature = request.headers.get("X-Sync-Signature")
+
+        if not ts_raw or not nonce or not signature:
+            return False, "Missing sync signature headers"
+
+        try:
+            ts_int = int(ts_raw)
+        except (TypeError, ValueError):
+            return False, "Invalid timestamp"
+
+        if abs(now - ts_int) > SIGNATURE_MAX_SKEW_SEC:
+            return False, "Timestamp skew too large"
+
+        if nonce in seen_nonces:
+            return False, "Replay detected"
+
+        body = request.get_data(cache=True) or b""
+        body_hash = hashlib.sha256(body).hexdigest()
+        signing_payload = f"{peer_id}\n{ts_int}\n{nonce}\n{body_hash}".encode("utf-8")
+        expected = hmac.new(
+            SYNC_SIGNATURE_SECRET.encode("utf-8"),
+            signing_payload,
+            hashlib.sha256,
+        ).hexdigest()
+
+        if not hmac.compare_digest(signature, expected):
+            return False, "Invalid signature"
+
+        seen_nonces[nonce] = now
+        return True, None
 
     def require_admin(f):
         from functools import wraps
@@ -47,6 +104,7 @@ def register_sync_endpoints(app, db_path, admin_key):
         """Returns the current Merkle root and table hashes."""
         now = time.time()
         _cleanup_peer_history(now)
+        _cleanup_nonces(now)
         status = sync_manager.get_sync_status()
         status["peer_sync_history"] = last_sync_times
         return jsonify(status)
@@ -99,6 +157,11 @@ def register_sync_endpoints(app, db_path, admin_key):
 
         now = time.time()
         _cleanup_peer_history(now)
+        _cleanup_nonces(now)
+
+        ok, err = _verify_sync_signature(peer_id, now)
+        if not ok:
+            return jsonify({"error": err}), 401
 
         # Rate limiting: Max 1 sync per minute per peer
         if peer_id in last_sync_times and (now - last_sync_times[peer_id] < RATE_LIMIT_WINDOW_SEC):
