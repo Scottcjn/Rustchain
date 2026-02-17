@@ -22,6 +22,7 @@
 - **Primary Node**: `https://50.28.86.131`
 - **Explorer**: `https://50.28.86.131/explorer`
 - **Health Check**: `curl -sk https://50.28.86.131/health`
+- **Network Status Page**: `docs/network-status.html` (GitHub Pages-hostable status dashboard)
 
 ## Current Stats
 

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>RustChain Network Status</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #0d1117; color: #e6edf3; }
+      .wrap { max-width: 1100px; margin: 0 auto; padding: 20px; }
+      h1 { margin: 0 0 8px; font-size: 26px; }
+      .sub { color: #8b949e; margin-bottom: 20px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+      .card { border: 1px solid #30363d; border-radius: 12px; padding: 14px; background: #161b22; }
+      .row { display: flex; justify-content: space-between; margin: 7px 0; font-size: 14px; }
+      .status { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
+      .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+      .g { background: #3fb950; }
+      .y { background: #d29922; }
+      .r { background: #f85149; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .small { color: #8b949e; font-size: 12px; }
+      canvas { width: 100%; height: 110px; background: #0d1117; border: 1px solid #30363d; border-radius: 10px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>RustChain Network Status</h1>
+      <div class="sub" id="last">Polling every 60s…</div>
+      <div class="grid" id="cards"></div>
+      <h3 style="margin:20px 0 8px">Response Time (recent)</h3>
+      <canvas id="chart" width="1080" height="140"></canvas>
+      <div class="small">Green = healthy, Yellow = slow (>2s), Red = down. Uptime windows are computed from local history in your browser.</div>
+    </div>
+
+    <script>
+      const nodes = [
+        { name: 'Node 1 (Primary)', url: 'https://50.28.86.131' },
+        { name: 'Node 2 (Ergo Anchor)', url: 'https://50.28.86.153' },
+        { name: 'Node 3 (External)', url: 'http://76.8.228.245:8099' },
+      ]
+
+      const storeKey = 'rustchain_status_history_v1'
+      const pollMs = 60_000
+      const history = JSON.parse(localStorage.getItem(storeKey) || '{}')
+      for (const n of nodes) history[n.name] ||= []
+
+      function trim(samples, ms = 31 * 24 * 3600_000) {
+        const cutoff = Date.now() - ms
+        return samples.filter((s) => s.t >= cutoff)
+      }
+
+      function uptime(samples, hours) {
+        const cutoff = Date.now() - hours * 3600_000
+        const s = samples.filter((x) => x.t >= cutoff)
+        if (!s.length) return 'n/a'
+        const ok = s.filter((x) => x.state !== 'red').length
+        return `${((ok / s.length) * 100).toFixed(1)}%`
+      }
+
+      function stateFrom(lat, ok) {
+        if (!ok || lat == null) return 'red'
+        if (lat > 2000) return 'yellow'
+        return 'green'
+      }
+
+      async function probe(node) {
+        const started = performance.now()
+        let health = null
+        let epoch = null
+        let ok = false
+
+        try {
+          const h = await fetch(`${node.url}/health`, { cache: 'no-store' })
+          if (h.ok) {
+            health = await h.json()
+            ok = !!health.ok
+          }
+        } catch (_) {}
+
+        try {
+          const e = await fetch(`${node.url}/epoch`, { cache: 'no-store' })
+          if (e.ok) epoch = await e.json()
+        } catch (_) {}
+
+        const latency = Math.round(performance.now() - started)
+        const state = stateFrom(latency, ok)
+        const sample = {
+          t: Date.now(),
+          latency,
+          state,
+          ok,
+          epoch: epoch?.epoch ?? null,
+          miners: epoch?.enrolled_miners ?? null,
+          tipSlots: health?.tip_age_slots ?? null,
+        }
+
+        history[node.name].push(sample)
+        history[node.name] = trim(history[node.name])
+        return sample
+      }
+
+      function card(node, s) {
+        const dot = s.state === 'green' ? 'g' : s.state === 'yellow' ? 'y' : 'r'
+        const statusText = s.state === 'green' ? 'Healthy' : s.state === 'yellow' ? 'Slow' : 'Down'
+        const samples = history[node.name]
+        return `
+          <div class="card">
+            <div class="status"><span class="dot ${dot}"></span>${node.name} — ${statusText}</div>
+            <div class="row"><span>URL</span><span class="mono">${node.url}</span></div>
+            <div class="row"><span>Response</span><span>${s.latency} ms</span></div>
+            <div class="row"><span>Uptime (24h / 7d / 30d)</span><span>${uptime(samples,24)} / ${uptime(samples,24*7)} / ${uptime(samples,24*30)}</span></div>
+            <div class="row"><span>Current epoch</span><span>${s.epoch ?? 'n/a'}</span></div>
+            <div class="row"><span>Active miners</span><span>${s.miners ?? 'n/a'}</span></div>
+            <div class="row"><span>Last block age (slots)</span><span>${s.tipSlots ?? 'n/a'}</span></div>
+          </div>
+        `
+      }
+
+      function drawChart() {
+        const cv = document.getElementById('chart')
+        const ctx = cv.getContext('2d')
+        ctx.clearRect(0,0,cv.width,cv.height)
+        const colors = ['#58a6ff','#3fb950','#d29922']
+        const all = nodes.flatMap((n) => history[n.name].slice(-60).map((x) => x.latency))
+        const max = Math.max(2500, ...all, 1)
+
+        nodes.forEach((n, idx) => {
+          const arr = history[n.name].slice(-60)
+          if (!arr.length) return
+          ctx.beginPath()
+          ctx.strokeStyle = colors[idx]
+          ctx.lineWidth = 2
+          arr.forEach((p, i) => {
+            const x = (i / 59) * (cv.width - 20) + 10
+            const y = cv.height - (p.latency / max) * (cv.height - 20) - 10
+            if (i === 0) ctx.moveTo(x, y)
+            else ctx.lineTo(x, y)
+          })
+          ctx.stroke()
+        })
+      }
+
+      async function tick() {
+        const samples = await Promise.all(nodes.map(probe))
+        localStorage.setItem(storeKey, JSON.stringify(history))
+        document.getElementById('cards').innerHTML = nodes.map((n, i) => card(n, samples[i])).join('')
+        drawChart()
+        document.getElementById('last').textContent = `Last updated: ${new Date().toLocaleString()} (polling every 60s)`
+      }
+
+      tick()
+      setInterval(tick, pollMs)
+    </script>
+  </body>
+</html>
