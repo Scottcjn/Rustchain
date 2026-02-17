@@ -89,7 +89,7 @@ jobs:
         run: |
           . .venv-bcos/bin/activate
           mkdir -p artifacts
-          python -m cyclonedx_py environment --format json -o artifacts/sbom_environment.json
+          python -m cyclonedx_py environment --output-format JSON -o artifacts/sbom_environment.json
 
       - name: Generate dependency license report
         run: |
