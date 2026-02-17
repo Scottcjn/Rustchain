@@ -28,7 +28,7 @@ def blake2b256_hex(data):
 
 def address_from_public_key(pubkey_bytes):
     # Returns a mock address format 'RTC...'
-    return f"RTC{hashlib.md5(pubkey_bytes).hexdigest()[:10]}"
+    return f"RTC{hashlib.sha256(pubkey_bytes).hexdigest()[:10]}"
 
 def generate_wallet_keypair():
     import secrets
