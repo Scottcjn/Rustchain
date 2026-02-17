@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hardware Requirements | RustChain Compatible Systems</title>
+  <meta name="description" "content="Complete guide to RustChain hardware requirements, antiquity multipliers, and compatible vintage systems. PowerPC G4 earns 2.5x rewards.">
+  <meta name="keywords" content="RustChain hardware, antiquity multipliers, PowerPC mining, vintage hardware compatibility, silicon stratigraphy, hardware requirements">
+  <meta name="author" content="Elyan Labs">
+  <meta name="robots" content="index, follow">
+  <meta name="language" content="English">
+  
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://rustchain.org/docs/hardware.html">
+  
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://rustchain.org/docs/hardware.html">
+  <meta property="og:title" content="Hardware Requirements | RustChain Compatible Systems">
+  <meta property="og:description" content="Complete guide to RustChain hardware requirements and antiquity multipliers for vintage mining systems.">
+  <meta property="og:image" content="https://rustchain.org/elyan_logo.png">
+  <meta property="og:site_name" content="RustChain">
+  
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image">
+  <meta property="twitter:url" content="https://rustchain.org/docs/hardware.html">
+  <meta property="twitter:title" content="Hardware Requirements | RustChain Compatible Systems">
+  <meta property="twitter:description" content="Complete guide to RustChain hardware requirements and antiquity multipliers for vintage mining systems.">
+  <meta property="twitter:image" content="https://rustchain.org/elyan_logo.png">
+  
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "Hardware Requirements | RustChain Compatible Systems",
+    "description": "Complete guide to RustChain hardware requirements, antiquity multipliers, and compatible vintage systems. PowerPC G4 earns 2.5x rewards.",
+    "url": "https://rustchain.org/docs/hardware.html",
+    "datePublished": "2026-02-18",
+    "author": {
+      "@type": "Organization",
+      "name": "Elyan Labs",
+      "url": "https://rustchain.org"
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": "Elyan Labs",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://rustchain.org/elyan_logo.png"
+      }
+    },
+    "mainEntityOfPage": {
+      "@type": "WebPage",
+      "@id": "https://rustchain.org/docs/hardware.html"
+    }
+  }
+  </script>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --border: #1e1e2e;
+      --text: #e0e0e8;
+      --dim: #8888a0;
+      --accent: #6c5ce7;
+      --accent2: #00cec9;
+      --warn: #fdcb6e;
+      --fire: #ff6b35;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace; background: var(--bg); color: var(--text); line-height: 1.7; }
+    a { color: var(--accent2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .hero {
+      padding: 60px 20px 40px;
+      text-align: center;
+      background: linear-gradient(135deg, #0a0a1a 0%, #1a0a2e 50%, #0a1a1e 100%);
+      border-bottom: 1px solid var(--border);
+    }
+    .hero img { max-height: 80px; margin-bottom: 16px; }
+    .hero h1 { font-size: 3em; margin-bottom: 10px; }
+    .hero h1 span { color: var(--accent); }
+    .hero p { color: var(--dim); font-size: 1.1em; max-width: 600px; margin: 0 auto; }
+
+    .marquee-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 0;
+      color: var(--fire);
+      font-size: 0.95em;
+      overflow: hidden;
+    }
+    .marquee-bar marquee { font-weight: bold; }
+
+    .nav {
+      display: flex; justify-content: center; gap: 20px;
+      padding: 16px; background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .nav a {
+      color: var(--text); padding: 8px 16px;
+      border: 1px solid var(--border); border-radius: 6px;
+      transition: all 0.2s;
+    }
+    .nav a:hover { background: var(--accent); color: white; text-decoration: none; border-color: var(--accent); }
+
+    .container { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 30px; margin-bottom: 24px;
+    }
+    .card h2 { color: var(--accent2); margin-bottom: 12px; font-size: 1.4em; }
+    .card h3 { color: var(--accent); margin: 16px 0 8px; }
+    .card p { color: var(--dim); margin-bottom: 12px; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+
+    .hardware-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      background: #080810;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .hardware-table th,
+    .hardware-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .hardware-table th {
+      background: rgba(108, 92, 231, 0.15);
+      color: var(--accent);
+      font-weight: bold;
+    }
+    .hardware-table tr:hover {
+      background: rgba(0, 206, 201, 0.05);
+    }
+
+    pre {
+      background: #080810; padding: 16px; border-radius: 8px;
+      overflow-x: auto; margin: 12px 0; border: 1px solid var(--border);
+      color: var(--text); font-size: 0.85em;
+    }
+    code { background: rgba(108, 92, 231, 0.15); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+
+    .tag {
+      display: inline-block; padding: 4px 10px; border-radius: 20px;
+      font-size: 0.8em; margin: 2px;
+      background: rgba(108, 92, 231, 0.15); color: var(--accent);
+      border: 1px solid rgba(108, 92, 231, 0.3);
+    }
+    .tag.green { background: rgba(0, 206, 201, 0.15); color: var(--accent2); border-color: rgba(0, 206, 201, 0.3); }
+    .tag.yellow { background: rgba(253, 203, 110, 0.15); color: var(--warn); border-color: rgba(253, 203, 110, 0.3); }
+    .tag.fire { background: rgba(255, 107, 53, 0.15); color: var(--fire); border-color: rgba(255, 107, 53, 0.3); }
+
+    footer {
+      text-align: center; padding: 40px 20px;
+      border-top: 1px solid var(--border); color: var(--dim);
+    }
+    footer a { color: var(--accent); }
+
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 2em; }
+      .nav { gap: 8px; }
+      .nav a { padding: 6px 10px; font-size: 0.85em; }
+      .hardware-table { font-size: 0.8em; }
+      .hardware-table th,
+      .hardware-table td { padding: 8px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="hero">
+    <img src="elyan_logo.png" alt="Elyan Labs Logo">
+    <h1><span>Hardware</span> Requirements</h1>
+    <p>Compatible systems and antiquity multiplier guide</p>
+  </div>
+
+  <div class="marquee-bar">
+    <marquee behavior="scroll" direction="left" scrollamount="10">
+      PowerPC G4 earns 2.5x. Real hardware only. No VMs allowed.
+    </marquee>
+  </div>
+
+  <nav class="nav">
+    <a href="index.html">Home</a>
+    <a href="about.html">About</a>
+    <a href="mining.html">Mining</a>
+    <a href="tokenomics.html">Tokenomics</a>
+    <a href="hardware.html">Hardware</a>
+    <a href="https://scottcjn.github.io/elyan-labs-site/">Elyan Labs</a>
+  </nav>
+
+  <div class="container">
+
+    <!-- Antiquity Multipliers -->
+    <div class="card">
+      <h2>Antiquity Multiplier System</h2>
+      <p>RustChain's <strong style="color:var(--warn);">antiquity multiplier</strong> system rewards vintage hardware with higher RTC payouts based on historical significance, rarity, and preservation value. This creates economic incentives to maintain and restore vintage computing systems rather than discarding them as e-waste.</p>
+      
+      <table class="hardware-table">
+        <thead>
+          <tr>
+            <th>Architecture</th>
+            <th>Multiplier</th>
+            <th>Era</th>
+            <th>Examples</th>
+            <th>Reward Rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>PowerPC G4</strong></td>
+            <td><span class="tag fire">2.5x</span></td>
+            <td>2003</td>
+            <td>PowerBook G4, iMac G4</td>
+            <td>Highest</td>
+          </tr>
+          <tr>
+            <td><strong>PowerPC G5</strong></td>
+            <td><span class="tag fire">2.0x</span></td>
+            <td>2004</td>
+            <td>PowerMac G5, iMac G5</td>
+            <td>Very High</td>
+          </tr>
+          <tr>
+            <td><strong>PowerPC G3</strong></td>
+            <td><span class="tag yellow">1.8x</span></td>
+            <td>1999</td>
+            <td>iMac G3, PowerBook G3</td>
+            <td>High</td>
+          </tr>
+          <tr>
+            <td><strong>Pentium 4</strong></td>
+            <td><span class="tag yellow">1.5x</span></td>
+            <td>2000</td>
+            <td>Dell Dimension, HP Pavilion</td>
+            <td>Above Average</td>
+          </tr>
+          <tr>
+            <td><strong>Retro x86</strong></td>
+            <td><span class="tag green">1.4x</span></td>
+            <td>pre-2010</td>
+            <td>Core 2 Duo, early Core i-series</td>
+            <td>Average</td>
+          </tr>
+          <tr>
+            <td><strong>Apple Silicon</strong></td>
+            <td><span class="tag green">1.2x</span></td>
+            <td>2020+</td>
+            <td>M1/M2/M3 MacBook Air/Pro</td>
+            <td>Slightly Above</td>
+          </tr>
+          <tr>
+            <td><strong>Modern x86_64</strong></td>
+            <td><span class="tag">1.0x</span></td>
+            <td>current</td>
+            <td>Ryzen, modern Core i-series</td>
+            <td>Baseline</td>
+          </tr>
+          <tr>
+            <td><strong>Virtual Machines</strong></td>
+            <td><span class="tag" style="background: rgba(255, 107, 53, 0.15); color: var(--fire);">0.0x</span></td>
+            <td>any</td>
+            <td>All VMs, containers, cloud</td>
+            <td>Blocked</td>
+          </tr>
+        </tbody>
+      </table>
+      
+      <h3>Multiplier Rationale</h3>
+      <p>The multiplier system reflects several factors that determine hardware value to the RustChain network:</p>
+      
+      <p><span class="tag fire">Historical Significance</span> Systems that represent pivotal moments in computing history receive higher multipliers. PowerPC G4 systems, for example, represent Apple's innovative design era and transition period.</p>
+      
+      <p><span class="tag fire">Rarity and Preservation Value</span> As hardware becomes scarcer due to age and attrition, multipliers increase to incentivize preservation of remaining examples.</p>
+      
+      <p><span class="tag yellow">Maintenance Complexity</span> Older hardware requires more expertise, replacement parts, and maintenance effort. Higher multipliers compensate for these operational challenges.</p>
+      
+      <p><span class="tag green">Energy Efficiency</span> Despite their age, many vintage systems consume less power than modern mining rigs, providing environmental benefits.</p>
+    </div>
+
+    <!-- Top Tier Hardware -->
+    <div class="card">
+      <h2>Top Tier Mining Systems (2.0x - 2.5x)</h2>
+      <p>These systems offer the highest rewards and represent the pinnacle of vintage hardware mining. They're highly sought after by RustChain miners for their exceptional multiplier values and historical significance.</p>
+      
+      <h3>PowerPC G4 Systems (2.5x Multiplier)</h3>
+      <p><strong style="color:var(--accent2);">PowerPC G4</strong> systems represent the golden age of Apple's PowerPC era and offer the highest mining rewards at 2.5x. These systems combine historical significance, relative availability, and excellent mining performance.</p>
+      
+      <h4>Recommended PowerPC G4 Models:</h4>
+      <pre>✓ PowerBook G4 (Titanium) - 1.0-1.5 GHz, excellent portability
+✓ PowerBook G4 (Aluminum) - 1.33-1.67 GHz, final G4 laptops
+✓ iMac G4 "Lampshade" - 700-1250 MHz, iconic design
+✓ PowerMac G4 (Quicksilver) - 733-1250 MHz, expandable tower
+✓ PowerMac G4 (MDD) - 867-1250 MHz, dual processor options
+✓ eMac G4 - 700-1.42 GHz, educational market systems
+✓ iBook G4 - 800-1.42 GHz, consumer laptops</pre>
+      
+      <h4>PowerPC G4 Mining Tips:</h4>
+      <ul style="color: var(--dim); margin-left: 20px;">
+        <li>Upgrade to maximum RAM (typically 1-2 GB) for better performance</li>
+        <li>Replace thermal paste and clean heatsinks for 24/7 operation</li>
+        <li>Install lightweight Linux distributions (Ubuntu 16.04, Debian 8)</li>
+        <li>Consider SSD upgrades for faster boot times and lower power consumption</li>
+        <li>Monitor temperatures carefully - G4 systems can run hot under load</li>
+      </ul>
+      
+      <h3>PowerPC G5 Systems (2.0x Multiplier)</h3>
+      <p><strong style="color:var(--accent2);">PowerPC G5</strong> systems were Apple's final PowerPC generation before the Intel transition. They offer excellent mining performance at 2.0x and represent the pinnacle of PowerPC technology.</p>
+      
+      <h4>Recommended PowerPC G5 Models:</h4>
+      <pre>✓ PowerMac G5 (Late 2004) - 1.8-2.5 GHz, liquid cooling options
+✓ PowerMac G5 (Early 2005) - 1.8-2.7 GHz, improved cooling
+✓ PowerMac G5 (Late 2005) - 2.0-2.7 GHz, final G5 models
+✓ iMac G5 (ALS) - 1.8-2.1 GHz, ambient light sensor
+✓ iMac G5 (iSight) - 1.9-2.1 GHz, built-in iSight camera
+✓ Xserve G5 - 2.0-2.3 GHz, server-grade hardware</pre>
+      
+      <h4>PowerPC G5 Considerations:</h4>
+      <ul style="color: var(--dim); margin-left: 20px;">
+        <li>Liquid-cooled models require careful maintenance and leak checking</li>
+        <li>Power consumption is higher than G4 systems but still reasonable</li>
+        <li>64-bit architecture provides better performance for attestation algorithms</li>
+        <li>Maximum RAM typically 4-8 GB, excellent for mining operations</li>
+        <li>Loud fans - consider noise reduction for 24/7 home mining</li>
+      </ul>
+    </div>
+
+    <!-- Mid Tier Hardware -->
+    <div class="card">
+      <h2>Mid Tier Systems (1.4x - 1.8x)</h2>
+      <p>These systems offer solid mining rewards with good availability and reasonable maintenance requirements. They represent excellent entry points for vintage hardware mining.</p>
+      
+      <h3>PowerPC G3 Systems (1.8x Multiplier)</h3>
+      <p><strong style="color:var(--accent2);">PowerPC G3</strong> systems launched Apple's comeback in the late 1990s with colorful, innovative designs. They offer strong mining rewards at 1.8x and are widely available.</p>
+      
+      <h4>Recommended PowerPC G3 Models:</h4>
+      <pre>✓ iMac G3 (Bondi Blue) - 233 MHz, original colorful iMac
+✓ iMac G3 (Colors) - 233-333 MHz, fruit colors
+✓ iMac G3 (Slot Loading) - 350-600 MHz, improved design
+✓ PowerBook G3 (Wallstreet) - 233-300 MHz, professional laptop
+✓ PowerBook G3 (Lombard) - 333-400 MHz, thinner design
+✓ PowerBook G3 (Pismo) - 400-500 MHz, FireWire support
+✓ PowerMac G3 (Blue & White) - 300-450 MHz, tower design
+✓ PowerMac G3 (Graphite) - 350-500 MHz, final G3 towers</pre>
+      
+      <h3>Pentium 4 Systems (1.5x Multiplier)</h3>
+      <p><strong style="color:var(--accent2);">Pentium 4</strong> systems dominated the early 2000s PC market and offer excellent mining accessibility at 1.5x. They're widely available and often free or very cheap.</p>
+      
+      <h4>Recommended Pentium 4 Models:</h4>
+      <pre>✓ Dell Dimension 2400/4600 - 2.0-2.8 GHz, business systems
+✓ HP Pavilion a000 series - 2.0-3.2 GHz, consumer desktops
+✓ Compaq Presario 6000 series - 1.8-2.8 GHz, budget systems
+✓ IBM ThinkCentre A50 - 2.0-2.8 GHz, corporate desktops
+✓ Gateway 500 series - 1.7-2.4 GHz, consumer systems
+✓ eMachines T series - 2.0-2.6 GHz, budget desktops</pre>
+      
+      <h4>Pentium 4 Mining Advantages:</h4>
+      <ul style="color: var(--dim); margin-left: 20px;">
+        <li>Extremely common and often free from recycling centers</li>
+        <li>Standard ATX components make repairs and upgrades easy</li>
+        <li>Good Linux compatibility with most distributions</li>
+        <li>Reasonable power consumption for 24/7 operation</li>
+        <li>Wide availability of replacement parts and documentation</li>
+      </ul>
+    </div>
+
+    <!-- Modern Hardware -->
+    <div class="card">
+      <h2>Modern Hardware (1.0x - 1.4x)</h2>
+      <p>While vintage hardware offers the highest rewards, modern systems can still mine effectively and provide good entry points for new miners. They offer better performance and reliability with lower maintenance requirements.</p>
+      
+      <h3>Retro x86 Systems (1.4x Multiplier)</h3>
+      <p><strong style="color:var(--accent2);">Retro x86</strong> systems from the pre-2010 era offer solid mining rewards at 1.4x. These systems represent the transition from early 2000s to modern computing.</p>
+      
+      <h4>Recommended Retro x86 Systems:</h4>
+      <pre>✓ Core 2 Duo systems (2006-2009) - 1.8-3.33 GHz, excellent value
+✓ Early Core i-series (2008-2010) - 2.66-3.2 GHz, 64-bit capable
+✓ AMD Athlon 64 X2 (2005-2009) - 2.0-3.2 GHz, good performance
+✓ Intel Core Duo (2006-2008) - 1.6-2.33 GHz, laptop processors
+✓ Pentium Dual-Core (2007-2010) - 1.6-3.2 GHz, budget options</pre>
+      
+      <h3>Apple Silicon (1.2x Multiplier)</h3>
+      <p><strong style="color:var(--accent2);">Apple Silicon</strong> Macs offer excellent efficiency and modern performance at 1.2x. While newer, they represent a significant architectural shift to ARM-based computing.</p>
+      
+      <h4>Recommended Apple Silicon Systems:</h4>
+      <pre>✓ MacBook Air M1 - 3.2 GHz, 8-core, excellent efficiency
+✓ MacBook Pro M1/M2 - 3.2-3.5 GHz, 8-10 core, professional
+✓ Mac mini M1/M2 - 3.2-3.5 GHz, compact desktop solution
+✓ iMac M1 - 3.2 GHz, all-in-one design
+✓ MacBook Air M2 - 3.5 GHz, improved performance
+✓ Mac Studio M1/M2 - 2.0-3.5 GHz, workstation class</pre>
+      
+      <h3>Modern x86_64 Systems (1.0x Multiplier)</h3>
+      <p><strong style="color:var(--accent2);">Modern x86_64</strong> systems provide baseline mining rewards at 1.0x but offer excellent performance, reliability, and availability.</p>
+      
+      <h4>Recommended Modern Systems:</h4>
+      <pre>✓ AMD Ryzen 3/5/7 (2017+) - 3.0-4.9 GHz, excellent value
+✓ Intel Core i3/i5/i7 (2015+) - 2.5-5.0 GHz, widely available
+✓ AMD EPYC (2017+) - 2.0-3.4 GHz, server-grade reliability
+✓ Intel Xeon (2015+) - 1.7-4.0 GHz, professional systems</pre>
+    </div>
+
+    <!-- Hardware Requirements -->
+    <div class="card">
+      <h2>Minimum System Requirements</h2>
+      <p>While RustChain can run on virtually any real hardware, certain minimum requirements ensure stable 24/7 mining operation and successful hardware attestation.</p>
+      
+      <h3>Basic Requirements</h3>
+      <pre>✓ Genuine physical CPU (no virtualization or containers)
+✓ Minimum 512 MB RAM (1 GB+ recommended)
+✓ 5 GB available storage space
+✓ Stable internet connection
+✓ Supported operating system (Linux, macOS, Windows)
+✓ Hardware attestation capability (see below)</pre>
+      
+      <h3>Operating System Support</h3>
+      <table class="hardware-table">
+        <thead>
+          <tr>
+            <th>OS</th>
+            <th>Minimum Version</th>
+            <th>Recommended Version</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Linux</strong></td>
+            <td>Kernel 2.6.32</td>
+            <td>Ubuntu 18.04+ / Debian 10+</td>
+            <td>Best compatibility, lightweight options</td>
+          </tr>
+          <tr>
+            <td><strong>macOS</strong></td>
+            <td>10.6 Snow Leopard</td>
+            <td>10.14 Mojave+ (Intel), 11.0+ (Apple Silicon)</td>
+            <td>Excellent for PowerPC and modern Macs</td>
+          </tr>
+          <tr>
+            <td><strong>Windows</strong></td>
+            <td>Windows XP</td>
+            <td>Windows 10/11</td>
+            <td>Limited legacy support, modern preferred</td>
+          </tr>
+        </tbody>
+      </table>
+      
+      <h3>Hardware Attestation Requirements</h3>
+      <p>RustChain's <strong style="color:var(--warn);">Proof-of-Attestation</strong> system requires hardware with specific characteristics:</p>
+      
+      <p><span class="tag green">CPU Timer Access</span> The system must provide access to high-resolution timers for clock-skew analysis. Most modern CPUs support this, but some very old systems may have limitations.</p>
+      
+      <p><span class="tag green">Cache Hierarchy</span> Multi-level cache (L1/L2/L3) is required for cache timing fingerprinting. Single-cache systems may have reduced attestation accuracy.</p>
+      
+      <p><span class="tag green">SIMD Instructions</span> Support for vector instructions (SSE, AVX, AltiVec, NEON) is required for SIMD identity testing. Most post-1999 processors include these.</p>
+      
+      <p><span class="tag green">Thermal Sensors</span> Access to CPU temperature sensors enables thermal drift entropy collection. Most systems support this, but some embedded systems may not.</p>
+      
+      <h3>Network Requirements</h3>
+      <pre>✓ Outbound HTTPS (port 443) to attestation nodes
+✓ Stable internet connection (minimum 1 Mbps)
+✓ DNS resolution for rustchain.org domains
+✓ No restrictive firewalls blocking outbound connections
+✓ Optional: Static IP for improved network stability</pre>
+    </div>
+
+    <!-- Hardware Optimization -->
+    <div class="card">
+      <h2>Hardware Optimization Tips</h2>
+      <p>Maximize your mining rewards and system stability with these hardware optimization techniques specifically tailored for vintage computing systems.</p>
+      
+      <h3>Thermal Management</h3>
+      <p>Proper thermal management is critical for 24/7 mining operations, especially with vintage hardware that may have degraded cooling systems.</p>
+      
+      <h4>Cooling System Maintenance:</h4>
+      <pre>✓ Clean all heatsinks and fans thoroughly with compressed air
+✓ Replace thermal paste every 2-3 years (use Arctic Silver 5 or similar)
+✓ Check fan bearings - replace noisy or failing fans
+✓ Ensure proper case ventilation and airflow paths
+✓ Consider aftermarket cooling for hot-running systems
+✓ Monitor temperatures during initial mining sessions</pre>
+      
+      <h4>Temperature Monitoring:</h4>
+      <ul style="color: var(--dim); margin-left: 20px;">
+        <li><strong>PowerPC G4/G5:</strong> Keep CPU below 80°C under load</li>
+        <li><strong>Pentium 4:</strong> Stay under 70°C for Prescott cores, 75°C for Northwood</li>
+        <li><strong>Core 2 Duo:</strong> Maintain below 75°C for optimal longevity</li>
+        <li><strong>Modern CPUs:</strong> Keep under 85°C (most have thermal throttling)</li>
+      </ul>
+      
+      <h3>Power Supply Optimization</h3>
+      <p>Stable power delivery is essential for reliable attestation and mining operations.</p>
+      
+      <h4>Power Supply Recommendations:</h4>
+      <pre>✓ Use quality power supplies with 80+ certification
+✓ Replace old PSUs (capacitors degrade after 5-7 years)
+✓ Ensure adequate wattage (add 20% margin for safety)
+✓ Consider UPS protection for all mining systems
+✓ Check voltage rails with monitoring software
+✓ Replace failing PSUs immediately to prevent hardware damage</pre>
+      
+      <h3>Storage Optimization</h3>
+      <p>Fast, reliable storage improves system responsiveness and reduces boot times for mining operations.</p>
+      
+      <h4>Storage Recommendations:</h4>
+      <pre>✓ Upgrade vintage systems to SSDs where possible
+✓ Use lightweight operating systems (minimal Linux distributions)
+✓ Disable unnecessary services and startup programs
+✓ Regular disk maintenance and cleanup
+✓ Consider compact flash or DOM storage for embedded systems
+✓ Backup mining configurations and wallet data regularly</pre>
+      
+      <h3>Memory Optimization</h3>
+      <p>Adequate RAM ensures smooth attestation processes and mining operation.</p>
+      
+      <h4>Memory Tips:</h4>
+      <ul style="color: var(--dim); margin-left: 20px;">
+        <li>Upgrade to maximum supported RAM for best performance</li>
+        <li>Use matching memory modules for dual-channel operation</li>
+        <li>Clean memory contacts with isopropyl alcohol if issues occur</li>
+        <li>Test memory with memtest86+ before extended mining sessions</li>
+        <li>Consider memory-mapped storage for systems with limited RAM</li>
+      </ul>
+    </div>
+
+    <!-- Troubleshooting -->
+    <div class="card">
+      <h2>Common Hardware Issues and Solutions</h2>
+      <p>Vintage hardware may present unique challenges during mining operations. Here are common issues and their solutions.</p>
+      
+      <h3>Attestation Failures</h3>
+      <p><span class="tag yellow">Clock-Skew Test Failures</span> Often caused by unstable power supplies or excessive background processes. Solutions:</p>
+      <pre>✓ Replace aging power supply with quality unit
+✓ Close unnecessary applications and services
+✓ Disable power management features that affect CPU timing
+✓ Check for failing capacitors on motherboard
+✓ Use dedicated mining OS installation</pre>
+      
+      <p><span class="tag yellow">Cache Timing Issues</span> May indicate overheating or degraded cache memory:</p>
+      <pre>✓ Improve cooling system and reduce temperatures
+✓ Test with different memory configurations
+✓ Update motherboard BIOS/firmware if available
+✓ Check for motherboard component degradation</pre>
+      
+      <h3>Hardware-Specific Issues</h3>
+      <p><span class="tag fire">PowerPC G4 Liquid Cooling</span> Some high-end G4 systems used liquid cooling that can fail:</p>
+      <pre>✓ Check coolant level and color regularly
+✓ Look for leaks around CPU and radiator
+✓ Replace coolant every 2-3 years
+✓ Consider air-cooling upgrades for reliability</pre>
+      
+      <p><span class="tag fire">Pentium 4 Prescott Heat</span> Prescott cores run extremely hot and require robust cooling:</p>
+      <pre>✓ Upgrade to aftermarket CPU cooler
+✓ Ensure case has excellent airflow
+✓ Monitor temperatures closely during mining
+✓ Consider undervolting if motherboard supports it</pre>
+      
+      <p><span class="tag fire">Capacitor Plague</span> Systems from 1999-2007 often have failing capacitors:</p>
+      <pre>✓ Inspect motherboard for bulging or leaking capacitors
+✓ Replace capacitors proactively to prevent failure
+✓ Use high-quality replacement capacitors (Panasonic, Rubycon)
+✓ Consider professional motherboard repair if needed</pre>
+      
+      <h3>Network Connectivity Issues</h3>
+      <p><span class="tag green">DNS Resolution Problems</span> Vintage systems may have outdated DNS configurations:</p>
+      <pre>✓ Use modern DNS servers (8.8.8.8, 1.1.1.1)
+✓ Update /etc/hosts file with rustchain.org IPs if needed
+✓ Check firewall settings blocking outbound connections
+✓ Verify network adapter drivers are current</pre>
+      
+      <h3>Performance Optimization</h3>
+      <p><span class="tag yellow">Slow Attestation</span> Older systems may take longer to complete attestation:</p>
+      <pre>✓ Be patient - attestation can take 5-10 minutes on vintage hardware
+✓ Close all unnecessary applications during attestation
+✓ Use lightweight operating systems optimized for old hardware
+✓ Consider hardware upgrades if attestation consistently fails</pre>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>Maintained by <a href="https://github.com/Scottcjn/Rustchain">Elyan Labs</a> &middot; Built with love and BIOS timestamps</p>
+    <p style="margin-top: 8px; font-size: 0.8em;">More dedicated compute than most colleges. $12K invested. $60K+ retail value.</p>
+  </footer>
+
+</body>
+</html>

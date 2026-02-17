@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tokenomics | RustChain (RTC) Economic Model</title>
+  <meta name="description" content="Explore RustChain's tokenomics: 1.5 RTC per epoch, antiquity multipliers, and sustainable economic model for vintage hardware mining.">
+  <meta name="keywords" content="RustChain tokenomics, RTC cryptocurrency, antiquity multipliers, vintage hardware rewards, Proof-of-Attestation economics, sustainable blockchain">
+  <meta name="author" content="Elyan Labs">
+  <meta name="robots" content="index, follow">
+  <meta name="language" content="English">
+  
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://rustchain.org/docs/tokenomics.html">
+  
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://rustchain.org/docs/tokenomics.html">
+  <meta property="og:title" content="Tokenomics | RustChain (RTC) Economic Model">
+  <meta property="og:description" content="Explore RustChain's sustainable economic model that rewards vintage hardware preservation through antiquity multipliers.">
+  <meta property="og:image" content="https://rustchain.org/elyan_logo.png">
+  <meta property="og:site_name" content="RustChain">
+  
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image">
+  <meta property="twitter:url" content="https://rustchain.org/docs/tokenomics.html">
+  <meta property="twitter:title" content="Tokenomics | RustChain (RTC) Economic Model">
+  <meta property="twitter:description" content="Explore RustChain's sustainable economic model that rewards vintage hardware preservation through antiquity multipliers.">
+  <meta property="twitter:image" content="https://rustchain.org/elyan_logo.png">
+  
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "Tokenomics | RustChain (RTC) Economic Model",
+    "description": "Explore RustChain's tokenomics: 1.5 RTC per epoch, antiquity multipliers, and sustainable economic model for vintage hardware mining.",
+    "url": "https://rustchain.org/docs/tokenomics.html",
+    "datePublished": "2026-02-18",
+    "author": {
+      "@type": "Organization",
+      "name": "Elyan Labs",
+      "url": "https://rustchain.org"
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": "Elyan Labs",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://rustchain.org/elyan_logo.png"
+      }
+    },
+    "mainEntityOfPage": {
+      "@type": "WebPage",
+      "@id": "https://rustchain.org/docs/tokenomics.html"
+    }
+  }
+  </script>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --border: #1e1e2e;
+      --text: #e0e0e8;
+      --dim: #8888a0;
+      --accent: #6c5ce7;
+      --accent2: #00cec9;
+      --warn: #fdcb6e;
+      --fire: #ff6b35;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace; background: var(--bg); color: var(--text); line-height: 1.7; }
+    a { color: var(--accent2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .hero {
+      padding: 60px 20px 40px;
+      text-align: center;
+      background: linear-gradient(135deg, #0a0a1a 0%, #1a0a2e 50%, #0a1a1e 100%);
+      border-bottom: 1px solid var(--border);
+    }
+    .hero img { max-height: 80px; margin-bottom: 16px; }
+    .hero h1 { font-size: 3em; margin-bottom: 10px; }
+    .hero h1 span { color: var(--accent); }
+    .hero p { color: var(--dim); font-size: 1.1em; max-width: 600px; margin: 0 auto; }
+
+    .marquee-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 0;
+      color: var(--fire);
+      font-size: 0.95em;
+      overflow: hidden;
+    }
+    .marquee-bar marquee { font-weight: bold; }
+
+    .nav {
+      display: flex; justify-content: center; gap: 20px;
+      padding: 16px; background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .nav a {
+      color: var(--text); padding: 8px 16px;
+      border: 1px solid var(--border); border-radius: 6px;
+      transition: all 0.2s;
+    }
+    .nav a:hover { background: var(--accent); color: white; text-decoration: none; border-color: var(--accent); }
+
+    .container { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 30px; margin-bottom: 24px;
+    }
+    .card h2 { color: var(--accent2); margin-bottom: 12px; font-size: 1.4em; }
+    .card h3 { color: var(--accent); margin: 16px 0 8px; }
+    .card p { color: var(--dim); margin-bottom: 12px; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+
+    .stat { text-align: center; padding: 20px; }
+    .stat .num { font-size: 2.5em; color: var(--accent); font-weight: bold; }
+    .stat .label { color: var(--dim); font-size: 0.9em; }
+
+    pre {
+      background: #080810; padding: 16px; border-radius: 8px;
+      overflow-x: auto; margin: 12px 0; border: 1px solid var(--border);
+      color: var(--text); font-size: 0.85em;
+    }
+    code { background: rgba(108, 92, 231, 0.15); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+
+    .tag {
+      display: inline-block; padding: 4px 10px; border-radius: 20px;
+      font-size: 0.8em; margin: 2px;
+      background: rgba(108, 92, 231, 0.15); color: var(--accent);
+      border: 1px solid rgba(108, 92, 231, 0.3);
+    }
+    .tag.green { background: rgba(0, 206, 201, 0.15); color: var(--accent2); border-color: rgba(0, 206, 201, 0.3); }
+    .tag.yellow { background: rgba(253, 203, 110, 0.15); color: var(--warn); border-color: rgba(253, 203, 110, 0.3); }
+    .tag.fire { background: rgba(255, 107, 53, 0.15); color: var(--fire); border-color: rgba(255, 107, 53, 0.3); }
+
+    footer {
+      text-align: center; padding: 40px 20px;
+      border-top: 1px solid var(--border); color: var(--dim);
+    }
+    footer a { color: var(--accent); }
+
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 2em; }
+      .nav { gap: 8px; }
+      .nav a { padding: 6px 10px; font-size: 0.85em; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="hero">
+    <img src="elyan_logo.png" alt="Elyan Labs Logo">
+    <h1><span>Tokenomics</span></h1>
+    <p>Sustainable economics for vintage hardware preservation</p>
+  </div>
+
+  <div class="marquee-bar">
+    <marquee behavior="scroll" direction="left" scrollamount="10">
+      1.5 RTC per epoch. Vintage hardware earns more. Real hardware only.
+    </marquee>
+  </div>
+
+  <nav class="nav">
+    <a href="index.html">Home</a>
+    <a href="about.html">About</a>
+    <a href="mining.html">Mining</a>
+    <a href="tokenomics.html">Tokenomics</a>
+    <a href="hardware.html">Hardware</a>
+    <a href="https://scottcjn.github.io/elyan-labs-site/">Elyan Labs</a>
+  </nav>
+
+  <div class="container">
+
+    <!-- Token Overview -->
+    <div class="card">
+      <h2>RTC Token Overview</h2>
+      <p><strong style="color:var(--warn);">RTC (RustChain Token)</strong> is the native cryptocurrency of the RustChain network, designed to reward genuine hardware participation and vintage computing preservation. Unlike traditional cryptocurrencies that reward computational waste or financial stake, RTC rewards authenticity, entropy, and the tangible history of computing hardware.</p>
+      
+      <div class="grid">
+        <div class="card stat">
+          <div class="num">1.5</div>
+          <div class="label">RTC per Epoch</div>
+        </div>
+        <div class="card stat">
+          <div class="num">10</div>
+          <div class="label">Minutes per Epoch</div>
+        </div>
+        <div class="card stat">
+          <div class="num">216</div>
+          <div class="label">RTC Daily Supply</div>
+        </div>
+        <div class="card stat">
+          <div class="num">78,840</div>
+          <div class="label">RTC Annual Supply</div>
+        </div>
+      </div>
+      
+      <h3>Key Economic Principles</h3>
+      <p>RustChain's tokenomics are built on three fundamental principles that differentiate it from traditional blockchain networks:</p>
+      
+      <p><span class="tag green">Hardware-Backed Value</span> Each RTC represents proof of real physical hardware participation, creating intrinsic value tied to tangible computing resources rather than speculative trading.</p>
+      
+      <p><span class="tag green">Vintage Preservation Incentives</span> Higher rewards for older hardware create economic incentives to maintain and restore vintage systems, preventing them from becoming e-waste.</p>
+      
+      <p><span class="tag green">Sustainable Distribution</span> Fixed supply growth of 1.5 RTC per epoch creates predictable inflation while avoiding the energy waste of proof-of-work systems.</p>
+    </div>
+
+    <!-- Reward Distribution -->
+    <div class="card">
+      <h2>Reward Distribution Mechanics</h2>
+      <p>RustChain distributes <strong style="color:var(--accent2);">1.5 RTC every 10 minutes</strong> among all active miners, with rewards weighted by hardware antiquity multipliers. This creates a fair distribution system where vintage hardware receives proportionally higher rewards for its historical significance and preservation value.</p>
+      
+      <h3>Epoch Reward Calculation</h3>
+      <p>The reward distribution follows a simple formula:</p>
+      
+      <pre>Reward = (1.5 RTC × Your_Multiplier) ÷ Total_Network_Multiplier</pre>
+      
+      <p>Where <code>Total_Network_Multiplier</code> is the sum of all active miners' antiquity multipliers. This ensures that rewards are always distributed proportionally, regardless of how many miners participate.</p>
+      
+      <h3>Example Distribution Scenarios</h3>
+      <p>With 8 active miners featuring different hardware types:</p>
+      
+      <pre>Miner                Hardware        Multiplier  RTC/Epoch  Daily RTC
+─────────────────────────────────────────────────────────────────────
+dual-g4-125          PowerPC G4      2.5x        0.2976     42.8
+g4-powerbook-115     PowerPC G4      2.5x        0.2976     42.8
+ppc_g5_130           PowerPC G5      2.0x        0.2381     34.3
+retro-x86            Pentium 4       1.5x        0.1786     25.7
+apple-silicon        M2 MacBook      1.2x        0.1429     20.6
+modern-1             Ryzen 5         1.0x        0.1191     17.1
+modern-2             Core i5         1.0x        0.1191     17.1
+sophia-nas           Xeon            1.0x        0.1191     17.1
+─────────────────────────────────────────────────────────────────────
+TOTALS               8 miners        12.7x       1.5000     216.0</pre>
+      
+      <h3>Network Effects on Rewards</h3>
+      <p>As more miners join the network, individual rewards decrease proportionally, but the total network value increases through greater decentralization and hardware preservation. This creates a sustainable growth model where:</p>
+      
+      <ul style="color: var(--dim); margin-left: 20px;">
+        <li>Early adopters with vintage hardware earn higher initial rewards</li>
+        <li>Network growth increases security and decentralization</li>
+        <li>More vintage hardware gets preserved and activated</li>
+        <li>RTC value increases through greater utility and network effects</li>
+      </ul>
+    </div>
+
+    <!-- Antiquity Multipliers -->
+    <div class="card">
+      <h2>Antiquity Multiplier System</h2>
+      <p>The <strong style="color:var(--warn);">antiquity multiplier</strong> system is the cornerstone of RustChain's tokenomics, creating economic incentives for vintage hardware preservation. This system rewards older hardware with higher multipliers, reflecting their historical significance, rarity, and preservation value.</p>
+      
+      <h3>Multiplier Tiers</h3>
+      <pre>Architecture           Multiplier   Era        Historical Significance
+─────────────────────────────────────────────────────────────────────
+PowerPC G4             2.5x         2003       Apple's final G4 generation
+PowerPC G5             2.0x         2004       Last PowerPC before Intel transition
+PowerPC G3             1.8x         1999       Colorful iMac era revival
+Pentium 4              1.5x         2000       Early 2000s Windows dominance
+Retro x86              1.4x         pre-2010   Core 2 Duo, early Core i-series
+Apple Silicon          1.2x         2020+      M1/M2/M3 ARM architecture
+Modern x86_64          1.0x         current    Current Ryzen, Core i-series
+Virtual Machines       0.0x         any        All VMs, containers, cloud instances</pre>
+      
+      <h3>Economic Rationale</h3>
+      <p>The multiplier system reflects several economic factors:</p>
+      
+      <p><span class="tag fire">Scarcity Value</span> Vintage hardware becomes increasingly rare as systems fail or are recycled. Higher multipliers compensate for this scarcity and encourage preservation.</p>
+      
+      <p><span class="tag fire">Maintenance Costs</span> Older hardware requires more maintenance, replacement parts, and expertise. Higher rewards offset these operational costs.</p>
+      
+      <p><span class="tag fire">Historical Significance</span> Certain architectures represent pivotal moments in computing history. PowerPC G4 systems, for example, represent Apple's transition period and innovative industrial design.</p>
+      
+      <p><span class="tag yellow">Energy Efficiency</span> Despite their age, many vintage systems are surprisingly energy-efficient compared to modern mining rigs, making them environmentally sustainable mining options.</p>
+      
+      <h3>Multiplier Decay Mechanism</h3>
+      <p>To maintain long-term sustainability, antiquity multipliers slowly decay over the network's lifetime. This prevents permanent reward advantages and encourages ongoing hardware preservation:</p>
+      
+      <pre>Year 0-2: 100% of base multiplier
+Year 2-4: 85% of base multiplier  
+Year 4-6: 70% of base multiplier
+Year 6-8: 55% of base multiplier
+Year 8+:   40% of base multiplier</pre>
+      
+      <p>This decay mechanism ensures that even the oldest hardware gradually normalizes while still providing preservation incentives during the critical early network growth phase.</p>
+    </div>
+
+    <!-- Supply Economics -->
+    <div class="card">
+      <h2>Supply and Inflation Dynamics</h2>
+      <p>RustChain employs a predictable supply model with fixed inflation, creating a stable monetary policy that contrasts sharply with the unpredictable supply dynamics of proof-of-work systems.</p>
+      
+      <h3>Supply Schedule</h3>
+      <pre>Time Period      RTC per Epoch    Epochs     Total RTC    Daily RTC
+─────────────────────────────────────────────────────────────────────
+Per Epoch        1.5 RTC          -          -            1.5
+Daily (144)      216 RTC          144        216          216
+Weekly (1008)    1,512 RTC        1,008      1,512        216
+Monthly (4320)   6,480 RTC        4,320      6,480        216
+Yearly (52560)   78,840 RTC       52,560     78,840       216</pre>
+      
+      <h3>Inflation Characteristics</h3>
+      <p>RustChain's inflation model has several unique characteristics:</p>
+      
+      <p><span class="tag green">Predictable Inflation</span> At 1.5 RTC per epoch, the annual inflation rate is approximately 78,840 RTC, regardless of network size or computing power.</p>
+      
+      <p><span class="tag green">Deflationary Pressure</span> As hardware fails or miners exit, their RTC becomes permanently locked or lost, creating natural deflationary pressure over time.</p>
+      
+      <p><span class="tag green">Utility-Driven Value</span> RTC value derives from its utility in network participation and hardware attestation, not just speculative trading.</p>
+      
+      <h3>Long-Term Supply Projections</h3>
+      <p>Over a 10-year period, RustChain's total supply would reach approximately 788,400 RTC, creating a relatively scarce cryptocurrency compared to major alternatives:</p>
+      
+      <pre>Year    Total Supply    Annual Inflation    Inflation Rate
+─────────────────────────────────────────────────────────────
+1       78,840          78,840              100%
+2       157,680         78,840              50%
+3       236,520         78,840              33%
+5       394,200         78,840              20%
+10      788,400         78,840              10%</pre>
+      
+      <p>This controlled supply growth ensures long-term value preservation while providing sufficient rewards for network security and hardware preservation.</p>
+    </div>
+
+    <!-- Utility and Use Cases -->
+    <div class="card">
+      <h2>RTC Utility and Use Cases</h2>
+      <p>Beyond mining rewards, RTC serves multiple utility functions within the RustChain ecosystem and broader computing preservation community.</p>
+      
+      <h3>Network Participation</h3>
+      <p><span class="tag green">Mining Stakes</span> While not required for mining, RTC can be staked to increase network participation rewards and governance voting power.</p>
+      
+      <p><span class="tag green">Transaction Fees</span> Network transactions require small RTC fees, creating ongoing demand for the token as network activity increases.</p>
+      
+      <p><span class="tag green">Attestation Services</span> Third-party services can charge RTC for hardware authentication and vintage hardware verification.</p>
+      
+      <h3>Preservation Economy</h3>
+      <p><span class="tag fire">Hardware Bounties</span> RTC funds bounty programs for rare hardware acquisition, restoration, and documentation projects.</p>
+      
+      <p><span class="tag fire">Museum Funding</span> Digital museums and preservation projects can accept RTC donations and grants for hardware acquisition and maintenance.</p>
+      
+      <p><span class="tag fire">Documentation Rewards</span> Contributors who create technical documentation, repair guides, and historical archives can earn RTC rewards.</p>
+      
+      <h3>External Integration</h3>
+      <p>RustChain is designed to integrate with broader cryptocurrency and computing ecosystems:</p>
+      
+      <pre>✓ Exchange listings for liquidity and price discovery
+✓ DeFi protocols for lending and borrowing against hardware value
+✓ NFT platforms for digital certificates of authenticity
+✓ Gaming platforms that reward vintage hardware usage
+✓ Educational platforms teaching computing history</pre>
+      
+      <h3>Economic Sustainability</h3>
+      <p>The RTC tokenomics model creates several sustainable economic mechanisms:</p>
+      
+      <ul style="color: var(--dim); margin-left: 20px;">
+        <li><strong>Hardware-Backed Value</strong> - Each RTC represents proof of real hardware, creating intrinsic value</li>
+        <li><strong>Preservation Incentives</strong> - Economic rewards keep vintage hardware operational</li>
+        <li><strong>Network Effects</strong> - More participants increase security and utility</li>
+        <li><strong>Environmental Benefits</strong> - Minimal energy consumption compared to alternatives</li>
+        <li><strong>Historical Value</strong> - Preserving computing history has cultural and educational value</li>
+      </ul>
+    </div>
+
+    <!-- Economic Comparison -->
+    <div class="card">
+      <h2>Economic Comparison with Traditional Models</h2>
+      <p>RustChain's tokenomics represent a fundamental departure from traditional cryptocurrency economic models, offering several advantages for sustainable growth and real-world utility.</p>
+      
+      <h3>Proof-of-Work Comparison</h3>
+      <pre>Aspect                Bitcoin (PoW)           RustChain (PoA)
+─────────────────────────────────────────────────────────────────────
+Energy Consumption    ~150 TWh annually       ~0.5 TWh annually
+Hardware Requirements Specialized ASICs      Any real hardware
+Centralization Risk   Mining pool dominance   Hardware diversity
+Environmental Impact  High carbon footprint   Minimal carbon footprint
+Hardware Waste        ASIC obsolescence      Hardware preservation
+Entry Barrier         $10,000+ equipment     $0-500 vintage hardware</pre>
+      
+      <h3>Proof-of-Stake Comparison</h3>
+      <pre>Aspect                Ethereum (PoS)          RustChain (PoA)
+─────────────────────────────────────────────────────────────────────
+Participation Cost    32 ETH (~$100,000)     Free hardware
+Wealth Concentration   Rich get richer        Hardware diversity
+Real-World Utility    Smart contracts only   Hardware preservation
+Security Model         Economic stakes        Hardware authenticity
+Network Effects       Financial ecosystem    Computing ecosystem</pre>
+      
+      <h3>Unique Economic Advantages</h3>
+      <p>RustChain's model offers several unique economic advantages:</p>
+      
+      <p><span class="tag fire">Tangible Asset Backing</span> Unlike purely digital cryptocurrencies, RTC is backed by physical hardware assets that have intrinsic value and utility.</p>
+      
+      <p><span class="tag fire">Positive Externalities</span> Mining RTC generates positive externalities through hardware preservation, e-waste reduction, and computing history education.</p>
+      
+      <p><span class="tag fire">Low Entry Barriers</span> Anyone with a computer can participate, making it truly decentralized and accessible regardless of financial status.</p>
+      
+      <p><span class="tag fire">Sustainable Growth</span> The model scales sustainably without increasing energy consumption or requiring specialized hardware investments.</p>
+      
+      <h3>Market Positioning</h3>
+      <p>RustChain occupies a unique position in the cryptocurrency market:</p>
+      
+      <ul style="color: var(--dim); margin-left: 20px;">
+        <li><strong>Niche Focus</strong> - Specialized in vintage computing and hardware preservation</li>
+        <li><strong>Ethical Mining</strong> - Environmentally sustainable with positive social impact</li>
+        <li><strong>Community-Driven</strong> - Built by and for computing enthusiasts and preservationists</li>
+        <li><strong>Innovation Leadership</strong> - Pioneer in hardware-authenticated consensus mechanisms</li>
+      </ul>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>Maintained by <a href="https://github.com/Scottcjn/Rustchain">Elyan Labs</a> &middot; Built with love and BIOS timestamps</p>
+    <p style="margin-top: 8px; font-size: 0.8em;">More dedicated compute than most colleges. $12K invested. $60K+ retail value.</p>
+  </footer>
+
+</body>
+</html>
