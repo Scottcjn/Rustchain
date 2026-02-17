@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <!-- SEO Meta Tags -->
+    <title>Hardware Guide — Supported Vintage Hardware and Multipliers</title>
+    <meta name="description" content="Complete guide to vintage hardware supported by RustChain mining. Hardware multipliers for PowerPC, 68K, SPARC, retro x86, and more.">
+    <meta name="keywords" content="RustChain hardware, vintage hardware mining, PowerPC G4 G5, 68K Macintosh, SPARC mining, retro x86, hardware multipliers">
+    <meta name="robots" content="index, follow">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Hardware Guide — Supported Vintage Hardware and Multipliers">
+    <meta property="og:description" content="Find your vintage hardware and see its mining multiplier on RustChain.">
+    <meta property="og:url" content="https://rustchain.org/hardware">
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://rustchain.org/hardware">
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="css/style.css">
+
+    <!-- JSON-LD -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": "RustChain Hardware Guide",
+      "description": "Complete guide to vintage hardware supported by RustChain with mining multipliers.",
+      "url": "https://rustchain.org/hardware"
+    }
+    </script>
+</head>
+<body>
+    <header>
+        <nav class="main-nav">
+            <div class="nav-container">
+                <a href="/" class="logo">RustChain</a>
+                <ul class="nav-menu">
+                    <li><a href="/about">About</a></li>
+                    <li><a href="/mining">Mining</a></li>
+                    <li><a href="/tokenomics">Tokenomics</a></li>
+                    <li><a href="/hardware" class="active">Hardware</a></li>
+                    <li><a href="/faq">FAQ</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <article class="content-page">
+            <h1>RustChain Hardware Guide</h1>
+
+            <p class="intro">
+                RustChain rewards vintage hardware mining through multipliers based on architecture,
+                age, and rarity. Older and rarer systems earn significantly more. Use this guide
+                to find your hardware and understand its mining potential.
+            </p>
+
+            <section class="section">
+                <h2>Hardware Multipliers</h2>
+                <p>
+                    Your mining reward is calculated based on your hardware multiplier:
+                </p>
+                <div class="formula">
+                    <code>
+                        reward = base_reward × hardware_multiplier × uptime_bonus
+                    </code>
+                </div>
+
+                <div class="hardware-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Hardware Type</th>
+                                <th>Specific Models</th>
+                                <th>Multiplier</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- 68K Macintosh -->
+                            <tr class="hardware-row excellent">
+                                <td><strong>68K Macintosh</strong></td>
+                                <td>Macintosh Plus, SE, II, LC, IIsi</td>
+                                <td><span class="multiplier excellent">3.0x</span></td>
+                                <td>Highest multiplier for authentic 68K systems</td>
+                            </tr>
+
+                            <!-- PowerPC -->
+                            <tr class="hardware-row excellent">
+                                <td><strong>PowerPC G4</strong></td>
+                                <td>Power Mac G4, iMac G4, eMac</td>
+                                <td><span class="multiplier excellent">2.5x</span></td>
+                                <td>AltiVec SIMD, excellent vintage choice</td>
+                            </tr>
+                            <tr class="hardware-row great">
+                                <td><strong>PowerPC G5</strong></td>
+                                <td>Power Mac G5, iMac G5</td>
+                                <td><span class="multiplier great">2.0x</span></td>
+                                <td>Last PowerPC Macs, very good</td>
+                            </tr>
+                            <tr class="hardware-row great">
+                                <td><strong>PowerPC G3</strong></td>
+                                <td>Power Mac G3, iMac G3</td>
+                                <td><span class="multiplier great">1.8x</span></td>
+                                <td>Early PowerPC, solid choice</td>
+                            </tr>
+
+                            <!-- SPARC -->
+                            <tr class="hardware-row great">
+                                <td><strong>SPARC</strong></td>
+                                <td>SPARCstation, Ultra, Enterprise servers</td>
+                                <td><span class="multiplier great">2.0x</span></td>
+                                <td>Sun workstations, rare and powerful</td>
+                            </tr>
+
+                            <!-- Retro x86 -->
+                            <tr class="hardware-row good">
+                                <td><strong>486 / Pentium</strong></td>
+                                <td>Intel 486, Pentium, Pentium Pro/MMX</td>
+                                <td><span class="multiplier good">1.8x - 2.5x</span></td>
+                                <td>Early x86, 486 earns higher</td>
+                            </tr>
+                            <tr class="hardware-row good">
+                                <td><strong>Core2 / Retro x86</strong></td>
+                                <td>Core2 Duo, early Core architecture</td>
+                                <td><span class="multiplier good">1.3x - 1.4x</span></td>
+                                <td>Retro but not vintage</td>
+                            </tr>
+
+                            <!-- Modern Hardware -->
+                            <tr class="hardware-row fair">
+                                <td><strong>Modern x86_64</strong></td>
+                                <td>Core i3/i5/i7, Ryzen, modern CPUs</td>
+                                <td><span class="multiplier fair">1.0x</span></td>
+                                <td>Base multiplier, no vintage bonus</td>
+                            </tr>
+                            <tr class="hardware-row fair">
+                                <td><strong>Apple Silicon</strong></td>
+                                <td>M1, M2, M3 chips</td>
+                                <td><span class="multiplier fair">1.2x</span></td>
+                                <td>Modern ARM, slight bonus</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2>Hardware Fingerprinting</h2>
+                <p>
+                    RustChain uses hardware fingerprinting to verify authenticity and prevent VM mining:
+                </p>
+                <div class="fingerprinting-checks">
+                    <div class="check-item">
+                        <h3>CPU Architecture</h3>
+                        <p>Detects genuine CPU architecture (PowerPC, 68K, SPARC, x86)</p>
+                    </div>
+                    <div class="check-item">
+                        <h3>ROM Verification</h3>
+                        <p>Checks for authentic ROM signatures and known emulator ROMs</p>
+                    </div>
+                    <div class="check-item">
+                        <h3>Timing Analysis</h3>
+                        <p>Measures clock drift and timing characteristics unique to hardware</p>
+                    </div>
+                    <div class="check-item">
+                        <h3>Entropy Scoring</h3>
+                        <p>Calculates entropy from timing variance</p>
+                    </div>
+                    <div class="check-item">
+                        <h3>Anti-Emulation</h3>
+                        <p>Detects virtual machines and emulators (QEMU, VMware, etc.)</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2>Recommended Hardware</h2>
+                <div class="recommended-list">
+                    <div class="rec-card">
+                        <h3>🥇 Best Overall</h3>
+                        <h4>PowerPC G4</h4>
+                        <p class="multiplier-display">2.5x multiplier</p>
+                        <p>Best balance of availability and rewards</p>
+                    </div>
+                    <div class="rec-card">
+                        <h3>🥈 Highest Reward</h3>
+                        <h4>68K Macintosh</h4>
+                        <p class="multiplier-display">3.0x multiplier</p>
+                        <p>Maximum multiplier but rare and slow</p>
+                    </div>
+                    <div class="rec-card">
+                        <h3>🥉 Great Choice</h3>
+                        <h4>PowerPC G5</h4>
+                        <p class="multiplier-display">2.0x multiplier</p>
+                        <p>Powerful and still reasonably available</p>
+                    </div>
+                    <div class="rec-card">
+                        <h3>🏅 Value Pick</h3>
+                        <h4>SPARC Workstation</h4>
+                        <p class="multiplier-display">2.0x multiplier</p>
+                        <p>Rare and interesting systems</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2>Hardware Requirements</h2>
+                <div class="requirements-grid">
+                    <div class="req-item">
+                        <h3>✅ Supported</h3>
+                        <ul>
+                            <li>Authentic vintage hardware</li>
+                            <li>Any architecture with legitimate CPU</li>
+                            <li>Real hardware (not emulated)</li>
+                            <li>Stable internet connection</li>
+                        </ul>
+                    </div>
+                    <div class="req-item">
+                        <h3>❌ Not Supported</h3>
+                        <ul>
+                            <li>Virtual machines (VMware, QEMU, VirtualBox)</li>
+                            <li>Emulators (SheepShaver, Basilisk, Mini vMac)</li>
+                            <li>Cloud instances (AWS, GCP, Azure)</li>
+                            <li>Fingerprint spoofing attempts</li>
+                        </ul>
+                    </div>
+                    <div class="req-item">
+                        <h3>⚠️ Limited</h3>
+                        <ul>
+                            <li>Modern hardware (1.0x multiplier)</li>
+                            <li>Hardware with inconsistent timing</li>
+                            <li>Systems without proper entropy</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2>Hardware Badges</h2>
+                <p>
+                    Earn special NFT badges for mining with unique hardware:
+                </p>
+                <div class="badges-grid">
+                    <div class="badge-item">
+                        <div class="badge-icon">🎖️</div>
+                        <h3>Uber Dev Badge</h3>
+                        <p>Awarded for developing on multiple architectures</p>
+                    </div>
+                    <div class="badge-item">
+                        <div class="badge-icon">🦞</div>
+                        <h3>PowerPC Flamekeeper</h3>
+                        <p>Mining 100+ epochs on PowerPC</p>
+                    </div>
+                    <div class="badge-item">
+                        <div class="badge-icon">💿</div>
+                        <h3>68K Pioneer</h3>
+                        <p>First 100 miners on 68K hardware</p>
+                    </div>
+                    <div class="badge-item">
+                        <div class="badge-icon">🏆</div>
+                        <h3>Hall of Rust</h3>
+                        <p>Top contributors by hardware score</p>
+                    </div>
+                </div>
+            </section>
+
+            <div class="cta-section">
+                <h2>Check Your Hardware</h2>
+                <div class="cta-buttons">
+                    <a href="/mining" class="btn btn-primary">Start Mining Test</a>
+                    <a href="https://github.com/Scottcjn/Rustchain" class="btn btn-secondary">Check GitHub</a>
+                </div>
+            </div>
+        </article>
+    </main>
+
+    <footer>
+        <div class="footer-content">
+            <p>&copy; 2026 RustChain Foundation. All rights reserved.</p>
+        </div>
+    </footer>
+</body>
+</html>

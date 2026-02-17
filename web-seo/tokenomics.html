@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <!-- SEO Meta Tags -->
+    <title>Tokenomics — RTC Supply, Distribution, and Bridges</title>
+    <meta name="description" content="Learn about RustChain (RTC) tokenomics. Total supply, distribution, inflation model, withdrawal fees, and bridge options to Ergo and other chains.">
+    <meta name="keywords" content="RustChain tokenomics, RTC supply, RTC distribution, cryptocurrency economics, blockchain token, token bridges">
+    <meta name="robots" content="index, follow">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Tokenomics — RTC Supply, Distribution, and Bridges">
+    <meta property="og:description" content="Understanding RustChain's economic model and token distribution.">
+    <meta property="og:url" content="https://rustchain.org/tokenomics">
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://rustchain.org/tokenomics">
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="css/style.css">
+
+    <!-- JSON-LD -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FinancialProduct",
+      "name": "RTC (RustChain Token)",
+      "description": "Native cryptocurrency of the RustChain blockchain, earned through proof of antiquity mining.",
+      "tickerSymbol": "RTC",
+      "url": "https://rustchain.org/tokenomics",
+      "provider": {
+        "@type": "Organization",
+        "name": "RustChain Foundation"
+      }
+    }
+    </script>
+</head>
+<body>
+    <header>
+        <nav class="main-nav">
+            <div class="nav-container">
+                <a href="/" class="logo">RustChain</a>
+                <ul class="nav-menu">
+                    <li><a href="/about">About</a></li>
+                    <li><a href="/mining">Mining</a></li>
+                    <li><a href="/tokenomics" class="active">Tokenomics</a></li>
+                    <li><a href="/hardware">Hardware</a></li>
+                    <li><a href="/faq">FAQ</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <article class="content-page">
+            <h1>RustChain Tokenomics</h1>
+
+            <p class="intro">
+                RTC is the native cryptocurrency of RustChain. It's earned through proof of antiquity
+                mining and can be withdrawn, traded, or bridged to other blockchains.
+                Understanding the tokenomics helps miners make informed decisions about their participation.
+            </p>
+
+            <section class="section">
+                <h2>Total Supply</h2>
+                <div class="supply-info">
+                    <div class="supply-card">
+                        <h3>Maximum Supply</h3>
+                        <div class="supply-value">21,000,000 RTC</div>
+                        <p>Fixed total supply with no inflation</p>
+                    </div>
+                    <div class="supply-card">
+                        <h3>Circulating Supply</h3>
+                        <div class="supply-value">~50,000 RTC</div>
+                        <p>Currently in circulation (as of Feb 2026)</p>
+                    </div>
+                    <div class="supply-card">
+                        <h3>Daily Emission</h3>
+                        <div class="supply-value">1.5 RTC</div>
+                        <p>Per epoch (24 hours), distributed to miners</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2>Token Distribution</h2>
+                <p>
+                    RTC is distributed through mining rewards, with fair and transparent allocation:
+                </p>
+                <div class="distribution-chart">
+                    <div class="distribution-item">
+                        <div class="distribution-bar" style="width: 70%"></div>
+                        <div class="distribution-label">Mining Rewards (70%)</div>
+                    </div>
+                    <div class="distribution-item">
+                        <div class="distribution-bar" style="width: 15%"></div>
+                        <div class="distribution-label">Development Fund (15%)</div>
+                    </div>
+                    <div class="distribution-item">
+                        <div class="distribution-bar" style="width: 10%"></div>
+                        <div class="distribution-label">Community & Marketing (10%)</div>
+                    </div>
+                    <div class="distribution-item">
+                        <div class="distribution-bar" style="width: 5%"></div>
+                        <div class="distribution-label">Reserve (5%)</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2>Inflation Model</h2>
+                <p>
+                    RustChain uses a controlled emission model to balance sustainability with miner rewards:
+                </p>
+                <ul class="feature-list">
+                    <li><strong>Fixed Epoch Reward:</strong> 1.5 RTC distributed every epoch (24 hours)</li>
+                    <li><strong>No Block Rewards:</strong> Rewards are epoch-based, not per-block</li>
+                    <li><strong>Hard Cap:</strong> Maximum supply of 21,000,000 RTC ensures scarcity</li>
+                    <li><strong>Halving Schedule:</strong> Epoch rewards halve approximately every 4 years</li>
+                </ul>
+                <div class="halving-info">
+                    <h3>Reward Halving Schedule</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Epoch</th>
+                                <th>Year</th>
+                                <th>Reward per Epoch</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>0 - 1460</td><td>2026 - 2029</td><td>1.5 RTC</td></tr>
+                            <tr><td>1461 - 2920</td><td>2030 - 2033</td><td>0.75 RTC</td></tr>
+                            <tr><td>2921 - 4380</td><td>2034 - 2037</td><td>0.375 RTC</td></tr>
+                            <tr><td>4381+</td><td>2038+</td><td>0.1875 RTC</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2>Withdrawal Fees</h2>
+                <div class="fee-info">
+                    <div class="fee-card">
+                        <h3>Minimum Withdrawal</h3>
+                        <div class="fee-value">0.1 RTC</div>
+                        <p>Minimum amount you can withdraw</p>
+                    </div>
+                    <div class="fee-card">
+                        <h3>Withdrawal Fee</h3>
+                        <div class="fee-value">0.01 RTC</div>
+                        <p>Fixed fee per withdrawal</p>
+                    </div>
+                    <div class="fee-card">
+                        <h3>Daily Limit</h3>
+                        <div class="fee-value">1,000 RTC</div>
+                        <p>Maximum withdrawal per day</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <2>Token Bridges</h2>
+                <p>
+                    RTC can be bridged to other blockchains for trading and utility:
+                </p>
+                <div class="bridges">
+                    <div class="bridge-card">
+                        <h3>Ergo Bridge</h3>
+                        <p>Bridge RTC to Ergo blockchain for trading on Spectrum DEX</p>
+                        <div class="bridge-status"><span class="status-badge coming-soon">Coming Soon</span></div>
+                    </div>
+                    <div class="bridge-card">
+                        <h3>Raydium LP Pool</h3>
+                        <p>Provide liquidity on Raydium (Solana) to earn rewards</p>
+                        <div class="bridge-status"><span class="status-badge active">Active</span></div>
+                    </div>
+                    <div class="bridge-card">
+                        <h3>DEX Trading</h3>
+                        <p>Trade RTC/wRTC pairs on supported decentralized exchanges</p>
+                        <div class="bridge-status"><span class="status-badge active">Active</span></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2>Token Utility</h2>
+                <p>
+                    RTC has multiple use cases within and beyond the RustChain ecosystem:
+                </p>
+                <div class="utility-grid">
+                    <div class="utility-item">
+                        <h3>💰 Mining Rewards</h3>
+                        <p>Earned through proof of antiquity mining</p>
+                    </div>
+                    <div class="utility-item">
+                        <h3>💸 Trading</h3>
+                        <p>Trade on DEXs or bridge to other chains</p>
+                    </div>
+                    <div class="utility-item">
+                        <h3>🏦 Staking</h3>
+                        <p>Stake to earn additional rewards (future)</p>
+                    </div>
+                    <div class="utility-item">
+                        <h3>🎮 Badges & NFTs</h3>
+                        <p>Unlock hardware badges and NFT collectibles</p>
+                    </div>
+                    <div class="utility-item">
+                        <h3>🗳 Governance</h3>
+                        <p>Participate in protocol decisions (future)</p>
+                    </div>
+                    <div class="utility-item">
+                        <h3>🏆 Leaderboard</h3>
+                        <p>Compete on Hall of Rust leaderboard</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2>Token Economics</h2>
+                <div class="economics-overview">
+                    <div class="econ-card">
+                        <h3>Supply Model</h3>
+                        <p>Deflationary with fixed maximum supply</p>
+                    </div>
+                    <div class="econ-card">
+                        <h3>Allocation</h3>
+                        <p>70% to miners, fair distribution based on contribution</p>
+                    </div>
+                    <div class="econ-card">
+                        <h3>Security</h3>
+                        <p>Proof of antiquity ensures authentic hardware mining</p>
+                    </div>
+                    <div class="econ-card">
+                        <h3>Sustainability</h3>
+                        <p>Halving schedule ensures long-term viability</p>
+                    </div>
+                </div>
+            </section>
+
+            <div class="cta-section">
+                <h2>Start Earning RTC Today</h2>
+                <div class="cta-buttons">
+                    <a href="/mining" class="btn btn-primary">Start Mining</a>
+                    <a href="https://spectrum.fi" class="btn btn-secondary">Trade on Spectrum</a>
+                </div>
+            </div>
+        </article>
+    </main>
+
+    <footer>
+        <div class="footer-content">
+            <p>&copy; 2026 RustChain Foundation. All rights reserved.</p>
+        </div>
+    </footer>
+</body>
+</html>

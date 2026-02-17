@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <!-- SEO Meta Tags -->
+    <title>Mining Guide — How to Mine RustChain with clawrtc</title>
+    <meta name="description" content="Complete guide to mining RustChain (RTC) cryptocurrency. Install clawrtc mining client, configure vintage hardware, and start earning proof of antiquity rewards.">
+    <meta name="keywords" content="RustChain mining, clawrtc, vintage hardware mining, PowerPC mining, how to mine RTC, cryptocurrency mining guide">
+    <meta name="robots" content="index, follow">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Mining Guide — How to Mine RustChain">
+    <meta property="og:description" content="Step-by-step guide to start mining RustChain with vintage hardware.">
+    <meta property="og:url" content="https://rustchain.org/mining">
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://rustchain.org/mining">
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="css/style.css">
+
+    <!-- JSON-LD -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "HowTo",
+      "name": "How to Mine RustChain",
+      "description": "Step-by-step guide to start mining RustChain cryptocurrency with vintage hardware.",
+      "step": [
+        {
+          "@type": "HowToStep",
+          "text": "Install Python 3.11 or higher on your system"
+        },
+        {
+          "@type": "HowToStep",
+          "text": "Install clawrtc mining client: pip install clawrtc"
+        },
+        {
+          "@type": "HowToStep",
+          "text": "Run the miner: clawrtc"
+        },
+        {
+          "@type": "HowToStep",
+          "text": "Wait for automatic epoch payouts every 24 hours"
+        }
+      ],
+      "url": "https://rustchain.org/mining"
+    }
+    </script>
+</head>
+<body>
+    <header>
+        <nav class="main-nav">
+            <div class="nav-container">
+                <a href="/" class="logo">RustChain</a>
+                <ul class="nav-menu">
+                    <li><a href="/about">About</a></li>
+                    <li><a href="/mining" class="active">Mining</a></li>
+                    <li><a href="/tokenomics">Tokenomics</a></li>
+                    <li><a href="/hardware">Hardware</a></li>
+                    <li><a href="/faq">FAQ</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <article class="content-page">
+            <h1>RustChain Mining Guide</h1>
+
+            <p class="intro">
+                Start mining RustChain (RTC) with vintage hardware in just a few minutes.
+                The clawrtc mining client automatically detects your hardware, validates authenticity,
+                and connects you to the RustChain network.
+            </p>
+
+            <section class="section">
+                <h2>Requirements</h2>
+                <div class="requirements">
+                    <div class="requirement-item">
+                        <h3>Operating System</h3>
+                        <ul>
+                            <li>Linux (Ubuntu, Debian, Fedora, Arch, etc.)</li>
+                            <li>macOS 10.13+ (for Apple Silicon or Intel Macs)</li>
+                            <li>Windows 10/11 (with WSL2 recommended)</li>
+                        </ul>
+                    </div>
+                    <div class="requirement-item">
+                        <h3>Software</h3>
+                        <ul>
+                            <li>Python 3.11 or higher</li>
+                            <li>pip (Python package manager)</li>
+                            <li>Internet connection</li>
+                        </ul>
+                    </div>
+                    <div class="requirement-item">
+                        <h3>Hardware</h3>
+                        <ul>
+                            <li><strong>Recommended:</strong> Vintage hardware (PowerPC, 68K, SPARC, retro x86)</li>
+                            <li><strong>Supported:</strong> Any authentic computing hardware</li>
+                            <li><strong>Note:</strong> Virtual machines and emulators are not allowed</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2>Quick Start</h2>
+                <div class="quick-start">
+                    <div class="step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h3>Install clawrtc</h3>
+                            <code class="code-block">pip install clawrtc</code>
+                            <p>This installs the official RustChain mining client.</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h3>Run the Miner</h3>
+                            <code class="code-block">clawrtc</code>
+                            <p>The client will automatically detect and configure your hardware.</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h3>Start Mining</h3>
+                            <p>Your hardware will begin attesting and earning rewards.</p>
+                            <p class="note">First epoch payout after ~24 hours.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2>Advanced Configuration</h2>
+                <p>
+                    For more control over mining behavior, clawrtc supports several options:
+                </p>
+                <div class="config-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Option</th>
+                                <th>Description</th>
+                                <th>Example</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>--node-url</code></td>
+                                <td>Custom RustChain node URL</td>
+                                <td><code>clawrtc --node-url https://node.rustchain.org:8099</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>--wallet</code></td>
+                                <td>Custom wallet address</td>
+                                <td><code>clawrtc --wallet 0x1234...</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>--pool</code></td>
+                                <td>Mine via mining pool</td>
+                                <td><code>clawrtc --pool http://pool.rustchain.org:8080</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>--verbose</code></td>
+                                <td>Detailed logging output</td>
+                                <td><code>clawrtc --verbose</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2>How Mining Works</h2>
+                <div class="mining-process">
+                    <div class="process-step">
+                        <div class="step-icon">🔍</div>
+                        <h3>Hardware Detection</h3>
+                        <p>clawrtc identifies your CPU architecture, model, and manufacturing era.</p>
+                    </div>
+                    <div class="process-step">
+                        <div class="step-icon">🔐</div>
+                        <h3>Authentication</h3>
+                        <p>Hardware fingerprinting proves you're using authentic vintage hardware, not a VM.</p>
+                    </div>
+                    <div class="process-step">
+                        <div class="step-icon">⏱️</div>
+                        <h3>Entropy Attestation</h3>
+                        <p>Submit periodic attestations with timing characteristics unique to your hardware.</p>
+                    </div>
+                    <div class="process-step">
+                        <div class="step-icon">💰</div>
+                        <h3>Earn Rewards</h3>
+                        <p>Receive RTC tokens every epoch (24 hours) based on your contribution weight.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2>Mining Pools</h2>
+                <p>
+                    If you have weaker vintage hardware or want more consistent rewards, you can
+                    join a <strong>RustChain mining pool</strong>:
+                </p>
+                <ul class="feature-list">
+                    <li><strong>Combine Power:</strong> Multiple miners share computing power</li>
+                    <li><strong>Consistent Rewards:</strong> More predictable payout schedule</li>
+                    <li><strong>Lower Barrier:</strong> Even small miners can earn regularly</li>
+                </ul>
+                <p class="pool-note">
+                    <strong>To mine via pool:</strong> <code>clawrtc --pool http://pool.rustchain.org:8080</code>
+                </p>
+            </section>
+
+            <section class="section">
+                <h2>Troubleshooting</h2>
+                <div class="troubleshooting">
+                    <div class="trouble-item">
+                        <h3>Hardware Not Detected</h3>
+                        <p>Run with <code>--verbose</code> to see detailed hardware detection info.</p>
+                    </div>
+                    <div class="trouble-item">
+                        <h3>Connection Refused</h3>
+                        <p>Check your internet connection and verify the node URL is accessible.</p>
+                    </div>
+                    <div class="trouble-item">
+                        <h3>VM Detected Error</h3>
+                        <p>Virtual machines are not allowed. Use authentic vintage hardware.</p>
+                    </div>
+                    <div class="trouble-item">
+                        <h3>Low Rewards</h3>
+                        <p>Modern hardware earns lower multipliers. Use vintage hardware for better rewards.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2>Withdraw Your Earnings</h2>
+                <p>
+                    Once you've accumulated enough RTC, you can withdraw to an external wallet:
+                </p>
+                <div class="withdraw-steps">
+                    <ol>
+                        <li>Register your withdrawal address</li>
+                        <li>Request withdrawal (minimum: 0.1 RTC)</li>
+                        <li>Wait for processing (usually within one epoch)</li>
+                        <li>Receive RTC in your external wallet</li>
+                    </ol>
+                </div>
+            </section>
+
+            <div class="cta-section">
+                <h2>Ready to Mine?</h2>
+                <div class="cta-buttons">
+                    <a href="/hardware" class="btn btn-primary">Check Hardware Compatibility</a>
+                    <a href="https://github.com/Scottcjn/Rustchain" class="btn btn-secondary">View Source Code</a>
+                </div>
+            </div>
+        </article>
+    </main>
+
+    <footer>
+        <div class="footer-content">
+            <p>&copy; 2026 RustChain Foundation. All rights reserved.</p>
+        </div>
+    </footer>
+</body>
+</html>

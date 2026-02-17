@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <!-- Main Page -->
+    <url>
+        <loc>https://rustchain.org/</loc>
+        <lastmod>2026-02-17</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>1.0</priority>
+    </url>
+
+    <!-- About Page -->
+    <url>
+        <loc>https://rustchain.org/about</loc>
+        <lastmod>2026-02-17</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.9</priority>
+    </url>
+
+    <!-- Mining Page -->
+    <url>
+        <loc>https://rustchain.org/mining</loc>
+        <lastmod>2026-02-17</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>0.9</priority>
+    </url>
+
+    <!-- Tokenomics Page -->
+    <url>
+        <loc>https://rustchain.org/tokenomics</loc>
+        <lastmod>2026-02-17</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+    </url>
+
+    <!-- Hardware Page -->
+    <url>
+        <loc>https://rustchain.org/hardware</loc>
+        <lastmod>2026-02-17</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+    </url>
+
+    <!-- FAQ Page -->
+    <url>
+        <loc>https://rustchain.org/faq</loc>
+        <lastmod>2026-02-17</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.7</priority>
+    </url>
+
+    <!-- GitHub Repository -->
+    <url>
+        <loc>https://github.com/Scottcjn/Rustchain</loc>
+        <lastmod>2026-02-17</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>0.8</priority>
+    </url>
+
+    <!-- Documentation -->
+    <url>
+        <loc>https://docs.rustchain.org</loc>
+        <lastmod>2026-02-17</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>0.6</priority>
+    </url>
+
+    <!-- Discord -->
+    <url>
+        <loc>https://discord.gg/rustchain</loc>
+        <lastmod>2026-02-17</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.5</priority>
+    </url>
+</urlset>

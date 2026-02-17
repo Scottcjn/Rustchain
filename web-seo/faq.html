@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <!-- SEO Meta Tags -->
+    <title>FAQ — Frequently Asked Questions About RustChain</title>
+    <meta name="description" content="Find answers to common questions about RustChain mining, proof of antiquity, RTC tokens, hardware requirements, and troubleshooting.">
+    <meta name="keywords" content="RustChain FAQ, mining questions, proof of antiquity, RTC token, vintage hardware mining help">
+    <meta name="robots" content="index, follow">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="FAQ — Frequently Asked Questions About RustChain">
+    <meta property="og:description" content="Get answers to common RustChain questions.">
+    <meta property="og:url" content="https://rustchain.org/faq">
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://rustchain.org/faq">
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="css/style.css">
+
+    <!-- JSON-LD -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is RustChain?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "RustChain is a blockchain that rewards vintage hardware mining through Proof of Antiquity. Older and rarer hardware earns higher rewards."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I start mining?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Install clawrtc with 'pip install clawrtc' and run it. Your hardware will be automatically detected."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What hardware earns the most?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Vintage hardware like 68K Macintosh (3.0x) and PowerPC G4 (2.5x) earn the highest multipliers."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I mine with a VM?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. RustChain uses hardware fingerprinting to detect and reject virtual machines and emulators."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I withdraw my RTC?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Register your withdrawal address and request withdrawal. Minimum: 0.1 RTC, Fee: 0.01 RTC."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+    <header>
+        <nav class="main-nav">
+            <div class="nav-container">
+                <a href="/" class="logo">RustChain</a>
+                <ul class="nav-menu">
+                    <li><a href="/about">About</a></li>
+                    <li><a href="/mining">Mining</a></li>
+                    <li><a href="/tokenomics">Tokenomics</a></li>
+                    <li><a href="/hardware">Hardware</a></li>
+                    <li><a href="/faq" class="active">FAQ</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <article class="content-page">
+            <h1>Frequently Asked Questions</h1>
+
+            <div class="faq-container">
+
+                <!-- Getting Started -->
+                <section class="faq-section">
+                    <h2>🚀 Getting Started</h2>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">What is RustChain?</h3>
+                        <div class="faq-answer">
+                            <p>
+                                RustChain is a blockchain that rewards vintage hardware mining through a unique
+                                <strong>Proof of Antiquity</strong> consensus mechanism. Unlike traditional
+                                cryptocurrencies that favor modern hardware, RustChain celebrates computing
+                                history by rewarding older and rarer hardware with higher multipliers.
+                            </p>
+                            <p>
+                                The network aims to reduce e-waste by giving vintage computers a
+                                purpose: mining cryptocurrency while preserving computing heritage.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">How do I start mining?</h3>
+                        <div class="faq-answer">
+                            <ol>
+                                <li><strong>Install Python 3.11+</strong> if you don't have it</li>
+                                <li><strong>Install clawrtc:</strong> <code>pip install clawrtc</code></li>
+                                <li><strong>Run the miner:</strong> <code>clawrtc</code></li>
+                                <li><strong>Wait for rewards:</strong> Payouts occur every epoch (24 hours)</li>
+                            </ol>
+                            <p class="tip">
+                                💡 <strong>Tip:</strong> Run <code>clawrtc --verbose</code> to see detailed
+                                hardware detection information.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">What are the system requirements?</h3>
+                        <div class="faq-answer">
+                            <p>
+                                <strong>Operating System:</strong> Linux, macOS 10.13+, or Windows 10/11 (WSL2 recommended)<br>
+                                <strong>Software:</strong> Python 3.11+ and pip<br>
+                                <strong>Hardware:</strong> Any authentic computing hardware (vintage recommended)<br>
+                                <strong>Network:</strong> Stable internet connection
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Hardware -->
+                <section class="faq-section">
+                    <h2>🖥️ Hardware & Mining</h2>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">What hardware earns the most?</h3>
+                        <div class="faq-answer">
+                            <p>
+                                Vintage hardware earns significantly more due to higher multipliers:
+                            </p>
+                            <ul>
+                                <li><strong>68K Macintosh:</strong> 3.0x (highest)</li>
+                                <li><strong>PowerPC G4:</strong> 2.5x</li>
+                                <li><strong>PowerPC G5:</strong> 2.0x</li>
+                                <li><strong>SPARC:</strong> 2.0x</li>
+                                <li><strong>PowerPC G3:</strong> 1.8x</li>
+                                <li><strong>486 / Pentium:</strong> 1.8x - 2.5x</li>
+                                <li><strong>Modern Hardware:</strong> 1.0x (base)</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">Can I mine with a virtual machine (VM)?</h3>
+                        <div class="faq-answer">
+                            <p>
+                                <strong>No.</strong> RustChain uses hardware fingerprinting and anti-emulation
+                                checks to detect virtual machines. VMs, emulators, and cloud instances
+                                will be detected and rejected.
+                            </p>
+                            <p class="warning">
+                                ⚠️ <strong>Important:</strong> Only authentic vintage hardware is allowed.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">How do mining pools work?</h3>
+                        <div class="faq-answer">
+                            <p>
+                                Mining pools allow multiple miners to combine their computing power and receive
+                                more consistent rewards:
+                            </p>
+                            <ul>
+                                <li>Miners connect to the pool instead of mining directly</li>
+                                <li>Pool submits combined attestations to the network</li>
+                                <li>Rewards are distributed proportionally based on contribution</li>
+                                <li>Pool charges a small fee (usually 1%) for operating costs</li>
+                            </ul>
+                            <p class="code-example">
+                                <code>clawrtc --pool http://pool.rustchain.org:8080</code>
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">How long until I get my first payout?</h3>
+                        <div class="faq-answer">
+                            <p>
+                                Payouts occur every <strong>epoch</strong>, which is 24 hours. Your
+                                first payout will be distributed approximately 24 hours after your first
+                                successful attestation.
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Tokens -->
+                <section class="faq-section">
+                    <h2>💰 RTC Tokens</h2>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">What is the RTC token?</h3>
+                        <div class="faq-answer">
+                            <p>
+                                RTC is the native cryptocurrency of RustChain. It's earned through mining
+                                proof of antiquity and can be:
+                            </p>
+                            <ul>
+                                <li>Withdrawn to external wallets</li>
+                                <li>Traded on decentralized exchanges (DEX)</li>
+                                <li>Bridged to other blockchains (Ergo, Solana)</li>
+                                <li>Used for protocol governance (future)</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">How do I withdraw my RTC?</h3>
+                        <div class="faq-answer">
+                            <ol>
+                                <li>Register your withdrawal address on the node</li>
+                                <li>Request withdrawal (minimum: 0.1 RTC)</li>
+                                <li>Pay fee (0.01 RTC)</li>
+                                <li>Wait for processing (usually within one epoch)</li>
+                            </ol>
+                            <p class="limit">
+                                📊 <strong>Daily Limit:</strong> 1,000 RTC maximum withdrawal per day
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">What are the tokenomics?</h3>
+                        <div class="faq-answer">
+                            <p>
+                                <strong>Total Supply:</strong> 21,000,000 RTC (fixed)<br>
+                                <strong>Daily Emission:</strong> 1.5 RTC per epoch<br>
+                                <strong>Halving:</strong> Rewards halve approximately every 4 years<br>
+                                <strong>Distribution:</strong> 70% to miners, 30% to development, marketing, and reserve
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Technical -->
+                <section class="faq-section">
+                    <h2>⚙️ Technical</h2>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">What is Proof of Antiquity?</h3>
+                        <div class="faq-answer">
+                            <p>
+                                Proof of Antiquity is a consensus mechanism that rewards hardware based on
+                                age and rarity. It uses:
+                            </p>
+                            <ul>
+                                <li><strong>Hardware Fingerprinting:</strong> CPU architecture, ROM verification, thermal profiling</li>
+                                <li><strong>Entropy Scoring:</strong> Timing characteristics unique to hardware</li>
+                                <li><strong>Anti-Emulation:</strong> Detection of VMs and emulators</li>
+                            </ul>
+                            <p>
+                                This ensures only authentic vintage hardware can mine, creating a fair
+                                distribution that favors preservation over raw computing power.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">How is RustChain different from Bitcoin?</h3>
+                        <div class="faq-answer">
+                            <table class="comparison-table">
+                                <thead>
+                                    <tr>
+                                        <th>Feature</th>
+                                        <th>Bitcoin</th>
+                                        <th>RustChain</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Consensus</td>
+                                        <td>Proof of Work</td>
+                                        <td>Proof of Antiquity</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Mining</td>
+                                        <td>ASICs dominate</td>
+                                        <td>Vintage hardware favored</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Energy Use</td>
+                                        <td>High</td>
+                                        <td>Low (vintage hardware)</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Hardware</td>
+                                        <td>Modern, powerful</td>
+                                        <td>Old, rare systems</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Supply</td>
+                                        <td>21M BTC</td>
+                                        <td>21M RTC</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">Is RustChain secure?</h3>
+                        <div class="faq-answer">
+                            <p>
+                                Yes. RustChain includes multiple security measures:
+                            </p>
+                            <ul>
+                                <li><strong>Hardware Authentication:</strong> Fingerprinting prevents spoofing</li>
+                                <li><strong>Anti-Cheating:</strong> Timing analysis detects simulation</li>
+                                <li><strong>No VM Mining:</strong> Emulators are detected and rejected</li>
+                                <li><strong>Transparent:</strong> All data is publicly verifiable on-chain</li>
+                                <li><strong>Replay Protection:</strong> Prevents double-spending attacks</li>
+                            </ul>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Troubleshooting -->
+                <section class="faq-section">
+                    <h2>🔧 Troubleshooting</h2>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">Hardware not detected correctly?</h3>
+                        <div class="faq-answer">
+                            <p>
+                                Try running with verbose mode to see detailed detection:
+                            </p>
+                            <code class="code-example">clawrtc --verbose</code>
+                            <p>
+                                This will show CPU architecture, model, and fingerprint detection
+                                details. If detection fails, check that you're using authentic hardware
+                                (not a VM).
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">Connection refused to node?</h3>
+                        <div class="faq-answer">
+                            <ol>
+                                <li>Check your internet connection</li>
+                                <li>Verify the node URL is correct</li>
+                                <li>Check if a firewall is blocking the connection</li>
+                                <li>Try a different node URL</li>
+                            </ol>
+                            <p class="code-example">
+                                <code>clawrtc --node-url https://node.rustchain.org:8099</code>
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">Low rewards received?</h3>
+                        <div class="faq-answer">
+                            <p>
+                                Check the following:
+                            </p>
+                            <ul>
+                                <li>Verify your hardware multiplier (modern hardware earns 1.0x)</li>
+                                <li>Ensure you're mining consistently (uptime bonus)</li>
+                                <li>Check attestation frequency (regular attestations earn more)</li>
+                                <li>Review epoch statistics on the network</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <h3 class="faq-question">Need more help?</h3>
+                        <div class="faq-answer">
+                            <ul>
+                                <li><strong>GitHub Issues:</strong> <a href="https://github.com/Scottcjn/Rustchain/issues">github.com/Scottcjn/Rustchain/issues</a></li>
+                                <li><strong>Discord Community:</strong> Join the RustChain Discord server</li>
+                                <li><strong>Documentation:</strong> <a href="https://docs.rustchain.org">docs.rustchain.org</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+
+            <div class="cta-section">
+                <h2>Still Have Questions?</h2>
+                <div class="cta-buttons">
+                    <a href="https://github.com/Scottcjn/Rustchain/issues" class="btn btn-primary">Ask on GitHub</a>
+                    <a href="https://discord.gg/rustchain" class="btn btn-secondary">Join Discord</a>
+                </div>
+            </div>
+
+        </article>
+    </main>
+
+    <footer>
+        <div class="footer-content">
+            <p>&copy; 2026 RustChain Foundation. All rights reserved.</p>
+        </div>
+    </footer>
+</body>
+</html>

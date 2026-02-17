@@ -1,0 +1,18 @@
+# robots.txt for RustChain.org
+# Allow all crawlers to access the site
+
+User-agent: *
+Allow: /
+
+# Disallow system and hidden files
+Disallow: /.*
+Disallow: /css/
+Disallow: /js/
+Disallow: /images/
+Disallow: /api/
+
+# Crawl delay (optional, be respectful)
+Crawl-delay: 1
+
+# Sitemap location
+Sitemap: https://rustchain.org/sitemap.xml
