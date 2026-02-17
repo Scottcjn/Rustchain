@@ -1,0 +1,227 @@
+groups:
+  - name: rustchain_alerts
+    interval: 30s
+    rules:
+      # Node Health Alerts
+      - alert: NodeDown
+        expr: rustchain_node_health == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: node
+        annotations:
+          summary: "RustChain node is down"
+          description: "Node health metric indicates the RustChain node is not responding. Please check the service."
+          runbook_url: "https://docs.rustchain.org/troubleshooting"
+
+      - alert: NodeDegraded
+        expr: rustchain_node_health < 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: node
+        annotations:
+          summary: "RustChain node health is degraded"
+          description: "Node health is {{ $value }}. Expected 1.0, anything below 0.8 indicates performance issues."
+          runbook_url: "https://docs.rustchain.org/troubleshooting"
+
+      # Miner Alerts
+      - alert: MinerCountCritical
+        expr: rustchain_miners < 10
+        for: 10m
+        labels:
+          severity: critical
+          component: miners
+        annotations:
+          summary: "Critical: Very low miner count"
+          description: "Only {{ $value }} active miners. Expected at least 10. This may indicate network issues."
+
+      - alert: MinerCountLow
+        expr: rustchain_miners < 50
+        for: 5m
+        labels:
+          severity: warning
+          component: miners
+        annotations:
+          summary: "Low miner count detected"
+          description: "Active miners dropped to {{ $value }}. Normal range is 50-200 miners."
+
+      - alert: MinerDropSudden
+        expr: |
+          (
+            rate(rustchain_miners[5m])
+            /
+            rate(rustchain_miners[1h] offset 5m)
+          ) < 0.5
+        for: 10m
+        labels:
+          severity: warning
+          component: miners
+        annotations:
+          summary: "Sudden miner count drop detected"
+          description: "Miner count dropped by >50% in the last 5 minutes. Current rate: {{ $value }}."
+
+      # Attestation Alerts
+      - alert: AttestationRateZero
+        expr: rate(rustchain_attestations_total[5m]) < 0.01
+        for: 10m
+        labels:
+          severity: critical
+          component: attestations
+        annotations:
+          summary: "Attestation rate is near zero"
+          description: "Attestations have almost stopped (rate: {{ $value }}/sec). Network may be stalled."
+
+      - alert: AttestationRateLow
+        expr: rate(rustchain_attestations_total[5m]) < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: attestations
+        annotations:
+          summary: "Low attestation rate"
+          description: "Attestation rate is {{ $value }}/sec. Expected > 0.1 attestations/sec."
+
+      - alert: AttestationDropSudden
+        expr: |
+          (
+            rate(rustchain_attestations_total[5m])
+            /
+            rate(rustchain_attestations_total[1h] offset 5m)
+          ) < 0.3
+        for: 10m
+        labels:
+          severity: warning
+          component: attestations
+        annotations:
+          summary: "Sudden attestation drop"
+          description: "Attestation rate dropped by >70%. Current: {{ $value }}, Previous: {{ $value }}."
+
+      # API Performance Alerts
+      - alert: APILatencyCritical
+        expr: histogram_quantile(0.95, rate(rustchain_api_request_duration_seconds[5m])) > 10
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "Critical: API latency too high"
+          description: "API p95 latency is {{ $value }}s. Critical threshold is 10s."
+
+      - alert: APILatencyWarning
+        expr: histogram_quantile(0.95, rate(rustchain_api_request_duration_seconds[5m])) > 5
+        for: 10m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "API latency elevated"
+          description: "API p95 latency is {{ $value }}s. Warning threshold is 5s."
+
+      - alert: APIErrorRateHigh
+        expr: |
+          (
+            rate(rustchain_api_errors_total[5m])
+            /
+            rate(rustchain_api_requests_total[5m])
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High API error rate"
+          description: "API error rate is {{ $value | humanizePercentage }}. Threshold is 10%."
+
+      # Token/Balance Alerts
+      - alert: BalanceLow
+        expr: sum(rustchain_balance_rtc) < 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: balances
+        annotations:
+          summary: "Total RTC balance is low"
+          description: "Total network balance is {{ $value }} RTC. Threshold is 1,000 RTC."
+
+      - alert: TransferVolumeUnusual
+        expr: |
+          abs(
+            (
+              sum(rate(rustchain_transfers_total[1h]))
+              -
+              avg_over_time(sum(rate(rustchain_transfers_total[1h]), 24h)
+            )
+            /
+            avg_over_time(sum(rate(rustchain_transfers_total[1h]), 24h)
+          ) > 2
+        for: 15m
+        labels:
+          severity: warning
+          component: transfers
+        annotations:
+          summary: "Unusual transfer volume detected"
+          description: "Transfer volume deviates by >200% from 24h average. Current: {{ $value }} RTC/h."
+
+      # Storage Alerts
+      - alert: DiskSpaceCritical
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: storage
+        annotations:
+          summary: "Critical: Disk space running low"
+          description: "Less than 10% disk space available on mount point /. Current: {{ $value | humanizePercentage }}."
+
+      - alert: DiskSpaceWarning
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.2
+        for: 10m
+        labels:
+          severity: warning
+          component: storage
+        annotations:
+          summary: "Disk space low"
+          description: "Less than 20% disk space available. Current: {{ $value | humanizePercentage }}."
+
+      # Memory Alerts
+      - alert: MemoryUsageCritical
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          component: memory
+        annotations:
+          summary: "Critical: High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }}. Critical threshold is 90%."
+
+      - alert: MemoryUsageWarning
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          component: memory
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }}. Warning threshold is 80%."
+
+      # CPU Alerts
+      - alert: CPUUsageCritical
+        expr: (1 - rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          component: cpu
+        annotations:
+          summary: "Critical: High CPU usage"
+          description: "CPU usage is {{ $value | humanizePercentage }}. Critical threshold is 90%."
+
+      - alert: CPUUsageWarning
+        expr: (1 - rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          component: cpu
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value | humanizePercentage }}. Warning threshold is 80%."

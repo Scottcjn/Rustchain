@@ -1,0 +1,65 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'rustchain-mainnet'
+    replica: 'production'
+
+# Load alert rules
+rule_files:
+  - "alerts.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - api_url: http://alertmanager:9093
+          # Add your Slack/Discord webhook URL here
+          # api_url: https://hooks.slack.com/services/YOUR/WEBHOOK
+
+# Scrape configurations
+scrape_configs:
+  # RustChain Node Metrics
+  - job_name: 'rustchain-node'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets:
+          # Change to your RustChain node URL
+          - 'localhost:8099'
+          # For multiple nodes:
+          # - 'node1.rustchain.org:8099'
+          # - 'node2.rustchain.org:8099'
+    relabel_configs:
+      # Add instance label
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+)(?::\\d+)?;\\d+'
+        replacement: '$1'
+      # Add job label
+      - source_labels: [__address__]
+        target_label: job
+        regex: '([^:]+)(?::\\d+)?;\\d+'
+        replacement: '$1'
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Node Exporter (optional, for system metrics)
+  # - job_name: 'node'
+  #   static_configs:
+  #     - targets: ['localhost:9100']
+  #   relabel_configs:
+  #     - source_labels: [__address__]
+  #       target_label: instance
+  #       regex: '([^:]+)(?::\\d+)?;\\d+'
+  #       replacement: '$1'
+
+# Storage configuration
+storage:
+  tsdb:
+    retention:
+      time: 200h    # Keep 200 hours of metrics (~8 days)
+      size: 10GB     # Maximum disk usage

@@ -1,0 +1,609 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "RustChain Monitoring Dashboard",
+    "tags": ["rustchain", "blockchain", "mining"],
+    "style": "dark",
+    "timezone": "browser",
+    "schemaVersion": 36,
+    "version": 1,
+    "refresh": "10s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Active Miners",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rustchain_miners",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 0,
+          "w": 4,
+          "x": 0,
+          "y": 0
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "values": false,
+            "calcs": false,
+            "fields": false
+          },
+          "textMode": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "yellow",
+                  "value": 100
+                },
+                {
+                  "color": "red",
+                  "value": 50
+                }
+              ]
+            }
+          },
+          "mappings": []
+        },
+        "pluginVersion": "9.0.0"
+      },
+      {
+        "id": 2,
+        "title": "Total Attestations",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(rustchain_attestations_total)",
+            "refId": "B"
+          }
+        ],
+        "gridPos": {
+          "h": 0,
+          "w": 4,
+          "x": 4,
+          "y": 0
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "values": false,
+            "calcs": false,
+            "fields": false
+          },
+          "textMode": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "mappings": []
+        },
+        "pluginVersion": "9.0.0"
+      },
+      {
+        "id": 3,
+        "title": "Current Epoch",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rustchain_current_epoch",
+            "refId": "C"
+          }
+        ],
+        "gridPos": {
+          "h": 0,
+          "w": 4,
+          "x": 8,
+          "y": 0
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "values": false,
+            "calcs": false,
+            "fields": false
+          },
+          "textMode": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "unit": "none"
+          },
+          "mappings": []
+        },
+        "pluginVersion": "9.0.0"
+      },
+      {
+        "id": 4,
+        "title": "Miners Over Time",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rustchain_miners",
+            "refId": "D",
+            "legendFormat": "{{__value.labels}}"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 1
+        },
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 10
+            }
+          }
+        },
+        "pluginVersion": "9.0.0"
+      },
+      {
+        "id": 5,
+        "title": "Attestations Rate (Last 5m)",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(rustchain_attestations_total[5m])",
+            "refId": "E",
+            "legendFormat": "attestations/sec"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 1
+        },
+        "options": {
+          "legend": {
+            "displayMode": "hidden",
+            "showLegend": false
+          },
+          "tooltip": {
+            "mode": "single"
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 20
+            },
+            "unit": "ops"
+          }
+        },
+        "pluginVersion": "9.0.0"
+      },
+      {
+        "id": 6,
+        "title": "RTC Balance (Total)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(rustchain_balance_rtc)",
+            "refId": "F"
+          }
+        ],
+        "gridPos": {
+          "h": 0,
+          "w": 4,
+          "x": 16,
+          "y": 0
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "values": false,
+            "calcs": false,
+            "fields": false
+          },
+          "textMode": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "unit": "RTC",
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "yellow",
+                  "value": 10000
+                },
+                {
+                  "color": "red",
+                  "value": 5000
+                }
+              ]
+            }
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "suffix": " RTC"
+                },
+                "1": {
+                  "suffix": " RTC"
+                }
+              },
+              "type": "value"
+            }
+          ]
+        },
+        "pluginVersion": "9.0.0"
+      },
+      {
+        "id": 7,
+        "title": "RTC Transfers Volume",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum(rate(rustchain_transfers_total[1h]))",
+            "refId": "G",
+            "legendFormat": "RTC/hour"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 3
+        },
+        "options": {
+          "legend": {
+            "displayMode": "hidden",
+            "showLegend": false
+          },
+          "tooltip": {
+            "mode": "single"
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "RTC/h"
+          }
+        },
+        "pluginVersion": "9.0.0"
+      },
+      {
+        "id": 8,
+        "title": "Epoch Rewards Distributed",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "increase(rustchain_epoch_rewards_distributed_total[1h])",
+            "refId": "H",
+            "legendFormat": "RTC/epoch"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 3
+        },
+        "options": {
+          "legend": {
+            "displayMode": "hidden",
+            "showLegend": false
+          },
+          "tooltip": {
+            "mode": "single"
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "RTC",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 10,
+              "areaStyle": "line"
+            }
+          }
+        },
+        "pluginVersion": "9.0.0"
+      },
+      {
+        "id": 9,
+        "title": "Node Health",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rustchain_node_health",
+            "refId": "I"
+          }
+        ],
+        "gridPos": {
+          "h": 0,
+          "w": 4,
+          "x": 20,
+          "y": 0
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "values": false,
+            "calcs": false,
+            "fields": false
+          },
+          "textMode": "value"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "yellow",
+                  "value": 1
+                },
+                {
+                  "color": "red",
+                  "value": 0.8
+                }
+              ]
+            }
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "text": "Healthy"
+                },
+                "1": {
+                  "text": "Degraded"
+                }
+              },
+              "type": "value"
+            }
+          ]
+        },
+        "pluginVersion": "9.0.0"
+      },
+      {
+        "id": 10,
+        "title": "API Response Time (p95)",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(rustchain_api_request_duration_seconds[5m]))",
+            "refId": "J",
+            "legendFormat": "{{__value}}s"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 5
+        },
+        "options": {
+          "legend": {
+            "displayMode": "hidden",
+            "showLegend": false
+          },
+          "tooltip": {
+            "mode": "single"
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 10
+            },
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.5
+                },
+                {
+                  "color": "red",
+                  "value": 2
+                }
+              ]
+            }
+          }
+        },
+        "pluginVersion": "9.0.0"
+      },
+      {
+        "id": 11,
+        "title": "API Request Rate",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(rustchain_api_requests_total[1m])",
+            "refId": "K",
+            "legendFormat": "req/s"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 5
+        },
+        "options": {
+          "legend": {
+            "displayMode": "hidden",
+            "showLegend": false
+          },
+          "tooltip": {
+            "mode": "single"
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "req/s",
+            "custom": {
+              "lineWidth": 2,
+              "fillOpacity": 20
+            }
+          }
+        },
+        "pluginVersion": "9.0.0"
+      },
+      {
+        "id": 12,
+        "title": "Hardware Distribution",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum by (hardware_type) (rustchain_miner_count)",
+            "refId": "L"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 7
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "right",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi"
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            }
+          }
+        },
+        "pluginVersion": "9.0.0"
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "type": "dashboard",
+          "options": {
+            "hideControls": true
+          },
+          "pluginVersion": "9.0.0"
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "datasource": {
+            "type": "prometheus"
+          },
+          "enable": true,
+          "expr": "rustchain_node_health < 0.8",
+          "isRegion": true,
+          "name": "Node Degraded",
+          "text": "Node health below threshold",
+          "titleFormat": "Node Degraded"
+        },
+        {
+          "datasource": {
+            "type": "prometheus"
+          },
+          "enable": true,
+          "expr": "rustchain_miners < 50",
+          "isRegion": true,
+          "name": "Low Miner Count",
+          "text": "Active miners dropped below 50",
+          "titleFormat": "Low Miner Count Alert"
+        },
+        {
+          "datasource": {
+            "type": "prometheus"
+          },
+          "enable": true,
+          "expr": "increase(rustchain_attestations_total[5m]) < 0.1",
+          "isRegion": true,
+          "name": "Unusual Attestation Drop",
+          "text": "Attestation rate dropped significantly",
+          "titleFormat": "Unusual Volume Alert"
+        },
+        {
+          "datasource": {
+            "type": "prometheus"
+          },
+          "enable": true,
+          "expr": "histogram_quantile(0.95, rate(rustchain_api_request_duration_seconds[5m])) > 5",
+          "isRegion": true,
+          "name": "API Response Time High",
+          "text": "API p95 response time above 5s",
+          "titleFormat": "API Performance Alert"
+        }
+      ]
+    }
+  }
+}
