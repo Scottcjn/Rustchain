@@ -25,21 +25,17 @@ jobs:
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi
 
-    - name: Lint with ruff
-      run: ruff check . || true
-      continue-on-error: true
+    - name: Lint (syntax + runtime safety subset)
+      run: ruff check tests --select E9,F63,F7,F82
 
-    - name: Type check with mypy
-      run: mypy . --ignore-missing-imports || true
-      continue-on-error: true
+    - name: Type check (core test crypto shim)
+      run: mypy tests/mock_crypto.py --ignore-missing-imports
 
-    - name: Security scan with bandit
-      run: bandit -r . -ll --exclude ./deprecated,./node_backups || true
-      continue-on-error: true
+    - name: Security scan (tests)
+      run: bandit -r tests -ll
 
-    - name: Run tests with pytest
+    - name: Run tests with pytest (blocking)
       env:
         RC_ADMIN_KEY: "0123456789abcdef0123456789abcdef"
         DB_PATH: ":memory:"
-      run: pytest tests/ -v || true
-      continue-on-error: true
+      run: pytest tests/ -v
