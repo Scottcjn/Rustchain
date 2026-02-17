@@ -2690,6 +2690,57 @@ def get_balance(miner_pk):
             "amount_i64": balance_i64
         })
 
+@app.route('/api/badge/<wallet>', methods=['GET'])
+def get_mining_badge(wallet):
+    """
+    Get mining status badge for shields.io
+    Returns JSON in shields.io endpoint schema format
+    """
+    epoch = slot_to_epoch(current_slot())
+
+    with sqlite3.connect(DB_PATH) as c:
+        # Get balance - try both miner_pk and miner_id columns
+        row = c.execute("SELECT COALESCE(amount_i64, 0) FROM balances WHERE miner_pk = ?", (wallet,)).fetchone()
+        if not row or row[0] == 0:
+            row = c.execute("SELECT COALESCE(amount_i64, 0) FROM balances WHERE miner_id = ?", (wallet,)).fetchone()
+        balance_i64 = row[0] if row else 0
+        balance_rtc = balance_i64 / 1000000.0
+
+        # Check if miner is active (has recent attestation or enrollment)
+        # Active if enrolled in current epoch or has attestation within last hour
+        active = False
+        now = int(time.time())
+
+        # Check enrollment in current epoch
+        enroll_row = c.execute("SELECT COUNT(*) FROM epoch_enroll WHERE epoch = ? AND miner_pk = ?",
+                               (epoch, wallet)).fetchone()
+        if enroll_row and enroll_row[0] > 0:
+            active = True
+        else:
+            # Check recent attestation (within last hour)
+            attest_row = c.execute(
+                "SELECT ts_ok FROM miner_attest_recent WHERE miner = ? AND ts_ok > ?",
+                (wallet, now - 3600)
+            ).fetchone()
+            if attest_row:
+                active = True
+
+    # Determine message and color based on status
+    if active:
+        message = f"{balance_rtc:.1f} RTC | Epoch {epoch} | Active"
+        color = "brightgreen"
+    else:
+        message = f"{balance_rtc:.1f} RTC | Epoch {epoch} | Inactive"
+        color = "yellow"
+
+    # Return shields.io-compatible JSON
+    return jsonify({
+        "schemaVersion": 1,
+        "label": "RustChain",
+        "message": message,
+        "color": color
+    })
+
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
     """Get system statistics"""

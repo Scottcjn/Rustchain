@@ -1,0 +1,52 @@
+name: Update Mining Status Badge
+
+on:
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      wallet:
+        description: 'Wallet name to check'
+        required: true
+        default: 'frozen-factorio-ryan'
+  # Update daily at midnight UTC
+  schedule:
+    - cron: '0 0 * * *'
+  # Allow manual trigger from repository settings
+  workflow_dispatch:
+
+jobs:
+  update-badge:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fetch mining status
+        id: fetch-status
+        run: |
+          # Get wallet from input or use default
+          WALLET="${{ github.event.inputs.wallet }}"
+          if [ -z "$WALLET" ]; then
+            WALLET="frozen-factorio-ryan"
+          fi
+
+          # Fetch mining status from RustChain node
+          STATUS=$(curl -s "https://50.28.86.131/api/badge/$WALLET")
+
+          # Extract status components
+          LABEL=$(echo $STATUS | jq -r '.label')
+          MESSAGE=$(echo $STATUS | jq -r '.message')
+          COLOR=$(echo $STATUS | jq -r '.color')
+
+          echo "label=$LABEL" >> $GITHUB_OUTPUT
+          echo "message=$MESSAGE" >> $GITHUB_OUTPUT
+          echo "color=$COLOR" >> $GITHUB_OUTPUT
+
+      - name: Update README with badge
+        run: |
+          echo "Mining Status:"
+          echo "Label: ${{ steps.fetch-status.outputs.label }}"
+          echo "Message: ${{ steps.fetch-status.outputs.message }}"
+          echo "Color: ${{ steps.fetch-status.outputs.color }}"
+
+          # Note: This is a template action. Actual README updates
+          # would require checkout and push permissions.
+          echo "Badge URL: https://img.shields.io/badge/${{ steps.fetch-status.outputs.label }}-${{ steps.fetch-status.outputs.message }}-${{ steps.fetch-status.outputs.color }}"
