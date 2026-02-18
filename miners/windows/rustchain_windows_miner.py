@@ -15,11 +15,23 @@ import statistics
 import uuid
 import subprocess
 import re
-import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+try:
+    import tkinter as tk
+    from tkinter import ttk, messagebox, scrolledtext
+    TK_AVAILABLE = True
+    _TK_IMPORT_ERROR = ""
+except Exception as e:
+    # Windows embeddable Python often ships without Tcl/Tk. We support headless mode.
+    TK_AVAILABLE = False
+    _TK_IMPORT_ERROR = str(e)
+    tk = None
+    ttk = None
+    messagebox = None
+    scrolledtext = None
 import requests
 from datetime import datetime
 from pathlib import Path
+import argparse
 
 # Configuration
 RUSTCHAIN_API = "http://50.28.86.131:8088"
@@ -301,6 +313,8 @@ class RustChainMiner:
 class RustChainGUI:
     """Windows GUI for RustChain"""
     def __init__(self):
+        if not TK_AVAILABLE:
+            raise RuntimeError(f"tkinter is not available: {_TK_IMPORT_ERROR}")
         self.root = tk.Tk()
         self.root.title("RustChain Wallet & Miner for Windows")
         self.root.geometry("800x600")
@@ -385,10 +399,56 @@ class RustChainGUI:
         """Run the GUI"""
         self.root.mainloop()
 
-def main():
+def run_headless(wallet_address: str, node_url: str) -> int:
+    wallet = RustChainWallet()
+    if wallet_address:
+        wallet.wallet_data["address"] = wallet_address
+        wallet.save_wallet(wallet.wallet_data)
+    miner = RustChainMiner(wallet.wallet_data["address"])
+    miner.node_url = node_url
+
+    def cb(evt):
+        t = evt.get("type")
+        if t == "share":
+            ok = "OK" if evt.get("success") else "FAIL"
+            print(f"[share] submitted={evt.get('submitted')} accepted={evt.get('accepted')} {ok}", flush=True)
+        elif t == "error":
+            print(f"[error] {evt.get('message')}", file=sys.stderr, flush=True)
+
+    print("RustChain Windows miner: headless mode", flush=True)
+    print(f"node={miner.node_url} miner_id={miner.miner_id}", flush=True)
+    miner.start_mining(cb)
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        miner.stop_mining()
+        print("\nStopping miner.", flush=True)
+        return 0
+
+
+def main(argv=None):
     """Main entry point"""
+    ap = argparse.ArgumentParser(description="RustChain Windows wallet + miner (GUI or headless fallback).")
+    ap.add_argument("--headless", action="store_true", help="Run without GUI (recommended for embeddable Python).")
+    ap.add_argument("--node", default=RUSTCHAIN_API, help="RustChain node base URL.")
+    ap.add_argument("--wallet", default="", help="Wallet address / miner pubkey string.")
+    args = ap.parse_args(argv)
+
+    if args.headless or not TK_AVAILABLE:
+        if not TK_AVAILABLE and not args.headless:
+            print(f"tkinter unavailable ({_TK_IMPORT_ERROR}); falling back to --headless.", file=sys.stderr)
+        return run_headless(args.wallet, args.node)
+
     app = RustChainGUI()
+    app.miner.node_url = args.node
+    if args.wallet:
+        app.wallet.wallet_data["address"] = args.wallet
+        app.wallet.save_wallet(app.wallet.wallet_data)
+        app.miner.wallet_address = args.wallet
+        app.miner.miner_id = f"windows_{hashlib.md5(args.wallet.encode()).hexdigest()[:8]}"
     app.run()
+    return 0
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
