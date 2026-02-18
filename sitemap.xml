@@ -42,21 +42,21 @@
 
   <!-- Applications -->
   <url>
-    <loc>https://rustchain.org/light-client/</loc>
+    <loc>https://rustchain.org/light-client/index.html</loc>
     <lastmod>2026-02-18</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
 
   <url>
-    <loc>https://rustchain.org/museum/</loc>
+    <loc>https://rustchain.org/museum/index.html</loc>
     <lastmod>2026-02-18</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
 
   <url>
-    <loc>https://rustchain.org/museum/3d</loc>
+    <loc>https://rustchain.org/museum/museum3d.html</loc>
     <lastmod>2026-02-18</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>

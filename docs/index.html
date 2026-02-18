@@ -63,7 +63,16 @@
       font-size: 0.95em;
       overflow: hidden;
     }
-    .marquee-bar marquee { font-weight: bold; }
+    .marquee-text { 
+      display: inline-block;
+      padding-left: 100%;
+      animation: scroll 15s linear infinite;
+      font-weight: bold;
+    }
+    @keyframes scroll {
+      0% { transform: translate(0, 0); }
+      100% { transform: translate(-100%, 0); }
+    }
 
     .nav {
       display: flex; justify-content: center; gap: 20px;
@@ -248,9 +257,9 @@
   </div>
 
   <div class="marquee-bar">
-    <marquee id="rustSlogan" behavior="scroll" direction="left" scrollamount="10">
+    <div class="marquee-text" id="rustSlogan">
       If it runs DOOM, it runs RustChain.
-    </marquee>
+    </div>
   </div>
 
   <script>
