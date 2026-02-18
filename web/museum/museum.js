@@ -1,10 +1,19 @@
 (() => {
   const $ = (id) => document.getElementById(id);
+  const TRACKER_URL = 'https://github.com/Scottcjn/rustchain-bounties/blob/main/bounties/XP_TRACKER.md';
+  const HUNTER_BADGES_RAW = {
+    totalXp: 'https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/hunter-stats.json',
+    topHunter: 'https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/top-hunter.json',
+    activeHunters: 'https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/active-hunters.json',
+    legendaryHunters: 'https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/legendary-hunters.json',
+    updatedAt: 'https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/updated-at.json',
+  };
+
   const state = {
     miners: [],
     stats: null,
     epoch: null,
-    balances: null,
+    hunters: null,
     lastLoaded: 0,
   };
 
@@ -44,6 +53,28 @@
     return await r.json();
   }
 
+  async function fetchJson(url) {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) return null;
+    return await r.json();
+  }
+
+  function badgeEndpoint(rawUrl) {
+    return `https://img.shields.io/endpoint?url=${encodeURIComponent(rawUrl)}`;
+  }
+
+  async function loadHunterData() {
+    const [topHunter, totalXp, activeHunters, legendaryHunters, updatedAt] = await Promise.all([
+      fetchJson(HUNTER_BADGES_RAW.topHunter).catch(() => null),
+      fetchJson(HUNTER_BADGES_RAW.totalXp).catch(() => null),
+      fetchJson(HUNTER_BADGES_RAW.activeHunters).catch(() => null),
+      fetchJson(HUNTER_BADGES_RAW.legendaryHunters).catch(() => null),
+      fetchJson(HUNTER_BADGES_RAW.updatedAt).catch(() => null),
+    ]);
+
+    return { topHunter, totalXp, activeHunters, legendaryHunters, updatedAt };
+  }
+
   function renderStats() {
     const box = $('stats');
     box.innerHTML = '';
@@ -57,6 +88,41 @@
     add('Attested Miners (1h)', state.miners.length);
     add('Version', state.stats?.version ?? 'n/a');
     add('Last Refresh', new Date(state.lastLoaded).toLocaleTimeString());
+  }
+
+  function renderHunterPanel() {
+    const meta = $('huntersMeta');
+    const box = $('hunterBadges');
+    if (!meta || !box) return;
+
+    box.innerHTML = '';
+    if (!state.hunters) {
+      meta.textContent = 'Hall of Hunters data unavailable right now.';
+      return;
+    }
+
+    const top = state.hunters.topHunter?.message || 'n/a';
+    const total = state.hunters.totalXp?.message || 'n/a';
+    const active = state.hunters.activeHunters?.message || 'n/a';
+    const legendary = state.hunters.legendaryHunters?.message || 'n/a';
+    const updated = state.hunters.updatedAt?.message || 'n/a';
+
+    meta.textContent = `Top Hunter: ${top} | Total XP: ${total} | Active Hunters: ${active} | Legendary: ${legendary} | Updated: ${updated}`;
+
+    const badgeEntries = [
+      ['Top Hunter', HUNTER_BADGES_RAW.topHunter],
+      ['Total XP', HUNTER_BADGES_RAW.totalXp],
+      ['Active Hunters', HUNTER_BADGES_RAW.activeHunters],
+      ['Legendary Hunters', HUNTER_BADGES_RAW.legendaryHunters],
+      ['Updated', HUNTER_BADGES_RAW.updatedAt],
+    ];
+
+    for (const [label, raw] of badgeEntries) {
+      const a = el('a', { href: TRACKER_URL, target: '_blank', rel: 'noopener', title: label });
+      const img = el('img', { src: badgeEndpoint(raw), alt: label, loading: 'lazy' });
+      a.appendChild(img);
+      box.appendChild(a);
+    }
   }
 
   function renderArchChart(miners) {
@@ -176,7 +242,7 @@
         b
       ]));
 
-      card.appendChild(el('h3', {}, [String(m.hardware_type || 'Unknown')]))
+      card.appendChild(el('h3', {}, [String(m.hardware_type || 'Unknown')]));
 
       const meta = el('div', { class: 'meta' }, [
         kv('Arch', `${m.device_arch || 'unknown'}`),
@@ -249,19 +315,22 @@
   async function loadAll() {
     $('subtitle').textContent = 'Loading miners...';
 
-    const [stats, epoch, miners] = await Promise.all([
+    const [stats, epoch, miners, hunters] = await Promise.all([
       api('/api/stats').catch(() => null),
       api('/epoch').catch(() => null),
       api('/api/miners').catch(() => []),
+      loadHunterData().catch(() => null),
     ]);
 
     state.stats = stats;
     state.epoch = epoch;
     state.miners = Array.isArray(miners) ? miners : (miners?.miners || []);
+    state.hunters = hunters;
     state.lastLoaded = Date.now();
 
     renderStats();
     renderCards();
+    renderHunterPanel();
   }
 
   function wire() {
@@ -270,6 +339,7 @@
       stats: state.stats,
       epoch: state.epoch,
       miners: state.miners,
+      hunters: state.hunters,
       exported_at: new Date().toISOString(),
     }, `rustchain_museum_${Date.now()}.json`));
 
@@ -282,5 +352,6 @@
   wire();
   loadAll().catch((e) => {
     $('subtitle').textContent = `Failed to load: ${String(e)}`;
+    renderHunterPanel();
   });
 })();

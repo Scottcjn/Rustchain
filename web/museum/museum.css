@@ -242,3 +242,26 @@ pre.code{margin:0;padding:14px;border-radius:16px;border:1px solid rgba(0,0,0,.1
 
 .small-note{font-family:var(--mono);font-size:11px;opacity:.75}
 
+
+
+.hall-panel .panel-body{
+  display:grid;
+  gap:12px;
+}
+
+.hunter-badges{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  align-items:center;
+}
+
+.hunter-badges a{
+  text-decoration:none;
+}
+
+.hunter-badges img{
+  height:24px;
+  border-radius:4px;
+  box-shadow:0 2px 12px rgba(12,16,20,.12);
+}
