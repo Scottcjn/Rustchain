@@ -88,6 +88,62 @@ REPO_ROOT = os.path.abspath(os.path.join(_BASE_DIR, "..")) if os.path.basename(_
 LIGHTCLIENT_DIR = os.path.join(REPO_ROOT, "web", "light-client")
 MUSEUM_DIR = os.path.join(REPO_ROOT, "web", "museum")
 
+# ----------------------------------------------------------------------------
+# Trusted proxy handling
+#
+# SECURITY: never trust X-Forwarded-For unless the request came from a trusted
+# reverse proxy. This matters because we use client IP for logging, rate limits,
+# and (critically) hardware binding anti-multiwallet logic.
+#
+# Configure via env:
+#   RC_TRUSTED_PROXIES="127.0.0.1,::1,10.0.0.0/8"
+# ----------------------------------------------------------------------------
+
+def _parse_trusted_proxies() -> Tuple[set, list]:
+    raw = (os.environ.get("RC_TRUSTED_PROXIES", "") or "127.0.0.1,::1").strip()
+    ips = set()
+    nets = []
+    for item in [x.strip() for x in raw.split(",") if x.strip()]:
+        try:
+            if "/" in item:
+                nets.append(ipaddress.ip_network(item, strict=False))
+            else:
+                ips.add(item)
+        except Exception:
+            continue
+    return ips, nets
+
+
+_TRUSTED_PROXY_IPS, _TRUSTED_PROXY_NETS = _parse_trusted_proxies()
+
+
+def client_ip_from_request(req) -> str:
+    remote = (req.remote_addr or "").strip()
+    if not remote:
+        return ""
+
+    trusted = False
+    try:
+        ip = ipaddress.ip_address(remote)
+        if remote in _TRUSTED_PROXY_IPS:
+            trusted = True
+        else:
+            for net in _TRUSTED_PROXY_NETS:
+                if ip in net:
+                    trusted = True
+                    break
+    except Exception:
+        trusted = remote in _TRUSTED_PROXY_IPS
+
+    if not trusted:
+        return remote
+
+    xff = (req.headers.get("X-Forwarded-For", "") or "").strip()
+    if not xff:
+        return remote
+    first = xff.split(",")[0].strip()
+    return first or remote
+
 # Register Hall of Rust blueprint (tables initialized after DB_PATH is set)
 try:
     from hall_of_rust import hall_bp
@@ -112,7 +168,7 @@ def _after(resp):
             "method": request.method,
             "path": request.path,
             "status": resp.status_code,
-            "ip": request.headers.get("X-Forwarded-For", request.remote_addr),
+            "ip": client_ip_from_request(request),
             "dur_ms": int(dur * 1000),
         }
         log.info(json.dumps(rec, separators=(",", ":")))
@@ -1653,9 +1709,7 @@ def submit_attestation():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = client_ip_from_request(request)
 
     # Extract attestation data
     miner = data.get('miner') or data.get('miner_id')
@@ -1854,9 +1908,7 @@ def enroll_epoch():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = client_ip_from_request(request)
     miner_pk = data.get('miner_pubkey')
     miner_id = data.get('miner_id', miner_pk)  # Use miner_id if provided
     device = data.get('device', {})
@@ -2216,9 +2268,7 @@ def register_withdrawal_key():
         return jsonify({"error": "Invalid JSON body"}), 400
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = client_ip_from_request(request)
     miner_pk = data.get('miner_pk')
     pubkey_sr25519 = data.get('pubkey_sr25519')
 
@@ -2269,9 +2319,7 @@ def request_withdrawal():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = client_ip_from_request(request)
     miner_pk = data.get('miner_pk')
     amount = float(data.get('amount', 0))
     destination = data.get('destination')
@@ -2954,9 +3002,7 @@ def add_oui_deny():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = client_ip_from_request(request)
     oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
     vendor = data.get('vendor', 'Unknown')
     enforce = int(data.get('enforce', 0))
@@ -2981,9 +3027,7 @@ def remove_oui_deny():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = client_ip_from_request(request)
     oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
 
     with sqlite3.connect(DB_PATH) as conn:
@@ -3043,9 +3087,7 @@ def attest_debug():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = client_ip_from_request(request)
     miner = data.get('miner') or data.get('miner_id')
 
     if not miner:
@@ -3711,9 +3753,7 @@ def wallet_transfer_OLD():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = client_ip_from_request(request)
     from_miner = data.get('from_miner')
     to_miner = data.get('to_miner')
     amount_rtc = float(data.get('amount_rtc', 0))
@@ -4029,9 +4069,7 @@ def wallet_transfer_signed():
         return jsonify({"error": pre.error, "details": pre.details}), 400
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = client_ip_from_request(request)
     
     from_address = pre.details["from_address"]
     to_address = pre.details["to_address"]
