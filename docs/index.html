@@ -3,8 +3,30 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RustChain | Proof-of-Attestation Blockchain</title>
+  <title>RustChain | Proof-of-Attestation Blockchain - Vintage Hardware Mining</title>
   <meta name="description" content="RustChain - 1 CPU = 1 Vote blockchain with RIP-200 Proof-of-Attestation consensus. Mine with real hardware. Vintage PowerPC earns 2.5x. VMs earn nothing.">
+  <meta name="keywords" content="RustChain, Proof-of-Attestation, vintage hardware mining, silicon stratigraphy, antiquity multipliers, blockchain, cryptocurrency, RTC, PowerPC, retro computing">
+  <meta name="author" content="Elyan Labs">
+  <meta name="robots" content="index, follow">
+  <meta name="language" content="English">
+  
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://rustchain.org/docs/index.html">
+  
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://rustchain.org/docs/index.html">
+  <meta property="og:title" content="RustChain | Proof-of-Attestation Blockchain">
+  <meta property="og:description" content="1 CPU = 1 Vote blockchain with vintage hardware mining. PowerPC earns 2.5x rewards. Real hardware only.">
+  <meta property="og:image" content="https://rustchain.org/elyan_logo.png">
+  <meta property="og:site_name" content="RustChain">
+  
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image">
+  <meta property="twitter:url" content="https://rustchain.org/docs/index.html">
+  <meta property="twitter:title" content="RustChain | Proof-of-Attestation Blockchain">
+  <meta property="twitter:description" content="1 CPU = 1 Vote blockchain with vintage hardware mining. PowerPC earns 2.5x rewards.">
+  <meta property="twitter:image" content="https://rustchain.org/elyan_logo.png">
   <style>
     :root {
       --bg: #0a0a0f;
@@ -41,7 +63,16 @@
       font-size: 0.95em;
       overflow: hidden;
     }
-    .marquee-bar marquee { font-weight: bold; }
+    .marquee-text { 
+      display: inline-block;
+      padding-left: 100%;
+      animation: scroll 15s linear infinite;
+      font-weight: bold;
+    }
+    @keyframes scroll {
+      0% { transform: translate(0, 0); }
+      100% { transform: translate(-100%, 0); }
+    }
 
     .nav {
       display: flex; justify-content: center; gap: 20px;
@@ -128,6 +159,90 @@
       .stat .num { font-size: 2em; }
     }
   </style>
+  
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://rustchain.org/#organization",
+        "name": "Elyan Labs",
+        "url": "https://rustchain.org",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://rustchain.org/elyan_logo.png"
+        },
+        "description": "Blockchain development studio focused on vintage hardware preservation and Proof-of-Attestation consensus"
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://rustchain.org/#software",
+        "name": "RustChain",
+        "applicationCategory": "Blockchain",
+        "operatingSystem": "Linux, macOS, Windows",
+        "description": "1 CPU = 1 Vote blockchain with Proof-of-Attestation consensus for vintage hardware mining",
+        "url": "https://rustchain.org",
+        "author": {
+          "@type": "Organization",
+          "@id": "https://rustchain.org/#organization"
+        },
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://rustchain.org/#website",
+        "url": "https://rustchain.org",
+        "name": "RustChain",
+        "description": "Proof-of-Attestation blockchain for vintage hardware mining",
+        "publisher": {
+          "@type": "Organization",
+          "@id": "https://rustchain.org/#organization"
+        },
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": "https://rustchain.org?q={search_term_string}",
+          "query-input": "required name=search_term_string"
+        }
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://rustchain.org/#faq",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is Proof-of-Attestation?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Proof-of-Attestation is a consensus mechanism where miners prove they're running on real physical hardware via cryptographic fingerprinting, preventing VM and bot participation."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What hardware earns the highest rewards?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Vintage hardware earns the highest antiquity multipliers: PowerPC G4 earns 2.5x, PowerPC G5 earns 2.0x, and PowerPC G3 earns 1.8x rewards."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I mine with virtual machines?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. RustChain's hardware fingerprinting detects and blocks virtual machines, ensuring only real physical hardware can participate in mining."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
 
@@ -142,9 +257,9 @@
   </div>
 
   <div class="marquee-bar">
-    <marquee id="rustSlogan" behavior="scroll" direction="left" scrollamount="10">
+    <div class="marquee-text" id="rustSlogan">
       If it runs DOOM, it runs RustChain.
-    </marquee>
+    </div>
   </div>
 
   <script>
@@ -183,6 +298,10 @@
   </script>
 
   <nav class="nav">
+    <a href="about.html">About</a>
+    <a href="mining.html">Mining</a>
+    <a href="tokenomics.html">Tokenomics</a>
+    <a href="hardware.html">Hardware</a>
     <a href="#about">About</a>
     <a href="#consensus">Consensus</a>
     <a href="#fingerprinting">Fingerprinting</a>

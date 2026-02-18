@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mining Guide | RustChain Vintage Hardware Mining</title>
+  <meta name="description" content="Complete guide to mining RustChain with vintage hardware. Learn about Proof-of-Attestation, hardware requirements, and maximizing antiquity multipliers.">
+  <meta name="keywords" content="RustChain mining, vintage hardware mining, Proof-of-Attestation, antiquity multipliers, PowerPC mining, retro computing mining, silicon stratigraphy">
+  <meta name="author" content="Elyan Labs">
+  <meta name="robots" content="index, follow">
+  <meta name="language" content="English">
+  
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://rustchain.org/docs/mining.html">
+  
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://rustchain.org/docs/mining.html">
+  <meta property="og:title" content="Mining Guide | RustChain Vintage Hardware Mining">
+  <meta property="og:description" content="Complete guide to mining RustChain with vintage hardware. Learn about Proof-of-Attestation and maximizing your rewards.">
+  <meta property="og:image" content="https://rustchain.org/elyan_logo.png">
+  <meta property="og:site_name" content="RustChain">
+  
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image">
+  <meta property="twitter:url" content="https://rustchain.org/docs/mining.html">
+  <meta property="twitter:title" content="Mining Guide | RustChain Vintage Hardware Mining">
+  <meta property="twitter:description" content="Complete guide to mining RustChain with vintage hardware. Learn about Proof-of-Attestation and maximizing your rewards.">
+  <meta property="twitter:image" content="https://rustchain.org/elyan_logo.png">
+  
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "Mining Guide | RustChain Vintage Hardware Mining",
+    "description": "Complete guide to mining RustChain with vintage hardware. Learn about Proof-of-Attestation, hardware requirements, and maximizing antiquity multipliers.",
+    "url": "https://rustchain.org/docs/mining.html",
+    "datePublished": "2026-02-18",
+    "author": {
+      "@type": "Organization",
+      "name": "Elyan Labs",
+      "url": "https://rustchain.org"
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": "Elyan Labs",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://rustchain.org/elyan_logo.png"
+      }
+    },
+    "mainEntityOfPage": {
+      "@type": "WebPage",
+      "@id": "https://rustchain.org/docs/mining.html"
+    }
+  }
+  </script>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --border: #1e1e2e;
+      --text: #e0e0e8;
+      --dim: #8888a0;
+      --accent: #6c5ce7;
+      --accent2: #00cec9;
+      --warn: #fdcb6e;
+      --fire: #ff6b35;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace; background: var(--bg); color: var(--text); line-height: 1.7; }
+    a { color: var(--accent2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .hero {
+      padding: 60px 20px 40px;
+      text-align: center;
+      background: linear-gradient(135deg, #0a0a1a 0%, #1a0a2e 50%, #0a1a1e 100%);
+      border-bottom: 1px solid var(--border);
+    }
+    .hero img { max-height: 80px; margin-bottom: 16px; }
+    .hero h1 { font-size: 3em; margin-bottom: 10px; }
+    .hero h1 span { color: var(--accent); }
+    .hero p { color: var(--dim); font-size: 1.1em; max-width: 600px; margin: 0 auto; }
+
+    .marquee-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 0;
+      color: var(--fire);
+      font-size: 0.95em;
+      overflow: hidden;
+    }
+    .marquee-text { 
+      display: inline-block;
+      padding-left: 100%;
+      animation: scroll 15s linear infinite;
+      font-weight: bold;
+    }
+    @keyframes scroll {
+      0% { transform: translate(0, 0); }
+      100% { transform: translate(-100%, 0); }
+    }
+
+    .nav {
+      display: flex; justify-content: center; gap: 20px;
+      padding: 16px; background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .nav a {
+      color: var(--text); padding: 8px 16px;
+      border: 1px solid var(--border); border-radius: 6px;
+      transition: all 0.2s;
+    }
+    .nav a:hover { background: var(--accent); color: white; text-decoration: none; border-color: var(--accent); }
+
+    .container { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 30px; margin-bottom: 24px;
+    }
+    .card h2 { color: var(--accent2); margin-bottom: 12px; font-size: 1.4em; }
+    .card h3 { color: var(--accent); margin: 16px 0 8px; }
+    .card p { color: var(--dim); margin-bottom: 12px; }
+
+    pre {
+      background: #080810; padding: 16px; border-radius: 8px;
+      overflow-x: auto; margin: 12px 0; border: 1px solid var(--border);
+      color: var(--text); font-size: 0.85em;
+    }
+    code { background: rgba(108, 92, 231, 0.15); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+
+    .tag {
+      display: inline-block; padding: 4px 10px; border-radius: 20px;
+      font-size: 0.8em; margin: 2px;
+      background: rgba(108, 92, 231, 0.15); color: var(--accent);
+      border: 1px solid rgba(108, 92, 231, 0.3);
+    }
+    .tag.green { background: rgba(0, 206, 201, 0.15); color: var(--accent2); border-color: rgba(0, 206, 201, 0.3); }
+    .tag.yellow { background: rgba(253, 203, 110, 0.15); color: var(--warn); border-color: rgba(253, 203, 110, 0.3); }
+    .tag.fire { background: rgba(255, 107, 53, 0.15); color: var(--fire); border-color: rgba(255, 107, 53, 0.3); }
+
+    footer {
+      text-align: center; padding: 40px 20px;
+      border-top: 1px solid var(--border); color: var(--dim);
+    }
+    footer a { color: var(--accent); }
+
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 2em; }
+      .nav { gap: 8px; }
+      .nav a { padding: 6px 10px; font-size: 0.85em; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="hero">
+    <img src="elyan_logo.png" alt="Elyan Labs Logo">
+    <h1><span>Mining</span> Guide</h1>
+    <p>Start earning RTC with your vintage hardware</p>
+  </div>
+
+  <div class="marquee-bar">
+    <div class="marquee-text">
+      Don't throw it out. Reboot it into the chain.
+    </div>
+  </div>
+
+  <nav class="nav">
+    <a href="index.html">Home</a>
+    <a href="about.html">About</a>
+    <a href="mining.html">Mining</a>
+    <a href="tokenomics.html">Tokenomics</a>
+    <a href="hardware.html">Hardware</a>
+    <a href="https://scottcjn.github.io/elyan-labs-site/">Elyan Labs</a>
+  </nav>
+
+  <div class="container">
+
+    <!-- Getting Started -->
+    <div class="card">
+      <h2>Getting Started with Vintage Hardware Mining</h2>
+      <p>RustChain mining represents a revolutionary approach to cryptocurrency that rewards authentic hardware rather than computational waste or financial stake. Unlike traditional blockchain networks that require expensive GPUs or massive token holdings, RustChain allows you to mine with any real physical computer—especially vintage hardware that carries historical significance.</p>
+      
+      <p>The core principle is simple: <strong style="color:var(--accent2);">1 CPU = 1 Vote</strong>. Every genuine physical processor gets equal participation in the network consensus, with bonuses for older hardware through our <strong style="color:var(--warn);">antiquity multipliers</strong> system. This creates a truly decentralized network where vintage PowerPC systems can out-earn modern x86 machines.</p>
+      
+      <h3>What You Need to Start Mining</h3>
+      <p>Getting started with RustChain mining requires minimal setup:</p>
+      
+      <pre>
+✓ Real physical hardware (no VMs or containers)
+✓ Linux, macOS, or Windows operating system
+✓ Internet connection
+✓ RustChain miner software
+✓ RTC wallet address for rewards</pre>
+      
+      <p>That's it. No specialized mining rigs, no expensive GPUs, no massive electricity consumption. Your vintage PowerBook G4, old Pentium system, or even modern laptop can start earning RTC immediately.</p>
+    </div>
+
+    <!-- Installation -->
+    <div class="card">
+      <h2>Installation and Setup</h2>
+      <p>RustChain provides automated installation scripts for all major platforms. The installation process includes the miner software, hardware attestation tools, and wallet generation utilities.</p>
+      
+      <h3>Quick Install (Linux/macOS)</h3>
+      <pre># Download and run the installer
+curl -fsSL https://rustchain.org/install.sh | bash
+
+# Or download manually
+wget https://github.com/Scottcjn/Rustchain/releases/latest/install.sh
+chmod +x install.sh
+./install.sh</pre>
+      
+      <h3>Windows Installation</h3>
+      <pre># Download the Windows installer
+# Visit: https://github.com/Scottcjn/Rustchain/releases/latest
+
+# Run install-miner.bat as Administrator
+# Follow the on-screen prompts</pre>
+      
+      <h3>Post-Installation Setup</h3>
+      <p>After installation completes, you'll need to configure your miner:</p>
+      
+      <pre># Generate your wallet address
+rustchain-wallet generate
+
+# Start the attestation service
+rustchain-attest --start
+
+# Begin mining
+rustchain-miner --wallet YOUR_WALLET_ADDRESS</pre>
+      
+      <p>The attestation service will run hardware fingerprinting tests to verify your system is genuine physical hardware. This process typically takes 2-5 minutes and only needs to run once per hardware configuration.</p>
+    </div>
+
+    <!-- Hardware Attestation Process -->
+    <div class="card">
+      <h2>Understanding Hardware Attestation</h2>
+      <p>RustChain's <strong style="color:var(--accent2);">Proof-of-Attestation</strong> consensus relies on sophisticated hardware fingerprinting to ensure network integrity. This process, known as <strong style="color:var(--warn);">silicon stratigraphy</strong>, reads the unique characteristics embedded in your hardware during manufacturing.</p>
+      
+      <h3>The Seven-Layer Verification</h3>
+      <p>When you first start mining, RustChain runs seven distinct verification checks:</p>
+      
+      <p><span class="tag green">Clock-Skew Analysis</span> Measures microscopic timing variations in your CPU's crystal oscillator. Real hardware exhibits unique drift patterns that vary with temperature and age—impossible to replicate in virtual environments.</p>
+      
+      <p><span class="tag green">Cache Timing Fingerprint</span> Analyzes latency patterns across your CPU's cache hierarchy. Physical caches age unevenly through thermal cycling and electron migration, creating unique timing signatures.</p>
+      
+      <p><span class="tag green">SIMD Unit Identity</span> Tests instruction execution timing for your processor's vector instruction set (AltiVec for PowerPC, SSE/AVX for x86, NEON for ARM). Each CPU family has distinct timing characteristics.</p>
+      
+      <p><span class="tag green">Thermal Drift Entropy</span> Monitors how your system's timing characteristics change across different thermal states, from cold boot to full load. Real hardware has unique thermal response curves.</p>
+      
+      <p><span class="tag green">Instruction Path Jitter</span> Measures cycle-level timing variations across different execution pipelines. Physical CPUs exhibit complex jitter patterns that virtualization flattens.</p>
+      
+      <p><span class="tag yellow">Device-Age Oracle</span> Cross-references your CPU model, release year, and firmware version with expected entropy profiles. This prevents fake vintage hardware from earning inflated rewards.</p>
+      
+      <p><span class="tag green">Anti-Emulation Detection</span> Identifies hypervisor artifacts, time dilation effects, and other virtualization signatures that indicate VM or container environments.</p>
+      
+      <h3>Attestation Results</h3>
+      <p>After running the attestation process, you'll receive a detailed report:</p>
+      
+      <pre>HP Victus (Real Hardware):
+  [1/7] Clock-Skew.............. PASS (cv=0.092)
+  [2/7] Cache Timing............ PASS
+  [3/7] SIMD Identity........... PASS
+  [4/7] Thermal Drift........... PASS
+  [5/7] Instruction Jitter...... PASS
+  [6/7] Device-Age Oracle....... PASS
+  [7/7] Anti-Emulation.......... PASS
+  RESULT: ALL CHECKS PASSED
+  MULTIPLIER: 1.0x (Modern x86_64)</pre>
+    </div>
+
+    <!-- Maximizing Rewards -->
+    <div class="card">
+      <h2>Maximizing Your Mining Rewards</h2>
+      <p>RustChain's reward system is designed to incentivize vintage hardware preservation through <strong style="color:var(--warn);">antiquity multipliers</strong>. Older hardware earns higher rewards because it represents greater historical value and is harder to maintain.</p>
+      
+      <h3>Understanding Antiquity Multipliers</h3>
+      <p>The multiplier system rewards hardware based on manufacturing era and architectural significance:</p>
+      
+      <pre>Architecture       Multiplier   Era     Examples
+─────────────────────────────────────────────────
+PowerPC G4         2.5x         2003    PowerBook G4, iMac G4
+PowerPC G5         2.0x         2004    PowerMac G5, iMac G5
+PowerPC G3         1.8x         1999    iMac G3, PowerBook G3
+Pentium 4          1.5x         2000    Dell Dimension, HP Pavilion
+Retro x86          1.4x         pre-2010 Core 2 Duo, early Core i-series
+Apple Silicon      1.2x         2020+   M1/M2/M3 MacBook Air/Pro
+Modern x86_64      1.0x         current Ryzen, Core i-series
+Virtual Machines   0.0x         any     All VMs, containers, cloud instances</pre>
+      
+      <h3>Strategic Hardware Selection</h3>
+      <p>To maximize your earnings, focus on hardware with the highest multipliers:</p>
+      
+      <p><span class="tag fire">PowerPC G4 Systems (2.5x)</span> These represent the golden age of Apple's PowerPC era. Look for PowerBook G4 laptops, iMac G4 "lampshade" models, or PowerMac G4 towers. These systems are relatively common and offer the highest rewards.</p>
+      
+      <p><span class="tag fire">PowerPC G5 Systems (2.0x)</span> The final PowerPC generation before Apple's Intel transition. PowerMac G5 towers and iMac G5 models offer excellent rewards and are often available at reasonable prices.</p>
+      
+      <p><span class="tag yellow">Pentium 4 Systems (1.5x)</span> Early 2000s Windows machines with Pentium 4 processors. These were incredibly popular and are often available for free or very cheap from recycling centers.</p>
+      
+      <h3>Hardware Maintenance Tips</h3>
+      <p>To keep your vintage hardware mining reliably:</p>
+      
+      <pre>✓ Clean dust from heatsinks and fans regularly
+✓ Replace thermal paste every 2-3 years
+✓ Check capacitors for bulging or leakage
+✓ Keep systems in cool, well-ventilated areas
+✓ Use UPS protection to prevent power issues
+✓ Monitor system temperatures during mining</pre>
+      
+      <p>Well-maintained vintage hardware can run 24/7 for years, providing consistent RTC rewards while preserving computing history.</p>
+    </div>
+
+    <!-- Network Participation -->
+    <div class="card">
+      <h2>Network Participation and Rewards</h2>
+      <p>RustChain distributes <strong style="color:var(--accent2);">1.5 RTC per epoch</strong> among all active miners, with each epoch lasting approximately 10 minutes. Rewards are distributed proportionally based on your hardware's antiquity multiplier.</p>
+      
+      <h3>Example Reward Distribution</h3>
+      <p>With 8 active miners, rewards might distribute like this:</p>
+      
+      <pre>Miner                Hardware    Multiplier  RTC/Epoch  Percentage
+─────────────────────────────────────────────────────────────────
+dual-g4-125          PowerPC G4  2.5x        0.2976     19.8%
+g4-powerbook-115     PowerPC G4  2.5x        0.2976     19.8%
+ppc_g5_130           PowerPC G5  2.0x        0.2381     15.9%
+retro-x86            Pentium 4   1.5x        0.1786     11.9%
+apple-silicon        M2 MacBook  1.2x        0.1429      9.5%
+modern-1             Ryzen 5     1.0x        0.1191      7.9%
+modern-2             Core i5     1.0x        0.1191      7.9%
+sophia-nas           Xeon        1.0x        0.1191      7.9%</pre>
+      
+      <h3>Monitoring Your Mining</h3>
+      <p>RustChain provides several tools to monitor your mining activity:</p>
+      
+      <pre># Check your balance
+curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET"
+
+# View active miners
+curl -sk https://50.28.86.131/api/miners
+
+# Check current epoch
+curl -sk https://50.28.86.131/epoch
+
+# Network health check
+curl -sk https://50.28.86.131/health</pre>
+      
+      <h3>Withdrawing Rewards</h3>
+      <p>Once you've accumulated sufficient RTC, you can withdraw to external wallets or trade on supported exchanges. The RustChain light client provides an easy-to-use interface for managing your wallet and transactions.</p>
+      
+      <p>Remember that each transaction requires a small network fee, so it's economical to accumulate rewards before withdrawing. Most miners withdraw weekly or monthly depending on their earnings rate.</p>
+    </div>
+
+    <!-- Troubleshooting -->
+    <div class="card">
+      <h2>Troubleshooting Common Issues</h2>
+      <p>While RustChain mining is designed to be straightforward, you may encounter some common issues, especially with vintage hardware.</p>
+      
+      <h3>Attestation Failures</h3>
+      <p><span class="tag yellow">Clock-Skew FAIL</span> Often caused by unstable power supplies or excessive background processes. Try closing unnecessary applications and ensuring stable power.</p>
+      
+      <p><span class="tag yellow">Cache Timing FAIL</span> May indicate overheating or degraded cache memory. Check system temperatures and consider cleaning/reapplying thermal paste.</p>
+      
+      <p><span class="tag yellow">Anti-Emulation FAIL</span> This indicates you're running in a virtual environment. RustChain requires bare metal hardware—no VMs, containers, or cloud instances.</p>
+      
+      <h3>Hardware Issues</h3>
+      <p><span class="tag fire">System Crashes</span> Vintage hardware may be unstable under continuous load. Start with shorter mining sessions and gradually increase uptime as you verify system stability.</p>
+      
+      <p><span class="tag fire">Overheating</span> Old thermal paste and dust accumulation are common causes. Clean heatsinks thoroughly and replace thermal paste if temperatures exceed safe limits.</p>
+      
+      <h3>Network Connectivity</h3>
+      <p>If you can't connect to RustChain nodes, check your firewall settings and ensure port 443 is open for outbound connections. The miner will automatically retry connections.</p>
+      
+      <p>For additional support, join our Discord community where experienced miners can help diagnose issues and share hardware-specific tips.</p>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>Maintained by <a href="https://github.com/Scottcjn/Rustchain">Elyan Labs</a> &middot; Built with love and BIOS timestamps</p>
+    <p style="margin-top: 8px; font-size: 0.8em;">More dedicated compute than most colleges. $12K invested. $60K+ retail value.</p>
+  </footer>
+
+</body>
+</html>
