@@ -5,7 +5,9 @@ Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
 import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math
 import ipaddress
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort
 try:
     # Deployment compatibility: production may run this file as a single script.
@@ -87,6 +89,16 @@ _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(_BASE_DIR, "..")) if os.path.basename(_BASE_DIR) == "node" else _BASE_DIR
 LIGHTCLIENT_DIR = os.path.join(REPO_ROOT, "web", "light-client")
 MUSEUM_DIR = os.path.join(REPO_ROOT, "web", "museum")
+
+HUNTER_BADGE_RAW_URLS = {
+    "topHunter": "https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/top-hunter.json",
+    "totalXp": "https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/hunter-stats.json",
+    "activeHunters": "https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/active-hunters.json",
+    "legendaryHunters": "https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/legendary-hunters.json",
+    "updatedAt": "https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/updated-at.json",
+}
+_HUNTER_BADGE_CACHE = {"ts": 0, "data": None}
+_HUNTER_BADGE_TTL_S = int(os.environ.get("HUNTER_BADGE_CACHE_TTL", "300"))
 
 # ----------------------------------------------------------------------------
 # Trusted proxy handling
@@ -1625,6 +1637,59 @@ Blocks per Epoch: ${epoch.blocks_per_epoch}</span>`;
     return html
 
 # ============= MUSEUM STATIC UI (2D/3D) =============
+
+def _fetch_json_http(url: str, timeout_s: int = 8):
+    req = Request(url, headers={"User-Agent": f"RustChain/{APP_VERSION}"})
+    try:
+        with urlopen(req, timeout=timeout_s) as resp:
+            payload = resp.read().decode("utf-8", errors="replace")
+        return json.loads(payload)
+    except (HTTPError, URLError, TimeoutError, ValueError):
+        return None
+
+
+def _load_hunter_badges(force: bool = False):
+    now = int(time.time())
+    cached = _HUNTER_BADGE_CACHE.get("data")
+    ts = int(_HUNTER_BADGE_CACHE.get("ts") or 0)
+
+    if not force and cached and (now - ts) < _HUNTER_BADGE_TTL_S:
+        return cached
+
+    badges = {}
+    for key, raw_url in HUNTER_BADGE_RAW_URLS.items():
+        badges[key] = _fetch_json_http(raw_url)
+
+    endpoint_urls = {
+        key: f"https://img.shields.io/endpoint?url={quote(raw_url, safe='')}"
+        for key, raw_url in HUNTER_BADGE_RAW_URLS.items()
+    }
+
+    data = {
+        "ok": True,
+        "source": "rustchain-bounties",
+        "fetched_at": now,
+        "ttl_s": _HUNTER_BADGE_TTL_S,
+        "topHunter": badges.get("topHunter"),
+        "totalXp": badges.get("totalXp"),
+        "activeHunters": badges.get("activeHunters"),
+        "legendaryHunters": badges.get("legendaryHunters"),
+        "updatedAt": badges.get("updatedAt"),
+        "rawUrls": HUNTER_BADGE_RAW_URLS,
+        "endpointUrls": endpoint_urls,
+    }
+
+    _HUNTER_BADGE_CACHE["ts"] = now
+    _HUNTER_BADGE_CACHE["data"] = data
+    return data
+
+
+@app.route("/api/hunters/badges", methods=["GET"])
+def api_hunter_badges():
+    """Proxy Hall of Hunters badge JSON via local node API with caching."""
+    refresh = str(request.args.get("refresh", "0")).lower() in {"1", "true", "yes"}
+    return jsonify(_load_hunter_badges(force=refresh))
+
 
 @app.route("/museum", methods=["GET"])
 def museum_2d():

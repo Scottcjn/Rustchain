@@ -1,6 +1,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const TRACKER_URL = 'https://github.com/Scottcjn/rustchain-bounties/blob/main/bounties/XP_TRACKER.md';
+  const HUNTER_PROXY_API = '/api/hunters/badges';
   const HUNTER_BADGES_RAW = {
     totalXp: 'https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/hunter-stats.json',
     topHunter: 'https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/top-hunter.json',
@@ -64,6 +65,15 @@
   }
 
   async function loadHunterData() {
+    try {
+      const proxied = await api(HUNTER_PROXY_API);
+      if (proxied && (proxied.topHunter || proxied.totalXp || proxied.activeHunters)) {
+        return proxied;
+      }
+    } catch (_) {
+      // Fall through to direct raw fetch if proxy endpoint is unavailable.
+    }
+
     const [topHunter, totalXp, activeHunters, legendaryHunters, updatedAt] = await Promise.all([
       fetchJson(HUNTER_BADGES_RAW.topHunter).catch(() => null),
       fetchJson(HUNTER_BADGES_RAW.totalXp).catch(() => null),
@@ -72,7 +82,21 @@
       fetchJson(HUNTER_BADGES_RAW.updatedAt).catch(() => null),
     ]);
 
-    return { topHunter, totalXp, activeHunters, legendaryHunters, updatedAt };
+    return {
+      topHunter,
+      totalXp,
+      activeHunters,
+      legendaryHunters,
+      updatedAt,
+      rawUrls: HUNTER_BADGES_RAW,
+      endpointUrls: {
+        topHunter: badgeEndpoint(HUNTER_BADGES_RAW.topHunter),
+        totalXp: badgeEndpoint(HUNTER_BADGES_RAW.totalXp),
+        activeHunters: badgeEndpoint(HUNTER_BADGES_RAW.activeHunters),
+        legendaryHunters: badgeEndpoint(HUNTER_BADGES_RAW.legendaryHunters),
+        updatedAt: badgeEndpoint(HUNTER_BADGES_RAW.updatedAt),
+      },
+    };
   }
 
   function renderStats() {
@@ -109,17 +133,25 @@
 
     meta.textContent = `Top Hunter: ${top} | Total XP: ${total} | Active Hunters: ${active} | Legendary: ${legendary} | Updated: ${updated}`;
 
+    const endpointUrls = state.hunters.endpointUrls || {
+      topHunter: badgeEndpoint((state.hunters.rawUrls || HUNTER_BADGES_RAW).topHunter),
+      totalXp: badgeEndpoint((state.hunters.rawUrls || HUNTER_BADGES_RAW).totalXp),
+      activeHunters: badgeEndpoint((state.hunters.rawUrls || HUNTER_BADGES_RAW).activeHunters),
+      legendaryHunters: badgeEndpoint((state.hunters.rawUrls || HUNTER_BADGES_RAW).legendaryHunters),
+      updatedAt: badgeEndpoint((state.hunters.rawUrls || HUNTER_BADGES_RAW).updatedAt),
+    };
+
     const badgeEntries = [
-      ['Top Hunter', HUNTER_BADGES_RAW.topHunter],
-      ['Total XP', HUNTER_BADGES_RAW.totalXp],
-      ['Active Hunters', HUNTER_BADGES_RAW.activeHunters],
-      ['Legendary Hunters', HUNTER_BADGES_RAW.legendaryHunters],
-      ['Updated', HUNTER_BADGES_RAW.updatedAt],
+      ['Top Hunter', endpointUrls.topHunter],
+      ['Total XP', endpointUrls.totalXp],
+      ['Active Hunters', endpointUrls.activeHunters],
+      ['Legendary Hunters', endpointUrls.legendaryHunters],
+      ['Updated', endpointUrls.updatedAt],
     ];
 
-    for (const [label, raw] of badgeEntries) {
+    for (const [label, src] of badgeEntries) {
       const a = el('a', { href: TRACKER_URL, target: '_blank', rel: 'noopener', title: label });
-      const img = el('img', { src: badgeEndpoint(raw), alt: label, loading: 'lazy' });
+      const img = el('img', { src, alt: label, loading: 'lazy' });
       a.appendChild(img);
       box.appendChild(a);
     }

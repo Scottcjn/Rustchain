@@ -58,3 +58,12 @@ body{margin:0;overflow:hidden;background:#0f1318;color:var(--paper);font-family:
 @media (max-width: 520px){
   .panel{top:auto;left:16px;right:16px;bottom:16px;width:auto;height:min(56vh, 520px)}
 }
+
+
+.hunter-strip{pointer-events:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.hunter-strip a{text-decoration:none}
+.hunter-strip img{height:20px;border-radius:4px;box-shadow:0 2px 10px rgba(0,0,0,.28)}
+
+@media (max-width: 860px){
+  .hunter-strip img{height:18px}
+}

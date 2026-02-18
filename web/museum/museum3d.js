@@ -7,6 +7,8 @@ import { OrbitControls } from './vendor/OrbitControls.js';
   const controlsChip = document.getElementById('controlsChip');
   const recenterBtn = document.getElementById('recenterBtn');
   const modeBtn = document.getElementById('modeBtn');
+  const huntersChip = document.getElementById('huntersChip');
+  const hunterStrip = document.getElementById('hunterStrip');
 
   const panel = document.getElementById('panel');
   const pTitle = document.getElementById('pTitle');
@@ -33,6 +35,113 @@ import { OrbitControls } from './vendor/OrbitControls.js';
   const pointer = new THREE.Vector2();
 
   const clock = new THREE.Clock();
+
+  const TRACKER_URL = 'https://github.com/Scottcjn/rustchain-bounties/blob/main/bounties/XP_TRACKER.md';
+  const HUNTER_PROXY_API = '/api/hunters/badges';
+  const HUNTER_BADGES_RAW = {
+    topHunter: 'https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/top-hunter.json',
+    totalXp: 'https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/hunter-stats.json',
+    activeHunters: 'https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/active-hunters.json',
+    legendaryHunters: 'https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/legendary-hunters.json',
+    updatedAt: 'https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/updated-at.json',
+  };
+
+  let nextHunterRefreshAt = 0;
+
+  function badgeEndpoint(rawUrl) {
+    return `https://img.shields.io/endpoint?url=${encodeURIComponent(rawUrl)}`;
+  }
+
+  async function fetchJson(url) {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) return null;
+    return await r.json();
+  }
+
+  async function loadHunterData() {
+    try {
+      const proxied = await api(HUNTER_PROXY_API);
+      if (proxied && (proxied.topHunter || proxied.totalXp || proxied.activeHunters)) {
+        return proxied;
+      }
+    } catch (_) {
+      // Fall back to direct raw fetch.
+    }
+
+    const [topHunter, totalXp, activeHunters, legendaryHunters, updatedAt] = await Promise.all([
+      fetchJson(HUNTER_BADGES_RAW.topHunter).catch(() => null),
+      fetchJson(HUNTER_BADGES_RAW.totalXp).catch(() => null),
+      fetchJson(HUNTER_BADGES_RAW.activeHunters).catch(() => null),
+      fetchJson(HUNTER_BADGES_RAW.legendaryHunters).catch(() => null),
+      fetchJson(HUNTER_BADGES_RAW.updatedAt).catch(() => null),
+    ]);
+
+    return {
+      topHunter,
+      totalXp,
+      activeHunters,
+      legendaryHunters,
+      updatedAt,
+      rawUrls: HUNTER_BADGES_RAW,
+      endpointUrls: {
+        topHunter: badgeEndpoint(HUNTER_BADGES_RAW.topHunter),
+        totalXp: badgeEndpoint(HUNTER_BADGES_RAW.totalXp),
+        activeHunters: badgeEndpoint(HUNTER_BADGES_RAW.activeHunters),
+        legendaryHunters: badgeEndpoint(HUNTER_BADGES_RAW.legendaryHunters),
+        updatedAt: badgeEndpoint(HUNTER_BADGES_RAW.updatedAt),
+      },
+    };
+  }
+
+  function renderHunterHud(hunters) {
+    if (!huntersChip || !hunterStrip) return;
+
+    hunterStrip.innerHTML = '';
+
+    if (!hunters) {
+      huntersChip.textContent = 'Hall of Hunters: unavailable';
+      return;
+    }
+
+    const top = hunters.topHunter?.message || 'n/a';
+    const total = hunters.totalXp?.message || 'n/a';
+    const active = hunters.activeHunters?.message || 'n/a';
+    const legendary = hunters.legendaryHunters?.message || 'n/a';
+
+    huntersChip.textContent = `Hall of Hunters | Top: ${top} | XP: ${total} | Active: ${active} | Legendary: ${legendary}`;
+
+    const endpointUrls = hunters.endpointUrls || {
+      topHunter: badgeEndpoint((hunters.rawUrls || HUNTER_BADGES_RAW).topHunter),
+      totalXp: badgeEndpoint((hunters.rawUrls || HUNTER_BADGES_RAW).totalXp),
+      activeHunters: badgeEndpoint((hunters.rawUrls || HUNTER_BADGES_RAW).activeHunters),
+      legendaryHunters: badgeEndpoint((hunters.rawUrls || HUNTER_BADGES_RAW).legendaryHunters),
+      updatedAt: badgeEndpoint((hunters.rawUrls || HUNTER_BADGES_RAW).updatedAt),
+    };
+
+    const entries = [
+      ['Top Hunter', endpointUrls.topHunter],
+      ['Total XP', endpointUrls.totalXp],
+      ['Active Hunters', endpointUrls.activeHunters],
+      ['Legendary Hunters', endpointUrls.legendaryHunters],
+      ['Updated', endpointUrls.updatedAt],
+    ];
+
+    for (const [label, src] of entries) {
+      const a = document.createElement('a');
+      a.href = TRACKER_URL;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.title = label;
+
+      const img = document.createElement('img');
+      img.src = src;
+      img.alt = label;
+      img.loading = 'lazy';
+
+      a.appendChild(img);
+      hunterStrip.appendChild(a);
+    }
+  }
 
   function resize() {
     const w = window.innerWidth;
@@ -436,9 +545,17 @@ import { OrbitControls } from './vendor/OrbitControls.js';
         if (la && (now - la) <= ACTIVE_WINDOW_S) active++;
       }
 
+      const nowMs = Date.now();
+      if (nowMs >= nextHunterRefreshAt) {
+        const hunters = await loadHunterData().catch(() => null);
+        renderHunterHud(hunters);
+        nextHunterRefreshAt = nowMs + 300000;
+      }
+
       setStatus(`Loaded ${list.length} miners | active ${active} | ${new Date().toLocaleTimeString()}`);
     } catch (e) {
       setStatus(`Load failed: ${String(e)}`);
+      if (huntersChip) huntersChip.textContent = 'Hall of Hunters: unavailable';
     }
   }
 
