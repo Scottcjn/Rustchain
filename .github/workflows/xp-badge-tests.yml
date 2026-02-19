@@ -1,0 +1,46 @@
+name: XP/Badge Automation Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'validator_core_with_badge.py'
+      - 'badges/**'
+      - '.github/workflows/xp-badge-tests.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'validator_core_with_badge.py'
+      - 'badges/**'
+      - '.github/workflows/xp-badge-tests.yml'
+
+jobs:
+  test-xp-badge-automation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install dependencies
+        run: |
+          pip install pytest jsonschema pytest-cov
+          
+      - name: Create test directories
+        run: |
+          mkdir -p tests/schemas
+          
+      - name: Run XP/Badge automation tests
+        run: |
+          pytest tests/test_xp_badge_automation.py -v --cov=.
+          
+      - name: Validate badge JSON schemas
+        run: |
+          python tests/validate_badge_schemas.py
+          
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: github.event_name == 'push'

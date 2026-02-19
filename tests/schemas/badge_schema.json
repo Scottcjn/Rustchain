@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Badge Schema",
+  "description": "Schema for RustChain NFT badge JSON files",
+  "type": "object",
+  "properties": {
+    "nft_id": {
+      "type": "string",
+      "description": "Unique identifier for the badge"
+    },
+    "title": {
+      "type": "string",
+      "description": "Display title of the badge"
+    },
+    "category": {
+      "type": "string",
+      "description": "Category of the badge (e.g., 'Hardware', 'Milestone', 'Community')"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed description of the badge"
+    },
+    "emotional_resonance": {
+      "type": "string",
+      "description": "Emotional impact or story behind the badge"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Unicode symbol representing the badge"
+    },
+    "visual_anchor": {
+      "type": "string",
+      "description": "Visual reference or anchor point"
+    },
+    "rarity": {
+      "type": "string",
+      "enum": ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"],
+      "description": "Rarity level of the badge"
+    },
+    "bound": {
+      "type": "boolean",
+      "description": "Whether the badge is bound to a specific wallet"
+    }
+  },
+  "required": ["nft_id", "title", "category", "description", "emotional_resonance", "symbol", "visual_anchor", "rarity", "bound"],
+  "additionalProperties": false
+}

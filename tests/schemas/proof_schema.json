@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Proof of Antiquity Schema",
+  "description": "Schema for proof_of_antiquity.json validation",
+  "type": "object",
+  "properties": {
+    "cpu_model": {
+      "type": "string",
+      "description": "CPU model name"
+    },
+    "cpu_architecture": {
+      "type": "string",
+      "description": "CPU architecture (e.g., PowerPC, x86_64)"
+    },
+    "bios_date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "BIOS date in YYYY-MM-DD format"
+    },
+    "entropy_score": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Entropy score for hardware authenticity"
+    },
+    "antiquity_multiplier": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Antiquity multiplier based on hardware age"
+    },
+    "hardware_fingerprint": {
+      "type": "string",
+      "description": "Unique hardware fingerprint"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp of proof generation"
+    },
+    "validator_version": {
+      "type": "string",
+      "description": "Version of the validator that generated this proof"
+    }
+  },
+  "required": [
+    "cpu_model",
+    "cpu_architecture", 
+    "bios_date",
+    "entropy_score",
+    "antiquity_multiplier",
+    "hardware_fingerprint",
+    "timestamp",
+    "validator_version"
+  ],
+  "additionalProperties": false
+}
