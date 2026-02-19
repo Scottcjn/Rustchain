@@ -7,6 +7,7 @@
 | Document | Description |
 |----------|-------------|
 | [Protocol Specification](./PROTOCOL.md) | Full RIP-200 consensus protocol |
+| [Mechanism Spec + Falsification Matrix](./MECHANISM_SPEC_AND_FALSIFICATION_MATRIX.md) | One-page claim-to-test map with break conditions |
 | [API Reference](./API.md) | All endpoints with curl examples |
 | [Glossary](./GLOSSARY.md) | Terms and definitions |
 | [Tokenomics](./tokenomics_v1.md) | RTC supply and distribution |
