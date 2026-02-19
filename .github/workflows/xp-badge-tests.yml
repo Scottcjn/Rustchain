@@ -17,10 +17,6 @@ jobs:
         with:
           python-version: '3.11'
           
-      - name: Install dependencies
-        run: |
-          pip install pytest
-          
       - name: Run XP/Badge automation tests
         run: |
-          python -m pytest tests/test_xp_badge_automation.py -v
+          python tests/test_xp_badge_automation.py
