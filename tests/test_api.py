@@ -4,6 +4,7 @@ import json
 from unittest.mock import patch, MagicMock
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 # Modules are pre-loaded in conftest.py
 integrated_node = sys.modules["integrated_node"]
@@ -67,3 +68,29 @@ def test_api_miners(client):
         assert data[0]['miner'] == "addr1"
         assert data[0]['hardware_type'] == "PowerPC G4 (Vintage)"
         assert data[0]['antiquity_multiplier'] == 2.5
+
+
+def test_client_ip_from_request_ignores_leftmost_xff_spoof(monkeypatch):
+    """Trusted-proxy mode should ignore client-injected left-most XFF entries."""
+    monkeypatch.setattr(integrated_node, "_TRUSTED_PROXY_IPS", {"127.0.0.1"})
+    monkeypatch.setattr(integrated_node, "_TRUSTED_PROXY_NETS", [])
+
+    req = SimpleNamespace(
+        remote_addr="127.0.0.1",
+        headers={"X-Forwarded-For": "203.0.113.250, 198.51.100.77"},
+    )
+
+    assert integrated_node.client_ip_from_request(req) == "198.51.100.77"
+
+
+def test_client_ip_from_request_untrusted_remote_uses_remote_addr(monkeypatch):
+    """When not behind a trusted proxy, XFF must be ignored."""
+    monkeypatch.setattr(integrated_node, "_TRUSTED_PROXY_IPS", {"127.0.0.1"})
+    monkeypatch.setattr(integrated_node, "_TRUSTED_PROXY_NETS", [])
+
+    req = SimpleNamespace(
+        remote_addr="198.51.100.12",
+        headers={"X-Forwarded-For": "203.0.113.250"},
+    )
+
+    assert integrated_node.client_ip_from_request(req) == "198.51.100.12"
