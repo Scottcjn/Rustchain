@@ -14,11 +14,10 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from typing import Callable, List, Optional
+from urllib.request import urlopen
 
-import requests
 
-
-Fetcher = Callable[..., requests.Response]
+Fetcher = Callable[..., dict]
 
 
 @dataclass
@@ -32,14 +31,18 @@ class NodeSnapshot:
     error: Optional[str]
 
 
+def _default_fetcher(url: str, timeout: int) -> dict:
+    with urlopen(url, timeout=timeout) as response:
+        payload = response.read().decode("utf-8")
+    return json.loads(payload)
+
+
 def _fetch_json(node_url: str, endpoint: str, timeout_s: int, fetcher: Fetcher):
     url = f"{node_url.rstrip('/')}{endpoint}"
-    response = fetcher(url, timeout=timeout_s)
-    response.raise_for_status()
-    return response.json()
+    return fetcher(url, timeout=timeout_s)
 
 
-def collect_snapshot(node_url: str, timeout_s: int = 8, fetcher: Fetcher = requests.get) -> NodeSnapshot:
+def collect_snapshot(node_url: str, timeout_s: int = 8, fetcher: Fetcher = _default_fetcher) -> NodeSnapshot:
     try:
         health = _fetch_json(node_url, "/health", timeout_s, fetcher)
         epoch = _fetch_json(node_url, "/epoch", timeout_s, fetcher)

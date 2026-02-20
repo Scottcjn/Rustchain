@@ -1,15 +1,4 @@
-from types import SimpleNamespace
-
-import requests
-
 import consensus_probe as cp
-
-
-def _response(payload):
-    return SimpleNamespace(
-        json=lambda: payload,
-        raise_for_status=lambda: None,
-    )
 
 
 def test_detect_divergence_flags_split_state():
@@ -63,7 +52,7 @@ def test_collect_snapshot_success():
     def fake_fetcher(url, timeout):
         for endpoint, payload in payloads.items():
             if url.endswith(endpoint):
-                return _response(payload)
+                return payload
         raise AssertionError(f"unexpected url {url}")
 
     snap = cp.collect_snapshot("http://node", timeout_s=3, fetcher=fake_fetcher)
@@ -78,7 +67,7 @@ def test_collect_snapshot_success():
 
 def test_collect_snapshot_error():
     def failing_fetcher(url, timeout):
-        raise requests.RequestException("boom")
+        raise RuntimeError("boom")
 
     snap = cp.collect_snapshot("http://node", timeout_s=3, fetcher=failing_fetcher)
 
