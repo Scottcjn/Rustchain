@@ -129,32 +129,46 @@ def _parse_trusted_proxies() -> Tuple[set, list]:
 _TRUSTED_PROXY_IPS, _TRUSTED_PROXY_NETS = _parse_trusted_proxies()
 
 
+def _is_trusted_proxy_ip(ip_text: str) -> bool:
+    """Return True if an IP belongs to configured trusted proxies."""
+    if not ip_text:
+        return False
+    try:
+        ip_obj = ipaddress.ip_address(ip_text)
+        if ip_text in _TRUSTED_PROXY_IPS:
+            return True
+        for net in _TRUSTED_PROXY_NETS:
+            if ip_obj in net:
+                return True
+        return False
+    except Exception:
+        return ip_text in _TRUSTED_PROXY_IPS
+
+
 def client_ip_from_request(req) -> str:
     remote = (req.remote_addr or "").strip()
     if not remote:
         return ""
 
-    trusted = False
-    try:
-        ip = ipaddress.ip_address(remote)
-        if remote in _TRUSTED_PROXY_IPS:
-            trusted = True
-        else:
-            for net in _TRUSTED_PROXY_NETS:
-                if ip in net:
-                    trusted = True
-                    break
-    except Exception:
-        trusted = remote in _TRUSTED_PROXY_IPS
-
-    if not trusted:
+    if not _is_trusted_proxy_ip(remote):
         return remote
 
     xff = (req.headers.get("X-Forwarded-For", "") or "").strip()
     if not xff:
         return remote
-    first = xff.split(",")[0].strip()
-    return first or remote
+
+    # Walk right-to-left to resist client-controlled header injection.
+    # Proxies append their observed client to the right side.
+    hops = [h.strip() for h in xff.split(",") if h.strip()]
+    hops.append(remote)
+    for hop in reversed(hops):
+        try:
+            ipaddress.ip_address(hop)
+        except Exception:
+            continue
+        if not _is_trusted_proxy_ip(hop):
+            return hop
+    return remote
 
 # Register Hall of Rust blueprint (tables initialized after DB_PATH is set)
 try:
