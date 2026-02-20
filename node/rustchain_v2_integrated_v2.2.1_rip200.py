@@ -1909,6 +1909,7 @@ def submit_attestation():
     if not vm_ok:
         print(f"[VM_CHECK] Miner: {miner} - VM DETECTED (zero rewards): {vm_reason}")
         fingerprint_passed = False  # Mark as failed for zero weight
+        fingerprint_reason = f"server_vm_check_failed:{vm_reason}"
 
     # Record successful attestation (with fingerprint status)
     record_attestation_success(miner, device, fingerprint_passed, client_ip)
