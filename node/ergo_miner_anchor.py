@@ -4,21 +4,31 @@ import os, json, sqlite3, time, requests
 from hashlib import blake2b
 
 ERGO_NODE = os.environ.get("ERGO_NODE", "http://localhost:9053")
-ERGO_API_KEY = os.environ.get("ERGO_API_KEY", "BE7YM1fYWrMQ9tSmxAc9jzLNw42nEXTX")
+ERGO_API_KEY = os.environ.get("ERGO_API_KEY", "")
+ERGO_WALLET_PASSWORD = os.environ.get("ERGO_WALLET_PASSWORD", "")
 DB_PATH = "/root/rustchain/rustchain_v2.db"
 ANCHOR_VALUE = 1000000  # 0.001 ERG min box size
 
 class ErgoMinerAnchor:
     def __init__(self):
         self.session = requests.Session()
-        self.session.headers["api_key"] = ERGO_API_KEY
+        if ERGO_API_KEY:
+            self.session.headers["api_key"] = ERGO_API_KEY
         self.session.headers["Content-Type"] = "application/json"
     
-    def unlock_wallet(self, password="rustchain123"):
+    def unlock_wallet(self, password=None):
         """Unlock wallet if needed."""
-        status = self.session.get(ERGO_NODE + "/wallet/status").json()
+        status_resp = self.session.get(ERGO_NODE + "/wallet/status")
+        if status_resp.status_code != 200:
+            return False
+        status = status_resp.json()
         if not status.get("isUnlocked"):
-            self.session.post(ERGO_NODE + "/wallet/unlock", json={"pass": password})
+            pwd = password if password is not None else ERGO_WALLET_PASSWORD
+            if not pwd:
+                return False
+            unlock_resp = self.session.post(ERGO_NODE + "/wallet/unlock", json={"pass": pwd})
+            return unlock_resp.status_code == 200
+        return True
     
     def get_recent_miners(self, limit=10):
         conn = sqlite3.connect(DB_PATH)
@@ -43,7 +53,10 @@ class ErgoMinerAnchor:
     
     def create_anchor_tx(self, miners):
         """Create zero-fee anchor TX with miner data in registers."""
-        self.unlock_wallet()
+        if not ERGO_API_KEY:
+            return {"success": False, "error": "ERGO_API_KEY not configured"}
+        if not self.unlock_wallet():
+            return {"success": False, "error": "Wallet locked or unlock failed"}
         
         commitment = self.compute_commitment(miners)
         rc_slot = self.get_rc_slot()

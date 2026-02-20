@@ -4,13 +4,11 @@ import os
 import sys
 import time
 
-# Set env vars
-os.environ["ERGO_NODE_URL"] = "http://localhost:9053"
-os.environ["ERGO_API_KEY"] = "hello"
-
 from rustchain_ergo_anchor import AnchorService, ErgoClient
 
-DB_PATH = "/root/rustchain/rustchain_v2.db"
+DB_PATH = os.environ.get("DB_PATH", "/root/rustchain/rustchain_v2.db")
+ERGO_NODE_URL = os.environ.get("ERGO_NODE_URL", "http://localhost:9053")
+ERGO_API_KEY = os.environ.get("ERGO_API_KEY", "")
 
 print("=" * 60)
 print("RustChain -> Ergo Anchor Service Starting")
@@ -20,10 +18,13 @@ print("=" * 60)
 client = ErgoClient()
 info = client.get_info()
 if info:
-    print(f"Ergo height: {info.get(\"fullHeight\", \"N/A\")}")
+    print(f"Ergo height: {info.get('fullHeight', 'N/A')}")
 else:
     print("WARNING: Cannot connect to Ergo node")
     sys.exit(1)
+
+if not ERGO_API_KEY:
+    print("WARNING: ERGO_API_KEY is not set; wallet operations may fail.")
 
 service = AnchorService(
     db_path=DB_PATH,
