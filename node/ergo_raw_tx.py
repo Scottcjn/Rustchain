@@ -4,7 +4,7 @@ import os, json, sqlite3, time, requests
 from hashlib import blake2b
 
 ERGO_NODE = "http://localhost:9053"
-ERGO_API_KEY = os.environ.get("ERGO_API_KEY", "BE7YM1fYWrMQ9tSmxAc9jzLNw42nEXTX")
+ERGO_API_KEY = os.environ.get("ERGO_API_KEY", "")
 DB_PATH = "/root/rustchain/rustchain_v2.db"
 
 def encode_coll_byte(hex_str):
