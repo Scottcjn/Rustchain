@@ -1023,8 +1023,7 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     - C miner format: {"checks": {"clock_drift": true}}
     """
     if not fingerprint:
-        # Legacy miners without fingerprint get reduced weight (not zero, not full)
-        return True, "no_fingerprint_data_legacy_reduced"
+        return False, "missing_fingerprint_data"
 
     checks = fingerprint.get("checks", {})
     claimed_device = claimed_device or {}
@@ -1079,6 +1078,8 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
         if clock_check.get("passed") == True and samples == 0 and cv == 0:
             print(f"[FINGERPRINT] REJECT: clock_drift claims pass but no samples/cv")
             return False, "clock_drift_no_evidence"
+        if clock_check.get("passed") == True and samples < 32:
+            return False, f"clock_drift_insufficient_samples:{samples}"
 
         if cv < 0.0001 and cv != 0:
             return False, "timing_too_uniform"
@@ -1888,8 +1889,8 @@ def submit_attestation():
             return jsonify(oui_info), 412
 
     # NEW: Validate fingerprint data (RIP-PoA)
-    fingerprint_passed = True
-    fingerprint_reason = "not_checked"
+    fingerprint_passed = False
+    fingerprint_reason = "missing_fingerprint_data"
 
     if fingerprint:
         fingerprint_passed, fingerprint_reason = validate_fingerprint_data(fingerprint, claimed_device=device)
@@ -1900,6 +1901,8 @@ def submit_attestation():
         if not fingerprint_passed:
             # VM/emulator detected - allow attestation but with zero weight
             print(f"[FINGERPRINT] VM/EMULATOR DETECTED - will receive ZERO rewards")
+    else:
+        print(f"[FINGERPRINT] Missing fingerprint payload for miner {miner} - zero reward weight")
 
     # NEW: Server-side VM check (double-check device/signals)
     vm_ok, vm_reason = check_vm_signatures_server_side(device, signals)
@@ -1978,6 +1981,7 @@ def submit_attestation():
         "status": "accepted",
         "device": device,
         "fingerprint_passed": fingerprint_passed,
+        "fingerprint_reason": fingerprint_reason,
         "macs_recorded": len(macs) if macs else 0
     })
 
