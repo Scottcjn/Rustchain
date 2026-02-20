@@ -85,6 +85,22 @@ RUSTCHAIN_NODE = "https://your-node-url"
 - **Prometheus**: http://localhost:9090
 - **Exporter**: http://localhost:9100/metrics
 
+## Cross-Node Consistency Probe
+
+Use the built-in probe to detect split-state symptoms across multiple RustChain
+nodes (read-only check).
+
+```bash
+python node/consensus_probe.py \
+  --nodes http://50.28.86.131:8099 http://50.28.86.153:8099 \
+  --pretty
+```
+
+Exit codes:
+- `0`: no divergence detected
+- `1`: transport/availability issue (one or more nodes unreachable)
+- `2`: consistency divergence detected (miners/epoch/balance mismatch)
+
 ## Dashboard Panels
 
 1. **Node Health** - Real-time health indicator
