@@ -44,11 +44,23 @@ def validate_wallet_transfer_admin(payload: Any) -> PreflightResult:
         return PreflightResult(ok=False, error=aerr, details={})
     if amount_rtc is None or amount_rtc <= 0:
         return PreflightResult(ok=False, error="amount_must_be_positive", details={})
+    amount_i64 = int(amount_rtc * 1_000_000)
+    if amount_i64 <= 0:
+        return PreflightResult(
+            ok=False,
+            error="amount_too_small_after_quantization",
+            details={"amount_rtc": amount_rtc, "min_rtc": 0.000001},
+        )
 
     return PreflightResult(
         ok=True,
         error="",
-        details={"from_miner": str(from_miner), "to_miner": str(to_miner), "amount_rtc": amount_rtc},
+        details={
+            "from_miner": str(from_miner),
+            "to_miner": str(to_miner),
+            "amount_rtc": amount_rtc,
+            "amount_i64": amount_i64,
+        },
     )
 
 
@@ -70,6 +82,13 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
         return PreflightResult(ok=False, error=aerr, details={})
     if amount_rtc is None or amount_rtc <= 0:
         return PreflightResult(ok=False, error="amount_must_be_positive", details={})
+    amount_i64 = int(amount_rtc * 1_000_000)
+    if amount_i64 <= 0:
+        return PreflightResult(
+            ok=False,
+            error="amount_too_small_after_quantization",
+            details={"amount_rtc": amount_rtc, "min_rtc": 0.000001},
+        )
 
     if not (from_address.startswith("RTC") and len(from_address) == 43):
         return PreflightResult(ok=False, error="invalid_from_address_format", details={})
@@ -88,6 +107,12 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
     return PreflightResult(
         ok=True,
         error="",
-        details={"from_address": from_address, "to_address": to_address, "amount_rtc": amount_rtc, "nonce": nonce_int},
+        details={
+            "from_address": from_address,
+            "to_address": to_address,
+            "amount_rtc": amount_rtc,
+            "amount_i64": amount_i64,
+            "nonce": nonce_int,
+        },
     )
 
