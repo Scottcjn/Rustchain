@@ -31,10 +31,10 @@ def test_compute_hardware_id_consistency():
     assert id1 == id2
 
 def test_validate_fingerprint_data_no_data():
-    """Verify handling of missing fingerprint data (legacy reduced)."""
+    """Missing fingerprint payload must fail validation."""
     passed, reason = validate_fingerprint_data(None)
-    assert passed is True
-    assert reason == "no_fingerprint_data_legacy_reduced"
+    assert passed is False
+    assert reason == "missing_fingerprint_data"
 
 def test_validate_fingerprint_data_vm_detection():
     """Verify detection of VM indicators."""
@@ -77,6 +77,20 @@ def test_validate_fingerprint_data_clock_drift_threshold():
     passed, reason = validate_fingerprint_data(fingerprint)
     assert passed is False
     assert reason == "timing_too_uniform"
+
+def test_validate_fingerprint_data_clock_drift_insufficient_samples():
+    """Clock drift cannot pass with extremely low sample count."""
+    fingerprint = {
+        "checks": {
+            "clock_drift": {
+                "passed": True,
+                "data": {"cv": 0.02, "samples": 1}
+            }
+        }
+    }
+    passed, reason = validate_fingerprint_data(fingerprint)
+    assert passed is False
+    assert reason.startswith("clock_drift_insufficient_samples")
 
 def test_validate_fingerprint_data_vintage_stability():
     """Verify rejection of suspicious stability on vintage hardware."""
