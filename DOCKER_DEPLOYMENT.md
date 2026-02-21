@@ -2,6 +2,17 @@
 
 Complete Docker setup for RustChain node with nginx reverse proxy and optional SSL.
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [What Gets Deployed](#what-gets-deployed)
+- [Configuration](#configuration)
+- [SSL Setup (Optional)](#ssl-setup-optional)
+- [Management Commands](#management-commands)
+- [Database Management](#database-management)
+- [Troubleshooting](#troubleshooting)
+- [System Requirements](#system-requirements)
+
 ## Quick Start
 
 ### Single Command Deployment
