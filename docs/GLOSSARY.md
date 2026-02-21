@@ -1,5 +1,22 @@
 # RustChain Glossary
 
+## Table of Contents
+
+- [A](#a)
+- [C](#c)
+- [E](#e)
+- [F](#f)
+- [H](#h)
+- [I](#i)
+- [L](#l)
+- [M](#m)
+- [P](#p)
+- [R](#r)
+- [S](#s)
+- [T](#t)
+- [V](#v)
+- [Multiplier Reference](#multiplier-reference)
+
 ## A
 
 ### Antiquity Multiplier
