@@ -1,5 +1,15 @@
 # RustChain Protocol Specification
 
+## Table of Contents
+
+- [1. Overview](#1-overview)
+- [2. Consensus: RIP-200](#2-consensus-rip-200)
+- [3. Hardware Fingerprinting](#3-hardware-fingerprinting)
+- [4. Token Economics](#4-token-economics)
+- [5. Network Architecture](#5-network-architecture)
+- [6. Reward Distribution](#6-reward-distribution)
+- [7. Security Considerations](#7-security-considerations)
+
 ## 1. Overview
 
 **RustChain** is a Proof-of-Antiquity blockchain that validates and rewards vintage hardware. Unlike traditional Proof-of-Work, RustChain uses **RIP-200** (RustChain Iterative Protocol), a Proof-of-Attestation consensus where miners prove physical hardware ownership to earn **RTC** tokens.
