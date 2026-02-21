@@ -20,6 +20,26 @@
 
 ---
 
+## Table of Contents
+
+- [🪙 wRTC on Solana](#-wrtc-on-solana)
+- [Agent Wallets + x402 Payments](#agent-wallets--x402-payments)
+- [📄 Academic Publications](#-academic-publications)
+- [🎯 What Makes RustChain Different](#-what-makes-rustchain-different)
+- [⚡ Quick Start](#-quick-start)
+- [💰 Bounty Board](#-bounty-board)
+- [💰 Antiquity Multipliers](#-antiquity-multipliers)
+- [🔧 How Proof-of-Antiquity Works](#-how-proof-of-antiquity-works)
+- [🌐 Network Architecture](#-network-architecture)
+- [📊 API Endpoints](#-api-endpoints)
+- [🖥️ Supported Platforms](#-supported-platforms)
+- [🏅 NFT Badge System](#-nft-badge-system)
+- [🔒 Security Model](#-security-model)
+- [📁 Repository Structure](#-repository-structure)
+- [✅ Beacon Certified Open Source (BCOS)](#-beacon-certified-open-source-bcos)
+
+---
+
 ## 🪙 wRTC on Solana
 
 RustChain Token (RTC) is now available as **wRTC** on Solana via the BoTTube Bridge:
