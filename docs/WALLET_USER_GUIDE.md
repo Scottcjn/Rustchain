@@ -2,6 +2,16 @@
 
 This guide explains wallet basics, balance checks, and safe transfer practices for RustChain users.
 
+## Table of Contents
+
+- [1) Wallet basics](#1-wallet-basics)
+- [2) Check wallet balance](#2-check-wallet-balance)
+- [3) Confirm miner is active](#3-confirm-miner-is-active)
+- [4) Wallet-safe operations checklist](#4-wallet-safe-operations-checklist)
+- [5) Signed transfer endpoint (advanced)](#5-signed-transfer-endpoint-advanced)
+- [6) Common wallet issues](#6-common-wallet-issues)
+- [7) Quick support data to collect](#7-quick-support-data-to-collect)
+
 ## 1) Wallet basics
 
 - In RustChain docs, wallet identity is often represented by `miner_id`.
