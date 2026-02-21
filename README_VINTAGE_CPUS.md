@@ -1,5 +1,18 @@
 # Vintage CPU Architecture Detection for RustChain
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Files in this Package](#files-in-this-package)
+- [Supported Architectures](#supported-architectures)
+- [Quick Start](#quick-start)
+- [Multiplier Examples](#multiplier-examples)
+- [Time Decay](#time-decay)
+- [Difficulty Adjustment](#difficulty-adjustment)
+- [Running the Demo](#running-the-demo)
+- [Detection Patterns](#detection-patterns)
+- [Anti-Spoofing](#anti-spoofing)
+
 ## Overview
 
 This package provides comprehensive vintage CPU architecture detection for the RustChain RIP-200 antiquity reward system. It covers **50+ CPU architectures** from 1979-2012, incentivizing preservation of computing history.
