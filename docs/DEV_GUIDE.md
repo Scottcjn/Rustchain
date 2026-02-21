@@ -2,6 +2,14 @@
 
 Welcome to the RustChain Proof-of-Antiquity system — a blockchain layer that accepts and preserves computational history. This guide helps you connect legacy hardware to the chain.
 
+## Table of Contents
+
+- [🔥 Retro PoA Integration](#-retro-poa-integration)
+- [🧠 What To Send](#-what-to-send)
+- [🧩 Submitting from DOS](#-submitting-from-dos)
+- [🧩 Submitting from Amiga](#-submitting-from-amiga)
+- [🔌 TCP Broadcast Option](#-tcp-broadcast-option)
+
 ## 🔥 Retro PoA Integration
 
 ### Supported Devices:
