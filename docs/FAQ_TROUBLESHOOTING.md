@@ -2,6 +2,13 @@
 
 This guide covers common setup and runtime issues for miners and node users.
 
+## Table of Contents
+
+- [FAQ](#faq)
+- [Troubleshooting](#troubleshooting)
+- [Quick Incident Checklist](#quick-incident-checklist)
+- [Security Notes](#security-notes)
+
 ## FAQ
 
 ### 1) What is the difference between RTC and wRTC?
