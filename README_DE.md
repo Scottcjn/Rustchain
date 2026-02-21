@@ -19,6 +19,19 @@
 
 ---
 
+## Inhaltsverzeichnis
+
+- [🪙 wRTC auf Solana](#-wrtc-auf-solana)
+- [📄 Wissenschaftliche Publikationen](#-wissenschaftliche-publikationen)
+- [🎯 Was macht RustChain anders?](#-was-macht-rustchain-anders)
+- [⚡ Schnellstart](#-schnellstart)
+- [💰 Antiquity-Multiplikatoren](#-antiquity-multiplikatoren)
+- [🔧 Wie Proof-of-Antiquity funktioniert](#-wie-proof-of-antiquity-funktioniert)
+- [🌐 Netzwerk-Architektur](#-netzwerk-architektur)
+- [📊 API-Endpunkte](#-api-endpunkte)
+
+---
+
 ## 🪙 wRTC auf Solana
 
 RustChain Token (RTC) ist jetzt als **wRTC** auf Solana über die BoTTube Bridge verfügbar:
