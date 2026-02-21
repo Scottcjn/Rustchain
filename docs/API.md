@@ -4,6 +4,16 @@ Base URL: `https://50.28.86.131`
 
 All endpoints use HTTPS. Self-signed certificates require `-k` flag with curl.
 
+## Table of Contents
+
+- [Health & Status](#health--status)
+- [Epoch Information](#epoch-information)
+- [Miners](#miners)
+- [Wallet](#wallet)
+- [Attestation](#attestation)
+- [Error Codes](#error-codes)
+- [Rate Limits](#rate-limits)
+
 ---
 
 ## Health & Status
