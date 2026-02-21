@@ -2,6 +2,22 @@
 
 This guide covers installation and setup of the RustChain miner on Linux and macOS systems.
 
+## Table of Contents
+
+- [Quick Install (Recommended)](#quick-install-recommended)
+- [Supported Platforms](#supported-platforms)
+- [Requirements](#requirements)
+- [Installation Directory Structure](#installation-directory-structure)
+- [Auto-Start Configuration](#auto-start-configuration)
+- [Checking Your Wallet](#checking-your-wallet)
+- [Manual Operation](#manual-operation)
+- [Uninstallation](#uninstallation)
+- [Troubleshooting](#troubleshooting)
+- [Getting Help](#getting-help)
+- [Security Notes](#security-notes)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Quick Install (Recommended)
 
 ### Default Installation
