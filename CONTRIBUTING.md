@@ -2,6 +2,20 @@
 
 Thanks for your interest in contributing to RustChain! We pay bounties in RTC tokens for quality contributions.
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Bounty Tiers](#bounty-tiers)
+- [What Gets Merged](#what-gets-merged)
+- [What Gets Rejected](#what-gets-rejected)
+- [Development Setup](#development-setup)
+- [Live Infrastructure](#live-infrastructure)
+- [RTC Payout Process](#rtc-payout-process)
+- [Code Style](#code-style)
+- [BCOS (Beacon Certified Open Source)](#bcos-beacon-certified-open-source)
+- [Start Mining](#start-mining)
+- [Questions?](#questions)
+
 ## Quick Start
 
 1. **Browse open bounties**: Check [Issues](https://github.com/Scottcjn/Rustchain/issues?q=is%3Aissue+is%3Aopen+label%3Abounty) labeled `bounty`
