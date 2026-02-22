@@ -17,40 +17,31 @@ jobs:
       - name: Fetch Status
         id: fetch_status
         run: |
-          # Fetch from relay/discover with robust error handling
-          # Use --fail to exit non-zero on 4xx/5xx, then handle via fallback
-          RAW_DATA=$(curl -s --fail --max-time 10 https://rustchain.org/beacon/relay/discover || echo "[]")
-          
-          # Use jq to extract status safely, fallback to 'Unknown' if parsing fails or data is empty
-          STATUS=$(echo "$RAW_DATA" | jq -r '.[0].status // "Inactive"' 2>/dev/null || echo "Inactive")
-          
-          echo "MINING_STATUS=$STATUS" >> $GITHUB_ENV
-          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          RAW_DATA=\$(curl -s --fail --max-time 10 https://rustchain.org/beacon/relay/discover || echo "[]")
+          STATUS=\$(echo "\$RAW_DATA" | jq -r '.[0].status // "Inactive"' 2>/dev/null || echo "Inactive")
+          echo "MINING_STATUS=\$STATUS" >> \$GITHUB_ENV
           
       - name: Generate Badge
         run: |
           COLOR="#4c1"
-          if [ "$MINING_STATUS" != "active" ]; then
+          if [ "\$MINING_STATUS" != "active" ]; then
             COLOR="#9f9f9f"
           fi
-          
-          # Ensure badges directory exists
           mkdir -p badges
-          
           cat <<SVG > badges/mining-status.svg
 <svg xmlns="http://www.w3.org/2000/svg" width="100" height="20">
   <linearGradient id="b" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
   <mask id="a"><rect width="100" height="20" rx="3" fill="#fff"/></mask>
   <g mask="url(#a)">
     <path fill="#555" d="M0 0h60v20H0z"/>
-    <path fill="$COLOR" d="M60 0h40v20H60z"/>
+    <path fill="\$COLOR" d="M60 0h40v20H60z"/>
     <path fill="url(#b)" d="M0 0h100v20H0z"/>
   </g>
   <g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11">
     <text x="30" y="15" fill="#010101" fill-opacity=".3">Mining</text>
     <text x="30" y="14">Mining</text>
-    <text x="80" y="15" fill="#010101" fill-opacity=".3">$MINING_STATUS</text>
-    <text x="80" y="14">$MINING_STATUS</text>
+    <text x="80" y="15" fill="#010101" fill-opacity=".3">\$MINING_STATUS</text>
+    <text x="80" y="14">\$MINING_STATUS</text>
   </g>
 </svg>
 SVG
@@ -60,5 +51,5 @@ SVG
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add badges/mining-status.svg
-          git commit -m "docs: update mining status badge to $MINING_STATUS [skip ci]" || echo "No changes to commit"
+          git commit -m "docs: update mining status badge [skip ci]" || echo "No changes to commit"
           git push
