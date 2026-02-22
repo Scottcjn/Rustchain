@@ -167,8 +167,9 @@ tail -f ~/.rustchain/miner.log             # View logs
 ```bash
 git clone https://github.com/Scottcjn/Rustchain.git
 cd Rustchain
-pip install -r requirements.txt
-python3 rustchain_universal_miner.py --wallet YOUR_WALLET_NAME
+bash install-miner.sh --wallet YOUR_WALLET_NAME
+# Optional: preview actions without changing your system
+bash install-miner.sh --dry-run --wallet YOUR_WALLET_NAME
 ```
 
 ## 💰 Bounty Board
@@ -329,10 +330,13 @@ Each hardware fingerprint is bound to one wallet. Prevents:
 
 ```
 Rustchain/
-├── rustchain_universal_miner.py    # Main miner (all platforms)
-├── rustchain_v2_integrated.py      # Full node implementation
-├── fingerprint_checks.py           # Hardware verification
-├── install.sh                      # One-line installer
+├── install-miner.sh                # Universal miner installer (Linux/macOS)
+├── node/
+│   ├── rustchain_v2_integrated_v2.2.1_rip200.py  # Full node implementation
+│   └── fingerprint_checks.py       # Hardware verification
+├── miners/
+│   ├── linux/rustchain_linux_miner.py            # Linux miner
+│   └── macos/rustchain_mac_miner_v2.4.py         # macOS miner
 ├── docs/
 │   ├── RustChain_Whitepaper_*.pdf  # Technical whitepaper
 │   └── chain_architecture.md       # Architecture docs
