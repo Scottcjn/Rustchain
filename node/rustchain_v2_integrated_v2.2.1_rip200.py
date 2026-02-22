@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 RustChain v2 - Integrated Server
 Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
@@ -1973,6 +1974,8 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
 
 
 @app.route('/attest/submit', methods=['POST'])
+# TOFU Key Management imports
+
 def submit_attestation():
     """Submit hardware attestation with fingerprint validation"""
     data = request.get_json()
@@ -1980,8 +1983,14 @@ def submit_attestation():
     # Extract client IP (handle nginx proxy)
     client_ip = client_ip_from_request(request)
 
+# TOFU Key Management: Ensure tables exist
+    with sqlite3.connect(DB_PATH) as conn:
+        tofu_ensure_tables(conn)
     # Extract attestation data
     miner = data.get('miner') or data.get('miner_id')
+# Extract signature data for TOFU validation
+    signature = data.get("signature")
+    pubkey = data.get("pubkey")
     report = data.get('report', {})
     nonce = report.get('nonce') or data.get('nonce')
     challenge = report.get('challenge') or data.get('challenge')
@@ -1999,6 +2008,17 @@ def submit_attestation():
         }), 429
     signals = data.get('signals', {})
     fingerprint = data.get('fingerprint', {})  # NEW: Extract fingerprint
+# TOFU Key Validation
+    if pubkey and miner:
+        with sqlite3.connect(DB_PATH) as conn:
+            is_valid, reason = tofu_validate_key(conn, miner, pubkey)
+            if not is_valid:
+                return jsonify({
+                    "ok": False,
+                    "error": "tofu_key_validation_failed",
+                    "reason": reason,
+                    "code": "TOFU_KEY_REJECTED"
+                }), 403
 
     # Basic validation
     if not miner:
@@ -4664,3 +4684,133 @@ def check_hardware_wallet_consistency(hardware_id, miner_wallet, conn):
             return False, f'hardware_bound_to_different_wallet:{bound_wallet[:20]}'
     
     return True, 'ok'
+# ============= TOFU KEY MANAGEMENT =============
+# TOFU (Trust On First Use) Key Management for RustChain Attestation
+# This inline implementation integrates directly into the attestation flow.
+
+def tofu_ensure_tables(conn):
+    """Create TOFU tables if they don't exist."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tofu_keys (
+            miner_id TEXT PRIMARY KEY,
+            pubkey_hex TEXT NOT NULL,
+            key_type TEXT DEFAULT 'ed25519',
+            created_at INTEGER NOT NULL,
+            revoked INTEGER DEFAULT 0,
+            revoked_at INTEGER,
+            revocation_reason TEXT,
+            rotation_history TEXT DEFAULT '[]'
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_tofu_keys_revoked 
+        ON tofu_keys(revoked)
+    """)
+
+
+def tofu_store_first_key(conn, miner_id: str, pubkey_hex: str) -> bool:
+    """Store the first key for a miner (TOFU - Trust On First Use)."""
+    try:
+        conn.execute("""
+            INSERT INTO tofu_keys 
+            (miner_id, pubkey_hex, created_at) 
+            VALUES (?, ?, ?)
+        """, (miner_id, pubkey_hex, int(time.time())))
+        return True
+    except Exception as e:
+        print(f"[TOFU] Failed to store first key for {miner_id}: {e}")
+        return False
+
+
+def tofu_get_key_info(conn, miner_id: str) -> Optional[dict]:
+    """Get key information for a miner."""
+    row = conn.execute("""
+        SELECT miner_id, pubkey_hex, key_type, created_at, revoked, 
+               revoked_at, revocation_reason, rotation_history
+        FROM tofu_keys 
+        WHERE miner_id = ?
+    """, (miner_id,)).fetchone()
+    
+    if not row:
+        return None
+        
+    return {
+        "miner_id": row[0],
+        "pubkey_hex": row[1],
+        "key_type": row[2],
+        "created_at": row[3],
+        "revoked": bool(row[4]),
+        "revoked_at": row[5],
+        "revocation_reason": row[6],
+        "rotation_history": json.loads(row[7]) if row[7] else []
+    }
+
+
+def tofu_validate_key(conn, miner_id: str, pubkey_hex: str) -> Tuple[bool, str]:
+    """
+    Validate a key for a miner.
+    Returns (is_valid, reason).
+    """
+    key_info = tofu_get_key_info(conn, miner_id)
+    
+    if not key_info:
+        # First time - store the key (TOFU)
+        success = tofu_store_first_key(conn, miner_id, pubkey_hex)
+        if success:
+            return True, "first_time_key_stored"
+        else:
+            return False, "failed_to_store_first_key"
+    
+    # Check if key is revoked
+    if key_info["revoked"]:
+        return False, f"key_revoked: {key_info.get('revocation_reason', 'no_reason')}"
+    
+    # Check if pubkey matches
+    if key_info["pubkey_hex"] != pubkey_hex:
+        return False, "pubkey_mismatch"
+    
+    return True, "key_valid"
+
+
+def tofu_revoke_key(conn, miner_id: str, reason: str = "") -> bool:
+    """Revoke a key for a miner."""
+    try:
+        conn.execute("""
+            UPDATE tofu_keys 
+            SET revoked = 1, revoked_at = ?, revocation_reason = ?
+            WHERE miner_id = ?
+        """, (int(time.time()), reason, miner_id))
+        return True
+    except Exception as e:
+        print(f"[TOFU] Failed to revoke key for {miner_id}: {e}")
+        return False
+
+
+def tofu_rotate_key(conn, miner_id: str, new_pubkey_hex: str, reason: str = "") -> bool:
+    """Rotate a key for a miner."""
+    try:
+        # Get current key info
+        key_info = tofu_get_key_info(conn, miner_id)
+        if not key_info:
+            return False
+            
+        # Update rotation history
+        rotation_history = key_info.get("rotation_history", [])
+        rotation_history.append({
+            "old_pubkey": key_info["pubkey_hex"],
+            "rotated_at": int(time.time()),
+            "reason": reason
+        })
+        
+        # Update the key
+        conn.execute("""
+            UPDATE tofu_keys 
+            SET pubkey_hex = ?, rotation_history = ?
+            WHERE miner_id = ?
+        """, (new_pubkey_hex, json.dumps(rotation_history), miner_id))
+        return True
+    except Exception as e:
+        print(f"[TOFU] Failed to rotate key for {miner_id}: {e}")
+        return False
+
+# ============= END TOFU KEY MANAGEMENT =============
