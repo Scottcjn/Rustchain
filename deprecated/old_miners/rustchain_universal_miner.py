@@ -14,6 +14,26 @@ import subprocess
 import requests
 from datetime import datetime
 
+# Terminal styling
+NO_COLOR = bool(os.environ.get("NO_COLOR", "").strip())
+GREEN = "\033[92m" if not NO_COLOR else ""
+YELLOW = "\033[93m" if not NO_COLOR else ""
+RED = "\033[91m" if not NO_COLOR else ""
+CYAN = "\033[96m" if not NO_COLOR else ""
+RESET = "\033[0m" if not NO_COLOR else ""
+
+
+def emit(prefix, message, color, payload=None, json_mode=False):
+    """Emit plain or JSON logs with status prefix."""
+    if json_mode:
+        event = {"event": prefix, "message": message, "timestamp": datetime.utcnow().isoformat() + "Z"}
+        if payload:
+            event.update(payload)
+        print(json.dumps(event, ensure_ascii=False))
+        return
+
+    print(f"{color}[{prefix}]{RESET} {message}")
+
 NODE_URL = os.environ.get("RUSTCHAIN_NODE", "http://50.28.86.131:8088")
 BLOCK_TIME = 600  # 10 minutes
 ATTESTATION_INTERVAL = 300  # Re-attest every 5 minutes
@@ -154,9 +174,11 @@ def detect_hardware():
 
 
 class UniversalMiner:
-    def __init__(self, miner_id=None):
+    def __init__(self, miner_id=None, json_mode=False, dry_run=False):
         self.node_url = NODE_URL
         self.hw_info = detect_hardware()
+        self.json_mode = json_mode
+        self.dry_run = dry_run
 
         # Generate miner_id if not provided
         if miner_id:
@@ -176,24 +198,43 @@ class UniversalMiner:
         self._print_banner()
 
     def _print_banner(self):
-        print("=" * 70)
-        print("RustChain Universal Miner v2.3.0")
-        print("=" * 70)
-        print(f"Miner ID:    {self.miner_id}")
-        print(f"Wallet:      {self.wallet}")
-        print(f"Node:        {self.node_url}")
-        print("-" * 70)
-        print(f"Hardware:    {self.hw_info['family']} / {self.hw_info['arch']}")
-        print(f"CPU:         {self.hw_info['cpu']}")
-        print(f"Cores:       {self.hw_info['cores']}")
-        print(f"Memory:      {self.hw_info['memory_gb']} GB")
-        print(f"OS:          {self.hw_info['os']}")
-        print("-" * 70)
-
-        # Show expected PoA weight
         weight = self._get_expected_weight()
-        print(f"Expected Weight: {weight}x (Proof of Antiquity)")
-        print("=" * 70)
+        emit("INFO", "RustChain Universal Miner v2.3.0", CYAN, {
+            "miner_id": self.miner_id,
+            "wallet": self.wallet,
+            "node": self.node_url,
+            "weight": weight
+        }, json_mode=self.json_mode)
+        emit("INFO", "System profile", CYAN, {
+            "hardware_family": self.hw_info['family'],
+            "hardware_arch": self.hw_info['arch'],
+            "cpu": self.hw_info['cpu'],
+            "cores": self.hw_info['cores'],
+            "memory_gb": self.hw_info['memory_gb'],
+            "os": self.hw_info['os'],
+        }, json_mode=self.json_mode)
+        if not self.json_mode:
+            print("=" * 70)
+            print(f"Expected Weight: {weight}x (Proof of Antiquity)")
+            print("=" * 70)
+
+    def _log(self, event, message, payload=None):
+        if payload is None:
+            payload = {}
+        event_map = {
+            "GREEN": "OK",
+            "YELLOW": "WAIT",
+            "RED": "ERR",
+            "CYAN": "INFO",
+        }
+        color_map = {
+            "GREEN": GREEN,
+            "YELLOW": YELLOW,
+            "RED": RED,
+            "CYAN": CYAN,
+        }
+        label = event_map.get(event, event)
+        emit(label.lower(), message, color_map.get(event, CYAN), {"miner_id": self.miner_id, **payload}, json_mode=self.json_mode)
 
     def _get_expected_weight(self):
         """Calculate expected PoA weight based on hardware"""
@@ -214,18 +255,22 @@ class UniversalMiner:
 
     def attest(self):
         """Complete hardware attestation with RIP server"""
-        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Attesting hardware...")
+        self._log("CYAN", f"\n[{datetime.now().strftime('%H:%M:%S')}] Attesting hardware...")
 
         try:
             # Step 1: Get challenge nonce
+            if self.dry_run:
+                self._log("CYAN", "Dry-run mode: simulated attestation challenge")
+                self.attestation_valid_until = time.time() + ATTESTATION_INTERVAL
+                return True
             resp = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=15)
             if resp.status_code != 200:
-                print(f"  ERROR: Challenge failed ({resp.status_code})")
+                self._log("RED", f"  ERROR: Challenge failed ({resp.status_code})")
                 return False
 
             challenge = resp.json()
             nonce = challenge.get("nonce", "")
-            print(f"  Got challenge nonce: {nonce[:16]}...")
+            self._log("CYAN", f"  Got challenge nonce: {nonce[:16]}...")
 
             # Step 2: Build attestation payload
             commitment = hashlib.sha256(f"{nonce}{self.wallet}{self.miner_id}".encode()).hexdigest()
@@ -261,23 +306,26 @@ class UniversalMiner:
                 result = resp.json()
                 if result.get("ok") or result.get("status") == "accepted":
                     self.attestation_valid_until = time.time() + ATTESTATION_INTERVAL
-                    print(f"  SUCCESS: Attestation accepted!")
-                    print(f"  Ticket: {result.get('ticket_id', 'N/A')}")
+                    self._log("GREEN", f"  SUCCESS: Attestation accepted!")
+                    self._log("GREEN", f"  Ticket: {result.get('ticket_id', 'N/A')}")
                     return True
                 else:
-                    print(f"  WARNING: {result}")
+                    self._log("YELLOW", f"  WARNING: {result}")
                     return False
             else:
-                print(f"  ERROR: Attestation failed ({resp.status_code})")
+                self._log("RED", f"  ERROR: Attestation failed ({resp.status_code})")
                 return False
 
         except Exception as e:
-            print(f"  ERROR: {e}")
+            self._log("RED", f"  ERROR: {e}")
             return False
 
     def check_eligibility(self):
         """Check if we're eligible for the current lottery slot"""
         try:
+            if self.dry_run:
+                self._log("CYAN", "Dry-run mode: skipping eligibility", {"slot": 0, "eligible": False})
+                return {"eligible": False, "slot": 0}
             resp = requests.get(
                 f"{self.node_url}/lottery/eligibility",
                 params={"miner_id": self.miner_id},
@@ -313,6 +361,12 @@ class UniversalMiner:
                 "pubkey": self.wallet
             }
 
+            if self.dry_run:
+                self._log("CYAN", f"Dry-run mode: simulated header submit", {"slot": slot})
+                self.shares_submitted += 1
+                self.shares_accepted += 1
+                return True, {"dry_run": True}
+
             resp = requests.post(
                 f"{self.node_url}/headers/ingest_signed",
                 json=header_payload,
@@ -334,11 +388,11 @@ class UniversalMiner:
 
     def run(self):
         """Main mining loop"""
-        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Starting miner...")
+        self._log("CYAN", f"\n[{datetime.now().strftime('%H:%M:%S')}] Starting miner...")
 
         # Initial attestation
         while not self.attest():
-            print("  Retrying attestation in 30 seconds...")
+            self._log("YELLOW", "  Retrying attestation in 30 seconds...")
             time.sleep(30)
 
         last_slot = 0
@@ -354,20 +408,20 @@ class UniversalMiner:
                 slot = eligibility.get("slot", 0)
 
                 if eligibility.get("eligible"):
-                    print(f"\n[{datetime.now().strftime('%H:%M:%S')}] ELIGIBLE for slot {slot}!")
+                    self._log("GREEN", f"\n[{datetime.now().strftime('%H:%M:%S')}] ELIGIBLE for slot {slot}!")
 
                     if slot != last_slot:
                         # Submit header
                         success, result = self.submit_header(slot)
                         if success:
-                            print(f"  Header ACCEPTED! Slot {slot}")
+                            self._log("GREEN", f"  Header ACCEPTED! Slot {slot}")
                         else:
-                            print(f"  Header rejected: {result}")
+                            self._log("RED", f"  Header rejected: {result}")
                         last_slot = slot
                 else:
                     reason = eligibility.get("reason", "unknown")
                     if reason == "not_attested":
-                        print(f"[{datetime.now().strftime('%H:%M:%S')}] Not attested - re-attesting...")
+                        self._log("YELLOW", f"[{datetime.now().strftime('%H:%M:%S')}] Not attested - re-attesting...")
                         self.attest()
                     else:
                         # Normal not-eligible, just wait
@@ -375,17 +429,17 @@ class UniversalMiner:
 
                 # Status update every 60 seconds
                 if int(time.time()) % 60 == 0:
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Slot {slot} | "
+                    self._log("CYAN", f"[{datetime.now().strftime('%H:%M:%S')}] Slot {slot} | "
                           f"Submitted: {self.shares_submitted} | "
                           f"Accepted: {self.shares_accepted}")
 
                 time.sleep(LOTTERY_CHECK_INTERVAL)
 
             except KeyboardInterrupt:
-                print("\n\nShutting down miner...")
+                self._log("YELLOW", "\n\nShutting down miner...")
                 break
             except Exception as e:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] Error: {e}")
+                self._log("RED", f"[{datetime.now().strftime('%H:%M:%S')}] Error: {e}")
                 time.sleep(30)
 
 
@@ -393,12 +447,15 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="RustChain Universal Miner")
+    parser.add_argument("--version", "-v", action="version", version="clawrtc 1.5.0")
+    parser.add_argument("--json", action="store_true", help="Emit logs as JSON lines")
     parser.add_argument("--miner-id", "-m", help="Custom miner ID")
     parser.add_argument("--node", "-n", default=NODE_URL, help="RIP node URL")
+    parser.add_argument("--dry-run", action="store_true", help="Skip network requests and print planned output")
     args = parser.parse_args()
 
     if args.node:
         NODE_URL = args.node
 
-    miner = UniversalMiner(miner_id=args.miner_id)
+    miner = UniversalMiner(miner_id=args.miner_id, json_mode=args.json, dry_run=args.dry_run)
     miner.run()
