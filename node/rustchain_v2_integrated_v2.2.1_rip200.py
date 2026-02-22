@@ -9,6 +9,7 @@ from urllib.parse import urlparse, quote
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort
+from rate_limiting import rate_limit
 try:
     # Deployment compatibility: production may run this file as a single script.
     from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
@@ -22,6 +23,14 @@ try:
 except ImportError:
     HW_BINDING_V2 = False
     print('[WARN] hardware_binding_v2.py not found - using legacy binding')
+
+# Rate Limiting Module
+try:
+    from rate_limiting import rate_limit
+    RATE_LIMITING_ENABLED = True
+except ImportError:
+    RATE_LIMITING_ENABLED = False
+    print('[WARN] rate_limiting.py not found - rate limiting disabled')
 
 # App versioning and uptime tracking
 APP_VERSION = "2.2.1-rip200"
@@ -1881,6 +1890,8 @@ def museum_assets(filename: str):
 # ============= ATTESTATION ENDPOINTS =============
 
 @app.route('/attest/challenge', methods=['GET', 'POST'])
+
+@rate_limit(key_prefix="write")
 def get_challenge():
     """Issue challenge for hardware attestation"""
     now_ts = int(time.time())
@@ -1972,7 +1983,11 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
             return False, f'Hardware bound to {bound_miner[:16]}...', bound_miner
 
 
+@rate_limit(key_prefix="write")
+@rate_limit(key_prefix="write")
 @app.route('/attest/submit', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def submit_attestation():
     """Submit hardware attestation with fingerprint validation"""
     data = request.get_json()
@@ -2218,6 +2233,8 @@ def get_epoch():
     })
 
 @app.route('/epoch/enroll', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def enroll_epoch():
     """Enroll in current epoch"""
     data = request.get_json()
@@ -2357,6 +2374,8 @@ def lottery_eligibility():
     return jsonify(result)
 
 @app.route('/miner/headerkey', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def miner_set_header_key():
     """Admin-set or update the header-signing ed25519 public key for a miner.
     Body: {"miner_id":"...","pubkey_hex":"<64 hex chars>"}
@@ -2378,6 +2397,8 @@ def miner_set_header_key():
     return jsonify({"ok":True,"miner_id":miner_id,"pubkey_hex":pubkey_hex})
 
 @app.route('/headers/ingest_signed', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def ingest_signed_header():
     """Ingest signed block header from v2 miners.
 
@@ -2537,6 +2558,8 @@ def is_admin(req):
     return need and got and (need == got)
 
 @app.route('/admin/oui_deny/enforce', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def admin_oui_enforce():
     """Toggle OUI enforcement (admin only)"""
     if not is_admin(request):
@@ -2554,7 +2577,10 @@ def ops_oui_enforce():
 
 # ============= V1 API COMPATIBILITY (REJECTION) =============
 
+@rate_limit(key_prefix="write")
 @app.route('/api/mine', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 @app.route('/compat/v1/api/mine', methods=['POST'])
 def reject_v1_mine():
     """Explicitly reject v1 mining API with clear error
@@ -2576,6 +2602,8 @@ def reject_v1_mine():
 # ============= WITHDRAWAL ENDPOINTS =============
 
 @app.route('/withdraw/register', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def register_withdrawal_key():
     """Register sr25519 public key for withdrawals"""
     data = request.get_json(silent=True)
@@ -2627,6 +2655,8 @@ def register_withdrawal_key():
     })
 
 @app.route('/withdraw/request', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def request_withdrawal():
     """Request RTC withdrawal"""
     withdrawal_requests.inc()
@@ -2869,6 +2899,8 @@ def _rotation_message(epoch:int, threshold:int, members_json:str)->bytes:
     return f"ROTATE|{epoch}|{threshold}|{h}".encode()
 
 @app.route('/gov/rotate/stage', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 @admin_required
 def gov_rotate_stage():
     """Stage governance rotation (admin only) - returns canonical message to sign"""
@@ -2922,6 +2954,8 @@ def gov_rotate_message(epoch:int):
         return jsonify({"ok": True, "epoch_effective": epoch, "message": msg})
 
 @app.route('/gov/rotate/approve', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def gov_rotate_approve():
     """Submit governance rotation approval signature"""
     b = request.get_json() or {}
@@ -2974,6 +3008,8 @@ def gov_rotate_approve():
         })
 
 @app.route('/gov/rotate/commit', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def gov_rotate_commit():
     """Commit governance rotation (requires threshold approvals)"""
     b = request.get_json() or {}
@@ -3325,6 +3361,8 @@ def list_oui_deny():
     })
 
 @app.route('/admin/oui_deny/add', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def add_oui_deny():
     """Add OUI to denylist"""
     if not is_admin(request):
@@ -3350,6 +3388,8 @@ def add_oui_deny():
     return jsonify({"ok": True, "oui": oui, "vendor": vendor, "enforce": enforce})
 
 @app.route('/admin/oui_deny/remove', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def remove_oui_deny():
     """Remove OUI from denylist"""
     if not is_admin(request):
@@ -3412,6 +3452,8 @@ def metrics_mac():
 
 # ---------- RIP-0147c: Ops Attestation Debug Endpoint ----------
 @app.route('/ops/attest/debug', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def attest_debug():
     """Debug endpoint: show miner's enrollment eligibility"""
     data = request.get_json()
@@ -3615,6 +3657,8 @@ def metrics():
 
 
 @app.route('/rewards/settle', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def api_rewards_settle():
     """Settle rewards for a specific epoch (admin/cron callable)"""
     # SECURITY: settling rewards mutates chain state; require admin key.
@@ -3712,6 +3756,8 @@ def send_sophiacheck_alert(alert_type, message, data):
 
 
 @app.route('/wallet/transfer', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def wallet_transfer_v2():
     """Transfer RTC between miner wallets - NOW WITH 2-PHASE COMMIT"""
     # SECURITY: Require admin key for internal transfers
@@ -3855,6 +3901,8 @@ def list_pending():
 
 
 @app.route('/pending/void', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def void_pending():
     """Admin: Void a pending transfer before confirmation"""
     admin_key = request.headers.get("X-Admin-Key", "")
@@ -3929,6 +3977,8 @@ def void_pending():
 
 
 @app.route('/pending/confirm', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def confirm_pending():
     """Worker: Confirm pending transfers that have passed the delay period"""
     admin_key = request.headers.get("X-Admin-Key", "")
@@ -4074,6 +4124,8 @@ def check_integrity():
 
 # OLD FUNCTION DISABLED - Kept for reference
 @app.route('/wallet/transfer_OLD_DISABLED', methods=['POST'])
+
+@rate_limit(key_prefix="write")
 def wallet_transfer_OLD():
     # SECURITY FIX: Require admin key for internal transfers
     admin_key = request.headers.get("X-Admin-Key", "")
@@ -4221,6 +4273,7 @@ try:
         return jsonify(peer_manager.get_network_stats())
 
     @app.route('/p2p/ping', methods=['POST'])
+    @rate_limit(key_prefix="write")
     @require_peer_auth
     def p2p_ping():
         """Peer health check"""
@@ -4240,6 +4293,7 @@ try:
             return jsonify({"ok": False, "error": str(e)}), 400
 
     @app.route('/p2p/add_peer', methods=['POST'])
+    @rate_limit(key_prefix="write")
     @require_peer_auth
     def p2p_add_peer():
         """Add a new peer to the network"""
@@ -4380,6 +4434,8 @@ def _balance_i64_for_wallet(c: sqlite3.Cursor, wallet_id: str) -> int:
 
 
 @app.route("/wallet/transfer/signed", methods=["POST"])
+
+@rate_limit(key_prefix="write")
 def wallet_transfer_signed():
     """
     Transfer RTC with Ed25519 signature verification.
