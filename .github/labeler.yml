@@ -1,0 +1,71 @@
+# Auto-label PRs based on changed file paths
+# Used by .github/workflows/labeler.yml
+
+security:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'fingerprint_checks.py'
+      - 'hardware_fingerprint.py'
+      - 'rustchain_crypto.py'
+      - '**/auth*'
+      - '**/crypto*'
+      - '**/security*'
+
+consensus:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'rip_200_round_robin_1cpu1vote.py'
+      - 'rewards_implementation_rip200.py'
+      - '**/consensus*'
+      - '**/epoch*'
+
+miner:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'rustchain_*_miner.py'
+      - 'rustchain_universal_miner.py'
+      - '**/miner*'
+
+wallet:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'rustchain_wallet_*.py'
+      - 'rustchain_crypto.py'
+      - '**/wallet*'
+      - '**/transfer*'
+
+documentation:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/*.md'
+      - 'docs/**'
+      - 'README*'
+
+tests:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'tests/**'
+      - 'test_*'
+      - '*_test.py'
+      - 'node/tests/**'
+
+ci:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '.github/**'
+      - 'Dockerfile'
+      - 'docker-compose*'
+
+node:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'rustchain_v2_integrated*.py'
+      - 'ergo_*'
+      - 'node/**'
+
+api:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'rustchain_v2_integrated*.py'
+      - '**/api*'
+      - '**/endpoint*'

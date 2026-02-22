@@ -1,0 +1,59 @@
+name: Bounty Claim
+description: Claim an RTC bounty for your contribution
+title: "[Bounty Claim] "
+labels: [bounty-claim]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Claim an RTC Bounty
+        Fill out this form after your PR is merged to receive your RTC payment.
+        **Reference rate: 1 RTC = $0.10 USD**
+
+  - type: input
+    id: pr-link
+    attributes:
+      label: Merged PR Link
+      description: Link to your merged pull request
+      placeholder: https://github.com/Scottcjn/Rustchain/pull/123
+    validations:
+      required: true
+
+  - type: input
+    id: bounty-issue
+    attributes:
+      label: Bounty Issue Link
+      description: Link to the bounty issue you completed
+      placeholder: https://github.com/Scottcjn/rustchain-bounties/issues/123
+    validations:
+      required: true
+
+  - type: input
+    id: wallet
+    attributes:
+      label: RTC Wallet Name
+      description: Your RustChain wallet name (create one at rustchain.org/wallet.html)
+      placeholder: my-wallet-name
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Bounty Tier
+      options:
+        - Micro (1-10 RTC)
+        - Standard (20-50 RTC)
+        - Major (75-100 RTC)
+        - Critical (100-150 RTC)
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What did you do?
+      description: Brief summary of your contribution
+      placeholder: Fixed the epoch settlement calculation for edge cases...
+    validations:
+      required: true

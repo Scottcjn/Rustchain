@@ -1,0 +1,21 @@
+# RustChain Code Owners
+# These users will be auto-requested for review on PRs touching these paths
+
+# Core node & consensus — security-critical
+rustchain_v2_integrated*.py @Scottcjn
+rip_200_round_robin_1cpu1vote.py @Scottcjn
+rewards_implementation_rip200.py @Scottcjn
+
+# Security & fingerprinting
+fingerprint_checks.py @Scottcjn
+hardware_fingerprint.py @Scottcjn
+rustchain_crypto.py @Scottcjn
+
+# Wallet & transfers
+rustchain_wallet_*.py @Scottcjn
+
+# CI/CD & repo config
+.github/ @Scottcjn
+
+# Documentation — community can review
+# docs/ (no owner = anyone can review)
