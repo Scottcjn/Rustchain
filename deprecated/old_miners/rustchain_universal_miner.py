@@ -154,9 +154,10 @@ def detect_hardware():
 
 
 class UniversalMiner:
-    def __init__(self, miner_id=None):
+    def __init__(self, miner_id=None, json_mode=False):
         self.node_url = NODE_URL
         self.hw_info = detect_hardware()
+        self.json_mode = json_mode
 
         # Generate miner_id if not provided
         if miner_id:
@@ -173,7 +174,41 @@ class UniversalMiner:
         self.shares_submitted = 0
         self.shares_accepted = 0
 
-        self._print_banner()
+        if self.json_mode:
+            self.emit("startup", wallet=self.wallet, node=self.node_url, 
+                     hardware={"arch": self.hw_info["arch"], "family": self.hw_info["family"]})
+        else:
+            self._print_banner()
+
+    def emit(self, event_type, **data):
+        """Output either JSON or human-readable text based on json_mode"""
+        if self.json_mode:
+            output = {"event": event_type, "timestamp": int(time.time()), **data}
+            print(json.dumps(output))
+        else:
+            # Human-readable output
+            if event_type == "startup":
+                pass  # Already handled in _print_banner
+            elif event_type == "attestation":
+                status = data.get("status", "unknown")
+                epoch = data.get("epoch", 0)
+                slot = data.get("slot", 0)
+                print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Attestation: {status} (epoch={epoch}, slot={slot})")
+            elif event_type == "attestation_error":
+                print(f"  ERROR: {data.get('message')}")
+            elif event_type == "eligible":
+                slot = data.get("slot", 0)
+                print(f"\n[{datetime.now().strftime('%H:%M:%S')}] ELIGIBLE for slot {slot}!")
+            elif event_type == "header_accepted":
+                slot = data.get("slot", 0)
+                print(f"  Header ACCEPTED! Slot {slot}")
+            elif event_type == "header_rejected":
+                print(f"  Header rejected: {data.get('message')}")
+            elif event_type == "status":
+                slot = data.get("slot", 0)
+                submitted = data.get("submitted", 0)
+                accepted = data.get("accepted", 0)
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] Slot {slot} | Submitted: {submitted} | Accepted: {accepted}")
 
     def _print_banner(self):
         print("=" * 70)
@@ -214,18 +249,19 @@ class UniversalMiner:
 
     def attest(self):
         """Complete hardware attestation with RIP server"""
-        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Attesting hardware...")
+        self.emit("attestation", status="in_progress")
 
         try:
             # Step 1: Get challenge nonce
             resp = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=15)
             if resp.status_code != 200:
-                print(f"  ERROR: Challenge failed ({resp.status_code})")
+                self.emit("attestation_error", message=f"Challenge failed ({resp.status_code})")
                 return False
 
             challenge = resp.json()
             nonce = challenge.get("nonce", "")
-            print(f"  Got challenge nonce: {nonce[:16]}...")
+            if not self.json_mode:
+                print(f"  Got challenge nonce: {nonce[:16]}...")
 
             # Step 2: Build attestation payload
             commitment = hashlib.sha256(f"{nonce}{self.wallet}{self.miner_id}".encode()).hexdigest()
@@ -261,18 +297,17 @@ class UniversalMiner:
                 result = resp.json()
                 if result.get("ok") or result.get("status") == "accepted":
                     self.attestation_valid_until = time.time() + ATTESTATION_INTERVAL
-                    print(f"  SUCCESS: Attestation accepted!")
-                    print(f"  Ticket: {result.get('ticket_id', 'N/A')}")
+                    self.emit("attestation", status="success", ticket_id=result.get('ticket_id', 'N/A'))
                     return True
                 else:
-                    print(f"  WARNING: {result}")
+                    self.emit("attestation_error", message=str(result))
                     return False
             else:
-                print(f"  ERROR: Attestation failed ({resp.status_code})")
+                self.emit("attestation_error", message=f"Attestation failed ({resp.status_code})")
                 return False
 
         except Exception as e:
-            print(f"  ERROR: {e}")
+            self.emit("attestation_error", message=str(e))
             return False
 
     def check_eligibility(self):
@@ -334,11 +369,12 @@ class UniversalMiner:
 
     def run(self):
         """Main mining loop"""
-        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Starting miner...")
+        self.emit("startup", status="miner_running")
 
         # Initial attestation
         while not self.attest():
-            print("  Retrying attestation in 30 seconds...")
+            if not self.json_mode:
+                print("  Retrying attestation in 30 seconds...")
             time.sleep(30)
 
         last_slot = 0
@@ -354,20 +390,20 @@ class UniversalMiner:
                 slot = eligibility.get("slot", 0)
 
                 if eligibility.get("eligible"):
-                    print(f"\n[{datetime.now().strftime('%H:%M:%S')}] ELIGIBLE for slot {slot}!")
+                    self.emit("eligible", slot=slot)
 
                     if slot != last_slot:
                         # Submit header
                         success, result = self.submit_header(slot)
                         if success:
-                            print(f"  Header ACCEPTED! Slot {slot}")
+                            self.emit("header_accepted", slot=slot)
                         else:
-                            print(f"  Header rejected: {result}")
+                            self.emit("header_rejected", message=str(result))
                         last_slot = slot
                 else:
                     reason = eligibility.get("reason", "unknown")
                     if reason == "not_attested":
-                        print(f"[{datetime.now().strftime('%H:%M:%S')}] Not attested - re-attesting...")
+                        self.emit("attestation", status="re-attesting")
                         self.attest()
                     else:
                         # Normal not-eligible, just wait
@@ -375,17 +411,16 @@ class UniversalMiner:
 
                 # Status update every 60 seconds
                 if int(time.time()) % 60 == 0:
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Slot {slot} | "
-                          f"Submitted: {self.shares_submitted} | "
-                          f"Accepted: {self.shares_accepted}")
+                    self.emit("status", slot=slot, submitted=self.shares_submitted, accepted=self.shares_accepted)
 
                 time.sleep(LOTTERY_CHECK_INTERVAL)
 
             except KeyboardInterrupt:
-                print("\n\nShutting down miner...")
+                if not self.json_mode:
+                    print("\n\nShutting down miner...")
                 break
             except Exception as e:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] Error: {e}")
+                self.emit("error", message=str(e))
                 time.sleep(30)
 
 
@@ -395,10 +430,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="RustChain Universal Miner")
     parser.add_argument("--miner-id", "-m", help="Custom miner ID")
     parser.add_argument("--node", "-n", default=NODE_URL, help="RIP node URL")
+    parser.add_argument("--json", action="store_true", help="Output structured JSON instead of human-readable text")
+    parser.add_argument("--dry-run", action="store_true", help="Run in dry-run mode (don't actually mine)")
     args = parser.parse_args()
 
     if args.node:
         NODE_URL = args.node
 
-    miner = UniversalMiner(miner_id=args.miner_id)
-    miner.run()
+    miner = UniversalMiner(miner_id=args.miner_id, json_mode=args.json)
+    if args.dry_run and args.json:
+        # In dry-run + JSON mode, just emit startup event and exit
+        print(json.dumps({"event": "ready", "status": "dry-run complete"}))
+    else:
+        miner.run()
