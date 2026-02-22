@@ -17,6 +17,14 @@ import os
 import time
 from typing import Dict, Optional, List
 
+# Try to import pynacl for real Ed25519 support
+try:
+    import nacl.signing
+    import nacl.encoding
+    HAVE_NACL = True
+except ImportError:
+    HAVE_NACL = False
+
 
 class TOFUKeyManager:
     """Manages TOFU keys for RustChain nodes."""
@@ -44,20 +52,26 @@ class TOFUKeyManager:
         if node_id in self.keys:
             raise ValueError(f"Key already exists for node {node_id}")
         
-        # In a real implementation, this would use proper crypto libraries
-        # For bounty demonstration, we'll use a simple hash-based approach
-        seed = f"{node_id}_{key_type}_{time.time()}".encode()
-        key_hash = hashlib.sha256(seed).hexdigest()
+        if key_type == "ed25519" and HAVE_NACL:
+            # Use real Ed25519 key generation
+            signing_key = nacl.signing.SigningKey.generate()
+            verify_key = signing_key.verify_key
+            key_hex = verify_key.encode(encoder=nacl.encoding.HexEncoder).decode('utf-8')
+        else:
+            # Fallback to hash-based approach for compatibility
+            seed = f"{node_id}_{key_type}_{time.time()}".encode()
+            key_hash = hashlib.sha256(seed).hexdigest()
+            key_hex = key_hash
         
         self.keys[node_id] = {
-            "key": key_hash,
+            "key": key_hex,
             "key_type": key_type,
             "created_at": time.time(),
             "revoked": False,
             "rotation_history": []
         }
         self._save_keys()
-        return key_hash
+        return key_hex
     
     def revoke_key(self, node_id: str, reason: str = "") -> bool:
         """Revoke a key for the specified node."""
@@ -111,6 +125,18 @@ class TOFUKeyManager:
     def get_key_info(self, node_id: str) -> Optional[Dict]:
         """Get key information for the specified node."""
         return self.keys.get(node_id)
+
+    def verify_signature(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
+        """Verify an Ed25519 signature if pynacl is available."""
+        if not HAVE_NACL:
+            raise RuntimeError("pynacl is required for signature verification")
+        
+        try:
+            verify_key = nacl.signing.VerifyKey(public_key)
+            verify_key.verify(message, signature)
+            return True
+        except Exception:
+            return False
 
 
 # Example usage and integration points

@@ -1,17 +1,37 @@
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["node", "."]
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
 
-[tool.ruff]
-line-length = 120
-select = ["E", "F", "W", "B", "I"]
-ignore = []
-exclude = ["deprecated", "node_backups"]
+[project]
+name = "rustchain"
+dynamic = ["version"]
+description = "Proof-of-Antiquity blockchain — vintage PowerPC hardware earns 2.5x mining rewards"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [{name = "Scott Johnson", email = "scott@rustchain.org"}]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "flask",
+    "requests",
+    "cryptography",
+    "pynacl",  # Required for Ed25519 signature verification
+    "prometheus-client",
+    "blake2b-py",
+]
+requires-python = ">=3.8"
 
-[tool.ruff.lint]
-ignore = ["E501"] # Ignore long lines for legacy code
+[project.optional-dependencies]
+dev = ["pytest", "black", "flake8"]
+monitoring = ["prometheus-client"]
+security = ["pynacl", "cryptography"]
 
-[tool.mypy]
-python_version = "3.11"
-ignore_missing_imports = true
-exclude = ["deprecated", "node_backups"]
+[tool.setuptools_scm]
