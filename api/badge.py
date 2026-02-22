@@ -1,41 +1,55 @@
-import hashlib
+import os
 import time
-from flask import Flask, send_file, request
-import io
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
-def generate_svg(status="Active"):
-    color = "#4c1" if status == "Active" else "#9f9f9f"
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="100" height="20">
-  <linearGradient id="b" x2="0" y2="100%">
-    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
-    <stop offset="1" stop-opacity=".1"/>
-  </linearGradient>
-  <mask id="a">
-    <rect width="100" height="20" rx="3" fill="#fff"/>
-  </mask>
-  <g mask="url(#a)">
-    <path fill="#555" d="M0 0h60v20H0z"/>
-    <path fill="{color}" d="M60 0h40v20H60z"/>
-    <path fill="url(#b)" d="M0 0h100v20H0z"/>
-  </g>
-  <g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11">
-    <text x="30" y="15" fill="#010101" fill-opacity=".3">Mining</text>
-    <text x="30" y="14">Mining</text>
-    <text x="80" y="15" fill="#010101" fill-opacity=".3">{status}</text>
-    <text x="80" y="14">{status}</text>
-  </g>
-</svg>"""
-    return svg
+# Mock node state — in production, this would be imported from node.state or similar
+# For RIP-200 nodes, we check the last attestation / epoch participation.
+def get_node_mining_status():
+    """
+    Determines if the node is actively mining based on local state.
+    In a real RIP-200 node, we'd check:
+    1. Local miner process status
+    2. Last successful attestation timestamp
+    """
+    try:
+        # Check if we have a local heartbeat file or DB entry
+        # For this implementation, we look for 'last_attestation.timestamp'
+        # which is updated by the miner worker.
+        ts_file = "last_attestation.timestamp"
+        if os.path.exists(ts_file):
+            with open(ts_file, "r") as f:
+                last_ts = float(f.read().strip())
+                # Active if attestation within last 20 minutes
+                if (time.time() - last_ts) < 1200:
+                    return "Active"
+        
+        # Fallback: check if miner process is in env (for containerized runs)
+        if os.environ.get("MINER_ACTIVE") == "true":
+            return "Active"
+            
+    except Exception:
+        pass
+        
+    return "Inactive"
 
 @app.route("/api/badge")
-def mining_badge():
-    # Simple logic: if a heartbeat happened in the last 15 mins, it's active
-    # For a real implementation, this would query the node's memory or DB
-    status = "Active"
-    svg = generate_svg(status)
-    return svg, 200, {"Content-Type": "image/svg+xml"}
+def mining_badge_json():
+    """
+    Returns a shields.io-compatible JSON endpoint.
+    Usage: https://img.shields.io/endpoint?url=https://your-node.com/api/badge
+    """
+    status = get_node_mining_status()
+    color = "brightgreen" if status == "Active" else "inactive"
+    
+    return jsonify({
+        "schemaVersion": 1,
+        "label": "RustChain",
+        "message": status,
+        "color": color
+    })
 
 if __name__ == "__main__":
+    # Internal port, mapped to 8082 or similar via proxy
     app.run(port=8082)
