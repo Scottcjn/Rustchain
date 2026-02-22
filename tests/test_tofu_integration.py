@@ -1,15 +1,30 @@
 """
 Integration tests for TOFU key management in RustChain attestation flow.
+Uses importlib to dynamically load the main module with dots in filename.
 """
 
 import os
 import tempfile
 import unittest
 import sqlite3
-from node.rustchain_v2_integrated_v2.2.1_rip200 import (
-    tofu_ensure_tables, tofu_store_first_key, tofu_get_key_info, 
-    tofu_validate_key, tofu_revoke_key, tofu_rotate_key
+import importlib.util
+
+
+# Dynamically load the main rustchain module
+spec = importlib.util.spec_from_file_location(
+    "rustchain_main", 
+    "node/rustchain_v2_integrated_v2.2.1_rip200.py"
 )
+rustchain_main = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(rustchain_main)
+
+# Import TOFU functions
+tofu_ensure_tables = rustchain_main.tofu_ensure_tables
+tofu_store_first_key = rustchain_main.tofu_store_first_key  
+tofu_get_key_info = rustchain_main.tofu_get_key_info
+tofu_validate_key = rustchain_main.tofu_validate_key
+tofu_revoke_key = rustchain_main.tofu_revoke_key
+tofu_rotate_key = rustchain_main.tofu_rotate_key
 
 
 class TestTOFUIntegration(unittest.TestCase):

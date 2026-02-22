@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-#!/usr/bin/env python3
 """
 RustChain v2 - Integrated Server
 Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
@@ -4684,9 +4683,9 @@ def check_hardware_wallet_consistency(hardware_id, miner_wallet, conn):
             return False, f'hardware_bound_to_different_wallet:{bound_wallet[:20]}'
     
     return True, 'ok'
-# ============= TOFU KEY MANAGEMENT =============
-# TOFU (Trust On First Use) Key Management for RustChain Attestation
-# This inline implementation integrates directly into the attestation flow.
+#     ============= TOFU KEY MANAGEMENT =============
+#     TOFU (Trust On First Use) Key Management for RustChain Attestation
+#     This inline implementation integrates directly into the attestation flow.
 
 def tofu_ensure_tables(conn):
     """Create TOFU tables if they don't exist."""
@@ -4813,4 +4812,4 @@ def tofu_rotate_key(conn, miner_id: str, new_pubkey_hex: str, reason: str = "") 
         print(f"[TOFU] Failed to rotate key for {miner_id}: {e}")
         return False
 
-# ============= END TOFU KEY MANAGEMENT =============
+#     ============= END TOFU KEY MANAGEMENT =============
