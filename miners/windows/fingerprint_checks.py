@@ -270,35 +270,137 @@ def check_instruction_jitter(samples: int = 100) -> Tuple[bool, Dict]:
 
 
 def check_anti_emulation() -> Tuple[bool, Dict]:
-    """Check 6: Anti-Emulation Behavioral Checks"""
+    """Check 6: Anti-Emulation Behavioral Checks
+
+    Detects traditional hypervisors AND cloud provider VMs:
+    - VMware, VirtualBox, KVM, QEMU, Xen, Hyper-V, Parallels
+    - AWS EC2 (Nitro/Xen), GCP, Azure, DigitalOcean
+    - Linode, Vultr, Hetzner, Oracle Cloud, OVH
+    - Cloud metadata endpoints (169.254.169.254)
+
+    Updated 2026-02-21: Added cloud provider detection after
+    discovering AWS t3.medium instances attempting to mine.
+    """
     vm_indicators = []
 
+    # --- DMI paths to check ---
     vm_paths = [
         "/sys/class/dmi/id/product_name",
         "/sys/class/dmi/id/sys_vendor",
+        "/sys/class/dmi/id/board_vendor",
+        "/sys/class/dmi/id/board_name",
+        "/sys/class/dmi/id/bios_vendor",
+        "/sys/class/dmi/id/chassis_vendor",
+        "/sys/class/dmi/id/chassis_asset_tag",
         "/proc/scsi/scsi",
     ]
 
-    vm_strings = ["vmware", "virtualbox", "kvm", "qemu", "xen", "hyperv", "parallels"]
+    # --- VM and cloud provider strings to match ---
+    vm_strings = [
+        # Traditional hypervisors
+        "vmware", "virtualbox", "kvm", "qemu", "xen",
+        "hyperv", "hyper-v", "parallels", "bhyve",
+        # AWS EC2 (Nitro and Xen instances)
+        "amazon", "amazon ec2", "ec2", "nitro",
+        # Google Cloud Platform
+        "google", "google compute engine", "gce",
+        # Microsoft Azure
+        "microsoft corporation", "azure",
+        # DigitalOcean
+        "digitalocean",
+        # Linode (now Akamai)
+        "linode", "akamai",
+        # Vultr
+        "vultr",
+        # Hetzner
+        "hetzner",
+        # Oracle Cloud
+        "oracle", "oraclecloud",
+        # OVH
+        "ovh", "ovhcloud",
+        # Alibaba Cloud
+        "alibaba", "alicloud",
+        # Generic cloud/VM indicators
+        "bochs", "innotek", "seabios",
+    ]
 
     for path in vm_paths:
         try:
             with open(path, "r") as f:
-                content = f.read().lower()
+                content = f.read().strip().lower()
                 for vm in vm_strings:
                     if vm in content:
                         vm_indicators.append("{}:{}".format(path, vm))
         except:
             pass
 
-    for key in ["KUBERNETES", "DOCKER", "VIRTUAL", "container"]:
+    # --- Environment variable checks ---
+    for key in ["KUBERNETES", "DOCKER", "VIRTUAL", "container",
+                "AWS_EXECUTION_ENV", "ECS_CONTAINER_METADATA_URI",
+                "GOOGLE_CLOUD_PROJECT", "AZURE_FUNCTIONS_ENVIRONMENT",
+                "WEBSITE_INSTANCE_ID"]:
         if key in os.environ:
             vm_indicators.append("ENV:{}".format(key))
 
+    # --- CPU hypervisor flag check ---
     try:
         with open("/proc/cpuinfo", "r") as f:
             if "hypervisor" in f.read().lower():
                 vm_indicators.append("cpuinfo:hypervisor")
+    except:
+        pass
+
+    # --- /sys/hypervisor check (Xen-based cloud VMs expose this) ---
+    try:
+        if os.path.exists("/sys/hypervisor/type"):
+            with open("/sys/hypervisor/type", "r") as f:
+                hv_type = f.read().strip().lower()
+                if hv_type:
+                    vm_indicators.append("sys_hypervisor:{}".format(hv_type))
+    except:
+        pass
+
+    # --- Cloud metadata endpoint check ---
+    # AWS, GCP, Azure, DigitalOcean all use 169.254.169.254
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            "http://169.254.169.254/",
+            headers={"Metadata": "true"}
+        )
+        resp = urllib.request.urlopen(req, timeout=1)
+        cloud_body = resp.read(512).decode("utf-8", errors="replace").lower()
+        cloud_provider = "unknown_cloud"
+        if "latest" in cloud_body or "meta-data" in cloud_body:
+            cloud_provider = "aws_or_gcp"
+        if "azure" in cloud_body or "microsoft" in cloud_body:
+            cloud_provider = "azure"
+        vm_indicators.append("cloud_metadata:{}".format(cloud_provider))
+    except:
+        pass
+
+    # --- AWS IMDSv2 check (token-based, t3/t4 Nitro instances) ---
+    try:
+        import urllib.request
+        token_req = urllib.request.Request(
+            "http://169.254.169.254/latest/api/token",
+            headers={"X-aws-ec2-metadata-token-ttl-seconds": "5"},
+            method="PUT"
+        )
+        token_resp = urllib.request.urlopen(token_req, timeout=1)
+        if token_resp.status == 200:
+            vm_indicators.append("cloud_metadata:aws_imdsv2")
+    except:
+        pass
+
+    # --- systemd-detect-virt (if available) ---
+    try:
+        result = subprocess.run(
+            ["systemd-detect-virt"], capture_output=True, text=True, timeout=5
+        )
+        virt_type = result.stdout.strip().lower()
+        if virt_type and virt_type != "none":
+            vm_indicators.append("systemd_detect_virt:{}".format(virt_type))
     except:
         pass
 
@@ -313,6 +415,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
         data["fail_reason"] = "vm_detected"
 
     return valid, data
+
 
 
 def check_rom_fingerprint() -> Tuple[bool, Dict]:

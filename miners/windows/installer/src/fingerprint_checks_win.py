@@ -231,14 +231,37 @@ def check_instruction_jitter(samples: int = 100) -> Tuple[bool, Dict]:
 
 
 def check_anti_emulation() -> Tuple[bool, Dict]:
-    """Check 6: Anti-Emulation Behavioral Checks (Windows Version)"""
+    """Check 6: Anti-Emulation Behavioral Checks (Windows Version)
+
+    Detects traditional hypervisors AND cloud provider VMs:
+    - VMware, VirtualBox, KVM, QEMU, Xen, Hyper-V, Parallels
+    - AWS EC2 (Nitro/Xen), GCP, Azure, DigitalOcean
+    - Linode, Vultr, Hetzner, Oracle Cloud, OVH
+
+    Updated 2026-02-21: Added cloud provider detection after
+    discovering AWS t3.medium instances attempting to mine.
+    """
     vm_indicators = []
 
-    # Registry checks
+    # --- Registry checks (traditional + cloud) ---
     reg_checks = [
+        # Traditional hypervisors
         (winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\Description\System", "SystemBiosVersion", "vbox"),
         (winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\Description\System", "VideoBiosVersion", "vbox"),
         (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\VMware, Inc.\VMware Tools", "", ""),
+        # AWS EC2
+        (winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\Description\System\BIOS", "SystemManufacturer", "amazon"),
+        (winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\Description\System\BIOS", "SystemProductName", "ec2"),
+        (winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\Description\System\BIOS", "BIOSVendor", "amazon"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Amazon\MachineImage", "", ""),
+        # Google Cloud
+        (winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\Description\System\BIOS", "SystemManufacturer", "google"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Google\ComputeEngine", "", ""),
+        # Azure
+        (winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\Description\System\BIOS", "SystemManufacturer", "microsoft"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows Azure", "", ""),
+        # QEMU/KVM
+        (winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\Description\System\BIOS", "SystemManufacturer", "qemu"),
     ]
 
     for root, path, val_name, search_str in reg_checks:
@@ -247,23 +270,91 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
                 if val_name:
                     val, _ = winreg.QueryValueEx(key, val_name)
                     if search_str.lower() in str(val).lower():
-                        vm_indicators.append(f"REG:{path}\\{val_name}")
+                        vm_indicators.append(f"REG:{path}\\{val_name}:{search_str}")
                 else:
                     vm_indicators.append(f"REG:{path}")
-        except WindowsError:
+        except (WindowsError, FileNotFoundError, OSError):
             pass
 
-    # File checks
+    # --- File checks (traditional + cloud agent files) ---
     vm_files = [
+        # VirtualBox
         r"C:\windows\System32\Drivers\VBoxGuest.sys",
         r"C:\windows\System32\Drivers\vmmouse.sys",
         r"C:\windows\System32\Drivers\vmusb.sys",
         r"C:\windows\System32\Drivers\vm3dver.dll",
+        # VMware
+        r"C:\windows\System32\Drivers\vmhgfs.sys",
+        # AWS
+        r"C:\Program Files\Amazon\SSM\amazon-ssm-agent.exe",
+        r"C:\Program Files\Amazon\EC2Launch\EC2Launch.exe",
+        r"C:\ProgramData\Amazon\EC2-Windows\Launch\Settings\LaunchConfig.json",
+        # Google Cloud
+        r"C:\Program Files\Google\Compute Engine\agent\GCEWindowsAgent.exe",
+        # Azure
+        r"C:\WindowsAzure\GuestAgent\WaAppAgent.exe",
+        r"C:\Packages\Plugins\Microsoft.Compute.VMAccessAgent",
     ]
 
     for f in vm_files:
         if os.path.exists(f):
             vm_indicators.append(f"FILE:{f}")
+
+    # --- WMI check for cloud provider ---
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["wmic", "bios", "get", "serialnumber,manufacturer", "/format:list"],
+            capture_output=True, text=True, timeout=10
+        )
+        output = result.stdout.lower()
+        cloud_strings = ["amazon", "ec2", "google", "azure", "digitalocean",
+                         "vultr", "linode", "hetzner", "oracle", "ovh"]
+        for cs in cloud_strings:
+            if cs in output:
+                vm_indicators.append(f"WMI_BIOS:{cs}")
+    except:
+        pass
+
+    # --- Cloud metadata endpoint check ---
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            "http://169.254.169.254/",
+            headers={"Metadata": "true"}
+        )
+        resp = urllib.request.urlopen(req, timeout=1)
+        cloud_body = resp.read(512).decode("utf-8", errors="replace").lower()
+        cloud_provider = "unknown_cloud"
+        if "latest" in cloud_body or "meta-data" in cloud_body:
+            cloud_provider = "aws_or_gcp"
+        if "azure" in cloud_body or "microsoft" in cloud_body:
+            cloud_provider = "azure"
+        vm_indicators.append(f"cloud_metadata:{cloud_provider}")
+    except:
+        pass
+
+    # --- AWS IMDSv2 check (token-based, Nitro instances) ---
+    try:
+        import urllib.request
+        token_req = urllib.request.Request(
+            "http://169.254.169.254/latest/api/token",
+            headers={"X-aws-ec2-metadata-token-ttl-seconds": "5"},
+            method="PUT"
+        )
+        token_resp = urllib.request.urlopen(token_req, timeout=1)
+        if token_resp.status == 200:
+            vm_indicators.append("cloud_metadata:aws_imdsv2")
+    except:
+        pass
+
+    # --- Environment variable checks ---
+    for key in ["KUBERNETES", "DOCKER", "VIRTUAL", "container",
+                "AWS_EXECUTION_ENV", "ECS_CONTAINER_METADATA_URI",
+                "GOOGLE_CLOUD_PROJECT", "AZURE_FUNCTIONS_ENVIRONMENT",
+                "WEBSITE_INSTANCE_ID"]:
+        if key in os.environ:
+            vm_indicators.append(f"ENV:{key}")
 
     data = {
         "vm_indicators": vm_indicators,
