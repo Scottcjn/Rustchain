@@ -3077,6 +3077,68 @@ def get_stats():
         "security": ["no_mock_sigs", "mandatory_admin_key", "replay_protection", "validated_json"]
     })
 
+@app.route('/api/badge/<wallet>', methods=['GET'])
+def api_badge(wallet):
+    """Return mining status badge in shields.io format for GitHub Action"""
+    if not wallet or len(wallet) < 10:
+        return jsonify({
+            "schemaVersion": 1,
+            "label": "RustChain",
+            "message": "Invalid wallet",
+            "color": "red"
+        })
+    
+    try:
+        # Get wallet balance
+        with sqlite3.connect(DB_PATH) as c:
+            row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ? OR miner_pk = ?", (wallet, wallet)).fetchone()
+            if row and row[0] is not None:
+                balance_rtc = float(row[0]) / 1000000.0
+            else:
+                balance_rtc = 0.0
+            
+            # Get current epoch
+            epoch = slot_to_epoch(current_slot())
+            
+            # Check if wallet is actively mining (has recent attestations)
+            now = int(time.time())
+            one_hour_ago = now - 3600
+            active_row = c.execute(
+                "SELECT 1 FROM miner_attest_recent WHERE miner = ? AND ts_ok > ?", 
+                (wallet, one_hour_ago)
+            ).fetchone()
+            is_active = bool(active_row)
+            
+            # Format message
+            balance_str = f"{balance_rtc:.1f}" if balance_rtc >= 1 else f"{balance_rtc:.3f}"
+            status = "Active" if is_active else "Inactive"
+            message = f"{balance_str} RTC | Epoch {epoch} | {status}"
+            
+            # Determine color based on activity and balance
+            if is_active and balance_rtc > 0:
+                color = "brightgreen"
+            elif is_active:
+                color = "yellow"
+            elif balance_rtc > 0:
+                color = "orange"
+            else:
+                color = "red"
+                
+        return jsonify({
+            "schemaVersion": 1,
+            "label": "RustChain",
+            "message": message,
+            "color": color
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "schemaVersion": 1,
+            "label": "RustChain",
+            "message": "Error",
+            "color": "red"
+        }), 500
+
 # ---------- RIP-0147a: Admin OUI Management ----------
 
 
