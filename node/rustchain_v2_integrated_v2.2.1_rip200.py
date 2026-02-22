@@ -2631,20 +2631,35 @@ def request_withdrawal():
     """Request RTC withdrawal"""
     withdrawal_requests.inc()
 
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        withdrawal_failed.inc()
+        return jsonify({"error": "Invalid JSON body"}), 400
 
     # Extract client IP (handle nginx proxy)
     client_ip = client_ip_from_request(request)
     miner_pk = data.get('miner_pk')
-    amount = float(data.get('amount', 0))
+    amount_raw = data.get('amount', 0)
     destination = data.get('destination')
     signature = data.get('signature')
     nonce = data.get('nonce')
 
     if not all([miner_pk, destination, signature, nonce]):
+        withdrawal_failed.inc()
         return jsonify({"error": "Missing required fields"}), 400
 
+    try:
+        amount = float(amount_raw)
+    except (TypeError, ValueError):
+        withdrawal_failed.inc()
+        return jsonify({"error": "Amount must be a number"}), 400
+
+    if not math.isfinite(amount) or amount <= 0:
+        withdrawal_failed.inc()
+        return jsonify({"error": "Amount must be a finite positive number"}), 400
+
     if amount < MIN_WITHDRAWAL:
+        withdrawal_failed.inc()
         return jsonify({"error": f"Minimum withdrawal is {MIN_WITHDRAWAL} RTC"}), 400
 
     with sqlite3.connect(DB_PATH) as c:
