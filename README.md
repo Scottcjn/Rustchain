@@ -325,6 +325,17 @@ Each hardware fingerprint is bound to one wallet. Prevents:
 - Hardware spoofing
 - Sybil attacks
 
+### TOFU Key Management (Trust-On-First-Use)
+
+RustChain implements **TOFU (Trust-On-First-Use) key management** for beacon agents and secure communications:
+
+- **Key Registration**: Agents register their Ed25519 public key during initial registration
+- **Key Validation**: All subsequent communications must be signed with the registered key
+- **Key Revocation**: Compromised keys can be revoked to prevent unauthorized access
+- **Key Rotation**: Keys can be safely rotated with proper authentication and audit logging
+
+This prevents impersonation attacks and ensures secure agent-to-agent communication. See the [API documentation](docs/API.md) for `/relay/register` and `/relay/ping` endpoint details.
+
 ## 📁 Repository Structure
 
 ```

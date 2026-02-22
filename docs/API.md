@@ -220,6 +220,66 @@ curl -sk -X POST https://50.28.86.131/attest/submit \
 
 ---
 
+## Beacon Atlas Endpoints
+
+### `POST /relay/register`
+
+Register a beacon agent with public key for TOFU (Trust-On-First-Use) key management.
+
+**Request:**
+```bash
+curl -X POST https://50.28.86.131/relay/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "bcn_a1b2c3d4e5f6",
+    "pubkey_hex": "a1b2c3d4e5f6...",
+    "signature": "base64_ed25519_signature"
+  }'
+```
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "agent_id": "bcn_a1b2c3d4e5f6",
+  "registered_at": 1770112912
+}
+```
+
+### `POST /relay/ping`
+
+Send heartbeat ping from registered beacon agent.
+
+**Request:**
+```bash
+curl -X POST https://50.28.86.131/relay/ping \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "bcn_a1b2c3d4e5f6",
+    "status": "alive",
+    "timestamp": 1770112912,
+    "signature": "base64_ed25519_signature"
+  }'
+```
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "last_seen": 1770112912
+}
+```
+
+**Response (Unauthorized):**
+```json
+{
+  "error": "Invalid signature",
+  "code": "INVALID_SIGNATURE"
+}
+```
+
+---
+
 ## Error Codes
 
 | Code | Meaning |
