@@ -1,98 +1,77 @@
 # Security Policy
 
-Last updated: 2026-02-19
+## Reporting a Vulnerability
 
-RustChain welcomes good-faith security research.
+Do not open public issues for critical vulnerabilities before maintainers can patch.
 
-## Safe Harbor
+- Use responsible disclosure via project maintainers.
+- Include reproduction steps, impact, and proposed mitigation.
 
-If you act in good faith and follow this policy, Elyan Labs maintainers will not pursue legal action related to your research activities.
+## Key Management Best Practices
 
-Good-faith means:
+### Ed25519 Key Security
 
-- avoid privacy violations, data destruction, and service disruption
-- do not access, alter, or exfiltrate non-public user data
-- do not move funds you do not own
-- do not use social engineering, phishing, or physical attacks
-- report vulnerabilities responsibly and give maintainers time to fix
+RustChain uses Ed25519 signatures for all authenticated operations. Follow these best practices:
 
-## Authorization Statement
+1. **Secure Key Storage**: Store private keys in secure locations (hardware wallets, encrypted storage)
+2. **Key Backup**: Always backup your private keys securely - lost keys cannot be recovered
+3. **Key Rotation**: Regularly rotate keys using the TOFU key rotation functionality
+4. **Compromise Response**: Immediately revoke compromised keys using the key revocation API
 
-Testing conducted in accordance with this policy is authorized by project maintainers.
-We will not assert anti-hacking claims for good-faith research that follows these rules.
+### TOFU (Trust-On-First-Use) Security Model
 
-## How to Report
+RustChain implements TOFU key management for beacon agents:
 
-Preferred:
+- **Initial Trust**: The first public key registered for an agent is trusted permanently
+- **Key Validation**: All subsequent communications must be signed with the registered key
+- **Revocation**: Compromised keys can be revoked to prevent unauthorized access
+- **Rotation**: Keys can be safely rotated with proper authentication
 
-- GitHub Private Vulnerability Reporting (Security Advisories)
+### Anti-Emulation Protection
 
-Alternative:
+The hardware fingerprinting system includes multiple layers of anti-emulation protection:
 
-- Open a private disclosure request via maintainer contact listed in repository profile
+- **Clock Skew Detection**: Real hardware has unique oscillator drift patterns
+- **Cache Timing**: VMs cannot perfectly replicate cache timing characteristics  
+- **SIMD Identity**: Vector unit behavior is hardware-specific
+- **Thermal Entropy**: Heat patterns are unique to physical silicon
+- **Instruction Jitter**: Microarchitectural timing varies by real hardware
+- **Behavioral Heuristics**: Advanced detection of virtualization artifacts
 
-Please include:
+### Rate Limiting
 
-- affected component
-- clear reproduction steps
-- impact assessment
-- suggested mitigation if available
+API endpoints are protected by rate limiting:
 
-## Scope
+- **Public endpoints**: 100 requests/minute
+- **Attestation**: 1 per 10 minutes per miner  
+- **Transfers**: 10 per minute per wallet
+- **Beacon Atlas**: Protected against abuse and DoS attacks
 
-In scope:
+### Secure Communication
 
-- consensus and attestation logic
-- reward calculation and epoch settlement
-- wallet transfer and pending confirmation paths
-- API authentication/authorization/rate-limit controls
-- bridge and payout-related integrations
+All API communication should use HTTPS with proper certificate validation:
 
-Out of scope:
+- **Production**: Valid certificates from trusted CAs
+- **Development**: Self-signed certificates (use `-k` flag with curl)
+- **Authentication**: All sensitive operations require Ed25519 signatures
+- **Authorization**: Proper access controls prevent unauthorized operations
 
-- social engineering
-- physical attacks
-- denial-of-service against production infrastructure
-- reports without reproducible evidence
+## Security Headers
 
-## Response Targets
+The RustChain API implements appropriate security headers:
 
-- acknowledgment: within 48 hours
-- initial triage: within 5 business days
-- fix/mitigation plan: within 30-45 days
-- coordinated public disclosure target: up to 90 days
+- **Content-Security-Policy**: Prevents XSS attacks
+- **X-Content-Type-Options**: Prevents MIME type sniffing
+- **X-Frame-Options**: Prevents clickjacking
+- **Strict-Transport-Security**: Enforces HTTPS
 
-## Bounty Guidance (RTC)
+## Regular Security Updates
 
-Bounty rewards are discretionary and severity-based.
+- Monitor dependencies for security vulnerabilities
+- Apply security patches promptly
+- Follow security best practices for Python and Flask applications
+- Keep system and runtime updated
 
-- Critical: 2000+ RTC
-- High: 800-2000 RTC
-- Medium: 300-800 RTC
-- Low: 50-300 RTC
+## Contact
 
-Bonuses may be granted for clear reproducibility, exploit reliability, and patch-quality remediation.
-
-## Token Value and Compensation Disclaimer
-
-- Bounty payouts are offered in project-native tokens unless explicitly stated otherwise.
-- No token price, market value, liquidity, convertibility, or future appreciation is guaranteed.
-- Participation in this open-source program is not an investment contract and does not create ownership rights.
-- Rewards are recognition for accepted security work: respect earned through contribution.
-
-## Prohibited Conduct
-
-Reports are ineligible for reward if they involve:
-
-- extortion or disclosure threats
-- automated spam submissions
-- duplicate reports without new technical substance
-- exploitation beyond what is required to prove impact
-
-## Recognition
-
-Valid reports may receive:
-
-- RTC bounty payout
-- optional Hall of Hunters recognition
-- follow-on hardening bounty invitations
+For security concerns, contact the maintainers through official channels.
