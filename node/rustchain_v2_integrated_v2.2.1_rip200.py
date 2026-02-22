@@ -100,6 +100,21 @@ HUNTER_BADGE_RAW_URLS = {
 _HUNTER_BADGE_CACHE = {"ts": 0, "data": None}
 _HUNTER_BADGE_TTL_S = int(os.environ.get("HUNTER_BADGE_CACHE_TTL", "300"))
 
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+ATTEST_NONCE_SKEW_SECONDS = _env_int("RC_ATTEST_NONCE_SKEW_SECONDS", 60)
+ATTEST_NONCE_TTL_SECONDS = _env_int("RC_ATTEST_NONCE_TTL_SECONDS", 3600)
+ATTEST_CHALLENGE_TTL_SECONDS = _env_int("RC_ATTEST_CHALLENGE_TTL_SECONDS", 300)
+
 # ----------------------------------------------------------------------------
 # Trusted proxy handling
 #
@@ -243,6 +258,26 @@ OPENAPI = {
     ],
     "paths": {
         "/attest/challenge": {
+            "get": {
+                "summary": "Get hardware attestation challenge",
+                "responses": {
+                    "200": {
+                        "description": "Challenge issued",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "nonce": {"type": "string"},
+                                        "expires_at": {"type": "integer"},
+                                        "server_time": {"type": "integer"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
             "post": {
                 "summary": "Get hardware attestation challenge",
                 "requestBody": {
@@ -653,11 +688,125 @@ if HAVE_REWARDS:
         print(f"[REWARDS] Failed to register: {e}")
 
 
+def attest_ensure_tables(conn) -> None:
+    """Create attestation replay/challenge tables if they are missing."""
+    conn.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS used_nonces (
+            nonce TEXT PRIMARY KEY,
+            miner_id TEXT,
+            first_seen INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_nonces_expires_at ON nonces(expires_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_used_nonces_expires_at ON used_nonces(expires_at)")
+
+
+def attest_cleanup_expired(conn, now_ts: Optional[int] = None) -> None:
+    now_ts = int(now_ts if now_ts is not None else time.time())
+    conn.execute("DELETE FROM nonces WHERE expires_at < ?", (now_ts,))
+    conn.execute("DELETE FROM used_nonces WHERE expires_at < ?", (now_ts,))
+
+
+def _coerce_unix_ts(raw_value) -> Optional[int]:
+    if raw_value is None:
+        return None
+    text = str(raw_value).strip()
+    if not text:
+        return None
+    if "." in text and text.replace(".", "", 1).isdigit():
+        text = text.split(".", 1)[0]
+    if not text.isdigit():
+        return None
+
+    ts = int(text)
+    if ts > 10_000_000_000:
+        ts //= 1000
+    if ts < 0:
+        return None
+    return ts
+
+
+def extract_attestation_timestamp(data: dict, report: dict, nonce: Optional[str]) -> Optional[int]:
+    for key in ("nonce_ts", "timestamp", "nonce_time", "nonce_timestamp"):
+        ts = _coerce_unix_ts(report.get(key))
+        if ts is not None:
+            return ts
+        ts = _coerce_unix_ts(data.get(key))
+        if ts is not None:
+            return ts
+
+    if not nonce:
+        return None
+
+    ts = _coerce_unix_ts(nonce)
+    if ts is not None:
+        return ts
+
+    for sep in (":", "|", "-", "_"):
+        if sep in nonce:
+            ts = _coerce_unix_ts(nonce.split(sep, 1)[0])
+            if ts is not None:
+                return ts
+    return None
+
+
+def attest_validate_challenge(conn, challenge: Optional[str], now_ts: Optional[int] = None):
+    if not challenge:
+        return True, None, None
+
+    now_ts = int(now_ts if now_ts is not None else time.time())
+    row = conn.execute("SELECT expires_at FROM nonces WHERE nonce = ?", (challenge,)).fetchone()
+    if not row:
+        return False, "challenge_invalid", "challenge nonce not found"
+
+    expires_at = int(row[0] or 0)
+    if expires_at < now_ts:
+        conn.execute("DELETE FROM nonces WHERE nonce = ?", (challenge,))
+        return False, "challenge_expired", "challenge nonce has expired"
+
+    conn.execute("DELETE FROM nonces WHERE nonce = ?", (challenge,))
+    return True, None, None
+
+
+def attest_validate_and_store_nonce(
+    conn,
+    miner: str,
+    nonce: Optional[str],
+    now_ts: Optional[int] = None,
+    nonce_ts: Optional[int] = None,
+    skew_seconds: int = ATTEST_NONCE_SKEW_SECONDS,
+    ttl_seconds: int = ATTEST_NONCE_TTL_SECONDS,
+):
+    if not nonce:
+        return True, None, None
+
+    now_ts = int(now_ts if now_ts is not None else time.time())
+    skew_seconds = max(0, int(skew_seconds))
+    ttl_seconds = max(1, int(ttl_seconds))
+
+    if nonce_ts is not None and abs(now_ts - int(nonce_ts)) > skew_seconds:
+        return False, "nonce_stale", f"nonce timestamp outside +/-{skew_seconds}s tolerance"
+
+    try:
+        conn.execute(
+            "INSERT INTO used_nonces (nonce, miner_id, first_seen, expires_at) VALUES (?, ?, ?, ?)",
+            (nonce, miner, now_ts, now_ts + ttl_seconds),
+        )
+    except sqlite3.IntegrityError:
+        return False, "nonce_replay", "nonce has already been used"
+
+    return True, None, None
+
+
 def init_db():
     """Initialize all database tables"""
     with sqlite3.connect(DB_PATH) as c:
         # Core tables
-        c.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
+        attest_ensure_tables(c)
         c.execute("CREATE TABLE IF NOT EXISTS ip_rate_limit (client_ip TEXT, miner_id TEXT, ts INTEGER, PRIMARY KEY (client_ip, miner_id))")
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
 
@@ -1731,19 +1880,22 @@ def museum_assets(filename: str):
 
 # ============= ATTESTATION ENDPOINTS =============
 
-@app.route('/attest/challenge', methods=['POST'])
+@app.route('/attest/challenge', methods=['GET', 'POST'])
 def get_challenge():
     """Issue challenge for hardware attestation"""
+    now_ts = int(time.time())
     nonce = secrets.token_hex(32)
-    expires = int(time.time()) + 300  # 5 minutes
+    expires = now_ts + ATTEST_CHALLENGE_TTL_SECONDS
 
     with sqlite3.connect(DB_PATH) as c:
+        attest_ensure_tables(c)
+        attest_cleanup_expired(c, now_ts)
         c.execute("INSERT INTO nonces (nonce, expires_at) VALUES (?, ?)", (nonce, expires))
 
     return jsonify({
         "nonce": nonce,
         "expires_at": expires,
-        "server_time": int(time.time())
+        "server_time": now_ts
     })
 
 
@@ -1832,6 +1984,7 @@ def submit_attestation():
     miner = data.get('miner') or data.get('miner_id')
     report = data.get('report', {})
     nonce = report.get('nonce') or data.get('nonce')
+    challenge = report.get('challenge') or data.get('challenge')
     device = data.get('device', {})
 
     # IP rate limiting (Security Hardening 2026-02-02)
@@ -1858,6 +2011,47 @@ def submit_attestation():
         blocked_row = c.fetchone()
         if blocked_row:
             return jsonify({"ok": False, "error": "wallet_blocked", "reason": blocked_row[0]}), 403
+
+    now_ts = int(time.time())
+    nonce_ts = extract_attestation_timestamp(data, report, nonce)
+    with sqlite3.connect(DB_PATH) as conn:
+        attest_ensure_tables(conn)
+        attest_cleanup_expired(conn, now_ts)
+
+        if challenge:
+            challenge_ok, challenge_error, challenge_message = attest_validate_challenge(conn, challenge, now_ts=now_ts)
+            if not challenge_ok:
+                return jsonify({
+                    "ok": False,
+                    "error": challenge_error,
+                    "message": challenge_message,
+                    "code": "ATTEST_CHALLENGE_REJECTED"
+                }), 400
+        else:
+            app.logger.warning(f"[ATTEST] challenge missing for miner={miner}; allowing legacy flow")
+
+        if nonce:
+            if nonce_ts is None:
+                app.logger.warning(f"[ATTEST] nonce timestamp missing/unparseable for miner={miner}; replay checks still enforced")
+
+            nonce_ok, nonce_error, nonce_message = attest_validate_and_store_nonce(
+                conn,
+                miner=miner,
+                nonce=nonce,
+                now_ts=now_ts,
+                nonce_ts=nonce_ts,
+            )
+            if not nonce_ok:
+                return jsonify({
+                    "ok": False,
+                    "error": nonce_error,
+                    "message": nonce_message,
+                    "code": "ATTEST_NONCE_REJECTED"
+                }), 409 if nonce_error == "nonce_replay" else 400
+        else:
+            app.logger.warning(f"[ATTEST] nonce missing for miner={miner}; allowing legacy flow")
+
+        conn.commit()
 
     # SECURITY: Hardware binding check v2.0 (serial + entropy validation)
     serial = device.get('serial_number') or device.get('serial') or signals.get('serial')
