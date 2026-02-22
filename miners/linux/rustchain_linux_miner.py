@@ -9,6 +9,18 @@ warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 import os, sys, json, time, hashlib, uuid, requests, socket, subprocess, platform, statistics, re
 from datetime import datetime
 
+# Global flag for JSON output mode
+JSON_MODE = False
+
+def emit(event_type, **data):
+    """Output handler that supports both human-readable and JSON (JSONL) modes."""
+    if JSON_MODE:
+        output = {"event": event_type, **data}
+        print(json.dumps(output, default=str))
+    else:
+        # Human-readable output handled by original print statements
+        pass
+
 # Import fingerprint checks
 try:
     from fingerprint_checks import validate_all_checks
@@ -58,14 +70,19 @@ class LocalMiner:
         self.fingerprint_passed = False
 
         self.serial = get_linux_serial()
-        print("="*70)
-        print("RustChain Local Miner - HP Victus Ryzen 5 8645HS")
-        print("RIP-PoA Hardware Fingerprint + Serial Binding v2.0")
-        print("="*70)
-        print(f"Node: {self.node_url}")
-        print(f"Wallet: {self.wallet}")
-        print(f"Serial: {self.serial}")
-        print("="*70)
+        
+        # Output startup info
+        if JSON_MODE:
+            emit("startup", wallet=self.wallet, node=self.node_url, serial=self.serial or "unknown")
+        else:
+            print("="*70)
+            print("RustChain Local Miner - HP Victus Ryzen 5 8645HS")
+            print("RIP-PoA Hardware Fingerprint + Serial Binding v2.0")
+            print("="*70)
+            print(f"Node: {self.node_url}")
+            print(f"Wallet: {self.wallet}")
+            print(f"Serial: {self.serial}")
+            print("="*70)
 
         # Run initial fingerprint check
         if FINGERPRINT_AVAILABLE:
@@ -73,21 +90,32 @@ class LocalMiner:
 
     def _run_fingerprint_checks(self):
         """Run 6 hardware fingerprint checks for RIP-PoA"""
-        print("\n[FINGERPRINT] Running 6 hardware fingerprint checks...")
+        if JSON_MODE:
+            emit("fingerprint", status="running", total_checks=6)
+        else:
+            print("\n[FINGERPRINT] Running 6 hardware fingerprint checks...")
         try:
             passed, results = validate_all_checks()
             self.fingerprint_passed = passed
             self.fingerprint_data = {"checks": results, "all_passed": passed}
             if passed:
-                print("[FINGERPRINT] All checks PASSED - eligible for full rewards")
+                if JSON_MODE:
+                    emit("fingerprint", status="passed", checks_passed=6, checks_total=6)
+                else:
+                    print("[FINGERPRINT] All checks PASSED - eligible for full rewards")
             else:
                 failed = [k for k, v in results.items() if not v.get("passed")]
-                print(f"[FINGERPRINT] FAILED checks: {failed}")
-                print("[FINGERPRINT] WARNING: May receive reduced/zero rewards")
+                if JSON_MODE:
+                    emit("fingerprint", status="failed", failed_checks=failed)
+                else:
+                    print(f"[FINGERPRINT] FAILED checks: {failed}")
+                    print("[FINGERPRINT] WARNING: May receive reduced/zero rewards")
         except Exception as e:
             print(f"[FINGERPRINT] Error running checks: {e}")
             self.fingerprint_passed = False
             self.fingerprint_data = {"error": str(e), "all_passed": False}
+            if JSON_MODE:
+                emit("fingerprint", status="error", error=str(e))
 
     def _gen_wallet(self):
         data = f"ryzen5-{uuid.uuid4().hex}-{time.time()}"
@@ -201,7 +229,10 @@ class LocalMiner:
 
     def attest(self):
         """Hardware attestation"""
-        print(f"\n🔐 [{datetime.now().strftime('%H:%M:%S')}] Attesting...")
+        if JSON_MODE:
+            emit("attestation", status="starting")
+        else:
+            print(f"\n🔐 [{datetime.now().strftime('%H:%M:%S')}] Attesting...")
 
         self._get_hw_info()
 
@@ -373,7 +404,10 @@ class LocalMiner:
             if resp.status_code == 200:
                 result = resp.json()
                 balance = result.get('balance_rtc', 0)
-                print(f"\n💰 Balance: {balance} RTC")
+                if JSON_MODE:
+                    emit("balance", balance=balance)
+                else:
+                    print(f"\n💰 Balance: {balance} RTC")
                 return balance
         except:
             pass
@@ -381,49 +415,71 @@ class LocalMiner:
 
     def mine(self):
         """Start mining"""
-        print(f"\n⛏️  Starting mining...")
-        print(f"Block time: {BLOCK_TIME//60} minutes")
-        print(f"Press Ctrl+C to stop\n")
+        if JSON_MODE:
+            emit("mining", status="starting", block_time_minutes=BLOCK_TIME//60)
+        else:
+            print(f"\n⛏️  Starting mining...")
+            print(f"Block time: {BLOCK_TIME//60} minutes")
+            print(f"Press Ctrl+C to stop\n")
 
         # Save wallet
         with open("/tmp/local_miner_wallet.txt", "w") as f:
             f.write(self.wallet)
-        print(f"💾 Wallet saved to: /tmp/local_miner_wallet.txt\n")
+        if not JSON_MODE:
+            print(f"💾 Wallet saved to: /tmp/local_miner_wallet.txt\n")
 
         cycle = 0
 
         try:
             while True:
                 cycle += 1
-                print(f"\n{'='*70}")
-                print(f"Cycle #{cycle} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                print(f"{'='*70}")
+                if JSON_MODE:
+                    emit("cycle", cycle=cycle, timestamp=datetime.now().isoformat())
+                else:
+                    print(f"\n{'='*70}")
+                    print(f"Cycle #{cycle} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                    print(f"{'='*70}")
 
                 if self.enroll():
-                    print(f"⏳ Mining for {BLOCK_TIME//60} minutes...")
+                    if JSON_MODE:
+                        emit("mining", status="in_progress", duration_minutes=BLOCK_TIME//60)
+                    else:
+                        print(f"⏳ Mining for {BLOCK_TIME//60} minutes...")
 
                     for i in range(BLOCK_TIME // 30):
                         time.sleep(30)
                         elapsed = (i + 1) * 30
                         remaining = BLOCK_TIME - elapsed
-                        print(f"   ⏱️  {elapsed}s elapsed, {remaining}s remaining...")
+                        if JSON_MODE:
+                            emit("progress", elapsed_seconds=elapsed, remaining_seconds=remaining)
+                        else:
+                            print(f"   ⏱️  {elapsed}s elapsed, {remaining}s remaining...")
 
                     self.check_balance()
 
                 else:
-                    print("❌ Enrollment failed. Retrying in 60s...")
+                    if JSON_MODE:
+                        emit("enrollment", status="failed", retrying=True)
+                    else:
+                        print("❌ Enrollment failed. Retrying in 60s...")
                     time.sleep(60)
 
         except KeyboardInterrupt:
-            print(f"\n\n⛔ Mining stopped")
-            print(f"   Wallet: {self.wallet}")
+            if JSON_MODE:
+                emit("mining", status="stopped", wallet=self.wallet)
+            else:
+                print(f"\n\n⛔ Mining stopped")
+                print(f"   Wallet: {self.wallet}")
             self.check_balance()
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--wallet", help="Wallet address")
+    parser.add_argument("--json", action="store_true", help="Output in JSONL format (one JSON object per line)")
     args = parser.parse_args()
+    
+    JSON_MODE = args.json
 
     miner = LocalMiner(wallet=args.wallet)
     miner.mine()
