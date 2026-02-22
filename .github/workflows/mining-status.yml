@@ -1,0 +1,48 @@
+name: Mining Status Badge
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  update-badge:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Badge Endpoint
+        run: |
+          RESPONSE=$(curl -s --fail --max-time 10 "https://rustchain.org/api/badge/scott" || echo '{}')
+          SCHEMA=$(echo "$RESPONSE" | jq -r '.schemaVersion // empty' 2>/dev/null)
+          if [ "$SCHEMA" = "1" ]; then
+            echo "Badge endpoint healthy"
+            echo "$RESPONSE" | jq .
+          else
+            echo "Badge endpoint not yet deployed or unreachable"
+            echo "Response: $RESPONSE"
+          fi
+
+      - name: Ensure badge in README
+        run: |
+          if ! grep -q 'img.shields.io/endpoint.*api/badge' README.md 2>/dev/null; then
+            echo "" >> README.md
+            echo "## Mining Status" >> README.md
+            echo "" >> README.md
+            echo '![Mining Status](https://img.shields.io/endpoint?url=https://rustchain.org/api/badge/scott&style=flat-square)' >> README.md
+            echo "" >> README.md
+            echo "Badge added to README"
+          else
+            echo "Badge already present in README"
+          fi
+
+      - name: Commit if changed
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -A
+          git diff --cached --quiet || git commit -m "docs: ensure mining status badge in README [skip ci]"
+          git push || echo "Nothing to push"

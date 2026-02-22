@@ -3221,6 +3221,68 @@ def api_miners():
     return jsonify(miners)
 
 
+@app.route("/api/badge/<miner_id>", methods=["GET"])
+def api_badge(miner_id: str):
+    """Shields.io-compatible JSON badge endpoint for a miner's mining status.
+
+    Usage in README:
+        ![Mining Status](https://img.shields.io/endpoint?url=https://rustchain.org/api/badge/YOUR_MINER_ID)
+
+    Returns JSON with schemaVersion, label, message, and color per
+    https://shields.io/endpoint spec.
+    """
+    miner_id = miner_id.strip()
+    if not miner_id:
+        return jsonify({"schemaVersion": 1, "label": "RustChain", "message": "invalid", "color": "red"}), 400
+
+    now = int(time.time())
+    status = "Inactive"
+    hw_type = ""
+    multiplier = 1.0
+
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+            row = c.execute(
+                "SELECT ts_ok, device_family, device_arch FROM miner_attest_recent WHERE miner = ?",
+                (miner_id,),
+            ).fetchone()
+
+            if row and row["ts_ok"]:
+                age = now - int(row["ts_ok"])
+                if age < 1200:       # attested within 20 minutes
+                    status = "Active"
+                elif age < 3600:     # attested within 1 hour
+                    status = "Idle"
+                else:
+                    status = "Inactive"
+
+                fam = (row["device_family"] or "unknown")
+                arch = (row["device_arch"] or "unknown")
+                hw_type = f"{fam}/{arch}"
+                multiplier = HARDWARE_WEIGHTS.get(fam, {}).get(
+                    arch, HARDWARE_WEIGHTS.get(fam, {}).get("default", 1.0)
+                )
+    except Exception:
+        pass
+
+    color_map = {"Active": "brightgreen", "Idle": "yellow", "Inactive": "lightgrey"}
+    color = color_map.get(status, "lightgrey")
+    label = f"⛏ {miner_id}"
+
+    message = status
+    if status == "Active" and multiplier > 1.0:
+        message = f"{status} ({multiplier}x)"
+
+    return jsonify({
+        "schemaVersion": 1,
+        "label": label,
+        "message": message,
+        "color": color,
+    })
+
+
 @app.route("/api/miner/<miner_id>/attestations", methods=["GET"])
 def api_miner_attestations(miner_id: str):
     """Best-effort attestation history for a single miner (museum detail view)."""
