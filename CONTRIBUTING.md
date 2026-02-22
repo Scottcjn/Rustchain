@@ -72,6 +72,28 @@ curl -sk https://50.28.86.131/epoch
 4. Bridge RTC to wRTC (Solana) via [bottube.ai/bridge](https://bottube.ai/bridge)
 5. Trade on [Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X)
 
+
+## Documentation Quality Checklist
+
+Before opening a docs PR, please verify:
+
+- [ ] Instructions work exactly as written (commands are copy-pasteable).
+- [ ] OS/architecture assumptions are explicit (Linux/macOS/Windows).
+- [ ] New terms are defined at first use.
+- [ ] Broken links are removed or corrected.
+- [ ] At least one `example` command/output is updated if behavior changed.
+- [ ] File and section names follow existing naming conventions.
+
+## Common Troubleshooting Entries
+
+If you changed setup or CLI docs, add at least one section covering common failures, for example:
+
+- `Command not found`: verify PATH and virtualenv activation.
+- `Permission denied` on scripts: ensure execute bit and shell compatibility.
+- `Connection error to live node`: include curl timeout/retry guidance and fallback endpoint checks.
+
+This keeps bounty-quality docs usable by new contributors and operators.
+
 ## Code Style
 
 - Python 3.8+ compatible
