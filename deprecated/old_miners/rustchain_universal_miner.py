@@ -393,6 +393,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="RustChain Universal Miner")
+    parser.add_argument("--version", "-v", action="version", version="clawrtc 1.5.0")
     parser.add_argument("--miner-id", "-m", help="Custom miner ID")
     parser.add_argument("--node", "-n", default=NODE_URL, help="RIP node URL")
     args = parser.parse_args()
