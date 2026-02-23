@@ -15,6 +15,14 @@ try:
 except ImportError:
     from node.payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
 
+try:
+    from security_utils import require_auth, RateLimiter, rate_limit
+except ImportError:
+    from node.security_utils import require_auth, RateLimiter, rate_limit
+
+# Initialize global rate limiter
+api_limiter = RateLimiter(requests_per_minute=30)
+
 # Hardware Binding v2.0 - Anti-Spoof with Entropy Validation
 try:
     from hardware_binding_v2 import bind_hardware_v2, extract_entropy_profile
@@ -2197,6 +2205,8 @@ def submit_attestation():
 # ============= EPOCH ENDPOINTS =============
 
 @app.route('/epoch', methods=['GET'])
+@require_auth(ADMIN_KEY)
+@rate_limit(api_limiter)
 def get_epoch():
     """Get current epoch info"""
     slot = current_slot()
@@ -3052,6 +3062,8 @@ def genesis_export():
 # ============= MONITORING ENDPOINTS =============
 
 @app.route('/balance/<miner_pk>', methods=['GET'])
+@require_auth(ADMIN_KEY)
+@rate_limit(api_limiter)
 def get_balance(miner_pk):
     """Get miner balance - checks both miner_pk and miner_id columns"""
     with sqlite3.connect(DB_PATH) as c:
@@ -3157,6 +3169,8 @@ def api_nodes():
 
 
 @app.route("/api/miners", methods=["GET"])
+@require_auth(ADMIN_KEY)
+@rate_limit(api_limiter)
 def api_miners():
     """Return list of attested miners with their PoA details"""
     import time as _time
@@ -3714,6 +3728,8 @@ def api_rewards_epoch(epoch: int):
     })
 
 @app.route('/wallet/balance', methods=['GET'])
+@require_auth(ADMIN_KEY)
+@rate_limit(api_limiter)
 def api_wallet_balance():
     """Get balance for a specific miner"""
     miner_id = request.args.get("miner_id", "").strip()
