@@ -2015,6 +2015,13 @@ def get_epoch():
             (epoch,)
         ).fetchone()[0]
 
+    if not is_admin(request):
+        return jsonify({
+            "epoch": epoch,
+            "blocks_per_epoch": EPOCH_SLOTS,
+            "visibility": "public_redacted"
+        })
+
     return jsonify({
         "epoch": epoch,
         "slot": slot,
@@ -2952,6 +2959,24 @@ def api_miners():
     """Return list of attested miners with their PoA details"""
     import time as _time
     now = int(_time.time())
+
+    if not is_admin(request):
+        with sqlite3.connect(DB_PATH) as conn:
+            active_miners = conn.execute(
+                """
+                SELECT COUNT(DISTINCT miner)
+                FROM miner_attest_recent
+                WHERE ts_ok > ?
+                """,
+                (now - 3600,),
+            ).fetchone()[0]
+
+        return jsonify({
+            "active_miners": int(active_miners or 0),
+            "window_seconds": 3600,
+            "visibility": "public_redacted"
+        })
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
@@ -3445,6 +3470,9 @@ def api_rewards_epoch(epoch: int):
 @app.route('/wallet/balance', methods=['GET'])
 def api_wallet_balance():
     """Get balance for a specific miner"""
+    if not is_admin(request):
+        return jsonify({"ok": False, "reason": "admin_required"}), 401
+
     miner_id = request.args.get("miner_id", "").strip()
     if not miner_id:
         return jsonify({"ok": False, "error": "miner_id required"}), 400
