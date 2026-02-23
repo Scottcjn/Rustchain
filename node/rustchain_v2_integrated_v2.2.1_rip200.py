@@ -3230,6 +3230,8 @@ def api_badge(miner_id: str):
 
     Returns JSON with schemaVersion, label, message, and color per
     https://shields.io/endpoint spec.
+    
+    Enhanced 2026-02-23: Added balance display to badge message.
     """
     miner_id = miner_id.strip()
     if not miner_id:
@@ -3239,11 +3241,19 @@ def api_badge(miner_id: str):
     status = "Inactive"
     hw_type = ""
     multiplier = 1.0
+    balance_rtc = 0.0
 
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
+            
+            # Get balance
+            bal_row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id=?", (miner_id,)).fetchone()
+            if bal_row:
+                balance_rtc = int(bal_row["amount_i64"]) / UNIT if bal_row["amount_i64"] else 0
+            
+            # Get attestation status
             row = c.execute(
                 "SELECT ts_ok, device_family, device_arch FROM miner_attest_recent WHERE miner = ?",
                 (miner_id,),
@@ -3271,9 +3281,14 @@ def api_badge(miner_id: str):
     color = color_map.get(status, "lightgrey")
     label = f"⛏ {miner_id}"
 
-    message = status
+    # Build message: balance + status (+ multiplier if active and >1x)
+    message = f"{balance_rtc:.1f} RTC"
     if status == "Active" and multiplier > 1.0:
-        message = f"{status} ({multiplier}x)"
+        message = f"{balance_rtc:.1f} RTC | {status} ({multiplier}x)"
+    elif status != "Inactive":
+        message = f"{balance_rtc:.1f} RTC | {status}"
+    else:
+        message = f"{balance_rtc:.1f} RTC | {status}"
 
     return jsonify({
         "schemaVersion": 1,
@@ -3730,6 +3745,8 @@ def api_wallet_balance():
         "amount_rtc": amt / UNIT
     })
 
+# =============================================================================
+# SHIELDS.IO BADGE ENDPOINT
 # =============================================================================
 # 2-PHASE COMMIT PENDING LEDGER SYSTEM
 # Added 2026-02-03 - Security fix for transfer logging
