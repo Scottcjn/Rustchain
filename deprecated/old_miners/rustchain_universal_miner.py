@@ -154,9 +154,10 @@ def detect_hardware():
 
 
 class UniversalMiner:
-    def __init__(self, miner_id=None):
+    def __init__(self, miner_id=None, json_mode=False):
         self.node_url = NODE_URL
         self.hw_info = detect_hardware()
+        self.json_mode = json_mode
 
         # Generate miner_id if not provided
         if miner_id:
@@ -174,6 +175,18 @@ class UniversalMiner:
         self.shares_accepted = 0
 
         self._print_banner()
+
+    def _print(self, *args, **kwargs):
+        """Print only if not in JSON mode."""
+        if not self.json_mode:
+            print(*args, **kwargs)
+
+    def _emit(self, event_type, **data):
+        """Emit a JSON event if in JSON mode."""
+        if self.json_mode:
+            event = {"event": event_type}
+            event.update(data)
+            print(json.dumps(event))
 
     def _print_banner(self):
         print("=" * 70)
@@ -393,6 +406,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="RustChain Universal Miner")
+    parser.add_argument("--version", "-v", action="version", version="clawrtc 1.5.0")
     parser.add_argument("--miner-id", "-m", help="Custom miner ID")
     parser.add_argument("--node", "-n", default=NODE_URL, help="RIP node URL")
     args = parser.parse_args()
