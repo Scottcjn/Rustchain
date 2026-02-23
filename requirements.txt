@@ -1,0 +1,7 @@
+# Development dependencies for RustChain
+# For node development:
+flask>=2.0.0
+# For miner and SDK:
+requests>=2.25.0
+# For running tests:
+pytest>=7.0.0
