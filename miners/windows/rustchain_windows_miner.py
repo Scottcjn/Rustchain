@@ -33,6 +33,13 @@ from datetime import datetime
 from pathlib import Path
 import argparse
 
+# Color logging
+try:
+    from color_logs import info, warning, error, success, debug
+except ImportError:
+    # Fallback to plain text if color_logs not available
+    info = warning = error = success = debug = lambda x: x
+
 # Configuration
 RUSTCHAIN_API = "http://50.28.86.131:8088"
 WALLET_DIR = Path.home() / ".rustchain"
@@ -430,6 +437,7 @@ def run_headless(wallet_address: str, node_url: str) -> int:
 def main(argv=None):
     """Main entry point"""
     ap = argparse.ArgumentParser(description="RustChain Windows wallet + miner (GUI or headless fallback).")
+    ap.add_argument("--version", "-v", action="version", version="clawrtc 1.5.0")
     ap.add_argument("--headless", action="store_true", help="Run without GUI (recommended for embeddable Python).")
     ap.add_argument("--node", default=RUSTCHAIN_API, help="RustChain node base URL.")
     ap.add_argument("--wallet", default="", help="Wallet address / miner pubkey string.")

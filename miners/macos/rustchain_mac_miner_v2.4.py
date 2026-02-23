@@ -25,7 +25,7 @@ try:
     FINGERPRINT_AVAILABLE = True
 except ImportError:
     FINGERPRINT_AVAILABLE = False
-    print("[WARN] fingerprint_checks.py not found - fingerprint attestation disabled")
+    print(warning("[WARN] fingerprint_checks.py not found - fingerprint attestation disabled"))
 
 # Import CPU architecture detection
 try:
@@ -33,7 +33,7 @@ try:
     CPU_DETECTION_AVAILABLE = True
 except ImportError:
     CPU_DETECTION_AVAILABLE = False
-    print("[INFO] cpu_architecture_detection.py not found - using basic detection")
+    print(info("[INFO] cpu_architecture_detection.py not found - using basic detection"))
 
 NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://50.28.86.131")
 BLOCK_TIME = 600  # 10 minutes
@@ -276,19 +276,19 @@ class MacMiner:
 
     def _run_fingerprint_checks(self):
         """Run hardware fingerprint checks for RIP-PoA"""
-        print("\n[FINGERPRINT] Running hardware fingerprint checks...")
+        print(info("\n[FINGERPRINT] Running hardware fingerprint checks..."))
         try:
             passed, results = validate_all_checks()
             self.fingerprint_passed = passed
             self.fingerprint_data = {"checks": results, "all_passed": passed}
             if passed:
-                print("[FINGERPRINT] All checks PASSED - eligible for full rewards")
+                print(success("[FINGERPRINT] All checks PASSED - eligible for full rewards"))
             else:
                 failed = [k for k, v in results.items() if not v.get("passed")]
-                print(f"[FINGERPRINT] FAILED checks: {failed}")
-                print("[FINGERPRINT] WARNING: May receive reduced/zero rewards")
+                print(warning(f"[FINGERPRINT] FAILED checks: {failed}"))
+                print(warning("[FINGERPRINT] WARNING: May receive reduced/zero rewards"))
         except Exception as e:
-            print(f"[FINGERPRINT] Error running checks: {e}")
+            print(error(f"[FINGERPRINT] Error running checks: {e}"))
             self.fingerprint_passed = False
             self.fingerprint_data = {"error": str(e), "all_passed": False}
 
@@ -330,21 +330,21 @@ class MacMiner:
 
     def attest(self):
         """Complete hardware attestation with fingerprint"""
-        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Attesting hardware...")
+        print(info(f"\n[{datetime.now().strftime('%H:%M:%S')}] Attesting hardware..."))
 
         try:
             # Step 1: Get challenge
             resp = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=15, verify=False)
             if resp.status_code != 200:
-                print(f"  ERROR: Challenge failed ({resp.status_code})")
+                print(error(f"  ERROR: Challenge failed ({resp.status_code})"))
                 return False
 
             challenge = resp.json()
             nonce = challenge.get("nonce", "")
-            print(f"  Got challenge nonce: {nonce[:16]}...")
+            print(success(f"  Got challenge nonce: {nonce[:16]}..."))
 
         except Exception as e:
-            print(f"  ERROR: Challenge error: {e}")
+            print(error(f"  ERROR: Challenge error: {e}"))
             return False
 
         # Collect entropy
@@ -395,23 +395,23 @@ class MacMiner:
                 result = resp.json()
                 if result.get("ok"):
                     self.attestation_valid_until = time.time() + 580
-                    print(f"  SUCCESS: Attestation accepted!")
+                    print(success(f"  SUCCESS: Attestation accepted!"))
 
                     # Show fingerprint status
                     if self.fingerprint_passed:
-                        print(f"  Fingerprint: PASSED")
+                        print(success(f"  Fingerprint: PASSED"))
                     else:
-                        print(f"  Fingerprint: FAILED (reduced rewards)")
+                        print(warning(f"  Fingerprint: FAILED (reduced rewards)"))
                     return True
                 else:
-                    print(f"  WARNING: {result}")
+                    print(warning(f"  WARNING: {result}"))
                     return False
             else:
-                print(f"  ERROR: HTTP {resp.status_code}: {resp.text[:200]}")
+                print(error(f"  ERROR: HTTP {resp.status_code}: {resp.text[:200]}"))
                 return False
 
         except Exception as e:
-            print(f"  ERROR: {e}")
+            print(error(f"  ERROR: {e}"))
             return False
 
     def check_eligibility(self):
@@ -525,6 +525,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="RustChain Mac Miner v2.4.0")
+    parser.add_argument("--version", "-v", action="version", version="clawrtc 1.5.0")
     parser.add_argument("--miner-id", "-m", help="Custom miner ID")
     parser.add_argument("--wallet", "-w", help="Custom wallet address")
     parser.add_argument("--node", "-n", default=NODE_URL, help="Node URL")
