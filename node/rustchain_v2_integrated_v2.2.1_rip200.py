@@ -45,6 +45,22 @@ from hashlib import blake2b
 TESTNET_ALLOW_INLINE_PUBKEY = False  # PRODUCTION: Disabled
 TESTNET_ALLOW_MOCK_SIG = False  # PRODUCTION: Disabled
 
+
+def _runtime_env_name() -> str:
+    return (os.getenv("RC_RUNTIME_ENV") or os.getenv("RUSTCHAIN_ENV") or "").strip().lower()
+
+
+def enforce_mock_signature_runtime_guard() -> None:
+    """Fail closed if mock signature mode is enabled outside test runtime."""
+    if not TESTNET_ALLOW_MOCK_SIG:
+        return
+    if _runtime_env_name() in {"test", "testing", "ci"}:
+        return
+    raise RuntimeError(
+        "Refusing to start with TESTNET_ALLOW_MOCK_SIG enabled outside test runtime "
+        "(set RC_RUNTIME_ENV=test only for tests)."
+    )
+
 try:
     from nacl.signing import VerifyKey
     from nacl.exceptions import BadSignatureError
@@ -4309,6 +4325,16 @@ def wallet_transfer_signed():
         conn.close()
 
 if __name__ == "__main__":
+    try:
+        enforce_mock_signature_runtime_guard()
+    except RuntimeError as e:
+        print("=" * 70, file=sys.stderr)
+        print("FATAL: unsafe mock-signature configuration", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
+        print(str(e), file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
+        sys.exit(1)
+
     # CRITICAL: SR25519 library is REQUIRED for production
     if not SR25519_AVAILABLE:
         print("=" * 70, file=sys.stderr)

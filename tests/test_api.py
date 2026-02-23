@@ -94,3 +94,28 @@ def test_client_ip_from_request_untrusted_remote_uses_remote_addr(monkeypatch):
     )
 
     assert integrated_node.client_ip_from_request(req) == "198.51.100.12"
+
+
+def test_mock_signature_guard_fails_closed_outside_test_runtime(monkeypatch):
+    monkeypatch.setattr(integrated_node, "TESTNET_ALLOW_MOCK_SIG", True)
+    monkeypatch.setenv("RC_RUNTIME_ENV", "production")
+    monkeypatch.delenv("RUSTCHAIN_ENV", raising=False)
+
+    with pytest.raises(RuntimeError, match="TESTNET_ALLOW_MOCK_SIG"):
+        integrated_node.enforce_mock_signature_runtime_guard()
+
+
+def test_mock_signature_guard_allows_test_runtime(monkeypatch):
+    monkeypatch.setattr(integrated_node, "TESTNET_ALLOW_MOCK_SIG", True)
+    monkeypatch.setenv("RC_RUNTIME_ENV", "test")
+    monkeypatch.delenv("RUSTCHAIN_ENV", raising=False)
+
+    integrated_node.enforce_mock_signature_runtime_guard()
+
+
+def test_mock_signature_guard_allows_when_disabled(monkeypatch):
+    monkeypatch.setattr(integrated_node, "TESTNET_ALLOW_MOCK_SIG", False)
+    monkeypatch.setenv("RC_RUNTIME_ENV", "production")
+    monkeypatch.delenv("RUSTCHAIN_ENV", raising=False)
+
+    integrated_node.enforce_mock_signature_runtime_guard()
