@@ -20,6 +20,8 @@ try:
 except ImportError:
     from node.security_utils import require_auth, RateLimiter, rate_limit
 
+ADMIN_KEY = os.environ.get("RC_ADMIN_KEY", "0" * 32)
+
 # Initialize global rate limiter
 api_limiter = RateLimiter(requests_per_minute=30)
 
