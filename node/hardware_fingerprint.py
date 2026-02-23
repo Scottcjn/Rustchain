@@ -572,7 +572,7 @@ if __name__ == "__main__":
     fingerprints = HardwareFingerprint.collect_all()
     
     print("\n" + "=" * 60)
-    print(f"RESULTS: {fingerprints[\"checks_passed\"]}/7 checks passed")
+    print(f"RESULTS: {fingerprints['checks_passed']}/7 checks passed")
     print("=" * 60)
     
     for name, data in fingerprints.items():
@@ -580,4 +580,4 @@ if __name__ == "__main__":
             status = "PASS" if data["valid"] else "FAIL"
             print(f"  {name}: {status}")
     
-    print(f"\nAll Valid: {fingerprints[\"all_valid\"]}")
+    print(f"\nAll Valid: {fingerprints['all_valid']}")
