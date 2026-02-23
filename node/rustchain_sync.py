@@ -26,8 +26,11 @@ class RustChainSyncManager:
         "epoch_rewards",
     ]
 
+    # Keep ledger semantics compatible with older/newer node schemas.
     OPTIONAL_SYNC_TABLES = [
+        "ledger",
         "transaction_history",
+        "pending_ledger",
     ]
 
     def __init__(self, db_path: str, admin_key: str):
@@ -156,7 +159,26 @@ class RustChainSyncManager:
                     return None
         return None
 
-    def apply_sync_payload(self, table_name: str, remote_data: List[Dict[str, Any]]):
+    def _is_authoritative_epoch_peer(self, peer_id: str) -> bool:
+        """Return True only if peer_id is the configured primary epoch authority."""
+        import os
+
+        primary_peer = (os.getenv("RC_SYNC_PRIMARY_NODE") or "").strip()
+        if not primary_peer:
+            # Backward-compatible fallback: no authority configured -> accept updates.
+            return True
+        return (peer_id or "").strip() == primary_peer
+
+    def _timestamp_from_row(self, row: Dict[str, Any]) -> Optional[float]:
+        for key in ("updated_at", "timestamp", "ts", "created_at", "time", "last_attest"):
+            if key in row and row[key] is not None:
+                try:
+                    return float(row[key])
+                except Exception:
+                    continue
+        return None
+
+    def apply_sync_payload(self, table_name: str, remote_data: List[Dict[str, Any]], peer_id: str = ""):
         """Merges remote data into local database with conflict resolution and schema hardening."""
         if table_name not in self.SYNC_TABLES:
             return False
@@ -215,6 +237,25 @@ class RustChainSyncManager:
                                     continue
                             except Exception:
                                 pass
+
+                # For epoch rewards, accept only from configured primary authority peer.
+                if table_name == "epoch_rewards" and not self._is_authoritative_epoch_peer(peer_id):
+                    self.logger.warning(
+                        f"Rejected epoch sync from non-authoritative peer '{peer_id or 'unknown'}'"
+                    )
+                    continue
+
+                # Generic timestamp conflict handling for non-attestation tables where timestamp exists.
+                # Latest timestamp wins when comparable timestamp fields are present.
+                if table_name != "miner_attest_recent":
+                    row_ts = self._timestamp_from_row(sanitized)
+                    if row_ts is not None:
+                        cursor.execute(f"SELECT * FROM {table_name} WHERE {pk} = ?", (sanitized[pk],))
+                        local_existing = cursor.fetchone()
+                        if local_existing:
+                            local_ts = self._timestamp_from_row(dict(local_existing))
+                            if local_ts is not None and local_ts >= row_ts:
+                                continue
 
                 # Safe upsert (avoid INSERT OR REPLACE data loss semantics)
                 columns = list(sanitized.keys())

@@ -19,6 +19,7 @@ def register_sync_endpoints(app, db_path, admin_key):
     RATE_LIMIT_WINDOW_SEC = 60
     PEER_TTL_SEC = 3600
     MAX_PEERS_TRACKED = 2000
+    REQUIRE_HTTPS = os.getenv("RC_SYNC_REQUIRE_HTTPS", "1").lower() not in ("0", "false", "no")
 
     SYNC_SIGNATURE_SECRET = os.getenv("RC_SYNC_SHARED_SECRET", admin_key)
     SIGNATURE_MAX_SKEW_SEC = 300
@@ -86,6 +87,29 @@ def register_sync_endpoints(app, db_path, admin_key):
         seen_nonces[nonce] = now
         return True, None
 
+
+    def _is_https_request() -> bool:
+        if request.is_secure:
+            return True
+        proto = (request.headers.get("X-Forwarded-Proto") or "").lower().strip()
+        if proto == "https":
+            return True
+        host = (request.host or "").split(":")[0]
+        if host in ("127.0.0.1", "localhost"):
+            return True
+        return False
+
+    def require_https(f):
+        from functools import wraps
+
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if REQUIRE_HTTPS and not _is_https_request():
+                return jsonify({"error": "HTTPS required"}), 403
+            return f(*args, **kwargs)
+
+        return decorated
+
     def require_admin(f):
         from functools import wraps
 
@@ -99,6 +123,8 @@ def register_sync_endpoints(app, db_path, admin_key):
         return decorated
 
     @app.route("/api/sync/status", methods=["GET"])
+    @app.route("/sync/status", methods=["GET"])
+    @require_https
     @require_admin
     def sync_status():
         """Returns the current Merkle root and table hashes."""
@@ -110,6 +136,8 @@ def register_sync_endpoints(app, db_path, admin_key):
         return jsonify(status)
 
     @app.route("/api/sync/pull", methods=["GET"])
+    @app.route("/sync/pull", methods=["GET"])
+    @require_https
     @require_admin
     def sync_pull():
         """
@@ -150,6 +178,8 @@ def register_sync_endpoints(app, db_path, admin_key):
         return jsonify(payload)
 
     @app.route("/api/sync/push", methods=["POST"])
+    @app.route("/sync/push", methods=["POST"])
+    @require_https
     @require_admin
     def sync_push():
         """Receives data from a peer and applies it locally."""
@@ -176,7 +206,7 @@ def register_sync_endpoints(app, db_path, admin_key):
             if not isinstance(rows, list):
                 success = False
                 continue
-            if not sync_manager.apply_sync_payload(table, rows):
+            if not sync_manager.apply_sync_payload(table, rows, peer_id=peer_id):
                 success = False
 
         if success:
