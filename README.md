@@ -439,3 +439,7 @@ MIT License - Free to use, but please keep the copyright notice and attribution.
 **DOS boxes, PowerPC G4s, Win95 machines - they all have value. RustChain proves it.**
 
 </div>
+
+## Mining Status
+<!-- rustchain-mining-badge-start -->
+![RustChain Mining Status](https://img.shields.io/endpoint?url=https://rustchain.org/api/badge/frozen-factorio-ryan&style=flat-square)<!-- rustchain-mining-badge-end -->
