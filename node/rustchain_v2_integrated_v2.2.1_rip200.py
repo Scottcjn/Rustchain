@@ -3037,11 +3037,29 @@ def api_miners():
     return jsonify(miners)
 
 
+def _parse_int_query_arg(name: str, default: int, min_value: int | None = None, max_value: int | None = None):
+    raw_value = request.args.get(name)
+    if raw_value is None or str(raw_value).strip() == "":
+        value = default
+    else:
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            return None, f"{name} must be an integer"
+
+    if min_value is not None and value < min_value:
+        value = min_value
+    if max_value is not None and value > max_value:
+        value = max_value
+    return value, None
+
+
 @app.route("/api/miner/<miner_id>/attestations", methods=["GET"])
 def api_miner_attestations(miner_id: str):
     """Best-effort attestation history for a single miner (museum detail view)."""
-    limit = int(request.args.get("limit", "120") or 120)
-    limit = max(1, min(limit, 500))
+    limit, limit_err = _parse_int_query_arg("limit", 120, min_value=1, max_value=500)
+    if limit_err:
+        return jsonify({"ok": False, "error": limit_err}), 400
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
@@ -3079,8 +3097,9 @@ def api_miner_attestations(miner_id: str):
 @app.route("/api/balances", methods=["GET"])
 def api_balances():
     """Return wallet balances (best-effort across schema variants)."""
-    limit = int(request.args.get("limit", "2000") or 2000)
-    limit = max(1, min(limit, 5000))
+    limit, limit_err = _parse_int_query_arg("limit", 2000, min_value=1, max_value=5000)
+    if limit_err:
+        return jsonify({"ok": False, "error": limit_err}), 400
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
@@ -3638,7 +3657,9 @@ def list_pending():
         return jsonify({"error": "Unauthorized"}), 401
 
     status_filter = request.args.get('status', 'pending')
-    limit = min(int(request.args.get('limit', 100)), 500)
+    limit, limit_err = _parse_int_query_arg("limit", 100, min_value=1, max_value=500)
+    if limit_err:
+        return jsonify({"ok": False, "error": limit_err}), 400
     
     with sqlite3.connect(DB_PATH) as db:
         if status_filter == 'all':
