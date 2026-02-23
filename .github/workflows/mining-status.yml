@@ -1,48 +1,51 @@
-name: Mining Status Badge
+name: RustChain Mining Status Badge
 
 on:
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
+    inputs:
+      wallet:
+        description: 'RustChain wallet for badge endpoint'
+        required: false
+        default: 'frozen-factorio-ryan'
 
 jobs:
   update-badge:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify Badge Endpoint
+      - name: Verify badge endpoint
         run: |
-          RESPONSE=$(curl -s --fail --max-time 10 "https://rustchain.org/api/badge/scott" || echo '{}')
+          WALLET="${{ github.event.inputs.wallet || 'frozen-factorio-ryan' }}"
+          RESPONSE=$(curl -s --fail --max-time 10 "https://rustchain.org/api/badge/${WALLET}" || echo '{}')
           SCHEMA=$(echo "$RESPONSE" | jq -r '.schemaVersion // empty' 2>/dev/null)
           if [ "$SCHEMA" = "1" ]; then
             echo "Badge endpoint healthy"
             echo "$RESPONSE" | jq .
           else
-            echo "Badge endpoint not yet deployed or unreachable"
+            echo "Badge endpoint not deployed or unreachable yet"
             echo "Response: $RESPONSE"
           fi
 
-      - name: Ensure badge in README
-        run: |
-          if ! grep -q 'img.shields.io/endpoint.*api/badge' README.md 2>/dev/null; then
-            echo "" >> README.md
-            echo "## Mining Status" >> README.md
-            echo "" >> README.md
-            echo '![Mining Status](https://img.shields.io/endpoint?url=https://rustchain.org/api/badge/scott&style=flat-square)' >> README.md
-            echo "" >> README.md
-            echo "Badge added to README"
-          else
-            echo "Badge already present in README"
-          fi
+      - name: Update mining badge in README
+        uses: ./.github/actions/mining-status-badge
+        with:
+          wallet: ${{ github.event.inputs.wallet || 'frozen-factorio-ryan' }}
+          readme-path: README.md
+          badge-style: flat-square
 
-      - name: Commit if changed
+      - name: Commit badge update
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add -A
-          git diff --cached --quiet || git commit -m "docs: ensure mining status badge in README [skip ci]"
-          git push || echo "Nothing to push"
+          git add README.md
+          git diff --cached --quiet || (
+            git commit -m "docs: refresh RustChain mining status badge" && \
+            git push
+          )
