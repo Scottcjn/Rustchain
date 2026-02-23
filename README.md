@@ -146,6 +146,19 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 - ✅ macOS 12+ (Intel, Apple Silicon, PowerPC)
 - ✅ IBM POWER8 systems
 
+### Troubleshooting
+
+- **Installer fails with permission errors**: re-run using an account with write access to `~/.local` and avoid running inside a system Python's global site-packages.
+- **Python version errors** (`SyntaxError` / `ModuleNotFoundError`): install with Python 3.10+ and set `python3` to that interpreter.
+  ```bash
+  python3 --version
+  curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
+  ```
+- **HTTPS certificate errors in `curl`**: this can happen with non-browser client environments; check connectivity first with `curl -I https://rustchain.org` before wallet checks.
+- **Miner exits immediately**: verify wallet exists and service is running (`systemctl --user status rustchain-miner` or `launchctl list | grep rustchain`)
+
+If an issue persists, include logs and OS details in a new issue or bounty comment with exact error output and your `install-miner.sh --dry-run` result.
+
 ### After Installation
 
 **Check your wallet balance:**
