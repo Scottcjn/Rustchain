@@ -1,0 +1,27 @@
+name: 'RustChain Mining Badge'
+description: 'Display a live RustChain mining status badge in your README'
+author: 'Scottcjn'
+branding:
+  icon: 'activity'
+  color: 'green'
+
+inputs:
+  wallet:
+    description: 'Your RustChain miner wallet name'
+    required: true
+  node-url:
+    description: 'RustChain node URL'
+    required: false
+    default: 'https://50.28.86.131'
+  badge-style:
+    description: 'Shields.io badge style'
+    required: false
+    default: 'flat'
+  
+outputs:
+  badge-url:
+    description: 'URL to the generated badge'
+  
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

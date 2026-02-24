@@ -1,0 +1,40 @@
+name: RustChain Badge Example
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:  # Manual trigger
+  push:
+    branches: [main]
+
+jobs:
+  update-badge:
+    runs-on: ubuntu-latest
+    name: Update RustChain Mining Badge
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Generate RustChain Badge
+        uses: Scottcjn/rustchain-badge-action@v1
+        id: badge
+        with:
+          wallet: ${{ secrets.RUSTCHAIN_WALLET }}
+          badge-style: flat
+          
+      - name: Update README
+        run: |
+          # Extract badge URL and update README
+          BADGE_URL="${{ steps.badge.outputs.badge-url }}"
+          echo "Badge URL: $BADGE_URL"
+          
+          # You can customize this step to update your README
+          # For example, using sed to replace badge URL in README
+          
+      - name: Commit changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -A
+          git diff --quiet && git diff --staged --quiet || git commit -m "🔄 Update RustChain badge - $(date)"
+          git push
