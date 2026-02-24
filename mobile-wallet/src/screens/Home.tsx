@@ -3,6 +3,7 @@ import History from './History';
 import Send from './Send';
 import Security from './Security';
 import Receive from './Receive';
+import Stats from './Stats';
 import { getSession, saveSession } from '../store/session';
 import {SafeAreaView, Text, TextInput, Pressable} from 'react-native';
 import {createMnemonic, deriveEd25519FromMnemonic} from '../crypto/wallet';
@@ -15,6 +16,7 @@ export default function Home() {
   const [showSend, setShowSend] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
   const [showReceive, setShowReceive] = useState(false);
+  const [showStats, setShowStats] = useState(false);
 
   useEffect(() => {
     const s = getSession();
@@ -25,6 +27,7 @@ export default function Home() {
   if (showSend && minerId) return <Send from={minerId} />;
   if (showSecurity) return <Security />;
   if (showReceive) return <Receive minerId={minerId} />;
+  if (showStats) return <Stats />;
 
   return <SafeAreaView style={{flex:1,padding:16,backgroundColor:'#111'}}>
     <Text style={{color:'#fff',fontSize:24,fontWeight:'700'}}>RustChain Wallet</Text>
@@ -39,6 +42,7 @@ export default function Home() {
     <Pressable onPress={() => setShowSend(true)} style={{backgroundColor:'#31c46d',padding:10,borderRadius:8,marginTop:10}}><Text>Send RTC</Text></Pressable>
     <Pressable onPress={() => setShowSecurity(true)} style={{backgroundColor:'#7a5cff',padding:10,borderRadius:8,marginTop:10}}><Text>Security / QR</Text></Pressable>
     <Pressable onPress={() => setShowReceive(true)} style={{backgroundColor:'#f0b429',padding:10,borderRadius:8,marginTop:10}}><Text>Receive RTC</Text></Pressable>
+    <Pressable onPress={() => setShowStats(true)} style={{backgroundColor:'#1fa2ff',padding:10,borderRadius:8,marginTop:10}}><Text>Price / Stats</Text></Pressable>
     <Text style={{color:'#9aa',marginTop:16}}>QR Scan hook: TODO (expo-camera / barcode-scanner)</Text>
     <Text style={{color:'#9aa',marginTop:4}}>Biometric hook: TODO (expo-local-authentication)</Text>
   </SafeAreaView>

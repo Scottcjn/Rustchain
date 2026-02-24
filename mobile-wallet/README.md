@@ -26,3 +26,4 @@ npm run start
 - Added security hooks screen for biometric lock + QR scanner integration placeholders
 - Added receive screen scaffold with wallet display and QR-generation hook
 - Added wallet session store scaffold (`src/store/session.ts`) with persistence hooks for AsyncStorage integration
+- Added Price/Stats screen scaffold (`/epoch` + `/api/miners`) for `/price` parity on mobile
