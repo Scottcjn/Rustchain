@@ -23,3 +23,4 @@ npm run start
 
 - Added send screen scaffold wired to transfer API
 - Added biometric confirmation hook note before transfer finalize
+- Added security hooks screen for biometric lock + QR scanner integration placeholders
