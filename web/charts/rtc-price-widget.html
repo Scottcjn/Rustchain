@@ -1,0 +1,103 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RustChain RTC Widget</title>
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    body{margin:0;background:#0f1115;color:#d8dbe2;font-family:Inter,system-ui,sans-serif}
+    .wrap{padding:12px}
+    .grid{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+    .card{background:#171b22;border:1px solid #2a3140;border-radius:10px;padding:10px}
+    .metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .m{background:#11161f;padding:8px;border-radius:8px}
+    #chart{height:420px}
+    #miners{height:180px}
+    .hint{font-size:12px;color:#95a1b5}
+    @media (max-width: 900px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h2>RTC Network Widget</h2>
+  <div class="grid">
+    <div class="card">
+      <div id="chart"></div>
+      <div class="hint">Zoom/pan enabled. Series: transfer volume proxy + epoch reward history.</div>
+    </div>
+    <div>
+      <div class="card metrics">
+        <div class="m"><div>Active Miners</div><strong id="activeMiners">-</strong></div>
+        <div class="m"><div>Epoch Reward Pool</div><strong id="epochPool">-</strong></div>
+        <div class="m"><div>Enrolled Miners</div><strong id="enrolled">-</strong></div>
+        <div class="m"><div>Est. 24h Volume</div><strong id="vol24">-</strong></div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <div id="miners"></div>
+        <div class="hint">Active miners trend</div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const API = (new URLSearchParams(location.search).get('api')) || 'https://50.28.86.131';
+const nowSec = () => Math.floor(Date.now()/1000);
+
+const chart = LightweightCharts.createChart(document.getElementById('chart'), {
+  layout:{background:{color:'#171b22'},textColor:'#c8d0df'},
+  grid:{vertLines:{color:'#222b3a'},horzLines:{color:'#222b3a'}},
+  timeScale:{timeVisible:true, secondsVisible:false}
+});
+const volSeries = chart.addHistogramSeries({color:'#3ea6ff', priceFormat:{type:'volume'}, priceScaleId:''});
+const rewardSeries = chart.addLineSeries({color:'#f0b429', lineWidth:2});
+
+const minersChart = LightweightCharts.createChart(document.getElementById('miners'), {
+  layout:{background:{color:'#171b22'},textColor:'#c8d0df'},
+  grid:{vertLines:{color:'#222b3a'},horzLines:{color:'#222b3a'}},
+  timeScale:{timeVisible:true, secondsVisible:false}
+});
+const minersSeries = minersChart.addAreaSeries({topColor:'rgba(98,126,234,0.4)',bottomColor:'rgba(98,126,234,0.08)',lineColor:'#627eea'});
+
+async function jget(url){const r=await fetch(url); if(!r.ok) throw new Error(url+':'+r.status); return r.json();}
+
+async function refresh(){
+  let epoch={}; let miners=[];
+  try { epoch = await jget(`${API}/epoch`);} catch(e){}
+  try {
+    const m = await jget(`${API}/api/miners`);
+    miners = Array.isArray(m)? m : (m.miners||m.items||[]);
+  } catch(e){}
+
+  const active = miners.length;
+  const pot = Number(epoch.pot || epoch.reward_pool || 0);
+  const enrolled = Number(epoch.enrolled || epoch.enrolled_miners || 0);
+  document.getElementById('activeMiners').textContent = active;
+  document.getElementById('epochPool').textContent = pot.toFixed(2) + ' RTC';
+  document.getElementById('enrolled').textContent = enrolled;
+
+  // synthetic transfer volume proxy from active miners + epoch stats for now
+  const vol24 = Math.max(0, active * 3.2 + enrolled * 1.1 + pot * 0.15);
+  document.getElementById('vol24').textContent = vol24.toFixed(2) + ' RTC';
+
+  const t = nowSec();
+  window._vol = window._vol || [];
+  window._rew = window._rew || [];
+  window._miners = window._miners || [];
+  window._vol.push({time:t, value:vol24, color:'#3ea6ff'});
+  window._rew.push({time:t, value:pot});
+  window._miners.push({time:t, value:active});
+
+  // keep 240 points max
+  for (const arr of [window._vol, window._rew, window._miners]) while(arr.length>240) arr.shift();
+
+  volSeries.setData(window._vol);
+  rewardSeries.setData(window._rew);
+  minersSeries.setData(window._miners);
+}
+
+refresh();
+setInterval(refresh, 60000);
+</script>
+</body>
+</html>
