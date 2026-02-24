@@ -38,3 +38,6 @@ See `BUILD.md` for iOS/Android local runs and EAS packaging flow.
 
 ## Demo / QA checklist
 See `docs/DEMO_PLAN.md` for demo capture and acceptance validation steps.
+
+## Acceptance coverage
+See `docs/ACCEPTANCE_MATRIX.md` for requirement-to-evidence mapping.
