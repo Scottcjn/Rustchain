@@ -15,3 +15,8 @@ cd mobile-wallet
 npm install
 npm run start
 ```
+
+
+## Increment in this update
+- Added transaction history screen scaffold wired to `wallet/history` API
+- Added miner_id input + navigation hook from Home
