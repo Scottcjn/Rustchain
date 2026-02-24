@@ -55,7 +55,11 @@ def fetch_miners(api: str):
     r = requests.get(f"{api}/api/miners", timeout=20, verify=False)
     r.raise_for_status()
     d = r.json()
-    return d.get("miners") or d.get("items") or []
+    if isinstance(d, list):
+        return d
+    if isinstance(d, dict):
+        return d.get("miners") or d.get("items") or []
+    return []
 
 
 def fetch_balance(api: str, miner_id: str) -> float:
