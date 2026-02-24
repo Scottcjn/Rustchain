@@ -126,6 +126,24 @@ def test_wallet_balance_admin_allows_access(client):
         assert data['amount_i64'] == 1234567
 
 
+def test_api_miner_attestations_rejects_non_integer_limit(client):
+    response = client.get('/api/miner/alice/attestations?limit=abc')
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "limit must be an integer"}
+
+
+def test_api_balances_rejects_non_integer_limit(client):
+    response = client.get('/api/balances?limit=abc')
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "limit must be an integer"}
+
+
+def test_pending_list_rejects_non_integer_limit(client):
+    response = client.get('/pending/list?limit=abc', headers={'X-Admin-Key': '0' * 32})
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "limit must be an integer"}
+
+
 def test_client_ip_from_request_ignores_leftmost_xff_spoof(monkeypatch):
     """Trusted-proxy mode should ignore client-injected left-most XFF entries."""
     monkeypatch.setattr(integrated_node, "_TRUSTED_PROXY_IPS", {"127.0.0.1"})
