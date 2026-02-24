@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import TransferReview from './TransferReview';
 import { SafeAreaView, Text, TextInput, Pressable } from 'react-native';
 import { sendRtc } from '../api/client';
 
@@ -6,6 +7,7 @@ export default function Send({ from }: { from: string }) {
   const [to, setTo] = useState('');
   const [amount, setAmount] = useState('');
   const [msg, setMsg] = useState('');
+  const [review, setReview] = useState(false);
 
   async function submit() {
     try {
@@ -21,14 +23,18 @@ export default function Send({ from }: { from: string }) {
     }
   }
 
+  if (review) {
+    return <TransferReview from={from} to={to} amount={Number(amount || 0)} onConfirm={submit} />;
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#111', padding: 14 }}>
       <Text style={{ color: '#fff', fontSize: 22, fontWeight: '700' }}>Send RTC</Text>
       <Text style={{ color: '#9aa', marginTop: 8 }}>From: {from}</Text>
       <TextInput value={to} onChangeText={setTo} placeholder='to wallet' placeholderTextColor='#777' style={{ color:'#fff', borderWidth:1, borderColor:'#333', padding:8, marginTop:10 }} />
       <TextInput value={amount} onChangeText={setAmount} placeholder='amount' placeholderTextColor='#777' keyboardType='decimal-pad' style={{ color:'#fff', borderWidth:1, borderColor:'#333', padding:8, marginTop:10 }} />
-      <Pressable onPress={submit} style={{ backgroundColor:'#2d8cff', padding:10, borderRadius:8, marginTop:12 }}>
-        <Text>Send</Text>
+      <Pressable onPress={() => setReview(true)} style={{ backgroundColor:'#2d8cff', padding:10, borderRadius:8, marginTop:12 }}>
+        <Text>Review & Send</Text>
       </Pressable>
       {msg ? <Text style={{ color:'#cdd3df', marginTop:12 }}>{msg}</Text> : null}
       <Text style={{ color:'#9aa', marginTop:16 }}>Biometric confirmation hook: TODO (`expo-local-authentication`).</Text>
