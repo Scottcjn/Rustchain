@@ -20,3 +20,6 @@ npm run start
 ## Increment in this update
 - Added transaction history screen scaffold wired to `wallet/history` API
 - Added miner_id input + navigation hook from Home
+
+- Added send screen scaffold wired to transfer API
+- Added biometric confirmation hook note before transfer finalize
