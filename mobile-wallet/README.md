@@ -28,3 +28,4 @@ npm run start
 - Added wallet session store scaffold (`src/store/session.ts`) with persistence hooks for AsyncStorage integration
 - Added Price/Stats screen scaffold (`/epoch` + `/api/miners`) for `/price` parity on mobile
 - Added onboarding checklist screen scaffold for first-run wallet UX and acceptance validation
+- Added biometric gate screen scaffold (mock verify) for secure-action preflight UX

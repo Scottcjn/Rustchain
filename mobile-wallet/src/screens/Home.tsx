@@ -5,6 +5,7 @@ import Security from './Security';
 import Receive from './Receive';
 import Stats from './Stats';
 import Onboarding from './Onboarding';
+import BiometricGate from './BiometricGate';
 import { getSession, saveSession } from '../store/session';
 import {SafeAreaView, Text, TextInput, Pressable} from 'react-native';
 import {createMnemonic, deriveEd25519FromMnemonic} from '../crypto/wallet';
@@ -19,6 +20,7 @@ export default function Home() {
   const [showReceive, setShowReceive] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showBiometric, setShowBiometric] = useState(false);
 
   useEffect(() => {
     const s = getSession();
@@ -31,6 +33,7 @@ export default function Home() {
   if (showReceive) return <Receive minerId={minerId} />;
   if (showStats) return <Stats />;
   if (showOnboarding) return <Onboarding />;
+  if (showBiometric) return <BiometricGate />;
 
   return <SafeAreaView style={{flex:1,padding:16,backgroundColor:'#111'}}>
     <Text style={{color:'#fff',fontSize:24,fontWeight:'700'}}>RustChain Wallet</Text>
@@ -47,6 +50,7 @@ export default function Home() {
     <Pressable onPress={() => setShowReceive(true)} style={{backgroundColor:'#f0b429',padding:10,borderRadius:8,marginTop:10}}><Text>Receive RTC</Text></Pressable>
     <Pressable onPress={() => setShowStats(true)} style={{backgroundColor:'#1fa2ff',padding:10,borderRadius:8,marginTop:10}}><Text>Price / Stats</Text></Pressable>
     <Pressable onPress={() => setShowOnboarding(true)} style={{backgroundColor:'#ff6b6b',padding:10,borderRadius:8,marginTop:10}}><Text>Onboarding</Text></Pressable>
+    <Pressable onPress={() => setShowBiometric(true)} style={{backgroundColor:'#4f8a10',padding:10,borderRadius:8,marginTop:10}}><Text>Biometric Gate</Text></Pressable>
     <Text style={{color:'#9aa',marginTop:16}}>QR Scan hook: TODO (expo-camera / barcode-scanner)</Text>
     <Text style={{color:'#9aa',marginTop:4}}>Biometric hook: TODO (expo-local-authentication)</Text>
   </SafeAreaView>
