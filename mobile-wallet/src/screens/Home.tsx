@@ -1,8 +1,9 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import History from './History';
 import Send from './Send';
 import Security from './Security';
 import Receive from './Receive';
+import { getSession, saveSession } from '../store/session';
 import {SafeAreaView, Text, TextInput, Pressable} from 'react-native';
 import {createMnemonic, deriveEd25519FromMnemonic} from '../crypto/wallet';
 
@@ -14,6 +15,11 @@ export default function Home() {
   const [showSend, setShowSend] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
   const [showReceive, setShowReceive] = useState(false);
+
+  useEffect(() => {
+    const s = getSession();
+    if (s?.minerId) setMinerId(s.minerId);
+  }, []);
 
   if (showHistory && minerId) return <History minerId={minerId} />;
   if (showSend && minerId) return <Send from={minerId} />;
@@ -28,6 +34,7 @@ export default function Home() {
     <TextInput value={mnemonic} onChangeText={setMnemonic} multiline style={{color:'#fff',marginTop:12,borderWidth:1,borderColor:'#333',padding:8}} />
     <Text style={{color:'#9aa',marginTop:8}}>Public key: {pub.slice(0,32)}...</Text>
     <TextInput value={minerId} onChangeText={setMinerId} placeholder='miner_id for history' placeholderTextColor='#777' style={{color:'#fff',marginTop:10,borderWidth:1,borderColor:'#333',padding:8}} />
+    <Pressable onPress={async () => { await saveSession({ minerId }); }} style={{backgroundColor:'#444',padding:10,borderRadius:8,marginTop:10}}><Text>Save Session</Text></Pressable>
     <Pressable onPress={() => setShowHistory(true)} style={{backgroundColor:'#2d8cff',padding:10,borderRadius:8,marginTop:10}}><Text>Open History</Text></Pressable>
     <Pressable onPress={() => setShowSend(true)} style={{backgroundColor:'#31c46d',padding:10,borderRadius:8,marginTop:10}}><Text>Send RTC</Text></Pressable>
     <Pressable onPress={() => setShowSecurity(true)} style={{backgroundColor:'#7a5cff',padding:10,borderRadius:8,marginTop:10}}><Text>Security / QR</Text></Pressable>
