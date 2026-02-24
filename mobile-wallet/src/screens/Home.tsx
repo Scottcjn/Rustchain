@@ -6,6 +6,7 @@ import Receive from './Receive';
 import Stats from './Stats';
 import Onboarding from './Onboarding';
 import BiometricGate from './BiometricGate';
+import QrScanner from './QrScanner';
 import { getSession, saveSession } from '../store/session';
 import {SafeAreaView, Text, TextInput, Pressable} from 'react-native';
 import {createMnemonic, deriveEd25519FromMnemonic} from '../crypto/wallet';
@@ -21,6 +22,7 @@ export default function Home() {
   const [showStats, setShowStats] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showBiometric, setShowBiometric] = useState(false);
+  const [showQrScanner, setShowQrScanner] = useState(false);
 
   useEffect(() => {
     const s = getSession();
@@ -34,6 +36,7 @@ export default function Home() {
   if (showStats) return <Stats />;
   if (showOnboarding) return <Onboarding />;
   if (showBiometric) return <BiometricGate />;
+  if (showQrScanner) return <QrScanner />;
 
   return <SafeAreaView style={{flex:1,padding:16,backgroundColor:'#111'}}>
     <Text style={{color:'#fff',fontSize:24,fontWeight:'700'}}>RustChain Wallet</Text>
@@ -51,6 +54,7 @@ export default function Home() {
     <Pressable onPress={() => setShowStats(true)} style={{backgroundColor:'#1fa2ff',padding:10,borderRadius:8,marginTop:10}}><Text>Price / Stats</Text></Pressable>
     <Pressable onPress={() => setShowOnboarding(true)} style={{backgroundColor:'#ff6b6b',padding:10,borderRadius:8,marginTop:10}}><Text>Onboarding</Text></Pressable>
     <Pressable onPress={() => setShowBiometric(true)} style={{backgroundColor:'#4f8a10',padding:10,borderRadius:8,marginTop:10}}><Text>Biometric Gate</Text></Pressable>
+    <Pressable onPress={() => setShowQrScanner(true)} style={{backgroundColor:'#8e44ad',padding:10,borderRadius:8,marginTop:10}}><Text>QR Scanner</Text></Pressable>
     <Text style={{color:'#9aa',marginTop:16}}>QR Scan hook: TODO (expo-camera / barcode-scanner)</Text>
     <Text style={{color:'#9aa',marginTop:4}}>Biometric hook: TODO (expo-local-authentication)</Text>
   </SafeAreaView>
