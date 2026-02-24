@@ -170,6 +170,24 @@ def client_ip_from_request(req) -> str:
             return hop
     return remote
 
+
+def _parse_int_query_arg(name: str, default: int, min_value: int | None = None, max_value: int | None = None):
+    raw_value = request.args.get(name)
+    if raw_value is None or str(raw_value).strip() == "":
+        value = default
+    else:
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            return None, f"{name} must be an integer"
+
+    if min_value is not None and value < min_value:
+        value = min_value
+    if max_value is not None and value > max_value:
+        value = max_value
+    return value, None
+
+
 # Register Hall of Rust blueprint (tables initialized after DB_PATH is set)
 try:
     from hall_of_rust import hall_bp
@@ -3097,23 +3115,6 @@ def api_badge(miner_id: str):
         "message": message,
         "color": color,
     })
-
-
-def _parse_int_query_arg(name: str, default: int, min_value: int | None = None, max_value: int | None = None):
-    raw_value = request.args.get(name)
-    if raw_value is None or str(raw_value).strip() == "":
-        value = default
-    else:
-        try:
-            value = int(raw_value)
-        except (TypeError, ValueError):
-            return None, f"{name} must be an integer"
-
-    if min_value is not None and value < min_value:
-        value = min_value
-    if max_value is not None and value > max_value:
-        value = max_value
-    return value, None
 
 
 @app.route("/api/miner/<miner_id>/attestations", methods=["GET"])
