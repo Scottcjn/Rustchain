@@ -31,3 +31,7 @@ npm run start
 - Added biometric gate screen scaffold (mock verify) for secure-action preflight UX
 - Added QR scanner screen scaffold with camera/barcode integration notes
 - Added transfer review screen scaffold for pre-submit confirmation flow
+
+
+## Build instructions
+See `BUILD.md` for iOS/Android local runs and EAS packaging flow.
