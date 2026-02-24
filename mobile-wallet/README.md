@@ -35,3 +35,6 @@ npm run start
 
 ## Build instructions
 See `BUILD.md` for iOS/Android local runs and EAS packaging flow.
+
+## Demo / QA checklist
+See `docs/DEMO_PLAN.md` for demo capture and acceptance validation steps.
