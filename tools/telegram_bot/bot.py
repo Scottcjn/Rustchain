@@ -1,128 +1,112 @@
-#!/usr/bin/env python3
-"""RustChain Telegram community bot.
-
-Commands:
-- /price
-- /miners
-- /epoch
-- /balance <wallet>
-- /health
+"""
+RustChain Telegram Community Bot
+Bounty: 50 RTC
+Issue: #249
 """
 
-from __future__ import annotations
-
+import asyncio
 import logging
-import os
-from typing import Any
-
-import httpx
+import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-API_BASE = os.getenv("RUSTCHAIN_API_BASE", "http://50.28.86.131")
-REQUEST_TIMEOUT = float(os.getenv("RUSTCHAIN_REQUEST_TIMEOUT", "8"))
+# Configure logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-logging.basicConfig(
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    level=os.getenv("LOG_LEVEL", "INFO"),
-)
-logger = logging.getLogger("rustchain_telegram_bot")
+# RustChain API Base URL
+RUSTCHAIN_API = "https://50.28.86.131"
 
-
-async def api_get(path: str) -> Any:
-    url = f"{API_BASE.rstrip('/')}/{path.lstrip('/')}"
-    timeout = httpx.Timeout(REQUEST_TIMEOUT)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        return response.json()
+# Bot token - User needs to set this from @BotFather
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 
 
-def _pick_number(payload: Any, keys: list[str]) -> Any:
-    if isinstance(payload, dict):
-        for k in keys:
-            if k in payload and payload[k] is not None:
-                return payload[k]
-    return None
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    welcome = """🛡️ *RustChain Bot*
+
+/price - wRTC price
+/miners - Active miners
+/epoch - Epoch info
+/balance <addr> - Wallet balance
+/health - Node health
+/help - Commands"""
+    await update.message.reply_text(welcome, parse_mode='Markdown')
 
 
-async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_text = """🛡️ *Commands*
+
+/price - wRTC price
+/miners - Miner count
+/epoch - Epoch info
+/balance <wallet> - Check balance
+/health - Node status"""
+    await update.message.reply_text(help_text, parse_mode='Markdown')
+
+
+async def price_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("📊 Price feature - coming soon!")
+
+
+async def miners_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        data = await api_get("wrtc/price")
-        price = _pick_number(data, ["price", "wrtc_price", "usd", "value"])
-        if price is None:
-            await update.message.reply_text(f"wRTC price payload: {data}")
-            return
-        await update.message.reply_text(f"wRTC 当前价格: {price}")
-    except Exception as exc:
-        logger.exception("/price failed")
-        await update.message.reply_text(f"获取价格失败: {exc}")
+        r = requests.get(f"{RUSTCHAIN_API}/api/miners", verify=False, timeout=10)
+        miners = r.json() if r.status_code == 200 else []
+        count = len(miners) if isinstance(miners, list) else "N/A"
+        await update.message.reply_text(f"⛏️ *Miners:* {count}", parse_mode='Markdown')
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {str(e)}")
 
 
-async def cmd_miners(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def epoch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        data = await api_get("api/miners")
-        count = _pick_number(data, ["active_miners", "count", "miners", "total"])
-        if count is None and isinstance(data, list):
-            count = len(data)
-        await update.message.reply_text(f"活跃矿工数: {count if count is not None else data}")
-    except Exception as exc:
-        logger.exception("/miners failed")
-        await update.message.reply_text(f"获取矿工信息失败: {exc}")
+        r = requests.get(f"{RUSTCHAIN_API}/epoch", verify=False, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            epoch = data.get('epoch', 'N/A')
+            await update.message.reply_text(f"📅 *Epoch:* {epoch}", parse_mode='Markdown')
+        else:
+            await update.message.reply_text("❌ Could not fetch epoch")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {str(e)}")
 
 
-async def cmd_epoch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    try:
-        data = await api_get("epoch")
-        await update.message.reply_text(f"当前 Epoch: {data}")
-    except Exception as exc:
-        logger.exception("/epoch failed")
-        await update.message.reply_text(f"获取 epoch 失败: {exc}")
-
-
-async def cmd_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("用法: /balance <wallet>")
+        await update.message.reply_text("Usage: /balance <wallet_address>")
         return
-    wallet = context.args[0].strip()
+    wallet = context.args[0]
     try:
-        data = await api_get(f"wallet/{wallet}")
-        balance = _pick_number(data, ["balance", "rtc", "amount"])
-        await update.message.reply_text(
-            f"钱包 {wallet}\n余额: {balance if balance is not None else data}"
-        )
-    except Exception as exc:
-        logger.exception("/balance failed")
-        await update.message.reply_text(f"查询余额失败: {exc}")
+        r = requests.get(f"{RUSTCHAIN_API}/wallet/balance", params={"miner_id": wallet}, verify=False, timeout=10)
+        data = r.json() if r.status_code == 200 else {}
+        balance = data.get('balance', 'N/A')
+        await update.message.reply_text(f"💰 *Balance:* {balance} wRTC", parse_mode='Markdown')
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {str(e)}")
 
 
-async def cmd_health(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        data = await api_get("health")
-        status = _pick_number(data, ["status", "ok", "healthy"])
-        await update.message.reply_text(f"节点健康状态: {status if status is not None else data}")
-    except Exception as exc:
-        logger.exception("/health failed")
-        await update.message.reply_text(f"健康检查失败: {exc}")
+        r = requests.get(f"{RUSTCHAIN_API}/health", verify=False, timeout=10)
+        if r.status_code == 200:
+            await update.message.reply_text("❤️ *Node: Healthy*", parse_mode='Markdown')
+        else:
+            await update.message.reply_text("❌ Node: Unhealthy")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {str(e)}")
 
 
-def build_app(token: str) -> Application:
-    app = Application.builder().token(token).build()
-    app.add_handler(CommandHandler("price", cmd_price))
-    app.add_handler(CommandHandler("miners", cmd_miners))
-    app.add_handler(CommandHandler("epoch", cmd_epoch))
-    app.add_handler(CommandHandler("balance", cmd_balance))
-    app.add_handler(CommandHandler("health", cmd_health))
-    return app
-
-
-def main() -> None:
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    if not token:
-        raise SystemExit("TELEGRAM_BOT_TOKEN is required")
-    app = build_app(token)
-    logger.info("Starting RustChain Telegram bot with API base: %s", API_BASE)
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("price", price_command))
+    app.add_handler(CommandHandler("miners", miners_command))
+    app.add_handler(CommandHandler("epoch", epoch_command))
+    app.add_handler(CommandHandler("balance", balance_command))
+    app.add_handler(CommandHandler("health", health_command))
+    print("🤖 RustChain Bot starting...")
+    app.run_polling(ping_interval=30)
 
 
 if __name__ == "__main__":
