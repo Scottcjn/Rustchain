@@ -1,39 +1,51 @@
-# RustChain Telegram Community Bot
+# RustChain Telegram Bot
 
-实现 `rustchain-bounties#249` 要求的社区机器人命令：
+A Telegram bot for the RustChain community.
 
-- `/price`：wRTC 价格
-- `/miners`：活跃矿工数
-- `/epoch`：当前 epoch 信息
-- `/balance <wallet>`：钱包余额
-- `/health`：节点健康状态
+## Features
 
-## 1) 安装依赖
+- `/price` - Current wRTC price from Raydium
+- `/miners` - Active miner count from API
+- `/epoch` - Current epoch info
+- `/balance <wallet>` - Check wallet balance
+- `/health` - Node health status
 
+## Setup
+
+1. Install dependencies:
 ```bash
-cd tools/telegram_bot
-python3 -m venv .venv
-source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## 2) 配置环境变量
+2. Get a Telegram Bot Token from @BotFather
 
+3. Edit `telegram_bot.py` and replace `YOUR_BOT_TOKEN_HERE` with your token
+
+4. Run the bot:
 ```bash
-export TELEGRAM_BOT_TOKEN="<your_bot_token>"
-export RUSTCHAIN_API_BASE="http://50.28.86.131"
-# 可选：请求超时（秒）
-export RUSTCHAIN_REQUEST_TIMEOUT="8"
+python telegram_bot.py
 ```
 
-## 3) 启动
+## Deployment
+
+### Using Docker
 
 ```bash
-python bot.py
+docker build -t rustchain-telegram-bot .
+docker run -d rustchain-telegram-bot
 ```
 
-## 说明
+### Using Systemd
 
-- 默认请求 `http://50.28.86.131`，可用 `RUSTCHAIN_API_BASE` 覆盖。
-- 各命令对返回 payload 做了宽松字段兼容（不同字段名也尽量解析）。
-- 发生请求错误时会直接回显错误，方便群组调试。
+```bash
+sudo cp rustchain-telegram-bot.service /etc/systemd/system/
+sudo systemctl enable rustchain-telegram-bot
+sudo systemctl start rustchain-telegram-bot
+```
+
+## Bounty
+
+This bot was built for the RustChain Bounty Program.
+Reward: 50 RTC
+
+Issue: https://github.com/Scottcjn/rustchain-bounties/issues/249
