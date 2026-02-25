@@ -13,6 +13,7 @@ from typing import Tuple, Dict, Optional
 # Allow overrides for local dev / non-Linux environments.
 DB_PATH = os.environ.get('RUSTCHAIN_DB_PATH') or os.environ.get('DB_PATH') or '/root/rustchain/rustchain_v2.db'
 ENTROPY_TOLERANCE = 0.30  # 30% tolerance for entropy drift
+MIN_COMPARABLE_FIELDS = 3  # require at least 3 non-zero entropy fields for quality
 
 def init_hardware_bindings_v2():
     """Create the v2 bindings table with entropy profiles."""
@@ -128,15 +129,14 @@ def check_entropy_collision(entropy_profile: Dict, exclude_serial: str = None) -
     Check if this entropy profile matches any OTHER serial.
     This detects serial spoofing (same hardware, different serial).
     
-    Requires at least 2 non-zero comparable fields for a valid collision.
-    Profiles with only clock_cv populated are too low-quality to detect collisions
-    (clock_cv varies too much between runs and is similar across machines).
+    Requires at least MIN_COMPARABLE_FIELDS non-zero comparable fields for collision checks.
+    Sparse profiles are considered low-quality and are ignored for collision matching.
     """
     # Count non-zero fields in current profile
     nonzero_fields = sum(1 for k in ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']
                         if float(entropy_profile.get(k, 0)) > 0)
     
-    if nonzero_fields < 2:
+    if nonzero_fields < MIN_COMPARABLE_FIELDS:
         # Not enough entropy data to detect collisions reliably
         return None
     
@@ -154,12 +154,13 @@ def check_entropy_collision(entropy_profile: Dict, exclude_serial: str = None) -
                 # Also require stored profile to have enough data
                 stored_nonzero = sum(1 for k in ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']
                                     if float(stored.get(k, 0)) > 0)
-                if stored_nonzero < 2:
+                if stored_nonzero < MIN_COMPARABLE_FIELDS:
                     continue
                 
                 is_similar, score, _ = compare_entropy_profiles(stored, entropy_profile)
                 
-                if is_similar and score > 0.90:  # Very similar to existing
+                # Require stronger confidence; do not let highly-tolerant clock_cv dominate.
+                if is_similar and score > 0.97:  # Very similar on sufficiently rich profiles
                     return serial_hash  # Collision detected!
     
     return None
@@ -191,6 +192,17 @@ def bind_hardware_v2(
         row = c.fetchone()
         
         if row is None:
+            # NEW HARDWARE - enforce entropy quality first
+            nonzero_fields = sum(1 for k in ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']
+                                if float(entropy_profile.get(k, 0)) > 0)
+            if nonzero_fields < MIN_COMPARABLE_FIELDS:
+                return False, 'entropy_insufficient', {
+                    'error': 'Entropy profile quality too low for secure binding',
+                    'required_nonzero_fields': MIN_COMPARABLE_FIELDS,
+                    'provided_nonzero_fields': nonzero_fields,
+                    'action': 'submit a fuller fingerprint payload'
+                }
+
             # NEW HARDWARE - Check for entropy collision first
             collision = check_entropy_collision(entropy_profile)
             if collision:
