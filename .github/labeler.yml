@@ -69,3 +69,30 @@ api:
       - 'rustchain_v2_integrated*.py'
       - '**/api*'
       - '**/endpoint*'
+
+BCOS-L2:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'fingerprint_checks.py'
+      - 'hardware_fingerprint.py'
+      - 'rustchain_crypto.py'
+      - 'rustchain_wallet_*.py'
+      - 'rip_200_round_robin_1cpu1vote.py'
+      - 'rewards_implementation_rip200.py'
+      - '**/auth*'
+      - '**/crypto*'
+      - '**/security*'
+      - '**/consensus*'
+      - '**/wallet*'
+
+BCOS-L1:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '**/*.py'
+      - '**/*.js'
+      - '**/*.ts'
+      - '**/*.rs'
+      - '**/*.sh'
+      - '**/*.c'
+      - '**/*.h'
+      - '**/*.go'
