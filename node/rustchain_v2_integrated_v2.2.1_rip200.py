@@ -3268,6 +3268,8 @@ def api_miners():
 
             miners.append({
                 "miner": r["miner"],
+                # Backward-compatible alias: some docs/tools refer to miner_id.
+                "miner_id": r["miner"],
                 "last_attest": r["ts_ok"],
                 "first_attest": first_attest,
                 "device_family": r["device_family"],
