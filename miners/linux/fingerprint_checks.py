@@ -153,7 +153,9 @@ def check_simd_identity() -> Tuple[bool, Dict]:
     has_sse = any("sse" in f.lower() for f in flags)
     has_avx = any("avx" in f.lower() for f in flags)
     has_altivec = any("altivec" in f.lower() for f in flags) or "ppc" in arch
-    has_neon = any("neon" in f.lower() for f in flags) or "arm" in arch
+    # ARM64 often reports NEON as "asimd" in /proc/cpuinfo features
+    is_arm_arch = ("arm" in arch) or ("aarch64" in arch)
+    has_neon = any(("neon" in f.lower()) or ("asimd" in f.lower()) for f in flags) or is_arm_arch
 
     data = {
         "arch": arch,
