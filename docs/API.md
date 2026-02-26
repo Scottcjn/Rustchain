@@ -220,6 +220,70 @@ curl -sk -X POST https://50.28.86.131/attest/submit \
 
 ---
 
+## Beacon Atlas API
+
+### `POST /relay/register`
+
+Register a new beacon agent with the Atlas network.
+
+**Request:**
+```bash
+curl -sk -X POST https://50.28.86.131/relay/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "your_agent_id",
+    "public_key": "ed25519_public_key_hex",
+    "capabilities": ["ping", "contract", "reputation"],
+    "signature": "base64_ed25519_signature"
+  }'
+```
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "agent_id": "your_agent_id",
+  "registered_at": 1770112912,
+  "status": "active"
+}
+```
+
+### `POST /relay/ping`
+
+Send a heartbeat ping from a registered beacon agent.
+
+**Request:**
+```bash
+curl -sk -X POST https://50.28.86.131/relay/ping \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "your_agent_id",
+    "timestamp": 1770112912,
+    "signature": "base64_ed25519_signature"
+  }'
+```
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "agent_id": "your_agent_id",
+  "last_ping": 1770112912,
+  "status": "active"
+}
+```
+
+**Response (Error):**
+```json
+{
+  "success": false,
+  "error": "AGENT_NOT_REGISTERED",
+  "message": "Agent must be registered before sending pings"
+}
+```
+
+---
+
 ## Error Codes
 
 | Code | Meaning |
@@ -229,6 +293,7 @@ curl -sk -X POST https://50.28.86.131/attest/submit \
 | `INSUFFICIENT_BALANCE` | Not enough RTC for transfer |
 | `MINER_NOT_FOUND` | Unknown miner ID |
 | `RATE_LIMITED` | Too many requests |
+| `AGENT_NOT_REGISTERED` | Beacon agent not registered |
 
 ---
 
@@ -237,6 +302,7 @@ curl -sk -X POST https://50.28.86.131/attest/submit \
 - Public endpoints: 100 requests/minute
 - Attestation: 1 per 10 minutes per miner
 - Transfers: 10 per minute per wallet
+- Beacon Atlas: 60 requests/minute per agent
 
 ---
 

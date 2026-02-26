@@ -270,6 +270,7 @@ This provides cryptographic proof that RustChain state existed at a specific tim
 
 ## 📊 API Endpoints
 
+### Core RustChain API
 ```bash
 # Check network health
 curl -sk https://50.28.86.131/health
@@ -285,6 +286,19 @@ curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET"
 
 # Block explorer (web browser)
 open https://rustchain.org/explorer
+```
+
+### Beacon Atlas API
+```bash
+# Register a new beacon agent
+curl -sk -X POST https://50.28.86.131/relay/register \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id": "your_agent_id", "public_key": "ed25519_pubkey"}'
+
+# Send ping to beacon network
+curl -sk -X POST https://50.28.86.131/relay/ping \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id": "your_agent_id", "signature": "ed25519_signature"}'
 ```
 
 ## 🖥️ Supported Platforms
