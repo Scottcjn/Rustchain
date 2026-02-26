@@ -1,23 +1,30 @@
-# RustChain Telegram Bot
+# RustChain Telegram Community Bot
 
-Telegram bot for RustChain community.
+Telegram bot for the RustChain community. Provides real-time chain data.
 
 ## Commands
-
-- `/price` - wRTC price
-- `/miners` - Active miners
-- `/epoch` - Current epoch
-- `/balance <wallet>` - Check balance
-- `/health` - Node health
+- `/price` — Current wRTC price from Raydium
+- `/miners` — Active miner count
+- `/epoch` — Current epoch info
+- `/balance <wallet>` — Check RTC balance
+- `/health` — Node health status
 
 ## Setup
-
 ```bash
 pip install -r requirements.txt
-# Edit bot.py and set BOT_TOKEN
+export TELEGRAM_BOT_TOKEN="your-bot-token"
 python bot.py
 ```
 
-## Bounty
+## Features
+- Async (aiohttp + python-telegram-bot v21)
+- Error handling with graceful fallbacks
+- Inline query support (bonus)
+- Markdown formatted responses
 
-50 RTC - Issue #249
+## API Endpoints Used
+- `GET /api/price` — wRTC price
+- `GET /api/miners` — Miner data
+- `GET /epoch` — Epoch info
+- `GET /api/balance/<wallet>` — Wallet balance
+- `GET /api/health` — Node health
