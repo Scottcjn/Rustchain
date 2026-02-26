@@ -14,6 +14,7 @@ from typing import Tuple, Dict, Optional
 DB_PATH = os.environ.get('RUSTCHAIN_DB_PATH') or os.environ.get('DB_PATH') or '/root/rustchain/rustchain_v2.db'
 ENTROPY_TOLERANCE = 0.30  # 30% tolerance for entropy drift
 MIN_COMPARABLE_FIELDS = 3  # require at least 3 non-zero entropy fields for quality
+CORE_ENTROPY_FIELDS = ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']
 
 def init_hardware_bindings_v2():
     """Create the v2 bindings table with entropy profiles."""
@@ -61,6 +62,14 @@ def extract_entropy_profile(fingerprint: dict) -> Dict:
     
     return profile
 
+
+def _count_nonzero_fields(profile: Dict) -> int:
+    return sum(1 for k in CORE_ENTROPY_FIELDS if float(profile.get(k, 0)) > 0)
+
+
+def _count_comparable_nonzero_fields(stored: Dict, current: Dict) -> int:
+    return sum(1 for k in CORE_ENTROPY_FIELDS if float(stored.get(k, 0)) > 0 and float(current.get(k, 0)) > 0)
+
 def compare_entropy_profiles(stored: Dict, current: Dict) -> Tuple[bool, float, str]:
     """
     Compare two entropy profiles.
@@ -88,11 +97,12 @@ def compare_entropy_profiles(stored: Dict, current: Dict) -> Tuple[bool, float, 
     count = 0
     hard_fails = 0
     
-    for key in ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']:
+    for key in CORE_ENTROPY_FIELDS:
         stored_val = float(stored.get(key, 0))
         current_val = float(current.get(key, 0))
         
-        if stored_val > 0:
+        # Compare only when BOTH sides provide non-zero signal for this field.
+        if stored_val > 0 and current_val > 0:
             diff = abs(stored_val - current_val) / stored_val
             field_tol = FIELD_TOLERANCE.get(key, ENTROPY_TOLERANCE)
             total_diff += min(diff, 1.0)  # Cap at 100% for averaging
@@ -106,12 +116,12 @@ def compare_entropy_profiles(stored: Dict, current: Dict) -> Tuple[bool, float, 
     
     # FIX: Handle no-fingerprint miners (both profiles are zeros)
     if count == 0:
-        current_count = sum(1 for key in ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']
-                          if float(current.get(key, 0)) > 0)
+        current_count = _count_nonzero_fields(current)
         if current_count == 0:
             return True, 1.0, 'no_fingerprint_data'
         else:
-            return True, 0.5, 'stored_empty_current_has_data' 
+            # No overlapping comparable fields; caller should treat as low-confidence comparison.
+            return True, 0.5, 'insufficient_comparable_overlap' 
     
     avg_diff = total_diff / count
     similarity = 1.0 - avg_diff
@@ -133,8 +143,7 @@ def check_entropy_collision(entropy_profile: Dict, exclude_serial: str = None) -
     Sparse profiles are considered low-quality and are ignored for collision matching.
     """
     # Count non-zero fields in current profile
-    nonzero_fields = sum(1 for k in ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']
-                        if float(entropy_profile.get(k, 0)) > 0)
+    nonzero_fields = _count_nonzero_fields(entropy_profile)
     
     if nonzero_fields < MIN_COMPARABLE_FIELDS:
         # Not enough entropy data to detect collisions reliably
@@ -152,15 +161,19 @@ def check_entropy_collision(entropy_profile: Dict, exclude_serial: str = None) -
             if stored_json:
                 stored = json.loads(stored_json)
                 # Also require stored profile to have enough data
-                stored_nonzero = sum(1 for k in ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']
-                                    if float(stored.get(k, 0)) > 0)
+                stored_nonzero = _count_nonzero_fields(stored)
                 if stored_nonzero < MIN_COMPARABLE_FIELDS:
                     continue
                 
+                comparable_nonzero = _count_comparable_nonzero_fields(stored, entropy_profile)
+                if comparable_nonzero < MIN_COMPARABLE_FIELDS:
+                    # Sparse overlap is too weak for collision decisions.
+                    continue
+
                 is_similar, score, _ = compare_entropy_profiles(stored, entropy_profile)
                 
-                # Require stronger confidence; do not let highly-tolerant clock_cv dominate.
-                if is_similar and score > 0.97:  # Very similar on sufficiently rich profiles
+                # Require stronger confidence on sufficiently rich, comparable profiles.
+                if is_similar and score > 0.97:
                     return serial_hash  # Collision detected!
     
     return None
@@ -193,8 +206,7 @@ def bind_hardware_v2(
         
         if row is None:
             # NEW HARDWARE - enforce entropy quality first
-            nonzero_fields = sum(1 for k in ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']
-                                if float(entropy_profile.get(k, 0)) > 0)
+            nonzero_fields = _count_nonzero_fields(entropy_profile)
             if nonzero_fields < MIN_COMPARABLE_FIELDS:
                 return False, 'entropy_insufficient', {
                     'error': 'Entropy profile quality too low for secure binding',
