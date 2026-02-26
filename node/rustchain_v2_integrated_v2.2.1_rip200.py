@@ -879,35 +879,24 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS ip_rate_limit (client_ip TEXT, miner_id TEXT, ts INTEGER, PRIMARY KEY (client_ip, miner_id))")
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
 
-        # TOFU Key Management tables (Bounty #308)
+        # TOFU Key Management tables (Bounty #308) - Unified schema
         c.execute("""
             CREATE TABLE IF NOT EXISTS tofu_keys (
                 miner_id TEXT PRIMARY KEY,
-                pubkey_hex TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                revoked_at INTEGER
+                pubkey_ed25519 TEXT NOT NULL,
+                first_seen INTEGER NOT NULL,
+                last_updated INTEGER NOT NULL
             )
         """)
         c.execute("""
-            CREATE TABLE IF NOT EXISTS tofu_revocations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                admin_id TEXT NOT NULL,
+            CREATE TABLE IF NOT EXISTS revoked_keys (
+                pubkey_ed25519 TEXT PRIMARY KEY,
                 miner_id TEXT NOT NULL,
-                old_pubkey TEXT NOT NULL,
                 revoked_at INTEGER NOT NULL,
-                reason TEXT
+                revoked_by TEXT NOT NULL
             )
         """)
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS tofu_rotations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                miner_id TEXT NOT NULL,
-                old_pubkey TEXT NOT NULL,
-                new_pubkey TEXT NOT NULL,
-                rotated_at INTEGER NOT NULL,
-                signature TEXT NOT NULL
-            )
-        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_revoked_keys_miner ON revoked_keys(miner_id)")
 
         # Epoch tables
         c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
@@ -2194,6 +2183,20 @@ def submit_attestation():
         oui_ok, oui_info = _check_oui_gate(macs)
         if not oui_ok:
             return jsonify(oui_info), 412
+
+    # TOFU Key Validation (Bounty #308)
+    tofu_pubkey = data.get('pubkey_ed25519')
+    if tofu_pubkey:
+        tofu_valid, tofu_error = validate_tofu_key(miner, tofu_pubkey)
+        if not tofu_valid:
+            print(f"[TOFU] REJECTED: {miner} - {tofu_error}")
+            return jsonify({
+                "ok": False,
+                "error": "tofu_validation_failed",
+                "message": tofu_error,
+                "code": "TOFU_KEY_REJECTED"
+            }), 400
+        print(f"[TOFU] OK: {miner} - {tofu_error}")
 
     # NEW: Validate fingerprint data (RIP-PoA)
     fingerprint_passed = False
@@ -4758,72 +4761,6 @@ pause
     resp.headers["Content-Disposition"] = "attachment; filename=test_miner.bat"
     return resp
 
-
-
-# === TOFU KEY MANAGEMENT ===
-def ensure_tofu_tables(conn):
-    """Create TOFU key management tables if they don't exist."""
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS tofu_keys (
-            miner_id TEXT PRIMARY KEY,
-            pubkey_hex TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            revoked_at INTEGER,
-            revoked_by TEXT,
-            rotation_from TEXT
-        )
-    """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_tofu_keys_revoked ON tofu_keys(revoked_at)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_tofu_keys_created ON tofu_keys(created_at)")
-
-
-def get_tofu_key(conn, miner_id):
-    """Get current active TOFU key for a miner."""
-    row = conn.execute(
-        "SELECT pubkey_hex FROM tofu_keys WHERE miner_id = ? AND revoked_at IS NULL",
-        (miner_id,)
-    ).fetchone()
-    return row[0] if row else None
-
-
-def revoke_tofu_key(conn, admin_miner_id, target_miner_id):
-    """Revoke a miner's TOFU key (admin only)."""
-    conn.execute(
-        "UPDATE tofu_keys SET revoked_at = ?, revoked_by = ? WHERE miner_id = ? AND revoked_at IS NULL",
-        (int(time.time()), admin_miner_id, target_miner_id)
-    )
-    return conn.rowcount > 0
-
-
-def rotate_tofu_key(conn, miner_id, old_pubkey_hex, new_pubkey_hex, signature):
-    """Rotate a miner's TOFU key (requires signature with old key)."""
-    # Verify the miner owns the old key
-    current_key = get_tofu_key(conn, miner_id)
-    if current_key != old_pubkey_hex:
-        return False, "invalid_old_key"
-    
-    # Verify signature with old key
-    if not HAVE_NACL:
-        return False, "ed25519_unavailable"
-    
-    try:
-        message = f"rotate_key:{miner_id}:{new_pubkey_hex}".encode()
-        sig_bytes = binascii.unhexlify(signature)
-        pubkey_bytes = binascii.unhexlify(old_pubkey_hex)
-        VerifyKey(pubkey_bytes).verify(message, sig_bytes)
-    except (BadSignatureError, Exception) as e:
-        return False, "invalid_signature"
-    
-    # Revoke old key and add new key
-    conn.execute(
-        "UPDATE tofu_keys SET revoked_at = ? WHERE miner_id = ? AND pubkey_hex = ?",
-        (int(time.time()), miner_id, old_pubkey_hex)
-    )
-    conn.execute(
-        "INSERT INTO tofu_keys (miner_id, pubkey_hex, created_at, rotation_from) VALUES (?, ?, ?, ?)",
-        (miner_id, new_pubkey_hex, int(time.time()), old_pubkey_hex)
-    )
-    return True, "success"
 
 
 # === TOFU KEY MANAGEMENT (Bounty #308) ===
