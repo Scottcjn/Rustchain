@@ -17,6 +17,7 @@
 | [Reward Analytics Dashboard](./REWARD_ANALYTICS_DASHBOARD.md) | Charts and API for RTC reward transparency |
 | [Cross-Node Sync Validator](./CROSS_NODE_SYNC_VALIDATOR.md) | Multi-node consistency checks and discrepancy reports |
 | [Discord Leaderboard Bot](./DISCORD_LEADERBOARD_BOT.md) | Webhook bot setup and usage |
+| [Japanese Quickstart (日本語)](./ja/README.md) | Community-maintained Japanese quickstart guide |
 
 ## Live Network
 
