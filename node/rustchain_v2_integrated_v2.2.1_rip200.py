@@ -640,6 +640,75 @@ OPENAPI = {
                     }
                 }
             }
+        },
+        "/tofu/revoke": {
+            "post": {
+                "summary": "Revoke compromised TOFU key (admin only)",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "miner_id": {"type": "string"},
+                                    "reason": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Key revoked successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ok": {"type": "boolean"},
+                                        "message": {"type": "string"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tofu/rotate": {
+            "post": {
+                "summary": "Rotate TOFU key (miner only)",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "miner_id": {"type": "string"},
+                                    "new_pubkey": {"type": "string"},
+                                    "signature": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Key rotated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ok": {"type": "boolean"},
+                                        "message": {"type": "string"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -809,6 +878,36 @@ def init_db():
         attest_ensure_tables(c)
         c.execute("CREATE TABLE IF NOT EXISTS ip_rate_limit (client_ip TEXT, miner_id TEXT, ts INTEGER, PRIMARY KEY (client_ip, miner_id))")
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
+
+        # TOFU Key Management tables (Bounty #308)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS tofu_keys (
+                miner_id TEXT PRIMARY KEY,
+                pubkey_hex TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                revoked_at INTEGER
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS tofu_revocations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                admin_id TEXT NOT NULL,
+                miner_id TEXT NOT NULL,
+                old_pubkey TEXT NOT NULL,
+                revoked_at INTEGER NOT NULL,
+                reason TEXT
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS tofu_rotations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                miner_id TEXT NOT NULL,
+                old_pubkey TEXT NOT NULL,
+                new_pubkey TEXT NOT NULL,
+                rotated_at INTEGER NOT NULL,
+                signature TEXT NOT NULL
+            )
+        """)
 
         # Epoch tables
         c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
@@ -4660,6 +4759,237 @@ pause
     return resp
 
 
+
+# === TOFU KEY MANAGEMENT ===
+def ensure_tofu_tables(conn):
+    """Create TOFU key management tables if they don't exist."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tofu_keys (
+            miner_id TEXT PRIMARY KEY,
+            pubkey_hex TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            revoked_at INTEGER,
+            revoked_by TEXT,
+            rotation_from TEXT
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tofu_keys_revoked ON tofu_keys(revoked_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tofu_keys_created ON tofu_keys(created_at)")
+
+
+def get_tofu_key(conn, miner_id):
+    """Get current active TOFU key for a miner."""
+    row = conn.execute(
+        "SELECT pubkey_hex FROM tofu_keys WHERE miner_id = ? AND revoked_at IS NULL",
+        (miner_id,)
+    ).fetchone()
+    return row[0] if row else None
+
+
+def revoke_tofu_key(conn, admin_miner_id, target_miner_id):
+    """Revoke a miner's TOFU key (admin only)."""
+    conn.execute(
+        "UPDATE tofu_keys SET revoked_at = ?, revoked_by = ? WHERE miner_id = ? AND revoked_at IS NULL",
+        (int(time.time()), admin_miner_id, target_miner_id)
+    )
+    return conn.rowcount > 0
+
+
+def rotate_tofu_key(conn, miner_id, old_pubkey_hex, new_pubkey_hex, signature):
+    """Rotate a miner's TOFU key (requires signature with old key)."""
+    # Verify the miner owns the old key
+    current_key = get_tofu_key(conn, miner_id)
+    if current_key != old_pubkey_hex:
+        return False, "invalid_old_key"
+    
+    # Verify signature with old key
+    if not HAVE_NACL:
+        return False, "ed25519_unavailable"
+    
+    try:
+        message = f"rotate_key:{miner_id}:{new_pubkey_hex}".encode()
+        sig_bytes = binascii.unhexlify(signature)
+        pubkey_bytes = binascii.unhexlify(old_pubkey_hex)
+        VerifyKey(pubkey_bytes).verify(message, sig_bytes)
+    except (BadSignatureError, Exception) as e:
+        return False, "invalid_signature"
+    
+    # Revoke old key and add new key
+    conn.execute(
+        "UPDATE tofu_keys SET revoked_at = ? WHERE miner_id = ? AND pubkey_hex = ?",
+        (int(time.time()), miner_id, old_pubkey_hex)
+    )
+    conn.execute(
+        "INSERT INTO tofu_keys (miner_id, pubkey_hex, created_at, rotation_from) VALUES (?, ?, ?, ?)",
+        (miner_id, new_pubkey_hex, int(time.time()), old_pubkey_hex)
+    )
+    return True, "success"
+
+
+# === TOFU KEY MANAGEMENT (Bounty #308) ===
+def ensure_tofu_tables(conn):
+    """Create TOFU key management tables if they don't exist."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tofu_keys (
+            miner_id TEXT PRIMARY KEY,
+            pubkey_ed25519 TEXT NOT NULL,
+            first_seen INTEGER NOT NULL,
+            last_updated INTEGER NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS revoked_keys (
+            pubkey_ed25519 TEXT PRIMARY KEY,
+            miner_id TEXT NOT NULL,
+            revoked_at INTEGER NOT NULL,
+            revoked_by TEXT NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_revoked_keys_miner ON revoked_keys(miner_id)")
+
+def validate_tofu_key(miner_id, pubkey_ed25519):
+    """Validate TOFU key for a miner - returns (valid, error_message)"""
+    with sqlite3.connect(DB_PATH) as conn:
+        # Check if key is revoked
+        revoked_row = conn.execute(
+            "SELECT revoked_at, revoked_by FROM revoked_keys WHERE pubkey_ed25519 = ?",
+            (pubkey_ed25519,)
+        ).fetchone()
+        
+        if revoked_row:
+            return False, f"Key revoked at {revoked_row[0]} by {revoked_row[1]}"
+        
+        # Check if this is the first time seeing this miner
+        existing_row = conn.execute(
+            "SELECT pubkey_ed25519, first_seen FROM tofu_keys WHERE miner_id = ?",
+            (miner_id,)
+        ).fetchone()
+        
+        if existing_row:
+            # Miner exists, verify key matches
+            if existing_row[0] != pubkey_ed25519:
+                return False, f"Key mismatch: expected {existing_row[0][:16]}..., got {pubkey_ed25519[:16]}..."
+            return True, "Key valid"
+        else:
+            # First time seeing this miner - store the key (TOFU)
+            now = int(time.time())
+            conn.execute(
+                "INSERT INTO tofu_keys (miner_id, pubkey_ed25519, first_seen, last_updated) VALUES (?, ?, ?, ?)",
+                (miner_id, pubkey_ed25519, now, now)
+            )
+            return True, "Key stored (TOFU)"
+
+def revoke_key_admin(pubkey_ed25519, admin_id):
+    """Admin endpoint to revoke a key"""
+    with sqlite3.connect(DB_PATH) as conn:
+        # Find the miner associated with this key
+        miner_row = conn.execute(
+            "SELECT miner_id FROM tofu_keys WHERE pubkey_ed25519 = ?",
+            (pubkey_ed25519,)
+        ).fetchone()
+        
+        if not miner_row:
+            # Check if it's already revoked
+            revoked_row = conn.execute(
+                "SELECT 1 FROM revoked_keys WHERE pubkey_ed25519 = ?",
+                (pubkey_ed25519,)
+            ).fetchone()
+            if revoked_row:
+                return False, "Key already revoked"
+            return False, "Key not found"
+        
+        miner_id = miner_row[0]
+        now = int(time.time())
+        
+        # Add to revoked keys
+        conn.execute(
+            "INSERT INTO revoked_keys (pubkey_ed25519, miner_id, revoked_at, revoked_by) VALUES (?, ?, ?, ?)",
+            (pubkey_ed25519, miner_id, now, admin_id)
+        )
+        
+        # Remove from active keys
+        conn.execute("DELETE FROM tofu_keys WHERE pubkey_ed25519 = ?", (pubkey_ed25519,))
+        
+        return True, f"Key revoked for miner {miner_id[:16]}..."
+
+def rotate_key_agent(miner_id, old_pubkey, new_pubkey, signature):
+    """Agent endpoint to rotate their own key"""
+    with sqlite3.connect(DB_PATH) as conn:
+        # Verify old key exists and is not revoked
+        old_key_row = conn.execute(
+            "SELECT 1 FROM tofu_keys WHERE miner_id = ? AND pubkey_ed25519 = ?",
+            (miner_id, old_pubkey)
+        ).fetchone()
+        
+        if not old_key_row:
+            return False, "Old key not found or already revoked"
+        
+        # Verify signature with old key
+        if not HAVE_NACL:
+            return False, "Ed25519 verification not available"
+        
+        try:
+            # Create message to sign: "rotate:{miner_id}:{new_pubkey}:{timestamp}"
+            timestamp = int(time.time())
+            message = f"rotate:{miner_id}:{new_pubkey}:{timestamp}".encode()
+            
+            # Verify signature
+            VerifyKey(bytes.fromhex(old_pubkey)).verify(message, bytes.fromhex(signature))
+        except BadSignatureError:
+            return False, "Invalid signature"
+        except Exception as e:
+            return False, f"Signature verification failed: {e}"
+        
+        # Rotate the key
+        now = int(time.time())
+        conn.execute(
+            "UPDATE tofu_keys SET pubkey_ed25519 = ?, last_updated = ? WHERE miner_id = ?",
+            (new_pubkey, now, miner_id)
+        )
+        
+        return True, "Key rotated successfully"
+
+# Admin endpoint to revoke a key
+@app.route('/api/admin/revoke-key', methods=['POST'])
+def admin_revoke_key():
+    """Admin endpoint to revoke a compromised key"""
+    # Simple admin auth check
+    admin_key = os.getenv("RC_ADMIN_KEY")
+    provided_key = request.headers.get("X-API-Key", "")
+    if not admin_key or provided_key != admin_key:
+        return jsonify({"error": "unauthorized"}), 403
+    
+    data = request.get_json()
+    pubkey = data.get('pubkey_ed25519')
+    admin_id = data.get('admin_id', 'unknown')
+    
+    if not pubkey:
+        return jsonify({"error": "missing pubkey_ed25519"}), 400
+    
+    success, message = revoke_key_admin(pubkey, admin_id)
+    if success:
+        return jsonify({"success": True, "message": message})
+    else:
+        return jsonify({"error": message}), 400
+
+# Agent endpoint to rotate their own key
+@app.route('/api/agent/rotate-key', methods=['POST'])
+def agent_rotate_key():
+    """Agent endpoint to rotate their own key"""
+    data = request.get_json()
+    miner_id = data.get('miner_id')
+    old_pubkey = data.get('old_pubkey_ed25519')
+    new_pubkey = data.get('new_pubkey_ed25519')
+    signature = data.get('signature')
+    
+    if not all([miner_id, old_pubkey, new_pubkey, signature]):
+        return jsonify({"error": "missing required fields"}), 400
+    
+    success, message = rotate_key_agent(miner_id, old_pubkey, new_pubkey, signature)
+    if success:
+        return jsonify({"success": True, "message": message})
+    else:
+        return jsonify({"error": message}), 400
 
 # === ANTI-DOUBLE-SPEND: Detect hardware wallet-switching ===
 def check_hardware_wallet_consistency(hardware_id, miner_wallet, conn):
