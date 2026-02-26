@@ -443,3 +443,12 @@ MIT License - Free to use, but please keep the copyright notice and attribution.
 ## Mining Status
 <!-- rustchain-mining-badge-start -->
 ![RustChain Mining Status](https://img.shields.io/endpoint?url=https://rustchain.org/api/badge/frozen-factorio-ryan&style=flat-square)<!-- rustchain-mining-badge-end -->
+
+### ARM64 (Raspberry Pi 4/5) quick validation
+
+```bash
+pip install clawrtc
+clawrtc mine --dry-run
+```
+
+Expected: all 6 hardware fingerprint checks execute on native ARM64 without architecture fallback errors.
