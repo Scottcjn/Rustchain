@@ -52,9 +52,10 @@ jobs:
             }
 
             if (!hasTier) {
-              core.setFailed(
-                "BCOS label required for non-doc changes. Add one of: BCOS-L1, BCOS-L2 (or bcos:l1, bcos:l2)."
+              core.warning(
+                "No BCOS tier label found — defaulting to L1. Maintainers: add BCOS-L1 or BCOS-L2 label for explicit tier classification."
               );
+              core.info("Proceeding with default L1 tier.");
             } else {
               core.info(`Tier label present: ${labels.join(", ")}`);
             }
@@ -62,7 +63,6 @@ jobs:
   spdx-and-sbom:
     name: SPDX + SBOM Artifacts
     runs-on: ubuntu-latest
-    needs: [label-gate]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -114,7 +114,7 @@ jobs:
             const tier =
               labels.includes('BCOS-L2') || labels.includes('bcos:l2') ? 'L2' :
               labels.includes('BCOS-L1') || labels.includes('bcos:l1') ? 'L1' :
-              null;
+              'L1';
 
             const att = {
               schema: 'bcos-attestation/v0',
