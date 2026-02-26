@@ -4,7 +4,6 @@ author: Scottcjn
 branding:
   icon: cpu
   color: blue
-
 inputs:
   wallet:
     description: RustChain wallet identifier for /api/badge/{wallet}
@@ -17,52 +16,13 @@ inputs:
     description: Shields.io badge style for the endpoint URL
     required: false
     default: flat-square
-
 runs:
   using: composite
   steps:
     - name: Update mining badge block
       shell: bash
       run: |
-        set -euo pipefail
-
-        WALLET="${{ inputs.wallet }}"
-        README="${{ inputs.readme-path }}"
-        STYLE="${{ inputs.badge-style }}"
-        BADGE_URL="https://img.shields.io/endpoint?url=https://rustchain.org/api/badge/${WALLET}&style=${STYLE}"
-        BLOCK_START="<!-- rustchain-mining-badge-start -->"
-        BLOCK_END="<!-- rustchain-mining-badge-end -->"
-        MARKDOWN="${BLOCK_START}\n![RustChain Mining Status](${BADGE_URL})${BLOCK_END}"
-
-        if [ ! -f "$README" ]; then
-          echo "README file not found: $README"
-          exit 1
-        fi
-
-        WALLET_ENV="$WALLET"
-        STYLE_ENV="$STYLE"
-        export WALLET="$WALLET_ENV"
-        export STYLE="$STYLE_ENV"
-        python3 - "$README" <<'PY'
-import sys
-from pathlib import Path
-readme = Path(sys.argv[1])
-text = readme.read_text(encoding="utf-8")
-start = "<!-- rustchain-mining-badge-start -->"
-end = "<!-- rustchain-mining-badge-end -->"
-wallet = __import__('os').environ['WALLET']
-style = __import__('os').environ.get('STYLE', 'flat-square')
-badge_url = f"https://img.shields.io/endpoint?url=https://rustchain.org/api/badge/{wallet}&style={style}"
-block = f"{start}\n![RustChain Mining Status]({badge_url}){end}"
-
-start_idx = text.find(start)
-end_idx = text.find(end)
-if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-    new = text[:start_idx] + block + text[end_idx + len(end):]
-else:
-    new = text.rstrip() + "\n\n## Mining Status\n" + block + "\n"
-
-readme.write_text(new, encoding="utf-8")
-PY
-
-        echo "Updated $README with mining badge for wallet: $WALLET"
+        export WALLET="${{ inputs.wallet }}"
+        export STYLE="${{ inputs.badge-style }}"
+        python3 "${{ github.action_path }}/update_badge.py" "${{ inputs.readme-path }}"
+        echo "Badge updated for wallet: $WALLET"
