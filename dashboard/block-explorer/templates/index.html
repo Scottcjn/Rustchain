@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RustChain Block Explorer Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#0f1220; color:#e8ecff; margin:0; }
+    .wrap { max-width:1200px; margin:20px auto; padding:0 16px; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
+    .card { background:#171b2e; padding:12px; border-radius:10px; }
+    h1,h2 { margin:10px 0; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th,td { border-bottom:1px solid #2a3050; padding:8px; text-align:left; }
+    .muted { color:#9aa6d1; }
+    .pill { background:#223; padding:2px 8px; border-radius:999px; }
+    .section { margin-top:20px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>RustChain Block Explorer Dashboard</h1>
+  <p class="muted">Data source: <span class="pill">{{ base_url }}</span> · Last refresh: {{ now_utc }}</p>
+
+  <div class="grid">
+    <div class="card"><div class="muted">Active Miners</div><div><b>{{ summary.active_miners }}</b></div></div>
+    <div class="card"><div class="muted">Current Epoch</div><div><b>{{ summary.epoch }}</b></div></div>
+    <div class="card"><div class="muted">Node Version</div><div><b>{{ summary.version }}</b></div></div>
+    <div class="card"><div class="muted">Tip Age (slots)</div><div><b>{{ summary.tip_age_slots }}</b></div></div>
+    <div class="card"><div class="muted">Uptime (s)</div><div><b>{{ summary.uptime_s }}</b></div></div>
+  </div>
+
+  <div class="section">
+    <h2>Miners</h2>
+    <table>
+      <thead><tr><th>miner_id</th><th>arch</th><th>weight</th><th>last_seen</th><th>balance</th></tr></thead>
+      <tbody>
+      {% for m in miners %}
+        <tr>
+          <td>{{ m.miner_id }}</td>
+          <td>{{ m.arch }}</td>
+          <td>{{ m.weight }}</td>
+          <td>{{ m.last_seen }}</td>
+          <td>{{ m.balance }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Epoch Rewards / Meta</h2>
+    <pre>{{ epoch | tojson(indent=2) }}</pre>
+  </div>
+
+  <div class="section">
+    <h2>Transaction History (if provided by /epoch)</h2>
+    <table>
+      <thead><tr><th>tx_hash</th><th>from</th><th>to</th><th>amount</th><th>timestamp</th></tr></thead>
+      <tbody>
+      {% for t in txs %}
+        <tr>
+          <td>{{ t.tx_hash }}</td>
+          <td>{{ t.from }}</td>
+          <td>{{ t.to }}</td>
+          <td>{{ t.amount }}</td>
+          <td>{{ t.ts }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+</body>
+</html>
