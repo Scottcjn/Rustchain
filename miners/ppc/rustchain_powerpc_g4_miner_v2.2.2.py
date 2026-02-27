@@ -6,7 +6,7 @@ Includes proper lottery checking and header submission flow
 import os, sys, json, time, hashlib, uuid, requests, statistics, subprocess, re
 from datetime import datetime
 
-NODE_URL = "http://50.28.86.131:8088"
+NODE_URL = "https://50.28.86.131"
 BLOCK_TIME = 600  # 10 minutes
 LOTTERY_CHECK_INTERVAL = 10  # Check every 10 seconds
 
