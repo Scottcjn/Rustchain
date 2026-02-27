@@ -3,7 +3,7 @@
 # Power Mac G5 Dual 2GHz - 2.0x Antiquity Bonus
 
 WALLET="ppc_g5_130_$(hostname | md5)RTC"
-RIP_URL="https://50.28.86.131"
+RIP_URL="http://50.28.86.131:8088"
 
 echo "=== RustChain G5 Miner ==="
 echo "Wallet: $WALLET"
