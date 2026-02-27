@@ -36,6 +36,8 @@ try:
 except ImportError:
     ROM_DB_AVAILABLE = False
 
+IS_WINDOWS = platform.system() == "Windows"
+
 def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict]:
     """Check 1: Clock-Skew & Oscillator Drift"""
     intervals = []
@@ -316,10 +318,44 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
 
     Updated 2026-02-21: Added cloud provider detection after
     discovering AWS t3.medium instances attempting to mine.
+    Cross-platform: Uses DMI/proc on Linux, WMI on Windows.
     """
     vm_indicators = []
+    creation_flag = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-    # --- DMI paths to check ---
+    # --- Windows: WMI-based VM detection ---
+    if IS_WINDOWS:
+        try:
+            result = subprocess.run(
+                ["wmic", "computersystem", "get", "Model,Manufacturer", "/format:list"],
+                capture_output=True, text=True, timeout=5,
+                creationflags=creation_flag
+            )
+            wmi_info = result.stdout.lower()
+            for vm in ["vmware", "virtualbox", "virtual machine", "kvm", "qemu",
+                        "xen", "hyperv", "hyper-v", "parallels", "bhyve",
+                        "amazon", "google", "microsoft corporation"]:
+                if vm in wmi_info:
+                    vm_indicators.append("wmi_computersystem:{}".format(vm))
+        except:
+            pass
+
+        # Check BIOS via WMI
+        try:
+            result = subprocess.run(
+                ["wmic", "bios", "get", "SMBIOSBIOSVersion,Manufacturer", "/format:list"],
+                capture_output=True, text=True, timeout=5,
+                creationflags=creation_flag
+            )
+            bios_info = result.stdout.lower()
+            for vm in ["vmware", "virtualbox", "qemu", "seabios", "bochs",
+                        "innotek", "xen", "amazon", "google"]:
+                if vm in bios_info:
+                    vm_indicators.append("wmi_bios:{}".format(vm))
+        except:
+            pass
+
+    # --- DMI paths to check (Linux) ---
     vm_paths = [
         "/sys/class/dmi/id/product_name",
         "/sys/class/dmi/id/sys_vendor",
@@ -429,16 +465,17 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
     except:
         pass
 
-    # --- systemd-detect-virt (if available) ---
-    try:
-        result = subprocess.run(
-            ["systemd-detect-virt"], capture_output=True, text=True, timeout=5
-        )
-        virt_type = result.stdout.strip().lower()
-        if virt_type and virt_type != "none":
-            vm_indicators.append("systemd_detect_virt:{}".format(virt_type))
-    except:
-        pass
+    # --- systemd-detect-virt (Linux only) ---
+    if not IS_WINDOWS:
+        try:
+            result = subprocess.run(
+                ["systemd-detect-virt"], capture_output=True, text=True, timeout=5
+            )
+            virt_type = result.stdout.strip().lower()
+            if virt_type and virt_type != "none":
+                vm_indicators.append("systemd_detect_virt:{}".format(virt_type))
+        except:
+            pass
 
     data = {
         "vm_indicators": vm_indicators,
