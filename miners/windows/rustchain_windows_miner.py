@@ -199,6 +199,7 @@ class RustChainMiner:
         self.fingerprint_passed = False
         self.last_update_check = 0
         self.miner_dir = Path(__file__).resolve().parent
+        self.callback = None
 
         # Run initial fingerprint check
         if FINGERPRINT_AVAILABLE:
@@ -224,10 +225,20 @@ class RustChainMiner:
 
     def start_mining(self, callback=None):
         """Start mining process"""
+        self.callback = callback
         self.mining = True
         self.mining_thread = threading.Thread(target=self._mine_loop, args=(callback,))
         self.mining_thread.daemon = True
         self.mining_thread.start()
+
+    def _emit(self, event):
+        """Emit structured event to callback if available."""
+        cb = self.callback
+        if cb:
+            try:
+                cb(event)
+            except Exception:
+                pass
 
     def stop_mining(self):
         """Stop mining"""
@@ -262,6 +273,7 @@ class RustChainMiner:
                             "accepted": self.shares_accepted,
                             "success": success
                         })
+                self._emit({"type": "heartbeat", "shares_submitted": self.shares_submitted, "shares_accepted": self.shares_accepted, "enrolled": self.enrolled, "attestation_valid_for_sec": max(0, int(self.attestation_valid_until - time.time()))})
                 time.sleep(10)
             except Exception as e:
                 if callback:
@@ -273,13 +285,17 @@ class RustChainMiner:
         now = time.time()
 
         if now >= self.attestation_valid_until - 60:
+            self._emit({"type": "attestation", "stage": "started"})
             if not self.attest():
+                self._emit({"type": "attestation", "stage": "failed"})
                 if callback:
                     callback({"type": "error", "message": "Attestation failed"})
                 return False
 
         if (now - self.last_enroll) > 3600 or not self.enrolled:
+            self._emit({"type": "enroll", "stage": "started"})
             if not self.enroll():
+                self._emit({"type": "enroll", "stage": "failed"})
                 if callback:
                     callback({"type": "error", "message": "Epoch enrollment failed"})
                 return False
@@ -416,6 +432,7 @@ class RustChainMiner:
                         print(f"   Fingerprint: FAILED (reduced rewards)", flush=True)
                     else:
                         print(f"   Fingerprint: N/A (module not available)", flush=True)
+                    self._emit({"type": "attestation", "stage": "success", "valid_for_sec": max(0, int(self.attestation_valid_until - time.time()))})
                     return True
                 else:
                     print(f"[FAIL] Rejected: {result}", flush=True)
@@ -424,6 +441,7 @@ class RustChainMiner:
         except Exception as e:
             print(f"[FAIL] Submit error: {e}", flush=True)
 
+        self._emit({"type": "attestation", "stage": "failed"})
         return False
 
     def enroll(self):
@@ -450,6 +468,7 @@ class RustChainMiner:
                     self.last_enroll = time.time()
                     weight = result.get('weight', 1.0)
                     print(f"[OK] Enrolled! Epoch: {result.get('epoch')} Weight: {weight}x", flush=True)
+                    self._emit({"type": "enroll", "stage": "success", "epoch": result.get("epoch"), "weight": weight})
                     return True
                 else:
                     print(f"[FAIL] Enroll rejected: {result}", flush=True)
@@ -457,6 +476,7 @@ class RustChainMiner:
                 print(f"[FAIL] Enroll HTTP {resp.status_code}: {resp.text[:200]}", flush=True)
         except Exception as e:
             print(f"[FAIL] Enroll error: {e}", flush=True)
+        self._emit({"type": "enroll", "stage": "failed"})
         return False
 
     def check_eligibility(self):
@@ -618,6 +638,24 @@ def run_headless(wallet_address: str, node_url: str) -> int:
             print(f"[{ts}] [share] submitted={evt.get('submitted')} accepted={evt.get('accepted')} {ok}", flush=True)
         elif t == "error":
             print(f"[{ts}] [error] {evt.get('message')}", flush=True)
+        elif t == "attestation":
+            stage = evt.get("stage")
+            if stage == "started":
+                print(f"[{ts}] [attestation] started", flush=True)
+            elif stage == "success":
+                print(f"[{ts}] [attestation] success valid_for={evt.get('valid_for_sec', 0)}s", flush=True)
+            elif stage == "failed":
+                print(f"[{ts}] [attestation] failed", flush=True)
+        elif t == "enroll":
+            stage = evt.get("stage")
+            if stage == "started":
+                print(f"[{ts}] [enroll] started", flush=True)
+            elif stage == "success":
+                print(f"[{ts}] [enroll] success epoch={evt.get('epoch')} weight={evt.get('weight')}", flush=True)
+            elif stage == "failed":
+                print(f"[{ts}] [enroll] failed", flush=True)
+        elif t == "heartbeat":
+            print(f"[{ts}] [heartbeat] enrolled={evt.get('enrolled')} attest_ttl={evt.get('attestation_valid_for_sec')}s shares={evt.get('shares_submitted')}/{evt.get('shares_accepted')}", flush=True)
 
     print("=" * 60, flush=True)
     print(f"RustChain Windows Miner v{MINER_VERSION} (HTTPS + RIP-PoA + Auto-Update)", flush=True)
