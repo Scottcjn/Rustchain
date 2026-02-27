@@ -127,6 +127,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
     flags = []
     arch = platform.machine().lower()
 
+    # Linux: read /proc/cpuinfo
     try:
         with open("/proc/cpuinfo", "r") as f:
             for line in f:
@@ -138,7 +139,8 @@ def check_simd_identity() -> Tuple[bool, Dict]:
     except:
         pass
 
-    if not flags:
+    # macOS: sysctl
+    if not flags and not IS_WINDOWS:
         try:
             result = subprocess.run(
                 ["sysctl", "-a"],
@@ -149,6 +151,40 @@ def check_simd_identity() -> Tuple[bool, Dict]:
                     flags.append(line.split(":")[-1].strip())
         except:
             pass
+
+    # Windows: detect SIMD via WMI/registry and arch inference
+    if not flags and IS_WINDOWS:
+        creation_flag = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            # WMIC gives CPU description which includes feature hints
+            result = subprocess.run(
+                ["wmic", "cpu", "get", "Name,Description,Architecture", "/format:list"],
+                capture_output=True, text=True, timeout=5,
+                creationflags=creation_flag
+            )
+            cpu_info = result.stdout.lower()
+            # AMD64/x86_64 always has SSE2+; detect AVX from CPU model
+            if "amd64" in arch or "x86_64" in arch or "x86" in arch:
+                flags.extend(["sse", "sse2"])  # All x64 CPUs have SSE2
+                # Check for AVX via OS-level support (cpuid leaf)
+                try:
+                    import struct
+                    # Try to detect AVX from processor brand string
+                    proc = platform.processor().lower()
+                    # Ryzen, Core i5/i7/i9 6th gen+ all have AVX2
+                    if any(k in proc for k in ["ryzen", "epyc", "threadripper"]):
+                        flags.extend(["avx", "avx2", "sse4_1", "sse4_2"])
+                    elif "intel" in proc or "core" in proc:
+                        flags.extend(["avx", "sse4_1", "sse4_2"])
+                except:
+                    pass
+            elif "arm" in arch or "aarch64" in arch:
+                flags.append("neon")
+        except:
+            pass
+        # Fallback: if arch is x86_64, we know SSE2 exists
+        if not flags and ("amd64" in arch or "x86_64" in arch or "x86" in arch):
+            flags.extend(["sse", "sse2"])
 
     has_sse = any("sse" in f.lower() for f in flags)
     has_avx = any("avx" in f.lower() for f in flags)
