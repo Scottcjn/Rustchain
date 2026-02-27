@@ -9,7 +9,7 @@ REPO_BASE="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners"
 CHECKSUM_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/checksums.sha256"
 INSTALL_DIR="$HOME/.rustchain"
 VENV_DIR="$INSTALL_DIR/venv"
-NODE_URL="https://50.28.86.131"
+NODE_URL="https://rustchain.org"
 SERVICE_NAME="rustchain-miner"
 VERSION="1.1.0"
 

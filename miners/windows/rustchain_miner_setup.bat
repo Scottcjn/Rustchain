@@ -52,5 +52,5 @@ echo.
 echo Miner is ready. Run:
 echo    python "%MINER_SCRIPT%"
 echo If you still get a tkinter error, run headless:
-echo    python "%MINER_SCRIPT%" --headless --wallet YOUR_WALLET_ID --node https://50.28.86.131
+echo    python "%MINER_SCRIPT%" --headless --wallet YOUR_WALLET_ID --node https://rustchain.org
 echo You can create a scheduled task or shortcut to keep it running.

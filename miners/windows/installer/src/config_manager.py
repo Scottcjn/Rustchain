@@ -19,7 +19,7 @@ DEFAULT_CONFIG = {
     "wallet_name": "",
     "auto_start": False,
     "minimize_to_tray": True,
-    "node_url": "https://50.28.86.131",
+    "node_url": "https://rustchain.org",
     "log_level": "INFO",
     "version": "1.0.0"
 }

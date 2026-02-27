@@ -60,7 +60,7 @@ logging.basicConfig(
 logger = logging.getLogger("RustChain")
 
 # Configuration
-RUSTCHAIN_API = CONFIG.node_url if CONFIG else "https://50.28.86.131"
+RUSTCHAIN_API = CONFIG.node_url if CONFIG else "https://rustchain.org"
 WALLET_DIR = Path.home() / ".rustchain"
 CONFIG_FILE = WALLET_DIR / "config.json"
 WALLET_FILE = WALLET_DIR / "wallet.json"
