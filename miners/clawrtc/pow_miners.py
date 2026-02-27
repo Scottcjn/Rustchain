@@ -17,6 +17,12 @@ Supported chains:
   - Alephium (Blake3) — CPU/GPU mineable
   - Verus (VerusHash 2.2) — CPU mineable
   - Neoxa (KawPow) — GPU mineable
+  - DERO (AstroBWT) — CPU mineable
+  - Raptoreum (GhostRider) — CPU mineable
+  - Wownero (RandomX) — CPU mineable
+  - Salvium (RandomX) — CPU mineable
+  - Conceal (CryptoNight-GPU) — GPU mineable
+  - Scala (RandomX) — CPU mineable
   - Generic — any coin with HTTP stats API
 
 Bonus multipliers (stacking with hardware weight):
@@ -127,6 +133,67 @@ KNOWN_MINERS = {
         "process_names": ["neoxad", "trex", "gminer", "nbminer"],
         "node_info_path": "/",
         "pool_api_templates": {},
+    },
+    "dero": {
+        "display": "DERO (AstroBWT)",
+        "algo": "astrobwt",
+        "node_ports": [10102, 20206],
+        "process_names": ["derod", "dero-miner", "dero-stratum-miner", "astrobwt-miner"],
+        "node_info_path": "/json_rpc",
+        "pool_api_templates": {
+            "dero-node": "http://127.0.0.1:10102/json_rpc",
+        },
+    },
+    "raptoreum": {
+        "display": "Raptoreum (GhostRider)",
+        "algo": "ghostrider",
+        "node_ports": [10225, 10226],
+        "process_names": ["raptoreumd", "cpuminer", "cpuminer-gr", "ghostrider"],
+        "node_info_path": "/",
+        "pool_api_templates": {
+            "flockpool": "https://flockpool.com/api/v1/wallets/{address}",
+            "suprnova": "https://rtm.suprnova.cc/api/wallets/{address}",
+        },
+    },
+    "wownero": {
+        "display": "Wownero (RandomX)",
+        "algo": "randomx",
+        "node_ports": [34568],
+        "process_names": ["wownerod", "xmrig", "wownero-wallet"],
+        "node_info_path": "/json_rpc",
+        "pool_api_templates": {
+            "herominers": "https://wownero.herominers.com/api/stats_address?address={address}",
+        },
+    },
+    "salvium": {
+        "display": "Salvium (RandomX)",
+        "algo": "randomx",
+        "node_ports": [19734],
+        "process_names": ["salviumd", "xmrig", "salvium-wallet"],
+        "node_info_path": "/json_rpc",
+        "pool_api_templates": {
+            "herominers": "https://salvium.herominers.com/api/stats_address?address={address}",
+        },
+    },
+    "conceal": {
+        "display": "Conceal (CryptoNight-GPU)",
+        "algo": "cryptonight-gpu",
+        "node_ports": [16000],
+        "process_names": ["conceald", "xmrig", "conceal-wallet"],
+        "node_info_path": "/json_rpc",
+        "pool_api_templates": {
+            "herominers": "https://conceal.herominers.com/api/stats_address?address={address}",
+        },
+    },
+    "scala": {
+        "display": "Scala (RandomX)",
+        "algo": "randomx",
+        "node_ports": [11812],
+        "process_names": ["scalad", "xmrig", "scala-wallet"],
+        "node_info_path": "/json_rpc",
+        "pool_api_templates": {
+            "herominers": "https://scala.herominers.com/api/stats_address?address={address}",
+        },
     },
 }
 
@@ -327,7 +394,7 @@ def _probe_node_rpc(chain: str, info: Dict, nonce: str) -> Optional[Dict]:
                         ).hexdigest(),
                     }
 
-            elif chain in ("monero", "zephyr"):
+            elif chain in ("monero", "zephyr", "wownero", "salvium", "conceal", "scala"):
                 resp = requests.post(f"{url}/json_rpc", json={
                     "jsonrpc": "2.0", "method": "get_info", "id": 1,
                 }, timeout=3)
@@ -338,6 +405,39 @@ def _probe_node_rpc(chain: str, info: Dict, nonce: str) -> Optional[Dict]:
                         "chain_height": r.get("height", 0),
                         "difficulty": r.get("difficulty", 0),
                         "tx_pool_size": r.get("tx_pool_size", 0),
+                        "proof_hash": hashlib.sha256(
+                            f"{nonce}:{json.dumps(r, sort_keys=True)}".encode()
+                        ).hexdigest(),
+                    }
+
+            elif chain == "dero":
+                resp = requests.post(f"{url}/json_rpc", json={
+                    "jsonrpc": "2.0", "method": "DERO.GetInfo", "id": 1,
+                }, timeout=3)
+                if resp.status_code == 200:
+                    r = resp.json().get("result", {})
+                    return {
+                        "endpoint": f"localhost:{port}",
+                        "chain_height": r.get("topoheight", 0),
+                        "stableheight": r.get("stableheight", 0),
+                        "network_hashrate": r.get("difficulty", 0),
+                        "proof_hash": hashlib.sha256(
+                            f"{nonce}:{json.dumps(r, sort_keys=True)}".encode()
+                        ).hexdigest(),
+                    }
+
+            elif chain == "raptoreum":
+                resp = requests.post(url, json={
+                    "jsonrpc": "1.0", "method": "getmininginfo",
+                    "params": [], "id": 1,
+                }, timeout=3)
+                if resp.status_code == 200:
+                    r = resp.json().get("result", {})
+                    return {
+                        "endpoint": f"localhost:{port}",
+                        "chain_height": r.get("blocks", 0),
+                        "network_hashrate": r.get("networkhashps", 0),
+                        "difficulty": r.get("difficulty", 0),
                         "proof_hash": hashlib.sha256(
                             f"{nonce}:{json.dumps(r, sort_keys=True)}".encode()
                         ).hexdigest(),
