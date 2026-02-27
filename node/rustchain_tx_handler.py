@@ -253,7 +253,10 @@ class TransactionPool:
         if tx.nonce != expected_nonce:
             return False, f"Invalid nonce: expected {expected_nonce}, got {tx.nonce}"
 
-        # 4. Check balance
+        # 4. Validate amount and check balance
+        if tx.amount_urtc <= 0:
+            return False, "Invalid amount: must be > 0"
+
         available = self.get_available_balance(tx.from_addr)
         if tx.amount_urtc > available:
             return False, f"Insufficient balance: have {available}, need {tx.amount_urtc}"
