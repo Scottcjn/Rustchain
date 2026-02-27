@@ -7,6 +7,11 @@ import sqlite3
 import time
 from typing import Any, Dict, Tuple
 
+try:
+    from pow_adapters import validate_chain_proof
+except ImportError:
+    from node.pow_adapters import validate_chain_proof
+
 POW_BONUS = {
     "node_rpc": 1.5,
     "pool_account": 1.3,
@@ -62,6 +67,10 @@ def validate_pow_proof_payload(
 
     if expires_at > now_ts + 900:
         return False, {"reason": "proof_ttl_too_long", "bonus_multiplier": 1.0, "proof_type": proof_type}
+
+    chain_ok, chain_reason = validate_chain_proof(proof)
+    if not chain_ok:
+        return False, {"reason": f"chain_adapter_failed:{chain_reason}", "bonus_multiplier": 1.0, "proof_type": proof_type, "chain": proof.get("chain")}
 
     proof_nonce = proof.get("nonce")
     if nonce and proof_nonce and str(proof_nonce) != str(nonce):
