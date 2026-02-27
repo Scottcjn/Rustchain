@@ -77,7 +77,7 @@ curl -sk https://50.28.86.131/epoch
 
 Before opening a docs PR, please verify:
 
-- [ ] Instructions work exactly as written (commands are copy-pasteable).
+- [ ] Instructions work exactly as written (commands are copy-pastable).
 - [ ] OS/architecture assumptions are explicit (Linux/macOS/Windows).
 - [ ] New terms are defined at first use.
 - [ ] Broken links are removed or corrected.
