@@ -237,9 +237,19 @@ class ErgoClient:
 
         return -1  # Transaction not found
 
-    def verify_anchor(self, tx_id: str, commitment: AnchorCommitment) -> Tuple[bool, str]:
+    def verify_anchor(
+        self,
+        tx_id: str,
+        commitment: AnchorCommitment,
+        min_confirmations: int = 1,
+    ) -> Tuple[bool, str]:
         """
-        Verify an anchor transaction contains the expected commitment.
+        Verify an anchor transaction contains the expected commitment and context.
+
+        Hardening:
+        - Require minimum confirmations (prevents mempool-only/reorg-prone proofs)
+        - Validate R5 commitment hash
+        - When present, enforce R4 (height) and R6 (timestamp) consistency
 
         Returns (is_valid, error_message)
         """
@@ -247,20 +257,40 @@ class ErgoClient:
         if not tx:
             return False, "Transaction not found"
 
-        # Check outputs for commitment
+        confirmations = self.get_transaction_confirmations(tx_id)
+        if confirmations < int(min_confirmations):
+            return False, f"Insufficient confirmations: {confirmations} < {int(min_confirmations)}"
+
+        expected_r5 = f"0e40{commitment.commitment_hash}"
+        expected_r4 = f"05{int(commitment.rustchain_height):016x}"
+        expected_r6 = f"05{int(commitment.timestamp):016x}"
+
+        def _reg_value(registers: Dict, key: str) -> str:
+            raw = registers.get(key, "")
+            if isinstance(raw, dict):
+                return raw.get("serializedValue", "") or ""
+            if isinstance(raw, str):
+                return raw
+            return ""
+
+        # Check outputs for commitment and associated context fields
         for output in tx.get("outputs", []):
             registers = output.get("additionalRegisters", {})
+            r5 = _reg_value(registers, "R5")
+            if r5 != expected_r5:
+                continue
 
-            # Check R5 for commitment hash
-            r5 = registers.get("R5", {}).get("serializedValue", "")
-            if r5:
-                # Remove prefix (0e40 = Coll[Byte] with 64 bytes)
-                if r5.startswith("0e40"):
-                    stored_hash = r5[4:]
-                    if stored_hash == commitment.commitment_hash:
-                        return True, ""
+            r4 = _reg_value(registers, "R4")
+            if r4 and r4 != expected_r4:
+                continue
 
-        return False, "Commitment not found in transaction outputs"
+            r6 = _reg_value(registers, "R6")
+            if r6 and r6 != expected_r6:
+                continue
+
+            return True, ""
+
+        return False, "Commitment/context mismatch in transaction outputs"
 
 
 # =============================================================================
