@@ -116,6 +116,39 @@ class TestAttestNonceReplay(unittest.TestCase):
             self.assertFalse(ok)
             self.assertEqual(err, "challenge_invalid")
 
+
+    def test_challenge_bound_to_miner_rejects_relayed_submit(self):
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO nonces (nonce, expires_at, miner_id) VALUES (?, ?, ?)",
+                ("challenge-bound", 1100, "miner-A"),
+            )
+
+            ok, err, _ = self.mod.attest_validate_challenge(
+                conn,
+                "challenge-bound",
+                miner="miner-B",
+                now_ts=1000,
+            )
+            self.assertFalse(ok)
+            self.assertEqual(err, "challenge_mismatch")
+
+    def test_challenge_bound_to_miner_accepts_matching_submit(self):
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO nonces (nonce, expires_at, miner_id) VALUES (?, ?, ?)",
+                ("challenge-ok", 1100, "miner-A"),
+            )
+
+            ok, err, _ = self.mod.attest_validate_challenge(
+                conn,
+                "challenge-ok",
+                miner="miner-A",
+                now_ts=1000,
+            )
+            self.assertTrue(ok)
+            self.assertIsNone(err)
+
     def test_expired_entries_cleanup(self):
         with self._conn() as conn:
             conn.execute(

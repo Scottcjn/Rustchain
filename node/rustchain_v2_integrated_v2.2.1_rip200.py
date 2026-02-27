@@ -736,6 +736,7 @@ def attest_ensure_tables(conn) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_nonces_expires_at ON nonces(expires_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_nonces_miner_id ON nonces(miner_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_used_nonces_expires_at ON used_nonces(expires_at)")
 
 
@@ -788,19 +789,24 @@ def extract_attestation_timestamp(data: dict, report: dict, nonce: Optional[str]
     return None
 
 
-def attest_validate_challenge(conn, challenge: Optional[str], now_ts: Optional[int] = None):
+def attest_validate_challenge(conn, challenge: Optional[str], miner: Optional[str] = None, now_ts: Optional[int] = None):
     if not challenge:
         return True, None, None
 
     now_ts = int(now_ts if now_ts is not None else time.time())
-    row = conn.execute("SELECT expires_at FROM nonces WHERE nonce = ?", (challenge,)).fetchone()
+    row = conn.execute("SELECT expires_at, miner_id FROM nonces WHERE nonce = ?", (challenge,)).fetchone()
     if not row:
         return False, "challenge_invalid", "challenge nonce not found"
 
     expires_at = int(row[0] or 0)
+    bound_miner = (row[1] or "").strip()
     if expires_at < now_ts:
         conn.execute("DELETE FROM nonces WHERE nonce = ?", (challenge,))
         return False, "challenge_expired", "challenge nonce has expired"
+
+    if bound_miner and miner and bound_miner != miner:
+        conn.execute("DELETE FROM nonces WHERE nonce = ?", (challenge,))
+        return False, "challenge_mismatch", "challenge nonce bound to different miner"
 
     conn.execute("DELETE FROM nonces WHERE nonce = ?", (challenge,))
     return True, None, None
@@ -1916,20 +1922,24 @@ def museum_assets(filename: str):
 
 @app.route('/attest/challenge', methods=['GET', 'POST'])
 def get_challenge():
-    """Issue challenge for hardware attestation"""
+    """Issue challenge for hardware attestation."""
     now_ts = int(time.time())
     nonce = secrets.token_hex(32)
     expires = now_ts + ATTEST_CHALLENGE_TTL_SECONDS
 
+    req_data = request.get_json(silent=True) if request.method == 'POST' else {}
+    miner = (request.args.get('miner') or (req_data or {}).get('miner') or (req_data or {}).get('miner_id') or '').strip()
+
     with sqlite3.connect(DB_PATH) as c:
         attest_ensure_tables(c)
         attest_cleanup_expired(c, now_ts)
-        c.execute("INSERT INTO nonces (nonce, expires_at) VALUES (?, ?)", (nonce, expires))
+        c.execute("INSERT INTO nonces (nonce, expires_at, miner_id) VALUES (?, ?, ?)", (nonce, expires, miner or None))
 
     return jsonify({
         "nonce": nonce,
         "expires_at": expires,
-        "server_time": now_ts
+        "server_time": now_ts,
+        "miner_bound": bool(miner)
     })
 
 
@@ -2053,7 +2063,7 @@ def submit_attestation():
         attest_cleanup_expired(conn, now_ts)
 
         if challenge:
-            challenge_ok, challenge_error, challenge_message = attest_validate_challenge(conn, challenge, now_ts=now_ts)
+            challenge_ok, challenge_error, challenge_message = attest_validate_challenge(conn, challenge, miner=miner, now_ts=now_ts)
             if not challenge_ok:
                 return jsonify({
                     "ok": False,
