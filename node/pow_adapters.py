@@ -72,3 +72,30 @@ def validate_profit_switching(proof: Dict[str, Any]) -> Tuple[bool, str]:
         return False, "missing_observed_at"
 
     return True, "ok"
+
+
+def validate_dero_astrobwt(proof: Dict[str, Any]) -> Tuple[bool, str]:
+    """Validate minimal DERO AstroBWT proof schema."""
+    if (proof.get("chain") or "").lower() != "dero":
+        return False, "chain_mismatch"
+
+    algo = (proof.get("algorithm") or "").lower()
+    if algo not in {"astrobwt", "astrobwtv3", "astrobwtv3.5"}:
+        return False, "unsupported_algorithm"
+
+    worker = proof.get("worker")
+    if not isinstance(worker, str) or len(worker.strip()) < 2:
+        return False, "missing_worker"
+
+    proof_blob = proof.get("proof_blob") or {}
+    if not isinstance(proof_blob, dict):
+        return False, "invalid_proof_blob"
+
+    block_hash = proof_blob.get("block_hash")
+    share_hash = proof_blob.get("share_hash")
+    if not _is_hex(str(block_hash or ""), min_len=16):
+        return False, "invalid_block_hash"
+    if not _is_hex(str(share_hash or ""), min_len=16):
+        return False, "invalid_share_hash"
+
+    return True, "ok"
