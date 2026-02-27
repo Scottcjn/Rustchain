@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-RustChain Local x86 Miner - Modern Ryzen
-With RIP-PoA Hardware Fingerprint Attestation + Serial Binding v2.0
+RustChain Linux Miner
+With RIP-PoA Hardware Fingerprint Attestation + Serial Binding v2.1
+Supports x86_64 and ARM64 (aarch64) Linux hosts.
 """
 import warnings
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
@@ -19,6 +20,16 @@ except ImportError:
 
 NODE_URL = "https://50.28.86.131"  # Use HTTPS via nginx
 BLOCK_TIME = 600  # 10 minutes
+
+
+def detect_family_arch(machine: str):
+    m = (machine or "").lower()
+    if m in ("aarch64", "arm64") or m.startswith("arm"):
+        return "arm", "arm64"
+    if m in ("x86_64", "amd64"):
+        return "x86", "modern"
+    return "unknown", m or "unknown"
+
 
 def get_linux_serial():
     """Get hardware serial number for Linux systems"""
@@ -59,12 +70,13 @@ class LocalMiner:
 
         self.serial = get_linux_serial()
         print("="*70)
-        print("RustChain Local Miner - HP Victus Ryzen 5 8645HS")
+        print("RustChain Linux Miner (x86_64/ARM64)")
         print("RIP-PoA Hardware Fingerprint + Serial Binding v2.0")
         print("="*70)
         print(f"Node: {self.node_url}")
         print(f"Wallet: {self.wallet}")
         print(f"Serial: {self.serial}")
+        print(f"Host Arch: {platform.machine()}")
         print("="*70)
 
         # Run initial fingerprint check
@@ -90,7 +102,7 @@ class LocalMiner:
             self.fingerprint_data = {"error": str(e), "all_passed": False}
 
     def _gen_wallet(self):
-        data = f"ryzen5-{uuid.uuid4().hex}-{time.time()}"
+        data = f"linux-{platform.machine()}-{uuid.uuid4().hex}-{time.time()}"
         return hashlib.sha256(data.encode()).hexdigest()[:38] + "RTC"
 
     def _run_cmd(self, cmd):
@@ -170,12 +182,14 @@ class LocalMiner:
 
     def _get_hw_info(self):
         """Collect hardware info"""
+        machine = platform.machine()
+        family, arch = detect_family_arch(machine)
         hw = {
             "platform": platform.system(),
-            "machine": platform.machine(),
+            "machine": machine,
             "hostname": socket.gethostname(),
-            "family": "x86",
-            "arch": "modern",  # Less than 10 years old
+            "family": family,
+            "arch": arch,
             "serial": get_linux_serial()  # Hardware serial for v2 binding
         }
 
@@ -231,7 +245,7 @@ class LocalMiner:
         # Submit attestation with fingerprint data
         attestation = {
             "miner": self.wallet,
-            "miner_id": f"ryzen5-{self.hw_info['hostname']}",
+            "miner_id": f"{self.hw_info['family']}-{self.hw_info['hostname']}",
             "nonce": nonce,
             "report": {
                 "nonce": nonce,
@@ -244,7 +258,7 @@ class LocalMiner:
             "device": {
                 "family": self.hw_info["family"],
                 "arch": self.hw_info["arch"],
-                "model": "AMD Ryzen 5 8645HS",
+                "model": self.hw_info.get("cpu", platform.machine()),
                 "cpu": self.hw_info["cpu"],
                 "cores": self.hw_info["cores"],
                 "memory_gb": self.hw_info["memory_gb"],
@@ -313,7 +327,7 @@ class LocalMiner:
 
         payload = {
             "miner_pubkey": self.wallet,
-            "miner_id": f"ryzen5-{self.hw_info['hostname']}",
+            "miner_id": f"{self.hw_info['family']}-{self.hw_info['hostname']}",
             "device": {
                 "family": self.hw_info["family"],
                 "arch": self.hw_info["arch"]
