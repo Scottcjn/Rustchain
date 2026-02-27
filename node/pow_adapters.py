@@ -45,3 +45,30 @@ def validate_chain_proof(proof: Dict[str, Any]) -> Tuple[bool, str]:
     if chain == "ergo":
         return validate_ergo_autolykos2(proof)
     return True, "no_chain_adapter"
+
+
+def validate_profit_switching(proof: Dict[str, Any]) -> Tuple[bool, str]:
+    """Validate NiceHash/MoneroOcean-like profit-switching payload."""
+    provider = (proof.get("provider") or "").strip().lower()
+    if provider not in {"nicehash", "moneroocean", "profit_switching"}:
+        return False, "unsupported_provider"
+
+    worker = proof.get("worker")
+    if not isinstance(worker, str) or len(worker.strip()) < 2:
+        return False, "missing_worker"
+
+    runtime = proof.get("runtime") or {}
+    if not isinstance(runtime, dict):
+        return False, "invalid_runtime"
+
+    algo = (runtime.get("algorithm") or "").strip().lower()
+    coin = (runtime.get("coin") or "").strip().lower()
+    if not algo and not coin:
+        return False, "missing_algo_or_coin"
+
+    # small anti-cheat freshness guard (epoch seconds)
+    observed_at = runtime.get("observed_at")
+    if not isinstance(observed_at, int):
+        return False, "missing_observed_at"
+
+    return True, "ok"

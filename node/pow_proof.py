@@ -72,6 +72,14 @@ def validate_pow_proof_payload(
     if not chain_ok:
         return False, {"reason": f"chain_adapter_failed:{chain_reason}", "bonus_multiplier": 1.0, "proof_type": proof_type, "chain": proof.get("chain")}
 
+    # profit-switching freshness check
+    chain = (proof.get("chain") or "").strip().lower()
+    if chain in {"nicehash", "moneroocean", "profit-switching", "profit_switching"}:
+        rt = proof.get("runtime") or {}
+        observed_at = int(rt.get("observed_at") or 0)
+        if observed_at <= 0 or observed_at < now_ts - 900:
+            return False, {"reason": "stale_profit_switching_runtime", "bonus_multiplier": 1.0, "proof_type": proof_type, "chain": chain}
+
     proof_nonce = proof.get("nonce")
     if nonce and proof_nonce and str(proof_nonce) != str(nonce):
         return False, {"reason": "nonce_binding_failed", "bonus_multiplier": 1.0, "proof_type": proof_type}
