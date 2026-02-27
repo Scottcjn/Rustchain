@@ -1,8 +1,6 @@
 name: RustChain Mining Status Badge
 
 on:
-  schedule:
-    - cron: '0 12 * * *'
   workflow_dispatch:
     inputs:
       wallet:
@@ -11,10 +9,10 @@ on:
         default: 'frozen-factorio-ryan'
 
 jobs:
-  update-badge:
+  verify-badge:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Checkout
@@ -32,20 +30,3 @@ jobs:
             echo "Badge endpoint not deployed or unreachable yet"
             echo "Response: $RESPONSE"
           fi
-
-      - name: Update mining badge in README
-        uses: ./.github/actions/mining-status-badge
-        with:
-          wallet: ${{ github.event.inputs.wallet || 'frozen-factorio-ryan' }}
-          readme-path: README.md
-          badge-style: flat-square
-
-      - name: Commit badge update
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add README.md
-          git diff --cached --quiet || (
-            git commit -m "docs: refresh RustChain mining status badge" && \
-            git push
-          )
