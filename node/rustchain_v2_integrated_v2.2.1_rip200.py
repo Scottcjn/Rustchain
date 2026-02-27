@@ -15,6 +15,11 @@ try:
 except ImportError:
     from node.payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
 
+try:
+    from pow_proof import ensure_pow_tables, validate_pow_proof_payload, record_pow_proof
+except ImportError:
+    from node.pow_proof import ensure_pow_tables, validate_pow_proof_payload, record_pow_proof
+
 # Hardware Binding v2.0 - Anti-Spoof with Entropy Validation
 try:
     from hardware_binding_v2 import bind_hardware_v2, extract_entropy_profile
@@ -967,6 +972,9 @@ def init_db():
                 last_attestation INTEGER
             )
         """)
+
+        # Dual-mining PoW proof table (Bounty #453)
+        ensure_pow_tables(c)
 
         # Governance tables (RIP-0142)
         c.execute("""
@@ -2160,6 +2168,21 @@ def submit_attestation():
     if macs:
         record_macs(miner, macs)
 
+    # Dual-mining PoW proof validation (Bounty #453)
+    pow_bonus_multiplier = 1.0
+    pow_validation = {"reason": "missing_pow_proof", "bonus_multiplier": 1.0}
+    pow_proof = data.get("pow_proof") or {}
+    pow_valid, pow_validation = validate_pow_proof_payload(pow_proof, nonce=nonce, now_ts=now_ts)
+    try:
+        with sqlite3.connect(DB_PATH) as pow_conn:
+            record_pow_proof(pow_conn, miner_id=miner, validation=pow_validation, proof=pow_proof, status="accepted" if pow_valid else "rejected")
+            pow_conn.commit()
+    except Exception as pow_err:
+        app.logger.warning(f"[POW_PROOF] record failed for {miner[:20]}...: {pow_err}")
+
+    if pow_valid and fingerprint_passed:
+        pow_bonus_multiplier = float(pow_validation.get("bonus_multiplier") or 1.0)
+
     # AUTO-ENROLL: Automatically enroll miner in current epoch on successful attestation
     # This eliminates the need for miners to make a separate POST /epoch/enroll call
     try:
@@ -2172,7 +2195,7 @@ def submit_attestation():
         if not fingerprint_passed:
             enroll_weight = 0.000000001
         else:
-            enroll_weight = hw_weight
+            enroll_weight = hw_weight * pow_bonus_multiplier
         
         miner_id = data.get("miner_id", miner)
         
@@ -2225,6 +2248,9 @@ def submit_attestation():
         "device": device,
         "fingerprint_passed": fingerprint_passed,
         "fingerprint_reason": fingerprint_reason,
+        "pow_bonus_multiplier": pow_bonus_multiplier,
+        "pow_proof_reason": pow_validation.get("reason"),
+        "pow_proof_type": pow_validation.get("proof_type"),
         "macs_recorded": len(macs) if macs else 0
     })
 
