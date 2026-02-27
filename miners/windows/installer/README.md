@@ -66,14 +66,14 @@ rustchain-installer/
 
 ### Failure Recovery
 1. **Miner won't start:** Check `%APPDATA%\RustChain\logs\miner.log` for error messages.
-2. **"Node unreachable":** Verify your internet connection and ensure `node_url` in `config.json` is set to `https://50.28.86.131`.
+2. **"Node unreachable":** Verify your internet connection and ensure `node_url` in `config.json` is set to `https://rustchain.org`.
 3. **Hardware Fingerprint Failed:** Ensure you are running on real hardware. Virtual machines and emulators are restricted.
 
 ---
 
 ## Technical Notes
 
-- **Network:** Default node is `https://50.28.86.131`.
+- **Network:** Default node is `https://rustchain.org`.
 - **Security:** TLS verification is currently set to `verify=False` to support the node's self-signed certificate.
 - **Builds:** Automated Windows builds are handled via GitHub Actions (see `.github/workflows/windows-build.yml`).
 

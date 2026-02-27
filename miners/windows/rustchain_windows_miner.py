@@ -34,7 +34,7 @@ from pathlib import Path
 import argparse
 
 # Configuration
-RUSTCHAIN_API = "http://50.28.86.131:8088"
+RUSTCHAIN_API = "https://rustchain.org"
 WALLET_DIR = Path.home() / ".rustchain"
 CONFIG_FILE = WALLET_DIR / "config.json"
 WALLET_FILE = WALLET_DIR / "wallet.json"
