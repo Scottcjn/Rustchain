@@ -2034,6 +2034,22 @@ def submit_attestation():
     signals = data.get('signals', {})
     fingerprint = data.get('fingerprint', {})  # NEW: Extract fingerprint
 
+    # Focused PoW proof verification (server-side, do not trust client claims)
+    pow_payload = data.get('pow_proof')
+    pow_verified = False
+    pow_result = {}
+    if pow_payload:
+        ok_pow, pow_result, pow_err = validate_pow_proof(pow_payload, miner_id=miner or '')
+        if not ok_pow:
+            return jsonify({
+                "ok": False,
+                "error": "pow_proof_invalid",
+                "message": pow_err,
+                "details": pow_result,
+                "code": "POW_PROOF_INVALID"
+            }), 400
+        pow_verified = True
+
     # Basic validation
     if not miner:
         miner = f"anon_{secrets.token_hex(8)}"
@@ -2225,7 +2241,9 @@ def submit_attestation():
         "device": device,
         "fingerprint_passed": fingerprint_passed,
         "fingerprint_reason": fingerprint_reason,
-        "macs_recorded": len(macs) if macs else 0
+        "macs_recorded": len(macs) if macs else 0,
+        "pow_verified": pow_verified,
+        "pow_result": pow_result
     })
 
 # ============= EPOCH ENDPOINTS =============
