@@ -107,7 +107,7 @@ except ImportError:
     sys.exit(1)
 
 # Configuration
-NODE_URL = "https://50.28.86.131"
+NODE_URL = "https://rustchain.org"
 WALLET_FILE = os.path.expanduser("~/.rustchain_wallet")
 
 class RustChainWallet:

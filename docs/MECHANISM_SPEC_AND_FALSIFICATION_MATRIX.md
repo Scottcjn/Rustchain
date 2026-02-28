@@ -35,9 +35,9 @@ If any "Fail condition" occurs, the corresponding claim is falsified.
 
 | Claim | Mechanism Under Test | How to Test | Pass Condition | Fail Condition |
 |---|---|---|---|---|
-| C1: Node health/status is deterministic and machine-readable | Health endpoint | `curl -sk https://50.28.86.131/health \| jq .` | JSON response with `ok=true`, `version`, and runtime fields | Endpoint missing, malformed, or non-deterministic health state |
-| C2: Epoch state is explicit and observable | Epoch endpoint | `curl -sk https://50.28.86.131/epoch \| jq .` | Returns epoch/slot/pot fields and advances over time | No epoch data or inconsistent epoch progression |
-| C3: Miner enrollment + multipliers are transparent | Miner list endpoint | `curl -sk https://50.28.86.131/api/miners \| jq .` | Active miners listed with hardware fields and `antiquity_multiplier` | Missing/opaque miner state or absent multiplier disclosure |
+| C1: Node health/status is deterministic and machine-readable | Health endpoint | `curl -sk https://rustchain.org/health \| jq .` | JSON response with `ok=true`, `version`, and runtime fields | Endpoint missing, malformed, or non-deterministic health state |
+| C2: Epoch state is explicit and observable | Epoch endpoint | `curl -sk https://rustchain.org/epoch \| jq .` | Returns epoch/slot/pot fields and advances over time | No epoch data or inconsistent epoch progression |
+| C3: Miner enrollment + multipliers are transparent | Miner list endpoint | `curl -sk https://rustchain.org/api/miners \| jq .` | Active miners listed with hardware fields and `antiquity_multiplier` | Missing/opaque miner state or absent multiplier disclosure |
 | C4: Signed transfer replay is blocked | Nonce replay protection | Send the same signed payload (same nonce/signature) to `/wallet/transfer/signed` twice | First request accepted; second request rejected as replay/duplicate | Same signed payload executes twice |
 | C5: Signature checks are enforced | Signature verification | Submit intentionally invalid signature to `/wallet/transfer/signed` | Transfer rejected with validation error | Invalid signature accepted and state mutates |
 | C6: Cross-node reads can be compared for drift | API consistency | Compare `/health`, `/epoch`, `/api/miners` across live nodes (131, 153, 245) | Differences stay within expected propagation window and reconcile | Persistent divergence with no reconciliation |

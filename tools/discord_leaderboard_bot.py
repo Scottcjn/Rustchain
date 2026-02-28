@@ -175,7 +175,7 @@ def run_once(args):
 
 def main():
     p = argparse.ArgumentParser(description="Post RustChain leaderboard to Discord webhook.")
-    p.add_argument("--node", default="https://50.28.86.131", help="RustChain node base URL")
+    p.add_argument("--node", default="https://rustchain.org", help="RustChain node base URL")
     p.add_argument("--webhook-url", default="", help="Discord webhook URL")
     p.add_argument("--top-n", type=int, default=10, help="Top N miners to include")
     p.add_argument("--timeout", type=float, default=10.0, help="HTTP timeout seconds")

@@ -19,35 +19,35 @@ class TestRustChainClient:
 
     def test_init_with_defaults(self):
         """Test client initialization with default parameters"""
-        client = RustChainClient("https://50.28.86.131")
-        assert client.base_url == "https://50.28.86.131"
+        client = RustChainClient("https://rustchain.org")
+        assert client.base_url == "https://rustchain.org"
         assert client.verify_ssl is True
         assert client.timeout == 30
         client.close()
 
     def test_init_without_ssl_verification(self):
         """Test client initialization without SSL verification"""
-        client = RustChainClient("https://50.28.86.131", verify_ssl=False)
+        client = RustChainClient("https://rustchain.org", verify_ssl=False)
         assert client.verify_ssl is False
         assert client.session.verify is False
         client.close()
 
     def test_init_with_custom_timeout(self):
         """Test client initialization with custom timeout"""
-        client = RustChainClient("https://50.28.86.131", timeout=60)
+        client = RustChainClient("https://rustchain.org", timeout=60)
         assert client.timeout == 60
         client.close()
 
     def test_init_strips_trailing_slash(self):
         """Test that trailing slash is stripped from base URL"""
-        client = RustChainClient("https://50.28.86.131/")
-        assert client.base_url == "https://50.28.86.131"
+        client = RustChainClient("https://rustchain.org/")
+        assert client.base_url == "https://rustchain.org"
         client.close()
 
     def test_context_manager(self):
         """Test client as context manager"""
-        with RustChainClient("https://50.28.86.131") as client:
-            assert client.base_url == "https://50.28.86.131"
+        with RustChainClient("https://rustchain.org") as client:
+            assert client.base_url == "https://rustchain.org"
         # Session should be closed after exiting context
 
 
@@ -67,7 +67,7 @@ class TestHealthEndpoint:
         mock_response.raise_for_status = Mock()
         mock_request.return_value = mock_response
 
-        with RustChainClient("https://50.28.86.131") as client:
+        with RustChainClient("https://rustchain.org") as client:
             health = client.health()
 
         assert health["ok"] is True
@@ -84,7 +84,7 @@ class TestHealthEndpoint:
         mock_request.side_effect = requests.exceptions.ConnectionError("Failed to connect")
 
         with pytest.raises(ConnectionError) as exc_info:
-            with RustChainClient("https://50.28.86.131") as client:
+            with RustChainClient("https://rustchain.org") as client:
                 client.health()
 
         assert "Failed to connect" in str(exc_info.value)
@@ -107,7 +107,7 @@ class TestEpochEndpoint:
         mock_response.raise_for_status = Mock()
         mock_request.return_value = mock_response
 
-        with RustChainClient("https://50.28.86.131") as client:
+        with RustChainClient("https://rustchain.org") as client:
             epoch = client.epoch()
 
         assert epoch["epoch"] == 74
@@ -143,7 +143,7 @@ class TestMinersEndpoint:
         mock_response.raise_for_status = Mock()
         mock_request.return_value = mock_response
 
-        with RustChainClient("https://50.28.86.131") as client:
+        with RustChainClient("https://rustchain.org") as client:
             miners = client.miners()
 
         assert len(miners) == 2
@@ -158,7 +158,7 @@ class TestMinersEndpoint:
         mock_response.raise_for_status = Mock()
         mock_request.return_value = mock_response
 
-        with RustChainClient("https://50.28.86.131") as client:
+        with RustChainClient("https://rustchain.org") as client:
             miners = client.miners()
 
         assert miners == []
@@ -180,7 +180,7 @@ class TestBalanceEndpoint:
         mock_response.raise_for_status = Mock()
         mock_request.return_value = mock_response
 
-        with RustChainClient("https://50.28.86.131") as client:
+        with RustChainClient("https://rustchain.org") as client:
             balance = client.balance("test_wallet_address")
 
         assert balance["balance"] == 123.456
@@ -190,7 +190,7 @@ class TestBalanceEndpoint:
     def test_balance_empty_miner_id(self):
         """Test balance with empty miner_id raises ValidationError"""
         with pytest.raises(ValidationError) as exc_info:
-            with RustChainClient("https://50.28.86.131") as client:
+            with RustChainClient("https://rustchain.org") as client:
                 client.balance("")
 
         assert "miner_id" in str(exc_info.value)
@@ -198,7 +198,7 @@ class TestBalanceEndpoint:
     def test_balance_none_miner_id(self):
         """Test balance with None miner_id raises ValidationError"""
         with pytest.raises(ValidationError) as exc_info:
-            with RustChainClient("https://50.28.86.131") as client:
+            with RustChainClient("https://rustchain.org") as client:
                 client.balance(None)
 
         assert "miner_id" in str(exc_info.value)
@@ -220,7 +220,7 @@ class TestTransferEndpoint:
         mock_response.raise_for_status = Mock()
         mock_request.return_value = mock_response
 
-        with RustChainClient("https://50.28.86.131") as client:
+        with RustChainClient("https://rustchain.org") as client:
             result = client.transfer(
                 from_addr="wallet1",
                 to_addr="wallet2",
@@ -244,7 +244,7 @@ class TestTransferEndpoint:
         mock_response.raise_for_status = Mock()
         mock_request.return_value = mock_response
 
-        with RustChainClient("https://50.28.86.131") as client:
+        with RustChainClient("https://rustchain.org") as client:
             result = client.transfer(
                 from_addr="wallet1",
                 to_addr="wallet2",
@@ -257,7 +257,7 @@ class TestTransferEndpoint:
     def test_transfer_negative_amount(self):
         """Test transfer with negative amount raises ValidationError"""
         with pytest.raises(ValidationError) as exc_info:
-            with RustChainClient("https://50.28.86.131") as client:
+            with RustChainClient("https://rustchain.org") as client:
                 client.transfer("wallet1", "wallet2", -10.0)
 
         assert "amount must be positive" in str(exc_info.value)
@@ -265,7 +265,7 @@ class TestTransferEndpoint:
     def test_transfer_zero_amount(self):
         """Test transfer with zero amount raises ValidationError"""
         with pytest.raises(ValidationError) as exc_info:
-            with RustChainClient("https://50.28.86.131") as client:
+            with RustChainClient("https://rustchain.org") as client:
                 client.transfer("wallet1", "wallet2", 0.0)
 
         assert "amount must be positive" in str(exc_info.value)
@@ -273,7 +273,7 @@ class TestTransferEndpoint:
     def test_transfer_empty_from_addr(self):
         """Test transfer with empty from_addr raises ValidationError"""
         with pytest.raises(ValidationError) as exc_info:
-            with RustChainClient("https://50.28.86.131") as client:
+            with RustChainClient("https://rustchain.org") as client:
                 client.transfer("", "wallet2", 10.0)
 
         assert "from_addr" in str(exc_info.value)
@@ -281,7 +281,7 @@ class TestTransferEndpoint:
     def test_transfer_empty_to_addr(self):
         """Test transfer with empty to_addr raises ValidationError"""
         with pytest.raises(ValidationError) as exc_info:
-            with RustChainClient("https://50.28.86.131") as client:
+            with RustChainClient("https://rustchain.org") as client:
                 client.transfer("wallet1", "", 10.0)
 
         assert "to_addr" in str(exc_info.value)
@@ -310,7 +310,7 @@ class TestAttestationEndpoint:
             "nonce": "unique_nonce",
         }
 
-        with RustChainClient("https://50.28.86.131") as client:
+        with RustChainClient("https://rustchain.org") as client:
             result = client.submit_attestation(payload)
 
         assert result["success"] is True
@@ -325,7 +325,7 @@ class TestAttestationEndpoint:
         }
 
         with pytest.raises(ValidationError) as exc_info:
-            with RustChainClient("https://50.28.86.131") as client:
+            with RustChainClient("https://rustchain.org") as client:
                 client.submit_attestation(payload)
 
         assert "miner_id" in str(exc_info.value)
@@ -338,7 +338,7 @@ class TestAttestationEndpoint:
         }
 
         with pytest.raises(ValidationError) as exc_info:
-            with RustChainClient("https://50.28.86.131") as client:
+            with RustChainClient("https://rustchain.org") as client:
                 client.submit_attestation(payload)
 
         assert "device" in str(exc_info.value)
@@ -346,7 +346,7 @@ class TestAttestationEndpoint:
     def test_submit_attestation_empty_payload(self):
         """Test attestation with empty payload raises ValidationError"""
         with pytest.raises(ValidationError) as exc_info:
-            with RustChainClient("https://50.28.86.131") as client:
+            with RustChainClient("https://rustchain.org") as client:
                 client.submit_attestation({})
 
         assert "payload" in str(exc_info.value)
@@ -380,7 +380,7 @@ class TestTransferHistory:
         mock_response.raise_for_status = Mock()
         mock_request.return_value = mock_response
 
-        with RustChainClient("https://50.28.86.131") as client:
+        with RustChainClient("https://rustchain.org") as client:
             history = client.transfer_history("wallet_address", limit=10)
 
         assert len(history) == 2

@@ -27,7 +27,7 @@ pip install -r requirements.txt
 Create a `.env` file:
 ```bash
 TELEGRAM_BOT_TOKEN=your_bot_token_here
-RUSTCHAIN_API=https://50.28.86.131  # Optional, default is used
+RUSTCHAIN_API=https://rustchain.org  # Optional, default is used
 ```
 
 ### 4. Run the bot
@@ -70,7 +70,7 @@ docker run --env-file .env rustchain-telegram-bot
 
 - Uses `python-telegram-bot` library (v20.0+)
 - Fetches wRTC price from DexScreener API
-- Connects to RustChain API at `https://50.28.86.131`
+- Connects to RustChain API at `https://rustchain.org`
 - Supports both Raydium and other DEXs for price data
 
 ## Bounty

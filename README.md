@@ -164,22 +164,22 @@ If an issue persists, include logs and OS details in a new issue or bounty comme
 **Check your wallet balance:**
 ```bash
 # Note: Using -sk flags because the node may use a self-signed SSL certificate
-curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 **List active miners:**
 ```bash
-curl -sk https://50.28.86.131/api/miners
+curl -sk https://rustchain.org/api/miners
 ```
 
 **Check node health:**
 ```bash
-curl -sk https://50.28.86.131/health
+curl -sk https://rustchain.org/health
 ```
 
 **Get current epoch:**
 ```bash
-curl -sk https://50.28.86.131/epoch
+curl -sk https://rustchain.org/epoch
 ```
 
 **Manage the miner service:**
@@ -310,16 +310,16 @@ This provides cryptographic proof that RustChain state existed at a specific tim
 
 ```bash
 # Check network health
-curl -sk https://50.28.86.131/health
+curl -sk https://rustchain.org/health
 
 # Get current epoch
-curl -sk https://50.28.86.131/epoch
+curl -sk https://rustchain.org/epoch
 
 # List active miners
-curl -sk https://50.28.86.131/api/miners
+curl -sk https://rustchain.org/api/miners
 
 # Check wallet balance
-curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET"
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 
 # Block explorer (web browser)
 open https://rustchain.org/explorer

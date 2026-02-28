@@ -13,8 +13,8 @@
 #include <netdb.h>
 #include <sys/time.h>
 
-#define NODE_HOST "50.28.86.131"
-#define NODE_PORT 8088
+#define NODE_HOST "rustchain.org"
+#define NODE_PORT 443
 #define WALLET "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
 #define MINER_ID "dual-g4-125"
 #define MAC_ADDR "00:0d:93:af:2c:90"

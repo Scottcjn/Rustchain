@@ -152,7 +152,7 @@ tail -f ~/.rustchain/miner.log
 ### Balance Check
 ```bash
 # Note: Using -k flag because node may use self-signed SSL certificate
-curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 Example output:
@@ -166,17 +166,17 @@ Example output:
 
 ### Active Miners
 ```bash
-curl -sk https://50.28.86.131/api/miners
+curl -sk https://rustchain.org/api/miners
 ```
 
 ### Node Health
 ```bash
-curl -sk https://50.28.86.131/health
+curl -sk https://rustchain.org/health
 ```
 
 ### Current Epoch
 ```bash
-curl -sk https://50.28.86.131/epoch
+curl -sk https://rustchain.org/epoch
 ```
 
 ## Manual Operation
@@ -304,14 +304,14 @@ cat ~/.rustchain/miner.log
 
 **Check:**
 1. Internet connection is working
-2. Node is accessible: `curl -sk https://50.28.86.131/health`
+2. Node is accessible: `curl -sk https://rustchain.org/health`
 3. Firewall isn't blocking HTTPS (port 443)
 
 ### Miner not earning rewards
 
 **Check:**
 1. Miner is actually running: `systemctl --user status rustchain-miner` or `launchctl list | grep rustchain`
-2. Wallet balance: `curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_NAME"`
+2. Wallet balance: `curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"`
 3. Miner logs for errors: `journalctl --user -u rustchain-miner -f` or `tail -f ~/.rustchain/miner.log`
 4. Hardware attestation passes: Look for "fingerprint validation" messages in logs
 
@@ -338,7 +338,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 - **Documentation:** https://github.com/Scottcjn/Rustchain
 - **Issues:** https://github.com/Scottcjn/Rustchain/issues
-- **Explorer:** https://50.28.86.131/explorer
+- **Explorer:** https://rustchain.org/explorer
 - **Bounties:** https://github.com/Scottcjn/rustchain-bounties
 
 ## Security Notes
@@ -353,17 +353,17 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 To view the certificate SHA-256 fingerprint:
 
 ```bash
-openssl s_client -connect 50.28.86.131:443 < /dev/null 2>/dev/null | openssl x509 -fingerprint -sha256 -noout
+openssl s_client -connect rustchain.org:443 < /dev/null 2>/dev/null | openssl x509 -fingerprint -sha256 -noout
 ```
 
 If you want to avoid using `-k`, you can save the certificate locally and pin it:
 
 ```bash
 # Save the cert once (overwrite if it changes)
-openssl s_client -connect 50.28.86.131:443 < /dev/null 2>/dev/null | openssl x509 > ~/.rustchain/rustchain-cert.pem
+openssl s_client -connect rustchain.org:443 < /dev/null 2>/dev/null | openssl x509 > ~/.rustchain/rustchain-cert.pem
 
 # Then use it instead of -k
-curl --cacert ~/.rustchain/rustchain-cert.pem "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl --cacert ~/.rustchain/rustchain-cert.pem "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 ## Contributing

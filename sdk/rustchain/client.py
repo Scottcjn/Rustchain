@@ -22,7 +22,7 @@ class RustChainClient:
     Client for interacting with RustChain node API.
 
     Args:
-        base_url: Base URL of RustChain node (e.g., "https://50.28.86.131")
+        base_url: Base URL of RustChain node (e.g., "https://rustchain.org")
         verify_ssl: Whether to verify SSL certificates (default: True)
         timeout: Request timeout in seconds (default: 30)
     """
@@ -118,7 +118,7 @@ class RustChainClient:
             APIError: If API returns error
 
         Example:
-            >>> client = RustChainClient("https://50.28.86.131")
+            >>> client = RustChainClient("https://rustchain.org")
             >>> health = client.health()
             >>> print(health["version"])
             '2.2.1-rip200'
@@ -142,7 +142,7 @@ class RustChainClient:
             APIError: If API returns error
 
         Example:
-            >>> client = RustChainClient("https://50.28.86.131")
+            >>> client = RustChainClient("https://rustchain.org")
             >>> epoch = client.epoch()
             >>> print(f"Current epoch: {epoch['epoch']}")
         """
@@ -165,7 +165,7 @@ class RustChainClient:
             APIError: If API returns error
 
         Example:
-            >>> client = RustChainClient("https://50.28.86.131")
+            >>> client = RustChainClient("https://rustchain.org")
             >>> miners = client.miners()
             >>> print(f"Total miners: {len(miners)}")
         """
@@ -192,7 +192,7 @@ class RustChainClient:
             ValidationError: If miner_id is invalid
 
         Example:
-            >>> client = RustChainClient("https://50.28.86.131")
+            >>> client = RustChainClient("https://rustchain.org")
             >>> balance = client.balance("wallet_address")
             >>> print(f"Balance: {balance['balance']} RTC")
         """
@@ -233,7 +233,7 @@ class RustChainClient:
             TransferError: If transfer fails
 
         Example:
-            >>> client = RustChainClient("https://50.28.86.131")
+            >>> client = RustChainClient("https://rustchain.org")
             >>> result = client.transfer(
             ...     from_addr="wallet1",
             ...     to_addr="wallet2",
@@ -294,7 +294,7 @@ class RustChainClient:
             ValidationError: If miner_id is invalid
 
         Example:
-            >>> client = RustChainClient("https://50.28.86.131")
+            >>> client = RustChainClient("https://rustchain.org")
             >>> history = client.transfer_history("wallet_address", limit=10)
             >>> for tx in history:
             ...     print(f"{tx['tx_id']}: {tx['amount']} RTC")
@@ -334,7 +334,7 @@ class RustChainClient:
             AttestationError: If attestation fails
 
         Example:
-            >>> client = RustChainClient("https://50.28.86.131")
+            >>> client = RustChainClient("https://rustchain.org")
             >>> attestation = {
             ...     "miner_id": "wallet_address",
             ...     "device": {"arch": "G4", "cores": 1},
@@ -384,7 +384,7 @@ class RustChainClient:
             ValidationError: If miner_id is invalid
 
         Example:
-            >>> client = RustChainClient("https://50.28.86.131")
+            >>> client = RustChainClient("https://rustchain.org")
             >>> result = client.enroll_miner("wallet_address")
             >>> if result["success"]:
             ...     print("Enrolled successfully!")

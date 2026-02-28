@@ -613,7 +613,7 @@ if __name__ == '__main__':
     )
 
     # Add trusted peers to whitelist
-    peer_manager.sybil_protection.add_to_whitelist('http://50.28.86.131:8088')
+    peer_manager.sybil_protection.add_to_whitelist('https://rustchain.org')
     peer_manager.sybil_protection.add_to_whitelist('http://50.28.86.153:8088')
 
     # Start block sync

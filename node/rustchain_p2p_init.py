@@ -10,7 +10,7 @@ import os
 
 # All RustChain nodes - includes both Tailscale and public URLs
 PEER_NODES = {
-    "node1": "http://50.28.86.131:8099",           # VPS Primary (public)
+    "node1": "https://rustchain.org",           # VPS Primary (public)
     "node1_ts": "http://100.125.31.50:8099",       # VPS via Tailscale
     "node2": "http://50.28.86.153:8099",           # VPS Secondary / Ergo Anchor
     "node3": "http://100.88.109.32:8099",          # Ryan's (Tailscale)

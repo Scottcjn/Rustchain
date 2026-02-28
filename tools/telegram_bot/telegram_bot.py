@@ -26,7 +26,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Configuration - use environment variables or defaults
-RUSTCHAIN_API = os.getenv("RUSTCHAIN_API", "https://50.28.86.131")
+RUSTCHAIN_API = os.getenv("RUSTCHAIN_API", "https://rustchain.org")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 
 # DexScreener API for wRTC price

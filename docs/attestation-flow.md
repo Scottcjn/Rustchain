@@ -165,7 +165,7 @@ signature = signing_key.sign(message)
 payload["signature"] = base64.b64encode(signature).decode('ascii')
 
 # Submit
-requests.post("https://50.28.86.131/attest/submit", json=payload)
+requests.post("https://rustchain.org/attest/submit", json=payload)
 ```
 
 ## What Nodes Validate
@@ -406,7 +406,7 @@ Submit hardware attestation.
 
 **Request**:
 ```bash
-curl -sk -X POST https://50.28.86.131/attest/submit \
+curl -sk -X POST https://rustchain.org/attest/submit \
   -H "Content-Type: application/json" \
   -d @attestation.json
 ```
@@ -437,7 +437,7 @@ Check if miner is enrolled in current epoch.
 
 **Request**:
 ```bash
-curl -sk "https://50.28.86.131/lottery/eligibility?miner_id=scott"
+curl -sk "https://rustchain.org/lottery/eligibility?miner_id=scott"
 ```
 
 **Response**:

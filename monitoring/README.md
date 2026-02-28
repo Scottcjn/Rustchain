@@ -92,7 +92,7 @@ nodes (read-only check).
 
 ```bash
 python node/consensus_probe.py \
-  --nodes http://50.28.86.131:8099 http://50.28.86.153:8099 \
+  --nodes https://rustchain.org http://50.28.86.153:8099 \
   --pretty
 ```
 

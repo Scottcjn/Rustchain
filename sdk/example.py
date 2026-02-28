@@ -13,7 +13,7 @@ def main():
     """Main example function"""
     # Initialize client (disable SSL verification for demo)
     print("Connecting to RustChain node...")
-    client = RustChainClient("https://50.28.86.131", verify_ssl=False)
+    client = RustChainClient("https://rustchain.org", verify_ssl=False)
 
     try:
         # Get node health

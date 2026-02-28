@@ -27,7 +27,7 @@ except ImportError:
     FINGERPRINT_AVAILABLE = False
     print("[WARN] fingerprint_checks.py not found - fingerprint attestation disabled")
 
-NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://50.28.86.131")
+NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://rustchain.org")
 BLOCK_TIME = 600  # 10 minutes
 LOTTERY_CHECK_INTERVAL = 10  # Check every 10 seconds
 

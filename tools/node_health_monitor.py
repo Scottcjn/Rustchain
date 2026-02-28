@@ -32,7 +32,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 DEFAULT_NODES = [
-    "https://50.28.86.131",
+    "https://rustchain.org",
     "https://50.28.86.153",
     "http://76.8.228.245:8099",
 ]

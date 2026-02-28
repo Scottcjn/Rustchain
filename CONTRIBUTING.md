@@ -23,7 +23,7 @@ Thanks for your interest in contributing to RustChain! We pay bounties in RTC to
 
 ## What Gets Merged
 
-- Code that works against the live node (`https://50.28.86.131`)
+- Code that works against the live node (`https://rustchain.org`)
 - Tests that actually test something meaningful
 - Documentation that a human can follow end-to-end
 - Security fixes with proof of concept
@@ -49,19 +49,19 @@ python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
 # Test against live node
-curl -sk https://50.28.86.131/health
-curl -sk https://50.28.86.131/api/miners
-curl -sk https://50.28.86.131/epoch
+curl -sk https://rustchain.org/health
+curl -sk https://rustchain.org/api/miners
+curl -sk https://rustchain.org/epoch
 ```
 
 ## Live Infrastructure
 
 | Endpoint | URL |
 |----------|-----|
-| Node Health | `https://50.28.86.131/health` |
-| Active Miners | `https://50.28.86.131/api/miners` |
-| Current Epoch | `https://50.28.86.131/epoch` |
-| Block Explorer | `https://50.28.86.131/explorer` |
+| Node Health | `https://rustchain.org/health` |
+| Active Miners | `https://rustchain.org/api/miners` |
+| Current Epoch | `https://rustchain.org/epoch` |
+| Block Explorer | `https://rustchain.org/explorer` |
 | wRTC Bridge | `https://bottube.ai/bridge` |
 
 ## RTC Payout Process

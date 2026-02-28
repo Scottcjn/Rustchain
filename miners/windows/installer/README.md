@@ -73,7 +73,7 @@ rustchain-installer/
 
 ## Technical Notes
 
-- **Network:** Default node is `https://rustchain.org` (fallback: `http://50.28.86.131:8088` if TLS/proxy is unavailable).
+- **Network:** Default node is `https://rustchain.org`.
 - **Security:** TLS verification is currently set to `verify=False` to support the node's self-signed certificate.
 - **Builds:** Automated Windows builds are handled via GitHub Actions (see `.github/workflows/windows-build.yml`).
 

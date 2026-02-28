@@ -50,7 +50,7 @@ Older hardware is weighted heavier to incentivize preservation.
 ## 5. Network Architecture
 ### 5.1 Nodes
 The network relies on trusted **Attestation Nodes** to validate fingerprints.
-*   **Primary Node**: `https://50.28.86.131`
+*   **Primary Node**: `https://rustchain.org`
 *   **Ergo Anchor Node**: `https://50.28.86.153`
 
 ### 5.2 Ergo Anchoring

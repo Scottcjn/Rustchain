@@ -35,7 +35,7 @@ except ImportError:
     CPU_DETECTION_AVAILABLE = False
     print(info("[INFO] cpu_architecture_detection.py not found - using basic detection"))
 
-NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://50.28.86.131")
+NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://rustchain.org")
 BLOCK_TIME = 600  # 10 minutes
 LOTTERY_CHECK_INTERVAL = 10  # Check every 10 seconds
 

@@ -83,7 +83,7 @@ When your miner runs, it displays your miner ID (wallet address):
 List all active miners:
 
 ```bash
-curl -sk https://50.28.86.131/api/miners | jq '.[].miner'
+curl -sk https://rustchain.org/api/miners | jq '.[].miner'
 ```
 
 ### Option 3: From Wallet
@@ -142,14 +142,14 @@ Your miner must be:
 Check your miner status:
 
 ```bash
-curl -sk https://50.28.86.131/api/miners | jq '.[] | select(.miner=="YOUR_MINER_ID")'
+curl -sk https://rustchain.org/api/miners | jq '.[] | select(.miner=="YOUR_MINER_ID")'
 ```
 
 ### Balance shows 0.0 or "Error getting balance"
 
 1. Verify your miner ID is correct
 2. Make sure you're using the full wallet address (including "RTC" suffix if applicable)
-3. Check network connectivity: `curl -sk https://50.28.86.131/health`
+3. Check network connectivity: `curl -sk https://rustchain.org/health`
 
 ## Advanced Usage
 
