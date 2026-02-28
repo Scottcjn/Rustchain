@@ -1,0 +1,12 @@
+{
+  "miner": "signals-scalar-miner",
+  "device": {
+    "device_family": "PowerPC",
+    "device_arch": "power9",
+    "cores": 6
+  },
+  "signals": "not-a-signals-object",
+  "report": {
+    "commitment": "signals-scalar-commitment"
+  }
+}
