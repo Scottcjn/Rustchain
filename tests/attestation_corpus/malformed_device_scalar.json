@@ -1,0 +1,13 @@
+{
+  "miner": "device-scalar-miner",
+  "device": "not-a-device-object",
+  "signals": {
+    "hostname": "device-scalar-host",
+    "macs": [
+      "AA:BB:CC:DD:EE:01"
+    ]
+  },
+  "report": {
+    "commitment": "device-scalar-commitment"
+  }
+}
