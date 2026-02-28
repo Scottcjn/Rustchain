@@ -348,6 +348,15 @@ RustChain accepts AI-assisted PRs, but we require *evidence* and *review* so mai
 Read the draft spec:
 - `docs/BEACON_CERTIFIED_OPEN_SOURCE.md`
 
+## 📚 Documentation
+
+| Document | Description |
+|----------|-------------|
+| **[Beacon Atlas API](BEACON_ATLAS_API.md)** | Complete API reference for Beacon Atlas endpoints |
+| **[TOFU Key Management](TOFU_KEY_MANAGEMENT.md)** | Trust-On-First-Use key management guide |
+| **[wRTC Quickstart](docs/wrtc.md)** | wRTC token quick start guide |
+| **[Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)** | Technical whitepaper |
+
 ## 🔗 Related Projects & Links
 
 | Resource | Link |
