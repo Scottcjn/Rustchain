@@ -151,6 +151,8 @@ class TestFingerprintValidation:
                     "passed": True,
                     "data": {
                         "vm_indicators": [],
+                        "dmesg_scanned": True,
+                        "paths_checked": 42,
                         "passed": True
                     }
                 }
@@ -181,13 +183,15 @@ class TestAntiEmulationDetection:
         assert "vm_detected" in reason, "Reason should mention VM detection"
 
     def test_vm_detection_with_no_indicators(self):
-        """Verify no false positives when no VM indicators present."""
+        """Verify no false positives when real hardware reports no VM indicators."""
         fingerprint = {
             "checks": {
                 "anti_emulation": {
                     "passed": True,
                     "data": {
                         "vm_indicators": [],
+                        "dmesg_scanned": True,
+                        "paths_checked": 38,
                         "passed": True
                     }
                 }

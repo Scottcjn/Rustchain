@@ -1325,13 +1325,12 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     # Anti-emulation: MUST have raw data if present
     if isinstance(anti_emu_check, dict):
         anti_emu_data = anti_emu_check.get("data", {})
-        # Require evidence of actual checks being performed
+        # Require evidence of actual checks being performed (values must be non-empty)
         has_evidence = (
-            "vm_indicators" in anti_emu_data or
-            "dmesg_scanned" in anti_emu_data or
-            "paths_checked" in anti_emu_data or
-            "cpuinfo_flags" in anti_emu_data or
-            isinstance(anti_emu_data.get("vm_indicators"), list)
+            bool(anti_emu_data.get("vm_indicators")) or
+            bool(anti_emu_data.get("dmesg_scanned")) or
+            bool(anti_emu_data.get("paths_checked")) or
+            bool(anti_emu_data.get("cpuinfo_flags"))
         )
         if not has_evidence and anti_emu_check.get("passed") == True:
             print(f"[FINGERPRINT] REJECT: anti_emulation claims pass but has no raw evidence")
@@ -2119,6 +2118,7 @@ def submit_attestation():
         }), 429
     signals = _normalize_attestation_signals(data.get('signals'))
     fingerprint = _attest_mapping(data.get('fingerprint'))  # NEW: Extract fingerprint
+    challenge = _attest_text(data.get('challenge'))
 
     # Basic validation
     if not miner:
