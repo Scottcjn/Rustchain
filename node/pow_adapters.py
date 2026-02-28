@@ -85,3 +85,86 @@ def verify_ergo_pool(evidence: Dict[str, Any]) -> Tuple[bool, Dict[str, Any], st
             return False, {"hashrate": hashrate}, "ergo_pool_miner_not_found"
 
     return True, {"hashrate": hashrate}, ""
+
+
+def verify_monero_node_rpc(evidence: Dict[str, Any]) -> Tuple[bool, Dict[str, Any], str]:
+    """Verify Monero node proof via JSON-RPC get_info."""
+    endpoint = evidence.get("endpoint") or "http://127.0.0.1:18081/json_rpc"
+    timeout = float(evidence.get("timeout_sec", 3.0))
+    payload = {
+        "jsonrpc": "2.0",
+        "id": "0",
+        "method": evidence.get("method") or "get_info",
+        "params": evidence.get("params") or {},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    req = Request(endpoint, data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except (URLError, HTTPError, TimeoutError, ValueError, json.JSONDecodeError) as e:
+        return False, {}, f"monero_node_unreachable:{e}"
+
+    result = data.get("result") if isinstance(data, dict) else None
+    if not isinstance(result, dict):
+        return False, {"raw": data}, "monero_invalid_rpc_result"
+
+    synchronized = bool(result.get("synchronized", True))
+    height = int(result.get("height", 0) or 0)
+    incoming = int(result.get("incoming_connections_count", 0) or 0)
+    outgoing = int(result.get("outgoing_connections_count", 0) or 0)
+
+    if not synchronized:
+        return False, {"synchronized": synchronized, "height": height}, "monero_not_synced"
+    if height <= 0:
+        return False, {"synchronized": synchronized, "height": height}, "monero_invalid_height"
+
+    return True, {
+        "synchronized": synchronized,
+        "height": height,
+        "incoming_connections": incoming,
+        "outgoing_connections": outgoing,
+    }, ""
+
+
+def verify_monero_pool(evidence: Dict[str, Any]) -> Tuple[bool, Dict[str, Any], str]:
+    """Verify Monero pool hashrate/account evidence."""
+    pool_url = (evidence.get("pool_api_url") or "").strip()
+    if not pool_url:
+        return False, {}, "missing_pool_api_url"
+
+    try:
+        data = _json_get(pool_url, timeout=float(evidence.get("timeout_sec", 3.0)))
+    except (URLError, HTTPError, TimeoutError, ValueError, json.JSONDecodeError) as e:
+        return False, {}, f"monero_pool_unreachable:{e}"
+
+    hashrate = 0.0
+    for k in ("hashrate", "currentHashrate", "reportedHashrate"):
+        v = data.get(k)
+        if v is not None:
+            try:
+                hashrate = float(v)
+                break
+            except Exception:
+                pass
+
+    if hashrate <= 0 and isinstance(data.get("data"), dict):
+        for k in ("hashrate", "currentHashrate", "reportedHashrate"):
+            v = data["data"].get(k)
+            if v is not None:
+                try:
+                    hashrate = float(v)
+                    break
+                except Exception:
+                    pass
+
+    if hashrate <= 0:
+        return False, {"hashrate": hashrate}, "monero_pool_no_hashrate"
+
+    miner = (evidence.get("miner") or evidence.get("wallet") or "").strip()
+    if miner:
+        blob = json.dumps(data, ensure_ascii=False)
+        if miner not in blob:
+            return False, {"hashrate": hashrate}, "monero_pool_miner_not_found"
+
+    return True, {"hashrate": hashrate}, ""
