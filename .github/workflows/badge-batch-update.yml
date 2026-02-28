@@ -1,0 +1,140 @@
+name: RustChain Batch Badge Update
+
+on:
+  schedule:
+    # Run every hour to batch update all tracked miners
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  batch-update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Batch update all miner badges
+        run: |
+          import json
+          import urllib.request
+          import urllib.error
+          import os
+          import sys
+          import datetime
+          
+          NODE_URL = 'https://rustchain.org'
+          MINERS_FILE = '.github/workflows/miners.txt'
+          
+          # Default miners if file doesn't exist
+          default_miners = ['default', 'demo', 'test']
+          
+          # Load miner list
+          miners = default_miners
+          if os.path.exists(MINERS_FILE):
+              with open(MINERS_FILE, 'r') as f:
+                  miners = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+              print(f"Loaded {len(miners)} miners from {MINERS_FILE}")
+          else:
+              print(f"{MINERS_FILE} not found, using default miners")
+          
+          # Ensure output directory exists
+          os.makedirs('badges/dynamic', exist_ok=True)
+          
+          updated = []
+          failed = []
+          
+          for miner_id in miners:
+              print(f"\n--- Processing: {miner_id} ---")
+              badge_url = f"{NODE_URL}/api/badge/{miner_id}"
+              
+              try:
+                  req = urllib.request.Request(
+                      badge_url,
+                      headers={'Accept': 'application/json', 'User-Agent': 'RustChain-Badge-Batch/1.0'}
+                  )
+                  
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      badge_data = json.loads(response.read().decode('utf-8'))
+                  
+                  # Save badge
+                  badge_file = f'badges/dynamic/{miner_id}.json'
+                  with open(badge_file, 'w') as f:
+                      json.dump(badge_data, f, indent=2)
+                  
+                  # Create markdown
+                  shield_url = f"https://img.shields.io/endpoint?url={NODE_URL}/api/badge/{miner_id}"
+                  with open(f'badges/dynamic/{miner_id}.md', 'w') as f:
+                      f.write(f"# RustChain Badge for {miner_id}\n\n")
+                      f.write(f"![RustChain Status]({shield_url})\n\n")
+                      f.write(f"**Status:** {badge_data.get('message', 'unknown')}\n")
+                      f.write(f"**Color:** {badge_data.get('color', 'unknown')}\n")
+                  
+                  print(f"✅ Updated: {badge_data.get('message', 'unknown')} ({badge_data.get('color', 'unknown')})")
+                  updated.append(miner_id)
+                  
+              except Exception as e:
+                  print(f"❌ Failed: {e}")
+                  # Save offline badge
+                  fallback = {
+                      "schemaVersion": 1,
+                      "label": f"⛏ {miner_id}",
+                      "message": "offline",
+                      "color": "lightgrey"
+                  }
+                  with open(f'badges/dynamic/{miner_id}.json', 'w') as f:
+                      json.dump(fallback, f, indent=2)
+                  failed.append(miner_id)
+          
+          # Create summary
+          summary = {
+              "updated_at": datetime.datetime.now().isoformat(),
+              "total_miners": len(miners),
+              "updated": updated,
+              "failed": failed
+          }
+          
+          with open('badges/dynamic/_summary.json', 'w') as f:
+              json.dump(summary, f, indent=2)
+          
+          print(f"\n=== Summary ===")
+          print(f"Updated: {len(updated)}/{len(miners)}")
+          print(f"Failed: {len(failed)}/{len(miners)}")
+          
+          # Set outputs
+          with open(os.environ.get('GITHUB_OUTPUT', '/dev/null'), 'a') as f:
+              f.write(f"updated_count={len(updated)}\n")
+              f.write(f"failed_count={len(failed)}\n")
+              f.write(f"changed={'true' if updated else 'false'}\n")
+              
+        shell: python
+        env:
+          PYTHONIOENCODING: utf-8
+          
+      - name: Commit changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          git add badges/dynamic/
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          UPDATED=${{ steps.batch-update.outputs.updated_count || '0' }}
+          FAILED=${{ steps.batch-update.outputs.failed_count || '0' }}
+          
+          git commit -m "Batch update RustChain badges [${UPDATED} updated, ${FAILED} failed]
+
+Auto-generated by RustChain Batch Badge Updater"
+          
+          git push

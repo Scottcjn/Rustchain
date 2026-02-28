@@ -1,0 +1,12 @@
+# RustChain Miners to Track
+# Add one miner ID per line
+# Lines starting with # are ignored
+
+# Default/demo miners
+default
+demo
+test
+
+# Add your miner IDs below:
+# my-miner-id
+# another-miner
