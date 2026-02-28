@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Epoch Settlement Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); }
+        canvas { border-radius: 12px; }
+    </style>
+</head>
+<body class="text-white min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-center mb-2">🎬 RustChain Epoch Settlement Visualizer</h1>
+        <p class="text-center text-gray-400 mb-8">Animated reward distribution visualization</p>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Epoch Info -->
+            <div class="bg-gray-800 rounded-lg p-6">
+                <h2 class="text-xl font-bold mb-4">📅 Epoch Status</h2>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-gray-700 rounded p-4">
+                        <div class="text-2xl font-bold text-yellow-400" id="epoch-num">-</div>
+                        <div class="text-gray-400">Current Epoch</div>
+                    </div>
+                    <div class="bg-gray-700 rounded p-4">
+                        <div class="text-2xl font-bold text-blue-400" id="epoch-progress">-</div>
+                        <div class="text-gray-400">Progress</div>
+                    </div>
+                </div>
+                
+                <!-- Progress Bar -->
+                <div class="mt-4">
+                    <div class="h-4 bg-gray-700 rounded-full overflow-hidden">
+                        <div id="progress-bar" class="h-full bg-gradient-to-r from-green-500 to-yellow-500 transition-all duration-1000" style="width: 0%"></div>
+                    </div>
+                </div>
+                
+                <!-- Pot Size -->
+                <div class="mt-4 bg-gray-700 rounded p-4 text-center">
+                    <div class="text-3xl font-bold text-green-400" id="pot-size">-</div>
+                    <div class="text-gray-400">Reward Pot (RTC)</div>
+                </div>
+            </div>
+            
+            <!-- Miner Distribution -->
+            <div class="bg-gray-800 rounded-lg p-6">
+                <h2 class="text-xl font-bold mb-4">⛏️ Miner Rewards</h2>
+                <canvas id="reward-chart" width="400" height="250" class="w-full"></canvas>
+            </div>
+        </div>
+        
+        <!-- Visualizer -->
+        <div class="mt-6 bg-gray-800 rounded-lg p-6">
+            <h2 class="text-xl font-bold mb-4">🎬 Settlement Animation</h2>
+            <canvas id="visualizer" width="800" height="400" class="w-full"></canvas>
+        </div>
+        
+        <!-- Controls -->
+        <div class="mt-6 flex justify-center gap-4">
+            <button onclick="startAnimation()" class="bg-green-600 hover:bg-green-700 px-6 py-2 rounded font-bold">▶ Play</button>
+            <button onclick="stopAnimation()" class="bg-red-600 hover:bg-red-700 px-6 py-2 rounded font-bold">⏹ Stop</button>
+            <button onclick="fetchData()" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-bold">🔄 Refresh</button>
+        </div>
+        
+        <!-- Miner List -->
+        <div class="mt-6 bg-gray-800 rounded-lg p-6">
+            <h2 class="text-xl font-bold mb-4">📊 Miner Details</h2>
+            <div id="miner-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+        </div>
+    </div>
+
+    <script>
+        const NODE_URL = 'https://50.28.86.131';
+        let miners = [];
+        let epoch = 0;
+        let potSize = 1.5;
+        let animationRunning = false;
+        let animationFrame = 0;
+        
+        const ARCH_COLORS = {
+            'PowerPC G4': '#ff6b6b',
+            'PowerPC G5': '#feca57',
+            'Apple Silicon': '#48dbfb',
+            'IBM POWER8': '#ff9ff3',
+            'Modern x86': '#54a0ff',
+            'Other': '#c8d6e5'
+        };
+        
+        const MULTIPLIERS = {
+            'PowerPC G4': 2.5,
+            'PowerPC G5': 2.0,
+            'Apple Silicon': 1.0,
+            'IBM POWER8': 2.5,
+            'Modern x86': 1.0,
+            'Other': 1.0
+        };
+        
+        async function fetchData() {
+            try {
+                const [epochRes, minersRes] = await Promise.all([
+                    fetch(NODE_URL + '/epoch'),
+                    fetch(NODE_URL + '/api/miners')
+                ]);
+                
+                const epochData = await epochRes.json();
+                epoch = epochData.epoch || 0;
+                potSize = epochData.pot_size || 1.5;
+                
+                document.getElementById('epoch-num').textContent = epoch;
+                document.getElementById('epoch-progress').textContent = (epochData.progress || 0) + '%';
+                document.getElementById('progress-bar').style.width = (epochData.progress || 0) + '%';
+                document.getElementById('pot-size').textContent = potSize.toFixed(2);
+                
+                const minersData = await minersRes.json();
+                miners = (minersData.miners || []).map(m => {
+                    let arch = 'Other';
+                    const hw = (m.hardware || '').toLowerCase();
+                    if (hw.includes('g4')) arch = 'PowerPC G4';
+                    else if (hw.includes('g5')) arch = 'PowerPC G5';
+                    else if (hw.includes('m1') || hw.includes('m2') || hw.includes('m3') || hw.includes('m4')) arch = 'Apple Silicon';
+                    else if (hw.includes('power8')) arch = 'IBM POWER8';
+                    else if (hw.includes('intel') || hw.includes('core')) arch = 'Modern x86';
+                    
+                    return {
+                        ...m,
+                        architecture: arch,
+                        multiplier: MULTIPLIERS[arch]
+                    };
+                });
+                
+                drawRewardChart();
+                displayMinerList();
+                
+            } catch (e) {
+                console.error('Error fetching data:', e);
+            }
+        }
+        
+        function drawRewardChart() {
+            const canvas = document.getElementById('reward-chart');
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+            
+            ctx.clearRect(0, 0, w, h);
+            
+            if (miners.length === 0) {
+                ctx.fillStyle = '#666';
+                ctx.font = '20px sans-serif';
+                ctx.fillText('No miner data', w/2 - 60, h/2);
+                return;
+            }
+            
+            // Calculate weights and rewards
+            const totalWeight = miners.reduce((sum, m) => sum + m.multiplier, 0);
+            const rewards = miners.map(m => ({
+                ...m,
+                reward: potSize * (m.multiplier / totalWeight)
+            }));
+            
+            // Sort by reward
+            rewards.sort((a, b) => b.reward - a.reward);
+            
+            // Draw bars
+            const maxBarHeight = h - 40;
+            const barWidth = (w - 60) / Math.min(rewards.length, 10);
+            
+            rewards.slice(0, 10).forEach((m, i) => {
+                const barHeight = (m.reward / Math.max(...rewards.map(r => r.reward))) * maxBarHeight;
+                const x = 30 + i * barWidth;
+                const y = h - 20 - barHeight;
+                
+                ctx.fillStyle = ARCH_COLORS[m.architecture] || '#666';
+                ctx.fillRect(x, y, barWidth - 4, barHeight);
+                
+                ctx.fillStyle = '#fff';
+                ctx.font = '10px sans-serif';
+                ctx.fillText(m.reward.toFixed(3), x, y - 5);
+            });
+            
+            // Legend
+            ctx.font = '12px sans-serif';
+            let legendX = 10;
+            Object.entries(ARCH_COLORS).forEach(([arch, color]) => {
+                ctx.fillStyle = color;
+                ctx.fillRect(legendX, 5, 12, 12);
+                ctx.fillStyle = '#fff';
+                ctx.fillText(arch, legendX + 16, 15);
+                legendX += ctx.measureText(arch).width + 35;
+            });
+        }
+        
+        function displayMinerList() {
+            const container = document.getElementById('miner-list');
+            container.innerHTML = '';
+            
+            miners.forEach(m => {
+                const reward = potSize * (m.multiplier / miners.reduce((s, x) => s + x.multiplier, 0));
+                container.innerHTML += `
+                    <div class="bg-gray-700 rounded p-3" style="border-left: 4px solid ${ARCH_COLORS[m.architecture]}">
+                        <div class="font-bold">${m.miner_id?.substring(0, 12) || 'Unknown'}</div>
+                        <div class="text-sm text-gray-400">${m.architecture}</div>
+                        <div class="text-sm">Reward: <span class="text-green-400">${reward.toFixed(4)} RTC</span></div>
+                        <div class="text-xs text-gray-500">${m.multiplier}x multiplier</div>
+                    </div>
+                `;
+            });
+        }
+        
+        function startAnimation() {
+            if (animationRunning) return;
+            animationRunning = true;
+            animate();
+        }
+        
+        function stopAnimation() {
+            animationRunning = false;
+        }
+        
+        function animate() {
+            if (!animationRunning) return;
+            
+            const canvas = document.getElementById('visualizer');
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+            
+            ctx.fillStyle = 'rgba(26, 26, 46, 0.1)';
+            ctx.fillRect(0, 0, w, h);
+            
+            // Draw pot
+            const potX = w / 2;
+            const potY = h - 50;
+            const potRadius = 40;
+            
+            const gradient = ctx.createRadialGradient(potX, potY, 0, potX, potY, potRadius);
+            gradient.addColorStop(0, '#ffd700');
+            gradient.addColorStop(1, '#b8860b');
+            
+            ctx.beginPath();
+            ctx.arc(potX, potY, potRadius, 0, Math.PI * 2);
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            
+            // Animate particles
+            const totalWeight = miners.reduce((sum, m) => sum + m.multiplier, 0);
+            
+            miners.forEach((m, i) => {
+                const angle = (animationFrame * 0.02 + i * 2 * Math.PI / miners.length);
+                const dist = 150 + Math.sin(animationFrame * 0.05 + i) * 30;
+                
+                const x = potX + Math.cos(angle) * dist;
+                const y = potY + Math.sin(angle) * dist;
+                
+                ctx.beginPath();
+                ctx.arc(x, y, 8, 0, Math.PI * 2);
+                ctx.fillStyle = ARCH_COLORS[m.architecture] || '#666';
+                ctx.fill();
+                
+                // Draw line from miner to pot
+                if (animationFrame % 60 < 30) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(potX, potY);
+                    ctx.strokeStyle = ARCH_COLORS[m.architecture] + '40';
+                    ctx.stroke();
+                }
+            });
+            
+            // Draw weights
+            ctx.fillStyle = '#fff';
+            ctx.font = '14px sans-serif';
+            ctx.fillText(`Total Weight: ${totalWeight.toFixed(1)}`, 20, 30);
+            ctx.fillText(`Epoch: ${epoch}`, 20, 50);
+            ctx.fillText(`Pot: ${potSize.toFixed(2)} RTC`, 20, 70);
+            
+            animationFrame++;
+            requestAnimationFrame(animate);
+        }
+        
+        // Initial load
+        fetchData();
+        setInterval(fetchData, 60000);
+    </script>
+</body>
+</html>
