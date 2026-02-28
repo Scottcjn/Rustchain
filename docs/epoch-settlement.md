@@ -347,7 +347,7 @@ Get current epoch information.
 
 **Request**:
 ```bash
-curl -sk https://50.28.86.131/epoch
+curl -sk https://rustchain.org/epoch
 ```
 
 **Response**:
@@ -368,7 +368,7 @@ Check wallet balance after settlement.
 
 **Request**:
 ```bash
-curl -sk "https://50.28.86.131/wallet/balance?miner_id=scott"
+curl -sk "https://rustchain.org/wallet/balance?miner_id=scott"
 ```
 
 **Response**:
@@ -390,7 +390,7 @@ Query historical settlement data.
 
 **Request**:
 ```bash
-curl -sk https://50.28.86.131/api/settlement/75
+curl -sk https://rustchain.org/api/settlement/75
 ```
 
 **Response**:
@@ -450,7 +450,7 @@ tail -f /var/log/rustchain/node.log | grep SETTLEMENT
 
 ```bash
 # Check if settlement completed
-curl -sk https://50.28.86.131/api/settlement/75 | jq '.ergo_tx_id'
+curl -sk https://rustchain.org/api/settlement/75 | jq '.ergo_tx_id'
 
 # Verify on Ergo explorer
 curl "https://api.ergoplatform.com/api/v1/transactions/abc123..."

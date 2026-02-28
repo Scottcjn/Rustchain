@@ -94,22 +94,22 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 **Wallet-Guthaben prüfen:**
 ```bash
 # Hinweis: -sk Flags werden verwendet, da der Node ein selbstsigniertes SSL-Zertifikat nutzen kann
-curl -sk "https://50.28.86.131/wallet/balance?miner_id=DEIN_WALLET_NAME"
+curl -sk "https://rustchain.org/wallet/balance?miner_id=DEIN_WALLET_NAME"
 ```
 
 **Aktive Miner auflisten:**
 ```bash
-curl -sk https://50.28.86.131/api/miners
+curl -sk https://rustchain.org/api/miners
 ```
 
 **Node-Health prüfen:**
 ```bash
-curl -sk https://50.28.86.131/health
+curl -sk https://rustchain.org/health
 ```
 
 **Aktuelle Epoch abrufen:**
 ```bash
-curl -sk https://50.28.86.131/epoch
+curl -sk https://rustchain.org/epoch
 ```
 
 **Miner-Service verwalten:**
@@ -225,16 +225,16 @@ Dies bietet kryptographischen Beweis, dass der RustChain-State zu einem bestimmt
 
 ```bash
 # Netzwerk-Health prüfen
-curl -sk https://50.28.86.131/health
+curl -sk https://rustchain.org/health
 
 # Aktuelle Epoch abrufen
-curl -sk https://50.28.86.131/epoch
+curl -sk https://rustchain.org/epoch
 
 # Aktive Miner auflisten
-curl -sk https://50.28.86.131/api/miners
+curl -sk https://rustchain.org/api/miners
 
 # Wallet-Guthaben prüfen
-curl -sk "https://50.28.86.131/wallet/balance?miner_id=DEINE_WALLET"
+curl -sk "https://rustchain.org/wallet/balance?miner_id=DEINE_WALLET"
 
 # Block Explorer (Web-Browser)
 open https://rustchain.org/explorer

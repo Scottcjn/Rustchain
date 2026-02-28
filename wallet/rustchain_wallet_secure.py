@@ -27,7 +27,7 @@ from rustchain_crypto import RustChainWallet, verify_transaction
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Configuration
-NODE_URL = "https://50.28.86.131"
+NODE_URL = "https://rustchain.org"
 VERIFY_SSL = False
 KEYSTORE_DIR = Path.home() / ".rustchain" / "wallets"
 

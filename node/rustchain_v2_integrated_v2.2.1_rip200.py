@@ -4851,7 +4851,7 @@ echo.
 echo Downloading diagnostic test...
 echo.
 
-powershell -Command "Invoke-WebRequest -Uri 'http://50.28.86.131:8088/download/test' -OutFile 'test_miner_minimal.py'"
+powershell -Command "Invoke-WebRequest -Uri 'http://rustchain.org/download/test' -OutFile 'test_miner_minimal.py'"
 if errorlevel 1 (
   echo [error] download failed
   exit /b 1

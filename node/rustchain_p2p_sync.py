@@ -429,7 +429,7 @@ if __name__ == '__main__':
     p2p.start()
 
     # Announce to peers
-    p2p.announce_to_peers("http://50.28.86.131:8088")
+    p2p.announce_to_peers("https://rustchain.org")
 
     # Keep running
     try:

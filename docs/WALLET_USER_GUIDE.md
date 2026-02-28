@@ -10,7 +10,7 @@ This guide explains wallet basics, balance checks, and safe transfer practices f
 ## 2) Check wallet balance
 
 ```bash
-curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_NAME" | jq .
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME" | jq .
 ```
 
 Expected response shape:
@@ -26,7 +26,7 @@ Expected response shape:
 ## 3) Confirm miner is active
 
 ```bash
-curl -sk https://50.28.86.131/api/miners | jq .
+curl -sk https://rustchain.org/api/miners | jq .
 ```
 
 If your miner does not appear:
@@ -63,7 +63,7 @@ Only use this when you fully understand signing and key custody.
 Current docs use `curl -k` for self-signed TLS:
 
 ```bash
-curl -sk https://50.28.86.131/health
+curl -sk https://rustchain.org/health
 ```
 
 ### Wrong chain/token confusion (RTC vs wRTC)

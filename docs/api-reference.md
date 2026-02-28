@@ -4,7 +4,7 @@
 
 RustChain provides a REST API for interacting with the network. All endpoints use HTTPS with a self-signed certificate (use `-k` flag with curl).
 
-**Base URL**: `https://50.28.86.131`
+**Base URL**: `https://rustchain.org`
 
 **Internal URL**: `http://localhost:8099` (on VPS only)
 
@@ -25,7 +25,7 @@ Most endpoints are public. Admin endpoints require the `X-Admin-Key` header:
 Check node health status.
 
 ```bash
-curl -sk https://50.28.86.131/health
+curl -sk https://rustchain.org/health
 ```
 
 **Response**:
@@ -56,7 +56,7 @@ curl -sk https://50.28.86.131/health
 Kubernetes-style readiness probe.
 
 ```bash
-curl -sk https://50.28.86.131/ready
+curl -sk https://rustchain.org/ready
 ```
 
 **Response**:
@@ -75,7 +75,7 @@ curl -sk https://50.28.86.131/ready
 Get current epoch and slot information.
 
 ```bash
-curl -sk https://50.28.86.131/epoch
+curl -sk https://rustchain.org/epoch
 ```
 
 **Response**:
@@ -106,7 +106,7 @@ curl -sk https://50.28.86.131/epoch
 List all active miners with hardware details.
 
 ```bash
-curl -sk https://50.28.86.131/api/miners
+curl -sk https://rustchain.org/api/miners
 ```
 
 **Response**:
@@ -153,7 +153,7 @@ curl -sk https://50.28.86.131/api/miners
 List connected attestation nodes.
 
 ```bash
-curl -sk https://50.28.86.131/api/nodes
+curl -sk https://rustchain.org/api/nodes
 ```
 
 **Response**:
@@ -185,7 +185,7 @@ curl -sk https://50.28.86.131/api/nodes
 Check RTC balance for a miner wallet.
 
 ```bash
-curl -sk "https://50.28.86.131/wallet/balance?miner_id=scott"
+curl -sk "https://rustchain.org/wallet/balance?miner_id=scott"
 ```
 
 **Parameters**:
@@ -220,7 +220,7 @@ curl -sk "https://50.28.86.131/wallet/balance?miner_id=scott"
 Submit hardware attestation to enroll in current epoch.
 
 ```bash
-curl -sk -X POST https://50.28.86.131/attest/submit \
+curl -sk -X POST https://rustchain.org/attest/submit \
   -H "Content-Type: application/json" \
   -d '{
     "miner_id": "scott",
@@ -276,7 +276,7 @@ curl -sk -X POST https://50.28.86.131/attest/submit \
 Check if miner is enrolled in current epoch.
 
 ```bash
-curl -sk "https://50.28.86.131/lottery/eligibility?miner_id=scott"
+curl -sk "https://rustchain.org/lottery/eligibility?miner_id=scott"
 ```
 
 **Response**:
@@ -299,7 +299,7 @@ curl -sk "https://50.28.86.131/lottery/eligibility?miner_id=scott"
 Web UI for browsing blocks and transactions.
 
 ```bash
-open https://50.28.86.131/explorer
+open https://rustchain.org/explorer
 ```
 
 Returns HTML page (not JSON).
@@ -313,7 +313,7 @@ Returns HTML page (not JSON).
 Query historical settlement data for a specific epoch.
 
 ```bash
-curl -sk https://50.28.86.131/api/settlement/75
+curl -sk https://rustchain.org/api/settlement/75
 ```
 
 **Response**:
@@ -347,7 +347,7 @@ These endpoints require the `X-Admin-Key` header.
 Transfer RTC between wallets (admin only).
 
 ```bash
-curl -sk -X POST https://50.28.86.131/wallet/transfer \
+curl -sk -X POST https://rustchain.org/wallet/transfer \
   -H "X-Admin-Key: YOUR_ADMIN_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -375,7 +375,7 @@ curl -sk -X POST https://50.28.86.131/wallet/transfer \
 Manually trigger epoch settlement (admin only).
 
 ```bash
-curl -sk -X POST https://50.28.86.131/rewards/settle \
+curl -sk -X POST https://rustchain.org/rewards/settle \
   -H "X-Admin-Key: YOUR_ADMIN_KEY"
 ```
 
@@ -401,7 +401,7 @@ These endpoints support the x402 payment protocol (currently free during beta).
 Bulk video export (BoTTube integration).
 
 ```bash
-curl -sk https://50.28.86.131/api/premium/videos
+curl -sk https://rustchain.org/api/premium/videos
 ```
 
 ---
@@ -411,7 +411,7 @@ curl -sk https://50.28.86.131/api/premium/videos
 Deep agent analytics.
 
 ```bash
-curl -sk https://50.28.86.131/api/premium/analytics/scott
+curl -sk https://rustchain.org/api/premium/analytics/scott
 ```
 
 ---
@@ -421,7 +421,7 @@ curl -sk https://50.28.86.131/api/premium/analytics/scott
 USDC/wRTC swap guidance.
 
 ```bash
-curl -sk https://50.28.86.131/wallet/swap-info
+curl -sk https://rustchain.org/wallet/swap-info
 ```
 
 **Response**:
@@ -494,12 +494,12 @@ The node uses a self-signed certificate. Options:
 
 ```bash
 # Option 1: Skip verification (development)
-curl -sk https://50.28.86.131/health
+curl -sk https://rustchain.org/health
 
 # Option 2: Download and trust certificate
-openssl s_client -connect 50.28.86.131:443 -showcerts < /dev/null 2>/dev/null | \
+openssl s_client -connect rustchain.org:443 -showcerts < /dev/null 2>/dev/null | \
   openssl x509 -outform PEM > rustchain.pem
-curl --cacert rustchain.pem https://50.28.86.131/health
+curl --cacert rustchain.pem https://rustchain.org/health
 ```
 
 ---
@@ -511,7 +511,7 @@ curl --cacert rustchain.pem https://50.28.86.131/health
 ```python
 import requests
 
-BASE_URL = "https://50.28.86.131"
+BASE_URL = "https://rustchain.org"
 
 def get_balance(miner_id):
     resp = requests.get(
@@ -533,7 +533,7 @@ print(get_epoch())
 ### JavaScript
 
 ```javascript
-const BASE_URL = "https://50.28.86.131";
+const BASE_URL = "https://rustchain.org";
 
 async function getBalance(minerId) {
   const resp = await fetch(
@@ -556,7 +556,7 @@ getEpoch().then(console.log);
 
 ```bash
 #!/bin/bash
-BASE_URL="https://50.28.86.131"
+BASE_URL="https://rustchain.org"
 
 # Get balance
 get_balance() {

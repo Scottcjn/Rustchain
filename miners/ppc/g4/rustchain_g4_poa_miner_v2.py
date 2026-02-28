@@ -15,7 +15,7 @@ import requests
 from datetime import datetime
 
 # Configuration
-NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://50.28.86.131")
+NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://rustchain.org")
 ATTESTATION_TTL = 600  # 10 minutes - must re-attest before this
 LOTTERY_CHECK_INTERVAL = 10  # Check every 10 seconds
 ATTESTATION_INTERVAL = 300  # Re-attest every 5 minutes

@@ -13,7 +13,7 @@ info:
     Write operations (transfers) require cryptographic signatures.
     
     ## Base URL
-    Production: `https://50.28.86.131`
+    Production: `https://rustchain.org`
     
     **Note:** The server uses a self-signed TLS certificate.
   version: 2.2.1
@@ -25,7 +25,7 @@ info:
     url: https://opensource.org/licenses/MIT
 
 servers:
-  - url: https://50.28.86.131
+  - url: https://rustchain.org
     description: RustChain Mainnet Node
 
 tags:

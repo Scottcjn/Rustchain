@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 from pypresence import Presence
 
 # RustChain API endpoint (self-signed cert requires verification=False)
-RUSTCHAIN_API = "https://50.28.86.131"
+RUSTCHAIN_API = "https://rustchain.org"
 
 # Local state file for tracking earnings
 STATE_FILE = os.path.expanduser("~/.rustchain_discord_state.json")

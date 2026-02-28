@@ -59,5 +59,5 @@ def home():
 if __name__ == '__main__':
     print(f"Starting RustChain proxy on port 8089...")
     print(f"Forwarding to: {LOCAL_SERVER}")
-    print(f"G4 can connect to: http://50.28.86.131:8089")
+    print(f"G4 can connect to: https://rustchain.org:8089")
     app.run(host='0.0.0.0', port=8089, debug=False)

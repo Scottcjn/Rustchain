@@ -7,8 +7,8 @@ import requests
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-MINERS_API_URL = "https://50.28.86.131/api/miners"
-BALANCE_API_URL = "https://50.28.86.131/wallet/balance"
+MINERS_API_URL = "https://rustchain.org/api/miners"
+BALANCE_API_URL = "https://rustchain.org/wallet/balance"
 TOTAL_SUPPLY = 8300000
 
 FOUNDER_WALLETS = {

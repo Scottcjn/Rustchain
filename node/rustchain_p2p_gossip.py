@@ -796,7 +796,7 @@ if __name__ == "__main__":
     NODE_ID = os.environ.get("RC_NODE_ID", "node1")
 
     PEERS = {
-        "node1": "http://50.28.86.131:8099",
+        "node1": "https://rustchain.org",
         "node2": "http://50.28.86.153:8099",
         "node3": "http://76.8.228.245:8099"
     }
