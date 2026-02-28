@@ -143,4 +143,4 @@ Representative public statements:
 
 This document represents Elyan Labs' analysis of RTC's regulatory status based on publicly available legal frameworks. It is not legal advice. For a formal legal opinion, consult a qualified securities attorney.
 
-**Contact**: scott@elyanlabs.ai | [rustchain.org](http://rustchain.org) | [@RustchainPOA](https://x.com/RustchainPOA)
+**Contact**: scott@elyanlabs.ai | [rustchain.org](https://rustchain.org) | [@RustchainPOA](https://x.com/RustchainPOA)
