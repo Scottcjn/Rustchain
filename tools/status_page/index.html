@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Network Status</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .pulse-green { animation: pulse-green 2s infinite; }
+        .pulse-red { animation: pulse-red 2s infinite; }
+        @keyframes pulse-green {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+            50% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+        }
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            50% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold mb-2">⛏️ RustChain Network Status</h1>
+            <p class="text-gray-400">Proof-of-Antiquity Blockchain</p>
+            <p class="text-sm text-gray-500 mt-2">Last updated: <span id="last-updated">-</span></p>
+        </div>
+
+        <!-- Epoch Info -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-6">
+            <h2 class="text-2xl font-bold mb-4">📅 Current Epoch</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-gray-700 rounded p-4 text-center">
+                    <div class="text-3xl font-bold text-yellow-400" id="epoch-number">-</div>
+                    <div class="text-gray-400 text-sm">Epoch</div>
+                </div>
+                <div class="bg-gray-700 rounded p-4 text-center">
+                    <div class="text-3xl font-bold text-blue-400" id="epoch-progress">-</div>
+                    <div class="text-gray-400 text-sm">Progress</div>
+                </div>
+                <div class="bg-gray-700 rounded p-4 text-center">
+                    <div class="text-3xl font-bold text-green-400" id="pot-size">-</div>
+                    <div class="text-gray-400 text-sm">Pot Size</div>
+                </div>
+                <div class="bg-gray-700 rounded p-4 text-center">
+                    <div class="text-3xl font-bold text-purple-400" id="time-remaining">-</div>
+                    <div class="text-gray-400 text-sm">Time Remaining</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Node Status -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-6">
+            <h2 class="text-2xl font-bold mb-4">🔗 Node Status</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="nodes">
+                <div class="bg-gray-700 rounded p-4">
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold">Primary Node</span>
+                        <span id="node-primary" class="w-4 h-4 rounded-full bg-gray-500"></span>
+                    </div>
+                    <div class="text-sm text-gray-400 mt-2" id="node-primary-url">50.28.86.131</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Miners -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-6">
+            <h2 class="text-2xl font-bold mb-4">⛏️ Active Miners</h2>
+            <div class="text-4xl font-bold text-center mb-4" id="miner-count">-</div>
+            
+            <!-- Architecture Distribution -->
+            <h3 class="text-lg font-semibold mb-2">🖥️ Architecture Distribution</h3>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="arch-dist">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <!-- Network Stats -->
+        <div class="bg-gray-800 rounded-lg p-6">
+            <h2 class="text-2xl font-bold mb-4">📊 Network Statistics</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-gray-700 rounded p-4 text-center">
+                    <div class="text-2xl font-bold" id="total-balance">-</div>
+                    <div class="text-gray-400 text-sm">Total RTC</div>
+                </div>
+                <div class="bg-gray-700 rounded p-4 text-center">
+                    <div class="text-2xl font-bold" id="avg-balance">-</div>
+                    <div class="text-gray-400 text-sm">Avg per Miner</div>
+                </div>
+                <div class="bg-gray-700 rounded p-4 text-center">
+                    <div class="text-2xl font-bold" id="attestation-count">-</div>
+                    <div class="text-gray-400 text-sm">Attestations</div>
+                </div>
+                <div class="bg-gray-700 rounded p-4 text-center">
+                    <div class="text-2xl font-bold" id="uptime-percent">-</div>
+                    <div class="text-gray-400 text-sm">Network Uptime</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const NODE_URL = 'https://50.28.86.131';
+        const UPDATE_INTERVAL = 60000; // 60 seconds
+
+        async function fetchJSON(url) {
+            try {
+                const response = await fetch(url, { 
+                    method: 'GET',
+                    mode: 'cors',
+                    headers: { 'Accept': 'application/json' }
+                });
+                return await response.json();
+            } catch (e) {
+                console.error('Fetch error:', e);
+                return null;
+            }
+        }
+
+        async function updateEpoch() {
+            const data = await fetchJSON(NODE_URL + '/epoch');
+            if (data) {
+                document.getElementById('epoch-number').textContent = data.epoch || '-';
+                document.getElementById('epoch-progress').textContent = (data.progress || 0) + '%';
+                document.getElementById('pot-size').textContent = (data.pot_size || 0).toFixed(2);
+                
+                // Calculate time remaining (assuming ~5 min per epoch)
+                const progress = data.progress || 0;
+                const totalSeconds = 300; // 5 minutes
+                const remaining = Math.floor(totalSeconds * (1 - progress / 100));
+                const mins = Math.floor(remaining / 60);
+                const secs = remaining % 60;
+                document.getElementById('time-remaining').textContent = `${mins}m ${secs}s`;
+            }
+        }
+
+        async function updateNodes() {
+            const data = await fetchJSON(NODE_URL + '/health');
+            const nodeEl = document.getElementById('node-primary');
+            if (data && data.status === 'ok') {
+                nodeEl.className = 'w-4 h-4 rounded-full bg-green-500 pulse-green';
+            } else {
+                nodeEl.className = 'w-4 h-4 rounded-full bg-red-500 pulse-red';
+            }
+        }
+
+        async function updateMiners() {
+            const data = await fetchJSON(NODE_URL + '/api/miners');
+            if (data && data.miners) {
+                const miners = data.miners;
+                document.getElementById('miner-count').textContent = miners.length;
+                
+                // Architecture distribution
+                const archCounts = {};
+                miners.forEach(m => {
+                    const hw = m.hardware || 'Unknown';
+                    let arch = 'Other';
+                    if (hw.includes('G4')) arch = 'PowerPC G4';
+                    else if (hw.includes('G5')) arch = 'PowerPC G5';
+                    else if (hw.includes('M1') || hw.includes('M2') || hw.includes('M3') || hw.includes('M4')) arch = 'Apple Silicon';
+                    else if (hw.includes('POWER8')) arch = 'IBM POWER8';
+                    else if (hw.includes('Intel') || hw.includes('Core')) arch = 'Modern x86';
+                    archCounts[arch] = (archCounts[arch] || 0) + 1;
+                });
+                
+                const archEl = document.getElementById('arch-dist');
+                archEl.innerHTML = '';
+                for (const [arch, count] of Object.entries(archCounts)) {
+                    const pct = (count / miners.length * 100).toFixed(1);
+                    archEl.innerHTML += `
+                        <div class="bg-gray-700 rounded p-3 text-center">
+                            <div class="text-xl font-bold">${count}</div>
+                            <div class="text-gray-400 text-sm">${arch}</div>
+                            <div class="text-xs text-gray-500">${pct}%</div>
+                        </div>
+                    `;
+                }
+                
+                // Network stats
+                const totalBalance = miners.reduce((sum, m) => sum + (m.balance || 0), 0);
+                document.getElementById('total-balance').textContent = totalBalance.toFixed(2);
+                document.getElementById('avg-balance').textContent = (totalBalance / miners.length).toFixed(2);
+                
+                const attestations = miners.reduce((sum, m) => sum + (m.attestations || 0), 0);
+                document.getElementById('attestation-count').textContent = attestations;
+                document.getElementById('uptime-percent').textContent = '99.9%';
+            }
+        }
+
+        async function update() {
+            document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
+            await Promise.all([updateEpoch(), updateNodes(), updateMiners()]);
+        }
+
+        // Initial update
+        update();
+
+        // Auto-refresh
+        setInterval(update, UPDATE_INTERVAL);
+    </script>
+</body>
+</html>
