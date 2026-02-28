@@ -45,7 +45,7 @@ AGENTS = {
 }
 
 # Gemini for LLM solving
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyDvmLDE3DAP8fu8i8QU3vdh_VOAYK0Rcdk")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 
 # State DB for tracking suspensions and rate limits
