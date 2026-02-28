@@ -85,3 +85,66 @@ def verify_ergo_pool(evidence: Dict[str, Any]) -> Tuple[bool, Dict[str, Any], st
             return False, {"hashrate": hashrate}, "ergo_pool_miner_not_found"
 
     return True, {"hashrate": hashrate}, ""
+
+
+def verify_warthog_node_rpc(evidence: Dict[str, Any]) -> Tuple[bool, Dict[str, Any], str]:
+    """Verify Warthog node mining proof via local head endpoint."""
+    endpoint = evidence.get("endpoint") or "http://127.0.0.1:3000/chain/head"
+    try:
+        data = _json_get(endpoint, timeout=float(evidence.get("timeout_sec", 3.0)))
+    except (URLError, HTTPError, TimeoutError, ValueError, json.JSONDecodeError) as e:
+        return False, {}, f"warthog_node_unreachable:{e}"
+
+    height = int(data.get("height", 0) or 0)
+    block_hash = (data.get("hash") or data.get("blockHash") or "").strip()
+    if height <= 0:
+        return False, {"height": height}, "warthog_invalid_height"
+
+    expected_hash = (evidence.get("head_hash") or "").strip()
+    if expected_hash and block_hash and expected_hash != block_hash:
+        return False, {"height": height, "hash": block_hash}, "warthog_head_hash_mismatch"
+
+    return True, {"height": height, "hash": block_hash}, ""
+
+
+def verify_warthog_pool(evidence: Dict[str, Any]) -> Tuple[bool, Dict[str, Any], str]:
+    """Verify Warthog pool hashrate/account evidence."""
+    pool_url = (evidence.get("pool_api_url") or "").strip()
+    if not pool_url:
+        return False, {}, "missing_pool_api_url"
+
+    try:
+        data = _json_get(pool_url, timeout=float(evidence.get("timeout_sec", 3.0)))
+    except (URLError, HTTPError, TimeoutError, ValueError, json.JSONDecodeError) as e:
+        return False, {}, f"warthog_pool_unreachable:{e}"
+
+    hashrate = 0.0
+    for k in ("hashrate", "currentHashrate", "reportedHashrate"):
+        v = data.get(k)
+        if v is not None:
+            try:
+                hashrate = float(v)
+                break
+            except Exception:
+                pass
+
+    if hashrate <= 0 and isinstance(data.get("data"), dict):
+        for k in ("hashrate", "currentHashrate", "reportedHashrate"):
+            v = data["data"].get(k)
+            if v is not None:
+                try:
+                    hashrate = float(v)
+                    break
+                except Exception:
+                    pass
+
+    if hashrate <= 0:
+        return False, {"hashrate": hashrate}, "warthog_pool_no_hashrate"
+
+    miner = (evidence.get("miner") or evidence.get("wallet") or "").strip()
+    if miner:
+        blob = json.dumps(data, ensure_ascii=False)
+        if miner not in blob:
+            return False, {"hashrate": hashrate}, "warthog_pool_miner_not_found"
+
+    return True, {"hashrate": hashrate}, ""
