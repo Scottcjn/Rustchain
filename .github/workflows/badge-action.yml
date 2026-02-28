@@ -1,0 +1,45 @@
+# RustChain Badge Action
+# This is a reference implementation for the GitHub Action
+# The actual action should be published to: Scottcjn/rustchain-badge-action
+
+name: 'RustChain Mining Badge Action Reference'
+
+# This demonstrates how the action should work when published
+# Usage in workflows:
+# - name: Update RustChain Badge
+#   uses: Scottcjn/rustchain-badge-action@v1
+#   with:
+#     wallet: ${{ secrets.RUSTCHAIN_WALLET }}
+#     node-url: https://50.28.86.131
+
+# Action Implementation (for rustchain-badge-action repo):
+# action.yml:
+# name: 'RustChain Badge'
+# description: 'Display live RustChain mining status'
+# inputs:
+#   wallet:
+#     description: 'Wallet address'
+#     required: true
+#   node-url:
+#     description: 'Node URL'
+#     default: 'https://50.28.86.131'
+# runs:
+#   using: 'node20'
+#   main: 'index.js'
+
+# index.js:
+# const core = require('@actions/core');
+# const https = require('https');
+#
+# async function run() {
+#   const wallet = core.getInput('wallet');
+#   const nodeUrl = core.getInput('node-url') || 'https://50.28.86.131';
+#
+#   const badgeUrl = `${nodeUrl}/api/badge/${wallet}`;
+#   core.setOutput('badge-url', badgeUrl);
+#   core.setOutput('badge-markdown', `![RustChain Mining](${badgeUrl})`);
+#
+#   console.log(`Badge URL: ${badgeUrl}`);
+# }
+#
+# run();

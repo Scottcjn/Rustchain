@@ -677,6 +677,62 @@ def format_uptime(seconds):
         return f"{minutes}m"
 
 
+@app.route('/api/badge/<wallet_address>')
+def api_badge(wallet_address):
+    """Generate shields.io compatible badge JSON"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            # Get balance
+            balance_row = conn.execute(
+                "SELECT balance_rtc FROM balances WHERE miner_pk = ?",
+                (wallet_address,)
+            ).fetchone()
+
+            balance = balance_row[0] if balance_row else 0.0
+
+            # Get enrollment info
+            enrollment = conn.execute("""
+                SELECT epoch, weight
+                FROM epoch_enroll
+                WHERE miner_pk = ?
+                ORDER BY epoch DESC
+                LIMIT 1
+            """, (wallet_address,)).fetchone()
+
+            # Get current epoch
+            epoch_resp = requests.get(f"{NODE_API}/epoch", timeout=5)
+            epoch_data = epoch_resp.json()
+            current_epoch = epoch_data['epoch']
+
+            # Check if enrolled in current epoch
+            enrolled = (enrollment and enrollment[0] == current_epoch)
+
+            # Format message
+            message = f"{balance:.1f} RTC | Epoch {current_epoch}"
+            if enrolled:
+                message += " | Active"
+                color = "brightgreen"
+            else:
+                message += " | Inactive"
+                color = "orange"
+
+            return jsonify({
+                "schemaVersion": 1,
+                "label": "RustChain",
+                "message": message,
+                "color": color
+            })
+
+    except Exception as e:
+        print(f"Error in badge generation: {e}")
+        # Return error badge
+        return jsonify({
+            "schemaVersion": 1,
+            "label": "RustChain",
+            "message": "Error",
+            "color": "red"
+        }), 500
+
 @app.route('/downloads/<path:filename>')
 def download_file(filename):
     from flask import send_from_directory
