@@ -5,10 +5,9 @@ Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
 import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math
 import ipaddress
-from urllib.parse import urlparse, quote
-from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
+from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort
+from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, VALID_KINDS
 try:
     # Deployment compatibility: production may run this file as a single script.
     from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
@@ -41,25 +40,22 @@ from datetime import datetime
 from typing import Dict, Optional, Tuple
 from hashlib import blake2b
 
+# RIP-201: Fleet Detection Immune System
+try:
+    from fleet_immune_system import (
+        record_fleet_signals, calculate_immune_weights,
+        register_fleet_endpoints, ensure_schema as ensure_fleet_schema,
+        get_fleet_report
+    )
+    HAVE_FLEET_IMMUNE = True
+    print("[RIP-201] Fleet immune system loaded")
+except Exception as _e:
+    print(f"[RIP-201] Fleet immune system not available: {_e}")
+    HAVE_FLEET_IMMUNE = False
+
 # Ed25519 signature verification
 TESTNET_ALLOW_INLINE_PUBKEY = False  # PRODUCTION: Disabled
 TESTNET_ALLOW_MOCK_SIG = False  # PRODUCTION: Disabled
-
-
-def _runtime_env_name() -> str:
-    return (os.getenv("RC_RUNTIME_ENV") or os.getenv("RUSTCHAIN_ENV") or "").strip().lower()
-
-
-def enforce_mock_signature_runtime_guard() -> None:
-    """Fail closed if mock signature mode is enabled outside test runtime."""
-    if not TESTNET_ALLOW_MOCK_SIG:
-        return
-    if _runtime_env_name() in {"test", "testing", "ci"}:
-        return
-    raise RuntimeError(
-        "Refusing to start with TESTNET_ALLOW_MOCK_SIG enabled outside test runtime "
-        "(set RC_RUNTIME_ENV=test only for tests)."
-    )
 
 try:
     from nacl.signing import VerifyKey
@@ -106,197 +102,6 @@ REPO_ROOT = os.path.abspath(os.path.join(_BASE_DIR, "..")) if os.path.basename(_
 LIGHTCLIENT_DIR = os.path.join(REPO_ROOT, "web", "light-client")
 MUSEUM_DIR = os.path.join(REPO_ROOT, "web", "museum")
 
-HUNTER_BADGE_RAW_URLS = {
-    "topHunter": "https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/top-hunter.json",
-    "totalXp": "https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/hunter-stats.json",
-    "activeHunters": "https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/active-hunters.json",
-    "legendaryHunters": "https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/legendary-hunters.json",
-    "updatedAt": "https://raw.githubusercontent.com/Scottcjn/rustchain-bounties/main/badges/updated-at.json",
-}
-_HUNTER_BADGE_CACHE = {"ts": 0, "data": None}
-_HUNTER_BADGE_TTL_S = int(os.environ.get("HUNTER_BADGE_CACHE_TTL", "300"))
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return default
-
-
-ATTEST_NONCE_SKEW_SECONDS = _env_int("RC_ATTEST_NONCE_SKEW_SECONDS", 60)
-ATTEST_NONCE_TTL_SECONDS = _env_int("RC_ATTEST_NONCE_TTL_SECONDS", 3600)
-ATTEST_CHALLENGE_TTL_SECONDS = _env_int("RC_ATTEST_CHALLENGE_TTL_SECONDS", 300)
-
-# ----------------------------------------------------------------------------
-# Trusted proxy handling
-#
-# SECURITY: never trust X-Forwarded-For unless the request came from a trusted
-# reverse proxy. This matters because we use client IP for logging, rate limits,
-# and (critically) hardware binding anti-multiwallet logic.
-#
-# Configure via env:
-#   RC_TRUSTED_PROXIES="127.0.0.1,::1,10.0.0.0/8"
-# ----------------------------------------------------------------------------
-
-def _parse_trusted_proxies() -> Tuple[set, list]:
-    raw = (os.environ.get("RC_TRUSTED_PROXIES", "") or "127.0.0.1,::1").strip()
-    ips = set()
-    nets = []
-    for item in [x.strip() for x in raw.split(",") if x.strip()]:
-        try:
-            if "/" in item:
-                nets.append(ipaddress.ip_network(item, strict=False))
-            else:
-                ips.add(item)
-        except Exception:
-            continue
-    return ips, nets
-
-
-_TRUSTED_PROXY_IPS, _TRUSTED_PROXY_NETS = _parse_trusted_proxies()
-
-
-def _is_trusted_proxy_ip(ip_text: str) -> bool:
-    """Return True if an IP belongs to configured trusted proxies."""
-    if not ip_text:
-        return False
-    try:
-        ip_obj = ipaddress.ip_address(ip_text)
-        if ip_text in _TRUSTED_PROXY_IPS:
-            return True
-        for net in _TRUSTED_PROXY_NETS:
-            if ip_obj in net:
-                return True
-        return False
-    except Exception:
-        return ip_text in _TRUSTED_PROXY_IPS
-
-
-def client_ip_from_request(req) -> str:
-    remote = (req.remote_addr or "").strip()
-    if not remote:
-        return ""
-
-    if not _is_trusted_proxy_ip(remote):
-        return remote
-
-    xff = (req.headers.get("X-Forwarded-For", "") or "").strip()
-    if not xff:
-        return remote
-
-    # Walk right-to-left to resist client-controlled header injection.
-    # Proxies append their observed client to the right side.
-    hops = [h.strip() for h in xff.split(",") if h.strip()]
-    hops.append(remote)
-    for hop in reversed(hops):
-        try:
-            ipaddress.ip_address(hop)
-        except Exception:
-            continue
-        if not _is_trusted_proxy_ip(hop):
-            return hop
-    return remote
-
-
-def _parse_int_query_arg(name: str, default: int, min_value: int | None = None, max_value: int | None = None):
-    raw_value = request.args.get(name)
-    if raw_value is None or str(raw_value).strip() == "":
-        value = default
-    else:
-        try:
-            value = int(raw_value)
-        except (TypeError, ValueError):
-            return None, f"{name} must be an integer"
-
-    if min_value is not None and value < min_value:
-        value = min_value
-    if max_value is not None and value > max_value:
-        value = max_value
-    return value, None
-
-
-
-def _attest_mapping(value):
-    """Return a dict-like payload section or an empty mapping."""
-    return value if isinstance(value, dict) else {}
-
-
-def _attest_text(value):
-    """Accept only non-empty text values from untrusted attestation input."""
-    if isinstance(value, str):
-        value = value.strip()
-        if value:
-            return value
-    return None
-
-
-def _attest_positive_int(value, default=1):
-    """Coerce untrusted integer-like values to a safe positive integer."""
-    try:
-        coerced = int(value)
-    except (TypeError, ValueError):
-        return default
-    return coerced if coerced > 0 else default
-
-
-def _attest_string_list(value):
-    """Coerce a list-like field into a list of non-empty strings."""
-    if not isinstance(value, list):
-        return []
-    items = []
-    for item in value:
-        text = _attest_text(item)
-        if text:
-            items.append(text)
-    return items
-
-
-def _normalize_attestation_device(device):
-    """Shallow-normalize device metadata so malformed JSON shapes fail closed."""
-    raw = _attest_mapping(device)
-    normalized = {"cores": _attest_positive_int(raw.get("cores"), default=1)}
-    for field in (
-        "device_family",
-        "family",
-        "device_arch",
-        "arch",
-        "device_model",
-        "model",
-        "cpu",
-        "serial_number",
-        "serial",
-    ):
-        text = _attest_text(raw.get(field))
-        if text is not None:
-            normalized[field] = text
-    return normalized
-
-
-def _normalize_attestation_signals(signals):
-    """Shallow-normalize signal metadata used by attestation validation."""
-    raw = _attest_mapping(signals)
-    normalized = {"macs": _attest_string_list(raw.get("macs"))}
-    for field in ("hostname", "serial"):
-        text = _attest_text(raw.get(field))
-        if text is not None:
-            normalized[field] = text
-    return normalized
-
-
-def _normalize_attestation_report(report):
-    """Normalize report metadata used by challenge/ticket handling."""
-    raw = _attest_mapping(report)
-    normalized = {}
-    for field in ("nonce", "commitment"):
-        text = _attest_text(raw.get(field))
-        if text is not None:
-            normalized[field] = text
-    return normalized
-
 # Register Hall of Rust blueprint (tables initialized after DB_PATH is set)
 try:
     from hall_of_rust import hall_bp
@@ -304,6 +109,14 @@ try:
     print("[INIT] Hall of Rust blueprint registered")
 except ImportError as e:
     print(f"[INIT] Hall of Rust not available: {e}")
+
+# x402 + Coinbase Wallet endpoints (swap-info, link-coinbase)
+try:
+    import rustchain_x402
+    rustchain_x402.init_app(app, "/root/rustchain/rustchain_v2.db")
+    print("[x402] RustChain wallet endpoints loaded")
+except Exception as e:
+    print(f"[WARN] rustchain_x402 not loaded: {e}")
 
 @app.before_request
 def _start_timer():
@@ -321,7 +134,7 @@ def _after(resp):
             "method": request.method,
             "path": request.path,
             "status": resp.status_code,
-            "ip": client_ip_from_request(request),
+            "ip": request.headers.get("X-Forwarded-For", request.remote_addr),
             "dur_ms": int(dur * 1000),
         }
         log.info(json.dumps(rec, separators=(",", ":")))
@@ -370,26 +183,6 @@ OPENAPI = {
     ],
     "paths": {
         "/attest/challenge": {
-            "get": {
-                "summary": "Get hardware attestation challenge",
-                "responses": {
-                    "200": {
-                        "description": "Challenge issued",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "nonce": {"type": "string"},
-                                        "expires_at": {"type": "integer"},
-                                        "server_time": {"type": "integer"}
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
             "post": {
                 "summary": "Get hardware attestation challenge",
                 "requestBody": {
@@ -762,6 +555,8 @@ GENESIS_TIMESTAMP = 1764706927  # First actual block (Dec 2, 2025)
 EPOCH_SLOTS = 144  # 24 hours at 10-min blocks
 PER_EPOCH_RTC = 1.5  # Total RTC distributed per epoch across all miners
 PER_BLOCK_RTC = PER_EPOCH_RTC / EPOCH_SLOTS  # ~0.0104 RTC per block
+TOTAL_SUPPLY_RTC = 8_388_608  # Exactly 2**23 — pure binary, immutable
+TOTAL_SUPPLY_URTC = int(TOTAL_SUPPLY_RTC * 1_000_000)  # 8,388,608,000,000 uRTC
 ENFORCE = False  # Start with enforcement off
 CHAIN_ID = "rustchain-mainnet-v2"
 MIN_WITHDRAWAL = 0.1  # RTC
@@ -800,126 +595,19 @@ if HAVE_REWARDS:
         print(f"[REWARDS] Failed to register: {e}")
 
 
-def attest_ensure_tables(conn) -> None:
-    """Create attestation replay/challenge tables if they are missing."""
-    conn.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS used_nonces (
-            nonce TEXT PRIMARY KEY,
-            miner_id TEXT,
-            first_seen INTEGER NOT NULL,
-            expires_at INTEGER NOT NULL
-        )
-        """
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_nonces_expires_at ON nonces(expires_at)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_used_nonces_expires_at ON used_nonces(expires_at)")
-
-
-def attest_cleanup_expired(conn, now_ts: Optional[int] = None) -> None:
-    now_ts = int(now_ts if now_ts is not None else time.time())
-    conn.execute("DELETE FROM nonces WHERE expires_at < ?", (now_ts,))
-    conn.execute("DELETE FROM used_nonces WHERE expires_at < ?", (now_ts,))
-
-
-def _coerce_unix_ts(raw_value) -> Optional[int]:
-    if raw_value is None:
-        return None
-    text = str(raw_value).strip()
-    if not text:
-        return None
-    if "." in text and text.replace(".", "", 1).isdigit():
-        text = text.split(".", 1)[0]
-    if not text.isdigit():
-        return None
-
-    ts = int(text)
-    if ts > 10_000_000_000:
-        ts //= 1000
-    if ts < 0:
-        return None
-    return ts
-
-
-def extract_attestation_timestamp(data: dict, report: dict, nonce: Optional[str]) -> Optional[int]:
-    for key in ("nonce_ts", "timestamp", "nonce_time", "nonce_timestamp"):
-        ts = _coerce_unix_ts(report.get(key))
-        if ts is not None:
-            return ts
-        ts = _coerce_unix_ts(data.get(key))
-        if ts is not None:
-            return ts
-
-    if not nonce:
-        return None
-
-    ts = _coerce_unix_ts(nonce)
-    if ts is not None:
-        return ts
-
-    for sep in (":", "|", "-", "_"):
-        if sep in nonce:
-            ts = _coerce_unix_ts(nonce.split(sep, 1)[0])
-            if ts is not None:
-                return ts
-    return None
-
-
-def attest_validate_challenge(conn, challenge: Optional[str], now_ts: Optional[int] = None):
-    if not challenge:
-        return True, None, None
-
-    now_ts = int(now_ts if now_ts is not None else time.time())
-    row = conn.execute("SELECT expires_at FROM nonces WHERE nonce = ?", (challenge,)).fetchone()
-    if not row:
-        return False, "challenge_invalid", "challenge nonce not found"
-
-    expires_at = int(row[0] or 0)
-    if expires_at < now_ts:
-        conn.execute("DELETE FROM nonces WHERE nonce = ?", (challenge,))
-        return False, "challenge_expired", "challenge nonce has expired"
-
-    conn.execute("DELETE FROM nonces WHERE nonce = ?", (challenge,))
-    return True, None, None
-
-
-def attest_validate_and_store_nonce(
-    conn,
-    miner: str,
-    nonce: Optional[str],
-    now_ts: Optional[int] = None,
-    nonce_ts: Optional[int] = None,
-    skew_seconds: int = ATTEST_NONCE_SKEW_SECONDS,
-    ttl_seconds: int = ATTEST_NONCE_TTL_SECONDS,
-):
-    if not nonce:
-        return True, None, None
-
-    now_ts = int(now_ts if now_ts is not None else time.time())
-    skew_seconds = max(0, int(skew_seconds))
-    ttl_seconds = max(1, int(ttl_seconds))
-
-    if nonce_ts is not None and abs(now_ts - int(nonce_ts)) > skew_seconds:
-        return False, "nonce_stale", f"nonce timestamp outside +/-{skew_seconds}s tolerance"
-
-    try:
-        conn.execute(
-            "INSERT INTO used_nonces (nonce, miner_id, first_seen, expires_at) VALUES (?, ?, ?, ?)",
-            (nonce, miner, now_ts, now_ts + ttl_seconds),
-        )
-    except sqlite3.IntegrityError:
-        return False, "nonce_replay", "nonce has already been used"
-
-    return True, None, None
-
+    # RIP-201: Fleet immune system endpoints
+    if HAVE_FLEET_IMMUNE:
+        try:
+            register_fleet_endpoints(app, DB_PATH)
+            print("[RIP-201] Fleet immune endpoints registered")
+        except Exception as e:
+            print(f"[RIP-201] Failed to register fleet endpoints: {e}")
 
 def init_db():
     """Initialize all database tables"""
     with sqlite3.connect(DB_PATH) as c:
         # Core tables
-        attest_ensure_tables(c)
-        c.execute("CREATE TABLE IF NOT EXISTS ip_rate_limit (client_ip TEXT, miner_id TEXT, ts INTEGER, PRIMARY KEY (client_ip, miner_id))")
+        c.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
 
         # Epoch tables
@@ -991,6 +679,18 @@ def init_db():
             )
         """)
 
+        # RIP-301: Fee events tracking (fees recycled to mining pool)
+        c.execute("""CREATE TABLE IF NOT EXISTS fee_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT NOT NULL,
+            source_id TEXT,
+            miner_pk TEXT,
+            fee_rtc REAL NOT NULL,
+            fee_urtc INTEGER NOT NULL,
+            destination TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )""")
+
         c.execute("""
             CREATE TABLE IF NOT EXISTS miner_keys (
                 miner_pk TEXT PRIMARY KEY,
@@ -1007,42 +707,6 @@ def init_db():
                 nonce TEXT NOT NULL,
                 used_at INTEGER NOT NULL,
                 PRIMARY KEY (miner_pk, nonce)
-            )
-        """)
-
-        # GPU Render Protocol (Bounty #30)
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS render_escrow (
-                id INTEGER PRIMARY KEY,
-                job_id TEXT UNIQUE NOT NULL,
-                job_type TEXT NOT NULL,
-                from_wallet TEXT NOT NULL,
-                to_wallet TEXT NOT NULL,
-                amount_rtc REAL NOT NULL,
-                status TEXT DEFAULT 'locked',
-                created_at INTEGER NOT NULL,
-                released_at INTEGER
-            )
-        """)
-
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS gpu_attestations (
-                miner_id TEXT PRIMARY KEY,
-                gpu_model TEXT,
-                vram_gb REAL,
-                cuda_version TEXT,
-                benchmark_score REAL,
-                price_render_minute REAL,
-                price_tts_1k_chars REAL,
-                price_stt_minute REAL,
-                price_llm_1k_tokens REAL,
-                supports_render INTEGER DEFAULT 1,
-                supports_tts INTEGER DEFAULT 0,
-                supports_stt INTEGER DEFAULT 0,
-                supports_llm INTEGER DEFAULT 0,
-                tts_models TEXT,
-                llm_models TEXT,
-                last_attestation INTEGER
             )
         """)
 
@@ -1117,6 +781,10 @@ def init_db():
                   (int(time.time()),))
         c.execute("INSERT OR IGNORE INTO gov_threshold(id, threshold) VALUES(1, 3)")
         c.execute("INSERT OR IGNORE INTO checkpoints_meta(k, v) VALUES('chain_id', 'rustchain-mainnet-candidate')")
+        # Beacon protocol table
+        c.execute("CREATE TABLE IF NOT EXISTS beacon_envelopes (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL, kind TEXT NOT NULL, nonce TEXT UNIQUE NOT NULL, sig TEXT NOT NULL, pubkey TEXT NOT NULL, payload_hash TEXT NOT NULL, anchored INTEGER DEFAULT 0, created_at INTEGER NOT NULL)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_beacon_anchored ON beacon_envelopes(anchored)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_beacon_agent ON beacon_envelopes(agent_id, created_at)")
         c.commit()
 
 # Hardware multipliers
@@ -1240,7 +908,7 @@ def auto_induct_to_hall(miner: str, device: dict):
     except Exception as e:
         print(f"[HALL] Auto-induct error: {e}")
 
-def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False, source_ip: str = None):
+def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False, source_ip: str = None, signals: dict = None, fingerprint: dict = None):
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
@@ -1248,6 +916,14 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (miner, now, device.get("device_family", device.get("family", "unknown")), device.get("device_arch", device.get("arch", "unknown")), 0.0, 1 if fingerprint_passed else 0, source_ip))
         conn.commit()
+
+        # RIP-201: Record fleet immune system signals
+        if HAVE_FLEET_IMMUNE:
+            try:
+                record_fleet_signals(conn, miner, device, signals or {},
+                                     fingerprint, now, ip_address=source_ip)
+            except Exception as _fe:
+                print(f"[RIP-201] Fleet signal recording warning: {_fe}")
     # Auto-induct to Hall of Rust
     auto_induct_to_hall(miner, device)
 # =============================================================================
@@ -1298,12 +974,45 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     - C miner format: {"checks": {"clock_drift": true}}
     """
     if not fingerprint:
-        return False, "missing_fingerprint_data"
+        # FIX #305: Missing fingerprint data is a validation failure
+        return False, "no_fingerprint_data"
 
     checks = fingerprint.get("checks", {})
-    if not isinstance(checks, dict):
-        checks = {}
-    claimed_device = claimed_device if isinstance(claimed_device, dict) else {}
+    claimed_device = claimed_device or {}
+
+    # FIX #305: Reject empty fingerprint payloads (e.g. fingerprint={} or checks={})
+    if not checks:
+        return False, "empty_fingerprint_checks"
+
+    # FIX #305: Require at least anti_emulation and clock_drift evidence
+    # FIX 2026-02-28: PowerPC/legacy miners may not support clock_drift
+    # (time.perf_counter_ns requires Python 3.7+, old Macs run Python 2.x)
+    # For known vintage architectures, relax clock_drift if anti_emulation passes.
+    claimed_arch_lower = (claimed_device.get("device_arch") or
+                         claimed_device.get("arch", "modern")).lower()
+    vintage_relaxed_archs = {"g4", "g5", "g3", "powerpc", "power macintosh",
+                             "powerpc g4", "powerpc g5", "powerpc g3",
+                             "power8", "power9", "68k", "m68k"}
+    is_vintage = claimed_arch_lower in vintage_relaxed_archs
+
+    if is_vintage:
+        # Vintage: only anti_emulation is strictly required
+        required_checks = ["anti_emulation"]
+        print(f"[FINGERPRINT] Vintage arch {claimed_arch_lower} - relaxed clock_drift requirement")
+    else:
+        required_checks = ["anti_emulation", "clock_drift"]
+
+    for check_name in required_checks:
+        if check_name not in checks:
+            return False, f"missing_required_check:{check_name}"
+        check_entry = checks[check_name]
+        # Bool-only checks (C miner compat) are OK - validated in phase checks below
+        # But dict checks MUST have a "data" field with actual content
+        if isinstance(check_entry, dict) and not check_entry.get("data"):
+            return False, f"empty_check_data:{check_name}"
+
+    # If vintage and clock_drift IS present, still validate it (do not skip)
+    # This only relaxes the REQUIREMENT, not the validation
 
     def get_check_status(check_data):
         """Handle both bool and dict formats for check results"""
@@ -1325,12 +1034,15 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     # Anti-emulation: MUST have raw data if present
     if isinstance(anti_emu_check, dict):
         anti_emu_data = anti_emu_check.get("data", {})
-        # Require evidence of actual checks being performed (values must be non-empty)
+        if not isinstance(anti_emu_data, dict):
+            anti_emu_data = {}
+        # Require evidence of actual checks being performed
         has_evidence = (
-            bool(anti_emu_data.get("vm_indicators")) or
-            bool(anti_emu_data.get("dmesg_scanned")) or
-            bool(anti_emu_data.get("paths_checked")) or
-            bool(anti_emu_data.get("cpuinfo_flags"))
+            "vm_indicators" in anti_emu_data or
+            "dmesg_scanned" in anti_emu_data or
+            "paths_checked" in anti_emu_data or
+            "cpuinfo_flags" in anti_emu_data or
+            isinstance(anti_emu_data.get("vm_indicators"), list)
         )
         if not has_evidence and anti_emu_check.get("passed") == True:
             print(f"[FINGERPRINT] REJECT: anti_emulation claims pass but has no raw evidence")
@@ -1347,6 +1059,8 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     # Clock drift: MUST have statistical data if present
     if isinstance(clock_check, dict):
         clock_data = clock_check.get("data", {})
+        if not isinstance(clock_data, dict):
+            clock_data = {}
         cv = clock_data.get("cv", 0)
         samples = clock_data.get("samples", 0)
 
@@ -1354,8 +1068,6 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
         if clock_check.get("passed") == True and samples == 0 and cv == 0:
             print(f"[FINGERPRINT] REJECT: clock_drift claims pass but no samples/cv")
             return False, "clock_drift_no_evidence"
-        if clock_check.get("passed") == True and samples < 32:
-            return False, f"clock_drift_insufficient_samples:{samples}"
 
         if cv < 0.0001 and cv != 0:
             return False, "timing_too_uniform"
@@ -1383,6 +1095,8 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
         simd_check = checks.get("simd_identity")
         if isinstance(simd_check, dict):
             simd_data = simd_check.get("data", {})
+            if not isinstance(simd_data, dict):
+                simd_data = {}
             # x86 SIMD features should NOT be present on PowerPC
             x86_features = simd_data.get("x86_features", [])
             if x86_features:
@@ -1397,6 +1111,8 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
 
     # ── PHASE 3: ROM fingerprint (retro platforms) ──
     rom_passed, rom_data = get_check_status(checks.get("rom_fingerprint"))
+    if not isinstance(rom_data, dict):
+        rom_data = {}
     if rom_passed == False:
         return False, f"rom_check_failed:{rom_data.get('fail_reason', 'unknown')}"
     if rom_data.get("emulator_detected"):
@@ -1405,6 +1121,9 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     # ── PHASE 4: Overall check with hard/soft distinction ──
     if fingerprint.get("all_passed") == False:
         SOFT_CHECKS = {"cache_timing"}
+        # FIX 2026-02-28: For vintage archs, clock_drift is soft (may not be available)
+        if is_vintage:
+            SOFT_CHECKS = SOFT_CHECKS | {"clock_drift"}
         failed_checks = []
         for k, v in checks.items():
             passed, _ = get_check_status(v)
@@ -1915,59 +1634,6 @@ Blocks per Epoch: ${epoch.blocks_per_epoch}</span>`;
 
 # ============= MUSEUM STATIC UI (2D/3D) =============
 
-def _fetch_json_http(url: str, timeout_s: int = 8):
-    req = Request(url, headers={"User-Agent": f"RustChain/{APP_VERSION}"})
-    try:
-        with urlopen(req, timeout=timeout_s) as resp:
-            payload = resp.read().decode("utf-8", errors="replace")
-        return json.loads(payload)
-    except (HTTPError, URLError, TimeoutError, ValueError):
-        return None
-
-
-def _load_hunter_badges(force: bool = False):
-    now = int(time.time())
-    cached = _HUNTER_BADGE_CACHE.get("data")
-    ts = int(_HUNTER_BADGE_CACHE.get("ts") or 0)
-
-    if not force and cached and (now - ts) < _HUNTER_BADGE_TTL_S:
-        return cached
-
-    badges = {}
-    for key, raw_url in HUNTER_BADGE_RAW_URLS.items():
-        badges[key] = _fetch_json_http(raw_url)
-
-    endpoint_urls = {
-        key: f"https://img.shields.io/endpoint?url={quote(raw_url, safe='')}"
-        for key, raw_url in HUNTER_BADGE_RAW_URLS.items()
-    }
-
-    data = {
-        "ok": True,
-        "source": "rustchain-bounties",
-        "fetched_at": now,
-        "ttl_s": _HUNTER_BADGE_TTL_S,
-        "topHunter": badges.get("topHunter"),
-        "totalXp": badges.get("totalXp"),
-        "activeHunters": badges.get("activeHunters"),
-        "legendaryHunters": badges.get("legendaryHunters"),
-        "updatedAt": badges.get("updatedAt"),
-        "rawUrls": HUNTER_BADGE_RAW_URLS,
-        "endpointUrls": endpoint_urls,
-    }
-
-    _HUNTER_BADGE_CACHE["ts"] = now
-    _HUNTER_BADGE_CACHE["data"] = data
-    return data
-
-
-@app.route("/api/hunters/badges", methods=["GET"])
-def api_hunter_badges():
-    """Proxy Hall of Hunters badge JSON via local node API with caching."""
-    refresh = str(request.args.get("refresh", "0")).lower() in {"1", "true", "yes"}
-    return jsonify(_load_hunter_badges(force=refresh))
-
-
 @app.route("/museum", methods=["GET"])
 def museum_2d():
     """2D hardware museum UI (static files served from repo)."""
@@ -1993,22 +1659,19 @@ def museum_assets(filename: str):
 
 # ============= ATTESTATION ENDPOINTS =============
 
-@app.route('/attest/challenge', methods=['GET', 'POST'])
+@app.route('/attest/challenge', methods=['POST'])
 def get_challenge():
     """Issue challenge for hardware attestation"""
-    now_ts = int(time.time())
     nonce = secrets.token_hex(32)
-    expires = now_ts + ATTEST_CHALLENGE_TTL_SECONDS
+    expires = int(time.time()) + 300  # 5 minutes
 
     with sqlite3.connect(DB_PATH) as c:
-        attest_ensure_tables(c)
-        attest_cleanup_expired(c, now_ts)
         c.execute("INSERT INTO nonces (nonce, expires_at) VALUES (?, ?)", (nonce, expires))
 
     return jsonify({
         "nonce": nonce,
         "expires_at": expires,
-        "server_time": now_ts
+        "server_time": int(time.time())
     })
 
 
@@ -2088,23 +1751,18 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
 @app.route('/attest/submit', methods=['POST'])
 def submit_attestation():
     """Submit hardware attestation with fingerprint validation"""
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return jsonify({
-            "ok": False,
-            "error": "invalid_json_object",
-            "message": "Expected a JSON object request body",
-            "code": "INVALID_JSON_OBJECT"
-        }), 400
+    data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = client_ip_from_request(request)
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
 
     # Extract attestation data
-    miner = _attest_text(data.get('miner')) or _attest_text(data.get('miner_id'))
-    report = _normalize_attestation_report(data.get('report'))
-    nonce = report.get('nonce') or _attest_text(data.get('nonce'))
-    device = _normalize_attestation_device(data.get('device'))
+    miner = data.get('miner') or data.get('miner_id')
+    report = data.get('report', {})
+    nonce = report.get('nonce') or data.get('nonce')
+    device = data.get('device', {})
 
     # IP rate limiting (Security Hardening 2026-02-02)
     ip_ok, ip_reason = check_ip_rate_limit(client_ip, miner)
@@ -2116,9 +1774,8 @@ def submit_attestation():
             "message": "Too many unique miners from this IP address",
             "code": "IP_RATE_LIMIT"
         }), 429
-    signals = _normalize_attestation_signals(data.get('signals'))
-    fingerprint = _attest_mapping(data.get('fingerprint'))  # NEW: Extract fingerprint
-    challenge = _attest_text(data.get('challenge'))
+    signals = data.get('signals', {})
+    fingerprint = data.get('fingerprint')  # FIX #305: None default to detect missing vs empty
 
     # Basic validation
     if not miner:
@@ -2132,52 +1789,11 @@ def submit_attestation():
         if blocked_row:
             return jsonify({"ok": False, "error": "wallet_blocked", "reason": blocked_row[0]}), 403
 
-    now_ts = int(time.time())
-    nonce_ts = extract_attestation_timestamp(data, report, nonce)
-    with sqlite3.connect(DB_PATH) as conn:
-        attest_ensure_tables(conn)
-        attest_cleanup_expired(conn, now_ts)
-
-        if challenge:
-            challenge_ok, challenge_error, challenge_message = attest_validate_challenge(conn, challenge, now_ts=now_ts)
-            if not challenge_ok:
-                return jsonify({
-                    "ok": False,
-                    "error": challenge_error,
-                    "message": challenge_message,
-                    "code": "ATTEST_CHALLENGE_REJECTED"
-                }), 400
-        else:
-            app.logger.warning(f"[ATTEST] challenge missing for miner={miner}; allowing legacy flow")
-
-        if nonce:
-            if nonce_ts is None:
-                app.logger.warning(f"[ATTEST] nonce timestamp missing/unparseable for miner={miner}; replay checks still enforced")
-
-            nonce_ok, nonce_error, nonce_message = attest_validate_and_store_nonce(
-                conn,
-                miner=miner,
-                nonce=nonce,
-                now_ts=now_ts,
-                nonce_ts=nonce_ts,
-            )
-            if not nonce_ok:
-                return jsonify({
-                    "ok": False,
-                    "error": nonce_error,
-                    "message": nonce_message,
-                    "code": "ATTEST_NONCE_REJECTED"
-                }), 409 if nonce_error == "nonce_replay" else 400
-        else:
-            app.logger.warning(f"[ATTEST] nonce missing for miner={miner}; allowing legacy flow")
-
-        conn.commit()
-
     # SECURITY: Hardware binding check v2.0 (serial + entropy validation)
     serial = device.get('serial_number') or device.get('serial') or signals.get('serial')
-    cores = _attest_positive_int(device.get('cores'), default=1)
-    arch = _attest_text(device.get('arch')) or _attest_text(device.get('device_arch')) or 'modern'
-    macs = _attest_string_list(signals.get('macs'))
+    cores = device.get('cores', 1)
+    arch = device.get('arch') or device.get('device_arch', 'modern')
+    macs = signals.get('macs', [])
     
     if HW_BINDING_V2 and serial:
         hw_ok, hw_msg, hw_details = bind_hardware_v2(
@@ -2210,36 +1826,45 @@ def submit_attestation():
             }), 409
 
     # RIP-0147a: Check OUI gate
+    macs = signals.get('macs', [])
     if macs:
         oui_ok, oui_info = _check_oui_gate(macs)
         if not oui_ok:
             return jsonify(oui_info), 412
 
     # NEW: Validate fingerprint data (RIP-PoA)
+    # FIX #305: Default to False - must pass validation to earn rewards
     fingerprint_passed = False
-    fingerprint_reason = "missing_fingerprint_data"
+    fingerprint_reason = "not_checked"
 
-    if fingerprint:
+    # FIX #305: Always validate - pass None/empty to validator which rejects them
+    if fingerprint is not None:
         fingerprint_passed, fingerprint_reason = validate_fingerprint_data(fingerprint, claimed_device=device)
-        print(f"[FINGERPRINT] Miner: {miner}")
-        print(f"[FINGERPRINT]   Passed: {fingerprint_passed}")
-        print(f"[FINGERPRINT]   Reason: {fingerprint_reason}")
-
-        if not fingerprint_passed:
-            # VM/emulator detected - allow attestation but with zero weight
-            print(f"[FINGERPRINT] VM/EMULATOR DETECTED - will receive ZERO rewards")
     else:
-        print(f"[FINGERPRINT] Missing fingerprint payload for miner {miner} - zero reward weight")
+        fingerprint_reason = "no_fingerprint_submitted"
+
+    # DEBUG: dump fingerprint payload for diagnosis
+    if miner and 'selena' in miner.lower():
+        import json as _json
+        try:
+            print(f"[FINGERPRINT-DEBUG] g5-selena payload: {_json.dumps(fingerprint, default=str)[:2000]}")
+        except: pass
+    print(f"[FINGERPRINT] Miner: {miner}")
+    print(f"[FINGERPRINT]   Passed: {fingerprint_passed}")
+    print(f"[FINGERPRINT]   Reason: {fingerprint_reason}")
+
+    if not fingerprint_passed:
+        # VM/emulator or missing fingerprint - allow attestation but with zero weight
+        print(f"[FINGERPRINT] FINGERPRINT FAILED - will receive ZERO rewards")
 
     # NEW: Server-side VM check (double-check device/signals)
     vm_ok, vm_reason = check_vm_signatures_server_side(device, signals)
     if not vm_ok:
         print(f"[VM_CHECK] Miner: {miner} - VM DETECTED (zero rewards): {vm_reason}")
         fingerprint_passed = False  # Mark as failed for zero weight
-        fingerprint_reason = f"server_vm_check_failed:{vm_reason}"
 
     # Record successful attestation (with fingerprint status)
-    record_attestation_success(miner, device, fingerprint_passed, client_ip)
+    record_attestation_success(miner, device, fingerprint_passed, client_ip, signals=signals, fingerprint=fingerprint)
 
     # Record MACs if provided
     if macs:
@@ -2309,7 +1934,6 @@ def submit_attestation():
         "status": "accepted",
         "device": device,
         "fingerprint_passed": fingerprint_passed,
-        "fingerprint_reason": fingerprint_reason,
         "macs_recorded": len(macs) if macs else 0
     })
 
@@ -2328,19 +1952,13 @@ def get_epoch():
             (epoch,)
         ).fetchone()[0]
 
-    if not is_admin(request):
-        return jsonify({
-            "epoch": epoch,
-            "blocks_per_epoch": EPOCH_SLOTS,
-            "visibility": "public_redacted"
-        })
-
     return jsonify({
         "epoch": epoch,
         "slot": slot,
         "epoch_pot": PER_EPOCH_RTC,
         "enrolled_miners": enrolled,
-        "blocks_per_epoch": EPOCH_SLOTS
+        "blocks_per_epoch": EPOCH_SLOTS,
+        "total_supply_rtc": TOTAL_SUPPLY_RTC
     })
 
 @app.route('/epoch/enroll', methods=['POST'])
@@ -2349,7 +1967,9 @@ def enroll_epoch():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = client_ip_from_request(request)
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     miner_pk = data.get('miner_pubkey')
     miner_id = data.get('miner_id', miner_pk)  # Use miner_id if provided
     device = data.get('device', {})
@@ -2703,13 +2323,19 @@ def reject_v1_mine():
 
 @app.route('/withdraw/register', methods=['POST'])
 def register_withdrawal_key():
+    # SECURITY: Registering withdrawal keys allows fund extraction; require admin key.
+    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
+        return jsonify({"error": "Unauthorized - admin key required"}), 401
     """Register sr25519 public key for withdrawals"""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid JSON body"}), 400
 
     # Extract client IP (handle nginx proxy)
-    client_ip = client_ip_from_request(request)
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     miner_pk = data.get('miner_pk')
     pubkey_sr25519 = data.get('pubkey_sr25519')
 
@@ -2757,35 +2383,22 @@ def request_withdrawal():
     """Request RTC withdrawal"""
     withdrawal_requests.inc()
 
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        withdrawal_failed.inc()
-        return jsonify({"error": "Invalid JSON body"}), 400
+    data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = client_ip_from_request(request)
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     miner_pk = data.get('miner_pk')
-    amount_raw = data.get('amount', 0)
+    amount = float(data.get('amount', 0))
     destination = data.get('destination')
     signature = data.get('signature')
     nonce = data.get('nonce')
 
     if not all([miner_pk, destination, signature, nonce]):
-        withdrawal_failed.inc()
         return jsonify({"error": "Missing required fields"}), 400
 
-    try:
-        amount = float(amount_raw)
-    except (TypeError, ValueError):
-        withdrawal_failed.inc()
-        return jsonify({"error": "Amount must be a number"}), 400
-
-    if not math.isfinite(amount) or amount <= 0:
-        withdrawal_failed.inc()
-        return jsonify({"error": "Amount must be a finite positive number"}), 400
-
     if amount < MIN_WITHDRAWAL:
-        withdrawal_failed.inc()
         return jsonify({"error": f"Minimum withdrawal is {MIN_WITHDRAWAL} RTC"}), 400
 
     with sqlite3.connect(DB_PATH) as c:
@@ -2864,6 +2477,18 @@ def request_withdrawal():
         c.execute("UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ?",
                   (total_needed, miner_pk))
 
+        # RIP-301: Route fee to mining pool (founder_community) instead of burning
+        fee_urtc = int(WITHDRAWAL_FEE * UNIT)
+        c.execute(
+            "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+            (fee_urtc, "founder_community")
+        )
+        c.execute(
+            """INSERT INTO fee_events (source, source_id, miner_pk, fee_rtc, fee_urtc, destination, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            ("withdrawal", withdrawal_id, miner_pk, WITHDRAWAL_FEE, fee_urtc, "founder_community", int(time.time()))
+        )
+
         # Create withdrawal record
         c.execute("""
             INSERT INTO withdrawals (
@@ -2890,6 +2515,58 @@ def request_withdrawal():
         "fee": WITHDRAWAL_FEE,
         "net_amount": amount - WITHDRAWAL_FEE
     })
+
+
+@app.route("/api/fee_pool", methods=["GET"])
+def api_fee_pool():
+    """RIP-301: Fee pool statistics and recent fee events."""
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+
+        # Total fees collected
+        row = c.execute(
+            "SELECT COALESCE(SUM(fee_rtc), 0), COUNT(*) FROM fee_events"
+        ).fetchone()
+        total_fees_rtc = row[0]
+        total_events = row[1]
+
+        # Fees by source
+        sources = {}
+        for src_row in c.execute(
+            "SELECT source, COALESCE(SUM(fee_rtc), 0), COUNT(*) FROM fee_events GROUP BY source"
+        ).fetchall():
+            sources[src_row[0]] = {"total_rtc": src_row[1], "count": src_row[2]}
+
+        # Last 10 fee events
+        recent = []
+        for ev in c.execute(
+            """SELECT source, source_id, miner_pk, fee_rtc, destination,
+                      datetime(created_at, 'unixepoch') as ts
+               FROM fee_events ORDER BY id DESC LIMIT 10"""
+        ).fetchall():
+            recent.append({
+                "source": ev[0], "source_id": ev[1], "payer": ev[2],
+                "fee_rtc": ev[3], "destination": ev[4], "timestamp": ev[5]
+            })
+
+        # Community fund balance (where fees go)
+        fund_row = c.execute(
+            "SELECT COALESCE(amount_i64, 0) FROM balances WHERE miner_id = 'founder_community'"
+        ).fetchone()
+        fund_balance = fund_row[0] / 1_000_000.0 if fund_row else 0.0
+
+    return jsonify({
+        "rip": 301,
+        "description": "Fee Pool Statistics (fees recycled to mining pool)",
+        "total_fees_collected_rtc": total_fees_rtc,
+        "total_fee_events": total_events,
+        "fees_by_source": sources,
+        "destination": "founder_community",
+        "destination_balance_rtc": fund_balance,
+        "withdrawal_fee_rtc": WITHDRAWAL_FEE,
+        "recent_events": recent
+    })
+
 
 @app.route('/withdraw/status/<withdrawal_id>', methods=['GET'])
 def withdrawal_status(withdrawal_id):
@@ -2920,6 +2597,10 @@ def withdrawal_status(withdrawal_id):
 @app.route('/withdraw/history/<miner_pk>', methods=['GET'])
 def withdrawal_history(miner_pk):
     """Get withdrawal history for miner"""
+    # SECURITY FIX 2026-02-15: Require admin key - exposes withdrawal history
+    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
+        return jsonify({"error": "Unauthorized - admin key required"}), 401
     limit = request.args.get('limit', 50, type=int)
 
     with sqlite3.connect(DB_PATH) as c:
@@ -3218,6 +2899,73 @@ def get_stats():
         "security": ["no_mock_sigs", "mandatory_admin_key", "replay_protection", "validated_json"]
     })
 
+
+# ---------- RIP-0200b: Deflationary Bounty Decay ----------
+# Half-life model: bounty multiplier = 0.5^(total_paid / HALF_LIFE)
+# As more RTC is paid from community fund, bounties shrink automatically.
+# This creates scarcity pressure and rewards early contributors.
+
+BOUNTY_INITIAL_FUND = 96673.0  # Original community fund size (RTC)
+BOUNTY_HALF_LIFE = 25000.0     # RTC paid out before bounties halve
+
+@app.route("/api/bounty-multiplier", methods=["GET"])
+def bounty_multiplier():
+    """Get current bounty decay multiplier based on total payouts."""
+    import math
+    with sqlite3.connect(DB_PATH) as c:
+        # Total RTC paid out from community fund (negative deltas)
+        row = c.execute(
+            "SELECT COALESCE(SUM(ABS(delta_i64)), 0) FROM ledger "
+            "WHERE miner_id = ? AND delta_i64 < 0",
+            ("founder_community",)
+        ).fetchone()
+        total_paid_urtc = row[0] if row else 0
+        total_paid_rtc = total_paid_urtc / 1000000.0
+
+        # Current balance
+        bal_row = c.execute(
+            "SELECT COALESCE(amount_i64, 0) FROM balances WHERE miner_id = ?",
+            ("founder_community",)
+        ).fetchone()
+        remaining_urtc = bal_row[0] if bal_row else 0
+        remaining_rtc = remaining_urtc / 1000000.0
+
+    # Half-life decay: multiplier = 0.5^(total_paid / half_life)
+    multiplier = 0.5 ** (total_paid_rtc / BOUNTY_HALF_LIFE)
+
+    # Example: what a 100 RTC bounty would actually pay
+    example_face = 100.0
+    example_actual = round(example_face * multiplier, 2)
+
+    # Milestones
+    milestones = []
+    for pct in [0.75, 0.50, 0.25, 0.10]:
+        # Solve: 0.5^(x/25000) = pct  =>  x = 25000 * log2(1/pct)
+        threshold = BOUNTY_HALF_LIFE * math.log2(1.0 / pct)
+        status = "reached" if total_paid_rtc >= threshold else "upcoming"
+        milestones.append({
+            "multiplier": pct,
+            "rtc_paid_threshold": round(threshold, 0),
+            "status": status
+        })
+
+    return jsonify({
+        "ok": True,
+        "decay_model": "half-life",
+        "half_life_rtc": BOUNTY_HALF_LIFE,
+        "initial_fund_rtc": BOUNTY_INITIAL_FUND,
+        "total_paid_rtc": round(total_paid_rtc, 2),
+        "remaining_rtc": round(remaining_rtc, 2),
+        "current_multiplier": round(multiplier, 4),
+        "current_multiplier_pct": f"{multiplier * 100:.1f}%",
+        "example": {
+            "face_value": example_face,
+            "actual_payout": example_actual,
+            "note": f"A {example_face} RTC bounty currently pays {example_actual} RTC"
+        },
+        "milestones": milestones
+    })
+
 # ---------- RIP-0147a: Admin OUI Management ----------
 
 
@@ -3287,24 +3035,6 @@ def api_miners():
     """Return list of attested miners with their PoA details"""
     import time as _time
     now = int(_time.time())
-
-    if not is_admin(request):
-        with sqlite3.connect(DB_PATH) as conn:
-            active_miners = conn.execute(
-                """
-                SELECT COUNT(DISTINCT miner)
-                FROM miner_attest_recent
-                WHERE ts_ok > ?
-                """,
-                (now - 3600,),
-            ).fetchone()[0]
-
-        return jsonify({
-            "active_miners": int(active_miners or 0),
-            "window_seconds": 3600,
-            "visibility": "public_redacted"
-        })
-
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
@@ -3353,8 +3083,6 @@ def api_miners():
 
             miners.append({
                 "miner": r["miner"],
-                # Backward-compatible alias: some docs/tools refer to miner_id.
-                "miner_id": r["miner"],
                 "last_attest": r["ts_ok"],
                 "first_attest": first_attest,
                 "device_family": r["device_family"],
@@ -3369,21 +3097,13 @@ def api_miners():
 
 @app.route("/api/badge/<miner_id>", methods=["GET"])
 def api_badge(miner_id: str):
-    """Shields.io-compatible JSON badge endpoint for a miner's mining status.
-
-    Usage in README:
-        ![Mining Status](https://img.shields.io/endpoint?url=https://rustchain.org/api/badge/YOUR_MINER_ID)
-
-    Returns JSON with schemaVersion, label, message, and color per
-    https://shields.io/endpoint spec.
-    """
+    """Shields.io-compatible JSON badge endpoint for mining status."""
     miner_id = miner_id.strip()
     if not miner_id:
         return jsonify({"schemaVersion": 1, "label": "RustChain", "message": "invalid", "color": "red"}), 400
 
     now = int(time.time())
     status = "Inactive"
-    hw_type = ""
     multiplier = 1.0
 
     try:
@@ -3397,16 +3117,15 @@ def api_badge(miner_id: str):
 
             if row and row["ts_ok"]:
                 age = now - int(row["ts_ok"])
-                if age < 1200:       # attested within 20 minutes
+                if age < 1200:
                     status = "Active"
-                elif age < 3600:     # attested within 1 hour
+                elif age < 3600:
                     status = "Idle"
                 else:
                     status = "Inactive"
 
                 fam = (row["device_family"] or "unknown")
                 arch = (row["device_arch"] or "unknown")
-                hw_type = f"{fam}/{arch}"
                 multiplier = HARDWARE_WEIGHTS.get(fam, {}).get(
                     arch, HARDWARE_WEIGHTS.get(fam, {}).get("default", 1.0)
                 )
@@ -3415,15 +3134,11 @@ def api_badge(miner_id: str):
 
     color_map = {"Active": "brightgreen", "Idle": "yellow", "Inactive": "lightgrey"}
     color = color_map.get(status, "lightgrey")
-    label = f"⛏ {miner_id}"
-
-    message = status
-    if status == "Active" and multiplier > 1.0:
-        message = f"{status} ({multiplier}x)"
+    message = f"{status} ({multiplier}x)" if status == "Active" and multiplier > 1.0 else status
 
     return jsonify({
         "schemaVersion": 1,
-        "label": label,
+        "label": f"RustChain {miner_id}",
         "message": message,
         "color": color,
     })
@@ -3432,9 +3147,12 @@ def api_badge(miner_id: str):
 @app.route("/api/miner/<miner_id>/attestations", methods=["GET"])
 def api_miner_attestations(miner_id: str):
     """Best-effort attestation history for a single miner (museum detail view)."""
-    limit, limit_err = _parse_int_query_arg("limit", 120, min_value=1, max_value=500)
-    if limit_err:
-        return jsonify({"ok": False, "error": limit_err}), 400
+    # SECURITY FIX 2026-02-15: Require admin key - exposes miner attestation history/timing
+    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
+        return jsonify({"error": "Unauthorized - admin key required"}), 401
+    limit = int(request.args.get("limit", "120") or 120)
+    limit = max(1, min(limit, 500))
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
@@ -3472,9 +3190,12 @@ def api_miner_attestations(miner_id: str):
 @app.route("/api/balances", methods=["GET"])
 def api_balances():
     """Return wallet balances (best-effort across schema variants)."""
-    limit, limit_err = _parse_int_query_arg("limit", 2000, min_value=1, max_value=5000)
-    if limit_err:
-        return jsonify({"ok": False, "error": limit_err}), 400
+    # SECURITY FIX 2026-02-15: Require admin key - dumps all wallet balances
+    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
+        return jsonify({"error": "Unauthorized - admin key required"}), 401
+    limit = int(request.args.get("limit", "2000") or 2000)
+    limit = max(1, min(limit, 5000))
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
@@ -3542,7 +3263,9 @@ def add_oui_deny():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = client_ip_from_request(request)
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
     vendor = data.get('vendor', 'Unknown')
     enforce = int(data.get('enforce', 0))
@@ -3567,7 +3290,9 @@ def remove_oui_deny():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = client_ip_from_request(request)
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
 
     with sqlite3.connect(DB_PATH) as conn:
@@ -3624,10 +3349,16 @@ def metrics_mac():
 @app.route('/ops/attest/debug', methods=['POST'])
 def attest_debug():
     """Debug endpoint: show miner's enrollment eligibility"""
+    # SECURITY FIX 2026-02-15: Require admin key - exposes internal config + MAC hashes
+    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
+        return jsonify({"error": "Unauthorized - admin key required"}), 401
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = client_ip_from_request(request)
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     miner = data.get('miner') or data.get('miner_id')
 
     if not miner:
@@ -3737,6 +3468,9 @@ METRICS_SNAPSHOT = {}
 @app.route('/ops/readiness', methods=['GET'])
 def ops_readiness():
     """Single PASS/FAIL aggregator for all go/no-go checks"""
+    # SECURITY FIX 2026-02-15: Only show detailed checks to admin
+    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    is_admin = admin_key == os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64")
     out = {"ok": True, "checks": []}
 
     # Health check
@@ -3791,6 +3525,9 @@ def ops_readiness():
         out["checks"].append({"name": "metrics_keys", "ok": False, "err": "unavailable"})
         out["ok"] = False
 
+    # Strip detailed checks for non-admin requests
+    if not is_admin:
+        return jsonify({"ok": out["ok"]}), (200 if out["ok"] else 503)
     return jsonify(out), (200 if out["ok"] else 503)
 
 @app.route('/health', methods=['GET'])
@@ -3864,9 +3601,6 @@ def api_rewards_epoch(epoch: int):
 @app.route('/wallet/balance', methods=['GET'])
 def api_wallet_balance():
     """Get balance for a specific miner"""
-    if not is_admin(request):
-        return jsonify({"ok": False, "reason": "admin_required"}), 401
-
     miner_id = request.args.get("miner_id", "").strip()
     if not miner_id:
         return jsonify({"ok": False, "error": "miner_id required"}), 400
@@ -4032,9 +3766,7 @@ def list_pending():
         return jsonify({"error": "Unauthorized"}), 401
 
     status_filter = request.args.get('status', 'pending')
-    limit, limit_err = _parse_int_query_arg("limit", 100, min_value=1, max_value=500)
-    if limit_err:
-        return jsonify({"ok": False, "error": limit_err}), 400
+    limit = min(int(request.args.get('limit', 100)), 500)
     
     with sqlite3.connect(DB_PATH) as db:
         if status_filter == 'all':
@@ -4298,7 +4030,9 @@ def wallet_transfer_OLD():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = client_ip_from_request(request)
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     from_miner = data.get('from_miner')
     to_miner = data.get('to_miner')
     amount_rtc = float(data.get('amount_rtc', 0))
@@ -4594,6 +4328,114 @@ def _balance_i64_for_wallet(c: sqlite3.Cursor, wallet_id: str) -> int:
     return 0
 
 
+
+# ---------------------------------------------------------------------------
+# Beacon (bcn_) Wallet Address Support
+# ---------------------------------------------------------------------------
+# Beacon agents can use their beacon ID (bcn_xxx) as an RTC wallet address.
+# - Receiving: Anyone can send TO a bcn_ address
+# - Spending: Requires Ed25519 signature verified against the pubkey
+#   registered in the Beacon Atlas
+# - Resolution: bcn_ ID -> pubkey_hex from relay_agents table
+# ---------------------------------------------------------------------------
+
+BEACON_ATLAS_DB = "/root/beacon/beacon_atlas.db"
+
+
+def resolve_bcn_wallet(bcn_id: str) -> dict:
+    """
+    Resolve a bcn_ beacon ID to its registered public key and metadata.
+    
+    Returns dict with:
+      - found: bool
+      - agent_id: str
+      - pubkey_hex: str (Ed25519 public key)
+      - name: str
+      - rtc_address: str (derived RTC address from pubkey)
+    Or:
+      - found: False, error: str
+    """
+    if not bcn_id or not bcn_id.startswith("bcn_"):
+        return {"found": False, "error": "not_a_beacon_id"}
+    
+    try:
+        conn = sqlite3.connect(BEACON_ATLAS_DB)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT agent_id, pubkey_hex, name, status FROM relay_agents WHERE agent_id = ?",
+            (bcn_id,)
+        ).fetchone()
+        conn.close()
+        
+        if not row:
+            return {"found": False, "error": "beacon_id_not_registered"}
+        
+        if row["status"] != "active":
+            return {"found": False, "error": f"beacon_agent_status:{row[status]}"}
+        
+        pubkey_hex = row["pubkey_hex"]
+        rtc_addr = address_from_pubkey(pubkey_hex)
+        
+        return {
+            "found": True,
+            "agent_id": row["agent_id"],
+            "pubkey_hex": pubkey_hex,
+            "name": row["name"],
+            "rtc_address": rtc_addr,
+            "status": row["status"]
+        }
+    except Exception as e:
+        return {"found": False, "error": f"atlas_lookup_failed:{e}"}
+
+
+def is_bcn_address(addr: str) -> bool:
+    """Check if a wallet address is a beacon ID."""
+    return bool(addr and addr.startswith("bcn_") and len(addr) >= 8)
+
+
+@app.route("/wallet/resolve", methods=["GET"])
+def wallet_resolve():
+    """
+    Resolve a bcn_ beacon ID to its RTC wallet address and public key.
+    
+    This lets anyone look up the cryptographic identity behind a beacon wallet.
+    The pubkey is needed to verify signed transfers FROM this address.
+    
+    Query params:
+      - address: The bcn_ beacon ID to resolve
+    
+    Returns:
+      - agent_id, pubkey_hex, rtc_address, name
+    """
+    address = request.args.get("address", "").strip()
+    if not address:
+        return jsonify({"ok": False, "error": "address parameter required"}), 400
+    
+    if not is_bcn_address(address):
+        return jsonify({
+            "ok": False,
+            "error": "not_a_beacon_address",
+            "hint": "Only bcn_ prefixed addresses can be resolved. Regular wallet IDs are used directly."
+        }), 400
+    
+    result = resolve_bcn_wallet(address)
+    if not result["found"]:
+        return jsonify({
+            "ok": False,
+            "error": result["error"],
+            "hint": "Register your agent with the Beacon Atlas first: beacon atlas register"
+        }), 404
+    
+    return jsonify({
+        "ok": True,
+        "beacon_id": result["agent_id"],
+        "pubkey_hex": result["pubkey_hex"],
+        "rtc_address": result["rtc_address"],
+        "name": result["name"],
+        "status": result["status"]
+    })
+
+
 @app.route("/wallet/transfer/signed", methods=["POST"])
 def wallet_transfer_signed():
     """
@@ -4614,7 +4456,9 @@ def wallet_transfer_signed():
         return jsonify({"error": pre.error, "details": pre.details}), 400
 
     # Extract client IP (handle nginx proxy)
-    client_ip = client_ip_from_request(request)
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     
     from_address = pre.details["from_address"]
     to_address = pre.details["to_address"]
@@ -4625,13 +4469,31 @@ def wallet_transfer_signed():
     amount_rtc = pre.details["amount_rtc"]
 
     # Verify public key matches from_address
-    expected_address = address_from_pubkey(public_key)
-    if from_address != expected_address:
-        return jsonify({
-            "error": "Public key does not match from_address",
-            "expected": expected_address,
-            "got": from_address
-        }), 400
+    # Support bcn_ beacon addresses: resolve pubkey from Beacon Atlas
+    if is_bcn_address(from_address):
+        bcn_info = resolve_bcn_wallet(from_address)
+        if not bcn_info["found"]:
+            return jsonify({
+                "error": f"Beacon ID not registered in Atlas: {bcn_info.get('error', 'unknown')}",
+                "hint": "Register your agent first: beacon atlas register"
+            }), 404
+        # Use the Atlas pubkey — client may omit public_key for bcn_ wallets
+        atlas_pubkey = bcn_info["pubkey_hex"]
+        if public_key and public_key != atlas_pubkey:
+            return jsonify({
+                "error": "Public key does not match Beacon Atlas registration",
+                "beacon_id": from_address,
+                "expected_pubkey_prefix": atlas_pubkey[:16] + "..."
+            }), 400
+        public_key = atlas_pubkey  # Use Atlas pubkey for verification
+    else:
+        expected_address = address_from_pubkey(public_key)
+        if from_address != expected_address:
+            return jsonify({
+                "error": "Public key does not match from_address",
+                "expected": expected_address,
+                "got": from_address
+            }), 400
     
     nonce = str(nonce_int)
 
@@ -4732,17 +4594,69 @@ def wallet_transfer_signed():
     finally:
         conn.close()
 
-if __name__ == "__main__":
-    try:
-        enforce_mock_signature_runtime_guard()
-    except RuntimeError as e:
-        print("=" * 70, file=sys.stderr)
-        print("FATAL: unsafe mock-signature configuration", file=sys.stderr)
-        print("=" * 70, file=sys.stderr)
-        print(str(e), file=sys.stderr)
-        print("=" * 70, file=sys.stderr)
-        sys.exit(1)
 
+# ---------------------------------------------------------------------------
+# Beacon Protocol Endpoints (OpenClaw envelope anchoring)
+# ---------------------------------------------------------------------------
+
+BEACON_RATE_WINDOW = 60
+BEACON_RATE_LIMIT  = 60
+
+@app.route("/beacon/submit", methods=["POST"])
+def beacon_submit():
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"ok": False, "error": "invalid_json"}), 400
+    agent_id = data.get("agent_id", "")
+    kind = data.get("kind", "")
+    nonce = data.get("nonce", "")
+    sig = data.get("sig", "")
+    pubkey = data.get("pubkey", "")
+    if not all([agent_id, kind, nonce, sig, pubkey]):
+        return jsonify({"ok": False, "error": "missing_fields"}), 400
+    if kind not in VALID_KINDS:
+        return jsonify({"ok": False, "error": f"invalid_kind:{kind}"}), 400
+    if len(nonce) < 6 or len(nonce) > 64:
+        return jsonify({"ok": False, "error": "nonce_length_invalid"}), 400
+    if len(sig) < 64 or len(sig) > 256:
+        return jsonify({"ok": False, "error": "sig_length_invalid"}), 400
+    if len(agent_id) < 5 or len(agent_id) > 64:
+        return jsonify({"ok": False, "error": "agent_id_length_invalid"}), 400
+    now = int(time.time())
+    cutoff = now - BEACON_RATE_WINDOW
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM beacon_envelopes WHERE agent_id = ? AND created_at >= ?",
+                (agent_id, cutoff)).fetchone()[0]
+            if count >= BEACON_RATE_LIMIT:
+                return jsonify({"ok": False, "error": "rate_limited"}), 429
+    except Exception:
+        pass
+    result = store_envelope(data, DB_PATH)
+    if result["ok"]:
+        return jsonify(result), 201
+    elif "duplicate_nonce" in result.get("error", ""):
+        return jsonify(result), 409
+    else:
+        return jsonify(result), 400
+
+@app.route("/beacon/digest", methods=["GET"])
+def beacon_digest():
+    d = compute_beacon_digest(DB_PATH)
+    return jsonify({"ok": True, "digest": d["digest"], "count": d["count"], "latest_ts": d["latest_ts"]})
+
+@app.route("/beacon/envelopes", methods=["GET"])
+def beacon_envelopes_list():
+    try:
+        limit = min(int(request.args.get("limit", 50)), 50)
+        offset = max(int(request.args.get("offset", 0)), 0)
+    except (ValueError, TypeError):
+        limit, offset = 50, 0
+    envelopes = get_recent_envelopes(limit=limit, offset=offset, db_path=DB_PATH)
+    return jsonify({"ok": True, "count": len(envelopes), "envelopes": envelopes})
+
+if __name__ == "__main__":
     # CRITICAL: SR25519 library is REQUIRED for production
     if not SR25519_AVAILABLE:
         print("=" * 70, file=sys.stderr)
@@ -4768,24 +4682,6 @@ if __name__ == "__main__":
         print(f"[P2P] Not available: {e}")
     except Exception as e:
         print(f"[P2P] Init failed: {e}")
-
-    # New: GPU Render Protocol (Bounty #30)
-    try:
-        from node.gpu_render_endpoints import register_gpu_render_endpoints
-        register_gpu_render_endpoints(app, DB_PATH, ADMIN_KEY)
-    except ImportError as e:
-        print(f"[GPU] Endpoint module not available: {e}")
-    except Exception as e:
-        print(f"[GPU] Endpoint init failed: {e}")
-
-    # Node Sync Protocol (Bounty #36) - decoupled from P2P init
-    try:
-        from node.rustchain_sync_endpoints import register_sync_endpoints
-        register_sync_endpoints(app, DB_PATH, ADMIN_KEY)
-    except ImportError as e:
-        print(f"[Sync] Not available: {e}")
-    except Exception as e:
-        print(f"[Sync] Init failed: {e}")
     print("=" * 70)
     print("RustChain v2.2.1 - SECURITY HARDENED - Mainnet Candidate")
     print("=" * 70)
@@ -4851,7 +4747,7 @@ echo.
 echo Downloading diagnostic test...
 echo.
 
-powershell -Command "Invoke-WebRequest -Uri 'http://rustchain.org/download/test' -OutFile 'test_miner_minimal.py'"
+powershell -Command "Invoke-WebRequest -Uri 'https://50.28.86.131/download/test' -OutFile 'test_miner_minimal.py'"
 if errorlevel 1 (
   echo [error] download failed
   exit /b 1
