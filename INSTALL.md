@@ -338,7 +338,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 - **Documentation:** https://github.com/Scottcjn/Rustchain
 - **Issues:** https://github.com/Scottcjn/Rustchain/issues
-- **Explorer:** http://50.28.86.131/explorer
+- **Explorer:** https://50.28.86.131/explorer
 - **Bounties:** https://github.com/Scottcjn/rustchain-bounties
 
 ## Security Notes
