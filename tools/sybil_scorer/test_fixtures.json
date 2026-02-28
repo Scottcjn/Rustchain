@@ -1,0 +1,66 @@
+[
+  {
+    "issue": 400,
+    "claimant": "legit_dev",
+    "wallet": "legit_wallet_123",
+    "timestamp": "2026-02-20T10:00:00Z",
+    "comment": "Fixed the Windows node URL issue. Detailed PR with tests included.",
+    "account_age_days": 120
+  },
+  {
+    "issue": 401,
+    "claimant": "legit_dev",
+    "wallet": "legit_wallet_123",
+    "timestamp": "2026-02-22T14:00:00Z",
+    "comment": "Added Discord webhook support for notifications.",
+    "account_age_days": 120
+  },
+  {
+    "issue": 402,
+    "claimant": "real_contributor",
+    "wallet": "my_real_wallet",
+    "timestamp": "2026-02-25T09:00:00Z",
+    "comment": "Improved error handling in the API client. Full test coverage.",
+    "account_age_days": 90
+  },
+  {
+    "issue": 403,
+    "claimant": "new_user_abc",
+    "wallet": "test123",
+    "timestamp": "2026-02-28T08:00:00Z",
+    "comment": "Wallet: 0x123\nGitHub: @newuser\nProof: https://example.com",
+    "account_age_days": 3
+  },
+  {
+    "issue": 404,
+    "claimant": "new_user_xyz",
+    "wallet": "temp456",
+    "timestamp": "2026-02-28T08:15:00Z",
+    "comment": "Wallet: 0x456\nGitHub: @anothernew\nProof: https://example.com",
+    "account_age_days": 2
+  },
+  {
+    "issue": 405,
+    "claimant": "farming_bot",
+    "wallet": "wallet789",
+    "timestamp": "2026-02-28T08:30:00Z",
+    "comment": "Wallet: wallet789\nGitHub: @farming\nProof: https://example.com",
+    "account_age_days": 1
+  },
+  {
+    "issue": 406,
+    "claimant": "legit_dev2",
+    "wallet": "proper_wallet",
+    "timestamp": "2026-02-26T12:00:00Z",
+    "comment": "Great project! Adding feature request for better documentation.",
+    "account_age_days": 60
+  },
+  {
+    "issue": 407,
+    "claimant": "unknown",
+    "wallet": "abc",
+    "timestamp": "2026-02-28T09:00:00Z",
+    "comment": "Done",
+    "account_age_days": 0
+  }
+]
