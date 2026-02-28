@@ -29,7 +29,7 @@ class TestPowProofValidation(unittest.TestCase):
         self.assertEqual(err, "ergo_pool_no_hashrate")
 
     def test_reject_unsupported_coin(self):
-        ok, _, err = pow_proof.validate_pow_proof({"coin": "kaspa", "proof_type": "node_rpc"}, miner_id="m3")
+        ok, _, err = pow_proof.validate_pow_proof({"coin": "monero", "proof_type": "node_rpc"}, miner_id="m3")
         self.assertFalse(ok)
         self.assertIn("unsupported_coin", err)
 

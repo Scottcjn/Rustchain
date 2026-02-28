@@ -85,3 +85,82 @@ def verify_ergo_pool(evidence: Dict[str, Any]) -> Tuple[bool, Dict[str, Any], st
             return False, {"hashrate": hashrate}, "ergo_pool_miner_not_found"
 
     return True, {"hashrate": hashrate}, ""
+
+
+def verify_kaspa_node_rpc(evidence: Dict[str, Any]) -> Tuple[bool, Dict[str, Any], str]:
+    """Verify Kaspa node proof via JSON-RPC getInfo endpoint."""
+    endpoint = evidence.get("endpoint") or "http://127.0.0.1:16110"
+    timeout = float(evidence.get("timeout_sec", 3.0))
+    payload = {
+        "jsonrpc": "2.0",
+        "method": evidence.get("method") or "getInfo",
+        "params": evidence.get("params") or [],
+        "id": 1,
+    }
+    body = json.dumps(payload).encode("utf-8")
+    req = Request(endpoint, data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except (URLError, HTTPError, TimeoutError, ValueError, json.JSONDecodeError) as e:
+        return False, {}, f"kaspa_node_unreachable:{e}"
+
+    result = data.get("result") if isinstance(data, dict) else None
+    if not isinstance(result, dict):
+        return False, {"raw": data}, "kaspa_invalid_rpc_result"
+
+    synced = bool(result.get("isSynced", True))
+    peers = int(result.get("peers", result.get("numPeers", 0)) or 0)
+    network = (result.get("network") or result.get("networkName") or "").strip()
+
+    if not synced:
+        return False, {"isSynced": synced, "peers": peers, "network": network}, "kaspa_not_synced"
+
+    expected_network = (evidence.get("network") or "").strip()
+    if expected_network and network and expected_network.lower() != network.lower():
+        return False, {"isSynced": synced, "peers": peers, "network": network}, "kaspa_network_mismatch"
+
+    return True, {"isSynced": synced, "peers": peers, "network": network}, ""
+
+
+def verify_kaspa_pool(evidence: Dict[str, Any]) -> Tuple[bool, Dict[str, Any], str]:
+    """Verify Kaspa pool hashrate/account evidence."""
+    pool_url = (evidence.get("pool_api_url") or "").strip()
+    if not pool_url:
+        return False, {}, "missing_pool_api_url"
+
+    try:
+        data = _json_get(pool_url, timeout=float(evidence.get("timeout_sec", 3.0)))
+    except (URLError, HTTPError, TimeoutError, ValueError, json.JSONDecodeError) as e:
+        return False, {}, f"kaspa_pool_unreachable:{e}"
+
+    hashrate = 0.0
+    for k in ("hashrate", "currentHashrate", "reportedHashrate"):
+        v = data.get(k)
+        if v is not None:
+            try:
+                hashrate = float(v)
+                break
+            except Exception:
+                pass
+
+    if hashrate <= 0 and isinstance(data.get("data"), dict):
+        for k in ("hashrate", "currentHashrate", "reportedHashrate"):
+            v = data["data"].get(k)
+            if v is not None:
+                try:
+                    hashrate = float(v)
+                    break
+                except Exception:
+                    pass
+
+    if hashrate <= 0:
+        return False, {"hashrate": hashrate}, "kaspa_pool_no_hashrate"
+
+    miner = (evidence.get("miner") or evidence.get("wallet") or "").strip()
+    if miner:
+        blob = json.dumps(data, ensure_ascii=False)
+        if miner not in blob:
+            return False, {"hashrate": hashrate}, "kaspa_pool_miner_not_found"
+
+    return True, {"hashrate": hashrate}, ""

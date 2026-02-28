@@ -5,7 +5,10 @@ from __future__ import annotations
 
 from typing import Dict, Any, Tuple
 
-from pow_adapters import verify_ergo_node_rpc, verify_ergo_pool
+from pow_adapters import (
+    verify_ergo_node_rpc, verify_ergo_pool,
+    verify_kaspa_node_rpc, verify_kaspa_pool,
+)
 
 
 def validate_pow_proof(pow_proof: Dict[str, Any], miner_id: str = "") -> Tuple[bool, Dict[str, Any], str]:
@@ -21,16 +24,22 @@ def validate_pow_proof(pow_proof: Dict[str, Any], miner_id: str = "") -> Tuple[b
     if not proof_type:
         return False, {}, "missing_proof_type"
 
-    # Initial focused scope per review feedback: Ergo integration first.
-    if coin != "ergo":
-        return False, {}, f"unsupported_coin:{coin}"
-
-    if proof_type == "node_rpc":
-        ok, details, err = verify_ergo_node_rpc(evidence)
-    elif proof_type == "pool":
-        ok, details, err = verify_ergo_pool(evidence)
+    if coin == "ergo":
+        if proof_type == "node_rpc":
+            ok, details, err = verify_ergo_node_rpc(evidence)
+        elif proof_type == "pool":
+            ok, details, err = verify_ergo_pool(evidence)
+        else:
+            return False, {}, f"unsupported_proof_type:{proof_type}"
+    elif coin == "kaspa":
+        if proof_type == "node_rpc":
+            ok, details, err = verify_kaspa_node_rpc(evidence)
+        elif proof_type == "pool":
+            ok, details, err = verify_kaspa_pool(evidence)
+        else:
+            return False, {}, f"unsupported_proof_type:{proof_type}"
     else:
-        return False, {}, f"unsupported_proof_type:{proof_type}"
+        return False, {}, f"unsupported_coin:{coin}"
 
     if not ok:
         return False, details, err
