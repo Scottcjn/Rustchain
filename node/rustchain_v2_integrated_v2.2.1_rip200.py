@@ -156,6 +156,84 @@ def client_ip_from_request(req) -> str:
     first = xff.split(",")[0].strip()
     return first or remote
 
+
+def _attest_mapping(value):
+    """Return a dict-like payload section or an empty mapping."""
+    return value if isinstance(value, dict) else {}
+
+
+def _attest_text(value):
+    """Accept only non-empty text values from untrusted attestation input."""
+    if isinstance(value, str):
+        value = value.strip()
+        if value:
+            return value
+    return None
+
+
+def _attest_positive_int(value, default=1):
+    """Coerce untrusted integer-like values to a safe positive integer."""
+    try:
+        coerced = int(value)
+    except (TypeError, ValueError):
+        return default
+    return coerced if coerced > 0 else default
+
+
+def _attest_string_list(value):
+    """Coerce a list-like field into a list of non-empty strings."""
+    if not isinstance(value, list):
+        return []
+    items = []
+    for item in value:
+        text = _attest_text(item)
+        if text:
+            items.append(text)
+    return items
+
+
+def _normalize_attestation_device(device):
+    """Shallow-normalize device metadata so malformed JSON shapes fail closed."""
+    raw = _attest_mapping(device)
+    normalized = {"cores": _attest_positive_int(raw.get("cores"), default=1)}
+    for field in (
+        "device_family",
+        "family",
+        "device_arch",
+        "arch",
+        "device_model",
+        "model",
+        "cpu",
+        "serial_number",
+        "serial",
+    ):
+        text = _attest_text(raw.get(field))
+        if text is not None:
+            normalized[field] = text
+    return normalized
+
+
+def _normalize_attestation_signals(signals):
+    """Shallow-normalize signal metadata used by attestation validation."""
+    raw = _attest_mapping(signals)
+    normalized = {"macs": _attest_string_list(raw.get("macs"))}
+    for field in ("hostname", "serial"):
+        text = _attest_text(raw.get(field))
+        if text is not None:
+            normalized[field] = text
+    return normalized
+
+
+def _normalize_attestation_report(report):
+    """Normalize report metadata used by challenge/ticket handling."""
+    raw = _attest_mapping(report)
+    normalized = {}
+    for field in ("nonce", "commitment"):
+        text = _attest_text(raw.get(field))
+        if text is not None:
+            normalized[field] = text
+    return normalized
+
 # Register Hall of Rust blueprint (tables initialized after DB_PATH is set)
 try:
     from hall_of_rust import hall_bp
@@ -1027,7 +1105,9 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
         return True, "no_fingerprint_data_legacy_reduced"
 
     checks = fingerprint.get("checks", {})
-    claimed_device = claimed_device or {}
+    if not isinstance(checks, dict):
+        checks = {}
+    claimed_device = claimed_device if isinstance(claimed_device, dict) else {}
 
     def get_check_status(check_data):
         """Handle both bool and dict formats for check results"""
@@ -1808,16 +1888,23 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
 @app.route('/attest/submit', methods=['POST'])
 def submit_attestation():
     """Submit hardware attestation with fingerprint validation"""
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({
+            "ok": False,
+            "error": "invalid_json_object",
+            "message": "Expected a JSON object request body",
+            "code": "INVALID_JSON_OBJECT"
+        }), 400
 
     # Extract client IP (handle nginx proxy)
     client_ip = client_ip_from_request(request)
 
     # Extract attestation data
-    miner = data.get('miner') or data.get('miner_id')
-    report = data.get('report', {})
-    nonce = report.get('nonce') or data.get('nonce')
-    device = data.get('device', {})
+    miner = _attest_text(data.get('miner')) or _attest_text(data.get('miner_id'))
+    report = _normalize_attestation_report(data.get('report'))
+    nonce = report.get('nonce') or _attest_text(data.get('nonce'))
+    device = _normalize_attestation_device(data.get('device'))
 
     # IP rate limiting (Security Hardening 2026-02-02)
     ip_ok, ip_reason = check_ip_rate_limit(client_ip, miner)
@@ -1829,8 +1916,8 @@ def submit_attestation():
             "message": "Too many unique miners from this IP address",
             "code": "IP_RATE_LIMIT"
         }), 429
-    signals = data.get('signals', {})
-    fingerprint = data.get('fingerprint', {})  # NEW: Extract fingerprint
+    signals = _normalize_attestation_signals(data.get('signals'))
+    fingerprint = _attest_mapping(data.get('fingerprint'))  # NEW: Extract fingerprint
 
     # Basic validation
     if not miner:
@@ -1846,9 +1933,9 @@ def submit_attestation():
 
     # SECURITY: Hardware binding check v2.0 (serial + entropy validation)
     serial = device.get('serial_number') or device.get('serial') or signals.get('serial')
-    cores = device.get('cores', 1)
-    arch = device.get('arch') or device.get('device_arch', 'modern')
-    macs = signals.get('macs', [])
+    cores = _attest_positive_int(device.get('cores'), default=1)
+    arch = _attest_text(device.get('arch')) or _attest_text(device.get('device_arch')) or 'modern'
+    macs = _attest_string_list(signals.get('macs'))
     
     if HW_BINDING_V2 and serial:
         hw_ok, hw_msg, hw_details = bind_hardware_v2(
@@ -1881,7 +1968,6 @@ def submit_attestation():
             }), 409
 
     # RIP-0147a: Check OUI gate
-    macs = signals.get('macs', [])
     if macs:
         oui_ok, oui_info = _check_oui_gate(macs)
         if not oui_ok:
