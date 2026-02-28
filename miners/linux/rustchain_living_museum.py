@@ -23,7 +23,7 @@ load_dotenv('/home/sophia/.env.twitter')
 sys.stdout.reconfigure(line_buffering=True)
 
 # Configuration
-RUSTCHAIN_API = "http://50.28.86.131:8099"
+RUSTCHAIN_API = "https://rustchain.org"
 CHANNEL_NAME = "rustchain-relay"
 ANNOUNCE_INTERVAL_HOURS = 6  # Post every 6 hours
 TWITTER_ENABLED = True  # Set to False to disable Twitter posting

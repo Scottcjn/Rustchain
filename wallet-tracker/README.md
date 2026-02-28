@@ -33,8 +33,8 @@ A real-time web dashboard that tracks RTC token distribution across all wallets 
 
 The dashboard connects to the public RustChain APIs:
 
-- **Miners API:** `GET https://50.28.86.131/api/miners`
-- **Balance API:** `GET https://50.28.86.131/wallet/balance?miner_id=ID`
+- **Miners API:** `GET https://rustchain.org/api/miners`
+- **Balance API:** `GET https://rustchain.org/wallet/balance?miner_id=ID`
 
 ## Technical Details
 
@@ -94,7 +94,7 @@ python3 -m http.server 8000
 
 ### 1. Get Miners List
 ```bash
-curl https://50.28.86.131/api/miners
+curl https://rustchain.org/api/miners
 ```
 
 Returns array of miners:
@@ -111,7 +111,7 @@ Returns array of miners:
 
 ### 2. Get Wallet Balance
 ```bash
-curl "https://50.28.86.131/wallet/balance?miner_id=wallet_id_here"
+curl "https://rustchain.org/wallet/balance?miner_id=wallet_id_here"
 ```
 
 Returns:

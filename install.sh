@@ -12,7 +12,7 @@ set -e
 REPO_BASE="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners"
 INSTALL_DIR="$HOME/.rustchain"
 VENV_DIR="$INSTALL_DIR/venv"
-NODE_URL="https://50.28.86.131"
+NODE_URL="https://rustchain.org"
 SERVICE_NAME="rustchain-miner"
 
 # Colors

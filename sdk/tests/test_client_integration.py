@@ -1,7 +1,7 @@
 """
 Integration tests for RustChain Client (against live node)
 
-These tests require network access to https://50.28.86.131
+These tests require network access to https://rustchain.org
 """
 
 import pytest
@@ -10,7 +10,7 @@ from rustchain.exceptions import ConnectionError
 
 
 # Test against live RustChain node
-LIVE_NODE_URL = "https://50.28.86.131"
+LIVE_NODE_URL = "https://rustchain.org"
 
 
 @pytest.mark.integration
@@ -83,7 +83,7 @@ class TestLiveAPI:
     def test_connection_error_timeout(self):
         """Test connection error with timeout"""
         with pytest.raises(ConnectionError):
-            client = RustChainClient("https://50.28.86.131", timeout=0.001)
+            client = RustChainClient("https://rustchain.org", timeout=0.001)
             client.health()
             client.close()
 

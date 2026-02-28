@@ -4,7 +4,7 @@ RustChain SDK Test Results
 Date: 2026-02-15
 Python: 3.12.11
 
-## Live API Tests (Against https://50.28.86.131)
+## Live API Tests (Against https://rustchain.org)
 
 ✅ Health Endpoint (/health)
    - Node is healthy

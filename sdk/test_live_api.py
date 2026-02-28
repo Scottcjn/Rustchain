@@ -15,8 +15,8 @@ def test_live_api():
     print("=" * 60)
 
     # Initialize client
-    print("\n🔌 Connecting to https://50.28.86.131...")
-    client = RustChainClient("https://50.28.86.131", verify_ssl=False, timeout=10)
+    print("\n🔌 Connecting to https://rustchain.org...")
+    client = RustChainClient("https://rustchain.org", verify_ssl=False, timeout=10)
 
     try:
         # Test 1: Health endpoint

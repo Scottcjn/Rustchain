@@ -95,22 +95,22 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 **检查钱包余额：**
 ```bash
 # 注意：使用 -sk 标志，因为节点可能使用自签名 SSL 证书
-curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_NAME"
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
 
 **列出活跃矿工：**
 ```bash
-curl -sk https://50.28.86.131/api/miners
+curl -sk https://rustchain.org/api/miners
 ```
 
 **检查节点健康：**
 ```bash
-curl -sk https://50.28.86.131/health
+curl -sk https://rustchain.org/health
 ```
 
 **获取当前纪元：**
 ```bash
-curl -sk https://50.28.86.131/epoch
+curl -sk https://rustchain.org/epoch
 ```
 
 **管理矿工服务：**
@@ -240,16 +240,16 @@ RustChain 纪元 → 承诺哈希 → Ergo 交易（R4 寄存器）
 
 ```bash
 # 检查网络健康
-curl -sk https://50.28.86.131/health
+curl -sk https://rustchain.org/health
 
 # 获取当前纪元
-curl -sk https://50.28.86.131/epoch
+curl -sk https://rustchain.org/epoch
 
 # 列出活跃矿工
-curl -sk https://50.28.86.131/api/miners
+curl -sk https://rustchain.org/api/miners
 
 # 检查钱包余额
-curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET"
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 
 # 区块浏览器（网页浏览器）
 open https://rustchain.org/explorer

@@ -1,6 +1,6 @@
 # RustChain API Reference
 
-Base URL: `https://50.28.86.131`
+Base URL: `https://rustchain.org`
 
 All endpoints use HTTPS. Self-signed certificates require `-k` flag with curl.
 
@@ -14,7 +14,7 @@ Check node status and version.
 
 **Request:**
 ```bash
-curl -sk https://50.28.86.131/health | jq .
+curl -sk https://rustchain.org/health | jq .
 ```
 
 **Response:**
@@ -48,7 +48,7 @@ Get current epoch details.
 
 **Request:**
 ```bash
-curl -sk https://50.28.86.131/epoch | jq .
+curl -sk https://rustchain.org/epoch | jq .
 ```
 
 **Response:**
@@ -80,7 +80,7 @@ List all active/enrolled miners.
 
 **Request:**
 ```bash
-curl -sk https://50.28.86.131/api/miners | jq .
+curl -sk https://rustchain.org/api/miners | jq .
 ```
 
 **Response:**
@@ -127,7 +127,7 @@ Check RTC balance for a miner.
 
 **Request:**
 ```bash
-curl -sk "https://50.28.86.131/wallet/balance?miner_id=eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC" | jq .
+curl -sk "https://rustchain.org/wallet/balance?miner_id=eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC" | jq .
 ```
 
 **Response:**
@@ -151,7 +151,7 @@ Transfer RTC to another wallet. Requires Ed25519 signature.
 
 **Request:**
 ```bash
-curl -sk -X POST https://50.28.86.131/wallet/transfer/signed \
+curl -sk -X POST https://rustchain.org/wallet/transfer/signed \
   -H "Content-Type: application/json" \
   -d '{
     "from": "sender_miner_id",
@@ -181,7 +181,7 @@ Submit hardware fingerprint for epoch enrollment.
 
 **Request:**
 ```bash
-curl -sk -X POST https://50.28.86.131/attest/submit \
+curl -sk -X POST https://rustchain.org/attest/submit \
   -H "Content-Type: application/json" \
   -d '{
     "miner_id": "your_miner_id",

@@ -23,7 +23,7 @@ import os
 
 # Configuration
 PEER_NODES = [
-    "http://50.28.86.131:8088",
+    "https://rustchain.org",
     "http://50.28.86.153:8088"
 ]
 SYNC_INTERVAL = 30  # seconds

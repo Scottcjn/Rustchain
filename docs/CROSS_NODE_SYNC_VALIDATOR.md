@@ -18,7 +18,7 @@ This tool validates RustChain consistency across multiple nodes and reports disc
 
 ```bash
 python3 tools/node_sync_validator.py \
-  --nodes https://50.28.86.131 https://50.28.86.153 http://76.8.228.245:8099 \
+  --nodes https://rustchain.org https://50.28.86.153 http://76.8.228.245:8099 \
   --output-json /tmp/node_sync_report.json \
   --output-text /tmp/node_sync_report.txt
 ```

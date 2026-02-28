@@ -49,7 +49,7 @@ def cmd_confirm(args: argparse.Namespace) -> int:
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--node", default=os.environ.get("RUSTCHAIN_NODE", "https://50.28.86.131"))
+    ap.add_argument("--node", default=os.environ.get("RUSTCHAIN_NODE", "https://rustchain.org"))
     ap.add_argument("--admin-key", dest="admin_key", default=os.environ.get("RC_ADMIN_KEY", ""))
     ap.add_argument(
         "--insecure",

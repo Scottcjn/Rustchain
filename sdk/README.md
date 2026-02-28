@@ -14,7 +14,7 @@ pip install rustchain-sdk
 from rustchain import RustChainClient
 
 # Initialize client
-client = RustChainClient("https://50.28.86.131", verify_ssl=False)
+client = RustChainClient("https://rustchain.org", verify_ssl=False)
 
 # Get node health
 health = client.health()
@@ -55,7 +55,7 @@ RustChainClient(
 ```
 
 **Parameters:**
-- `base_url`: Base URL of RustChain node (e.g., "https://50.28.86.131")
+- `base_url`: Base URL of RustChain node (e.g., "https://rustchain.org")
 - `verify_ssl`: Whether to verify SSL certificates (default: True)
 - `timeout`: Request timeout in seconds (default: 30)
 
@@ -216,7 +216,7 @@ result = client.enroll_miner("wallet_address")
 The client supports context manager for automatic cleanup:
 
 ```python
-with RustChainClient("https://50.28.86.131") as client:
+with RustChainClient("https://rustchain.org") as client:
     health = client.health()
     print(health)
 # Session automatically closed
@@ -236,7 +236,7 @@ from rustchain.exceptions import (
     TransferError,
 )
 
-client = RustChainClient("https://50.28.86.131")
+client = RustChainClient("https://rustchain.org")
 
 try:
     balance = client.balance("wallet_address")

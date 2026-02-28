@@ -1,6 +1,6 @@
 # RustChain API Reference
 
-**Base URL:** `https://50.28.86.131` (Primary Node)  
+**Base URL:** `https://rustchain.org` (Primary Node)  
 **Authentication:** Read-only endpoints are public. Writes require Ed25519 signatures or an Admin Key.  
 **Certificate Note:** The node uses a self-signed TLS certificate. Use the `-k` flag with `curl` or disable certificate verification in your client.
 
@@ -67,7 +67,7 @@ List all miners currently participating in the network with their hardware detai
 Query the RTC balance for any valid miner ID.
 
 - **Endpoint:** `GET /wallet/balance?miner_id={NAME}`
-- **Example:** `curl -sk 'https://50.28.86.131/wallet/balance?miner_id=scott'`
+- **Example:** `curl -sk 'https://rustchain.org/wallet/balance?miner_id=scott'`
 - **Response:**
   ```json
   {

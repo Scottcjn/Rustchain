@@ -805,7 +805,7 @@ The Proof-of-Antiquity mechanism proves that blockchain can align economic incen
 
 1. RustChain GitHub Repository: https://github.com/Scottcjn/Rustchain
 2. Bounties Repository: https://github.com/Scottcjn/rustchain-bounties
-3. Live Explorer: https://50.28.86.131/explorer
+3. Live Explorer: https://rustchain.org/explorer
 
 ### Technical Standards
 

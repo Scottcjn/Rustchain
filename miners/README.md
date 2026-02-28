@@ -24,7 +24,7 @@ python3 rustchain_mac_miner_v2.4.py
 python rustchain_windows_miner.py
 
 # If your Python does not include Tcl/Tk (common on minimal/embeddable installs):
-python rustchain_windows_miner.py --headless --wallet YOUR_WALLET_ID --node https://50.28.86.131
+python rustchain_windows_miner.py --headless --wallet YOUR_WALLET_ID --node https://rustchain.org
 ```
 
 ## Windows installer & build helpers

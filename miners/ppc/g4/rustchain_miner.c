@@ -22,8 +22,8 @@
 #include <arpa/inet.h>
 
 /* Configuration */
-#define NODE_HOST "50.28.86.131"
-#define NODE_PORT 8088
+#define NODE_HOST "rustchain.org"
+#define NODE_PORT 443
 #define MINER_ID "dual-g4-125"
 #define BLOCK_TIME 600
 #define LOTTERY_INTERVAL 10

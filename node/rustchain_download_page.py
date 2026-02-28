@@ -75,7 +75,7 @@ HTML_PAGE = """<!DOCTYPE html>
     <h1>🦀 RustChain Miner Downloads</h1>
     
     <div class="stats">
-        <p><strong>Node</strong>: 50.28.86.131:8088</p>
+        <p><strong>Node</strong>: rustchain.org</p>
         <p><strong>Version</strong>: 2.2.1</p>
         <p><strong>Block Time</strong>: 600 seconds (10 min)</p>
         <p><strong>Block Reward</strong>: 1.5 RTC</p>
@@ -160,8 +160,8 @@ HTML_PAGE = """<!DOCTYPE html>
 
     <h2>📊 Network Stats</h2>
     <div class="download-section">
-        <p><a href="http://50.28.86.131:8088/api/stats" style="color: #00ff00;">http://50.28.86.131:8088/api/stats</a></p>
-        <p><a href="http://50.28.86.131:8088/api/miners" style="color: #00ff00;">http://50.28.86.131:8088/api/miners</a></p>
+        <p><a href="https://rustchain.org/api/stats" style="color: #00ff00;">https://rustchain.org/api/stats</a></p>
+        <p><a href="https://rustchain.org/api/miners" style="color: #00ff00;">https://rustchain.org/api/miners</a></p>
     </div>
 
     <hr style="border-color: #00ff00; margin: 40px 0;">
@@ -205,5 +205,5 @@ if __name__ == '__main__':
     server = HTTPServer(('0.0.0.0', 8090), DownloadHandler)
     print(f"🦀 RustChain Download Server running on port 8090...")
     print(f"📁 Serving files from: {DOWNLOAD_DIR}")
-    print(f"🌐 Access at: http://50.28.86.131:8090")
+    print(f"🌐 Access at: https://rustchain.org:8090")
     server.serve_forever()

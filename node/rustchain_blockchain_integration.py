@@ -15,7 +15,7 @@ from rustchain_nft_badges import NFTBadgeGenerator
 class BlockchainIntegration:
     """Integrates RustChain database with blockchain verification"""
     
-    def __init__(self, node_url: str = "http://50.28.86.131:8085", 
+    def __init__(self, node_url: str = "https://rustchain.org:8085", 
                  db_path: str = "db/rustchain_miners.db"):
         self.node_url = node_url
         self.db = RustChainDatabase(db_path)

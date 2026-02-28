@@ -16,7 +16,7 @@ This script posts a RustChain leaderboard message to a Discord webhook.
 
 ```bash
 python3 tools/discord_leaderboard_bot.py \
-  --node https://50.28.86.131 \
+  --node https://rustchain.org \
   --webhook-url "https://discord.com/api/webhooks/xxx/yyy"
 ```
 
@@ -24,7 +24,7 @@ If you prefer env vars:
 
 ```bash
 export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/xxx/yyy"
-python3 tools/discord_leaderboard_bot.py --node https://50.28.86.131
+python3 tools/discord_leaderboard_bot.py --node https://rustchain.org
 ```
 
 ## Dry Run

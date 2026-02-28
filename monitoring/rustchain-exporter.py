@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger('rustchain-exporter')
 
 # Configuration
-RUSTCHAIN_NODE = os.environ.get('RUSTCHAIN_NODE', 'https://50.28.86.131')
+RUSTCHAIN_NODE = os.environ.get('RUSTCHAIN_NODE', 'https://rustchain.org')
 EXPORTER_PORT = int(os.environ.get('EXPORTER_PORT', 9100))
 SCRAPE_INTERVAL = int(os.environ.get('SCRAPE_INTERVAL', 30))  # seconds
 TLS_VERIFY = os.environ.get('TLS_VERIFY', 'true').lower() in ('true', '1', 'yes')

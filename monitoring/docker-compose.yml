@@ -8,7 +8,7 @@ services:
     container_name: rustchain-exporter
     restart: unless-stopped
     environment:
-      - RUSTCHAIN_NODE=https://50.28.86.131
+      - RUSTCHAIN_NODE=https://rustchain.org
       - TLS_VERIFY=false  # Set to 'true' for production with valid certs
       # - TLS_CA_BUNDLE=/path/to/ca-bundle.crt  # Optional: custom CA
       - EXPORTER_PORT=9100

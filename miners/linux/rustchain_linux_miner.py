@@ -17,7 +17,7 @@ except ImportError:
     FINGERPRINT_AVAILABLE = False
     print("[WARN] fingerprint_checks.py not found - fingerprint attestation disabled")
 
-NODE_URL = "https://50.28.86.131"  # Use HTTPS via nginx
+NODE_URL = "https://rustchain.org"  # Use HTTPS via nginx
 BLOCK_TIME = 600  # 10 minutes
 
 def get_linux_serial():

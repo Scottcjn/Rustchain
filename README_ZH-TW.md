@@ -94,22 +94,22 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 **查詢錢包餘額：**
 ```bash
 # 注意：使用 -sk 參數是因為節點可能使用自簽 SSL 憑證
-curl -sk "https://50.28.86.131/wallet/balance?miner_id=你的錢包名稱"
+curl -sk "https://rustchain.org/wallet/balance?miner_id=你的錢包名稱"
 ```
 
 **列出活躍礦工：**
 ```bash
-curl -sk https://50.28.86.131/api/miners
+curl -sk https://rustchain.org/api/miners
 ```
 
 **檢查節點健康狀態：**
 ```bash
-curl -sk https://50.28.86.131/health
+curl -sk https://rustchain.org/health
 ```
 
 **取得當前週期：**
 ```bash
-curl -sk https://50.28.86.131/epoch
+curl -sk https://rustchain.org/epoch
 ```
 
 **管理礦工服務：**
@@ -227,16 +227,16 @@ RustChain 週期 → 承諾雜湊 → Ergo 交易（R4 暫存器）
 
 ```bash
 # 檢查網路健康狀態
-curl -sk https://50.28.86.131/health
+curl -sk https://rustchain.org/health
 
 # 取得當前週期
-curl -sk https://50.28.86.131/epoch
+curl -sk https://rustchain.org/epoch
 
 # 列出活躍礦工
-curl -sk https://50.28.86.131/api/miners
+curl -sk https://rustchain.org/api/miners
 
 # 查詢錢包餘額
-curl -sk "https://50.28.86.131/wallet/balance?miner_id=你的錢包"
+curl -sk "https://rustchain.org/wallet/balance?miner_id=你的錢包"
 
 # 區塊瀏覽器（網頁）
 open https://rustchain.org/explorer
