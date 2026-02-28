@@ -1,6 +1,6 @@
 # Security Policy
 
-Last updated: 2026-02-19
+Last updated: 2026-02-28
 
 RustChain welcomes good-faith security research.
 
@@ -96,3 +96,23 @@ Valid reports may receive:
 - RTC bounty payout
 - optional Hall of Hunters recognition
 - follow-on hardening bounty invitations
+
+## Beacon Atlas Integration Security
+
+Additional security considerations for Beacon Atlas integration:
+
+- All API endpoints must implement proper authentication and rate limiting
+- Wallet operations require additional verification steps
+- Signature verification must be implemented for all critical endpoints
+- Database schema changes must maintain backward compatibility
+- Third-party integrations must follow secure coding practices
+
+## RustChain Miner Security
+
+Miner-specific security guidelines:
+
+- Hardware fingerprinting must be validated on each epoch
+- Antiquity multipliers should be verified against hardware specifications
+- Network communication must use encrypted channels
+- Local storage of wallet keys must be properly secured
+- Miner updates should be signed and verified before installation
