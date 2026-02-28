@@ -1,83 +1,117 @@
 # RustChain Telegram Bot
 
-Telegram bot for RustChain community.
+A lightweight Telegram bot for the RustChain community.
 
-## Commands
+## Features
 
-- `/price` - Get real-time wRTC price from Raydium via DexScreener API
-- `/miners` - Get active miner count from RustChain network
-- `/epoch` - Get current epoch information
-- `/balance <wallet>` - Check wallet balance
-- `/health` - Check node health status
-- `/help` - Show all available commands
+- `/price` - Current wRTC price from Raydium
+- `/miners` - Active miner count from `/api/miners`
+- `/epoch` - Current epoch info
+- `/balance <wallet>` - Check RTC balance
+- `/health` - Node health status
 
-## Setup
+## Requirements
 
-### 1. Install dependencies
+```bash
+pip install python-telegram-bot requests
+```
+
+## Installation
+
+1. Clone this repository:
+```bash
+git clone https://github.com/Scottcjn/Rustchain.git
+cd Rustchain/tools/telegram_bot
+```
+
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Create a Telegram Bot
-1. Talk to @BotFather on Telegram
-2. Create a new bot with `/newbot`
-3. Copy the bot token provided
+3. Create a Telegram bot:
+   - Message @BotFather on Telegram
+   - Use `/newbot` to create a new bot
+   - Copy the bot token
 
-### 3. Configure environment variables
-Create a `.env` file:
+## Usage
+
+### With environment variables:
 ```bash
-TELEGRAM_BOT_TOKEN=your_bot_token_here
-RUSTCHAIN_API=https://50.28.86.131  # Optional, default is used
-```
-
-### 4. Run the bot
-```bash
-# Option 1: Using .env file
-python telegram_bot.py
-
-# Option 2: Set environment variables directly
-export TELEGRAM_BOT_TOKEN=your_bot_token_here
+export TELEGRAM_BOT_TOKEN="your_bot_token_here"
 python telegram_bot.py
 ```
 
-## Docker Deployment
+### With command-line arguments:
+```bash
+python telegram_bot.py --token "your_bot_token_here"
+```
 
-Create a Dockerfile:
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message |
+| `/help` | Show help |
+| `/price` | Get wRTC price |
+| `/miners` | Get active miner count |
+| `/epoch` | Get current epoch |
+| `/balance <wallet>` | Check wallet balance |
+| `/health` | Check node health |
+
+## Deployment
+
+### Systemd Service (Linux)
+
+Create `/etc/systemd/system/rustchain-bot.service`:
+
+```ini
+[Unit]
+Description=RustChain Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/path/to/Rustchain/tools/telegram_bot
+ExecStart=/usr/bin/python3 telegram_bot.py --token YOUR_TOKEN
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable rustchain-bot
+sudo systemctl start rustchain-bot
+```
+
+### Docker
+
 ```dockerfile
-FROM python:3.10-slim
+FROM python:3.11-slim
 WORKDIR /app
-COPY . .
+COPY requirements.txt .
 RUN pip install -r requirements.txt
+COPY telegram_bot.py .
 CMD ["python", "telegram_bot.py"]
 ```
 
 Build and run:
 ```bash
-docker build -t rustchain-telegram-bot .
-docker run --env-file .env rustchain-telegram-bot
+docker build -t rustchain-bot .
+docker run -d -e TELEGRAM_BOT_TOKEN=your_token rustchain-bot
 ```
 
-## Features
+## Bonus Features (Not Implemented)
 
-- ✅ Real-time wRTC price fetching from DexScreener API
-- ✅ Active miner count from RustChain network
-- ✅ Wallet balance checking
-- ✅ Node health monitoring
-- ✅ Environment variable configuration
-- ✅ Comprehensive error handling
+- Mining alerts (new miner joins, epoch settles)
+- Price alerts (wRTC moves >5%)
+- Inline query support
+- Tip functionality via `/tip @user 5`
 
-## Technical Details
+## License
 
-- Uses `python-telegram-bot` library (v20.0+)
-- Fetches wRTC price from DexScreener API
-- Connects to RustChain API at `https://50.28.86.131`
-- Supports both Raydium and other DEXs for price data
-
-## Bounty
-
-50 RTC - Issue #249
-Fixed version addressing code quality issues:
-1. Removed duplicate files
-2. Implemented real /price command (no placeholder)
-3. Added environment variable support
-4. Improved error handling and logging
+MIT
