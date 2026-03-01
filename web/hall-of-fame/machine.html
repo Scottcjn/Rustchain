@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>RustChain Hall of Fame · Machine Profile</title>
+  <style>
+    :root { --bg:#07110b; --panel:#0d1d14; --txt:#a8ffc6; --muted:#78c492; --accent:#39ff88; --danger:#9fa3a7; }
+    *{box-sizing:border-box} body{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:radial-gradient(circle at top,#0a1a11,#040906);color:var(--txt)}
+    .wrap{max-width:1000px;margin:24px auto;padding:0 16px}
+    .card{background:var(--panel);border:1px solid #1f3d2b;border-radius:12px;padding:16px;box-shadow:0 0 28px rgba(57,255,136,.08)}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+    .v{font-size:16px}
+    .head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .badge{border:1px solid #2a6f4a;padding:6px 10px;border-radius:999px;color:var(--accent)}
+    .deceased{filter:grayscale(1);opacity:.75;box-shadow:none;border-color:#4b5563;color:#d1d5db}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{padding:8px;border-bottom:1px solid #1d3526;text-align:left;font-size:13px}
+    .sil{font-size:12px;white-space:pre;color:var(--muted)}
+    .err{color:#ff8f8f}
+    a{color:var(--accent)}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h2>Hall of Fame · Machine Profile</h2>
+    <a href="/hall-of-fame/">← Back to leaderboard</a>
+  </div>
+  <div id="status" class="card">Loading machine profile…</div>
+  <div id="profile" class="card" style="display:none;margin-top:14px">
+    <div class="head">
+      <div>
+        <h3 id="name" style="margin:0 0 6px 0"></h3>
+        <div id="sil" class="sil"></div>
+      </div>
+      <div id="badge" class="badge"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div><div class="k">Architecture</div><div class="v" id="arch"></div></div>
+      <div><div class="k">Model</div><div class="v" id="model"></div></div>
+      <div><div class="k">Manufacture Year</div><div class="v" id="year"></div></div>
+      <div><div class="k">Age</div><div class="v" id="age"></div></div>
+      <div><div class="k">Rust Score</div><div class="v" id="score"></div></div>
+      <div><div class="k">Miner ID</div><div class="v" id="miner"></div></div>
+      <div><div class="k">Total Attestations</div><div class="v" id="attest"></div></div>
+      <div><div class="k">First / Last Attestation</div><div class="v" id="attestRange"></div></div>
+      <div><div class="k">Capacitor Plague</div><div class="v" id="plague"></div></div>
+      <div><div class="k">Status</div><div class="v" id="statusFlag"></div></div>
+    </div>
+  </div>
+  <div id="timelineCard" class="card" style="display:none;margin-top:14px">
+    <h3 style="margin-top:0">Attestation/Rust Timeline (last 30 days)</h3>
+    <table><thead><tr><th>Date</th><th>Rust Score</th><th>Samples</th></tr></thead><tbody id="timeline"></tbody></table>
+  </div>
+  <div id="rewardCard" class="card" style="display:none;margin-top:14px">
+    <h3 style="margin-top:0">Reward Participation</h3>
+    <div class="row">
+      <div><div class="k">Enrolled Epochs</div><div class="v" id="epochs"></div></div>
+      <div><div class="k">Confirmed Reward Events</div><div class="v" id="events"></div></div>
+      <div><div class="k">Confirmed Reward RTC</div><div class="v" id="rtc"></div></div>
+    </div>
+  </div>
+</div>
+<script>
+function q(name){ return new URLSearchParams(location.search).get(name) || ''; }
+function ts(v){ if(!v) return '—'; try { return new Date(v*1000).toISOString().slice(0,10); } catch { return '—'; } }
+function art(arch){ arch=(arch||'').toLowerCase(); if(arch.includes('g4')||arch.includes('g5')) return '  .----.\n / .--. \\n| |    | |\n| |.-""-.|\n\\ `----´ /\n `------´'; if(arch.includes('x86')||arch.includes('486')||arch.includes('pentium')) return '┌───────────┐\n│  RETRO PC │\n│ [====] [] │\n└───────────┘'; return '┌───────────┐\n│  MACHINE  │\n└───────────┘'; }
+(async()=>{
+  const id=q('id')||q('machine');
+  if(!id){ document.getElementById('status').innerHTML='<span class="err">Missing machine id. Use ?id=&lt;fingerprint_hash&gt;.</span>'; return; }
+  const res=await fetch('/api/hall_of_fame/machine?id='+encodeURIComponent(id));
+  if(!res.ok){ document.getElementById('status').innerHTML='<span class="err">Not found or unavailable.</span>'; return; }
+  const data=await res.json();
+  const m=data.machine||{};
+  document.getElementById('status').style.display='none';
+  const profile=document.getElementById('profile');
+  profile.style.display='block';
+  if(m.is_deceased){ profile.classList.add('deceased'); }
+  document.getElementById('name').textContent=(m.nickname||'Unnamed Machine')+' · '+(m.fingerprint_hash||'');
+  document.getElementById('sil').textContent=art(m.device_arch);
+  document.getElementById('badge').textContent=m.badge||'—';
+  document.getElementById('arch').textContent=m.device_arch||'—';
+  document.getElementById('model').textContent=m.device_model||'—';
+  document.getElementById('year').textContent=m.manufacture_year||'—';
+  document.getElementById('age').textContent=(m.age_years!=null?m.age_years+' years':'—');
+  document.getElementById('score').textContent=(m.rust_score??'—');
+  document.getElementById('miner').textContent=m.miner_id||'—';
+  document.getElementById('attest').textContent=m.total_attestations||0;
+  document.getElementById('attestRange').textContent=ts(m.first_attestation)+' / '+ts(m.last_attestation);
+  document.getElementById('plague').textContent=m.capacitor_plague? 'Yes':'No';
+  document.getElementById('statusFlag').textContent=m.is_deceased? 'Deceased memorial':'Active';
+
+  const t=data.attestation_timeline_30d||[];
+  document.getElementById('timelineCard').style.display='block';
+  document.getElementById('timeline').innerHTML=t.length?t.map(x=>`<tr><td>${x.date||'—'}</td><td>${x.rust_score??'—'}</td><td>${x.samples??0}</td></tr>`).join(''):'<tr><td colspan="3">No recent timeline samples</td></tr>';
+
+  const r=data.reward_participation||{};
+  document.getElementById('rewardCard').style.display='block';
+  document.getElementById('epochs').textContent=r.enrolled_epochs??0;
+  document.getElementById('events').textContent=r.confirmed_reward_events??0;
+  document.getElementById('rtc').textContent=r.confirmed_reward_rtc??0;
+})();
+</script>
+</body>
+</html>

@@ -101,6 +101,8 @@ _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(_BASE_DIR, "..")) if os.path.basename(_BASE_DIR) == "node" else _BASE_DIR
 LIGHTCLIENT_DIR = os.path.join(REPO_ROOT, "web", "light-client")
 MUSEUM_DIR = os.path.join(REPO_ROOT, "web", "museum")
+HOF_DIR = os.path.join(REPO_ROOT, "web", "hall-of-fame")
+DASHBOARD_DIR = os.path.join(REPO_ROOT, "tools", "miner_dashboard")
 
 # Register Hall of Rust blueprint (tables initialized after DB_PATH is set)
 try:
@@ -1681,6 +1683,21 @@ def museum_assets(filename: str):
 
     return _send_from_directory(MUSEUM_DIR, filename)
 
+
+@app.route("/hall-of-fame/machine.html", methods=["GET"])
+def hall_of_fame_machine_page():
+    """Hall of Fame machine detail page."""
+    from flask import send_from_directory as _send_from_directory
+
+    return _send_from_directory(HOF_DIR, "machine.html")
+
+
+@app.route("/dashboard", methods=["GET"])
+def miner_dashboard_page():
+    """Personal miner dashboard single-page UI."""
+    from flask import send_from_directory as _send_from_directory
+    return _send_from_directory(DASHBOARD_DIR, "index.html")
+
 # ============= ATTESTATION ENDPOINTS =============
 
 @app.route('/attest/challenge', methods=['POST'])
@@ -3173,6 +3190,81 @@ def api_badge(miner_id: str):
         "color": color,
     })
 
+
+
+
+@app.route('/api/miner_dashboard/<miner_id>', methods=['GET'])
+def api_miner_dashboard(miner_id):
+    """Aggregated miner dashboard data with reward history (last 20 epochs)."""
+    try:
+        with sqlite3.connect(DB_PATH) as c:
+            c.row_factory = sqlite3.Row
+            # current balance from balances table with column-name fallback
+            bal_rtc = 0.0
+            try:
+                row = c.execute("SELECT balance_urtc AS amount_i64 FROM balances WHERE wallet = ?", (miner_id,)).fetchone()
+                if row and row['amount_i64'] is not None:
+                    bal_rtc = (row['amount_i64'] / 1_000_000.0)
+            except Exception:
+                row = None
+
+            if bal_rtc == 0.0:
+                # production schema fallback: amount_i64 + miner_id
+                row2 = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (miner_id,)).fetchone()
+                if row2 and row2['amount_i64'] is not None:
+                    bal_rtc = (row2['amount_i64'] / 1_000_000.0)
+
+            # total earned & reward history from confirmed pending_ledger credits
+            total_row = c.execute("SELECT COALESCE(SUM(amount_i64),0) AS s, COUNT(*) AS cnt FROM pending_ledger WHERE to_miner = ? AND status = 'confirmed'", (miner_id,)).fetchone()
+            total_earned = (total_row['s'] or 0) / 1_000_000.0
+            reward_events = int(total_row['cnt'] or 0)
+
+            hist = c.execute("""
+                SELECT epoch, amount_i64, tx_hash, confirmed_at
+                FROM pending_ledger
+                WHERE to_miner = ? AND status = 'confirmed'
+                ORDER BY epoch DESC, confirmed_at DESC
+                LIMIT 20
+            """, (miner_id,)).fetchall()
+            reward_history = [{
+                'epoch': int(r['epoch'] or 0),
+                'amount_rtc': round((r['amount_i64'] or 0)/1_000_000.0, 6),
+                'tx_hash': r['tx_hash'],
+                'confirmed_at': int(r['confirmed_at'] or 0),
+            } for r in hist]
+
+            # epoch participation count
+            ep_row = c.execute("SELECT COUNT(*) AS n FROM epoch_enroll WHERE miner_pk = ?", (miner_id,)).fetchone()
+            epoch_participation = int(ep_row['n'] or 0)
+
+            # last 24h attest timeline if table exists
+            has_hist = c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='miner_attest_history'").fetchone() is not None
+            timeline = []
+            if has_hist:
+                now_ts = int(time.time())
+                start = now_ts - 86400
+                rows = c.execute("""
+                    SELECT CAST((ts_ok/3600) AS INTEGER) AS bucket, COUNT(*) AS n
+                    FROM miner_attest_history
+                    WHERE miner = ? AND ts_ok >= ?
+                    GROUP BY bucket
+                    ORDER BY bucket ASC
+                """, (miner_id, start)).fetchall()
+                timeline = [{'hour_bucket': int(r['bucket']), 'count': int(r['n'])} for r in rows]
+
+            return jsonify({
+                'ok': True,
+                'miner_id': miner_id,
+                'balance_rtc': round(bal_rtc, 6),
+                'total_earned_rtc': round(total_earned, 6),
+                'reward_events': reward_events,
+                'epoch_participation': epoch_participation,
+                'reward_history': reward_history,
+                'attest_timeline_24h': timeline,
+                'generated_at': int(time.time()),
+            })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 @app.route("/api/miner/<miner_id>/attestations", methods=["GET"])
 def api_miner_attestations(miner_id: str):

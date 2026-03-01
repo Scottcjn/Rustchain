@@ -390,6 +390,84 @@ def get_rust_badge(score):
     else:
         return "Fresh Metal"
 
+
+
+@hall_bp.route('/api/hall_of_fame/machine', methods=['GET'])
+def api_hall_of_fame_machine():
+    """Machine profile endpoint for Hall of Fame detail page."""
+    machine_id = (request.args.get('id') or '').strip()
+    if not machine_id:
+        return jsonify({'error': 'missing id'}), 400
+
+    try:
+        from flask import current_app
+        db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        c.execute("SELECT * FROM hall_of_rust WHERE fingerprint_hash = ?", (machine_id,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'error': 'machine not found'}), 404
+
+        machine = dict(row)
+        machine['badge'] = get_rust_badge(float(machine.get('rust_score') or 0))
+        mfg = machine.get('manufacture_year')
+        machine['age_years'] = max(0, 2026 - int(mfg)) if mfg else None
+
+        # Last 30 days timeline from rust score history (best-effort)
+        now = int(time.time())
+        start_ts = now - 30 * 86400
+        c.execute(
+            """
+            SELECT date(calculated_at, 'unixepoch') AS day,
+                   MAX(rust_score) AS rust_score,
+                   COUNT(*) AS samples
+            FROM rust_score_history
+            WHERE fingerprint_hash = ? AND calculated_at >= ?
+            GROUP BY day
+            ORDER BY day ASC
+            """,
+            (machine_id, start_ts)
+        )
+        timeline = [
+            {'date': r[0], 'rust_score': r[1], 'samples': r[2]}
+            for r in c.fetchall()
+        ]
+
+        # Reward participation (best-effort) from enrollments + pending ledger credits
+        miner_pk = machine.get('miner_id') or ''
+        c.execute("SELECT COUNT(*) FROM epoch_enroll WHERE miner_pk = ?", (miner_pk,))
+        enrolled_epochs = c.fetchone()[0] or 0
+
+        c.execute(
+            """
+            SELECT COUNT(*), COALESCE(SUM(amount_i64),0)
+            FROM pending_ledger
+            WHERE to_miner = ? AND status = 'confirmed'
+            """,
+            (miner_pk,)
+        )
+        reward_count, reward_sum_i64 = c.fetchone()
+
+        reward_participation = {
+            'enrolled_epochs': int(enrolled_epochs),
+            'confirmed_reward_events': int(reward_count or 0),
+            'confirmed_reward_rtc': round((reward_sum_i64 or 0) / 1_000_000.0, 6),
+        }
+
+        conn.close()
+        return jsonify({
+            'machine': machine,
+            'attestation_timeline_30d': timeline,
+            'reward_participation': reward_participation,
+            'generated_at': now,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 def register_hall_endpoints(app, db_path):
     """Register Hall of Rust endpoints with Flask app."""
     app.config['DB_PATH'] = db_path
