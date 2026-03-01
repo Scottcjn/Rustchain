@@ -113,15 +113,16 @@ def collect_epoch_metrics():
     enrolled_miners.set(data.get('enrolled_miners', 0))
     total_supply.set(data.get('total_supply_rtc', 0))
     
-    # Calculate progress and time remaining
-    progress = slot / blocks if blocks > 0 else 0
-    epoch_slot_progress.set(progress)  # 0-1 range
+    # Calculate progress within current epoch (0-1 range)
+    slot_in_epoch = slot % blocks if blocks > 0 else 0
+    progress = slot_in_epoch / blocks if blocks > 0 else 0
+    epoch_slot_progress.set(progress)
     
-    # Estimate seconds remaining (assuming ~10 min per block)
-    remaining_blocks = max(0, blocks - slot)
+    # Estimate seconds remaining in current epoch (assuming ~10 min per block)
+    remaining_blocks = blocks - slot_in_epoch
     epoch_seconds_remaining.set(remaining_blocks * 600)
     
-    logger.info(f"Epoch: {epoch}, Slot: {slot}/{blocks} ({progress:.1%})")
+    logger.info(f"Epoch: {epoch}, Slot: {slot_in_epoch}/{blocks} ({progress:.1%})")
 
 
 def collect_miner_metrics():
