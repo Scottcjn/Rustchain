@@ -115,10 +115,10 @@ def collect_epoch_metrics():
     
     # Calculate progress and time remaining
     progress = slot / blocks if blocks > 0 else 0
-    epoch_slot_progress.set(progress)
+    epoch_slot_progress.set(progress)  # 0-1 range
     
     # Estimate seconds remaining (assuming ~10 min per block)
-    remaining_blocks = blocks - slot
+    remaining_blocks = max(0, blocks - slot)
     epoch_seconds_remaining.set(remaining_blocks * 600)
     
     logger.info(f"Epoch: {epoch}, Slot: {slot}/{blocks} ({progress:.1%})")
@@ -163,23 +163,18 @@ def collect_balance_metrics():
 def collect_hall_of_fame_metrics():
     """Collect Hall of Fame metrics"""
     data = fetch_json('/api/hall_of_fame')
-    if not data or not isinstance(data, list):
+    if not data:
         return
     
-    total_machines.set(len(data))
+    # API returns an object with a stats field containing aggregated data
+    stats = data.get('stats', {})
     
-    total_attests = sum(m.get('total_attestations', 0) for m in data)
-    total_attestations.set(total_attests)
+    total_machines.set(stats.get('total_machines', 0))
+    total_attestations.set(stats.get('total_attestations', 0))
+    oldest_machine_year.set(stats.get('oldest_year', 0))
+    highest_rust_score.set(stats.get('highest_rust_score', 0))
     
-    years = [m.get('manufacture_year', 9999) for m in data if m.get('manufacture_year')]
-    if years:
-        oldest_machine_year.set(min(years))
-    
-    scores = [m.get('rust_score', 0) for m in data]
-    if scores:
-        highest_rust_score.set(max(scores))
-    
-    logger.info(f"Hall of Fame: {len(data)} machines, {total_attests} attestations")
+    logger.info(f"Hall of Fame: {stats.get('total_machines', 0)} machines, {stats.get('total_attestations', 0)} attestations")
 
 
 def collect_fee_metrics():
