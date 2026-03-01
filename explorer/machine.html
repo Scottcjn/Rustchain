@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Machine Details | RustChain Hall of Fame</title>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --green: #33ff33;
+            --green-dim: #1a8c1a;
+            --green-glow: #00ff0044;
+            --amber: #ffb000;
+            --red: #ff4444;
+            --cyan: #00ffff;
+            --bg-dark: #0a0a0a;
+            --bg-card: #0d1117;
+            --bg-terminal: #000800;
+            --border: #1a331a;
+            --text-dim: #668866;
+            --text-body: #a0c8a0;
+            --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+            --font-display: 'VT323', monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--bg-dark);
+            color: var(--text-body);
+            font-family: var(--font-mono);
+            font-size: 14px;
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .back-link {
+            color: var(--green);
+            text-decoration: none;
+            margin-bottom: 2rem;
+            display: inline-block;
+        }
+
+        .back-link:hover {
+            text-shadow: 0 0 8px var(--green-glow);
+        }
+
+        .machine-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.1);
+        }
+
+        .machine-card.deceased {
+            filter: grayscale(0.8);
+            opacity: 0.85;
+            border-color: var(--text-dim);
+        }
+
+        .machine-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .machine-title {
+            flex: 1;
+        }
+
+        .machine-name {
+            font-family: var(--font-display);
+            font-size: 2.5rem;
+            color: var(--green);
+            text-shadow: 0 0 10px var(--green-glow);
+            margin-bottom: 0.5rem;
+        }
+
+        .machine-subtitle {
+            color: var(--text-dim);
+            font-size: 1.1rem;
+        }
+
+        .badge {
+            background: linear-gradient(135deg, var(--green-dim), var(--green));
+            color: var(--bg-dark);
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 0 15px var(--green-glow);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-item {
+            background: var(--bg-terminal);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1rem;
+        }
+
+        .stat-label {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            color: var(--green);
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .section-title {
+            font-family: var(--font-display);
+            font-size: 1.8rem;
+            color: var(--green);
+            margin-bottom: 1rem;
+            text-shadow: 0 0 8px var(--green-glow);
+        }
+
+        .timeline {
+            background: var(--bg-terminal);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1.5rem;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .timeline-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .timeline-item:last-child {
+            border-bottom: none;
+        }
+
+        .timeline-date {
+            color: var(--text-dim);
+        }
+
+        .timeline-count {
+            color: var(--green);
+            font-weight: 600;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 4rem;
+            color: var(--text-dim);
+            font-size: 1.2rem;
+        }
+
+        .error {
+            background: rgba(255, 68, 68, 0.1);
+            border: 1px solid var(--red);
+            border-radius: 4px;
+            padding: 1.5rem;
+            color: var(--red);
+            text-align: center;
+        }
+
+        .deceased-banner {
+            background: rgba(255, 68, 68, 0.1);
+            border: 1px solid var(--red);
+            border-radius: 4px;
+            padding: 1rem;
+            margin-bottom: 2rem;
+            text-align: center;
+            color: var(--red);
+            font-family: var(--font-display);
+            font-size: 1.2rem;
+        }
+
+        .rust-score {
+            font-size: 3rem;
+            color: var(--amber);
+            text-shadow: 0 0 15px var(--amber-glow);
+            font-weight: 700;
+        }
+
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .machine-header {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/hall-of-fame/" class="back-link">← Back to Hall of Fame</a>
+        
+        <div id="loading" class="loading">
+            Loading machine details...
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+
+        <div id="machine-content" style="display: none;">
+            <!-- Content will be populated by JavaScript -->
+        </div>
+    </div>
+
+    <script>
+        // Get machine ID from URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const machineId = urlParams.get('id');
+
+        if (!machineId) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error').textContent = 'Error: No machine ID provided';
+        } else {
+            loadMachineDetails(machineId);
+        }
+
+        async function loadMachineDetails(id) {
+            try {
+                const response = await fetch(`/api/hall_of_fame/machine?id=${encodeURIComponent(id)}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                renderMachine(data.machine);
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('machine-content').style.display = 'block';
+                
+            } catch (error) {
+                console.error('Error loading machine:', error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').textContent = `Error: ${error.message}`;
+            }
+        }
+
+        function renderMachine(machine) {
+            const content = document.getElementById('machine-content');
+            
+            const deceasedBanner = machine.is_deceased ? 
+                `<div class="deceased-banner">⚰️ IN MEMORIAM - This machine has passed ⚰️</div>` : '';
+            
+            const nickname = machine.nickname ? ` "${machine.nickname}"` : '';
+            const model = machine.device_model || 'Unknown Model';
+            
+            const firstAttest = machine.first_attestation ? 
+                new Date(machine.first_attestation * 1000).toLocaleDateString() : 'Unknown';
+            const lastAttest = machine.last_attestation ? 
+                new Date(machine.last_attestation * 1000).toLocaleDateString() : 'Unknown';
+            
+            const timeline = machine.attestation_timeline && machine.attestation_timeline.length > 0 ?
+                machine.attestation_timeline.map(item => `
+                    <div class="timeline-item">
+                        <span class="timeline-date">${item.date}</span>
+                        <span class="timeline-count">${item.attestations} attestations</span>
+                    </div>
+                `).join('') :
+                '<div class="timeline-item"><span class="timeline-date">No recent attestations</span></div>';
+
+            content.innerHTML = `
+                ${deceasedBanner}
+                
+                <div class="machine-card ${machine.is_deceased ? 'deceased' : ''}">
+                    <div class="machine-header">
+                        <div class="machine-title">
+                            <h1 class="machine-name">${machine.miner_id}${nickname}</h1>
+                            <p class="machine-subtitle">${machine.device_family} ${machine.device_arch} - ${model}</p>
+                        </div>
+                        <div class="badge">${machine.badge}</div>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-label">Rust Score</div>
+                            <div class="stat-value rust-score">${machine.rust_score.toFixed(2)}</div>
+                        </div>
+                        
+                        <div class="stat-item">
+                            <div class="stat-label">Age</div>
+                            <div class="stat-value">${machine.age_years || '?'} years</div>
+                        </div>
+                        
+                        <div class="stat-item">
+                            <div class="stat-label">Manufacture Year</div>
+                            <div class="stat-value">${machine.manufacture_year || 'Unknown'}</div>
+                        </div>
+                        
+                        <div class="stat-item">
+                            <div class="stat-label">Total Attestations</div>
+                            <div class="stat-value">${machine.total_attestations.toLocaleString()}</div>
+                        </div>
+                        
+                        <div class="stat-item">
+                            <div class="stat-label">First Attestation</div>
+                            <div class="stat-value" style="font-size: 1rem;">${firstAttest}</div>
+                        </div>
+                        
+                        <div class="stat-item">
+                            <div class="stat-label">Last Attestation</div>
+                            <div class="stat-value" style="font-size: 1rem;">${lastAttest}</div>
+                        </div>
+                        
+                        <div class="stat-item">
+                            <div class="stat-label">Epochs Participated</div>
+                            <div class="stat-value">${machine.epochs_participated || 0}</div>
+                        </div>
+                        
+                        <div class="stat-item">
+                            <div class="stat-label">Total RTC Earned</div>
+                            <div class="stat-value">${(machine.total_rtc_earned || 0).toFixed(2)}</div>
+                        </div>
+                        
+                        <div class="stat-item">
+                            <div class="stat-label">Capacitor Plague</div>
+                            <div class="stat-value">${machine.capacitor_plague ? '⚠️ Yes' : '✅ No'}</div>
+                        </div>
+                        
+                        <div class="stat-item">
+                            <div class="stat-label">Thermal Events</div>
+                            <div class="stat-value">${machine.thermal_events || 0}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="machine-card">
+                    <h2 class="section-title">Attestation Timeline (Last 30 Days)</h2>
+                    <div class="timeline">
+                        ${timeline}
+                    </div>
+                </div>
+
+                <div class="machine-card">
+                    <h2 class="section-title">Technical Details</h2>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-label">Fingerprint Hash</div>
+                            <div class="stat-value" style="font-size: 0.8rem; word-break: break-all;">${machine.fingerprint_hash}</div>
+                        </div>
+                        
+                        <div class="stat-item">
+                            <div class="stat-label">Miner ID</div>
+                            <div class="stat-value" style="font-size: 0.9rem;">${machine.miner_id}</div>
+                        </div>
+                        
+                        <div class="stat-item">
+                            <div class="stat-label">Device Architecture</div>
+                            <div class="stat-value" style="font-size: 1rem;">${machine.device_arch}</div>
+                        </div>
+                        
+                        <div class="stat-item">
+                            <div class="stat-label">Device Family</div>
+                            <div class="stat-value" style="font-size: 1rem;">${machine.device_family}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

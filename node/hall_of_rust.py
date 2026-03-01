@@ -534,3 +534,116 @@ def hall_timeline():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@hall_bp.route('/hall/machine', methods=['GET'])
+def get_machine_details():
+    """Get detailed information for a specific machine by fingerprint hash.
+    
+    Query params:
+        id: fingerprint_hash of the machine
+    
+    Returns:
+        Machine details including attestation timeline for last 30 days
+    """
+    try:
+        from flask import current_app
+        machine_id = request.args.get('id')
+        
+        if not machine_id:
+            return jsonify({'error': 'Missing required parameter: id'}), 400
+        
+        db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        # Get machine details
+        c.execute("""
+            SELECT * FROM hall_of_rust 
+            WHERE fingerprint_hash = ?
+        """, (machine_id,))
+        
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'error': 'Machine not found'}), 404
+        
+        # Convert row to dict
+        machine = dict(row)
+        
+        # Calculate age
+        if machine['manufacture_year']:
+            machine['age_years'] = 2026 - machine['manufacture_year']
+        else:
+            machine['age_years'] = None
+        
+        # Get rust badge
+        machine['badge'] = get_rust_badge(machine['rust_score'])
+        
+        # Get attestation timeline (last 30 days)
+        thirty_days_ago = int(time.time()) - (30 * 24 * 60 * 60)
+        
+        c.execute("""
+            SELECT 
+                date(timestamp, 'unixepoch') as date,
+                COUNT(*) as attestations
+            FROM attestations
+            WHERE fingerprint_hash = ?
+            AND timestamp >= ?
+            GROUP BY date
+            ORDER BY date DESC
+        """, (machine_id, thirty_days_ago))
+        
+        timeline = []
+        for timeline_row in c.fetchall():
+            timeline.append({
+                'date': timeline_row[0],
+                'attestations': timeline_row[1]
+            })
+        
+        machine['attestation_timeline'] = timeline
+        
+        # Get epoch participation stats
+        c.execute("""
+            SELECT 
+                COUNT(DISTINCT epoch) as epochs_participated,
+                MIN(epoch) as first_epoch,
+                MAX(epoch) as last_epoch
+            FROM epoch_rewards
+            WHERE miner_id = ?
+        """, (machine['miner_id'],))
+        
+        epoch_row = c.fetchone()
+        if epoch_row and epoch_row[0]:
+            machine['epochs_participated'] = epoch_row[0]
+            machine['first_epoch'] = epoch_row[1]
+            machine['last_epoch'] = epoch_row[2]
+        else:
+            machine['epochs_participated'] = 0
+            machine['first_epoch'] = None
+            machine['last_epoch'] = None
+        
+        conn.close()
+        
+        return jsonify({
+            'machine': machine,
+            'generated_at': int(time.time())
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def get_rust_badge(rust_score):
+    """Get badge name based on rust score."""
+    if rust_score >= 300:
+        return "Oxidized Legend"
+    elif rust_score >= 200:
+        return "Tetanus Master"
+    elif rust_score >= 100:
+        return "Rust Warrior"
+    elif rust_score >= 50:
+        return "Corroded Knight"
+    elif rust_score >= 30:
+        return "Tarnished Squire"
+    else:
+        return "Fresh Metal"
