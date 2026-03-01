@@ -422,7 +422,7 @@ class LocalMiner:
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--version", "-v", action="version", version="clawrtc 1.5.0")
+    parser.add_argument("--version", "-v", action="version", version="RustChain Miner v2.2.1-rip200")
     parser.add_argument("--wallet", help="Wallet address")
     args = parser.parse_args()
 
