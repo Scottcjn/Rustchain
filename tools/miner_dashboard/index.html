@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Miner Dashboard | RustChain</title>
+    <meta name="description" content="Personal stats and reward history for RustChain miners">
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --green: #33ff33;
+            --green-dim: #1a8c1a;
+            --green-glow: #00ff0044;
+            --amber: #ffb000;
+            --amber-glow: #ffb00033;
+            --red: #ff4444;
+            --cyan: #00ffff;
+            --bg-dark: #0a0a0a;
+            --bg-card: #0d1117;
+            --bg-terminal: #000800;
+            --border: #1a331a;
+            --text-dim: #668866;
+            --text-body: #a0c8a0;
+            --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+            --font-display: 'VT323', monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--bg-dark);
+            color: var(--text-body);
+            font-family: var(--font-mono);
+            font-size: 14px;
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .title {
+            font-family: var(--font-display);
+            font-size: 3rem;
+            color: var(--green);
+            text-shadow: 0 0 15px var(--green-glow);
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--text-dim);
+            font-size: 1.1rem;
+        }
+
+        .search-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        .search-input {
+            background: var(--bg-terminal);
+            border: 1px solid var(--border);
+            color: var(--green);
+            font-family: var(--font-mono);
+            font-size: 1.1rem;
+            padding: 0.75rem 1rem;
+            width: 100%;
+            max-width: 500px;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--green);
+            box-shadow: 0 0 10px var(--green-glow);
+        }
+
+        .search-btn {
+            background: var(--green);
+            color: var(--bg-dark);
+            border: none;
+            padding: 0.75rem 2rem;
+            font-family: var(--font-mono);
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .search-btn:hover {
+            background: var(--green-dim);
+            box-shadow: 0 0 15px var(--green-glow);
+        }
+
+        .dashboard {
+            display: none;
+        }
+
+        .dashboard.active {
+            display: block;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.05);
+        }
+
+        .stat-label {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            color: var(--green);
+            font-size: 2rem;
+            font-weight: 600;
+            text-shadow: 0 0 10px var(--green-glow);
+        }
+
+        .stat-value.large {
+            font-size: 2.5rem;
+        }
+
+        .section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .section-title {
+            font-family: var(--font-display);
+            font-size: 1.8rem;
+            color: var(--green);
+            margin-bottom: 1.5rem;
+            text-shadow: 0 0 8px var(--green-glow);
+        }
+
+        .hardware-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .info-item {
+            padding: 0.75rem;
+            background: var(--bg-terminal);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+        }
+
+        .info-label {
+            color: var(--text-dim);
+            font-size: 0.8rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .info-value {
+            color: var(--green);
+            font-weight: 600;
+        }
+
+        .badge {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--green-dim), var(--green));
+            color: var(--bg-dark);
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 0 15px var(--green-glow);
+        }
+
+        .timeline {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .timeline-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-terminal);
+            margin-bottom: 0.5rem;
+            border-radius: 4px;
+        }
+
+        .timeline-date {
+            color: var(--text-dim);
+        }
+
+        .timeline-value {
+            color: var(--green);
+            font-weight: 600;
+        }
+
+        .countdown {
+            text-align: center;
+            padding: 2rem;
+            background: var(--bg-terminal);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .countdown-label {
+            color: var(--text-dim);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+
+        .countdown-value {
+            font-family: var(--font-display);
+            font-size: 3rem;
+            color: var(--amber);
+            text-shadow: 0 0 15px var(--amber-glow);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-dim);
+            font-size: 1.2rem;
+        }
+
+        .error {
+            background: rgba(255, 68, 68, 0.1);
+            border: 1px solid var(--red);
+            border-radius: 8px;
+            padding: 1.5rem;
+            color: var(--red);
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .chart {
+            width: 100%;
+            height: 300px;
+            background: var(--bg-terminal);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1rem;
+            position: relative;
+        }
+
+        .chart-bar {
+            display: inline-block;
+            width: 4%;
+            background: var(--green);
+            margin: 0 0.5%;
+            vertical-align: bottom;
+            border-radius: 2px 2px 0 0;
+            box-shadow: 0 0 5px var(--green-glow);
+        }
+
+        .share-url {
+            background: var(--bg-terminal);
+            border: 1px solid var(--border);
+            padding: 0.75rem;
+            border-radius: 4px;
+            color: var(--green);
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            word-break: break-all;
+            margin-top: 1rem;
+        }
+
+        @media (max-width: 768px) {
+            .title {
+                font-size: 2rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .hardware-info {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">⛏️ MINER DASHBOARD</h1>
+            <p class="subtitle">Personal Stats & Reward History</p>
+        </div>
+
+        <div class="search-box">
+            <input type="text" id="minerInput" class="search-input" placeholder="Enter your miner ID (e.g., macmini-m2-134)" />
+            <br>
+            <button onclick="loadDashboard()" class="search-btn">LOAD DASHBOARD</button>
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+        <div id="loading" class="loading" style="display: none;">Loading dashboard...</div>
+
+        <div id="dashboard" class="dashboard">
+            <!-- Dashboard content will be populated by JavaScript -->
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://rustchain.org';
+        let currentMiner = null;
+
+        // Check URL parameter on load
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const minerId = urlParams.get('miner');
+            if (minerId) {
+                document.getElementById('minerInput').value = minerId;
+                loadDashboard();
+            }
+        });
+
+        async function loadDashboard() {
+            const minerId = document.getElementById('minerInput').value.trim();
+            
+            if (!minerId) {
+                showError('Please enter a miner ID');
+                return;
+            }
+
+            currentMiner = minerId;
+            hideError();
+            showLoading();
+
+            try {
+                // Update URL
+                const url = new URL(window.location);
+                url.searchParams.set('miner', minerId);
+                window.history.pushState({}, '', url);
+
+                // Fetch all data in parallel
+                const [minersData, epochData, hofData] = await Promise.all([
+                    fetch(`${API_BASE}/api/miners`).then(r => r.json()),
+                    fetch(`${API_BASE}/epoch`).then(r => r.json()),
+                    fetch(`${API_BASE}/api/hall_of_fame`).then(r => r.json())
+                ]);
+
+                // Find miner in data
+                const miner = minersData.find(m => m.miner === minerId);
+                
+                if (!miner) {
+                    throw new Error('Miner not found. Please check the ID and try again.');
+                }
+
+                // Try to get balance (may not exist for all miners)
+                let balance = 0;
+                try {
+                    const balanceData = await fetch(`${API_BASE}/balance?miner_id=${minerId}`).then(r => r.json());
+                    balance = balanceData.balance || 0;
+                } catch (e) {
+                    console.warn('Balance not available:', e);
+                }
+
+                // Find miner in Hall of Fame for additional stats
+                let hofMiner = null;
+                for (const category in hofData.categories) {
+                    const found = hofData.categories[category].find(m => m.miner_id === minerId);
+                    if (found) {
+                        hofMiner = found;
+                        break;
+                    }
+                }
+
+                renderDashboard(miner, balance, epochData, hofMiner);
+                hideLoading();
+                document.getElementById('dashboard').classList.add('active');
+
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+                showError(error.message);
+                hideLoading();
+            }
+        }
+
+        function renderDashboard(miner, balance, epochData, hofMiner) {
+            const dashboard = document.getElementById('dashboard');
+            
+            const rustScore = hofMiner ? hofMiner.rust_score : 0;
+            const badge = getRustBadge(rustScore);
+            const totalEarned = hofMiner ? (hofMiner.total_rtc_earned || 0) : 0;
+            const totalAttestations = hofMiner ? hofMiner.total_attestations : 0;
+            const age = hofMiner && hofMiner.manufacture_year ? (2026 - hofMiner.manufacture_year) : '?';
+
+            // Calculate time since last attestation
+            const lastAttest = miner.last_attest ? new Date(miner.last_attest * 1000) : null;
+            const timeSinceAttest = lastAttest ? Math.floor((Date.now() - lastAttest.getTime()) / 1000 / 60) : '?';
+
+            dashboard.innerHTML = `
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Current Balance</div>
+                        <div class="stat-value large">${balance.toFixed(2)} RTC</div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-label">Total Earned</div>
+                        <div class="stat-value">${totalEarned.toFixed(2)} RTC</div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-label">Rust Score</div>
+                        <div class="stat-value">${rustScore.toFixed(1)}</div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-label">Total Attestations</div>
+                        <div class="stat-value">${totalAttestations.toLocaleString()}</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2 class="section-title">Hardware Information</h2>
+                    <div class="hardware-info">
+                        <div class="info-item">
+                            <div class="info-label">Miner ID</div>
+                            <div class="info-value">${miner.miner}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Architecture</div>
+                            <div class="info-value">${miner.device_arch}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Device Family</div>
+                            <div class="info-value">${miner.device_family}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Hardware Type</div>
+                            <div class="info-value">${miner.hardware_type}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Age</div>
+                            <div class="info-value">${age} years</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Antiquity Multiplier</div>
+                            <div class="info-value">${miner.antiquity_multiplier}x</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Badge</div>
+                            <div class="info-value"><span class="badge">${badge}</span></div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Last Attestation</div>
+                            <div class="info-value">${timeSinceAttest} min ago</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2 class="section-title">Epoch Status</h2>
+                    <div class="countdown">
+                        <div class="countdown-label">Current Epoch: ${epochData.epoch} | Slot: ${epochData.slot}/${epochData.blocks_per_epoch}</div>
+                        <div class="countdown-value" id="countdown">Calculating...</div>
+                        <div class="countdown-label">Until Next Epoch</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2 class="section-title">Share Your Dashboard</h2>
+                    <div class="share-url">${window.location.href}</div>
+                </div>
+            `;
+
+            // Start countdown timer
+            startCountdown(epochData);
+        }
+
+        function startCountdown(epochData) {
+            const updateCountdown = () => {
+                const remainingSlots = epochData.blocks_per_epoch - (epochData.slot % epochData.blocks_per_epoch);
+                const remainingSeconds = remainingSlots * 600; // 10 min per block
+                
+                const hours = Math.floor(remainingSeconds / 3600);
+                const minutes = Math.floor((remainingSeconds % 3600) / 60);
+                const seconds = remainingSeconds % 60;
+                
+                const countdownEl = document.getElementById('countdown');
+                if (countdownEl) {
+                    countdownEl.textContent = `${hours}h ${minutes}m ${seconds}s`;
+                }
+            };
+
+            updateCountdown();
+            setInterval(updateCountdown, 1000);
+        }
+
+        function getRustBadge(rustScore) {
+            if (rustScore >= 300) return "Oxidized Legend";
+            if (rustScore >= 200) return "Tetanus Master";
+            if (rustScore >= 100) return "Rust Warrior";
+            if (rustScore >= 50) return "Corroded Knight";
+            if (rustScore >= 30) return "Tarnished Squire";
+            return "Fresh Metal";
+        }
+
+        function showError(message) {
+            const errorEl = document.getElementById('error');
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+        }
+
+        function hideError() {
+            document.getElementById('error').style.display = 'none';
+        }
+
+        function showLoading() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('dashboard').classList.remove('active');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
