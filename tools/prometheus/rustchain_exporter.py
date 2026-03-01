@@ -35,7 +35,7 @@ node_info = Info('rustchain_node', 'Node information')
 # Miners
 active_miners = Gauge('rustchain_active_miners_total', 'Number of active miners')
 enrolled_miners = Gauge('rustchain_enrolled_miners_total', 'Number of enrolled miners')
-miner_last_attest = Gauge('rustchain_miner_last_attest_timestamp', 
+miner_last_attest = Gauge('rustchain_miner_last_attest_timestamp',
                           'Last attestation timestamp for miner',
                           ['miner', 'arch', 'device_family'])
 
@@ -82,17 +82,17 @@ def collect_health_metrics():
     if not data:
         node_up.labels(version='unknown').set(0)
         return
-    
+
     version = data.get('version', 'unknown')
     node_up.labels(version=version).set(1 if data.get('ok') else 0)
     node_uptime.set(data.get('uptime_s', 0))
-    
+
     node_info.info({
         'version': version,
         'db_rw': str(data.get('db_rw', False)),
         'tip_age_slots': str(data.get('tip_age_slots', 0))
     })
-    
+
     logger.info(f"Health: version={version}, uptime={data.get('uptime_s')}s")
 
 
@@ -101,27 +101,27 @@ def collect_epoch_metrics():
     data = fetch_json('/epoch')
     if not data:
         return
-    
+
     epoch = data.get('epoch', 0)
     slot = data.get('slot', 0)
     blocks = data.get('blocks_per_epoch', 144)
-    
+
     current_epoch.set(epoch)
     current_slot.set(slot)
     blocks_per_epoch.set(blocks)
     epoch_pot.set(data.get('epoch_pot', 0))
     enrolled_miners.set(data.get('enrolled_miners', 0))
     total_supply.set(data.get('total_supply_rtc', 0))
-    
+
     # Calculate progress within current epoch (0-1 range)
     slot_in_epoch = slot % blocks if blocks > 0 else 0
     progress = slot_in_epoch / blocks if blocks > 0 else 0
     epoch_slot_progress.set(progress)
-    
+
     # Estimate seconds remaining in current epoch (assuming ~10 min per block)
     remaining_blocks = blocks - slot_in_epoch
     epoch_seconds_remaining.set(remaining_blocks * 600)
-    
+
     logger.info(f"Epoch: {epoch}, Slot: {slot_in_epoch}/{blocks} ({progress:.1%})")
 
 
@@ -130,25 +130,25 @@ def collect_miner_metrics():
     data = fetch_json('/api/miners')
     if not data or not isinstance(data, list):
         return
-    
+
     active_count = 0
     for miner in data:
         miner_id = miner.get('miner', 'unknown')
         last_attest = miner.get('last_attest')
         arch = miner.get('device_arch', 'unknown')
         family = miner.get('device_family', 'unknown')
-        
+
         if last_attest:
             miner_last_attest.labels(
                 miner=miner_id,
                 arch=arch,
                 device_family=family
             ).set(last_attest)
-            
+
             # Consider active if attested in last 30 minutes
             if time.time() - last_attest < 1800:
                 active_count += 1
-    
+
     active_miners.set(active_count)
     logger.info(f"Miners: {active_count} active, {len(data)} total")
 
@@ -166,15 +166,15 @@ def collect_hall_of_fame_metrics():
     data = fetch_json('/api/hall_of_fame')
     if not data:
         return
-    
+
     # API returns an object with a stats field containing aggregated data
     stats = data.get('stats', {})
-    
+
     total_machines.set(stats.get('total_machines', 0))
     total_attestations.set(stats.get('total_attestations', 0))
     oldest_machine_year.set(stats.get('oldest_year', 0))
     highest_rust_score.set(stats.get('highest_rust_score', 0))
-    
+
     logger.info(f"Hall of Fame: {stats.get('total_machines', 0)} machines, {stats.get('total_attestations', 0)} attestations")
 
 
@@ -183,17 +183,17 @@ def collect_fee_metrics():
     data = fetch_json('/api/fee_pool')
     if not data:
         return
-    
+
     total_fees_collected.set(data.get('total_fees_collected_rtc', 0))
     fee_events_total.set(data.get('total_fee_events', 0))
-    
+
     logger.info(f"Fees: {data.get('total_fees_collected_rtc', 0)} RTC collected, {data.get('total_fee_events', 0)} events")
 
 
 def collect_all_metrics():
     """Collect all metrics from RustChain node"""
     logger.info("Starting metrics collection...")
-    
+
     try:
         collect_health_metrics()
         collect_epoch_metrics()
@@ -201,7 +201,7 @@ def collect_all_metrics():
         collect_balance_metrics()
         collect_hall_of_fame_metrics()
         collect_fee_metrics()
-        
+
         logger.info("Metrics collection completed successfully")
     except Exception as e:
         logger.error(f"Error during metrics collection: {e}")
@@ -213,14 +213,14 @@ def main():
     logger.info(f"Node URL: {RUSTCHAIN_NODE_URL}")
     logger.info(f"Exporter port: {EXPORTER_PORT}")
     logger.info(f"Scrape interval: {SCRAPE_INTERVAL}s")
-    
+
     # Start Prometheus HTTP server
     start_http_server(EXPORTER_PORT)
     logger.info(f"Metrics server started on :{EXPORTER_PORT}/metrics")
-    
+
     # Initial collection
     collect_all_metrics()
-    
+
     # Continuous collection loop
     while True:
         time.sleep(SCRAPE_INTERVAL)
