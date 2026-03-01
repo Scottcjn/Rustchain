@@ -13,6 +13,7 @@
 - [Buying wRTC on Raydium](#-buying-wrtc-on-raydium)
 - [Bridging RTC to wRTC](#-bridging-rtc-to-wrtc)
 - [Withdrawing wRTC to RTC](#-withdrawing-wrtc-to-rtc)
+- [Technical Integration](#-technical-integration)
 - [Quick Reference](#-quick-reference)
 - [Troubleshooting](#-troubleshooting)
 
@@ -283,6 +284,234 @@ Monitor the bridge UI for updates.
 curl -sk "https://rustchain.org/wallet/balance?miner_id=my-miner-id"
 ```
 2. Verify on [RustChain Explorer](https://rustchain.org/explorer)
+
+---
+
+## 🔧 Technical Integration
+
+### Solana SDK Integration
+
+Integrate wRTC into your Solana dApp or wallet.
+
+#### Install Dependencies
+
+```bash
+# Using npm
+npm install @solana/web3.js @solana/spl-token
+
+# Using yarn
+yarn add @solana/web3.js @solana/spl-token
+
+# Using pnpm
+pnpm add @solana/web3.js @solana/spl-token
+```
+
+#### wRTC Token Constants
+
+```javascript
+// wRTC Token Configuration
+const WRTC_CONFIG = {
+  mint: '12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X',
+  decimals: 6,
+  name: 'Wrapped RustChain Token',
+  symbol: 'wRTC',
+  network: 'mainnet-beta'
+};
+```
+
+#### Check wRTC Balance
+
+```javascript
+const { Connection, PublicKey } = require('@solana/web3.js');
+const { getAssociatedTokenAddress, getAccount } = require('@solana/spl-token');
+
+async function getWrtcBalance(walletAddress) {
+  const connection = new Connection('https://api.mainnet-beta.solana.com');
+  
+  const wrtcMint = new PublicKey(WRTC_CONFIG.mint);
+  const userPubkey = new PublicKey(walletAddress);
+  
+  // Get associated token account
+  const ata = await getAssociatedTokenAddress(wrtcMint, userPubkey);
+  
+  try {
+    const account = await getAccount(connection, ata);
+    const balance = Number(account.amount) / Math.pow(10, WRTC_CONFIG.decimals);
+    return balance;
+  } catch (error) {
+    // Token account doesn't exist yet
+    return 0;
+  }
+}
+
+// Usage
+const balance = await getWrtcBalance('7nx8QmzxD1wKX7QJ1FVqT5hX9YvJxKqZb8yPoR3dL8mN');
+console.log(`wRTC Balance: ${balance}`);
+```
+
+#### Transfer wRTC
+
+```javascript
+const { Transaction } = require('@solana/web3.js');
+const { createTransferInstruction, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
+
+async function transferWrtc(sender, recipient, amount) {
+  const connection = new Connection('https://api.mainnet-beta.solana.com');
+  
+  const wrtcMint = new PublicKey(WRTC_CONFIG.mint);
+  const senderPubkey = new PublicKey(sender.publicKey);
+  const recipientPubkey = new PublicKey(recipient);
+  
+  // Get ATAs for both accounts
+  const senderAta = await getAssociatedTokenAddress(wrtcMint, senderPubkey);
+  const recipientAta = await getAssociatedTokenAddress(wrtcMint, recipientPubkey);
+  
+  const transaction = new Transaction();
+  
+  // Check if recipient ATA exists, create if not
+  try {
+    await getAccount(connection, recipientAta);
+  } catch {
+    transaction.add(
+      createAssociatedTokenAccountInstruction(
+        senderPubkey,
+        recipientAta,
+        recipientPubkey,
+        wrtcMint
+      )
+    );
+  }
+  
+  // Transfer instruction
+  const lamports = amount * Math.pow(10, WRTC_CONFIG.decimals);
+  transaction.add(
+    createTransferInstruction(
+      senderAta,
+      recipientAta,
+      senderPubkey,
+      lamports
+    )
+  );
+  
+  // Send transaction
+  const signature = await connection.sendTransaction(transaction, [sender]);
+  await connection.confirmTransaction(signature);
+  
+  return signature;
+}
+```
+
+#### Create wRTC Token Account
+
+```javascript
+async function createWrtcAccount(wallet) {
+  const connection = new Connection('https://api.mainnet-beta.solana.com');
+  
+  const wrtcMint = new PublicKey(WRTC_CONFIG.mint);
+  const owner = new PublicKey(wallet.publicKey);
+  
+  const ata = await getAssociatedTokenAddress(wrtcMint, owner);
+  
+  const transaction = new Transaction().add(
+    createAssociatedTokenAccountInstruction(
+      owner,
+      ata,
+      owner,
+      wrtcMint
+    )
+  );
+  
+  const signature = await connection.sendTransaction(transaction, [wallet]);
+  await connection.confirmTransaction(signature);
+  
+  return ata.toString();
+}
+```
+
+### Raydium Swap Integration
+
+Integrate Raydium swaps for wRTC trading.
+
+#### Swap SOL to wRTC
+
+```javascript
+async function swapSolToWrtc(wallet, solAmount) {
+  // Redirect to Raydium with pre-filled parameters
+  const raydiumUrl = `https://raydium.io/swap/?inputMint=sol&outputMint=${WRTC_CONFIG.mint}&amount=${solAmount}`;
+  
+  // Open in new window or redirect
+  window.open(raydiumUrl, '_blank');
+}
+```
+
+### BoTTube Bridge API
+
+Bridge between RTC and wRTC programmatically.
+
+#### Bridge Status Check
+
+```javascript
+async function checkBridgeStatus(txHash) {
+  const response = await fetch('https://bottube.ai/api/bridge/status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ txHash })
+  });
+  
+  const status = await response.json();
+  return status; // { status: 'pending' | 'completed' | 'failed', details: {...} }
+}
+```
+
+#### Initiate Bridge (RTC → wRTC)
+
+```javascript
+async function bridgeRtcToWrtc(rtcAddress, solAddress, amount) {
+  const response = await fetch('https://bottube.ai/api/bridge/initiate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: rtcAddress,
+      to: solAddress,
+      amount: amount,
+      direction: 'RTC_to_wRTC'
+    })
+  });
+  
+  const result = await response.json();
+  return result; // { depositAddress, expectedAmount, estimatedTime }
+}
+```
+
+### RPC Endpoints
+
+```javascript
+// Solana Mainnet
+const SOLANA_RPC = 'https://api.mainnet-beta.solana.com';
+
+// Alternative RPCs for redundancy
+const SOLANA_RPC_BACKUP = [
+  'https://solana-mainnet.g.alchemy.com/v2/YOUR_KEY',
+  'https://mainnet.helius-rpc.com/?api-key=YOUR_KEY'
+];
+
+// Get wRTC token metadata
+async function getTokenMetadata() {
+  const connection = new Connection(SOLANA_RPC);
+  const mint = new PublicKey(WRTC_CONFIG.mint);
+  
+  const mintInfo = await connection.getParsedAccountInfo(mint);
+  return mintInfo.value.data.parsed.info;
+}
+```
+
+### Smart Contract Addresses
+
+| Network | Contract/Address | Type |
+|---------|------------------|------|
+| **Solana** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` | wRTC Mint |
+| **Base L2** | `0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6` | wRTC Token |
+| **BoTTube Bridge** | `https://bottube.ai/bridge/wrtc` | Bridge UI |
 
 ---
 
