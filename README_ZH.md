@@ -35,6 +35,50 @@ RustChain代币（RTC）现已通过BoTTube桥接器在Solana上提供**wRTC**�
 
 ---
 
+
+
+## 贡献并赚取 RTC
+
+每一次贡献都可以获得 RTC 奖励。无论是 Bug 修复、功能开发、文档改进还是安全审计，都有对应赏金。
+
+| 级别 | 奖励 | 示例 |
+|------|------|------|
+| 微任务 | 1-10 RTC | 错别字修复、文档小改、简单测试 |
+| 标准任务 | 20-50 RTC | 新功能、重构、新接口 |
+| 重大任务 | 75-100 RTC | 安全修复、共识改进 |
+| 关键任务 | 100-150 RTC | 漏洞补丁、协议升级 |
+
+**快速开始：**
+1. 查看 [开放赏金](https://github.com/Scottcjn/rustchain-bounties/issues)
+2. 选择一个 [good first issue](https://github.com/Scottcjn/Rustchain/labels/good%20first%20issue)（5-10 RTC）
+3. Fork、修复、提交 PR，然后领取 RTC
+4. 详见 [CONTRIBUTING.md](CONTRIBUTING.md)
+
+**1 RTC = $0.10 USD** | 使用 `pip install clawrtc` 开始挖矿
+
+## Agent 钱包 + x402 支付
+
+RustChain Agent 现已支持 **Coinbase Base 钱包**，并可通过 **x402 协议**（HTTP 402 Payment Required）实现机器到机器支付。
+
+| 资源 | 链接 |
+|------|------|
+| **Agent 钱包文档** | [rustchain.org/wallets.html](https://rustchain.org/wallets.html) |
+| **Base 链上的 wRTC** | [`0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6`](https://basescan.org/address/0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
+| **USDC 兑换 wRTC** | [Aerodrome DEX](https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
+| **Base Bridge** | [bottube.ai/bridge/base](https://bottube.ai/bridge/base) |
+
+```bash
+# 创建 Coinbase 钱包
+pip install clawrtc[coinbase]
+clawrtc wallet coinbase create
+
+# 查看兑换信息
+clawrtc wallet coinbase swap-info
+
+# 绑定已有 Base 地址
+clawrtc wallet coinbase link 0xYourBaseAddress
+```
+
 ## 📄 学术论文
 
 | 论文 | DOI | 主题 |
@@ -296,6 +340,16 @@ Rustchain/
 └── nfts/                           # 徽章定义
 ```
 
+
+
+## ✅ Beacon 认证开源（BCOS）
+
+RustChain 已通过 Beacon 认证开源标准（BCOS）相关要求，并持续改进可审计性、可复现性与开源透明度。
+
+- 可公开验证的代码与提交流程
+- 可复现的安装与运行路径
+- 面向社区贡献者的赏金与评审机制
+
 ## 🔗 相关项目和链接
 
 | 资源 | 链接 |
@@ -346,3 +400,14 @@ MIT许可证 - 可免费使用，但请保留版权声明和署名。
 **DOS机箱、PowerPC G4、Win95机器 - 它们都有价值。RustChain证明了这一点。**
 
 </div>
+
+
+## 挖矿状态
+
+可使用以下命令快速检查网络状态与本机挖矿状态：
+
+```bash
+curl -sk https://rustchain.org/api/miners
+curl -sk https://rustchain.org/epoch
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+```
