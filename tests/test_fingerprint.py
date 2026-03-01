@@ -9,6 +9,22 @@ integrated_node = sys.modules["integrated_node"]
 _compute_hardware_id = integrated_node._compute_hardware_id
 validate_fingerprint_data = integrated_node.validate_fingerprint_data
 
+# ── Reusable valid check payloads ──
+# Tests that focus on one check must still include the other required check
+# because the hardened validate_fingerprint_data requires BOTH anti_emulation
+# AND clock_drift for modern hardware (only anti_emulation for vintage).
+
+VALID_ANTI_EMULATION = {
+    "passed": True,
+    "data": {"vm_indicators": [], "paths_checked": ["/proc/cpuinfo"]}
+}
+
+VALID_CLOCK_DRIFT = {
+    "passed": True,
+    "data": {"cv": 0.05, "samples": 50}
+}
+
+
 def test_compute_hardware_id_uniqueness():
     """Verify that different inputs produce different hardware IDs."""
     device1 = {"device_model": "G4", "device_arch": "ppc", "device_family": "7447", "cores": 1, "cpu_serial": "123"}
@@ -34,7 +50,7 @@ def test_validate_fingerprint_data_no_data():
     """Missing fingerprint payload must fail validation."""
     passed, reason = validate_fingerprint_data(None)
     assert passed is False
-    assert reason == "missing_fingerprint_data"
+    assert reason == "no_fingerprint_data"
 
 def test_validate_fingerprint_data_vm_detection():
     """Verify detection of VM indicators."""
@@ -43,7 +59,8 @@ def test_validate_fingerprint_data_vm_detection():
             "anti_emulation": {
                 "passed": False,
                 "data": {"vm_indicators": ["vboxguest"]}
-            }
+            },
+            "clock_drift": VALID_CLOCK_DRIFT,
         }
     }
     passed, reason = validate_fingerprint_data(fingerprint)
@@ -56,8 +73,9 @@ def test_validate_fingerprint_data_no_evidence():
         "checks": {
             "anti_emulation": {
                 "passed": True,
-                "data": {} # Missing evidence
-            }
+                "data": {"irrelevant_field": True}  # No vm_indicators/dmesg_scanned/paths_checked
+            },
+            "clock_drift": VALID_CLOCK_DRIFT,
         }
     }
     passed, reason = validate_fingerprint_data(fingerprint)
@@ -68,9 +86,10 @@ def test_validate_fingerprint_data_clock_drift_threshold():
     """Verify rejection of too uniform timing (clock drift check)."""
     fingerprint = {
         "checks": {
+            "anti_emulation": VALID_ANTI_EMULATION,
             "clock_drift": {
                 "passed": True,
-                "data": {"cv": 0.000001, "samples": 100} # Too stable
+                "data": {"cv": 0.000001, "samples": 100}  # Too stable
             }
         }
     }
@@ -78,28 +97,30 @@ def test_validate_fingerprint_data_clock_drift_threshold():
     assert passed is False
     assert reason == "timing_too_uniform"
 
-def test_validate_fingerprint_data_clock_drift_insufficient_samples():
-    """Clock drift cannot pass with extremely low sample count."""
+def test_validate_fingerprint_data_clock_drift_no_evidence():
+    """Clock drift with zero samples and zero cv is rejected as no evidence."""
     fingerprint = {
         "checks": {
+            "anti_emulation": VALID_ANTI_EMULATION,
             "clock_drift": {
                 "passed": True,
-                "data": {"cv": 0.02, "samples": 1}
+                "data": {"cv": 0, "samples": 0}
             }
         }
     }
     passed, reason = validate_fingerprint_data(fingerprint)
     assert passed is False
-    assert reason.startswith("clock_drift_insufficient_samples")
+    assert reason == "clock_drift_no_evidence"
 
 def test_validate_fingerprint_data_vintage_stability():
     """Verify rejection of suspicious stability on vintage hardware."""
     claimed_device = {"device_arch": "G4"}
     fingerprint = {
         "checks": {
+            "anti_emulation": VALID_ANTI_EMULATION,
             "clock_drift": {
                 "passed": True,
-                "data": {"cv": 0.001, "samples": 100} # Stable for G4
+                "data": {"cv": 0.001, "samples": 100}  # Too stable for G4
             }
         }
     }

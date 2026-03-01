@@ -1172,12 +1172,14 @@ def check_vm_signatures_server_side(device: dict, signals: dict) -> tuple:
     """Server-side VM detection from device/signal data."""
     indicators = []
 
-    hostname = signals.get("hostname", "").lower()
+    raw_hostname = signals.get("hostname")
+    hostname = (raw_hostname if isinstance(raw_hostname, str) else "").lower()
     for sig in KNOWN_VM_SIGNATURES:
         if sig in hostname:
             indicators.append(f"hostname:{sig}")
 
-    cpu = device.get("cpu", "").lower()
+    raw_cpu = device.get("cpu")
+    cpu = (raw_cpu if isinstance(raw_cpu, str) else "").lower()
     for sig in KNOWN_VM_SIGNATURES:
         if sig in cpu:
             indicators.append(f"cpu:{sig}")
@@ -1751,18 +1753,24 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
 @app.route('/attest/submit', methods=['POST'])
 def submit_attestation():
     """Submit hardware attestation with fingerprint validation"""
-    data = request.get_json()
+    data = request.get_json(silent=True)
+
+    # Type guard: reject non-dict JSON payloads (null, array, scalar)
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "Request body must be a JSON object", "code": "INVALID_JSON_OBJECT"}), 400
 
     # Extract client IP (handle nginx proxy)
     client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
     if client_ip and "," in client_ip:
         client_ip = client_ip.split(",")[0].strip()  # First IP in chain
 
-    # Extract attestation data
+    # Extract attestation data (type guards for fuzz safety)
     miner = data.get('miner') or data.get('miner_id')
-    report = data.get('report', {})
+    if miner is not None and not isinstance(miner, str):
+        miner = str(miner)
+    report = data.get('report', {}) if isinstance(data.get('report'), dict) else {}
     nonce = report.get('nonce') or data.get('nonce')
-    device = data.get('device', {})
+    device = data.get('device', {}) if isinstance(data.get('device'), dict) else {}
 
     # IP rate limiting (Security Hardening 2026-02-02)
     ip_ok, ip_reason = check_ip_rate_limit(client_ip, miner)
@@ -1774,7 +1782,7 @@ def submit_attestation():
             "message": "Too many unique miners from this IP address",
             "code": "IP_RATE_LIMIT"
         }), 429
-    signals = data.get('signals', {})
+    signals = data.get('signals', {}) if isinstance(data.get('signals'), dict) else {}
     fingerprint = data.get('fingerprint')  # FIX #305: None default to detect missing vs empty
 
     # Basic validation
@@ -1925,7 +1933,7 @@ def submit_attestation():
     with sqlite3.connect(DB_PATH) as c:
         c.execute(
             "INSERT INTO tickets (ticket_id, expires_at, commitment) VALUES (?, ?, ?)",
-            (ticket_id, int(time.time()) + 3600, report.get('commitment', ''))
+            (ticket_id, int(time.time()) + 3600, str(report.get('commitment', '')))
         )
 
     return jsonify({
