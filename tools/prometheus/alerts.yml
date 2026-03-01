@@ -1,0 +1,48 @@
+groups:
+  - name: rustchain_alerts
+    interval: 60s
+    rules:
+      - alert: RustChainNodeDown
+        expr: rustchain_node_up == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RustChain node is down"
+          description: "RustChain node has been down for more than 5 minutes"
+
+      - alert: MinerOffline
+        expr: (time() - rustchain_miner_last_attest_timestamp) > 1800
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Miner {{ $labels.miner }} is offline"
+          description: "Miner {{ $labels.miner }} ({{ $labels.arch }}) has not attested in over 30 minutes"
+
+      - alert: LowMinerBalance
+        expr: rustchain_balance_rtc < 10
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low balance for miner {{ $labels.miner }}"
+          description: "Miner {{ $labels.miner }} has balance below 10 RTC"
+
+      - alert: FewActiveMiners
+        expr: rustchain_active_miners_total < 5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low number of active miners"
+          description: "Only {{ $value }} miners are currently active"
+
+      - alert: EpochStalled
+        expr: rate(rustchain_current_slot[10m]) == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Epoch progression has stalled"
+          description: "No new slots have been produced in the last 10 minutes"
