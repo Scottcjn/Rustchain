@@ -1,0 +1,25 @@
+[Unit]
+Description=RustChain Prometheus Metrics Exporter
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/rustchain-exporter
+Environment=RUSTCHAIN_NODE_URL=http://localhost:8080
+Environment=EXPORTER_PORT=9100
+Environment=SCRAPE_INTERVAL=60
+ExecStart=/usr/bin/python3 /opt/rustchain-exporter/rustchain_exporter.py
+Restart=always
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/rustchain-exporter
+
+[Install]
+WantedBy=multi-user.target
