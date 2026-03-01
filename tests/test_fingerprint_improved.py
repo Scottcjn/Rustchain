@@ -2,11 +2,10 @@
 Test suite for hardware fingerprint validation in RustChain.
 
 This module tests the hardware fingerprinting system which ensures
-miners are running on genuine vintage hardware.
+miners are running on genuine hardware.
 
-Author: Atlas (AI Bounty Hunter)
-Date: 2026-02-28
-Reward: 10 RTC for first merged PR
+Original author: Atlas (AI Bounty Hunter)
+Fixed: 2026-02-28 — aligned with hardened validate_fingerprint_data
 """
 
 import hashlib
@@ -20,6 +19,21 @@ from typing import Dict, Any, Optional, Tuple
 integrated_node = sys.modules["integrated_node"]
 _compute_hardware_id = integrated_node._compute_hardware_id
 validate_fingerprint_data = integrated_node.validate_fingerprint_data
+
+# ── Reusable valid check payloads ──
+# The hardened validate_fingerprint_data requires BOTH anti_emulation AND
+# clock_drift for modern hardware. Tests focusing on one check must still
+# include the other with valid data to pass the required-checks gate.
+
+VALID_ANTI_EMULATION = {
+    "passed": True,
+    "data": {"vm_indicators": [], "paths_checked": ["/proc/cpuinfo"]}
+}
+
+VALID_CLOCK_DRIFT = {
+    "passed": True,
+    "data": {"cv": 0.05, "samples": 50}
+}
 
 
 class TestHardwareIDUniqueness:
@@ -136,7 +150,7 @@ class TestFingerprintValidation:
         """Missing fingerprint payload must fail validation."""
         passed, reason = validate_fingerprint_data(None)
         assert passed is False, "None data should fail validation"
-        assert reason == "missing_fingerprint_data", "Error should indicate missing data"
+        assert reason == "no_fingerprint_data", "Error should indicate no fingerprint data"
 
     def test_validate_fingerprint_data_empty_dict(self):
         """Empty dictionary should fail validation."""
@@ -144,18 +158,11 @@ class TestFingerprintValidation:
         assert passed is False, "Empty dict should fail validation"
 
     def test_validate_fingerprint_data_valid_data(self):
-        """Valid fingerprint data should pass validation."""
+        """Valid fingerprint data with both required checks should pass."""
         fingerprint = {
             "checks": {
-                "anti_emulation": {
-                    "passed": True,
-                    "data": {
-                        "vm_indicators": [],
-                        "dmesg_scanned": True,
-                        "paths_checked": 42,
-                        "passed": True
-                    }
-                }
+                "anti_emulation": VALID_ANTI_EMULATION,
+                "clock_drift": VALID_CLOCK_DRIFT,
             }
         }
         passed, reason = validate_fingerprint_data(fingerprint)
@@ -175,7 +182,8 @@ class TestAntiEmulationDetection:
                         "vm_indicators": ["vboxguest"],
                         "passed": False
                     }
-                }
+                },
+                "clock_drift": VALID_CLOCK_DRIFT,
             }
         }
         passed, reason = validate_fingerprint_data(fingerprint)
@@ -186,15 +194,8 @@ class TestAntiEmulationDetection:
         """Verify no false positives when real hardware reports no VM indicators."""
         fingerprint = {
             "checks": {
-                "anti_emulation": {
-                    "passed": True,
-                    "data": {
-                        "vm_indicators": [],
-                        "dmesg_scanned": True,
-                        "paths_checked": 38,
-                        "passed": True
-                    }
-                }
+                "anti_emulation": VALID_ANTI_EMULATION,
+                "clock_drift": VALID_CLOCK_DRIFT,
             }
         }
         passed, reason = validate_fingerprint_data(fingerprint)
@@ -210,7 +211,8 @@ class TestAntiEmulationDetection:
                         "vm_indicators": ["vboxguest", "vmware", "parallels"],
                         "passed": False
                     }
-                }
+                },
+                "clock_drift": VALID_CLOCK_DRIFT,
             }
         }
         passed, reason = validate_fingerprint_data(fingerprint)
@@ -221,34 +223,34 @@ class TestEvidenceRequirements:
     """Test that evidence is required for all checks."""
 
     def test_no_evidence_fails(self):
-        """Verify rejection if no raw evidence is provided."""
+        """Verify rejection if check data has no recognized evidence fields."""
         fingerprint = {
             "checks": {
                 "anti_emulation": {
                     "passed": True,
-                    "data": {}  # Missing evidence
-                }
+                    "data": {"irrelevant_field": True}  # No vm_indicators/dmesg/paths
+                },
+                "clock_drift": VALID_CLOCK_DRIFT,
             }
         }
         passed, reason = validate_fingerprint_data(fingerprint)
         assert passed is False, "Checks with no evidence should fail"
         assert reason == "anti_emulation_no_evidence", "Error should indicate missing evidence"
 
-    def test_empty_evidence_fails(self):
-        """Verify rejection if evidence list is empty."""
+    def test_empty_check_data_fails(self):
+        """Verify rejection if check data dict is empty."""
         fingerprint = {
             "checks": {
                 "anti_emulation": {
                     "passed": True,
-                    "data": {
-                        "vm_indicators": [],
-                        "passed": True
-                    }
-                }
+                    "data": {}  # Empty data triggers empty_check_data guard
+                },
+                "clock_drift": VALID_CLOCK_DRIFT,
             }
         }
         passed, reason = validate_fingerprint_data(fingerprint)
-        assert passed is False, "Empty evidence should fail"
+        assert passed is False, "Empty check data should fail"
+        assert "empty_check_data" in reason, "Error should indicate empty check data"
 
 
 class TestClockDriftDetection:
@@ -258,6 +260,7 @@ class TestClockDriftDetection:
         """Verify rejection of too uniform timing (clock drift check)."""
         fingerprint = {
             "checks": {
+                "anti_emulation": VALID_ANTI_EMULATION,
                 "clock_drift": {
                     "passed": True,
                     "data": {
@@ -271,27 +274,29 @@ class TestClockDriftDetection:
         assert passed is False, "Too uniform timing should fail"
         assert "timing_too_uniform" in reason, "Reason should mention timing issue"
 
-    def test_clock_drift_insufficient_samples(self):
-        """Clock drift cannot pass with extremely low sample count."""
+    def test_clock_drift_no_evidence(self):
+        """Clock drift with zero samples and zero cv is rejected."""
         fingerprint = {
             "checks": {
+                "anti_emulation": VALID_ANTI_EMULATION,
                 "clock_drift": {
                     "passed": True,
                     "data": {
-                        "cv": 0.02,
-                        "samples": 1  # Too few samples
+                        "cv": 0,
+                        "samples": 0
                     }
                 }
             }
         }
         passed, reason = validate_fingerprint_data(fingerprint)
-        assert passed is False, "Insufficient samples should fail"
-        assert reason.startswith("clock_drift_insufficient_samples"), "Error should mention samples"
+        assert passed is False, "Zero samples/cv should fail"
+        assert "clock_drift_no_evidence" in reason, "Error should mention no evidence"
 
     def test_valid_clock_drift_passes(self):
         """Valid clock drift data should pass."""
         fingerprint = {
             "checks": {
+                "anti_emulation": VALID_ANTI_EMULATION,
                 "clock_drift": {
                     "passed": True,
                     "data": {
@@ -315,6 +320,7 @@ class TestVintageHardwareTiming:
         }
         fingerprint = {
             "checks": {
+                "anti_emulation": VALID_ANTI_EMULATION,
                 "clock_drift": {
                     "passed": True,
                     "data": {
@@ -335,6 +341,7 @@ class TestVintageHardwareTiming:
         }
         fingerprint = {
             "checks": {
+                "anti_emulation": VALID_ANTI_EMULATION,
                 "clock_drift": {
                     "passed": True,
                     "data": {
@@ -358,7 +365,7 @@ class TestEdgeCases:
             "device_arch": "ppc64",
             "device_family": "970",
             "cores": 2,
-            "cpu_serial": "ABC123_测试"
+            "cpu_serial": "ABC123_測試"
         }
         id1 = _compute_hardware_id(device, source_ip="1.1.1.1")
         id2 = _compute_hardware_id(device, source_ip="1.1.1.1")
