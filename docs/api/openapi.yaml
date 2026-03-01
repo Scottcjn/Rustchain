@@ -136,12 +136,45 @@ paths:
                   entropy_score: 0
                   first_attest: null
 
+  /api/stats:
+    get:
+      tags:
+        - Miners
+      summary: Network statistics
+      description: |
+        Returns network-wide statistics.
+        
+        **Note**: This endpoint is currently not implemented on the live node (returns 404).
+        Statistics are available via `/api/hall_of_fame` endpoint under the `stats` field.
+      operationId: getStats
+      deprecated: true
+      responses:
+        '200':
+          description: Network statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HallOfFameStats'
+              example:
+                total_machines: 73
+                total_attestations: 426415
+                oldest_year: 2001
+                highest_rust_score: 310.4
+                active_miners_now: 16
+                average_rust_score: 61.9
+        '404':
+          description: Endpoint not yet implemented (use /api/hall_of_fame instead)
+
   /api/hall_of_fame:
     get:
       tags:
         - Hall of Fame
       summary: Hall of Fame leaderboard
-      description: Returns historical machines organized by category with rust scores
+      description: |
+        Returns historical machines organized by category with rust scores.
+        
+        **Note**: This endpoint also includes network statistics in the `stats` field,
+        which can be used as an alternative to the `/api/stats` endpoint.
       operationId: getHallOfFame
       responses:
         '200':
