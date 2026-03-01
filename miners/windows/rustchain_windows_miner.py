@@ -690,7 +690,7 @@ def run_headless(wallet_address: str, node_url: str) -> int:
 def main(argv=None):
     """Main entry point"""
     ap = argparse.ArgumentParser(description="RustChain Windows wallet + miner (GUI or headless fallback).")
-    ap.add_argument("--version", "-v", action="version", version=f"clawrtc {MINER_VERSION}")
+    ap.add_argument("--version", "-v", action="version", version=f"RustChain Windows Miner {MINER_VERSION}")
     ap.add_argument("--headless", action="store_true", help="Run without GUI (recommended for embeddable Python).")
     ap.add_argument("--node", default=RUSTCHAIN_API, help="RustChain node base URL (default: https://rustchain.org; fallback: http://50.28.86.131:8088).")
     ap.add_argument("--wallet", default="", help="Wallet address / miner ID string.")
