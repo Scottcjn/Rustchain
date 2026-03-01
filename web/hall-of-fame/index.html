@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hall of Fame | RustChain - Proof of Antiquity</title>
+    <meta name="description" content="RustChain Hall of Fame - Celebrating the oldest, most exotic, and most dedicated vintage hardware miners on the network.">
+    <meta property="og:title" content="RustChain Hall of Fame - Iron Never Dies">
+    <meta property="og:description" content="79 vintage machines. 675,000+ attestations. The oldest iron on the blockchain.">
+    <meta property="og:image" content="https://rustchain.org/wrtc/og.png">
+    <meta property="og:url" content="https://rustchain.org/hall-of-fame/">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="stylesheet" href="/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --green: #33ff33;
+            --green-dim: #1a8c1a;
+            --green-glow: #00ff0044;
+            --amber: #ffb000;
+            --amber-dim: #996a00;
+            --amber-glow: #ffb00033;
+            --red: #ff4444;
+            --cyan: #00ffff;
+            --bg-dark: #0a0a0a;
+            --bg-card: #0d1117;
+            --bg-terminal: #000800;
+            --border: #1a331a;
+            --text-dim: #668866;
+            --text-body: #a0c8a0;
+            --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+            --font-display: 'VT323', monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--bg-dark);
+            color: var(--text-body);
+            font-family: var(--font-mono);
+            font-size: 14px;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* ========== NAV ========== */
+        .terminal-nav {
+            background: rgba(0,0,0,0.95);
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem 1.5rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(8px);
+        }
+        .nav-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .nav-logo {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            color: var(--green);
+            text-shadow: 0 0 10px var(--green-glow);
+            text-decoration: none;
+        }
+        .nav-links {
+            display: flex;
+            gap: 1.5rem;
+            align-items: center;
+        }
+        .nav-links a {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover, .nav-links a.active {
+            color: var(--green);
+            text-shadow: 0 0 8px var(--green-glow);
+        }
+        .nav-toggle {
+            display: none;
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--green);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.25rem 0.5rem;
+        }
+
+        /* ========== MAIN CONTAINER ========== */
+        .hof-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+        }
+
+        /* ========== HERO ========== */
+        .hof-hero {
+            text-align: center;
+            padding: 2rem 0 1.5rem;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 2rem;
+        }
+        .ascii-banner {
+            font-family: var(--font-display);
+            font-size: clamp(0.6rem, 2.5vw, 1.1rem);
+            color: var(--amber);
+            text-shadow: 0 0 15px var(--amber-glow);
+            white-space: pre;
+            line-height: 1.15;
+            margin-bottom: 1rem;
+            overflow-x: auto;
+        }
+        .hof-subtitle {
+            font-family: var(--font-display);
+            font-size: 1.3rem;
+            color: var(--text-dim);
+            letter-spacing: 3px;
+        }
+
+        /* ========== STAT BOXES ========== */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        .stat-box {
+            background: var(--bg-terminal);
+            border: 1px solid var(--border);
+            padding: 1rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .stat-box::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green-glow);
+        }
+        .stat-value {
+            font-family: var(--font-display);
+            font-size: 2rem;
+            color: var(--green);
+            text-shadow: 0 0 10px var(--green-glow);
+        }
+        .stat-label {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-top: 0.25rem;
+        }
+
+        /* ========== EPOCH COUNTDOWN ========== */
+        .epoch-bar {
+            background: var(--bg-terminal);
+            border: 1px solid var(--border);
+            padding: 1rem 1.5rem;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
+        .epoch-label {
+            font-family: var(--font-display);
+            font-size: 1.3rem;
+            color: var(--amber);
+            white-space: nowrap;
+        }
+        .epoch-progress-wrap {
+            flex: 1;
+            min-width: 200px;
+        }
+        .epoch-progress {
+            height: 16px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            position: relative;
+            overflow: hidden;
+        }
+        .epoch-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--green-dim), var(--green));
+            box-shadow: 0 0 10px var(--green-glow);
+            transition: width 1s linear;
+        }
+        .epoch-progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: var(--font-display);
+            font-size: 0.85rem;
+            color: var(--bg-dark);
+            font-weight: bold;
+            z-index: 2;
+        }
+        .epoch-time {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            color: var(--green);
+            text-shadow: 0 0 8px var(--green-glow);
+            white-space: nowrap;
+        }
+
+        /* ========== SPOTLIGHT ========== */
+        .spotlight {
+            background: var(--bg-terminal);
+            border: 1px solid var(--amber-dim);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            display: flex;
+            gap: 1.5rem;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+        .spotlight-ascii {
+            font-family: var(--font-display);
+            font-size: 0.75rem;
+            color: var(--amber);
+            text-shadow: 0 0 6px var(--amber-glow);
+            white-space: pre;
+            line-height: 1.1;
+            flex-shrink: 0;
+        }
+        .spotlight-info {
+            flex: 1;
+            min-width: 250px;
+        }
+        .spotlight-title {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            color: var(--amber);
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .spotlight-title .blink {
+            animation: blink 1s step-end infinite;
+        }
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+        .spotlight-details {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 0.25rem 1rem;
+            font-size: 0.85rem;
+        }
+        .spotlight-details dt {
+            color: var(--text-dim);
+        }
+        .spotlight-details dd {
+            color: var(--text-body);
+        }
+        .spotlight-fact {
+            margin-top: 0.75rem;
+            font-style: italic;
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+            padding-top: 0.75rem;
+        }
+
+        /* ========== TABS ========== */
+        .tab-nav {
+            display: flex;
+            gap: 0;
+            border-bottom: 2px solid var(--border);
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+            scrollbar-color: var(--green-dim) transparent;
+        }
+        .tab-btn {
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--text-dim);
+            font-family: var(--font-display);
+            font-size: 1.1rem;
+            padding: 0.75rem 1.25rem;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+            letter-spacing: 1px;
+            margin-bottom: -2px;
+        }
+        .tab-btn:hover {
+            color: var(--green);
+            background: rgba(51,255,51,0.03);
+        }
+        .tab-btn.active {
+            color: var(--green);
+            border-bottom-color: var(--green);
+            text-shadow: 0 0 8px var(--green-glow);
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+        .tab-content.active { display: block; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ========== TABLES ========== */
+        .hof-table-wrap {
+            overflow-x: auto;
+            margin-top: 1rem;
+        }
+        .hof-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        .hof-table thead {
+            position: sticky;
+            top: 0;
+        }
+        .hof-table th {
+            background: var(--bg-terminal);
+            color: var(--green);
+            font-family: var(--font-display);
+            font-size: 1rem;
+            letter-spacing: 1px;
+            padding: 0.6rem 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--green-dim);
+            white-space: nowrap;
+        }
+        .hof-table td {
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        .hof-table tbody tr:hover {
+            background: rgba(51,255,51,0.03);
+        }
+        .rank-num {
+            font-family: var(--font-display);
+            font-size: 1.2rem;
+            color: var(--amber);
+            text-align: center;
+            min-width: 2rem;
+        }
+        .rank-1 { color: #ffd700; text-shadow: 0 0 8px #ffd70066; }
+        .rank-2 { color: #c0c0c0; text-shadow: 0 0 6px #c0c0c044; }
+        .rank-3 { color: #cd7f32; text-shadow: 0 0 6px #cd7f3244; }
+
+        /* ========== BADGES ========== */
+        .badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 2px;
+            font-family: var(--font-display);
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+        }
+        .badge-oxidized { background: #8B4513; color: #ffcc80; border: 1px solid #a0522d; }
+        .badge-tetanus  { background: #4a1a00; color: #ff8c42; border: 1px solid #8B4513; }
+        .badge-corroded { background: #2d2d00; color: #cccc33; border: 1px solid #666600; }
+        .badge-patina   { background: #003322; color: #33cc99; border: 1px solid #006644; }
+        .badge-tarnish  { background: #1a2a1a; color: #88bb88; border: 1px solid #336633; }
+        .badge-fresh    { background: #1a1a2a; color: #8888cc; border: 1px solid #444488; }
+
+        .deceased { text-decoration: line-through; opacity: 0.6; }
+        .plague-badge {
+            display: inline-block;
+            background: var(--amber-dim);
+            color: var(--amber);
+            font-size: 0.7rem;
+            padding: 0.1rem 0.3rem;
+            border-radius: 2px;
+            margin-left: 0.25rem;
+        }
+
+        .miner-id {
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: var(--cyan);
+        }
+        .arch-tag {
+            font-family: var(--font-display);
+            font-size: 0.95rem;
+            color: var(--amber);
+        }
+
+        /* ========== FOOTER ========== */
+        .hof-footer {
+            text-align: center;
+            padding: 2rem 0;
+            border-top: 1px solid var(--border);
+            margin-top: 2rem;
+            color: var(--text-dim);
+            font-size: 0.8rem;
+        }
+        .refresh-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .refresh-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 6px var(--green-glow);
+            animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* ========== CRT EFFECTS ========== */
+        .crt-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 9999;
+            background:
+                repeating-linear-gradient(
+                    0deg,
+                    rgba(0,0,0,0.03) 0px,
+                    rgba(0,0,0,0.03) 1px,
+                    transparent 1px,
+                    transparent 3px
+                );
+        }
+
+        /* ========== LOADING ========== */
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            font-family: var(--font-display);
+            font-size: 1.3rem;
+            color: var(--green);
+        }
+        .loading::after {
+            content: '...';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+        @keyframes dots {
+            0% { content: ''; }
+            25% { content: '.'; }
+            50% { content: '..'; }
+            75% { content: '...'; }
+        }
+
+        /* ========== RESPONSIVE ========== */
+        @media (max-width: 768px) {
+            .nav-links { display: none; }
+            .nav-links.open {
+                display: flex;
+                flex-direction: column;
+                position: absolute;
+                top: 100%;
+                left: 0; right: 0;
+                background: rgba(0,0,0,0.97);
+                padding: 1rem;
+                gap: 0.75rem;
+                border-bottom: 1px solid var(--border);
+            }
+            .nav-toggle { display: block; }
+
+            .spotlight { flex-direction: column; }
+            .spotlight-ascii { font-size: 0.55rem; }
+            .stat-grid { grid-template-columns: repeat(2, 1fr); }
+            .epoch-bar { flex-direction: column; align-items: stretch; }
+            .ascii-banner { font-size: 0.5rem; }
+            .hof-table { font-size: 0.75rem; }
+            .hof-table th, .hof-table td { padding: 0.4rem 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="terminal-nav">
+    <div class="nav-inner">
+        <a href="/" class="nav-logo">[RTC]</a>
+        <div class="nav-links" id="navLinks">
+            <a href="/">HOME</a>
+            <a href="/wrtc/">wRTC</a>
+            <a href="/wallets/">WALLETS</a>
+            <a href="/hall-of-fame/" class="active">HALL OF FAME</a>
+            <a href="/beacon/">ATLAS</a>
+            <a href="https://rustchain.org/explorer" target="_blank">EXPLORER</a>
+        </div>
+        <button class="nav-toggle" onclick="toggleNav()" aria-label="Menu">&#9776;</button>
+    </div>
+</nav>
+
+<div class="hof-container">
+
+    <!-- HERO -->
+    <div class="hof-hero">
+        <div class="ascii-banner" aria-hidden="true">
+ _   _    _    _     _          ___  _____   _____ _    __  __ _____
+| | | |  / \  | |   | |        / _ \|  ___| |  ___/ \  |  \/  | ____|
+| |_| | / _ \ | |   | |       | | | | |_    | |_ / _ \ | |\/| |  _|
+|  _  |/ ___ \| |___| |___    | |_| |  _|   |  _/ ___ \| |  | | |___
+|_| |_/_/   \_\_____|_____|    \___/|_|     |_|/_/   \_\_|  |_|_____|
+        </div>
+        <div class="hof-subtitle">PROOF OF ANTIQUITY LEADERBOARD</div>
+    </div>
+
+    <!-- STAT BOXES -->
+    <div class="stat-grid" id="statGrid">
+        <div class="stat-box">
+            <div class="stat-value" id="statMachines">--</div>
+            <div class="stat-label">MACHINES</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value" id="statAttestations">--</div>
+            <div class="stat-label">ATTESTATIONS</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value" id="statOldest">--</div>
+            <div class="stat-label">OLDEST YEAR</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value" id="statRust">--</div>
+            <div class="stat-label">PEAK RUST</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value" id="statActive">--</div>
+            <div class="stat-label">ACTIVE NOW</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value" id="statAvgRust">--</div>
+            <div class="stat-label">AVG RUST</div>
+        </div>
+    </div>
+
+    <!-- EPOCH COUNTDOWN -->
+    <div class="epoch-bar" id="epochBar">
+        <div class="epoch-label">EPOCH <span id="epochNum">--</span></div>
+        <div class="epoch-progress-wrap">
+            <div class="epoch-progress">
+                <div class="epoch-progress-fill" id="epochFill" style="width:0%"></div>
+                <span class="epoch-progress-text" id="epochSlotText">--/--</span>
+            </div>
+        </div>
+        <div class="epoch-time" id="epochTime">--:--:--</div>
+    </div>
+
+    <!-- SPOTLIGHT -->
+    <div class="spotlight" id="spotlightSection" style="display:none">
+        <div class="spotlight-ascii" id="spotlightAscii"></div>
+        <div class="spotlight-info">
+            <div class="spotlight-title">
+                <span class="blink">></span> MACHINE OF THE MOMENT
+            </div>
+            <dl class="spotlight-details" id="spotlightDetails"></dl>
+            <div class="spotlight-fact" id="spotlightFact"></div>
+        </div>
+    </div>
+
+    <!-- CATEGORY TABS -->
+    <div class="tab-nav" id="tabNav">
+        <button class="tab-btn active" data-tab="ancient">ANCIENT IRON</button>
+        <button class="tab-btn" data-tab="dedicated">MOST DEDICATED</button>
+        <button class="tab-btn" data-tab="exotic">EXOTIC ARCH</button>
+        <button class="tab-btn" data-tab="earners">TOP EARNERS</button>
+        <button class="tab-btn" data-tab="fleet">FLEET COMMANDERS</button>
+    </div>
+
+    <!-- TAB: ANCIENT IRON -->
+    <div class="tab-content active" id="tab-ancient">
+        <div class="loading" id="loadAncient">LOADING ANCIENT IRON</div>
+        <div class="hof-table-wrap" style="display:none" id="tableAncient"></div>
+    </div>
+
+    <!-- TAB: MOST DEDICATED -->
+    <div class="tab-content" id="tab-dedicated">
+        <div class="loading" id="loadDedicated">SCANNING EPOCH HISTORY</div>
+        <div class="hof-table-wrap" style="display:none" id="tableDedicated"></div>
+    </div>
+
+    <!-- TAB: EXOTIC ARCH -->
+    <div class="tab-content" id="tab-exotic">
+        <div class="loading" id="loadExotic">CATALOGING ARCHITECTURES</div>
+        <div class="hof-table-wrap" style="display:none" id="tableExotic"></div>
+    </div>
+
+    <!-- TAB: TOP EARNERS -->
+    <div class="tab-content" id="tab-earners">
+        <div class="loading" id="loadEarners">COUNTING TOKENS</div>
+        <div class="hof-table-wrap" style="display:none" id="tableEarners"></div>
+    </div>
+
+    <!-- TAB: FLEET COMMANDERS -->
+    <div class="tab-content" id="tab-fleet">
+        <div class="loading" id="loadFleet">ASSEMBLING FLEETS</div>
+        <div class="hof-table-wrap" style="display:none" id="tableFleet"></div>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="hof-footer">
+        <div class="refresh-indicator">
+            <span class="refresh-dot"></span>
+            <span>Auto-refresh every 2 minutes</span>
+        </div>
+        <div style="margin-top:0.5rem">
+            <span id="lastUpdate">--</span> &middot;
+            <a href="/" style="color:var(--green-dim)">rustchain.org</a> &middot;
+            Iron Never Dies
+        </div>
+    </div>
+</div>
+
+<!-- CRT Effect -->
+<div class="crt-overlay"></div>
+
+<script>
+(function() {
+    'use strict';
+
+    // ─── ASCII SILHOUETTES ───
+    const ASCII_ART = {
+        g4: [
+            '  ___________  ',
+            ' |  .------.  |',
+            ' |  |      |  |',
+            ' |  | G4   |  |',
+            ' |  |______|  |',
+            ' |   ______   |',
+            ' |  |  ()  |  |',
+            ' |__|______|__|',
+        ].join('\n'),
+        g5: [
+            '  ____________ ',
+            ' /           /|',
+            '/  POWER    / |',
+            '|  MAC G5  |  |',
+            '|  ~~~~~~  |  |',
+            '|  ~~~~~~  | / ',
+            '|__________|/  ',
+        ].join('\n'),
+        g3: [
+            '  _________   ',
+            ' |  .----. |  ',
+            ' |  | G3 | |  ',
+            ' |  |____| |  ',
+            ' |  ______ |  ',
+            ' |_|______|_| ',
+        ].join('\n'),
+        power8: [
+            '  ================  ',
+            '  | IBM POWER8   |  ',
+            '  | S824  128T   |  ',
+            '  |  [][][][]    |  ',
+            '  |  [][][][]    |  ',
+            '  |  [][][][]    |  ',
+            '  ================  ',
+        ].join('\n'),
+        x86: [
+            '  __________  ',
+            ' |  .--.    | ',
+            ' |  |x86|   | ',
+            ' |  |   |   | ',
+            ' |  `--\'    | ',
+            ' |__________| ',
+        ].join('\n'),
+        apple_silicon: [
+            '   ________   ',
+            '  /  Apple  \\ ',
+            ' |  Silicon  |',
+            ' |    M2     |',
+            ' |  ~~~~~    |',
+            '  \\________/ ',
+        ].join('\n'),
+        default: [
+            '   ________   ',
+            '  |  .---.  | ',
+            '  |  |CPU|  | ',
+            '  |  |___|  | ',
+            '  |  _____  | ',
+            '  |_|_____|_| ',
+        ].join('\n')
+    };
+
+    function getAsciiArt(arch) {
+        if (!arch) return ASCII_ART.default;
+        const a = arch.toLowerCase();
+        if (a.includes('g4') || a.includes('powerbook')) return ASCII_ART.g4;
+        if (a.includes('g5')) return ASCII_ART.g5;
+        if (a.includes('g3')) return ASCII_ART.g3;
+        if (a.includes('power8') || a.includes('power9')) return ASCII_ART.power8;
+        if (a.includes('apple') || a.includes('m1') || a.includes('m2') || a.includes('m3')) return ASCII_ART.apple_silicon;
+        if (a.includes('x86') || a.includes('intel') || a.includes('amd') || a.includes('486') || a.includes('pentium')) return ASCII_ART.x86;
+        return ASCII_ART.default;
+    }
+
+    // ─── BADGE HELPERS ───
+    function badgeClass(badge) {
+        if (!badge) return 'badge-fresh';
+        const b = badge.toLowerCase();
+        if (b.includes('oxidized')) return 'badge-oxidized';
+        if (b.includes('tetanus'))  return 'badge-tetanus';
+        if (b.includes('corroded')) return 'badge-corroded';
+        if (b.includes('patina'))   return 'badge-patina';
+        if (b.includes('tarnish'))  return 'badge-tarnish';
+        return 'badge-fresh';
+    }
+
+    function shortId(id) {
+        if (!id) return '???';
+        if (id.length > 20) return id.slice(0, 8) + '...' + id.slice(-6);
+        return id;
+    }
+
+    function fmtNum(n) {
+        if (n == null) return '--';
+        if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+        if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+        return String(n);
+    }
+
+    function fmtRTC(n) {
+        if (n == null) return '--';
+        return Number(n).toFixed(2);
+    }
+
+    function rankClass(i) {
+        if (i === 0) return 'rank-1';
+        if (i === 1) return 'rank-2';
+        if (i === 2) return 'rank-3';
+        return '';
+    }
+
+    // ─── EPOCH COUNTDOWN ───
+    let epochData = null;
+    let epochFetchTime = 0;
+
+    function updateEpochTimer() {
+        if (!epochData) return;
+        const elapsed = (Date.now() / 1000) - epochFetchTime;
+        const remaining = Math.max(0, epochData.seconds_remaining - elapsed);
+        const h = Math.floor(remaining / 3600);
+        const m = Math.floor((remaining % 3600) / 60);
+        const s = Math.floor(remaining % 60);
+        document.getElementById('epochTime').textContent =
+            String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+
+        const totalSeconds = epochData.slots_per_epoch * epochData.block_time;
+        const elapsedSlot = totalSeconds - epochData.seconds_remaining + elapsed;
+        const pct = Math.min(100, (elapsedSlot / totalSeconds) * 100);
+        document.getElementById('epochFill').style.width = pct.toFixed(1) + '%';
+
+        if (remaining <= 0) {
+            // Epoch rolled over, refresh
+            fetchData();
+        }
+    }
+
+    // ─── BUILD TABLES ───
+    function buildAncientTable(data) {
+        let html = '<table class="hof-table"><thead><tr>';
+        html += '<th>#</th><th>MACHINE</th><th>ARCH</th><th>YEAR</th><th>AGE</th><th>RUST</th><th>BADGE</th><th>ATTESTATIONS</th>';
+        html += '</tr></thead><tbody>';
+        data.forEach(function(m, i) {
+            const cls = m.is_deceased ? ' class="deceased"' : '';
+            html += '<tr' + cls + ' onclick="window.location.href=\'/hall-of-fame/machine.html?id=' + (m.fingerprint_hash||'') + '\'' + ' style="cursor:pointer">';
+            html += '<td class="rank-num ' + rankClass(i) + '">' + (i+1) + '</td>';
+            html += '<td class="miner-id" title="' + (m.miner_id||'') + '">' + shortId(m.miner_id) + (m.is_deceased ? ' &#9760;' : '') + '</td>';
+            html += '<td class="arch-tag">' + (m.device_arch || '?') + '</td>';
+            html += '<td>' + (m.manufacture_year || '?') + '</td>';
+            html += '<td>' + (m.age_years || '?') + ' yr</td>';
+            html += '<td style="color:var(--amber)">' + (m.rust_score ? m.rust_score.toFixed(1) : '--') + '</td>';
+            html += '<td><span class="badge ' + badgeClass(m.badge) + '">' + (m.badge || 'Unknown') + '</span>';
+            if (m.capacitor_plague) html += '<span class="plague-badge">CAP PLAGUE</span>';
+            html += '</td>';
+            html += '<td>' + fmtNum(m.total_attestations) + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        return html;
+    }
+
+    function buildDedicatedTable(data) {
+        let html = '<table class="hof-table"><thead><tr>';
+        html += '<th>#</th><th>MINER</th><th>EPOCHS</th><th>TOTAL RTC</th><th>FIRST EPOCH</th><th>LAST EPOCH</th>';
+        html += '</tr></thead><tbody>';
+        data.forEach(function(m, i) {
+            html += '<tr>';
+            html += '<td class="rank-num ' + rankClass(i) + '">' + (i+1) + '</td>';
+            html += '<td class="miner-id" title="' + (m.miner_id||'') + '">' + shortId(m.miner_id) + '</td>';
+            html += '<td style="color:var(--green)">' + m.epochs_participated + '</td>';
+            html += '<td style="color:var(--amber)">' + fmtRTC(m.total_rtc) + '</td>';
+            html += '<td>' + (m.first_epoch || '--') + '</td>';
+            html += '<td>' + (m.last_epoch || '--') + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        return html;
+    }
+
+    function buildExoticTable(data) {
+        let html = '<table class="hof-table"><thead><tr>';
+        html += '<th>#</th><th>ARCHITECTURE</th><th>MACHINES</th><th>OLDEST</th><th>TOP RUST</th><th>AVG RUST</th><th>ATTESTATIONS</th>';
+        html += '</tr></thead><tbody>';
+        data.forEach(function(m, i) {
+            html += '<tr>';
+            html += '<td class="rank-num ' + rankClass(i) + '">' + (i+1) + '</td>';
+            html += '<td class="arch-tag">' + (m.device_arch || '?') + '</td>';
+            html += '<td>' + m.machine_count + '</td>';
+            html += '<td>' + (m.oldest_year || '?') + '</td>';
+            html += '<td style="color:var(--amber)">' + (m.top_rust_score ? m.top_rust_score.toFixed(1) : '--') + '</td>';
+            html += '<td>' + (m.avg_rust_score ? m.avg_rust_score.toFixed(1) : '--') + '</td>';
+            html += '<td>' + fmtNum(m.total_attestations) + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        return html;
+    }
+
+    function buildEarnersTable(data) {
+        let html = '<table class="hof-table"><thead><tr>';
+        html += '<th>#</th><th>MINER</th><th>BALANCE RTC</th><th>ARCH</th><th>MODEL</th><th>RUST</th><th>BADGE</th>';
+        html += '</tr></thead><tbody>';
+        data.forEach(function(m, i) {
+            html += '<tr>';
+            html += '<td class="rank-num ' + rankClass(i) + '">' + (i+1) + '</td>';
+            html += '<td class="miner-id" title="' + (m.miner_id||'') + '">' + shortId(m.miner_id) + '</td>';
+            html += '<td style="color:var(--green);font-weight:bold">' + fmtRTC(m.balance_rtc) + '</td>';
+            html += '<td class="arch-tag">' + (m.device_arch || '--') + '</td>';
+            html += '<td>' + (m.device_model || '--') + '</td>';
+            html += '<td style="color:var(--amber)">' + (m.rust_score ? m.rust_score.toFixed(1) : '--') + '</td>';
+            html += '<td><span class="badge ' + badgeClass(m.badge) + '">' + (m.badge || '--') + '</span></td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        return html;
+    }
+
+    function buildFleetTable(data) {
+        let html = '<table class="hof-table"><thead><tr>';
+        html += '<th>#</th><th>COMMANDER</th><th>MACHINES</th><th>ARCHITECTURES</th><th>TOP RUST</th><th>OLDEST</th><th>ATTESTATIONS</th>';
+        html += '</tr></thead><tbody>';
+        data.forEach(function(m, i) {
+            html += '<tr>';
+            html += '<td class="rank-num ' + rankClass(i) + '">' + (i+1) + '</td>';
+            html += '<td class="miner-id" title="' + (m.miner_id||'') + '">' + shortId(m.miner_id) + '</td>';
+            html += '<td style="color:var(--green);font-size:1.1rem">' + m.machine_count + '</td>';
+            html += '<td class="arch-tag">' + (m.architectures || '--') + '</td>';
+            html += '<td style="color:var(--amber)">' + (m.top_rust_score ? m.top_rust_score.toFixed(1) : '--') + '</td>';
+            html += '<td>' + (m.oldest_year || '--') + '</td>';
+            html += '<td>' + fmtNum(m.total_attestations) + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        return html;
+    }
+
+    // ─── RENDER ───
+    function render(data) {
+        // Stats
+        var s = data.stats;
+        document.getElementById('statMachines').textContent = s.total_machines;
+        document.getElementById('statAttestations').textContent = fmtNum(s.total_attestations);
+        document.getElementById('statOldest').textContent = s.oldest_year || '--';
+        document.getElementById('statRust').textContent = s.highest_rust_score;
+        document.getElementById('statActive').textContent = s.active_miners_now;
+        document.getElementById('statAvgRust').textContent = s.average_rust_score;
+
+        // Epoch
+        epochData = data.epoch;
+        epochFetchTime = Date.now() / 1000;
+        document.getElementById('epochNum').textContent = data.epoch.current;
+        document.getElementById('epochSlotText').textContent =
+            data.epoch.slot_in_epoch + '/' + data.epoch.slots_per_epoch;
+        updateEpochTimer();
+
+        // Spotlight
+        if (data.spotlight && data.spotlight.machine) {
+            var m = data.spotlight.machine;
+            var section = document.getElementById('spotlightSection');
+            section.style.display = 'flex';
+            document.getElementById('spotlightAscii').textContent = getAsciiArt(m.device_arch);
+
+            var details = '';
+            details += '<dt>Model</dt><dd>' + (m.device_model || 'Unknown') + '</dd>';
+            details += '<dt>Arch</dt><dd class="arch-tag">' + (m.device_arch || '?') + '</dd>';
+            details += '<dt>Year</dt><dd>' + (m.manufacture_year || '?') + ' (' + (m.age_years || '?') + ' years old)</dd>';
+            details += '<dt>Rust Score</dt><dd style="color:var(--amber)">' + (m.rust_score ? m.rust_score.toFixed(1) : '--') + '</dd>';
+            details += '<dt>Badge</dt><dd><span class="badge ' + badgeClass(m.badge) + '">' + (m.badge || '?') + '</span></dd>';
+            details += '<dt>Attestations</dt><dd>' + fmtNum(m.total_attestations) + '</dd>';
+            details += '<dt>Miner</dt><dd class="miner-id">' + shortId(m.miner_id) + '</dd>';
+            document.getElementById('spotlightDetails').innerHTML = details;
+            document.getElementById('spotlightFact').textContent = '"' + data.spotlight.fun_fact + '"';
+        }
+
+        // Tables
+        var c = data.categories;
+
+        document.getElementById('loadAncient').style.display = 'none';
+        var ta = document.getElementById('tableAncient');
+        ta.style.display = 'block';
+        ta.innerHTML = buildAncientTable(c.ancient_iron);
+
+        document.getElementById('loadDedicated').style.display = 'none';
+        var td = document.getElementById('tableDedicated');
+        td.style.display = 'block';
+        td.innerHTML = buildDedicatedTable(c.most_dedicated);
+
+        document.getElementById('loadExotic').style.display = 'none';
+        var te = document.getElementById('tableExotic');
+        te.style.display = 'block';
+        te.innerHTML = buildExoticTable(c.exotic_arch);
+
+        document.getElementById('loadEarners').style.display = 'none';
+        var tr = document.getElementById('tableEarners');
+        tr.style.display = 'block';
+        tr.innerHTML = buildEarnersTable(c.top_earners);
+
+        document.getElementById('loadFleet').style.display = 'none';
+        var tf = document.getElementById('tableFleet');
+        tf.style.display = 'block';
+        tf.innerHTML = buildFleetTable(c.fleet_commanders);
+
+        // Timestamp
+        var ts = new Date(data.generated_at * 1000);
+        document.getElementById('lastUpdate').textContent = 'Updated ' + ts.toLocaleTimeString();
+    }
+
+    // ─── FETCH ───
+    function fetchData() {
+        fetch('/api/hall_of_fame')
+            .then(function(r) { return r.json(); })
+            .then(function(data) { render(data); })
+            .catch(function(err) {
+                console.error('Hall of Fame fetch error:', err);
+            });
+    }
+
+    // ─── TABS ───
+    document.getElementById('tabNav').addEventListener('click', function(e) {
+        var btn = e.target.closest('.tab-btn');
+        if (!btn) return;
+        var tab = btn.dataset.tab;
+
+        document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+
+        document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
+        document.getElementById('tab-' + tab).classList.add('active');
+    });
+
+    // ─── NAV TOGGLE ───
+    window.toggleNav = function() {
+        document.getElementById('navLinks').classList.toggle('open');
+    };
+
+    // ─── INIT ───
+    fetchData();
+    setInterval(fetchData, 120000);  // 2 min auto-refresh
+    setInterval(updateEpochTimer, 1000);  // 1s epoch countdown
+
+})();
+</script>
+
+</body>
+</html>
