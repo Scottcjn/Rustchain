@@ -1,158 +1,360 @@
-# RustChain Miner Alert System
+# 🔔 RustChain Miner Alert System
 
-> Bounty: 75 RTC | Issue: [#28](https://github.com/Scottcjn/Rustchain/issues/28)
+**Bounty**: #28 - Email/SMS Alert System for Miners  
+**Author**: @xiangshangsir (大龙虾 AI)  
+**Wallet**: `0x76AD8c0bef0a99eEb761c3B20b590D60b20964Dc`  
+**Reward**: 75 RTC
 
-Email and SMS alert system that monitors RustChain miners and notifies operators about important events.
+---
 
-## Alert Types
+## Overview
 
-| Alert | Trigger | Default |
-|-------|---------|---------|
-| **Miner Offline** | No attestation within threshold (default 10 min) | Enabled |
-| **Rewards Received** | Balance increase detected | Enabled |
-| **Large Transfer** | Balance decrease above threshold (default 10 RTC) | Enabled |
-| **Attestation Failure** | Miner dropped from active miners list | Enabled |
+Automated alert system for RustChain miners. Sends notifications when:
 
-## Channels
+- ⚠️ **Miner goes offline** - No attestation for >1 hour
+- 💰 **Rewards received** - Epoch rewards deposited
+- 🚨 **Large transfers** - Wallet transfers above threshold
+- ❌ **Attestation failures** - Hardware/software issues
 
-- **Email** via SMTP (Gmail, SendGrid, any SMTP provider)
-- **SMS** via Twilio (optional)
+### Supported Channels
+
+- 📧 **Email** (SMTP - Gmail, Outlook, etc.)
+- 📱 **SMS** (Twilio - optional)
+
+---
 
 ## Quick Start
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure
-cp .env.example .env
-# Edit .env with your SMTP credentials
-
-# Subscribe to alerts
-python miner_alerts.py subscribe <miner_id> <email>
-
-# Start monitoring
-python miner_alerts.py monitor
-```
-
-## CLI Commands
+### 1. Install Dependencies
 
 ```bash
-# Subscribe to alerts for a miner
-python miner_alerts.py subscribe modern-sophia-Pow-9862e3be user@example.com
-
-# Subscribe with SMS
-python miner_alerts.py subscribe <miner_id> <email> --phone +15551234567
-
-# Disable specific alert types
-python miner_alerts.py subscribe <miner_id> <email> --no-offline --no-rewards
-
-# List all subscriptions
-python miner_alerts.py list
-
-# Unsubscribe
-python miner_alerts.py unsubscribe <miner_id> <email>
-
-# Start the monitoring daemon
-python miner_alerts.py monitor
-
-# Test email delivery
-python miner_alerts.py test-email user@example.com
-
-# Test SMS delivery
-python miner_alerts.py test-sms +15551234567
+pip install twilio  # Optional, for SMS support
 ```
 
-## Architecture
+### 2. Configure Alerts
 
-```
-                                    +------------------+
-  RustChain Node                    |  Alert System    |
-  /api/miners  ──────────────────── | monitor loop     |
-  /balance     ──────────────────── | (polls every 2m) |
-                                    +--------+---------+
-                                             |
-                                    +--------+---------+
-                                    |  SQLite DB       |
-                                    |  - subscriptions |
-                                    |  - miner_state   |
-                                    |  - alert_history |
-                                    +--------+---------+
-                                             |
-                               +-------------+-------------+
-                               |                           |
-                        +------+------+             +------+------+
-                        |    SMTP     |             |   Twilio    |
-                        |   (email)   |             |   (SMS)     |
-                        +-------------+             +-------------+
+Create `alert_config.json`:
+
+```bash
+cp alert_config.example.json alert_config.json
 ```
 
-## How It Works
+Edit with your settings:
 
-1. **Poll**: Every `POLL_INTERVAL` seconds, fetch `/api/miners` and `/balance` for all subscribed miners
-2. **Compare**: Diff current state against stored state in SQLite
-3. **Detect**: Identify offline transitions, balance changes, attestation drops
-4. **Alert**: Send notifications via email/SMS to all subscribers
-5. **Cooldown**: Avoid alert spam with per-type cooldown periods (1 hour for offline, 5 min for rewards)
+```json
+{
+  "email": {
+    "enabled": true,
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "username": "your-email@gmail.com",
+    "password": "your-app-password",
+    "from_email": "RustChain Alerts <alerts@rustchain.org>"
+  },
+  "sms": {
+    "enabled": false,
+    "account_sid": "ACxxxxxxxx",
+    "auth_token": "your-token",
+    "from_number": "+1234567890"
+  }
+}
+```
 
-## Environment Variables
+### 3. Run Alert System
+
+```bash
+# Continuous monitoring (recommended)
+python miner_alert_system.py
+
+# Or as a systemd service
+sudo systemctl enable rustchain-alerts
+sudo systemctl start rustchain-alerts
+
+# Test run (single check)
+python miner_alert_system.py --once
+```
+
+---
+
+## API Endpoints
+
+Miners can configure alerts via HTTP API.
+
+### GET /api/alert/preferences
+
+Get alert preferences for a miner.
+
+**Query params:**
+- `miner_id` (required)
+
+**Response:**
+```json
+{
+  "ok": true,
+  "preferences": {
+    "miner_id": "createkr",
+    "email": "user@example.com",
+    "phone": "+1234567890",
+    "alert_types": ["offline", "reward"],
+    "enabled": true
+  }
+}
+```
+
+### POST /api/alert/preferences
+
+Configure alert preferences.
+
+**Request:**
+```json
+{
+  "miner_id": "createkr",
+  "email": "user@example.com",
+  "phone": "+1234567890",
+  "alert_types": ["offline", "reward", "large_transfer"],
+  "enabled": true
+}
+```
+
+### GET /api/alert/history
+
+Get alert history.
+
+**Query params:**
+- `miner_id` (required)
+- `limit` (optional, default 50)
+- `alert_type` (optional filter)
+
+### POST /api/alert/test
+
+Send test alert.
+
+**Request:**
+```json
+{
+  "miner_id": "createkr",
+  "channel": "email"
+}
+```
+
+### GET /api/alert/stats
+
+Get alert statistics.
+
+---
+
+## Alert Types
+
+| Type | Description | Default |
+|------|-------------|---------|
+| `offline` | Miner no attestation for >1h | ✅ |
+| `reward` | Epoch rewards received | ✅ |
+| `large_transfer` | Transfer >100 RTC | ✅ |
+| `attestation_failure` | Hardware/software failure | ✅ |
+
+---
+
+## Configuration Options
+
+### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RUSTCHAIN_API` | `https://rustchain.org` | Node API URL |
-| `POLL_INTERVAL` | `120` | Seconds between checks |
-| `OFFLINE_THRESHOLD` | `600` | Seconds before offline alert |
-| `LARGE_TRANSFER_THRESHOLD` | `10.0` | RTC amount for transfer alert |
-| `SMTP_HOST` | `smtp.gmail.com` | SMTP server |
-| `SMTP_PORT` | `587` | SMTP port |
-| `SMTP_USER` | | SMTP username |
-| `SMTP_PASS` | | SMTP password (use app password for Gmail) |
-| `SMTP_FROM` | | From address |
-| `TWILIO_ACCOUNT_SID` | | Twilio SID (optional) |
-| `TWILIO_AUTH_TOKEN` | | Twilio auth token (optional) |
-| `TWILIO_FROM_NUMBER` | | Twilio from number (optional) |
+| `RUSTCHAIN_DB` | `/root/rustchain/rustchain_v2.db` | Database path |
+| `ALERT_CONFIG` | `alert_config.json` | Config file path |
+| `CHECK_INTERVAL` | `300` | Check interval (seconds) |
+| `OFFLINE_THRESHOLD` | `3600` | Offline threshold (seconds) |
+| `LARGE_TRANSFER_THRESHOLD` | `100` | Large transfer threshold (RTC) |
 
-## Database
+### Config File Settings
 
-SQLite database at `~/.rustchain/alerts.db` with three tables:
+```json
+{
+  "alert_settings": {
+    "check_interval_seconds": 300,
+    "offline_threshold_hours": 1,
+    "large_transfer_threshold_rtc": 100,
+    "rate_limit_per_24h": 10
+  }
+}
+```
 
-- **subscriptions**: Miner ID, email, phone, per-type alert toggles
-- **miner_state**: Last attestation time, balance, online status
-- **alert_history**: Sent alerts with timestamp for cooldown tracking
+---
 
-## Running as a Service
+## Database Schema
+
+### `alert_preferences` Table
+
+Stores miner alert configurations.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `miner_id` | TEXT | Primary key |
+| `email` | TEXT | Email address |
+| `phone` | TEXT | Phone number (SMS) |
+| `alert_types` | TEXT | JSON array of alert types |
+| `enabled` | INTEGER | Enabled flag |
+| `created_at` | INTEGER | Creation timestamp |
+
+### `alert_history` Table
+
+Audit trail of all sent alerts.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER | Primary key |
+| `miner_id` | TEXT | Miner identifier |
+| `alert_type` | TEXT | Type of alert |
+| `message` | TEXT | Alert message |
+| `sent_at` | INTEGER | Timestamp |
+| `channel` | TEXT | `email` or `sms` |
+| `status` | TEXT | `sent` or `failed` |
+| `error` | TEXT | Error message (if failed) |
+
+### `alert_rate_limit` Table
+
+Prevents alert spam.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `miner_id` | TEXT | Miner identifier |
+| `alert_type` | TEXT | Alert type |
+| `last_sent` | INTEGER | Last sent timestamp |
+| `count_24h` | INTEGER | Count in last 24h |
+
+---
+
+## Systemd Service
+
+Create `/etc/systemd/system/rustchain-alerts.service`:
 
 ```ini
-# /etc/systemd/system/rustchain-alerts.service
 [Unit]
 Description=RustChain Miner Alert System
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/rustchain-alerts
-ExecStart=/usr/bin/python3 miner_alerts.py monitor
+User=root
+WorkingDirectory=/root/rustchain/tools/miner_alerts
+Environment=RUSTCHAIN_DB=/root/rustchain/rustchain_v2.db
+Environment=ALERT_CONFIG=/root/rustchain/tools/miner_alerts/alert_config.json
+ExecStart=/usr/bin/python3 /root/rustchain/tools/miner_alerts/miner_alert_system.py
 Restart=always
-RestartSec=30
-EnvironmentFile=/opt/rustchain-alerts/.env
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 ```
 
+Enable and start:
+
 ```bash
+sudo systemctl daemon-reload
 sudo systemctl enable rustchain-alerts
 sudo systemctl start rustchain-alerts
+sudo systemctl status rustchain-alerts
 ```
 
-## Dependencies
+---
 
-- [requests](https://github.com/psf/requests) >= 2.28.0
-- [python-dotenv](https://github.com/theskumar/python-dotenv) >= 1.0.0
-- Python standard library: smtplib, sqlite3, email, argparse
+## Example Usage
 
-No additional dependencies for email alerts. Twilio SMS uses the REST API directly (no SDK needed).
+### Python Client
+
+```python
+import requests
+
+API_BASE = "https://rustchain.org"
+
+# Configure alerts
+response = requests.post(f"{API_BASE}/api/alert/preferences", json={
+    "miner_id": "createkr",
+    "email": "user@example.com",
+    "phone": "+1234567890",
+    "alert_types": ["offline", "reward"],
+    "enabled": True,
+})
+print(response.json())
+
+# Get history
+response = requests.get(
+    f"{API_BASE}/api/alert/history",
+    params={"miner_id": "createkr", "limit": 10}
+)
+print(response.json())
+```
+
+### cURL
+
+```bash
+# Configure alerts
+curl -X POST https://rustchain.org/api/alert/preferences \
+  -H "Content-Type: application/json" \
+  -d '{
+    "miner_id": "createkr",
+    "email": "user@example.com",
+    "alert_types": ["offline", "reward"]
+  }'
+
+# Get history
+curl "https://rustchain.org/api/alert/history?miner_id=createkr&limit=10"
+
+# Send test alert
+curl -X POST https://rustchain.org/api/alert/test \
+  -H "Content-Type: application/json" \
+  -d '{"miner_id": "createkr", "channel": "email"}'
+```
+
+---
+
+## Security
+
+- **Rate Limiting**: Max 10 alerts per type per 24h per miner
+- **Email Passwords**: Use app-specific passwords, never main password
+- **SMS Tokens**: Store Twilio credentials securely
+- **Database**: SQLite with proper connection handling
+
+---
+
+## Troubleshooting
+
+### Email not sending
+
+1. Check SMTP credentials in config
+2. For Gmail, use [App Password](https://support.google.com/accounts/answer/185833)
+3. Check firewall (port 587 for SMTP)
+
+### SMS not sending
+
+1. Install Twilio: `pip install twilio`
+2. Verify Account SID and Auth Token
+3. Check phone number format (+1234567890)
+
+### High alert volume
+
+Increase thresholds in config:
+```json
+{
+  "alert_settings": {
+    "offline_threshold_hours": 2,
+    "large_transfer_threshold_rtc": 500,
+    "rate_limit_per_24h": 5
+  }
+}
+```
+
+---
+
+## Files
+
+- `miner_alert_system.py` - Main alert monitoring daemon
+- `alert_config.example.json` - Configuration template
+- `../../node/alert_endpoints.py` - API endpoints for preferences
+- `../../node/migrations/add_alert_tables.sql` - Database schema
+
+---
 
 ## License
 
-MIT — Part of the RustChain project.
+SPDX-License-Identifier: MIT

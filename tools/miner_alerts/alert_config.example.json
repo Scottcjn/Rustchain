@@ -1,0 +1,22 @@
+{
+  "email": {
+    "enabled": true,
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "username": "your-email@gmail.com",
+    "password": "your-app-password",
+    "from_email": "RustChain Alerts <alerts@rustchain.org>"
+  },
+  "sms": {
+    "enabled": false,
+    "account_sid": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "auth_token": "your-auth-token",
+    "from_number": "+1234567890"
+  },
+  "alert_settings": {
+    "check_interval_seconds": 300,
+    "offline_threshold_hours": 1,
+    "large_transfer_threshold_rtc": 100,
+    "rate_limit_per_24h": 10
+  }
+}
