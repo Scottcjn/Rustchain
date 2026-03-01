@@ -1,0 +1,36 @@
+[Unit]
+Description=RustChain Prometheus Metrics Exporter
+Documentation=https://github.com/Scottcjn/Rustchain
+After=network.target
+
+[Service]
+Type=simple
+User=rustchain
+Group=rustchain
+
+# Environment configuration
+Environment=RUSTCHAIN_NODE_URL=https://rustchain.org
+Environment=EXPORTER_PORT=9100
+Environment=SCRAPE_INTERVAL=60
+
+# Working directory and executable
+WorkingDirectory=/opt/rustchain/tools/prometheus
+ExecStart=/usr/bin/python3 /opt/rustchain/tools/prometheus/rustchain_exporter.py
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/rustchain
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rustchain-exporter
+
+[Install]
+WantedBy=multi-user.target
