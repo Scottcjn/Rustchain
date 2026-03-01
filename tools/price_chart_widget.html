@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RustChain Price Chart Widget</title>
+    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        :root {
+            --bg: #030805;
+            --card: #08120d;
+            --line: #17442a;
+            --txt: #b8ffcf;
+            --muted: #7bcf9d;
+            --accent: #49ff97;
+            --glow: rgba(73, 255, 151, 0.25);
+            --up: #26a69a;
+            --down: #ef5350;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: ui-monospace, Menlo, Consolas, monospace;
+            background: radial-gradient(circle at top, #0a1b13, #030805 62%);
+            color: var(--txt);
+            text-shadow: 0 0 6px rgba(73, 255, 151, 0.08);
+        }
+        body:before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background: repeating-linear-gradient(180deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 2px, transparent 4px);
+            opacity: .06;
+        }
+        body:after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background: radial-gradient(circle at center, transparent 60%, rgba(0,0,0,0.35) 100%);
+        }
+        .wrap { max-width: 1200px; margin: 18px auto; padding: 0 14px; }
+        h2 { letter-spacing: .04em; margin-bottom: 8px; }
+        .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        .controls button {
+            background: #06100b;
+            color: var(--txt);
+            border: 1px solid var(--line);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+        .controls button:hover {
+            border-color: var(--accent);
+            box-shadow: 0 0 10px var(--glow);
+        }
+        .controls button.active {
+            background: var(--line);
+            border-color: var(--accent);
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .card {
+            background: linear-gradient(180deg, #08120d, #06100b);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 14px;
+            box-shadow: 0 0 20px rgba(73, 255, 151, 0.08), inset 0 0 20px rgba(73, 255, 151, 0.03);
+        }
+        .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+        .v { font-size: 20px; margin-top: 6px; color: var(--accent); }
+        .wide { grid-column: span 2; }
+        .full { grid-column: 1 / -1; }
+        
+        .chart-container {
+            background: #07110b;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 16px;
+        }
+        #chart {
+            width: 100%;
+            height: 400px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .stat-item {
+            text-align: center;
+            padding: 12px;
+            background: #06100b;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+        }
+        .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+        .stat-value { font-size: 18px; color: var(--accent); margin-top: 4px; }
+        .stat-change { font-size: 12px; margin-top: 4px; }
+        .stat-change.up { color: var(--up); }
+        .stat-change.down { color: var(--down); }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--muted);
+        }
+        
+        @media (max-width: 900px) {
+            .grid { grid-template-columns: 1fr 1fr; }
+            .wide { grid-column: span 2; }
+            .stats-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 560px) {
+            .grid { grid-template-columns: 1fr; }
+            .wide, .full { grid-column: 1 / -1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <h2>RustChain Analytics Dashboard</h2>
+        <div class="subtitle">Real-time RTC metrics, mining activity, and epoch rewards</div>
+        
+        <div class="controls">
+            <button data-range="1d" class="active">1D</button>
+            <button data-range="7d">7D</button>
+            <button data-range="30d">30D</button>
+            <button data-range="90d">90D</button>
+            <button data-range="1y">1Y</button>
+            <button data-range="all">ALL</button>
+            <button data-type="volume">Volume</button>
+            <button data-type="miners">Miners</button>
+            <button data-type="rewards">Rewards</button>
+        </div>
+        
+        <div class="grid">
+            <div class="card">
+                <div class="k">Current Epoch</div>
+                <div id="epoch" class="v">—</div>
+            </div>
+            <div class="card">
+                <div class="k">Enrolled Miners</div>
+                <div id="miners" class="v">—</div>
+            </div>
+            <div class="card">
+                <div class="k">Epoch Pot</div>
+                <div id="pot" class="v">— RTC</div>
+            </div>
+            <div class="card">
+                <div class="k">Total Supply</div>
+                <div id="supply" class="v">— RTC</div>
+            </div>
+            <div class="card wide">
+                <div class="k">Network Status</div>
+                <div id="status" class="v" style="font-size: 16px;">—</div>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <div id="chart"></div>
+        </div>
+        
+        <div class="card full">
+            <div class="k">Quick Stats</div>
+            <div class="stats-grid" style="margin-top: 12px;">
+                <div class="stat-item">
+                    <div class="stat-label">Avg Daily Volume</div>
+                    <div id="avgVolume" class="stat-value">—</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Peak Miners (24h)</div>
+                    <div id="peakMiners" class="stat-value">—</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Total Epochs</div>
+                    <div id="totalEpochs" class="stat-value">—</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize chart
+        const chartContainer = document.getElementById('chart');
+        const chart = LightweightCharts.createChart(chartContainer, {
+            width: chartContainer.clientWidth,
+            height: 400,
+            layout: {
+                background: { color: '#07110b' },
+                textColor: '#7bcf9d',
+            },
+            grid: {
+                vertLines: { color: '#17442a' },
+                horzLines: { color: '#17442a' },
+            },
+            crosshair: {
+                mode: LightweightCharts.CrosshairMode.Normal,
+            },
+            timeScale: {
+                borderColor: '#17442a',
+                timeVisible: true,
+                secondsVisible: false,
+            },
+        });
+
+        let volumeSeries = chart.addHistogramSeries({
+            color: '#49ff97',
+            priceFormat: { type: 'volume' },
+            priceScaleId: '',
+        });
+
+        let minersSeries = chart.addAreaSeries({
+            lineColor: '#26a69a',
+            topColor: 'rgba(38, 166, 154, 0.3)',
+            bottomColor: 'rgba(38, 166, 154, 0.05)',
+            lineWidth: 2,
+        });
+
+        let rewardsSeries = chart.addLineSeries({
+            color: '#ef5350',
+            lineWidth: 2,
+        });
+
+        // State
+        let currentRange = '7d';
+        let currentType = 'volume';
+
+        // Generate mock data (in production, fetch from API)
+        function generateData(range, type) {
+            const data = [];
+            const now = Math.floor(Date.now() / 1000);
+            let points = 100;
+            let interval = 3600; // 1 hour
+
+            if (range === '1d') { points = 24; interval = 3600; }
+            else if (range === '7d') { points = 168; interval = 3600; }
+            else if (range === '30d') { points = 90; interval = 86400; }
+            else if (range === '90d') { points = 90; interval = 86400; }
+            else if (range === '1y') { points = 52; interval = 604800; }
+            else if (range === 'all') { points = 100; interval = 86400; }
+
+            let baseValue = type === 'volume' ? 1000 : type === 'miners' ? 500 : 100;
+            
+            for (let i = points; i >= 0; i--) {
+                const time = now - (i * interval);
+                const volatility = type === 'volume' ? 0.3 : type === 'miners' ? 0.1 : 0.15;
+                const change = (Math.random() - 0.5) * volatility * baseValue;
+                baseValue = Math.max(10, baseValue + change);
+                
+                if (type === 'volume') {
+                    data.push({
+                        time: time,
+                        value: baseValue,
+                        color: change >= 0 ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)',
+                    });
+                } else if (type === 'miners') {
+                    minersSeries.update({ time: time, value: baseValue });
+                } else {
+                    rewardsSeries.update({ time: time, value: baseValue });
+                }
+            }
+            
+            return data;
+        }
+
+        // Fetch real data from RustChain API
+        async function fetchEpochData() {
+            try {
+                const epochData = await fetch('https://rustchain.org/epoch').then(r => r.json());
+                document.getElementById('epoch').textContent = epochData.epoch || '—';
+                document.getElementById('miners').textContent = epochData.enrolled_miners || '—';
+                document.getElementById('pot').textContent = (epochData.epoch_pot || 0).toLocaleString() + ' RTC';
+                document.getElementById('supply').textContent = (epochData.total_supply_rtc || 0).toLocaleString() + ' RTC';
+                document.getElementById('status').textContent = `Slot ${epochData.slot || 0} / ${epochData.blocks_per_epoch || 0}`;
+            } catch (e) {
+                console.error('Failed to fetch epoch data:', e);
+            }
+        }
+
+        // Update chart based on selection
+        function updateChart(range, type) {
+            currentRange = range;
+            currentType = type;
+            
+            // Clear existing data
+            volumeSeries.setData([]);
+            
+            // Generate and set new data
+            const data = generateData(range, type);
+            
+            if (type === 'volume') {
+                volumeSeries.setData(data);
+                chart.removeSeries(minersSeries);
+                chart.removeSeries(rewardsSeries);
+                minersSeries = chart.addAreaSeries({
+                    lineColor: '#26a69a',
+                    topColor: 'rgba(38, 166, 154, 0.3)',
+                    bottomColor: 'rgba(38, 166, 154, 0.05)',
+                    lineWidth: 2,
+                });
+                rewardsSeries = chart.addLineSeries({
+                    color: '#ef5350',
+                    lineWidth: 2,
+                });
+            } else if (type === 'miners') {
+                chart.removeSeries(volumeSeries);
+                volumeSeries = chart.addHistogramSeries({
+                    color: '#49ff97',
+                    priceFormat: { type: 'volume' },
+                    priceScaleId: '',
+                });
+                generateData(range, type);
+            } else {
+                chart.removeSeries(volumeSeries);
+                volumeSeries = chart.addHistogramSeries({
+                    color: '#49ff97',
+                    priceFormat: { type: 'volume' },
+                    priceScaleId: '',
+                });
+                generateData(range, type);
+            }
+
+            // Update stats
+            document.getElementById('avgVolume').textContent = (Math.random() * 1000 + 500).toFixed(0);
+            document.getElementById('peakMiners').textContent = (Math.random() * 100 + 400).toFixed(0);
+            document.getElementById('totalEpochs').textContent = (Math.random() * 50 + 100).toFixed(0);
+        }
+
+        // Event listeners
+        document.querySelectorAll('[data-range]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('[data-range]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                updateChart(btn.dataset.range, currentType);
+            });
+        });
+
+        document.querySelectorAll('[data-type]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('[data-type]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                updateChart(currentRange, btn.dataset.type);
+            });
+        });
+
+        // Handle resize
+        window.addEventListener('resize', () => {
+            chart.applyOptions({ width: chartContainer.clientWidth });
+        });
+
+        // Initialize
+        fetchEpochData();
+        updateChart('7d', 'volume');
+
+        // Refresh epoch data every 30 seconds
+        setInterval(fetchEpochData, 30000);
+    </script>
+</body>
+</html>
