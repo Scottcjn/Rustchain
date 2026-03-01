@@ -18,6 +18,7 @@ Patches applied:
 
 import argparse
 import os
+import platform
 import re
 import shutil
 import sys
@@ -197,6 +198,11 @@ def main():
         sys.exit(1)
 
     print(f"RIP-201 Fleet Immune System Patch")
+    print(f"{'='*50}")
+    print(f"System Information:")
+    print(f"  OS: {platform.system()} {platform.release()}")
+    print(f"  Architecture: {platform.machine()}")
+    print(f"  Python: {platform.python_version()}")
     print(f"{'='*50}")
     print(f"Target: {server_file}")
     print(f"Mode: {'DRY RUN' if args.dry_run else 'LIVE'}")
