@@ -58,7 +58,7 @@ highest_rust_score = Gauge('rustchain_highest_rust_score', 'Highest rust score i
 
 # Fees (RIP-301)
 total_fees_collected = Gauge('rustchain_total_fees_collected_rtc', 'Total fees collected in RTC')
-fee_events_total = Counter('rustchain_fee_events_total', 'Total number of fee events')
+fee_events_total = Gauge('rustchain_fee_events_total', 'Total number of fee events')
 
 # Supply
 total_supply = Gauge('rustchain_total_supply_rtc', 'Total RTC supply')
@@ -195,13 +195,10 @@ def collect_fee_metrics():
     if not data:
         return
     
-    total_fees_collected.set(data.get('total_collected', 0))
+    total_fees_collected.set(data.get('total_fees_collected_rtc', 0))
+    fee_events_total.set(data.get('total_fee_events', 0))
     
-    events = data.get('events', [])
-    if events:
-        fee_eventsc(len(events))
-    
-    logger.info(f"Fees: {data.get('total_collected', 0)} RTC collected")
+    logger.info(f"Fees: {data.get('total_fees_collected_rtc', 0)} RTC collected, {data.get('total_fee_events', 0)} events")
 
 
 def collect_all_metrics():
