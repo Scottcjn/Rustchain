@@ -1,0 +1,159 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "rustchain-node",
+    "title": "RustChain Node Monitoring",
+    "tags": ["rustchain", "blockchain", "prometheus"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "type": "stat",
+        "title": "Node Status",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+        "targets": [{
+          "expr": "rustchain_node_up",
+          "legendFormat": "Status"
+        }],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}}},
+              {"type": "value", "options": {"1": {"text": "UP", "color": "green"}}}
+            ]
+          }
+        }
+      },
+      {
+        "id": 2,
+        "type": "stat",
+        "title": "Active Miners",
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+        "targets": [{
+          "expr": "rustchain_active_miners_total",
+          "legendFormat": "Miners"
+        }]
+      },
+      {
+        "id": 3,
+        "type": "stat",
+        "title": "Current Epoch",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+        "targets": [{
+          "expr": "rustchain_current_epoch",
+          "legendFormat": "Epoch {{epoch}}"
+        }]
+      },
+      {
+        "id": 4,
+        "type": "stat",
+        "title": "Current Slot",
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+        "targets": [{
+          "expr": "rustchain_current_slot",
+          "legendFormat": "Slot"
+        }]
+      },
+      {
+        "id": 5,
+        "type": "gauge",
+        "title": "Epoch Progress",
+        "gridPos": {"h": 6, "w": 8, "x": 0, "y": 4},
+        "targets": [{
+          "expr": "rustchain_epoch_slot_progress",
+          "legendFormat": "Progress"
+        }],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "max": 1,
+            "unit": "percentunit"
+          }
+        }
+      },
+      {
+        "id": 6,
+        "type": "stat",
+        "title": "Epoch Time Remaining",
+        "gridPos": {"h": 6, "w": 8, "x": 8, "y": 4},
+        "targets": [{
+          "expr": "rustchain_epoch_seconds_remaining",
+          "legendFormat": "Seconds"
+        }],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "id": 7,
+        "type": "stat",
+        "title": "Total Machines",
+        "gridPos": {"h": 6, "w": 8, "x": 16, "y": 4},
+        "targets": [{
+          "expr": "rustchain_total_machines",
+          "legendFormat": "Machines"
+        }]
+      },
+      {
+        "id": 8,
+        "type": "stat",
+        "title": "Total Attestations",
+        "gridPos": {"h": 4, "w": 12, "x": 0, "y": 10},
+        "targets": [{
+          "expr": "rustchain_total_attestations",
+          "legendFormat": "Attestations"
+        }]
+      },
+      {
+        "id": 9,
+        "type": "stat",
+        "title": "Highest Rust Score",
+        "gridPos": {"h": 4, "w": 12, "x": 12, "y": 10},
+        "targets": [{
+          "expr": "rustchain_highest_rust_score",
+          "legendFormat": "Score"
+        }]
+      },
+      {
+        "id": 10,
+        "type": "table",
+        "title": "Top Miners by Balance",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 14},
+        "targets": [{
+          "expr": "topk(10, rustchain_balance_rtc)",
+          "legendFormat": "{{miner}}"
+        }],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "RTC"
+          }
+        }
+      },
+      {
+        "id": 11,
+        "type": "timeseries",
+        "title": "Active Miners History",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 22},
+        "targets": [{
+          "expr": "rustchain_active_miners_total",
+          "legendFormat": "Active Miners"
+        }]
+      },
+      {
+        "id": 12,
+        "type": "timeseries",
+        "title": "Total Fees Collected",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 22},
+        "targets": [{
+          "expr": "rustchain_total_fees_collected_rtc",
+          "legendFormat": "Fees (RTC)"
+        }]
+      }
+    ]
+  }
+}
