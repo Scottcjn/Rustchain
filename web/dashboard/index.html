@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Miner Dashboard</title>
+    <style>
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #1a1a1a;
+            --text-primary: #00ff41;
+            --text-secondary: #00cc33;
+            --accent: #ff6b35;
+            --border: #333;
+            --scanline: rgba(0, 255, 65, 0.03);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 20px;
+            background-image: 
+                linear-gradient(var(--scanline) 1px, transparent 1px);
+            background-size: 100% 3px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 2px solid var(--text-primary);
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            text-shadow: 0 0 10px var(--text-primary);
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1em;
+        }
+
+        .login-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            padding: 30px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            max-width: 600px;
+            margin: 20px auto;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 12px 15px;
+            background: var(--bg-primary);
+            border: 1px solid var(--text-primary);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 1em;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            box-shadow: 0 0 10px var(--text-primary);
+        }
+
+        button {
+            padding: 12px 30px;
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            border: none;
+            font-family: inherit;
+            font-size: 1em;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            background: var(--text-secondary);
+            box-shadow: 0 0 15px var(--text-primary);
+        }
+
+        .dashboard {
+            display: none;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .dashboard.active {
+            display: grid;
+        }
+
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            padding: 20px;
+        }
+
+        .card h2 {
+            color: var(--accent);
+            margin-bottom: 15px;
+            font-size: 1.3em;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 10px;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 15px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+        }
+
+        .stat-value {
+            font-size: 2em;
+            color: var(--accent);
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.9em;
+        }
+
+        .timeline {
+            margin-top: 15px;
+        }
+
+        .timeline-item {
+            padding: 10px;
+            border-left: 2px solid var(--text-primary);
+            margin-left: 10px;
+            margin-bottom: 10px;
+            background: var(--bg-primary);
+        }
+
+        .timeline-time {
+            color: var(--text-secondary);
+            font-size: 0.85em;
+            margin-bottom: 5px;
+        }
+
+        .reward-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .reward-table th,
+        .reward-table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .reward-table th {
+            color: var(--accent);
+        }
+
+        .reward-table tr:hover {
+            background: var(--bg-primary);
+        }
+
+        .countdown {
+            text-align: center;
+            padding: 20px;
+            background: var(--bg-primary);
+            border: 1px solid var(--text-primary);
+            margin-top: 15px;
+        }
+
+        .countdown-value {
+            font-size: 2.5em;
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        .hardware-info {
+            display: grid;
+            gap: 10px;
+        }
+
+        .hardware-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+        }
+
+        .hardware-label {
+            color: var(--text-secondary);
+        }
+
+        .hardware-value {
+            color: var(--text-primary);
+            font-weight: bold;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 15px;
+            background: var(--accent);
+            color: var(--bg-primary);
+            font-weight: bold;
+            border-radius: 3px;
+        }
+
+        .error {
+            background: #ff4444;
+            color: white;
+            padding: 15px;
+            margin: 20px 0;
+            border: 1px solid #cc0000;
+            display: none;
+        }
+
+        .error.active {
+            display: block;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+            display: none;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .chart-container {
+            margin-top: 20px;
+            height: 200px;
+            position: relative;
+        }
+
+        .chart-bar {
+            display: inline-block;
+            width: 20px;
+            background: var(--text-primary);
+            margin: 0 2px;
+            vertical-align: bottom;
+            transition: height 0.3s;
+        }
+
+        .chart-bar:hover {
+            background: var(--accent);
+        }
+
+        footer {
+            text-align: center;
+            padding: 30px 0;
+            border-top: 1px solid var(--border);
+            margin-top: 40px;
+            color: var(--text-secondary);
+        }
+
+        @media (max-width: 768px) {
+            .input-group {
+                flex-direction: column;
+            }
+            
+            .stat-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🦞 RustChain Miner Dashboard</h1>
+            <p class="subtitle">Your Personal Mining Control Panel</p>
+        </header>
+
+        <div class="login-section">
+            <h2>Enter Your Miner ID</h2>
+            <div class="input-group">
+                <input type="text" id="minerId" placeholder="e.g., dual-g4-125">
+                <button onclick="loadDashboard()">Load Dashboard</button>
+            </div>
+            <p style="color: var(--text-secondary); font-size: 0.9em;">
+                Or use URL: <code>?miner=your-id</code>
+            </p>
+        </div>
+
+        <div class="error" id="error"></div>
+        <div class="loading" id="loading">Loading your dashboard...</div>
+
+        <div class="dashboard" id="dashboard">
+            <!-- Balance & Stats -->
+            <div class="card">
+                <h2>💰 Balance & Stats</h2>
+                <div class="stat-grid">
+                    <div class="stat-item">
+                        <span class="stat-value" id="balance">0</span>
+                        <span class="stat-label">Current Balance (RTC)</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="totalEarned">0</span>
+                        <span class="stat-label">Total Earned (RTC)</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="epochsParticipated">0</span>
+                        <span class="stat-label">Epochs Participated</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="attestations">0</span>
+                        <span class="stat-label">Total Attestations</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Hardware Info -->
+            <div class="card">
+                <h2>🖥️ Hardware Info</h2>
+                <div class="hardware-info" id="hardwareInfo">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Epoch Countdown -->
+            <div class="card">
+                <h2>⏱️ Epoch Countdown</h2>
+                <div class="countdown">
+                    <div class="countdown-value" id="countdown">--:--:--</div>
+                    <div style="margin-top: 10px; color: var(--text-secondary);">
+                        until next epoch
+                    </div>
+                </div>
+            </div>
+
+            <!-- Attestation History -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <h2>📊 Attestation History (24h)</h2>
+                <div class="timeline" id="attestationTimeline">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Reward History -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <h2>💵 Reward History</h2>
+                <table class="reward-table">
+                    <thead>
+                        <tr>
+                            <th>Epoch</th>
+                            <th>Reward (RTC)</th>
+                            <th>Date</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rewardHistory">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+                <div class="chart-container" id="rewardChart">
+                    <!-- Chart populated by JS -->
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>RustChain Miner Dashboard | <a href="https://rustchain.org" style="color: var(--text-primary);">rustchain.org</a></p>
+            <p style="margin-top: 10px; font-size: 0.85em;">
+                Bounty #501 | Built with ❤️ for the RustChain community
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        const API_BASE = 'https://rustchain.org';
+
+        // Check URL for miner parameter
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const minerParam = urlParams.get('miner');
+            if (minerParam) {
+                document.getElementById('minerId').value = minerParam;
+                loadDashboard();
+            }
+        });
+
+        async function loadDashboard() {
+            const minerId = document.getElementById('minerId').value.trim();
+            if (!minerId) {
+                showError('Please enter your miner ID');
+                return;
+            }
+
+            showLoading(true);
+            hideError();
+
+            try {
+                // Fetch all data in parallel
+                const [minerData, balanceData, epochData, hofData] = await Promise.all([
+                    fetchMinerData(minerId),
+                    fetchBalance(minerId),
+                    fetchEpoch(),
+                    fetchHallOfFame()
+                ]);
+
+                if (!minerData) {
+                    showError('Miner not found. Please check your miner ID.');
+                    return;
+                }
+
+                updateDashboard(minerData, balanceData, epochData, hofData);
+                document.getElementById('dashboard').classList.add('active');
+                
+                // Update URL for sharing
+                const url = new URL(window.location);
+                url.searchParams.set('miner', minerId);
+                window.history.pushState({}, '', url);
+
+            } catch (error) {
+                showError('Failed to load dashboard: ' + error.message);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function fetchMinerData(minerId) {
+            const response = await fetch(`${API_BASE}/api/miners`);
+            const miners = await response.json();
+            return miners.find(m => m.name === minerId || m.id === minerId);
+        }
+
+        async function fetchBalance(minerId) {
+            const response = await fetch(`${API_BASE}/balance?miner_id=${minerId}`);
+            return response.json();
+        }
+
+        async function fetchEpoch() {
+            const response = await fetch(`${API_BASE}/epoch`);
+            return response.json();
+        }
+
+        async function fetchHallOfFame() {
+            const response = await fetch(`${API_BASE}/api/hall_of_fame`);
+            return response.json();
+        }
+
+        function updateDashboard(miner, balance, epoch, hof) {
+            // Balance & Stats
+            document.getElementById('balance').textContent = (balance?.rtc || 0).toFixed(2);
+            document.getElementById('totalEarned').textContent = (balance?.total_earned || 0).toFixed(2);
+            document.getElementById('epochsParticipated').textContent = miner?.epochs_participated || 0;
+            document.getElementById('attestations').textContent = miner?.total_attestations || 0;
+
+            // Hardware Info
+            const hardwareHtml = `
+                <div class="hardware-item">
+                    <span class="hardware-label">Architecture</span>
+                    <span class="hardware-value">${miner?.architecture || 'Unknown'}</span>
+                </div>
+                <div class="hardware-item">
+                    <span class="hardware-label">Manufacture Year</span>
+                    <span class="hardware-value">${miner?.manufacture_year || 'N/A'}</span>
+                </div>
+                <div class="hardware-item">
+                    <span class="hardware-label">Rust Score</span>
+                    <span class="hardware-value">${miner?.rust_score || 0}</span>
+                </div>
+                <div class="hardware-item">
+                    <span class="hardware-label">Badge</span>
+                    <span class="badge">${miner?.badge || 'Miner'}</span>
+                </div>
+                <div class="hardware-item">
+                    <span class="hardware-label">Status</span>
+                    <span class="hardware-value" style="color: ${miner?.status === 'active' ? '#00ff41' : '#ff6b35'}">
+                        ${miner?.status || 'Unknown'}
+                    </span>
+                </div>
+            `;
+            document.getElementById('hardwareInfo').innerHTML = hardwareHtml;
+
+            // Epoch Countdown
+            startCountdown(epoch);
+
+            // Attestation Timeline
+            updateAttestationTimeline(miner);
+
+            // Reward History
+            updateRewardHistory(miner);
+        }
+
+        function startCountdown(epoch) {
+            function update() {
+                const seconds = epoch.seconds_remaining || 0;
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                const secs = seconds % 60;
+                
+                document.getElementById('countdown').textContent = 
+                    `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+            }
+            
+            update();
+            setInterval(update, 1000);
+        }
+
+        function updateAttestationTimeline(miner) {
+            const timeline = document.getElementById('attestationTimeline');
+            const attestations = miner?.attestation_history || [];
+            
+            if (attestations.length === 0) {
+                timeline.innerHTML = '<p style="color: var(--text-secondary);">No attestations in the last 24h</p>';
+                return;
+            }
+
+            timeline.innerHTML = attestations.slice(0, 10).map(att => `
+                <div class="timeline-item">
+                    <div class="timeline-time">${new Date(att.timestamp * 1000).toLocaleString()}</div>
+                    <div>Epoch ${att.epoch} - ${att.status || 'Completed'}</div>
+                    ${att.reward ? `<div style="color: var(--accent); margin-top: 5px;">+${att.reward} RTC</div>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function updateRewardHistory(miner) {
+            const tbody = document.getElementById('rewardHistory');
+            const rewards = miner?.reward_history || [];
+            
+            if (rewards.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-secondary);">No rewards yet</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = rewards.slice(0, 20).map(r => `
+                <tr>
+                    <td>Epoch ${r.epoch}</td>
+                    <td style="color: var(--accent); font-weight: bold;">${r.amount || 0} RTC</td>
+                    <td>${new Date(r.date * 1000).toLocaleDateString()}</td>
+                    <td><span style="color: #00ff41;">✓ Paid</span></td>
+                </tr>
+            `).join('');
+
+            // Simple chart
+            updateChart(rewards.slice(0, 20).reverse());
+        }
+
+        function updateChart(rewards) {
+            const container = document.getElementById('rewardChart');
+            if (rewards.length === 0) return;
+
+            const maxReward = Math.max(...rewards.map(r => r.amount || 0));
+            const chartHtml = rewards.map((r, i) => {
+                const height = maxReward > 0 ? ((r.amount || 0) / maxReward) * 150 : 0;
+                return `<div class="chart-bar" style="height: ${height}px;" title="Epoch ${r.epoch}: ${r.amount} RTC"></div>`;
+            }).join('');
+
+            container.innerHTML = `
+                <div style="text-align: center; padding-top: 20px;">
+                    ${chartHtml}
+                </div>
+                <div style="text-align: center; margin-top: 10px; color: var(--text-secondary); font-size: 0.85em;">
+                    Last 20 Epochs
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            const errorEl = document.getElementById('error');
+            errorEl.textContent = message;
+            errorEl.classList.add('active');
+        }
+
+        function hideError() {
+            document.getElementById('error').classList.remove('active');
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').classList.toggle('active', show);
+        }
+    </script>
+</body>
+</html>
