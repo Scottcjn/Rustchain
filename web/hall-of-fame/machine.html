@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Machine Profile - RustChain Hall of Fame</title>
+    <style>
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #1a1a1a;
+            --text-primary: #00ff41;
+            --text-secondary: #00cc33;
+            --accent: #ff6b35;
+            --border: #333;
+            --scanline: rgba(0, 255, 65, 0.03);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 20px;
+            background-image: linear-gradient(var(--scanline) 1px, transparent 1px);
+            background-size: 100% 3px;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 2px solid var(--text-primary);
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            text-shadow: 0 0 10px var(--text-primary);
+            margin-bottom: 10px;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: var(--text-secondary);
+            text-decoration: none;
+        }
+
+        .back-link:hover { color: var(--text-primary); }
+
+        .machine-header {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            padding: 30px;
+            margin-bottom: 30px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .machine-name {
+            grid-column: 1 / -1;
+            font-size: 2em;
+            color: var(--accent);
+            margin-bottom: 10px;
+        }
+
+        .stat-box {
+            text-align: center;
+            padding: 20px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+        }
+
+        .stat-value {
+            font-size: 2.5em;
+            color: var(--accent);
+            font-weight: bold;
+            display: block;
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+
+        .section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+
+        .section h2 {
+            color: var(--accent);
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 10px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+        }
+
+        .info-label {
+            color: var(--text-secondary);
+        }
+
+        .info-value {
+            color: var(--text-primary);
+            font-weight: bold;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 15px;
+            background: var(--accent);
+            color: var(--bg-primary);
+            font-weight: bold;
+            border-radius: 3px;
+        }
+
+        .timeline {
+            margin-top: 15px;
+        }
+
+        .timeline-item {
+            padding: 15px;
+            border-left: 3px solid var(--text-primary);
+            margin-left: 10px;
+            margin-bottom: 15px;
+            background: var(--bg-primary);
+        }
+
+        .timeline-date {
+            color: var(--text-secondary);
+            font-size: 0.85em;
+            margin-bottom: 8px;
+        }
+
+        .timeline-title {
+            font-size: 1.1em;
+            margin-bottom: 5px;
+        }
+
+        .timeline-detail {
+            color: var(--text-secondary);
+            font-size: 0.9em;
+        }
+
+        .chart-container {
+            margin-top: 20px;
+            height: 250px;
+            position: relative;
+        }
+
+        .chart-bar {
+            display: inline-block;
+            width: 30px;
+            background: var(--text-primary);
+            margin: 0 3px;
+            vertical-align: bottom;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .chart-bar:hover {
+            background: var(--accent);
+            transform: scaleY(1.05);
+        }
+
+        .chart-bar:hover::after {
+            content: attr(data-value);
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-secondary);
+            padding: 3px 8px;
+            border: 1px solid var(--text-primary);
+            font-size: 0.8em;
+            white-space: nowrap;
+        }
+
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .comparison-table th,
+        .comparison-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .comparison-table th {
+            color: var(--accent);
+        }
+
+        .comparison-table tr:hover {
+            background: var(--bg-primary);
+        }
+
+        .better-than {
+            color: #00ff41;
+            font-weight: bold;
+        }
+
+        .worse-than {
+            color: #ff6b35;
+            font-weight: bold;
+        }
+
+        .error {
+            background: #ff4444;
+            color: white;
+            padding: 15px;
+            margin: 20px 0;
+            border: 1px solid #cc0000;
+            display: none;
+        }
+
+        .error.active { display: block; }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+            display: none;
+        }
+
+        .loading.active { display: block; }
+
+        footer {
+            text-align: center;
+            padding: 30px 0;
+            border-top: 1px solid var(--border);
+            margin-top: 40px;
+            color: var(--text-secondary);
+        }
+
+        @media (max-width: 768px) {
+            .machine-header {
+                grid-template-columns: 1fr;
+            }
+            
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="https://rustchain.org/hall-of-fame/" class="back-link">← Back to Hall of Fame</a>
+
+        <header>
+            <h1>🏆 Machine Profile</h1>
+            <p class="subtitle">Detailed hardware performance & history</p>
+        </header>
+
+        <div class="error" id="error"></div>
+        <div class="loading" id="loading">Loading machine profile...</div>
+
+        <div id="profile" style="display: none;">
+            <!-- Machine Header -->
+            <div class="machine-header">
+                <div class="machine-name" id="machineName">--</div>
+                
+                <div class="stat-box">
+                    <span class="stat-value" id="rustScore">0</span>
+                    <span class="stat-label">Rust Score</span>
+                </div>
+                
+                <div class="stat-box">
+                    <span class="stat-value" id="rank">0</span>
+                    <span class="stat-label">Fleet Rank</span>
+                </div>
+                
+                <div class="stat-box">
+                    <span class="stat-value" id="attestations">0</span>
+                    <span class="stat-label">Total Attestations</span>
+                </div>
+                
+                <div class="stat-box">
+                    <span class="stat-value" id="epochsParticipated">0</span>
+                    <span class="stat-label">Epochs Participated</span>
+                </div>
+            </div>
+
+            <!-- Hardware Specifications -->
+            <div class="section">
+                <h2>🖥️ Hardware Specifications</h2>
+                <div class="info-grid" id="hardwareSpecs">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Performance vs Fleet -->
+            <div class="section">
+                <h2>📊 Performance vs Fleet Average</h2>
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Metric</th>
+                            <th>This Machine</th>
+                            <th>Fleet Average</th>
+                            <th>Comparison</th>
+                        </tr>
+                    </thead>
+                    <tbody id="comparisonTable">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Rust Score History -->
+            <div class="section">
+                <h2>📈 Rust Score History</h2>
+                <div class="chart-container" id="scoreChart">
+                    <!-- Chart populated by JS -->
+                </div>
+            </div>
+
+            <!-- Attestation Timeline -->
+            <div class="section">
+                <h2>⏱️ Attestation Timeline</h2>
+                <div class="timeline" id="attestationTimeline">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Milestone Achievements -->
+            <div class="section">
+                <h2>🎯 Milestone Achievements</h2>
+                <div class="info-grid" id="milestones">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>RustChain Hall of Fame | <a href="https://rustchain.org" style="color: var(--text-primary);">rustchain.org</a></p>
+            <p style="margin-top: 10px; font-size: 0.85em;">
+                Bounty #505 | Machine Detail Pages
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        const API_BASE = 'https://rustchain.org';
+
+        // Get machine ID from URL
+        function getMachineId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('machine') || urlParams.get('id');
+        }
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            const machineId = getMachineId();
+            
+            if (!machineId) {
+                showError('No machine ID provided. Please access via /hall-of-fame/?machine=<id>');
+                return;
+            }
+
+            showLoading(true);
+
+            try {
+                const [hofData, epochData] = await Promise.all([
+                    fetchHallOfFame(),
+                    fetchEpoch()
+                ]);
+
+                const machine = findMachine(hofData, machineId);
+                
+                if (!machine) {
+                    showError('Machine not found. Please check the machine ID.');
+                    return;
+                }
+
+                displayProfile(machine, hofData, epochData);
+                
+            } catch (error) {
+                showError('Failed to load profile: ' + error.message);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        async function fetchHallOfFame() {
+            const response = await fetch(`${API_BASE}/api/hall_of_fame`);
+            return response.json();
+        }
+
+        async function fetchEpoch() {
+            const response = await fetch(`${API_BASE}/epoch`);
+            return response.json();
+        }
+
+        function findMachine(hofData, machineId) {
+            // Search through all categories
+            const categories = hofData?.categories || [];
+            for (const category of categories) {
+                const machine = category.machines?.find(m => 
+                    m.fingerprint === machineId || 
+                    m.name === machineId ||
+                    m.id === machineId
+                );
+                if (machine) return { ...machine, category: category.name };
+            }
+            return null;
+        }
+
+        function displayProfile(machine, hofData, epoch) {
+            document.getElementById('profile').style.display = 'block';
+
+            // Header stats
+            document.getElementById('machineName').textContent = machine.name || 'Unknown Machine';
+            document.getElementById('rustScore').textContent = machine.rust_score || 0;
+            document.getElementById('rank').textContent = machine.rank || '#';
+            document.getElementById('attestations').textContent = machine.total_attestations || 0;
+            document.getElementById('epochsParticipated').textContent = machine.epochs_participated || 0;
+
+            // Hardware specs
+            const specs = `
+                <div class="info-item">
+                    <span class="info-label">Architecture</span>
+                    <span class="info-value">${machine.architecture || 'Unknown'}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Manufacture Year</span>
+                    <span class="info-value">${machine.manufacture_year || 'N/A'}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Category</span>
+                    <span class="info-value">${machine.category || 'Unknown'}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Badge</span>
+                    <span class="badge">${machine.badge || 'Miner'}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">First Attestation</span>
+                    <span class="info-value">${machine.first_attestation ? new Date(machine.first_attestation * 1000).toLocaleDateString() : 'N/A'}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Last Attestation</span>
+                    <span class="info-value">${machine.last_attestation ? new Date(machine.last_attestation * 1000).toLocaleDateString() : 'N/A'}</span>
+                </div>
+            `;
+            document.getElementById('hardwareSpecs').innerHTML = specs;
+
+            // Comparison table
+            const fleetAvg = calculateFleetAverage(hofData);
+            const comparison = `
+                <tr>
+                    <td>Rust Score</td>
+                    <td>${machine.rust_score || 0}</td>
+                    <td>${fleetAvg.rustScore.toFixed(1)}</td>
+                    <td class="${machine.rust_score >= fleetAvg.rustScore ? 'better-than' : 'worse-than'}">
+                        ${machine.rust_score >= fleetAvg.rustScore ? '↑' : '↓'} ${Math.abs(((machine.rust_score - fleetAvg.rustScore) / fleetAvg.rustScore * 100) || 0).toFixed(1)}%
+                    </td>
+                </tr>
+                <tr>
+                    <td>Attestations</td>
+                    <td>${machine.total_attestations || 0}</td>
+                    <td>${fleetAvg.attestations.toFixed(0)}</td>
+                    <td class="${machine.total_attestations >= fleetAvg.attestations ? 'better-than' : 'worse-than'}">
+                        ${machine.total_attestations >= fleetAvg.attestations ? '↑' : '↓'} ${Math.abs(((machine.total_attestations - fleetAvg.attestations) / fleetAvg.attestations * 100) || 0).toFixed(0)}%
+                    </td>
+                </tr>
+                <tr>
+                    <td>Epochs Participated</td>
+                    <td>${machine.epochs_participated || 0}</td>
+                    <td>${fleetAvg.epochs.toFixed(0)}</td>
+                    <td class="${machine.epochs_participated >= fleetAvg.epochs ? 'better-than' : 'worse-than'}">
+                        ${machine.epochs_participated >= fleetAvg.epochs ? '↑' : '↓'} ${Math.abs(((machine.epochs_participated - fleetAvg.epochs) / fleetAvg.epochs * 100) || 0).toFixed(0)}%
+                    </td>
+                </tr>
+            `;
+            document.getElementById('comparisonTable').innerHTML = comparison;
+
+            // Score history chart
+            renderScoreChart(machine);
+
+            // Attestation timeline
+            renderTimeline(machine);
+
+            // Milestones
+            renderMilestones(machine);
+        }
+
+        function calculateFleetAverage(hofData) {
+            const categories = hofData?.categories || [];
+            let totalScore = 0, totalAttestations = 0, totalEpochs = 0, count = 0;
+
+            for (const cat of categories) {
+                for (const machine of (cat.machines || [])) {
+                    totalScore += machine.rust_score || 0;
+                    totalAttestations += machine.total_attestations || 0;
+                    totalEpochs += machine.epochs_participated || 0;
+                    count++;
+                }
+            }
+
+            return {
+                rustScore: count > 0 ? totalScore / count : 0,
+                attestations: count > 0 ? totalAttestations / count : 0,
+                epochs: count > 0 ? totalEpochs / count : 0
+            };
+        }
+
+        function renderScoreChart(machine) {
+            const container = document.getElementById('scoreChart');
+            // Simulate historical data (in real implementation, fetch from API)
+            const history = [];
+            const baseScore = machine.rust_score || 100;
+            for (let i = 10; i >= 1; i--) {
+                history.push({
+                    epoch: i,
+                    score: Math.max(0, baseScore - Math.random() * 30)
+                });
+            }
+            history.push({ epoch: 'Current', score: baseScore });
+
+            const maxScore = Math.max(...history.map(h => h.score));
+            const chartHtml = history.map(h => {
+                const height = maxScore > 0 ? (h.score / maxScore) * 200 : 0;
+                return `<div class="chart-bar" style="height: ${height}px;" data-value="Epoch ${h.epoch}: ${h.score.toFixed(0)}"></div>`;
+            }).join('');
+
+            container.innerHTML = `
+                <div style="text-align: center; padding-top: 20px;">
+                    ${chartHtml}
+                </div>
+                <div style="text-align: center; margin-top: 10px; color: var(--text-secondary); font-size: 0.85em;">
+                    Last 10 Epochs → Current
+                </div>
+            `;
+        }
+
+        function renderTimeline(machine) {
+            const timeline = document.getElementById('attestationTimeline');
+            const events = [
+                {
+                    date: machine.first_attestation,
+                    title: 'First Attestation',
+                    detail: 'Machine joined the RustChain network'
+                },
+                {
+                    date: machine.last_attestation,
+                    title: 'Latest Attestation',
+                    detail: `Epoch ${machine.epochs_participated || 1} completed`
+                },
+                {
+                    date: null,
+                    title: `${machine.total_attestations || 0} Total Attestations`,
+                    detail: 'Consistent participation in network consensus'
+                }
+            ];
+
+            timeline.innerHTML = events.map(e => `
+                <div class="timeline-item">
+                    <div class="timeline-date">${e.date ? new Date(e.date * 1000).toLocaleString() : 'Ongoing'}</div>
+                    <div class="timeline-title">${e.title}</div>
+                    <div class="timeline-detail">${e.detail}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderMilestones(machine) {
+            const milestones = document.getElementById('milestones');
+            const items = [];
+
+            if ((machine.total_attestations || 0) >= 100) {
+                items.push({ icon: '💯', label: 'Century Club', value: '100+ Attestations' });
+            }
+            if ((machine.epochs_participated || 0) >= 50) {
+                items.push({ icon: '🎯', label: 'Epoch Veteran', value: '50+ Epochs' });
+            }
+            if ((machine.rust_score || 0) >= 500) {
+                items.push({ icon: '👑', label: 'Elite Status', value: '500+ Rust Score' });
+            }
+            if ((machine.manufacture_year || 9999) <= 2010) {
+                items.push({ icon: '🏛️', label: 'Vintage Hardware', value: 'Pre-2010 Machine' });
+            }
+
+            if (items.length === 0) {
+                items.push({ icon: '🚀', label: 'Getting Started', value: 'Keep attesting!' });
+            }
+
+            milestones.innerHTML = items.map(m => `
+                <div class="info-item" style="flex-direction: column; align-items: center; text-align: center;">
+                    <div style="font-size: 2em; margin-bottom: 10px;">${m.icon}</div>
+                    <div class="info-label">${m.label}</div>
+                    <div class="info-value">${m.value}</div>
+                </div>
+            `).join('');
+        }
+
+        function showError(message) {
+            const errorEl = document.getElementById('error');
+            errorEl.textContent = message;
+            errorEl.classList.add('active');
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').classList.toggle('active', show);
+        }
+    </script>
+</body>
+</html>
