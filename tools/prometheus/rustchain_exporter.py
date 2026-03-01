@@ -153,18 +153,11 @@ def collect_miner_metrics():
 
 
 def collect_balance_metrics():
-    """Collect top miner balances"""
-    data = fetch_json('/api/stats')
-    if not data:
-        return
-    
-    balances = data.get('top_balances', [])
-    for entry in balances[:10]:  # Top 10 miners
-        miner_id = entry.get('miner', 'unknown')
-        balance = entry.get('balance', 0)
-        miner_balance.labels(miner=miner_id).set(balance)
-    
-    logger.info(f"Balances: collected {len(balances[:10])} top miners")
+    """Collect top miner balances from miners API"""
+    # Note: Balance data is not available in current API endpoints
+    # The /api/stats endpoint mentioned in requirements doesn't exist
+    # Balances would need to be added to /api/miners or a new endpoint created
+    logger.info("Balance metrics: endpoint not available in current API")
 
 
 def collect_hall_of_fame_metrics():
