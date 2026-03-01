@@ -793,7 +793,10 @@ HARDWARE_WEIGHTS = {
     "Apple Silicon": {"M1": 1.2, "M2": 1.2, "M3": 1.1, "default": 1.2},
     "x86": {"retro": 1.4, "core2": 1.3, "default": 1.0},
     "x86_64": {"default": 1.0},
-    "ARM": {"default": 1.0}
+    "ARM": {"default": 1.0},
+    "console": {"nes_6502": 2.8, "snes_65c816": 2.7, "n64_mips": 2.5,
+                "genesis_68000": 2.5, "gameboy_z80": 2.6, "ps1_mips": 2.8,
+                "saturn_sh2": 2.6, "gba_arm7": 2.3, "default": 2.5}
 }
 
 # RIP-0146b: Enrollment enforcement config
@@ -993,9 +996,28 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     vintage_relaxed_archs = {"g4", "g5", "g3", "powerpc", "power macintosh",
                              "powerpc g4", "powerpc g5", "powerpc g3",
                              "power8", "power9", "68k", "m68k"}
+    # RIP-304: Console miners via Pico bridge have their own fingerprint checks
+    console_archs = {"nes_6502", "snes_65c816", "n64_mips", "gba_arm7",
+                     "genesis_68000", "sms_z80", "saturn_sh2",
+                     "gameboy_z80", "gameboy_color_z80", "ps1_mips",
+                     "6502", "65c816", "z80", "sh2"}
     is_vintage = claimed_arch_lower in vintage_relaxed_archs
+    is_console = claimed_arch_lower in console_archs
 
-    if is_vintage:
+    # RIP-304: Console miners use Pico bridge fingerprinting (ctrl_port_timing
+    # replaces clock_drift; anti_emulation still required via timing CV)
+    bridge_type = fingerprint.get("bridge_type", "")
+    if is_console or bridge_type == "pico_serial":
+        # Console: accept ctrl_port_timing OR anti_emulation
+        # Pico bridge provides its own set of checks
+        has_ctrl_timing = "ctrl_port_timing" in checks
+        has_anti_emu = "anti_emulation" in checks
+        if has_ctrl_timing or has_anti_emu:
+            required_checks = [k for k in ["ctrl_port_timing", "anti_emulation"] if k in checks]
+            print(f"[FINGERPRINT] Console arch {claimed_arch_lower} (bridge={bridge_type}) - using Pico bridge checks")
+        else:
+            return False, "console_no_bridge_checks"
+    elif is_vintage:
         # Vintage: only anti_emulation is strictly required
         required_checks = ["anti_emulation"]
         print(f"[FINGERPRINT] Vintage arch {claimed_arch_lower} - relaxed clock_drift requirement")
