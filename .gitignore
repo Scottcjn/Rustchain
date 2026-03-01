@@ -32,6 +32,9 @@ Thumbs.db
 
 # Logs
 *.log
+.pytest_cache/
+pytest-cache-files-*/
+tests/.tmp_attestation/
 
 # Windows miner build artifacts
 Rustchain/miners/windows/dist/

@@ -135,9 +135,11 @@ def test_attest_submit_rejects_non_object_json(client, file_name, expected_statu
     "file_name",
     [
         "malformed_device_scalar.json",
+        "malformed_miner_array.json",
         "malformed_signals_scalar.json",
         "malformed_signals_macs_object.json",
         "malformed_fingerprint_checks_array.json",
+        "malformed_report_scalar.json",
     ],
 )
 def test_attest_submit_corpus_cases_do_not_raise_server_errors(client, file_name):

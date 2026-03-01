@@ -1,0 +1,21 @@
+{
+  "miner": [
+    "not",
+    "a",
+    "string"
+  ],
+  "device": {
+    "device_family": "PowerPC",
+    "device_arch": "power8",
+    "cores": 4
+  },
+  "signals": {
+    "hostname": "miner-array-host",
+    "macs": [
+      "AA:BB:CC:DD:EE:33"
+    ]
+  },
+  "report": {
+    "commitment": "miner-array-commitment"
+  }
+}

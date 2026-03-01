@@ -34,6 +34,13 @@ jobs:
     - name: Security scan (tests)
       run: bandit -r tests -ll
 
+    - name: Attestation fuzz regression gate
+      env:
+        RC_ADMIN_KEY: "0123456789abcdef0123456789abcdef"
+        DB_PATH: ":memory:"
+        ATTEST_FUZZ_CASES: "10000"
+      run: python -m pytest tests/test_attestation_fuzz.py -k fuzz_no_unhandled_exceptions -v
+
     - name: Run tests with pytest (blocking)
       env:
         RC_ADMIN_KEY: "0123456789abcdef0123456789abcdef"
