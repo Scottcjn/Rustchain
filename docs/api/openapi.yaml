@@ -2,41 +2,49 @@ openapi: 3.0.3
 info:
   title: RustChain Node API
   description: |
-    API specification for RustChain blockchain nodes.
+    RustChain is a blockchain that rewards vintage hardware through Proof-of-Antiquity.
     
-    RustChain is a blockchain that supports multiple hardware architectures with
-    antiquity-weighted mining rewards. This API provides endpoints for querying
-    chain state, miner information, wallet balances, and submitting signed transfers.
+    This API provides access to node health, epoch information, miner data, and the Hall of Fame.
     
-    ## Authentication
-    Currently, the API does not require authentication for read operations.
-    Write operations (transfers) require cryptographic signatures.
+    **Base URL**: `https://rustchain.org`
     
-    ## Base URL
-    Production: `https://rustchain.org`
+    **Authentication**: Most endpoints are public. Admin endpoints require `X-Admin-Key` header.
     
-    **Note:** The server uses a self-signed TLS certificate.
-  version: 2.2.1
+    **Rate Limiting**: Please be respectful with request rates.
+    
+    **GitHub**: https://github.com/Scottcjn/Rustchain
+  version: 2.2.1-rip200
   contact:
-    name: RustChain Development Team
-    url: https://github.com/Scottcjn/Rustchain
+    name: RustChain Support
+    email: scott@elyanlabs.ai
+    url: https://rustchain.org
   license:
     name: MIT
-    url: https://opensource.org/licenses/MIT
+    url: https://github.com/Scottcjn/Rustchain/blob/main/LICENSE
 
 servers:
   - url: https://rustchain.org
-    description: RustChain Mainnet Node
+    description: Production node
+  - url: http://localhost:8080
+    description: Local development node
 
 tags:
   - name: Health
-    description: Node health and status endpoints
-  - name: Chain
-    description: Blockchain statistics and information
+    description: Node health and readiness checks
+  - name: Epoch
+    description: Epoch and slot information
   - name: Miners
-    description: Miner registry and attestation data
+    description: Miner data and attestations
+  - name: Hall of Fame
+    description: Historical machine leaderboard
+  - name: Fees
+    description: RIP-301 fee pool statistics
   - name: Wallet
-    description: Balance queries and transfers
+    description: Balance and transfer operations
+  - name: Attestation
+    description: Hardware attestation submission
+  - name: Explorer
+    description: Block explorer interface
 
 paths:
   /health:
@@ -44,13 +52,11 @@ paths:
       tags:
         - Health
       summary: Node health check
-      description: |
-        Returns the health status of the RustChain node including database 
-        connectivity, chain tip age, uptime, and version information.
+      description: Returns node health status, version, uptime, and database state
       operationId: getHealth
       responses:
         '200':
-          description: Health status response
+          description: Node is healthy
           content:
             application/json:
               schema:
@@ -58,60 +64,58 @@ paths:
               example:
                 ok: true
                 version: "2.2.1-rip200"
-                uptime_s: 97300
+                uptime_s: 12188
                 db_rw: true
                 tip_age_slots: 0
-                backup_age_hours: 16.589909323586358
+                backup_age_hours: 4.27
 
-  /api/stats:
+  /ready:
     get:
       tags:
-        - Chain
-      summary: Chain statistics
-      description: |
-        Returns comprehensive blockchain statistics including total balance,
-        miner count, current epoch, supported features, and security settings.
-      operationId: getStats
+        - Health
+      summary: Readiness probe
+      description: Kubernetes-style readiness check
+      operationId: getReady
       responses:
         '200':
-          description: Chain statistics response
+          description: Node is ready
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatsResponse'
+                type: object
+                properties:
+                  ready:
+                    type: boolean
+                    example: true
+
+  /epoch:
+    get:
+      tags:
+        - Epoch
+      summary: Current epoch information
+      description: Returns current epoch number, slot, enrolled miners, and supply
+      operationId: getEpoch
+      responses:
+        '200':
+          description: Epoch data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpochResponse'
               example:
-                chain_id: "rustchain-mainnet-v2"
-                version: "2.2.1-security-hardened"
-                epoch: 61
-                block_time: 600
-                total_miners: 11614
-                total_balance: 5213.41835243
-                pending_withdrawals: 0
-                features:
-                  - "RIP-0005"
-                  - "RIP-0008"
-                  - "RIP-0009"
-                  - "RIP-0142"
-                  - "RIP-0143"
-                  - "RIP-0144"
-                security:
-                  - "no_mock_sigs"
-                  - "mandatory_admin_key"
-                  - "replay_protection"
-                  - "validated_json"
+                epoch: 88
+                slot: 12739
+                blocks_per_epoch: 144
+                enrolled_miners: 24
+                epoch_pot: 1.5
+                total_supply_rtc: 8388608
 
   /api/miners:
     get:
       tags:
         - Miners
-      summary: List all miners
-      description: |
-        Returns a list of all registered miners with their hardware information,
-        antiquity multipliers, entropy scores, and last attestation timestamps.
-        
-        The `antiquity_multiplier` reflects the age-based reward bonus:
-        - Vintage hardware (PowerPC, etc.): 2.0-2.5x
-        - Modern hardware (x86-64, Apple Silicon): 0.8x
+      summary: List active miners
+      description: Returns all enrolled miners with attestation data and hardware info
       operationId: getMiners
       responses:
         '200':
@@ -123,80 +127,170 @@ paths:
                 items:
                   $ref: '#/components/schemas/Miner'
               example:
-                - miner: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
-                  hardware_type: "PowerPC G4 (Vintage)"
-                  device_family: "PowerPC"
-                  device_arch: "G4"
-                  antiquity_multiplier: 2.5
-                  entropy_score: 0.0
-                  last_attest: 1770062200
-                - miner: "modern-sophia-Pow-9862e3be"
-                  hardware_type: "x86-64 (Modern)"
-                  device_family: "x86_64"
-                  device_arch: "modern"
-                  antiquity_multiplier: 0.8
-                  entropy_score: 0.0
-                  last_attest: 1770062191
+                - miner: "macmini-m2-134"
+                  device_arch: "M2"
+                  device_family: "Apple Silicon"
+                  hardware_type: "Apple Silicon (Modern)"
+                  last_attest: 1772350545
+                  antiquity_multiplier: 1.2
+                  entropy_score: 0
+                  first_attest: null
 
-  /wallet/balance:
+  /api/hall_of_fame:
+    get:
+      tags:
+        - Hall of Fame
+      summary: Hall of Fame leaderboard
+      description: Returns historical machines organized by category with rust scores
+      operationId: getHallOfFame
+      responses:
+        '200':
+          description: Hall of Fame data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HallOfFameResponse'
+              example:
+                epoch: 88
+                generated_at: "2026-03-01T07:35:00Z"
+                stats:
+                  total_machines: 73
+                  total_attestations: 426415
+                  oldest_year: 2001
+                  highest_rust_score: 310.4
+                  active_miners_now: 16
+                  average_rust_score: 61.9
+                  capacitor_plague_survivors: 0
+                  deceased_count: 0
+                categories:
+                  powerpc: []
+                  apple_silicon: []
+                  x86_modern: []
+                  vintage: []
+                  exotic: []
+                spotlight:
+                  miner: "dual-g4-125"
+                  rust_score: 310.4
+
+  /api/fee_pool:
+    get:
+      tags:
+        - Fees
+      summary: Fee pool statistics (RIP-301)
+      description: Returns total fees collected and recent fee events
+      operationId: getFeePool
+      responses:
+        '200':
+          description: Fee pool data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeePoolResponse'
+              example:
+                total_fees_collected_rtc: 0
+                total_fee_events: 0
+                recent_events: []
+
+  /balance:
     get:
       tags:
         - Wallet
-      summary: Get wallet balance
-      description: |
-        Returns the current balance for a specific miner ID.
-        Balance is returned in both raw integer format (`amount_i64`) 
-        and decimal RTC format (`amount_rtc`).
+      summary: Get miner balance
+      description: Returns RTC balance for a specific miner
       operationId: getBalance
       parameters:
         - name: miner_id
           in: query
           required: true
-          description: The unique identifier of the miner
+          description: Miner identifier
           schema:
             type: string
-          example: "modern-sophia-Pow-9862e3be"
+            example: "macmini-m2-134"
       responses:
         '200':
-          description: Balance response
+          description: Balance information
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/BalanceResponse'
               example:
-                miner_id: "modern-sophia-Pow-9862e3be"
-                amount_i64: 42653071
-                amount_rtc: 0.42653071
-        '400':
-          description: Missing miner_id parameter
+                miner: "macmini-m2-134"
+                balance: 1234.56
+                last_updated: "2026-03-01T07:35:00Z"
+
+  /lottery/eligibility:
+    get:
+      tags:
+        - Miners
+      summary: Check epoch eligibility
+      description: Check if a miner is eligible for the current epoch lottery
+      operationId: getLotteryEligibility
+      parameters:
+        - name: miner_id
+          in: query
+          required: true
+          description: Miner identifier
+          schema:
+            type: string
+            example: "macmini-m2-134"
+      responses:
+        '200':
+          description: Eligibility status
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/EligibilityResponse'
               example:
-                ok: false
-                error: "miner_id required"
+                miner: "macmini-m2-134"
+                eligible: true
+                epoch: 88
+                reason: "Active attestations in current epoch"
+
+  /attest/submit:
+    post:
+      tags:
+        - Attestation
+      summary: Submit hardware attestation
+      description: Submit a signed hardware attestation (requires authentication)
+      operationId: submitAttestation
+      security:
+        - AdminKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestationRequest'
+            example:
+              miner: "macmini-m2-134"
+              device_arch: "M2"
+              device_family: "Apple Silicon"
+              signature: "ed25519_signature_here"
+              timestamp: 1772350545
+      responses:
+        '200':
+          description: Attestation accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Attestation recorded"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /wallet/transfer/signed:
     post:
       tags:
         - Wallet
       summary: Submit signed transfer
-      description: |
-        Submits a cryptographically signed transfer transaction.
-        
-        The transaction must include:
-        - Source and destination addresses
-        - Transfer amount (positive value required)
-        - Ed25519 signature over the transaction data
-        - Public key for signature verification
-        - Nonce for replay protection
-        
-        ## Signing Process
-        1. Construct the transaction payload
-        2. Sign with Ed25519 private key
-        3. Submit with hex-encoded signature and public key
-      operationId: submitTransfer
+      description: Submit an Ed25519 signed RTC transfer
+      operationId: submitSignedTransfer
       requestBody:
         required: true
         content:
@@ -204,297 +298,403 @@ paths:
             schema:
               $ref: '#/components/schemas/SignedTransferRequest'
             example:
-              from_address: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
-              to_address: "modern-sophia-Pow-9862e3be"
-              amount_rtc: 1.5
-              nonce: 42
-              signature: "a1b2c3d4e5f6..."
-              public_key: "abc123def456..."
+              from: "macmini-m2-134"
+              to: "dual-g4-125"
+              amount: 10.5
+              signature: "ed25519_signature_here"
+              timestamp: 1772350545
       responses:
         '200':
-          description: Transfer submitted successfully
+          description: Transfer accepted
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TransferResponse'
               example:
-                ok: true
-                tx_hash: "0xabc123..."
-                from_address: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
-                to_address: "modern-sophia-Pow-9862e3be"
-                amount_rtc: 1.5
+                success: true
+                tx_id: "abc123def456"
+                message: "Transfer queued"
         '400':
-          description: Invalid request
+          $ref: '#/components/responses/BadRequest'
+
+  /wallet/transfer:
+    post:
+      tags:
+        - Wallet
+      summary: Admin transfer
+      description: Execute transfer with admin key (requires authentication)
+      operationId: adminTransfer
+      security:
+        - AdminKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminTransferRequest'
+            example:
+              from: "macmini-m2-134"
+              to: "dual-g4-125"
+              amount: 10.5
+              reason: "Bounty payment"
+      responses:
+        '200':
+          description: Transfer executed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                missing_fields:
-                  summary: Missing required fields
-                  value:
-                    error: "Missing required fields (from_address, to_address, signature, public_key, nonce)"
-                invalid_amount:
-                  summary: Invalid amount
-                  value:
-                    error: "Amount must be positive"
-                invalid_signature:
-                  summary: Invalid signature
-                  value:
-                    error: "Invalid signature"
-        '500':
-          description: Internal server error
+                $ref: '#/components/schemas/TransferResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /withdraw/request:
+    post:
+      tags:
+        - Wallet
+      summary: Request withdrawal
+      description: Submit a withdrawal request (requires authentication)
+      operationId: requestWithdrawal
+      security:
+        - AdminKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawalRequest'
+            example:
+              miner: "macmini-m2-134"
+              amount: 100.0
+              destination: "external_wallet_address"
+      responses:
+        '200':
+          description: Withdrawal request accepted
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error: "Internal server error"
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  request_id:
+                    type: string
+                    example: "wd_abc123"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /explorer:
+    get:
+      tags:
+        - Explorer
+      summary: Block explorer page
+      description: Returns HTML block explorer interface
+      operationId: getExplorer
+      responses:
+        '200':
+          description: Block explorer HTML
+          content:
+            text/html:
+              schema:
+                type: string
 
 components:
+  securitySchemes:
+    AdminKey:
+      type: apiKey
+      in: header
+      name: X-Admin-Key
+      description: Admin API key for authenticated endpoints
+
   schemas:
     HealthResponse:
       type: object
-      required:
-        - ok
-        - version
-        - uptime_s
-        - db_rw
-        - tip_age_slots
       properties:
         ok:
           type: boolean
           description: Overall health status
-          example: true
         version:
           type: string
-          description: Node software version
-          example: "2.2.1-rip200"
+          description: Node version
         uptime_s:
           type: integer
-          format: int64
-          description: Node uptime in seconds
-          example: 97300
+          description: Uptime in seconds
         db_rw:
           type: boolean
           description: Database read/write status
-          example: true
         tip_age_slots:
           type: integer
-          description: Age of chain tip in slots (0 = fully synced)
-          example: 0
+          description: Age of chain tip in slots
         backup_age_hours:
           type: number
-          format: double
-          description: Hours since last backup
-          example: 16.589909323586358
+          description: Age of last backup in hours
 
-    StatsResponse:
+    EpochResponse:
       type: object
-      required:
-        - chain_id
-        - version
-        - epoch
-        - block_time
-        - total_miners
-        - total_balance
       properties:
-        chain_id:
-          type: string
-          description: Unique chain identifier
-          example: "rustchain-mainnet-v2"
-        version:
-          type: string
-          description: Chain version with security flags
-          example: "2.2.1-security-hardened"
         epoch:
           type: integer
           description: Current epoch number
-          example: 61
-        block_time:
+        slot:
           type: integer
-          description: Target block time in seconds
-          example: 600
-        total_miners:
+          description: Current slot within epoch
+        blocks_per_epoch:
           type: integer
-          description: Total number of registered miners
-          example: 11614
-        total_balance:
+          description: Number of blocks per epoch
+        enrolled_miners:
+          type: integer
+          description: Number of enrolled miners
+        epoch_pot:
           type: number
-          format: double
-          description: Total RTC balance across all accounts
-          example: 5213.41835243
-        pending_withdrawals:
+          description: Current epoch reward pot in RTC
+        total_supply_rtc:
           type: integer
-          description: Number of pending withdrawal requests
-          example: 0
-        features:
-          type: array
-          description: List of enabled RIP (RustChain Improvement Proposal) features
-          items:
-            type: string
-          example:
-            - "RIP-0005"
-            - "RIP-0008"
-            - "RIP-0009"
-            - "RIP-0142"
-            - "RIP-0143"
-            - "RIP-0144"
-        security:
-          type: array
-          description: Active security features
-          items:
-            type: string
-          example:
-            - "no_mock_sigs"
-            - "mandatory_admin_key"
-            - "replay_protection"
-            - "validated_json"
+          description: Total RTC supply
 
     Miner:
       type: object
-      required:
-        - miner
-        - hardware_type
-        - device_family
-        - device_arch
-        - antiquity_multiplier
-        - last_attest
       properties:
         miner:
           type: string
-          description: Unique miner identifier
-          example: "modern-sophia-Pow-9862e3be"
-        hardware_type:
-          type: string
-          description: Human-readable hardware description
-          example: "x86-64 (Modern)"
-        device_family:
-          type: string
-          description: Device family category
-          enum:
-            - PowerPC
-            - x86_64
-            - x86
-            - Apple Silicon
-          example: "x86_64"
+          description: Miner identifier
         device_arch:
           type: string
-          description: Specific architecture identifier
-          example: "modern"
-        antiquity_multiplier:
-          type: number
-          format: double
-          description: |
-            Reward multiplier based on hardware age.
-            Vintage hardware (PowerPC) receives higher multipliers (2.0-2.5x)
-            while modern hardware receives 0.8x.
-          minimum: 0
-          example: 0.8
-        entropy_score:
-          type: number
-          format: double
-          description: Hardware entropy contribution score
-          example: 0.0
+          description: Device architecture (e.g., M2, G4, x86)
+        device_family:
+          type: string
+          description: Device family (e.g., Apple Silicon, PowerPC)
+        hardware_type:
+          type: string
+          description: Human-readable hardware type
         last_attest:
           type: integer
-          format: int64
           description: Unix timestamp of last attestation
-          example: 1770062191
+        antiquity_multiplier:
+          type: number
+          description: Reward multiplier based on hardware age (1.0-4.0)
+        entropy_score:
+          type: number
+          description: Hardware entropy score
+        first_attest:
+          type: integer
+          nullable: true
+          description: Unix timestamp of first attestation
+
+    HallOfFameResponse:
+      type: object
+      properties:
+        epoch:
+          type: integer
+          description: Epoch when data was generated
+        generated_at:
+          type: string
+          format: date-time
+          description: Timestamp when data was generated
+        stats:
+          $ref: '#/components/schemas/HallOfFameStats'
+        categories:
+          type: object
+          description: Machines organized by category
+          additionalProperties:
+            type: array
+            items:
+              $ref: '#/components/schemas/HallOfFameMachine'
+        spotlight:
+          $ref: '#/components/schemas/HallOfFameMachine'
+
+    HallOfFameStats:
+      type: object
+      properties:
+        total_machines:
+          type: integer
+        total_attestations:
+          type: integer
+        oldest_year:
+          type: integer
+        highest_rust_score:
+          type: number
+        active_miners_now:
+          type: integer
+        average_rust_score:
+          type: number
+        capacitor_plague_survivors:
+          type: integer
+        deceased_count:
+          type: integer
+
+    HallOfFameMachine:
+      type: object
+      properties:
+        miner:
+          type: string
+        rust_score:
+          type: number
+        manufacture_year:
+          type: integer
+        total_attestations:
+          type: integer
+        device_family:
+          type: string
+        device_arch:
+          type: string
+
+    FeePoolResponse:
+      type: object
+      properties:
+        total_fees_collected_rtc:
+          type: number
+          description: Total fees collected in RTC
+        total_fee_events:
+          type: integer
+          description: Total number of fee events
+        recent_events:
+          type: array
+          description: Recent fee events
+          items:
+            $ref: '#/components/schemas/FeeEvent'
+
+    FeeEvent:
+      type: object
+      properties:
+        timestamp:
+          type: integer
+          description: Unix timestamp
+        amount:
+          type: number
+          description: Fee amount in RTC
+        from:
+          type: string
+          description: Source miner
+        reason:
+          type: string
+          description: Fee reason
 
     BalanceResponse:
       type: object
-      required:
-        - miner_id
-        - amount_i64
-        - amount_rtc
       properties:
-        miner_id:
+        miner:
           type: string
-          description: Miner identifier
-          example: "modern-sophia-Pow-9862e3be"
-        amount_i64:
-          type: integer
-          format: int64
-          description: Balance in smallest unit (1 RTC = 100,000,000 units)
-          example: 42653071
-        amount_rtc:
+        balance:
           type: number
-          format: double
-          description: Balance in RTC (decimal format)
-          example: 0.42653071
+          description: Balance in RTC
+        last_updated:
+          type: string
+          format: date-time
+
+    EligibilityResponse:
+      type: object
+      properties:
+        miner:
+          type: string
+        eligible:
+          type: boolean
+        epoch:
+          type: integer
+        reason:
+          type: string
+
+    AttestationRequest:
+      type: object
+      required:
+        - miner
+        - device_arch
+        - device_family
+        - signature
+        - timestamp
+      properties:
+        miner:
+          type: string
+        device_arch:
+          type: string
+        device_family:
+          type: string
+        signature:
+          type: string
+          description: Ed25519 signature
+        timestamp:
+          type: integer
+          description: Unix timestamp
 
     SignedTransferRequest:
       type: object
       required:
-        - from_address
-        - to_address
+        - from
+        - to
+        - amount
         - signature
-        - public_key
-        - nonce
+        - timestamp
       properties:
-        from_address:
+        from:
           type: string
-          description: Source miner/wallet address
-          example: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
-        to_address:
+        to:
           type: string
-          description: Destination miner/wallet address
-          example: "modern-sophia-Pow-9862e3be"
-        amount_rtc:
+        amount:
           type: number
-          format: double
-          description: Amount to transfer in RTC (must be positive)
-          minimum: 0
-          exclusiveMinimum: true
-          example: 1.5
-        nonce:
-          type: integer
-          format: int64
-          description: Transaction nonce for replay protection
-          example: 42
         signature:
           type: string
-          description: Hex-encoded Ed25519 signature
-          example: "a1b2c3d4e5f6..."
-        public_key:
+          description: Ed25519 signature
+        timestamp:
+          type: integer
+
+    AdminTransferRequest:
+      type: object
+      required:
+        - from
+        - to
+        - amount
+      properties:
+        from:
           type: string
-          description: Hex-encoded Ed25519 public key
-          example: "abc123def456..."
+        to:
+          type: string
+        amount:
+          type: number
+        reason:
+          type: string
+
+    WithdrawalRequest:
+      type: object
+      required:
+        - miner
+        - amount
+        - destination
+      properties:
+        miner:
+          type: string
+        amount:
+          type: number
+        destination:
+          type: string
 
     TransferResponse:
       type: object
       properties:
-        ok:
+        success:
           type: boolean
-          description: Success status
-          example: true
-        tx_hash:
+        tx_id:
           type: string
-          description: Transaction hash
-          example: "0xabc123..."
-        from_address:
+        message:
           type: string
-          description: Source address
-          example: "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC"
-        to_address:
-          type: string
-          description: Destination address
-          example: "modern-sophia-Pow-9862e3be"
-        amount_rtc:
-          type: number
-          format: double
-          description: Transferred amount
-          example: 1.5
 
-    ErrorResponse:
-      type: object
-      properties:
-        ok:
-          type: boolean
-          description: Always false for errors
-          example: false
-        error:
-          type: string
-          description: Error message
-          example: "miner_id required"
+  responses:
+    Unauthorized:
+      description: Unauthorized - Invalid or missing API key
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "Unauthorized"
+
+    BadRequest:
+      description: Bad Request - Invalid input
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "Invalid request"

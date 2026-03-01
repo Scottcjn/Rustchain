@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain API Documentation</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+        .topbar {
+            display: none;
+        }
+        .swagger-ui .info {
+            margin: 50px 0;
+        }
+        .swagger-ui .info .title {
+            font-size: 36px;
+            color: #3b4151;
+        }
+    </style>
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function() {
+            const spec = {
+                "openapi": "3.0.3",
+                "info": {
+                    "title": "RustChain Node API",
+                    "description": "RustChain is a blockchain that rewards vintage hardware through Proof-of-Antiquity.\n\nThis API provides access to node health, epoch information, miner data, and the Hall of Fame.\n\n**Base URL**: `https://rustchain.org`\n\n**Authentication**: Most endpoints are public. Admin endpoints require `X-Admin-Key` header.\n\n**Rate Limiting**: Please be respectful with request rates.\n\n**GitHub**: https://github.com/Scottcjn/Rustchain",
+                    "version": "2.2.1-rip200",
+                    "contact": {
+                        "name": "RustChain Support",
+                        "email": "scott@elyanlabs.ai",
+                        "url": "https://rustchain.org"
+                    },
+                    "license": {
+                        "name": "MIT",
+                        "url": "https://github.com/Scottcjn/Rustchain/blob/main/LICENSE"
+                    }
+                },
+                "servers": [
+                    {
+                        "url": "https://rustchain.org",
+                        "description": "Production node"
+                    },
+                    {
+                        "url": "http://localhost:8080",
+                        "description": "Local development node"
+                    }
+                ],
+                "tags               {"name": "Health", "description": "Node health and readiness checks"},
+                    {"name": "Epoch", "description": "Epoch and slot information"},
+                    {"name": "Miners", "description": "Miner data and attestations"},
+                    {"name": "Hall of Fame", "description": "Historical machine leaderboard"},
+                    {"name": "Fees", "description": "RIP-301 fee pool statistics"},
+                    {"name": "Wallet", "description": "Balance and transfer operations"},
+                    {"name": "Attestation", "description": "Hardware attestation submission"},
+                    {"name": "Explorer", "description": "Block explorer interface"}
+                ],
+                "paths": {
+                    "/health": {
+                        "get": {
+                            "tags": ["Health"],
+                            "summary": "Node health check",
+                            "description": "Returns node health status, version, uptime, and database state",
+                            "operationId": "getHealth",
+                            "responses": {
+                                "200": {
+                                    "description": "Node is healthy",
+                                    "content": {
+                                        "application/json": {
+                                            "example": {
+                                                "ok": true,
+                                                "version": "2.2.1-rip200",
+                                                "uptime_s": 12188,
+                                                "db_rw": true,
+                                                "tip_age_slots": 0,
+                                                "backup_age_hours": 4.27
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "/epoch": {
+                        "get": {
+                            "tags": ["Epoch"],
+                            "summary": "Current epoch information",
+                            "description": "Returns current epoch number, slot, enrolled miners, and supply",
+                            "operationId": "getEpoch",
+                            "responses": {
+                                "200": {
+                                    "description": "Epoch data",
+                                    "content": {
+                                        "application/json": {
+                                            "example": {
+                                                "epoch": 88,
+                                                "slot": 12739,
+                                                "blocks_per_epoch": 144,
+                                                "enrolled_miners": 24,
+                                                "epoch_pot": 1.5,
+                                                "total_supply_rtc": 8388608
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "/api/miners": {
+                        "get": {
+                            "tags": ["Miners"],
+                            "summary": "List active miners",
+                            "description": "Returns all enrolled miners with attestation data and hardware info",
+                            "operationId": "getMiners",
+                            "responses": {
+                                "200": {
+                                    "description": "List of miners",
+                                    "content": {
+                                        "application/json": {
+                                            "example": [{
+                                                "miner": "macmini-m2-134",
+                                                "device_arch": "M2",
+                                                "device_family": "Apple Silicon",
+                                                "hardware_type": "Apple Silicon (Modern)",
+                                                "last_attest": 1772350545,
+                                                "antiquity_multiplier": 1.2,
+                                                "entropy_score": 0,
+                                                "first_attest": null
+                                            }]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "/api/hall_of_fame": {
+                        "get": {
+                            "tags": ["Hall of Fame"],
+                            "summary": "Hall of Fame leaderboard",
+                            "description": "Returns historical machines organized by category with rust scores",
+                            "operationId": "getHallOfFame",
+                            "responses": {
+                                "200": {
+                                    "description": "Hall of Fame data",
+                                    "content": {
+                                        "application/json": {
+                                            "example": {
+                                                "epoch": 88,
+                                                "generated_at": "2026-03-01T07:35:00Z",
+                                                "stats": {
+                                                    "total_machines": 73,
+                                                    "total_attestations": 426415,
+                                                    "oldest_year": 2001,
+                                                    "highest_rust_score": 310.4
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "/api/fee_pool": {
+                        "get": {
+                            "tags": ["Fees"],
+                            "summary": "Fee pool statistics (RIP-301)",
+                            "description": "Returns total fees collected and recent fee events",
+                            "operationId": "getFeePool",
+                            "responses": {
+                                "200": {
+                                    "description": "Fee pool data",
+                                    "content": {
+                                        "application/json": {
+                                            "example": {
+                                                "total_fees_collected_rtc": 0,
+                                                "total_fee_events": 0,
+                                                "recent_events": []
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            window.ui = SwaggerUIBundle({
+                spec: spec,
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                tryItOutEnabled: true,
+                displayRequestDuration: true,
+                filter: true,
+                syntaxHighlight: {
+                    activate: true,
+                    theme: "monokai"
+                }
+            });
+        };
+    </script>
+</body>
+</html>
