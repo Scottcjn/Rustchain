@@ -221,6 +221,10 @@ Earn **RTC** by contributing to the RustChain ecosystem!
 
 ---
 
+## Testing Notes
+
+- Attestation malformed-input fuzz harness and replayable corpus: [docs/attestation_fuzzing.md](docs/attestation_fuzzing.md)
+
 ## 💰 Antiquity Multipliers
 
 Your hardware's age determines your mining rewards:
