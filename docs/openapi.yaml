@@ -1,0 +1,2052 @@
+openapi: 3.0.3
+info:
+  title: RustChain Node API
+  description: |
+    RustChain is a decentralized blockchain that rewards vintage hardware preservation through proof-of-antiquity consensus.
+    
+    This API provides endpoints for:
+    - Hardware attestation and mining
+    - Epoch management and rewards
+    - Wallet operations and transfers
+    - P2P synchronization
+    - Ergo cross-chain anchoring
+    - Hall of Rust memorial registry
+    - x402 payment integration
+    
+  version: 2.2.1-rip200
+  contact:
+    name: RustChain
+    url: https://rustchain.org
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://rustchain.org
+    description: Production server
+  - url: http://localhost:5000
+    description: Local development server
+
+tags:
+  - name: Health
+    description: Node health and status endpoints
+  - name: Epoch
+    description: Epoch management and enrollment
+  - name: Attestation
+    description: Hardware attestation and mining
+  - name: Wallet
+    description: Wallet balance and transfers
+  - name: Transactions
+    description: Transaction submission and status
+  - name: P2P
+    description: Peer-to-peer synchronization
+  - name: Anchoring
+    description: Ergo cross-chain anchoring
+  - name: Hall of Rust
+    description: Memorial registry for vintage hardware
+  - name: x402 Payments
+    description: x402 payment protocol integration
+  - name: Dashboard
+    description: Dashboard and statistics
+  - name: GPU Services
+    description: GPU rendering and escrow services
+
+paths:
+  # ============================================================================
+  # HEALTH & STATUS
+  # ============================================================================
+  
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Check node health status
+      description: Returns node health metrics including version, uptime, database status, and sync status
+      operationId: getHealth
+      responses:
+        '200':
+          description: Node is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - version
+                  - uptime_s
+                  - db_rw
+                properties:
+                  ok:
+                    type: boolean
+                    description: Overall health status
+                    example: true
+                  version:
+                    type: string
+                    description: Protocol version
+                    example: "2.2.1-rip200"
+                  uptime_s:
+                    type: integer
+                    description: Seconds since node start
+                    example: 18728
+                  db_rw:
+                    type: boolean
+                    description: Database is writable
+                    example: true
+                  backup_age_hours:
+                    type: number
+                    format: float
+                    description: Hours since last backup
+                    example: 6.75
+                  tip_age_slots:
+                    type: integer
+                    description: Slots behind tip (0 = synced)
+                    example: 0
+
+  /api/stats:
+    get:
+      tags:
+        - Dashboard
+      summary: Get current mining and system statistics
+      operationId: getStats
+      responses:
+        '200':
+          description: Statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_miners:
+                    type: integer
+                  active_miners:
+                    type: integer
+                  total_rtc_minted:
+                    type: number
+                  current_epoch:
+                    type: integer
+
+  # ============================================================================
+  # EPOCH MANAGEMENT
+  # ============================================================================
+
+  /epoch:
+    get:
+      tags:
+        - Epoch
+      summary: Get current epoch information
+      description: Returns details about the current epoch including slot, enrolled miners, and rewards
+      operationId: getEpoch
+      responses:
+        '200':
+          description: Epoch information retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - epoch
+                  - slot
+                  - blocks_per_epoch
+                properties:
+                  epoch:
+                    type: integer
+                    description: Current epoch number
+                    example: 62
+                  slot:
+                    type: integer
+                    description: Current slot within epoch
+                    example: 9010
+                  blocks_per_epoch:
+                    type: integer
+                    description: Slots per epoch (144 = ~24h)
+                    example: 144
+                  epoch_pot:
+                    type: number
+                    format: float
+                    description: RTC to distribute this epoch
+                    example: 1.5
+                  enrolled_miners:
+                    type: integer
+                    description: Miners eligible for rewards
+                    example: 2
+
+  /epoch/enroll:
+    post:
+      tags:
+        - Epoch
+      summary: Enroll in current epoch
+      description: Enroll a miner in the current epoch for reward eligibility
+      operationId: enrollEpoch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - miner_id
+                - signature
+              properties:
+                miner_id:
+                  type: string
+                  description: Miner identifier
+                signature:
+                  type: string
+                  format: byte
+                  description: Ed25519 signature
+      responses:
+        '200':
+          description: Enrollment successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  epoch:
+                    type: integer
+                  message:
+                    type: string
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ============================================================================
+  # ATTESTATION
+  # ============================================================================
+
+  /attest/challenge:
+    post:
+      tags:
+        - Attestation
+      summary: Issue challenge for hardware attestation
+      description: Request a challenge nonce for hardware attestation
+      operationId: getChallenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - miner_id
+              properties:
+                miner_id:
+                  type: string
+                  description: Miner identifier
+      responses:
+        '200':
+          description: Challenge issued successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  challenge:
+                    type: string
+                  expires_at:
+                    type: integer
+
+  /attest/submit:
+    post:
+      tags:
+        - Attestation
+      summary: Submit hardware attestation
+      description: Submit hardware fingerprint for epoch enrollment with anti-VM validation
+      operationId: submitAttestation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestationRequest'
+      responses:
+        '200':
+          description: Attestation accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationSuccess'
+        '400':
+          description: Attestation rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationError'
+
+  /lottery/eligibility:
+    get:
+      tags:
+        - Attestation
+      summary: Check round-robin eligibility
+      description: RIP-200 round-robin eligibility check for current epoch
+      operationId: checkLotteryEligibility
+      parameters:
+        - name: miner_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Eligibility status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  eligible:
+                    type: boolean
+                  reason:
+                    type: string
+
+  # ============================================================================
+  # WALLET OPERATIONS
+  # ============================================================================
+
+  /wallet/balance:
+    get:
+      tags:
+        - Wallet
+      summary: Get wallet balance
+      description: Check RTC balance for a miner
+      operationId: getWalletBalance
+      parameters:
+        - name: miner_id
+          in: query
+          required: true
+          description: Miner identifier
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Balance retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletBalance'
+
+  /wallet/{address}/balance:
+    get:
+      tags:
+        - Wallet
+      summary: Get wallet balance by address
+      operationId: getWalletBalanceByAddress
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Balance retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletBalance'
+
+  /wallet/{address}/nonce:
+    get:
+      tags:
+        - Wallet
+      summary: Get wallet nonce
+      description: Get wallet nonce for transaction construction
+      operationId: getWalletNonce
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Nonce retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nonce:
+                    type: integer
+
+  /wallet/{address}/history:
+    get:
+      tags:
+        - Wallet
+      summary: Get wallet transaction history
+      operationId: getWalletHistory
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Transaction history retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Transaction'
+                  total:
+                    type: integer
+
+  /wallet/transfer/signed:
+    post:
+      tags:
+        - Wallet
+      summary: Transfer RTC with signature
+      description: Transfer RTC to another wallet with Ed25519 signature
+      operationId: transferSigned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferRequest'
+      responses:
+        '200':
+          description: Transfer successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferSuccess'
+        '400':
+          description: Transfer failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/wallet/{wallet_address}:
+    get:
+      tags:
+        - Wallet
+      summary: Look up wallet balance and info
+      operationId: lookupWallet
+      parameters:
+        - name: wallet_address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Wallet information retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletBalance'
+
+  # ============================================================================
+  # TRANSACTIONS
+  # ============================================================================
+
+  /tx/submit:
+    post:
+      tags:
+        - Transactions
+      summary: Submit signed transaction
+      operationId: submitTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignedTransaction'
+      responses:
+        '200':
+          description: Transaction accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tx_hash:
+                    type: string
+                  status:
+                    type: string
+
+  /tx/status/{tx_hash}:
+    get:
+      tags:
+        - Transactions
+      summary: Get transaction status
+      operationId: getTransactionStatus
+      parameters:
+        - name: tx_hash
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Transaction status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionStatus'
+
+  /tx/pending:
+    get:
+      tags:
+        - Transactions
+      summary: List pending transactions
+      operationId: listPendingTransactions
+      responses:
+        '200':
+          description: Pending transactions retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pending:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Transaction'
+
+  # ============================================================================
+  # MINERS
+  # ============================================================================
+
+  /api/miners:
+    get:
+      tags:
+        - Attestation
+      summary: List all active miners
+      description: Returns list of all active/enrolled miners with hardware details
+      operationId: listMiners
+      responses:
+        '200':
+          description: Miners list retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Miner'
+
+  /miner/headerkey:
+    post:
+      tags:
+        - Attestation
+      summary: Set header-signing key
+      description: Admin endpoint to set or update the header-signing ed25519 public key for a miner
+      operationId: setMinerHeaderKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - miner_id
+                - header_key
+              properties:
+                miner_id:
+                  type: string
+                header_key:
+                  type: string
+      responses:
+        '200':
+          description: Header key updated
+        '401':
+          description: Unauthorized
+
+  /headers/ingest_signed:
+    post:
+      tags:
+        - Attestation
+      summary: Ingest signed block header
+      description: Ingest signed block header from v2 miners
+      operationId: ingestSignedHeader
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                header:
+                  type: object
+                signature:
+                  type: string
+      responses:
+        '200':
+          description: Header ingested successfully
+
+  /headers/tip:
+    get:
+      tags:
+        - Attestation
+      summary: Get chain tip from headers
+      operationId: getHeadersTip
+      responses:
+        '200':
+          description: Tip retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  height:
+                    type: integer
+                  hash:
+                    type: string
+
+  # ============================================================================
+  # P2P SYNCHRONIZATION
+  # ============================================================================
+
+  /p2p/announce:
+    post:
+      tags:
+        - P2P
+      summary: Announce peer node
+      description: Endpoint for peer nodes to announce themselves to the network
+      operationId: announcePeer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PeerAnnouncement'
+      responses:
+        '200':
+          description: Peer announced successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  peer_id:
+                    type: string
+
+  /p2p/peers:
+    get:
+      tags:
+        - P2P
+      summary: Get active peers
+      description: Get list of active peer nodes
+      operationId: getPeers
+      responses:
+        '200':
+          description: Peers list retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  peers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Peer'
+
+  /api/blocks:
+    get:
+      tags:
+        - P2P
+      summary: Get blocks for synchronization
+      description: Retrieve blocks for sync with pagination
+      operationId: getBlocks
+      parameters:
+        - name: start_height
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Blocks retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  blocks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Block'
+
+  /api/sync/status:
+    get:
+      tags:
+        - P2P
+      summary: Get sync status
+      description: Get current synchronization status
+      operationId: getSyncStatus
+      security:
+        - AdminKey: []
+      responses:
+        '200':
+          description: Sync status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncStatus'
+
+  /api/sync/pull:
+    get:
+      tags:
+        - P2P
+      summary: Pull data for sync
+      operationId: syncPull
+      security:
+        - AdminKey: []
+      responses:
+        '200':
+          description: Data pulled successfully
+
+  /api/sync/push:
+    post:
+      tags:
+        - P2P
+      summary: Push data for sync
+      operationId: syncPush
+      security:
+        - AdminKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Data pushed successfully
+
+  # ============================================================================
+  # ERGO ANCHORING
+  # ============================================================================
+
+  /anchor/status:
+    get:
+      tags:
+        - Anchoring
+      summary: Get anchoring service status
+      description: Returns Ergo node connection status and last anchor information
+      operationId: getAnchorStatus
+      responses:
+        '200':
+          description: Anchor status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ergo_connected:
+                    type: boolean
+                  ergo_height:
+                    type: integer
+                  interval_blocks:
+                    type: integer
+                  last_anchor:
+                    $ref: '#/components/schemas/Anchor'
+
+  /anchor/proof/{height}:
+    get:
+      tags:
+        - Anchoring
+      summary: Get anchor proof for height
+      description: Get proof that a RustChain height was anchored to Ergo
+      operationId: getAnchorProof
+      parameters:
+        - name: height
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Anchor proof retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnchorProof'
+        '404':
+          description: No anchor found for height
+
+  /anchor/list:
+    get:
+      tags:
+        - Anchoring
+      summary: List all anchors
+      description: List all Ergo anchors with pagination
+      operationId: listAnchors
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Anchors list retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  anchors:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Anchor'
+
+  # ============================================================================
+  # HALL OF RUST
+  # ============================================================================
+
+  /hall/induct:
+    post:
+      tags:
+        - Hall of Rust
+      summary: Induct machine into Hall of Rust
+      description: Automatically induct a machine into the Hall of Rust on first attestation
+      operationId: inductMachine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MachineInduction'
+      responses:
+        '200':
+          description: Machine inducted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InductionResponse'
+
+  /hall/machine/{fingerprint}:
+    get:
+      tags:
+        - Hall of Rust
+      summary: Get machine by fingerprint
+      description: Get a machine's Hall of Rust entry
+      operationId: getMachine
+      parameters:
+        - name: fingerprint
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Machine retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Machine'
+        '404':
+          description: Machine not found
+
+  /hall/leaderboard:
+    get:
+      tags:
+        - Hall of Rust
+      summary: Get Rust Score leaderboard
+      description: Get the Rust Score leaderboard with rustiest machines on top
+      operationId: getLeaderboard
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Leaderboard retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Leaderboard'
+
+  /hall/eulogy/{fingerprint}:
+    post:
+      tags:
+        - Hall of Rust
+      summary: Set eulogy for machine
+      description: Set a eulogy/nickname for a machine when it dies
+      operationId: setEulogy
+      parameters:
+        - name: fingerprint
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nickname:
+                  type: string
+                  maxLength: 64
+                eulogy:
+                  type: string
+                  maxLength: 500
+                is_deceased:
+                  type: boolean
+      responses:
+        '200':
+          description: Memorial updated
+
+  /hall/stats:
+    get:
+      tags:
+        - Hall of Rust
+      summary: Get Hall of Rust statistics
+      description: Get overall Hall of Rust statistics
+      operationId: getHallStats
+      responses:
+        '200':
+          description: Statistics retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HallStats'
+
+  /hall/random_fact:
+    get:
+      tags:
+        - Hall of Rust
+      summary: Get random vintage hardware fact
+      operationId: getRandomFact
+      responses:
+        '200':
+          description: Random fact retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fact:
+                    type: string
+                  generated_at:
+                    type: integer
+
+  /hall/machine_of_the_day:
+    get:
+      tags:
+        - Hall of Rust
+      summary: Get machine of the day
+      description: Get a random machine from the hall to spotlight
+      operationId: getMachineOfTheDay
+      responses:
+        '200':
+          description: Machine of the day retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Machine'
+        '404':
+          description: No worthy machines found
+
+  /hall/fleet_breakdown:
+    get:
+      tags:
+        - Hall of Rust
+      summary: Get fleet breakdown
+      description: Get breakdown of machine types in the fleet
+      operationId: getFleetBreakdown
+      responses:
+        '200':
+          description: Fleet breakdown retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  breakdown:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        architecture:
+                          type: string
+                        count:
+                          type: integer
+                        oldest_year:
+                          type: integer
+                        top_rust_score:
+                          type: number
+                        avg_rust_score:
+                          type: number
+                  total_architectures:
+                    type: integer
+                  generated_at:
+                    type: integer
+
+  /hall/timeline:
+    get:
+      tags:
+        - Hall of Rust
+      summary: Get hall timeline
+      description: Get timeline of when machines joined the hall
+      operationId: getHallTimeline
+      responses:
+        '200':
+          description: Timeline retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  timeline:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date:
+                          type: string
+                        machines_joined:
+                          type: integer
+                        architectures:
+                          type: array
+                          items:
+                            type: string
+
+  /api/hall_of_fame/machine:
+    get:
+      tags:
+        - Hall of Rust
+      summary: Get machine profile for Hall of Fame
+      description: Machine profile endpoint for Hall of Fame detail page
+      operationId: getHallOfFameMachine
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Machine profile retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  machine:
+                    $ref: '#/components/schemas/Machine'
+                  attestation_timeline_30d:
+                    type: array
+                    items:
+                      type: object
+                  reward_participation:
+                    type: object
+        '400':
+          description: Missing id parameter
+        '404':
+          description: Machine not found
+
+  # ============================================================================
+  # x402 PAYMENTS
+  # ============================================================================
+
+  /api/agents/{agent_id}/wallet:
+    get:
+      tags:
+        - x402 Payments
+      summary: Get agent wallet info
+      description: Get a beacon agent's Coinbase wallet info
+      operationId: getAgentWallet
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Wallet info retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_id:
+                    type: string
+                  coinbase_address:
+                    type: string
+                    nullable: true
+                  source:
+                    type: string
+                  network:
+                    type: string
+                  swap_info:
+                    type: object
+                    nullable: true
+    post:
+      tags:
+        - x402 Payments
+      summary: Set agent wallet
+      description: Set Coinbase wallet for a native beacon agent (admin only)
+      operationId: setAgentWallet
+      security:
+        - AdminKey: []
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - coinbase_address
+              properties:
+                coinbase_address:
+                  type: string
+                  description: Base network address (0x...)
+      responses:
+        '200':
+          description: Wallet set successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  agent_id:
+                    type: string
+                  coinbase_address:
+                    type: string
+                  network:
+                    type: string
+        '400':
+          description: Invalid address
+        '401':
+          description: Unauthorized
+
+  /api/premium/reputation:
+    get:
+      tags:
+        - x402 Payments
+      summary: Export full reputation
+      description: Full reputation export for all agents (x402 paywalled)
+      operationId: exportReputation
+      parameters:
+        - name: X-PAYMENT
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Reputation exported
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  reputation:
+                    type: array
+                    items:
+                      type: object
+                  exported_at:
+                    type: number
+        '402':
+          description: Payment required
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  x402:
+                    type: object
+
+  /api/premium/contracts/export:
+    get:
+      tags:
+        - x402 Payments
+      summary: Export full contracts
+      description: Full contracts export with payment status (x402 paywalled)
+      operationId: exportContracts
+      parameters:
+        - name: X-PAYMENT
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Contracts exported
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  contracts:
+                    type: array
+                    items:
+                      type: object
+                  exported_at:
+                    type: number
+        '402':
+          description: Payment required
+
+  /api/x402/payments:
+    get:
+      tags:
+        - x402 Payments
+      summary: Get x402 payment history
+      description: View x402 payment history for beacon
+      operationId: getX402Payments
+      responses:
+        '200':
+          description: Payment history retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payments:
+                    type: array
+                    items:
+                      type: object
+                  total:
+                    type: integer
+
+  /api/x402/status:
+    get:
+      tags:
+        - x402 Payments
+      summary: Get x402 integration status
+      description: Public endpoint showing x402 integration status for Beacon Atlas
+      operationId: getX402Status
+      responses:
+        '200':
+          description: x402 status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  x402_enabled:
+                    type: boolean
+                  cdp_configured:
+                    type: boolean
+                  network:
+                    type: string
+                  facilitator:
+                    type: string
+                    nullable: true
+                  pricing_mode:
+                    type: string
+                  swap_info:
+                    type: object
+                    nullable: true
+                  premium_endpoints:
+                    type: array
+                    items:
+                      type: string
+
+  # ============================================================================
+  # WITHDRAWALS
+  # ============================================================================
+
+  /withdraw/register:
+    post:
+      tags:
+        - Wallet
+      summary: Register withdrawal key
+      description: Register a withdrawal public key (admin only)
+      operationId: registerWithdrawalKey
+      security:
+        - AdminKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - miner_id
+                - withdrawal_key
+              properties:
+                miner_id:
+                  type: string
+                withdrawal_key:
+                  type: string
+      responses:
+        '200':
+          description: Withdrawal key registered
+
+  /withdraw/request:
+    post:
+      tags:
+        - Wallet
+      summary: Request withdrawal
+      description: Request RTC withdrawal
+      operationId: requestWithdrawal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - miner_id
+                - amount
+                - signature
+              properties:
+                miner_id:
+                  type: string
+                amount:
+                  type: number
+                signature:
+                  type: string
+      responses:
+        '200':
+          description: Withdrawal requested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  withdrawal_id:
+                    type: string
+                  status:
+                    type: string
+
+  /withdraw/status/{withdrawal_id}:
+    get:
+      tags:
+        - Wallet
+      summary: Get withdrawal status
+      operationId: getWithdrawalStatus
+      parameters:
+        - name: withdrawal_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Withdrawal status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  withdrawal_id:
+                    type: string
+                  status:
+                    type: string
+                  amount:
+                    type: number
+
+  /withdraw/history/{miner_pk}:
+    get:
+      tags:
+        - Wallet
+      summary: Get withdrawal history
+      operationId: getWithdrawalHistory
+      parameters:
+        - name: miner_pk
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Withdrawal history retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  withdrawals:
+                    type: array
+                    items:
+                      type: object
+
+  # ============================================================================
+  # FEE POOL
+  # ============================================================================
+
+  /api/fee_pool:
+    get:
+      tags:
+        - Transactions
+      summary: Get fee pool statistics
+      description: RIP-301 Fee pool statistics and recent fee events
+      operationId: getFeePool
+      responses:
+        '200':
+          description: Fee pool statistics retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_fees:
+                    type: number
+                  recent_events:
+                    type: array
+                    items:
+                      type: object
+
+  # ============================================================================
+  # GPU SERVICES
+  # ============================================================================
+
+  /api/gpu/attest:
+    post:
+      tags:
+        - GPU Services
+      summary: GPU attestation
+      description: Submit GPU attestation for verification
+      operationId: gpuAttest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                gpu_id:
+                  type: string
+                fingerprint:
+                  type: object
+      responses:
+        '200':
+          description: GPU attestation accepted
+
+  /api/gpu/escrow:
+    post:
+      tags:
+        - GPU Services
+      summary: Create GPU escrow
+      description: Create escrow for GPU rendering service
+      operationId: gpuEscrow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: number
+                duration:
+                  type: integer
+      responses:
+        '200':
+          description: Escrow created
+
+  /api/gpu/release:
+    post:
+      tags:
+        - GPU Services
+      summary: Release GPU escrow
+      description: Release escrowed funds after GPU service completion
+      operationId: gpuRelease
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                escrow_id:
+                  type: string
+      responses:
+        '200':
+          description: Escrow released
+
+  /api/gpu/refund:
+    post:
+      tags:
+        - GPU Services
+      summary: Refund GPU escrow
+      description: Refund escrowed funds if service not completed
+      operationId: gpuRefund
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                escrow_id:
+                  type: string
+      responses:
+        '200':
+          description: Escrow refunded
+
+  # ============================================================================
+  # ADMIN ENDPOINTS
+  # ============================================================================
+
+  /admin/oui_deny/enforce:
+    post:
+      tags:
+        - Admin
+      summary: Toggle OUI enforcement
+      description: Toggle OUI enforcement (admin only)
+      operationId: toggleOuiEnforce
+      security:
+        - AdminKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: OUI enforcement toggled
+
+  /ops/oui/enforce:
+    get:
+      tags:
+        - Admin
+      summary: Get OUI enforcement status
+      operationId: getOuiEnforceStatus
+      responses:
+        '200':
+          description: OUI enforcement status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+
+  # ============================================================================
+  # STATIC PAGES
+  # ============================================================================
+
+  /explorer:
+    get:
+      tags:
+        - Dashboard
+      summary: Blockchain explorer
+      description: Lightweight blockchain explorer interface
+      operationId: getExplorer
+      responses:
+        '200':
+          description: Explorer page
+
+  /museum:
+    get:
+      tags:
+        - Dashboard
+      summary: 2D hardware museum
+      description: 2D hardware museum UI
+      operationId: getMuseum
+      responses:
+        '200':
+          description: Museum page
+
+  /museum/3d:
+    get:
+      tags:
+        - Dashboard
+      summary: 3D hardware museum
+      description: 3D hardware museum UI
+      operationId: getMuseum3D
+      responses:
+        '200':
+          description: 3D museum page
+
+  /dashboard:
+    get:
+      tags:
+        - Dashboard
+      summary: Miner dashboard
+      description: Personal miner dashboard single-page UI
+      operationId: getDashboard
+      responses:
+        '200':
+          description: Dashboard page
+
+  /openapi.json:
+    get:
+      tags:
+        - Health
+      summary: OpenAPI specification
+      description: Return OpenAPI 3.0.3 specification
+      operationId: getOpenApiSpec
+      responses:
+        '200':
+          description: OpenAPI specification
+          content:
+            application/json:
+              schema:
+                type: object
+
+components:
+  # ============================================================================
+  # SECURITY SCHEMES
+  # ============================================================================
+
+  securitySchemes:
+    AdminKey:
+      type: apiKey
+      in: header
+      name: X-Admin-Key
+      description: Admin key for protected endpoints
+
+  # ============================================================================
+  # SCHEMAS
+  # ============================================================================
+
+  schemas:
+    # Errors
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+        detail:
+          type: string
+          description: Detailed error information
+
+    # Attestation
+    AttestationRequest:
+      type: object
+      required:
+        - miner_id
+        - fingerprint
+        - signature
+      properties:
+        miner_id:
+          type: string
+          description: Miner identifier
+        fingerprint:
+          type: object
+          description: Hardware fingerprint object
+          properties:
+            clock_skew:
+              type: object
+            cache_timing:
+              type: object
+            simd_identity:
+              type: object
+            thermal_entropy:
+              type: object
+            instruction_jitter:
+              type: object
+            behavioral_heuristics:
+              type: object
+        signature:
+          type: string
+          format: byte
+          description: Base64 Ed25519 signature
+
+    AttestationSuccess:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        enrolled:
+          type: boolean
+        epoch:
+          type: integer
+        multiplier:
+          type: number
+        next_settlement_slot:
+          type: integer
+
+    AttestationError:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          enum:
+            - VM_DETECTED
+            - INVALID_SIGNATURE
+            - RATE_LIMITED
+        check_failed:
+          type: string
+        detail:
+          type: string
+
+    # Wallet
+    WalletBalance:
+      type: object
+      properties:
+        miner_id:
+          type: string
+        amount_rtc:
+          type: number
+          format: float
+          description: Balance in RTC (human readable)
+        amount_i64:
+          type: integer
+          description: Balance in micro-RTC (6 decimals)
+
+    TransferRequest:
+      type: object
+      required:
+        - from
+        - to
+        - amount_i64
+        - nonce
+        - signature
+      properties:
+        from:
+          type: string
+          description: Sender miner ID
+        to:
+          type: string
+          description: Recipient miner ID
+        amount_i64:
+          type: integer
+          description: Amount in micro-RTC
+        nonce:
+          type: integer
+          description: Transaction nonce
+        signature:
+          type: string
+          format: byte
+          description: Base64 Ed25519 signature
+
+    TransferSuccess:
+      type: object
+      properties:
+        success:
+          type: boolean
+        tx_hash:
+          type: string
+        new_balance:
+          type: integer
+
+    # Transactions
+    Transaction:
+      type: object
+      properties:
+        tx_hash:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+        amount:
+          type: integer
+        timestamp:
+          type: integer
+        status:
+          type: string
+
+    SignedTransaction:
+      type: object
+      properties:
+        tx:
+          type: object
+        signature:
+          type: string
+
+    TransactionStatus:
+      type: object
+      properties:
+        tx_hash:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - confirmed
+            - failed
+        confirmations:
+          type: integer
+        block_height:
+          type: integer
+
+    # Miners
+    Miner:
+      type: object
+      properties:
+        miner:
+          type: string
+          description: Unique miner ID (wallet address)
+        device_family:
+          type: string
+          description: CPU family (PowerPC, x86_64, etc.)
+        device_arch:
+          type: string
+          description: Specific architecture (G4, G5, M2)
+        hardware_type:
+          type: string
+          description: Human-readable hardware description
+        antiquity_multiplier:
+          type: number
+          format: float
+          description: Reward multiplier (1.0-2.5x)
+        entropy_score:
+          type: number
+          format: float
+          description: Hardware entropy quality
+        last_attest:
+          type: integer
+          description: Unix timestamp of last attestation
+
+    # P2P
+    Peer:
+      type: object
+      properties:
+        peer_id:
+          type: string
+        address:
+          type: string
+        last_seen:
+          type: integer
+        synced:
+          type: boolean
+
+    PeerAnnouncement:
+      type: object
+      properties:
+        peer_id:
+          type: string
+        address:
+          type: string
+        port:
+          type: integer
+
+    Block:
+      type: object
+      properties:
+        height:
+          type: integer
+        hash:
+          type: string
+        timestamp:
+          type: integer
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+
+    SyncStatus:
+      type: object
+      properties:
+        synced:
+          type: boolean
+        height:
+          type: integer
+        peers:
+          type: integer
+        last_sync:
+          type: integer
+
+    # Anchoring
+    Anchor:
+      type: object
+      properties:
+        id:
+          type: integer
+        rustchain_height:
+          type: integer
+        rustchain_hash:
+          type: string
+        commitment_hash:
+          type: string
+        ergo_tx_id:
+          type: string
+        ergo_height:
+          type: integer
+        confirmations:
+          type: integer
+        status:
+          type: string
+          enum:
+            - pending
+            - confirming
+            - confirmed
+            - not_found
+        created_at:
+          type: integer
+
+    AnchorProof:
+      type: object
+      properties:
+        rustchain_height:
+          type: integer
+        ergo_tx_id:
+          type: string
+        commitment_hash:
+          type: string
+        confirmations:
+          type: integer
+        ergo_transaction:
+          type: object
+
+    # Hall of Rust
+    Machine:
+      type: object
+      properties:
+        id:
+          type: integer
+        fingerprint_hash:
+          type: string
+        miner_id:
+          type: string
+        device_family:
+          type: string
+        device_arch:
+          type: string
+        device_model:
+          type: string
+        manufacture_year:
+          type: integer
+        first_attestation:
+          type: integer
+        last_attestation:
+          type: integer
+        total_attestations:
+          type: integer
+        total_rtc_earned:
+          type: number
+        rust_score:
+          type: number
+        nickname:
+          type: string
+        eulogy:
+          type: string
+        is_deceased:
+          type: boolean
+        capacitor_plague:
+          type: boolean
+        badge:
+          type: string
+        age_years:
+          type: integer
+
+    MachineInduction:
+      type: object
+      required:
+        - miner_id
+      properties:
+        miner_id:
+          type: string
+        device_family:
+          type: string
+        device_arch:
+          type: string
+        device_model:
+          type: string
+        cpu_serial:
+          type: string
+        hardware_id:
+          type: string
+
+    InductionResponse:
+      type: object
+      properties:
+        inducted:
+          type: boolean
+        message:
+          type: string
+        fingerprint:
+          type: string
+        rust_score:
+          type: number
+        manufacture_year:
+          type: integer
+        capacitor_plague:
+          type: boolean
+        attestation_count:
+          type: integer
+
+    Leaderboard:
+      type: object
+      properties:
+        leaderboard:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Machine'
+              - type: object
+                properties:
+                  rank:
+                    type: integer
+        total_machines:
+          type: integer
+        generated_at:
+          type: integer
+
+    HallStats:
+      type: object
+      properties:
+        total_machines:
+          type: integer
+        deceased_machines:
+          type: integer
+        total_attestations:
+          type: integer
+        average_rust_score:
+          type: number
+        highest_rust_score:
+          type: number
+        capacitor_plague_survivors:
+          type: integer
+        oldest_machine:
+          type: object
+          properties:
+            miner_id:
+              type: string
+            year:
+              type: integer
