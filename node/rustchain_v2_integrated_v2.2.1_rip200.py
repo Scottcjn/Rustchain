@@ -156,7 +156,7 @@ def _attest_is_valid_positive_int(value, max_value=4096):
 
 def client_ip_from_request(req) -> str:
     """Return the left-most forwarded IP when present, otherwise the remote address."""
-    client_ip = req.headers.get("X-Forwarded-For", req.remote_addr)
+    client_ip = req.headers.get("X-Real-IP", req.remote_addr)
     if client_ip and "," in client_ip:
         client_ip = client_ip.split(",")[0].strip()
     return client_ip
@@ -315,7 +315,7 @@ def _after(resp):
             "method": request.method,
             "path": request.path,
             "status": resp.status_code,
-            "ip": request.headers.get("X-Forwarded-For", request.remote_addr),
+            "ip": request.headers.get("X-Real-IP", request.remote_addr),
             "dur_ms": int(dur * 1000),
         }
         log.info(json.dumps(rec, separators=(",", ":")))
@@ -2194,7 +2194,7 @@ def enroll_epoch():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    client_ip = request.headers.get("X-Real-IP", request.remote_addr)
     if client_ip and "," in client_ip:
         client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     miner_pk = data.get('miner_pubkey')
@@ -2560,7 +2560,7 @@ def register_withdrawal_key():
         return jsonify({"error": "Invalid JSON body"}), 400
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    client_ip = request.headers.get("X-Real-IP", request.remote_addr)
     if client_ip and "," in client_ip:
         client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     miner_pk = data.get('miner_pk')
@@ -2613,7 +2613,7 @@ def request_withdrawal():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    client_ip = request.headers.get("X-Real-IP", request.remote_addr)
     if client_ip and "," in client_ip:
         client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     miner_pk = data.get('miner_pk')
@@ -3565,7 +3565,7 @@ def add_oui_deny():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    client_ip = request.headers.get("X-Real-IP", request.remote_addr)
     if client_ip and "," in client_ip:
         client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
@@ -3592,7 +3592,7 @@ def remove_oui_deny():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    client_ip = request.headers.get("X-Real-IP", request.remote_addr)
     if client_ip and "," in client_ip:
         client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
@@ -3658,7 +3658,7 @@ def attest_debug():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    client_ip = request.headers.get("X-Real-IP", request.remote_addr)
     if client_ip and "," in client_ip:
         client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     miner = data.get('miner') or data.get('miner_id')
@@ -4332,7 +4332,7 @@ def wallet_transfer_OLD():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    client_ip = request.headers.get("X-Real-IP", request.remote_addr)
     if client_ip and "," in client_ip:
         client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     from_miner = data.get('from_miner')
@@ -4758,7 +4758,7 @@ def wallet_transfer_signed():
         return jsonify({"error": pre.error, "details": pre.details}), 400
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    client_ip = request.headers.get("X-Real-IP", request.remote_addr)
     if client_ip and "," in client_ip:
         client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     
