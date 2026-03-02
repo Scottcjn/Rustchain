@@ -26,6 +26,24 @@
 
 ---
 
+## Q1 2026 Traction
+
+> *All data from [live GitHub API pull](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) compared against [GitClear](https://www.gitclear.com/research_studies/git_commit_count_percentiles_annual_days_active_from_largest_data_set) (878K dev-years), [LinearB](https://linearb.io/resources/software-engineering-benchmarks-report) (8.1M PRs), and [Electric Capital](https://www.developerreport.com) benchmarks.*
+
+| Metric (90 days) | Elyan Labs | Industry Median | Sei Protocol ($85M) |
+|-------------------|-----------|----------------|---------------------|
+| Commits | **1,882** | 105-168 | 297 |
+| Repos shipped | **97** | 1-3 | 0 new |
+| GitHub stars | **1,334** | 5-30 | 2,837 (lifetime) |
+| Developer interactions | **150+** | 0-2 | 78 (lifetime) |
+| Commits/dev/month | **627** | 56 | 7.6 |
+| External contributions | **32 PRs** | 0-2 | 0 |
+| Funding | **$0** | $0 | $85,000,000 |
+
+**[Full traction report with methodology and sources →](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md)**
+
+---
+
 ## 🪙 wRTC on Solana
 
 RustChain Token (RTC) is now available as **wRTC** on Solana via the BoTTube Bridge:
@@ -411,6 +429,7 @@ Read the draft spec:
 
 ## 📝 Articles
 
+- [I Built More in 90 Days With $0 Than an $85M-Funded Team](https://dev.to/scottcjn/i-built-more-in-90-days-with-0-than-an-85m-funded-team-of-13-engineers-3oi0) - Dev.to
 - [Proof of Antiquity: A Blockchain That Rewards Vintage Hardware](https://dev.to/scottcjn/proof-of-antiquity-a-blockchain-that-rewards-vintage-hardware-4ii3) - Dev.to
 - [I Run LLMs on a 768GB IBM POWER8 Server](https://dev.to/scottcjn/i-run-llms-on-a-768gb-ibm-power8-server-and-its-faster-than-you-think-1o) - Dev.to
 
