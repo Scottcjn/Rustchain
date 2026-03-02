@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Machine Profile - RustChain Hall of Fame</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background: #0a0a0a;
+            color: #33ff33;
+            font-family: 'VT323', monospace;
+            min-height: 100vh;
+            padding: 20px;
+            background-image: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,0,0.03) 2px, rgba(0,255,0,0.03) 4px);
+        }
+        
+        .container { max-width: 900px; margin: 0 auto; }
+        
+        h1 { text-align: center; font-size: 2rem; margin-bottom: 20px; text-shadow: 0 0 10px #33ff33; }
+        h2 { border-bottom: 1px solid #33ff33; padding-bottom: 10px; margin: 20px 0 15px; }
+        
+        .back-link { display: block; margin-bottom: 20px; color: #66ff66; }
+        
+        .profile-card {
+            border: 2px solid #33ff33;
+            padding: 20px;
+            background: rgba(0,50,0,0.3);
+            box-shadow: 0 0 20px rgba(51,255,51,0.2);
+        }
+        
+        .machine-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .badge { 
+            background: #33ff33; color: #000; padding: 5px 15px; 
+            font-size: 1.2rem; display: inline-block;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .stat {
+            background: #001100; padding: 15px; border: 1px solid #225522;
+        }
+        
+        .stat-label { color: #66aa66; font-size: 0.9rem; }
+        .stat-value { font-size: 1.4rem; text-shadow: 0 0 5px #33ff33; }
+        
+        .info-list { list-style: none; }
+        .info-list li {
+            padding: 8px 0;
+            border-bottom: 1px solid #113311;
+            display: flex;
+            justify-content: space-between;
+        }
+        .info-list .label { color: #66aa66; }
+        
+        .deceased {
+            filter: grayscale(100%);
+            opacity: 0.7;
+        }
+        
+        .loading { text-align: center; padding: 40px; font-size: 1.5rem; animation: blink 1s infinite; }
+        @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+        
+        .error { color: #ff3333; text-align: center; padding: 20px; border: 2px solid #ff3333; }
+        
+        .epoch-chart {
+            background: #001100;
+            padding: 15px;
+            margin-top: 20px;
+            border: 1px solid #225522;
+        }
+        
+        .epoch-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px dashed #113311;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/hall-of-fame/" class="back-link">← Back to Hall of Fame</a>
+        
+        <h1>▓▓ MACHINE PROFILE ▓▓</h1>
+        
+        <div id="loading" class="loading">►►► LOADING PROFILE... ◄◄◄</div>
+        <div id="error" class="error" style="display:none;"></div>
+        
+        <div id="profile" class="profile-card" style="display:none;">
+            <div class="machine-header">
+                <div>
+                    <h2 id="machineId">--</h2>
+                    <span id="nickname"></span>
+                </div>
+                <span class="badge" id="badge">--</span>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat">
+                    <div class="stat-label">RUST SCORE</div>
+                    <div class="stat-value" id="rustScore">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">AGE (YEARS)</div>
+                    <div class="stat-value" id="age">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">TOTAL ATTESTATIONS</div>
+                    <div class="stat-value" id="attestations">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">MANUFACTURE YEAR</div>
+                    <div class="stat-value" id="year">--</div>
+                </div>
+            </div>
+            
+            <h2>▸ HARDWARE DETAILS</h2>
+            <ul class="info-list">
+                <li><span class="label">Architecture</span><span id="arch">--</span></li>
+                <li><span class="label">Device Family</span><span id="family">--</span></li>
+                <li><span class="label">Device Model</span><span id="model">--</span></li>
+                <li><span class="label">Miner ID</span><span id="minerId">--</span></li>
+            </ul>
+            
+            <h2>▸ STATUS</h2>
+            <ul class="info-list">
+                <li><span class="label">Capacitor Plague</span><span id="capacitor">--</span></li>
+                <li><span class="label">Thermal Events</span><span id="thermal">--</span></li>
+                <li><span class="label">Status</span><span id="status">--</span></li>
+            </ul>
+            
+            <h2>▸ ATTESTATION TIMELINE</h2>
+            <div class="epoch-chart">
+                <div class="epoch-item">
+                    <span>First Attestation</span>
+                    <span id="firstAttest">--</span>
+                </div>
+                <div class="epoch-item">
+                    <span>Last Attestation</span>
+                    <span id="lastAttest">--</span>
+                </div>
+                <div class="epoch-item">
+                    <span>Uptime</span>
+                    <span id="uptime">--</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'https://rustchain.org';
+        
+        // Get machine ID from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const machineId = urlParams.get('id') || urlParams.get('machine');
+        
+        if (!machineId) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error').textContent = 'No machine ID provided. Use ?id=<fingerprint>';
+        } else {
+            loadProfile();
+        }
+        
+        async function loadProfile() {
+            try {
+                const response = await fetch(`${API_BASE}/api/hall_of_fame`);
+                const data = await response.json();
+                
+                // Find machine in all categories
+                let machine = null;
+                let category = '';
+                
+                for (const [cat, machines] of Object.entries(data.categories)) {
+                    if (Array.isArray(machines)) {
+                        const found = machines.find(m => m.fingerprint_hash === machineId);
+                        if (found) {
+                            machine = found;
+                            category = cat;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!machine) {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('error').style.display = 'block';
+                    document.getElementById('error').textContent = `Machine not found: ${machineId}`;
+                    return;
+                }
+                
+                // Update display
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('profile').style.display = 'block';
+                
+                document.getElementById('machineId').textContent = machine.fingerprint_hash?.substring(0, 16) + '...';
+                document.getElementById('badge').textContent = machine.badge || 'Unknown';
+                document.getElementById('rustScore').textContent = (machine.rust_score || 0).toFixed(2);
+                document.getElementById('age').textContent = machine.age_years || '--';
+                document.getElementById('attestations').textContent = machine.total_attestations || 0;
+                document.getElementById('year').textContent = machine.manufacture_year || '--';
+                document.getElementById('arch').textContent = machine.device_arch || '--';
+                document.getElementById('family').textContent = machine.device_family || '--';
+                document.getElementById('model').textContent = machine.device_model || '--';
+                document.getElementById('minerId').textContent = machine.miner_id || '--';
+                document.getElementById('capacitor').textContent = machine.capacitor_plague || 0;
+                document.getElementById('thermal').textContent = machine.thermal_events || 0;
+                
+                // Status
+                const isDeceased = machine.is_deceased === 1;
+                document.getElementById('status').textContent = isDeceased ? '💀 Deceased' : '✅ Active';
+                if (isDeceased) {
+                    document.getElementById('profile').classList.add('deceased');
+                }
+                
+                // Nickname
+                if (machine.nickname) {
+                    document.getElementById('nickname').textContent = ` aka ${machine.nickname}`;
+                }
+                
+                // Timestamps
+                const firstDate = machine.first_attestation ? new Date(machine.first_attestation * 1000) : null;
+                const lastDate = machine.last_attestation ? new Date(machine.last_attestation * 1000) : null;
+                
+                document.getElementById('firstAttest').textContent = firstDate ? firstDate.toLocaleDateString() : '--';
+                document.getElementById('lastAttest').textContent = lastDate ? lastDate.toLocaleDateString() : '--';
+                
+                if (firstDate && lastDate) {
+                    const days = Math.floor((lastDate - firstDate) / (1000*60*60*24));
+                    document.getElementById('uptime').textContent = `${days} days`;
+                }
+                
+            } catch (err) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').textContent = 'Error: ' + err.message;
+            }
+        }
+    </script>
+</body>
+</html>
