@@ -1,6 +1,6 @@
-# Attestation Fuzz Harness
+# Attestation Malformed-Input Regression Harness
 
-This repository includes a deterministic malformed-input fuzz gate for `POST /attest/submit` plus a replayable regression corpus under `tests/attestation_corpus/`.
+This repository includes a deterministic malformed-input regression gate for `POST /attest/submit` plus a replayable regression corpus under `tests/attestation_corpus/`.
 
 ## Corpus Classes
 
@@ -29,24 +29,19 @@ The script prints the HTTP status code and parsed JSON response, and exits non-z
 python -m pytest tests/test_attestation_fuzz.py -v
 ```
 
-## 10,000-Case Fuzz Run
+## 10,000-Case Mutation Run
 
 PowerShell:
 
 ```powershell
 $env:ATTEST_FUZZ_CASES = "10000"
-python -m pytest tests/test_attestation_fuzz.py -k fuzz_no_unhandled_exceptions -v
+python -m pytest tests/test_attestation_fuzz.py -k mutation_regression_no_unhandled_exceptions -v
 ```
 
 Bash:
 
 ```bash
-ATTEST_FUZZ_CASES=10000 python -m pytest tests/test_attestation_fuzz.py -k fuzz_no_unhandled_exceptions -v
+ATTEST_FUZZ_CASES=10000 python -m pytest tests/test_attestation_fuzz.py -k mutation_regression_no_unhandled_exceptions -v
 ```
 
-This is the CI-mode gate for "no unhandled exceptions" in the attestation parsing path. The command returns non-zero on regression.
-
-Observed local run on Windows / Python 3.14:
-
-- `10,000` generated cases
-- `1 passed in 250.90s`
+This is the CI-mode gate for "no unhandled exceptions" in the attestation parsing path. Set `ATTEST_FUZZ_SEED` only when you need to reproduce a specific random sequence locally.
