@@ -154,6 +154,14 @@ def _attest_is_valid_positive_int(value, max_value=4096):
     return 1 <= coerced <= max_value
 
 
+def client_ip_from_request(req) -> str:
+    """Return the left-most forwarded IP when present, otherwise the remote address."""
+    client_ip = req.headers.get("X-Forwarded-For", req.remote_addr)
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+    return client_ip
+
+
 def _attest_positive_int(value, default=1):
     """Coerce untrusted integer-like values to a safe positive integer."""
     try:
