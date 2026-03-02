@@ -1,0 +1,20 @@
+{
+  "name": "nested_device",
+  "description": "Deeply nested device object",
+  "expected_behavior": "accept_or_strip",
+  "payload": {
+    "miner_pubkey": "RTC000000000000000000000000000000000000000000000000000000000000",
+    "miner_id": "test_miner",
+    "device": {
+      "family": "x86",
+      "arch": "modern",
+      "nested": {
+        "level2": {
+          "level3": {
+            "value": "deep"
+          }
+        }
+      }
+    }
+  }
+}

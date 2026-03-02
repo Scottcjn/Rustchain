@@ -1,0 +1,13 @@
+{
+  "name": "string_as_int",
+  "description": "Pass string field as integer",
+  "expected_behavior": "reject",
+  "payload": {
+    "miner_pubkey": "RTC000000000000000000000000000000000000000000000000000000000000",
+    "miner_id": 99999,
+    "device": {
+      "family": "x86",
+      "arch": "modern"
+    }
+  }
+}

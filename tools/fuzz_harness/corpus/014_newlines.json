@@ -1,0 +1,13 @@
+{
+  "name": "newlines",
+  "description": "Newlines in strings",
+  "expected_behavior": "reject",
+  "payload": {
+    "miner_pubkey": "RTC\n0000000000000000000000000000000000000000000000000000000000",
+    "miner_id": "test_miner\n",
+    "device": {
+      "family": "x86\n",
+      "arch": "modern"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "missing_pubkey",
+  "description": "Missing required miner_pubkey",
+  "expected_behavior": "reject",
+  "payload": {
+    "miner_id": "test_miner",
+    "device": {
+      "family": "x86",
+      "arch": "modern"
+    }
+  }
+}

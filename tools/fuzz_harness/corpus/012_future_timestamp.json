@@ -1,0 +1,14 @@
+{
+  "name": "future_timestamp",
+  "description": "Timestamp far in future",
+  "expected_behavior": "accept_or_warn",
+  "payload": {
+    "miner_pubkey": "RTC000000000000000000000000000000000000000000000000000000000000",
+    "miner_id": "test_miner",
+    "device": {
+      "family": "x86",
+      "arch": "modern"
+    },
+    "timestamp": 2000000000
+  }
+}

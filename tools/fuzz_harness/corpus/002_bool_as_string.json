@@ -1,0 +1,14 @@
+{
+  "name": "bool_as_string",
+  "description": "Pass boolean as string",
+  "expected_behavior": "reject",
+  "payload": {
+    "miner_pubkey": "RTC000000000000000000000000000000000000000000000000000000000000",
+    "miner_id": "test_miner",
+    "device": {
+      "family": "x86",
+      "arch": "modern"
+    },
+    "enabled": "true"
+  }
+}

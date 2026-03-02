@@ -1,0 +1,9 @@
+{
+  "name": "missing_device",
+  "description": "Missing device object",
+  "expected_behavior": "reject",
+  "payload": {
+    "miner_pubkey": "RTC000000000000000000000000000000000000000000000000000000000000",
+    "miner_id": "test_miner"
+  }
+}

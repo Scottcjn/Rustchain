@@ -1,0 +1,13 @@
+{
+  "name": "int_as_string",
+  "description": "Pass integer field as string",
+  "expected_behavior": "reject",
+  "payload": {
+    "miner_pubkey": 12345,
+    "miner_id": "test_miner",
+    "device": {
+      "family": "x86",
+      "arch": "modern"
+    }
+  }
+}

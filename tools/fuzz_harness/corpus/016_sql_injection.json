@@ -1,0 +1,13 @@
+{
+  "name": "sql_injection",
+  "description": "SQL injection attempt",
+  "expected_behavior": "reject",
+  "payload": {
+    "miner_pubkey": "RTC000000000000000000000000000000000000000000000000000000000000",
+    "miner_id": "'; DROP TABLE miners;--",
+    "device": {
+      "family": "x86",
+      "arch": "modern"
+    }
+  }
+}

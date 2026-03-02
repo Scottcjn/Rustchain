@@ -1,0 +1,14 @@
+{
+  "name": "zero_timestamp",
+  "description": "Zero timestamp",
+  "expected_behavior": "accept_or_reject",
+  "payload": {
+    "miner_pubkey": "RTC000000000000000000000000000000000000000000000000000000000000",
+    "miner_id": "test_miner",
+    "device": {
+      "family": "x86",
+      "arch": "modern"
+    },
+    "timestamp": 0
+  }
+}

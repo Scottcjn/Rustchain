@@ -1,0 +1,13 @@
+{
+  "name": "unicode_injection",
+  "description": "Unicode injection",
+  "expected_behavior": "accept_or_strip",
+  "payload": {
+    "miner_pubkey": "RTC\u0000\u0001\u00020000000000000000000000000000000000000000000000000000000",
+    "miner_id": "test_\u4e2d\u6587_miner",
+    "device": {
+      "family": "x86",
+      "arch": "modern"
+    }
+  }
+}

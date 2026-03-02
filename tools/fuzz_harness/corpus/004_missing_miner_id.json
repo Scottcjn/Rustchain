@@ -1,0 +1,12 @@
+{
+  "name": "missing_miner_id",
+  "description": "Missing required miner_id",
+  "expected_behavior": "reject",
+  "payload": {
+    "miner_pubkey": "RTC000000000000000000000000000000000000000000000000000000000000",
+    "device": {
+      "family": "x86",
+      "arch": "modern"
+    }
+  }
+}

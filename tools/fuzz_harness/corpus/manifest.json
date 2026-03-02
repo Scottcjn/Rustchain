@@ -1,0 +1,12 @@
+{
+  "total": 17,
+  "categories": [
+    "type_confusion",
+    "missing_fields",
+    "nested_structures",
+    "oversized_values",
+    "boundary_timestamps",
+    "special_characters",
+    "sql_injection"
+  ]
+}

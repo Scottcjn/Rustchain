@@ -1,0 +1,24 @@
+{
+  "name": "array_in_string",
+  "description": "Array where string expected",
+  "expected_behavior": "reject",
+  "payload": {
+    "miner_pubkey": [
+      "RTC",
+      "RTC",
+      "RTC",
+      "RTC",
+      "RTC",
+      "RTC",
+      "RTC",
+      "RTC",
+      "RTC",
+      "RTC"
+    ],
+    "miner_id": "test_miner",
+    "device": {
+      "family": "x86",
+      "arch": "modern"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "null_bytes",
+  "description": "Null bytes in strings",
+  "expected_behavior": "reject",
+  "payload": {
+    "miner_pubkey": "RTC\u00000000000000000000000000000000000000000000000000000000000",
+    "miner_id": "test_miner",
+    "device": {
+      "family": "x86",
+      "arch": "modern"
+    }
+  }
+}
