@@ -86,6 +86,24 @@ except ImportError:
     def generate_latest(): return b"# Prometheus not available"
     CONTENT_TYPE_LATEST = "text/plain"
 
+# Prometheus Exporter Module (Issue #504)
+# Provides enhanced metrics: block_height, active_miners, epoch_progress, transaction_count
+try:
+    from prometheus_exporter import (
+        init_metrics as init_prometheus_exporter,
+        update_metrics as update_prometheus_metrics,
+        metrics_handler as prometheus_metrics_handler,
+        record_block_submission,
+        record_enrollment,
+        record_withdrawal,
+        record_transaction
+    )
+    PROMETHEUS_EXPORTER_AVAILABLE = True
+    print("[INIT] Prometheus exporter module loaded")
+except ImportError as e:
+    PROMETHEUS_EXPORTER_AVAILABLE = False
+    print(f"[INIT] Prometheus exporter module not found: {e}")
+
 # Phase 1: Hardware Proof Validation (Logging Only)
 try:
     from rip_proof_of_antiquity_hardware import server_side_validation, calculate_entropy_score
@@ -595,6 +613,14 @@ if HAVE_REWARDS:
         print("[REWARDS] Endpoints registered successfully")
     except Exception as e:
         print(f"[REWARDS] Failed to register: {e}")
+
+# Initialize Prometheus Exporter Module (Issue #504)
+if PROMETHEUS_EXPORTER_AVAILABLE:
+    try:
+        init_prometheus_exporter(DB_PATH, APP_VERSION)
+        print(f"[PROMETHEUS] Exporter initialized with DB: {DB_PATH}")
+    except Exception as e:
+        print(f"[PROMETHEUS] Failed to initialize exporter: {e}")
 
 
     # RIP-201: Fleet immune system endpoints
@@ -3679,7 +3705,14 @@ def api_ready():
 
 @app.route('/metrics', methods=['GET'])
 def metrics():
-    """Prometheus metrics endpoint"""
+    """Prometheus metrics endpoint (Issue #504)"""
+    # Use enhanced prometheus exporter if available
+    if PROMETHEUS_EXPORTER_AVAILABLE:
+        try:
+            return prometheus_metrics_handler()
+        except Exception as e:
+            print(f"[METRICS] Exporter error: {e}")
+    # Fallback to basic metrics
     return generate_latest()
 
 
