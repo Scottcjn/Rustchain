@@ -1,0 +1,36 @@
+{
+  "name": "epoch-determinism-fixtures",
+  "description": "Test fixtures for epoch determinism testing",
+  "fixtures": [
+    {
+      "name": "normal_epoch",
+      "description": "Normal epoch with 20 diverse miners",
+      "epoch": 1,
+      "enrollment_count": 20,
+      "config": {
+        "epoch_pot": 1.5,
+        "decay_enabled": true
+      }
+    },
+    {
+      "name": "sparse_epoch",
+      "description": "Sparse epoch with only 1 miner",
+      "epoch": 2,
+      "enrollment_count": 1,
+      "config": {
+        "epoch_pot": 0.5,
+        "decay_enabled": false
+      }
+    },
+    {
+      "name": "edge_case_epoch",
+      "description": "Edge case with boundary conditions",
+      "epoch": 3,
+      "enrollment_count": 3,
+      "config": {
+        "epoch_pot": 0.01,
+        "decay_enabled": true
+      }
+    }
+  ]
+}
