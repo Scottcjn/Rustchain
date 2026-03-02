@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-**RustChain** is a Proof-of-Antiquity blockchain that validates and rewards vintage hardware. Unlike traditional Proof-of-Work, RustChain uses **RIP-200** (RustChain Iterative Protocol), a Proof-of-Attestation consensus where miners prove physical hardware ownership to earn **RTC** tokens.
+**RustChain** is a Proof-of-Antiquity blockchain that validates and rewards vintage hardware. Unlike traditional Proof-of-Work, RustChain uses **RIP-200** (RustChain Iterative Protocol), a Proof-of-Antiquity consensus where miners prove physical hardware ownership to earn **RTC** tokens.
 
 **Core Principle**: 1 CPU = 1 Vote, weighted by hardware antiquity.
 
