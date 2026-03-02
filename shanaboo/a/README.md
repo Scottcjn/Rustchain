@@ -1,10 +1,11 @@
 # Rustchain
-A blockchain implementation in Rust
+🦀 A minimal, educational blockchain implementation in Rust.
 
-## ⭐ Help us reach 5,000 stars!
-We're participating in the [Rustchain 5,000 Stars Campaign](https://github.com/Scottcjn/Rustchain/issues/1).  
-Every star helps us qualify for the Claude Code Open Source program and earns you RTC tokens!
+## 🌟 Help Us Reach 5,000 Stars!
+We’re participating in the **Rustchain 5,000 Stars Campaign** to qualify for the Claude Code Open Source program.  
+Every star brings us closer to unlocking **5,000 RTC ($500)** in community rewards.
 
-### How to participate:
-1. ⭐ **Star this repository**
-2. 🎁 **Claim your RTC** at [rustchain.org/stars](https://rustchain.org/stars.html)
+### How to Contribute
+1. **Star this repository** ⭐  
+2. Visit [rustchain.org/stars](https://rustchain.org/stars.html) to star the other 85 repos in the campaign.  
+3. Claim your RTC rewards by following the instructions at [rustchain-bounties#478](https://github.com/Scottcjn/rustchain-bounties/issues/478).
