@@ -1,0 +1,17 @@
+[Unit]
+Description=RustChain Telegram Wallet Bot
+After=network.target
+
+[Service]
+Type=simple
+User=node
+WorkingDirectory=/home/node/.openclaw/workspace/rustchain-code/tools/telegram_bot
+Environment=PYTHONUNBUFFERED=1
+Environment=TELEGRAM_BOT_TOKEN=your-bot-token-here
+Environment=RUSTCHAIN_API=https://rustchain.org
+ExecStart=/usr/bin/python3 /home/node/.openclaw/workspace/rustchain-code/tools/telegram_bot/telegram_wallet_bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
