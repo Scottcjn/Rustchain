@@ -3,7 +3,7 @@
 RustChain v2 - Integrated Server
 Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
-import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math
+import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math, re
 import ipaddress
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort
@@ -103,6 +103,185 @@ LIGHTCLIENT_DIR = os.path.join(REPO_ROOT, "web", "light-client")
 MUSEUM_DIR = os.path.join(REPO_ROOT, "web", "museum")
 HOF_DIR = os.path.join(REPO_ROOT, "web", "hall-of-fame")
 DASHBOARD_DIR = os.path.join(REPO_ROOT, "tools", "miner_dashboard")
+
+
+def _attest_mapping(value):
+    """Return a dict-like payload section or an empty mapping."""
+    return value if isinstance(value, dict) else {}
+
+
+_ATTEST_MINER_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+
+
+def _attest_text(value):
+    """Accept only non-empty text values from untrusted attestation input."""
+    if isinstance(value, str):
+        value = value.strip()
+        if value:
+            return value
+    return None
+
+
+def _attest_valid_miner(value):
+    """Accept only bounded miner identifiers with a conservative character set."""
+    text = _attest_text(value)
+    if text and _ATTEST_MINER_RE.fullmatch(text):
+        return text
+    return None
+
+
+def _attest_field_error(code, message, status=400):
+    """Build a consistent error payload for malformed attestation inputs."""
+    return jsonify({
+        "ok": False,
+        "error": code.lower(),
+        "message": message,
+        "code": code,
+    }), status
+
+
+def _attest_is_valid_positive_int(value, max_value=4096):
+    """Validate positive integer-like input without silently coercing hostile shapes."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            return False
+    try:
+        coerced = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return 1 <= coerced <= max_value
+
+
+def client_ip_from_request(req) -> str:
+    """Return the left-most forwarded IP when present, otherwise the remote address."""
+    client_ip = req.headers.get("X-Forwarded-For", req.remote_addr)
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+    return client_ip
+
+
+def _attest_positive_int(value, default=1):
+    """Coerce untrusted integer-like values to a safe positive integer."""
+    try:
+        coerced = int(value)
+    except (TypeError, ValueError):
+        return default
+    return coerced if coerced > 0 else default
+
+
+def _attest_string_list(value):
+    """Coerce a list-like field into a list of non-empty strings."""
+    if not isinstance(value, list):
+        return []
+    items = []
+    for item in value:
+        text = _attest_text(item)
+        if text:
+            items.append(text)
+    return items
+
+
+def _validate_attestation_payload_shape(data):
+    """Reject malformed attestation payload shapes before normalization."""
+    for field_name, code in (
+        ("device", "INVALID_DEVICE"),
+        ("signals", "INVALID_SIGNALS"),
+        ("report", "INVALID_REPORT"),
+        ("fingerprint", "INVALID_FINGERPRINT"),
+    ):
+        if field_name in data and data[field_name] is not None and not isinstance(data[field_name], dict):
+            return _attest_field_error(code, f"Field '{field_name}' must be a JSON object")
+
+    for field_name in ("miner", "miner_id"):
+        if field_name in data and data[field_name] is not None and not isinstance(data[field_name], str):
+            return _attest_field_error("INVALID_MINER", f"Field '{field_name}' must be a non-empty string")
+
+    miner = _attest_valid_miner(data.get("miner")) or _attest_valid_miner(data.get("miner_id"))
+    if not miner and not (_attest_text(data.get("miner")) or _attest_text(data.get("miner_id"))):
+        return _attest_field_error(
+            "MISSING_MINER",
+            "Field 'miner' or 'miner_id' must be a non-empty identifier using only letters, numbers, '.', '_', ':' or '-'",
+        )
+    if not miner:
+        return _attest_field_error(
+            "INVALID_MINER",
+            "Field 'miner' or 'miner_id' must use only letters, numbers, '.', '_', ':' or '-' and be at most 128 characters",
+        )
+
+    device = data.get("device")
+    if isinstance(device, dict):
+        if "cores" in device and not _attest_is_valid_positive_int(device.get("cores")):
+            return _attest_field_error("INVALID_DEVICE_CORES", "Field 'device.cores' must be a positive integer between 1 and 4096", status=422)
+        for field_name in ("device_family", "family", "device_arch", "arch", "device_model", "model", "cpu", "serial_number", "serial"):
+            if field_name in device and device[field_name] is not None and not isinstance(device[field_name], str):
+                return _attest_field_error("INVALID_DEVICE", f"Field 'device.{field_name}' must be a string")
+
+    signals = data.get("signals")
+    if isinstance(signals, dict):
+        if "macs" in signals:
+            macs = signals.get("macs")
+            if not isinstance(macs, list) or any(_attest_text(mac) is None for mac in macs):
+                return _attest_field_error("INVALID_SIGNALS_MACS", "Field 'signals.macs' must be a list of non-empty strings")
+        for field_name in ("hostname", "serial"):
+            if field_name in signals and signals[field_name] is not None and not isinstance(signals[field_name], str):
+                return _attest_field_error("INVALID_SIGNALS", f"Field 'signals.{field_name}' must be a string")
+
+    report = data.get("report")
+    if isinstance(report, dict):
+        for field_name in ("nonce", "commitment"):
+            if field_name in report and report[field_name] is not None and not isinstance(report[field_name], str):
+                return _attest_field_error("INVALID_REPORT", f"Field 'report.{field_name}' must be a string")
+
+    fingerprint = data.get("fingerprint")
+    if isinstance(fingerprint, dict) and "checks" in fingerprint and not isinstance(fingerprint.get("checks"), dict):
+        return _attest_field_error("INVALID_FINGERPRINT_CHECKS", "Field 'fingerprint.checks' must be a JSON object")
+
+    return None
+
+
+def _normalize_attestation_device(device):
+    """Shallow-normalize device metadata so malformed JSON shapes fail closed."""
+    raw = _attest_mapping(device)
+    normalized = {"cores": _attest_positive_int(raw.get("cores"), default=1)}
+    for field in (
+        "device_family",
+        "family",
+        "device_arch",
+        "arch",
+        "device_model",
+        "model",
+        "cpu",
+        "serial_number",
+        "serial",
+    ):
+        text = _attest_text(raw.get(field))
+        if text is not None:
+            normalized[field] = text
+    return normalized
+
+
+def _normalize_attestation_signals(signals):
+    """Shallow-normalize signal metadata used by attestation validation."""
+    raw = _attest_mapping(signals)
+    normalized = {"macs": _attest_string_list(raw.get("macs"))}
+    for field in ("hostname", "serial"):
+        text = _attest_text(raw.get(field))
+        if text is not None:
+            normalized[field] = text
+    return normalized
+
+
+def _normalize_attestation_report(report):
+    """Normalize report metadata used by challenge/ticket handling."""
+    raw = _attest_mapping(report)
+    normalized = {}
+    for field in ("nonce", "commitment"):
+        text = _attest_text(raw.get(field))
+        if text is not None:
+            normalized[field] = text
+    return normalized
 
 # Register Hall of Rust blueprint (tables initialized after DB_PATH is set)
 try:
@@ -981,9 +1160,13 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     if not fingerprint:
         # FIX #305: Missing fingerprint data is a validation failure
         return False, "no_fingerprint_data"
+    if not isinstance(fingerprint, dict):
+        return False, "fingerprint_not_dict"
 
     checks = fingerprint.get("checks", {})
-    claimed_device = claimed_device or {}
+    if not isinstance(checks, dict):
+        checks = {}
+    claimed_device = claimed_device if isinstance(claimed_device, dict) else {}
 
     # FIX #305: Reject empty fingerprint payloads (e.g. fingerprint={} or checks={})
     if not checks:
@@ -1793,23 +1976,25 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
 def submit_attestation():
     """Submit hardware attestation with fingerprint validation"""
     data = request.get_json(silent=True)
-
-    # Type guard: reject non-dict JSON payloads (null, array, scalar)
     if not isinstance(data, dict):
-        return jsonify({"ok": False, "error": "Request body must be a JSON object", "code": "INVALID_JSON_OBJECT"}), 400
+        return jsonify({
+            "ok": False,
+            "error": "invalid_json_object",
+            "message": "Expected a JSON object request body",
+            "code": "INVALID_JSON_OBJECT"
+        }), 400
+    payload_error = _validate_attestation_payload_shape(data)
+    if payload_error is not None:
+        return payload_error
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = client_ip_from_request(request)
 
-    # Extract attestation data (type guards for fuzz safety)
-    miner = data.get('miner') or data.get('miner_id')
-    if miner is not None and not isinstance(miner, str):
-        miner = str(miner)
-    report = data.get('report', {}) if isinstance(data.get('report'), dict) else {}
-    nonce = report.get('nonce') or data.get('nonce')
-    device = data.get('device', {}) if isinstance(data.get('device'), dict) else {}
+    # Extract attestation data
+    miner = _attest_valid_miner(data.get('miner')) or _attest_valid_miner(data.get('miner_id'))
+    report = _normalize_attestation_report(data.get('report'))
+    nonce = report.get('nonce') or _attest_text(data.get('nonce'))
+    device = _normalize_attestation_device(data.get('device'))
 
     # IP rate limiting (Security Hardening 2026-02-02)
     ip_ok, ip_reason = check_ip_rate_limit(client_ip, miner)
@@ -1821,12 +2006,8 @@ def submit_attestation():
             "message": "Too many unique miners from this IP address",
             "code": "IP_RATE_LIMIT"
         }), 429
-    signals = data.get('signals', {}) if isinstance(data.get('signals'), dict) else {}
-    fingerprint = data.get('fingerprint')  # FIX #305: None default to detect missing vs empty
-
-    # Basic validation
-    if not miner:
-        miner = f"anon_{secrets.token_hex(8)}"
+    signals = _normalize_attestation_signals(data.get('signals'))
+    fingerprint = _attest_mapping(data.get('fingerprint'))  # NEW: Extract fingerprint
 
     # SECURITY: Check blocked wallets
     with sqlite3.connect(DB_PATH) as conn:
@@ -1838,9 +2019,9 @@ def submit_attestation():
 
     # SECURITY: Hardware binding check v2.0 (serial + entropy validation)
     serial = device.get('serial_number') or device.get('serial') or signals.get('serial')
-    cores = device.get('cores', 1)
-    arch = device.get('arch') or device.get('device_arch', 'modern')
-    macs = signals.get('macs', [])
+    cores = _attest_positive_int(device.get('cores'), default=1)
+    arch = _attest_text(device.get('arch')) or _attest_text(device.get('device_arch')) or 'modern'
+    macs = _attest_string_list(signals.get('macs'))
     
     if HW_BINDING_V2 and serial:
         hw_ok, hw_msg, hw_details = bind_hardware_v2(
@@ -1873,7 +2054,6 @@ def submit_attestation():
             }), 409
 
     # RIP-0147a: Check OUI gate
-    macs = signals.get('macs', [])
     if macs:
         oui_ok, oui_info = _check_oui_gate(macs)
         if not oui_ok:
