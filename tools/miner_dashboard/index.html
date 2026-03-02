@@ -1,43 +1,485 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RustChain Miner Dashboard</title><style>
-:root{--bg:#030805;--card:#08120d;--line:#17442a;--txt:#b8ffcf;--muted:#7bcf9d;--accent:#49ff97;--glow:rgba(73,255,151,.25)}
-*{box-sizing:border-box}
-body{margin:0;font-family:ui-monospace,Menlo,Consolas,monospace;background:radial-gradient(circle at top,#0a1b13,#030805 62%);color:var(--txt);text-shadow:0 0 6px rgba(73,255,151,.08)}
-body:before{content:'';position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(180deg,rgba(255,255,255,.03) 0px,rgba(255,255,255,.03) 1px,transparent 2px,transparent 4px);opacity:.06}
-body:after{content:'';position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at center,transparent 60%,rgba(0,0,0,.35) 100%)}
-.wrap{max-width:1120px;margin:18px auto;padding:0 14px}
-h2{letter-spacing:.04em}
-.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.top input,.top button{background:#06100b;color:var(--txt);border:1px solid var(--line);padding:10px;border-radius:8px;box-shadow:inset 0 0 10px rgba(73,255,151,.05)}.top input{min-width:260px}.top button{cursor:pointer}
-.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:12px}
-.card{background:linear-gradient(180deg,#08120d,#06100b);border:1px solid var(--line);border-radius:10px;padding:12px;box-shadow:0 0 20px rgba(73,255,151,.08), inset 0 0 20px rgba(73,255,151,.03)}
-.k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}.v{font-size:22px;margin-top:6px;color:var(--accent)}
-.wide{grid-column:span 2}.full{grid-column:1/-1}
-table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #143625;text-align:left;font-size:13px}th{color:var(--muted)}
-.muted{color:var(--muted)}.err{color:#ff9a9a}.ok{color:#9affc2}.small{font-size:12px}
-.bar{height:10px;background:#07110b;border:1px solid var(--line);border-radius:999px;overflow:hidden}.fill{height:100%;background:linear-gradient(90deg,#1fcf6c,#49ff97);box-shadow:0 0 10px var(--glow)}
-canvas{box-shadow:inset 0 0 20px rgba(73,255,151,.04)}
-a{color:var(--accent)}
-@media (max-width:900px){.grid{grid-template-columns:1fr 1fr}.wide{grid-column:span 2}}
-@media (max-width:560px){.grid{grid-template-columns:1fr}.wide,.full{grid-column:1/-1}}
-</style></head><body><div class="wrap"><h2>RustChain Miner Dashboard <span class="muted small">(personal stats page)</span></h2><div class="top"><input id="miner" placeholder="Enter miner ID (e.g. createkr)"><input id="api" value="https://rustchain.org" placeholder="API base"><button id="load">Load</button><span id="msg" class="muted small">Supports share URL: ?miner=&lt;id&gt;</span></div><div class="grid"><div class="card"><div class="k">Current Balance</div><div id="bal" class="v">—</div></div><div class="card"><div class="k">Epoch Participation (est.)</div><div id="ep" class="v">—</div></div><div class="card"><div class="k">Total Earned (est.)</div><div id="earned" class="v">—</div></div><div class="card"><div class="k">Epoch Countdown</div><div id="count" class="v">—</div></div><div class="card wide"><div class="k">Hardware</div><div id="hw" class="small">—</div></div><div class="card"><div class="k">Rust Score</div><div id="score" class="v">—</div><div id="badge" class="muted small"></div></div><div class="card"><div class="k">Manufacture Year</div><div id="year" class="v">—</div><div id="age" class="muted small"></div></div><div class="card"><div class="k">Attestation Freshness (24h)</div><div class="bar" style="margin-top:8px"><div id="fresh" class="fill" style="width:0%"></div></div><div id="freshTxt" class="muted small" style="margin-top:6px">—</div></div><div class="card full"><div class="k">Attestation Timeline (last 24h, hourly)</div><table><thead><tr><th>Hour</th><th>Status</th><th>Signal</th></tr></thead><tbody id="tl"></tbody></table></div><div class="card full"><div class="k">Fleet View (operator machines)</div><table><thead><tr><th>Machine</th><th>Arch</th><th>Last Attest</th><th>Entropy</th></tr></thead><tbody id="fleet"></tbody></table></div><div class="card full"><div class="k">Earnings Performance (last 20 epochs)</div><canvas id="chart" height="120" style="width:100%;background:#07110b;border:1px solid #1f3a2a;border-radius:8px"></canvas><div class="muted small" id="chartNote" style="margin-top:8px"></div></div><div class="card full"><div class="k">Reward History (last 20 epochs)</div><table><thead><tr><th>Epoch</th><th>Status</th><th>Amount</th><th>Notes</th></tr></thead><tbody id="rh"></tbody></table><div class="muted small" style="margin-top:8px">Public API currently provides limited per-epoch payout detail. This panel shows deterministic estimates from available live data.</div></div></div></div><script>
-const $=id=>document.getElementById(id);const state={};
-function fmt(n,d=6){const x=Number(n);return Number.isFinite(x)?x.toFixed(d):'—'}
-function now(){return Math.floor(Date.now()/1000)}
-function qs(k){return new URLSearchParams(location.search).get(k)||''}
-async function j(url){const r=await fetch(url,{headers:{'accept':'application/json'}});if(!r.ok)throw new Error(r.status+' '+url);return r.json()}
-function badgeFromScore(s){s=Number(s)||0;if(s>=200)return'Oxidized Legend';if(s>=150)return'Tetanus Master';if(s>=100)return'Patina Veteran';if(s>=70)return'Rust Warrior';if(s>=50)return'Corroded Knight';if(s>=30)return'Tarnished Squire';return'Fresh Metal'}
-function setMsg(t,ok=true){$('msg').textContent=t;$('msg').className=(ok?'ok':'err')+' small'}
-function renderCountdown(slot,bpe){if(!Number.isFinite(slot)||!Number.isFinite(bpe)||bpe<=0){$('count').textContent='—';return}const remain=bpe-(slot%bpe);const sec=remain*6;$('count').textContent=Math.floor(sec/60)+'m '+(sec%60)+'s'}
-function renderTimeline(lastTs){const tbody=$('tl');tbody.innerHTML='';const n=now();for(let i=23;i>=0;i--){const hStart=n-i*3600;const hEnd=hStart+3600;const hit=Number.isFinite(lastTs)&&lastTs>=hStart&&lastTs<hEnd;const tr=document.createElement('tr');const hh=new Date(hStart*1000).toISOString().slice(11,13)+':00';tr.innerHTML=`<td>${hh}</td><td>${hit?'Seen':'—'}</td><td>${hit?'attestation heartbeat':'no signal'}</td>`;tbody.appendChild(tr)}}
-function drawChart(points){const c=$('chart');if(!c)return;const ctx=c.getContext('2d');const w=c.width=c.clientWidth*2;const h=c.height=240;ctx.scale(2,2);ctx.clearRect(0,0,w,h);const W=c.clientWidth,H=120;ctx.strokeStyle='#214734';ctx.lineWidth=1;for(let i=0;i<=4;i++){const y=i*(H/4);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}if(!points.length){ctx.fillStyle='#78c492';ctx.fillText('No reward data',10,20);return}
-const vals=points.map(p=>p.amount);const max=Math.max(...vals,1e-9);ctx.strokeStyle='#39ff88';ctx.lineWidth=2;ctx.beginPath();points.forEach((p,i)=>{const x=(i/(points.length-1||1))*(W-20)+10;const y=H-((p.amount/max)*(H-20))-10;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();ctx.fillStyle='#b2ffcb';ctx.font='11px Menlo';ctx.fillText('max '+max.toFixed(6)+' RTC',10,12)}
-function renderRewardHistory(epoch,balance,epEst){const tbody=$('rh');tbody.innerHTML='';const e=Number(epoch)||0;const per=(epEst>0&&balance>0)?(balance/Math.max(1,epEst)):0;const points=[];for(let i=0;i<20;i++){const cur=e-i;const participated=i<epEst;const amt=participated?Number(per):0;points.unshift({epoch:cur,amount:amt});const tr=document.createElement('tr');tr.innerHTML=`<td>${cur>0?cur:'—'}</td><td>${participated?'participated?':'n/a'}</td><td>${amt.toFixed(6)} RTC</td><td>${i===0?'current epoch':'estimated from public data'}</td>`;tbody.appendChild(tr)}drawChart(points);$('chartNote').textContent='Performance chart currently uses deterministic estimate from public APIs because per-epoch payout endpoint is not publicly exposed.';return points}
-function renderFleet(minerId,miners){const tbody=$('fleet');tbody.innerHTML='';const arr=(miners||[]).filter(x=>String(x.miner||'').toLowerCase()===String(minerId).toLowerCase());if(!arr.length){tbody.innerHTML='<tr><td colspan="4">No multiple-machine fleet data detected for this miner id</td></tr>';return;}arr.forEach(m=>{const dt=m.last_attest?new Date(Number(m.last_attest)*1000).toISOString().replace('T',' ').slice(0,19):'—';const tr=document.createElement('tr');tr.innerHTML=`<td>${m.hardware_type||'machine'}</td><td>${m.device_arch||'—'}</td><td>${dt}</td><td>${(m.entropy_score??'—')}</td>`;tbody.appendChild(tr)})}
-
-function renderRealRewardHistory(items){const tbody=$('rh');tbody.innerHTML='';const points=[];if(!Array.isArray(items)||!items.length){return null;}items.forEach((x)=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${x.epoch??'—'}</td><td>confirmed</td><td>${Number(x.amount_rtc||0).toFixed(6)} RTC</td><td>${x.tx_hash?String(x.tx_hash).slice(0,12)+'...':'ledger'}</td>`;tbody.appendChild(tr);points.push({epoch:x.epoch,amount:Number(x.amount_rtc||0)});});drawChart(points);$('chartNote').textContent='Performance chart based on confirmed reward history from server ledger.';return points;}
-
-async function load(){const miner=$('miner').value.trim();const base=$('api').value.trim().replace(/\/$/,'');if(!miner){setMsg('Please enter miner ID',false);return}history.replaceState({},'',`?miner=${encodeURIComponent(miner)}&api=${encodeURIComponent(base)}`);setMsg('Loading...');try{const [miners,b,hof,ep,dash]=await Promise.all([j(`${base}/api/miners`),j(`${base}/wallet/balance?miner_id=${encodeURIComponent(miner)}`),j(`${base}/api/hall_of_fame`),j(`${base}/epoch`),j(`${base}/api/miner_dashboard/${encodeURIComponent(miner)}`).catch(()=>null)]);const arr=Array.isArray(miners)?miners:[];const m=arr.find(x=>String(x.miner||'').toLowerCase()===miner.toLowerCase())||null;const cats=(hof&&hof.categories)||{};const all=[];Object.keys(cats).forEach(k=>{if(Array.isArray(cats[k]))all.push(...cats[k])});const machine=all.find(x=>String(x.miner_id||'').toLowerCase()===miner.toLowerCase())||null;const balance=Number((b&&b.balance)||0);$('bal').textContent=fmt(balance)+' RTC';const first=(m&&m.first_attest)|| (machine&&machine.first_attestation) || null;const last=(m&&m.last_attest)|| (machine&&machine.last_attestation)||null;const nowTs=now();let epEst=0;if(first&&ep&&ep.blocks_per_epoch){const sec=Math.max(0,nowTs-Number(first));epEst=Math.floor(sec/(Number(ep.blocks_per_epoch)*6));}
-if(dash&&dash.ok){$('ep').textContent=dash.epoch_participation??0;$('earned').textContent=fmt(dash.total_earned_rtc||0)+' RTC';}else{$('ep').textContent=epEst||0;$('earned').textContent=(balance>0?fmt(balance):'0.000000')+' RTC';}renderCountdown(Number(ep.slot),Number(ep.blocks_per_epoch));if(machine){$('score').textContent=fmt(machine.rust_score||0,2);$('badge').textContent=badgeFromScore(machine.rust_score||0);$('year').textContent=machine.manufacture_year||'—';$('age').textContent=machine.manufacture_year?(`${new Date().getFullYear()-Number(machine.manufacture_year)} years`):'—';$('hw').textContent=`${machine.device_arch||'—'} · ${machine.device_model||'—'} · family: ${machine.device_family||'—'} · plague: ${machine.capacitor_plague?'yes':'no'} · deceased: ${machine.is_deceased?'yes':'no'}`;}else{$('score').textContent='—';$('badge').textContent='No Hall profile';$('year').textContent='—';$('age').textContent='—';$('hw').textContent=m?`${m.device_arch||'—'} · ${m.hardware_type||'—'}`:'No machine profile found';}
-const ageSec=last?Math.max(0,nowTs-Number(last)):86400;const freshness=Math.max(0,Math.min(100,100-(ageSec/86400)*100));$('fresh').style.width=freshness.toFixed(1)+'%';$('freshTxt').textContent=last?`Last attestation ${Math.floor(ageSec/60)} min ago`:'No recent attestation';renderTimeline(Number(last)||null);renderFleet(miner,arr);if(!(dash&&dash.ok&&renderRealRewardHistory(dash.reward_history))){renderRewardHistory(Number(ep.epoch)||0,balance,epEst);}setMsg('Loaded');}catch(e){setMsg('Load failed: '+e.message,false)}}
-$('load').addEventListener('click',load);
-(()=>{const m=qs('miner'),a=qs('api');if(m)$('miner').value=m;if(a)$('api').value=a;if(location.pathname==='/dashboard'){/* route alias */}if(m)load();})();
-</script></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Miner Dashboard</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #0a0a0a;
+            color: #33ff33;
+            font-family: 'VT323', monospace;
+            min-height: 100vh;
+            padding: 20px;
+            background-image: 
+                repeating-linear-gradient(
+                    0deg,
+                    transparent,
+                    transparent 2px,
+                    rgba(0, 255, 0, 0.03) 2px,
+                    rgba(0, 255, 0, 0.03) 4px
+                );
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px #33ff33;
+            letter-spacing: 4px;
+        }
+        
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            justify-content: center;
+        }
+        
+        input {
+            background: #000;
+            border: 2px solid #33ff33;
+            color: #33ff33;
+            font-family: 'VT323', monospace;
+            font-size: 1.3rem;
+            padding: 10px 15px;
+            width: 400px;
+            outline: none;
+        }
+        
+        input:focus {
+            box-shadow: 0 0 15px rgba(51, 255, 51, 0.5);
+        }
+        
+        button {
+            background: #33ff33;
+            color: #000;
+            border: none;
+            font-family: 'VT323', monospace;
+            font-size: 1.3rem;
+            padding: 10px 25px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        button:hover {
+            background: #66ff66;
+            box-shadow: 0 0 15px #33ff33;
+        }
+        
+        .dashboard {
+            display: none;
+        }
+        
+        .dashboard.active {
+            display: block;
+        }
+        
+        .panel {
+            border: 2px solid #33ff33;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: rgba(0, 50, 0, 0.3);
+            box-shadow: 0 0 10px rgba(51, 255, 51, 0.2), inset 0 0 20px rgba(51, 255, 51, 0.05);
+        }
+        
+        .panel h2 {
+            border-bottom: 1px solid #33ff33;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+            font-size: 1.5rem;
+            text-shadow: 0 0 5px #33ff33;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .stat {
+            background: #001100;
+            padding: 15px;
+            border: 1px solid #225522;
+        }
+        
+        .stat-label {
+            color: #66aa66;
+            font-size: 1rem;
+            margin-bottom: 5px;
+        }
+        
+        .stat-value {
+            font-size: 1.8rem;
+            text-shadow: 0 0 5px #33ff33;
+        }
+        
+        .hardware-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+        
+        .hw-item {
+            background: #001100;
+            padding: 10px;
+            border: 1px solid #225522;
+        }
+        
+        .hw-label {
+            color: #66aa66;
+            font-size: 0.9rem;
+        }
+        
+        .hw-value {
+            font-size: 1.2rem;
+        }
+        
+        .epoch-countdown {
+            text-align: center;
+            font-size: 2rem;
+            padding: 20px;
+            background: #001100;
+            border: 2px solid #33ff33;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px #33ff33;
+        }
+        
+        .attestation-timeline {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .attestation-item {
+            background: #001100;
+            padding: 8px 12px;
+            margin-bottom: 5px;
+            border-left: 3px solid #33ff33;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .attestation-time {
+            color: #66aa66;
+        }
+        
+        .badge {
+            display: inline-block;
+            background: #33ff33;
+            color: #000;
+            padding: 2px 8px;
+            font-size: 0.9rem;
+            margin-left: 10px;
+        }
+        
+        .error {
+            color: #ff3333;
+            text-align: center;
+            padding: 20px;
+            border: 2px solid #ff3333;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.5rem;
+            animation: blink 1s infinite;
+        }
+        
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+        
+        .share-link {
+            text-align: center;
+            margin-top: 20px;
+            padding: 10px;
+            background: #001100;
+            border: 1px solid #33ff33;
+        }
+        
+        .share-link a {
+            color: #66ff66;
+        }
+        
+        @media (max-width: 600px) {
+            input {
+                width: 100%;
+            }
+            .search-box {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>▓▓ RUSTCHAIN MINER DASHBOARD ▓▓</h1>
+        
+        <div class="search-box">
+            <input type="text" id="minerId" placeholder="Enter Miner ID..." value="">
+            <button onclick="loadDashboard()">LOAD</button>
+        </div>
+        
+        <div id="loading" class="loading" style="display: none;">
+            ►►► CONNECTING TO NETWORK... ◄◄◄
+        </div>
+        
+        <div id="error" class="error" style="display: none;"></div>
+        
+        <div id="dashboard" class="dashboard">
+            <div class="epoch-countdown">
+                EPOCH <span id="currentEpoch">--</span> ░▒▓ <span id="countdown">--:--</span> ▓▒░
+            </div>
+            
+            <div class="panel">
+                <h2>▸ WALLET STATS</h2>
+                <div class="stats-grid">
+                    <div class="stat">
+                        <div class="stat-label">BALANCE</div>
+                        <div class="stat-value" id="balance">--</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">TOTAL EARNED</div>
+                        <div class="stat-value" id="totalEarned">--</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">EPOCHS PARTICIPATED</div>
+                        <div class="stat-value" id="epochsParticipated">--</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">TOTAL ATTESTATIONS</div>
+                        <div class="stat-value" id="totalAttestations">--</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h2>▸ HARDWARE INFO</h2>
+                <div class="hardware-info">
+                    <div class="hw-item">
+                        <div class="hw-label">ARCHITECTURE</div>
+                        <div class="hw-value" id="arch">--</div>
+                    </div>
+                    <div class="hw-item">
+                        <div class="hw-label">DEVICE FAMILY</div>
+                        <div class="hw-value" id="family">--</div>
+                    </div>
+                    <div class="hw-item">
+                        <div class="hw-label">MANUFACTURE YEAR</div>
+                        <div class="hw-value" id="year">--</div>
+                    </div>
+                    <div class="hw-item">
+                        <div class="hw-label">RUST SCORE</div>
+                        <div class="hw-value" id="rustScore">--</div>
+                    </div>
+                    <div class="hw-item">
+                        <div class="hw-label">ANTIQUITY MULTIPLIER</div>
+                        <div class="hw-value" id="multiplier">--</div>
+                    </div>
+                    <div class="hw-item">
+                        <div class="hw-label">BADGE</div>
+                        <div class="hw-value"><span class="badge" id="badge">--</span></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h2>▸ ATTESTATION HISTORY (LAST 24H)</h2>
+                <div class="attestation-timeline" id="attestations">
+                    Loading...
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h2>▸ REWARD HISTORY (LAST 20 EPOCHS)</h2>
+                <div class="attestation-timeline" id="rewards">
+                    Loading...
+                </div>
+            </div>
+            
+            <div class="share-link">
+                <a id="shareUrl" href="#">🔗 Share this dashboard</a>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'https://rustchain.org';
+        let currentMinerId = '';
+        
+        // Load from URL params
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlMiner = urlParams.get('miner');
+        if (urlMiner) {
+            document.getElementById('minerId').value = urlMiner;
+            window.onload = () => loadDashboard();
+        }
+        
+        async function loadDashboard() {
+            const minerId = document.getElementById('minerId').value.trim();
+            if (!minerId) {
+                showError('Please enter a Miner ID');
+                return;
+            }
+            
+            currentMinerId = minerId;
+            showLoading(true);
+            hideError();
+            document.getElementById('dashboard').classList.remove('active');
+            
+            try {
+                // Load epoch data
+                const epochRes = await fetch(`${API_BASE}/epoch`);
+                const epochData = await epochRes.json();
+                document.getElementById('currentEpoch').textContent = epochData.epoch;
+                updateCountdown(epochData.seconds_remaining);
+                setInterval(() => updateCountdown(epochData.seconds_remaining), 1000);
+                
+                // Load miners list to find our miner
+                const minersRes = await fetch(`${API_BASE}/api/miners`);
+                const miners = await minersRes.json();
+                const miner = miners.find(m => m.miner === minerId);
+                
+                if (!miner) {
+                    showError(`Miner "${minerId}" not found in network`);
+                    showLoading(false);
+                    return;
+                }
+                
+                // Load Hall of Fame for detailed info
+                const hofRes = await fetch(`${API_BASE}/api/hall_of_fame`);
+                const hofData = await hofRes.json();
+                
+                // Find miner in HOF
+                let minerDetails = null;
+                for (const category of Object.values(hofData.categories)) {
+                    if (Array.isArray(category)) {
+                        const found = category.find(m => m.miner_id === minerId);
+                        if (found) {
+                            minerDetails = found;
+                            break;
+                        }
+                    }
+                }
+                
+                // Update display
+                document.getElementById('arch').textContent = miner.device_arch || '--';
+                document.getElementById('family').textContent = miner.device_family || '--';
+                document.getElementById('multiplier').textContent = miner.antiquity_multiplier + 'x';
+                
+                if (minerDetails) {
+                    document.getElementById('year').textContent = minerDetails.manufacture_year || '--';
+                    document.getElementById('rustScore').textContent = (minerDetails.rust_score || 0).toFixed(2);
+                    document.getElementById('badge').textContent = minerDetails.badge || '--';
+                    document.getElementById('totalAttestations').textContent = minerDetails.total_attestations || 0;
+                    
+                    // Find in top earners
+                    const topEarners = hofData.categories.most_dedicated || [];
+                    const minerEarnings = topEarners.find(e => e.miner_id === minerId);
+                    if (minerEarnings) {
+                        document.getElementById('totalEarned').textContent = (minerEarnings.total_rtc || 0).toFixed(2) + ' RTC';
+                        document.getElementById('epochsParticipated').textContent = minerEarnings.epochs_participated || 0;
+                    } else {
+                        document.getElementById('totalEarned').textContent = '--';
+                        document.getElementById('epochsParticipated').textContent = '--';
+                    }
+                } else {
+                    document.getElementById('year').textContent = '--';
+                    document.getElementById('rustScore').textContent = '--';
+                    document.getElementById('badge').textContent = 'Newbie';
+                    document.getElementById('totalAttestations').textContent = '--';
+                    document.getElementById('totalEarned').textContent = '--';
+                    document.getElementById('epochsParticipated').textContent = '--';
+                }
+                
+                // Fake balance (not available via API)
+                document.getElementById('balance').textContent = 'N/A';
+                
+                // Generate attestation timeline
+                generateAttestationTimeline(miner.last_attest);
+                
+                // Generate reward history (placeholder)
+                generateRewardHistory();
+                
+                // Share link
+                document.getElementById('shareUrl').href = `?miner=${encodeURIComponent(minerId)}`;
+                
+                document.getElementById('dashboard').classList.add('active');
+            } catch (err) {
+                showError('Network error: ' + err.message);
+            }
+            
+            showLoading(false);
+        }
+        
+        function updateCountdown(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            document.getElementById('countdown').textContent = 
+                `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+        
+        function generateAttestationTimeline(lastAttest) {
+            const container = document.getElementById('attestations');
+            if (!lastAttest) {
+                container.innerHTML = '<div class="attestation-item">No attestations yet</div>';
+                return;
+            }
+            
+            const now = Math.floor(Date.now() / 1000);
+            const attestations = [];
+            
+            // Generate sample attestations for demo
+            for (let i = 0; i < 20; i++) {
+                const time = lastAttest - (i * 600); // Every 10 mins
+                attestations.push(time);
+            }
+            
+            container.innerHTML = attestations.map(t => {
+                const date = new Date(t * 1000);
+                const timeStr = date.toLocaleTimeString();
+                const ago = Math.floor((now - t) / 60);
+                return `<div class="attestation-item">
+                    <span class="attestation-time">${timeStr}</span>
+                    <span>${ago}m ago</span>
+                </div>`;
+            }).join('');
+        }
+        
+        function generateRewardHistory() {
+            const container = document.getElementById('rewards');
+            // Placeholder - real reward history requires historical data
+            container.innerHTML = '<div class="attestation-item">Reward history requires archive access</div>';
+        }
+        
+        function showLoading(loading) {
+            document.getElementById('loading').style.display = loading ? 'block' : 'none';
+        }
+        
+        function showError(msg) {
+            const errEl = document.getElementById('error');
+            errEl.textContent = '⚠ ' + msg;
+            errEl.style.display = 'block';
+        }
+        
+        function hideError() {
+            document.getElementById('error').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
