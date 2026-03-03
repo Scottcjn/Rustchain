@@ -1,0 +1,76 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "RustChain Node Monitoring",
+    "tags": ["rustchain", "prometheus"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Node Status",
+        "type": "stat",
+        "targets": [{"expr": "rustchain_node_info"}],
+        "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4}
+      },
+      {
+        "id": 2,
+        "title": "Active Miners",
+        "type": "stat",
+        "targets": [{"expr": "rustchain_active_miners_total"}],
+        "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4}
+      },
+      {
+        "id": 3,
+        "title": "Current Epoch",
+        "type": "stat",
+        "targets": [{"expr": "rustchain_current_epoch"}],
+        "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4}
+      },
+      {
+        "id": 4,
+        "title": "Epoch Progress",
+        "type": "gauge",
+        "targets": [{"expr": "rustchain_epoch_slot_progress"}],
+        "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4}
+      },
+      {
+        "id": 5,
+        "title": "Hall of Fame - Total Machines",
+        "type": "stat",
+        "targets": [{"expr": "rustchain_total_machines"}],
+        "gridPos": {"x": 0, "y": 4, "w": 6, "h": 4}
+      },
+      {
+        "id": 6,
+        "title": "Total Attestations",
+        "type": "stat",
+        "targets": [{"expr": "rustchain_total_attestations"}],
+        "gridPos": {"x": 6, "y": 4, "w": 6, "h": 4}
+      },
+      {
+        "id": 7,
+        "title": "Highest Rust Score",
+        "type": "stat",
+        "targets": [{"expr": "rustchain_highest_rust_score"}],
+        "gridPos": {"x": 12, "y": 4, "w": 6, "h": 4}
+      },
+      {
+        "id": 8,
+        "title": "Fee Pool (RTC)",
+        "type": "stat",
+        "targets": [{"expr": "rustchain_total_fees_collected_rtc"}],
+        "gridPos": {"x": 18, "y": 4, "w": 6, "h": 4}
+      },
+      {
+        "id": 9,
+        "title": "Miner Balances (Top 10)",
+        "type": "table",
+        "targets": [{"expr": "rustchain_balance_rtc"}],
+        "gridPos": {"x": 0, "y": 8, "w": 24, "h": 8}
+      }
+    ],
+    "refresh": "30s",
+    "schemaVersion": 38,
+    "version": 1
+  }
+}

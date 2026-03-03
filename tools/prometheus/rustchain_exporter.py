@@ -1,198 +1,134 @@
 #!/usr/bin/env python3
 """
 RustChain Prometheus Metrics Exporter
-
-Scrapes RustChain node API and exposes Prometheus-compatible metrics.
-Run with: python rustchain_exporter.py
+Exposes RustChain node metrics in Prometheus format for Grafana monitoring.
 """
 
 import os
 import time
-import logging
 import requests
-from prometheus_client import start_http_server, Gauge, Info, Counter, CollectorRegistry, generate_latest
+from prometheus_client import start_http_server, Gauge, Info, Counter, generate_latest, CONTENT_TYPE_LATEST
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
 
-# Configuration from environment
+# Configuration
 NODE_URL = os.environ.get('RUSTCHAIN_NODE_URL', 'https://rustchain.org')
 EXPORTER_PORT = int(os.environ.get('EXPORTER_PORT', 9100))
-SCRAPE_INTERVAL = int(os.environ.get('SCRAPE_INTERVAL', 60))
+SCRAPE_INTERVAL = 60
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# Registry for metrics
-registry = CollectorRegistry()
-
-# Node health metrics
-node_up = Gauge('rustchain_node_up', 'Node health status (1=up, 0=down)', ['version'], registry=registry)
-node_uptime = Gauge('rustchain_node_uptime_seconds', 'Node uptime in seconds', registry=registry)
-
-# Miner metrics
-active_miners = Gauge('rustchain_active_miners_total', 'Total number of active miners', registry=registry)
-enrolled_miners = Gauge('rustchain_enrolled_miners_total', 'Total number of enrolled miners', registry=registry)
-miner_last_attest = Gauge('rustchain_miner_last_attest_timestamp', 'Last attestation timestamp per miner', ['miner', 'arch'], registry=registry)
-
-# Epoch metrics
-current_epoch = Gauge('rustchain_current_epoch', 'Current epoch number', registry=registry)
-current_slot = Gauge('rustchain_current_slot', 'Current slot number', registry=registry)
-epoch_slot_progress = Gauge('rustchain_epoch_slot_progress', 'Epoch slot progress (0.0-1.0)', registry=registry)
-epoch_seconds_remaining = Gauge('rustchain_epoch_seconds_remaining', 'Seconds remaining in current epoch', registry=registry)
-
-# Balance metrics
-balance_rtc = Gauge('rustchain_balance_rtc', 'Miner balance in RTC', ['miner'], registry=registry)
+# Metrics definitions
+node_info = Info('rustchain_node', 'Node information')
+active_miners = Gauge('rustchain_active_miners_total', 'Total active miners')
+enrolled_miners = Gauge('rustchain_enrolled_miners_total', 'Total enrolled miners')
+current_epoch = Gauge('rustchain_current_epoch', 'Current epoch number')
+current_slot = Gauge('rustchain_current_slot', 'Current slot number')
+epoch_slot_progress = Gauge('rustchain_epoch_slot_progress', 'Epoch progress (0-1)')
+epoch_seconds_remaining = Gauge('rustchain_epoch_seconds_remaining', 'Seconds until epoch ends')
 
 # Hall of Fame metrics
-total_machines = Gauge('rustchain_total_machines', 'Total machines in Hall of Fame', registry=registry)
-total_attestations = Gauge('rustchain_total_attestations', 'Total attestations in Hall of Fame', registry=registry)
-oldest_machine_year = Gauge('rustchain_oldest_machine_year', 'Oldest machine year in Hall of Fame', registry=registry)
-highest_rust_score = Gauge('rustchain_highest_rust_score', 'Highest Rust score in Hall of Fame', registry=registry)
+total_machines = Gauge('rustchain_total_machines', 'Total machines in Hall of Fame')
+total_attestations = Gauge('rustchain_total_attestations', 'Total attestations')
+oldest_machine_year = Gauge('rustchain_oldest_machine_year', 'Year of oldest machine')
+highest_rust_score = Gauge('rustchain_highest_rust_score', 'Highest Rust score')
 
-# Fee metrics (RIP-301)
-total_fees_collected = Gauge('rustchain_total_fees_collected_rtc', 'Total fees collected in RTC', registry=registry)
-fee_events_total = Counter('rustchain_fee_events_total', 'Total fee events', registry=registry)
+# Fee pool metrics
+total_fees_collected = Gauge('rustchain_total_fees_collected_rtc', 'Total fees collected in RTC')
+fee_events_total = Gauge('rustchain_fee_events_total', 'Total fee events')
 
+# Balance tracking (top miners)
+miner_balance = Gauge('rustchain_balance_rtc', 'Miner balance in RTC', ['miner'])
 
-def fetch_json(url, timeout=10):
-    """Fetch JSON from URL with error handling."""
+# Last update timestamp
+last_update = Gauge('rustchain_exporter_last_update_seconds', 'Last successful update timestamp')
+update_errors = Counter('rustchain_exporter_errors_total', 'Total update errors')
+
+def fetch_node_metrics():
+    """Fetch all metrics from RustChain node API."""
     try:
-        response = requests.get(url, timeout=timeout, verify=False)  # verify=False for self-signed certs
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to fetch {url}: {e}")
-        return None
-
-
-def scrape_health():
-    """Scrape /health endpoint."""
-    data = fetch_json(f"{NODE_URL}/health")
-    if data:
-        version = data.get('version', 'unknown')
-        node_up.labels(version=version).set(1)
-        uptime = data.get('uptime_seconds', 0)
-        node_uptime.set(uptime)
-        logger.info(f"Node health: version={version}, uptime={uptime}s")
-    else:
-        node_up.labels(version='unknown').set(0)
-        logger.warning("Node health check failed")
-
-
-def scrape_epoch():
-    """Scrape /epoch endpoint."""
-    data = fetch_json(f"{NODE_URL}/epoch")
-    if data:
-        current_epoch.set(data.get('epoch', 0))
-        current_slot.set(data.get('slot', 0))
-        epoch_slot_progress.set(data.get('slot_progress', 0.0))
-        epoch_seconds_remaining.set(data.get('seconds_remaining', 0))
+        # Node health
+        health = requests.get(f'{NODE_URL}/health', timeout=10).json()
+        node_info.info({
+            'version': health.get('version', 'unknown'),
+            'node_url': NODE_URL
+        })
         
-        # Update enrolled miners count
-        enrolled = data.get('enrolled_miners', [])
-        enrolled_miners.set(len(enrolled))
+        # Epoch data
+        epoch = requests.get(f'{NODE_URL}/epoch', timeout=10).json()
+        current_epoch.set(epoch.get('epoch', 0))
+        current_slot.set(epoch.get('slot', 0))
+        epoch_slot_progress.set(epoch.get('slot_progress', 0.0))
+        epoch_seconds_remaining.set(epoch.get('seconds_remaining', 0))
+        enrolled_miners.set(epoch.get('enrolled_miners', 0))
         
-        logger.info(f"Epoch: {data.get('epoch')}, Slot: {data.get('slot')}")
-    else:
-        logger.warning("Epoch scrape failed")
-
-
-def scrape_miners():
-    """Scrape /api/miners endpoint."""
-    data = fetch_json(f"{NODE_URL}/api/miners")
-    if data:
-        miners = data.get('miners', [])
-        active_miners.set(len(miners))
+        # Active miners
+        miners = requests.get(f'{NODE_URL}/api/miners', timeout=10).json()
+        active_miners.set(len(miners.get('miners', [])))
         
-        # Update per-miner attestation timestamps
-        for miner in miners:
-            miner_id = miner.get('miner_id', 'unknown')
-            arch = miner.get('architecture', 'unknown')
-            last_attest = miner.get('last_attestation_timestamp', 0)
-            miner_last_attest.labels(miner=miner_id, arch=arch).set(last_attest)
-        
-        logger.info(f"Active miners: {len(miners)}")
-    else:
-        logger.warning("Miners scrape failed")
-
-
-def scrape_stats():
-    """Scrape /api/stats endpoint for balance info."""
-    data = fetch_json(f"{NODE_URL}/api/stats")
-    if data:
-        # Update top miner balances
-        top_miners = data.get('top_miners', [])
-        for miner in top_miners:
+        # Update balances for top 10 miners
+        for miner in miners.get('miners', [])[:10]:
             miner_id = miner.get('miner_id', 'unknown')
             balance = miner.get('balance', 0)
-            balance_rtc.labels(miner=miner_id).set(balance)
+            miner_balance.labels(miner=miner_id).set(balance)
         
-        logger.info(f"Updated balances for {len(top_miners)} miners")
-    else:
-        logger.warning("Stats scrape failed")
-
-
-def scrape_hall_of_fame():
-    """Scrape /api/hall_of_fame endpoint."""
-    data = fetch_json(f"{NODE_URL}/api/hall_of_fame")
-    if data:
-        total_machines.set(data.get('total_machines', 0))
-        total_attestations.set(data.get('total_attestations', 0))
-        oldest_machine_year.set(data.get('oldest_machine_year', 0))
-        highest_rust_score.set(data.get('highest_rust_score', 0))
+        # Hall of Fame
+        hof = requests.get(f'{NODE_URL}/api/hall_of_fame', timeout=10).json()
+        total_machines.set(hof.get('total_machines', 0))
+        total_attestations.set(hof.get('total_attestations', 0))
+        oldest_machine_year.set(hof.get('oldest_machine_year', 0))
+        highest_rust_score.set(hof.get('highest_rust_score', 0.0))
         
-        logger.info(f"Hall of Fame: {data.get('total_machines')} machines, {data.get('total_attestations')} attestations")
-    else:
-        logger.warning("Hall of Fame scrape failed")
-
-
-def scrape_fee_pool():
-    """Scrape /api/fee_pool endpoint."""
-    data = fetch_json(f"{NODE_URL}/api/fee_pool")
-    if data:
-        total_fees_collected.set(data.get('total_fees_rtc', 0))
-        fee_events_total.inc(data.get('fee_events', 0))
+        # Fee pool
+        fees = requests.get(f'{NODE_URL}/api/fee_pool', timeout=10).json()
+        total_fees_collected.set(fees.get('total_fees_rtc', 0))
+        fee_events_total.set(fees.get('fee_events', 0))
         
-        logger.info(f"Fee pool: {data.get('total_fees_rtc')} RTC collected")
-    else:
-        logger.warning("Fee pool scrape failed")
+        last_update.set(time.time())
+        return True
+        
+    except Exception as e:
+        update_errors.inc()
+        print(f"Error fetching metrics: {e}")
+        return False
 
-
-def scrape_all():
-    """Scrape all endpoints and update metrics."""
-    logger.info("Starting metrics scrape...")
-    
-    scrape_health()
-    scrape_epoch()
-    scrape_miners()
-    scrape_stats()
-    scrape_hall_of_fame()
-    scrape_fee_pool()
-    
-    logger.info("Metrics scrape complete")
-
-
-def main():
-    """Main entry point."""
-    logger.info(f"Starting RustChain Prometheus Exporter")
-    logger.info(f"Node URL: {NODE_URL}")
-    logger.info(f"Exporter port: {EXPORTER_PORT}")
-    logger.info(f"Scrape interval: {SCRAPE_INTERVAL}s")
-    
-    # Start Prometheus HTTP server
-    start_http_server(EXPORTER_PORT, registry=registry)
-    logger.info(f"Metrics available at http://0.0.0.0:{EXPORTER_PORT}/metrics")
-    
-    # Initial scrape
-    scrape_all()
-    
-    # Continuous scraping
+def metrics_collector():
+    """Background thread to periodically fetch metrics."""
     while True:
+        fetch_node_metrics()
         time.sleep(SCRAPE_INTERVAL)
-        scrape_all()
 
+class MetricsHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/metrics':
+            self.send_response(200)
+            self.send_header('Content-Type', CONTENT_TYPE_LATEST)
+            self.end_headers()
+            self.wfile.write(generate_latest())
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    def log_message(self, format, *args):
+        pass  # Suppress logging
 
 if __name__ == '__main__':
-    main()
+    print(f"Starting RustChain Prometheus Exporter...")
+    print(f"Node URL: {NODE_URL}")
+    print(f"Exporter Port: {EXPORTER_PORT}")
+    print(f"Scrape Interval: {SCRAPE_INTERVAL}s")
+    
+    # Start background collector
+    collector_thread = threading.Thread(target=metrics_collector, daemon=True)
+    collector_thread.start()
+    
+    # Initial fetch
+    fetch_node_metrics()
+    
+    # Start HTTP server
+    server = HTTPServer(('0.0.0.0', EXPORTER_PORT), MetricsHandler)
+    print(f"Metrics available at http://0.0.0.0:{EXPORTER_PORT}/metrics")
+    
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("Shutting down...")
+        server.shutdown()
