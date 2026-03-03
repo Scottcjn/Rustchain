@@ -170,12 +170,13 @@ def collect_hall_of_fame_metrics():
     # API returns an object with a stats field containing aggregated data
     stats = data.get('stats', {})
     
-    total_machines.set(stats.get('total_machines', 0))
-    total_attestations.set(stats.get('total_attestations', 0))
-    oldest_machine_year.set(stats.get('oldest_year', 0))
-    highest_rust_score.set(stats.get('highest_rust_score', 0))
-    
-    logger.info(f"Hall of Fame: {stats.get('total_machines', 0)} machines, {stats.get('total_attestations', 0)} attestations")
+    if stats:
+        total_machines.set(stats.get('total_machines', 0))
+        total_attestations.set(stats.get('total_attestations', 0))
+        oldest_machine_year.set(stats.get('oldest_year', 0))
+        highest_rust_score.set(stats.get('highest_rust_score', 0))
+        
+        logger.info(f"Hall of Fame: {stats.get('total_machines', 0)} machines, {stats.get('total_attestations', 0)} attestations")
 
 
 def collect_fee_metrics():

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>RustChain Hall of Fame</title>
+  <style>
+    :root { --bg:#07110b; --panel:#0d1d14; --txt:#a8ffc6; --muted:#78c492; --accent:#39ff88; --danger:#9fa3a7; }
+    *{box-sizing:border-box} body{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:radial-gradient(circle at top,#0a1a11,#040906);color:var(--txt)}
+    .wrap{max-width:1200px;margin:24px auto;padding:0 16px}
+    h1{color:var(--accent);margin-bottom:8px}
+    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+    .stat{background:var(--panel);border:1px solid #1f3d2b;border-radius:12px;padding:14px;text-align:center}
+    .stat .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+    .stat .v{font-size:24px;font-weight:bold;margin-top:4px}
+    .card{background:var(--panel);border:1px solid #1f3d2b;border-radius:12px;overflow:hidden}
+    table{width:100%;border-collapse:collapse}
+    thead{background:#0a1a11}
+    th{padding:12px;text-align:left;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid #1f3d2b}
+    td{padding:12px;border-bottom:1px solid #1d3526;font-size:13px}
+    tr:hover{background:#0f2a1d}
+    tr.clickable{cursor:pointer}
+    tr.deceased{opacity:.6}
+    .rank{width:50px;text-align:center}
+    .score{font-weight:bold;color:var(--accent)}
+    .badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;border:1px solid #2a6f4a}
+    .badge-legend{background:#2a4a3a;color:#39ff88}
+    .badge-master{background:#2a5a4a;color:#58ff99}
+    .badge-veteran{background:#2a6a5a;color:#78ffaa}
+    .badge-warrior{background:#2a7a6a;color:#98ffbb}
+    .arch{color:var(--muted)}
+    .plague{color:#ffcc66}
+    .loading{text-align:center;padding:40px;color:var(--muted)}
+    a{text-decoration:none;color:inherit}
+    .footer{margin-top:20px;text-align:center;color:var(--muted);font-size:12px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🏆 Hall of Fame</h1>
+  <p style="color:var(--muted);margin-bottom:20px">Celebrating the rustiest machines in the RustChain fleet. Click on any machine to see its full profile.</p>
+  
+  <div class="stats" id="stats">
+    <div class="stat"><div class="k">Loading...</div></div>
+  </div>
+  
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th class="rank">#</th>
+          <th>Machine</th>
+          <th>Architecture</th>
+          <th>Year</th>
+          <th>Attestations</th>
+          <th>Rust Score</th>
+          <th>Badge</th>
+        </tr>
+      </thead>
+      <tbody id="leaderboard">
+        <tr><td colspan="7" class="loading">Loading leaderboard...</td></tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="footer">
+    <p>Data refreshes automatically. Machines are ranked by Rust Score.</p>
+  </div>
+</div>
+
+<script>
+function getBadgeClass(score) {
+  if (score >= 200) return 'badge-legend';
+  if (score >= 150) return 'badge-master';
+  if (score >= 100) return 'badge-veteran';
+  if (score >= 70) return 'badge-warrior';
+  return 'badge';
+}
+
+async function loadStats() {
+  try {
+    const res = await fetch('/api/hall_of_fame/stats');
+    if (!res.ok) throw new Error('Failed to load stats');
+    const stats = await res.json();
+    
+    document.getElementById('stats').innerHTML = `
+      <div class="stat"><div class="k">Total Machines</div><div class="v">${stats.total_machines || 0}</div></div>
+      <div class="stat"><div class="k">Total Attestations</div><div class="v">${(stats.total_attestations || 0).toLocaleString()}</div></div>
+      <div class="stat"><div class="k">Avg Rust Score</div><div class="v">${stats.average_rust_score || 0}</div></div>
+      <div class="stat"><div class="k">Highest Score</div><div class="v">${stats.highest_rust_score || 0}</div></div>
+      <div class="stat"><div class="k">Deceased Machines</div><div class="v">${stats.deceased_machines || 0}</div></div>
+      <div class="stat"><div class="k">Capacitor Plague Survivors</div><div class="v">${stats.capacitor_plague_survivors || 0}</div></div>
+    `;
+  } catch (e) {
+    console.error('Stats error:', e);
+  }
+}
+
+async function loadLeaderboard() {
+  try {
+    const res = await fetch('/api/hall_of_fame');
+    if (!res.ok) throw new Error('Failed to load leaderboard');
+    const data = await res.json();
+    
+    const tbody = document.getElementById('leaderboard');
+    if (!data.leaderboard || data.leaderboard.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="loading">No machines found</td></tr>';
+      return;
+    }
+    
+    tbody.innerHTML = data.leaderboard.map((m, idx) => `
+      <tr class="clickable ${m.is_deceased ? 'deceased' : ''}" onclick="window.location.href='/hall-of-fame/machine.html?id=${m.fingerprint_hash}'">
+        <td class="rank">${m.rank || idx + 1}</td>
+        <td>
+          <div style="font-weight:bold">${m.nickname || 'Unnamed Machine'}</div>
+          <div style="font-size:11px;color:var(--muted)">${m.miner_id || 'anonymous'}</div>
+        </td>
+        <td class="arch">${m.device_arch || 'Unknown'}${m.capacitor_plague ? ' <span class="plague">⚠️ Plague</span>' : ''}</td>
+        <td>${m.manufacture_year || '?'}</td>
+        <td>${(m.total_attestations || 0).toLocaleString()}</td>
+        <td class="score">${(m.rust_score || 0).toFixed(1)}</td>
+        <td><span class="badge ${getBadgeClass(m.rust_score || 0)}">${m.badge || '—'}</span></td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    console.error('Leaderboard error:', e);
+    document.getElementById('leaderboard').innerHTML = '<tr><td colspan="7" class="loading" style="color:#ff8f8f">Failed to load leaderboard</td></tr>';
+  }
+}
+
+// Initial load
+loadStats();
+loadLeaderboard();
+
+// Refresh every 60 seconds
+setInterval(loadLeaderboard, 60000);
+</script>
+</body>
+</html>
