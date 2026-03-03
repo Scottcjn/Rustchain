@@ -2373,7 +2373,6 @@ def submit_attestation():
         "device": device,
         "fingerprint_passed": fingerprint_passed,
         "temporal_review_flag": bool(temporal_review.get("review_flag")),
-        "temporal_review": temporal_review,
         "macs_recorded": len(macs) if macs else 0,
         "warthog_bonus": warthog_bonus
     })
