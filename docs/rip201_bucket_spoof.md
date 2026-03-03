@@ -63,6 +63,50 @@ The PoC shows:
 
 That is a **10x** per-miner reward advantage from bucket spoofing alone.
 
+## Live Black-Box Validation
+
+The same technique was also validated against the live node at `https://50.28.86.131`.
+
+### Request sent
+
+`POST /attest/submit` with:
+
+- `device_family = "PowerPC"`
+- `device_arch = "G4"`
+- `cpu = "Intel Xeon Platinum"`
+- fingerprint containing only the minimal `anti_emulation` check
+
+### Observed live response
+
+The server returned `200 OK` and accepted the contradictory claim:
+
+```json
+{
+  "device": {
+    "arch": "G4",
+    "cpu": "Intel Xeon Platinum",
+    "device_arch": "G4",
+    "device_family": "PowerPC"
+  },
+  "fingerprint_passed": true,
+  "ok": true,
+  "status": "accepted"
+}
+```
+
+### Public follow-up evidence
+
+After the attestation, public endpoints reflected the spoofed vintage classification:
+
+- `GET /api/badge/bucket-spoof-live-492a` returned `Active (2.5x)`
+- `GET /api/miners` listed `bucket-spoof-live-492a` as:
+  - `device_family = "PowerPC"`
+  - `device_arch = "G4"`
+  - `hardware_type = "PowerPC G4 (Vintage)"`
+  - `antiquity_multiplier = 2.5`
+
+That is black-box evidence that the deployed server accepts the false hardware class and exposes the spoofed vintage multiplier through public API surfaces.
+
 ## Recommended Fixes
 
 1. Treat claimed legacy architectures as untrusted until the fingerprint proves architecture-specific traits.
