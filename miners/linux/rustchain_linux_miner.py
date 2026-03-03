@@ -401,6 +401,43 @@ class LocalMiner:
             pass
         return 0
 
+
+    def dry_run(self):
+        """Preview miner setup without attesting/enrolling/mining."""
+        print("\n[DRY-RUN] RustChain Linux Miner preflight")
+        print("[DRY-RUN] No mining or network state will be modified")
+
+        self._get_hw_info()
+        print(f"[DRY-RUN] Node URL: {self.node_url}")
+        print(f"[DRY-RUN] Wallet: {self.wallet}")
+        print(f"[DRY-RUN] Hostname: {self.hw_info.get('hostname')}")
+        print(f"[DRY-RUN] CPU: {self.hw_info.get('cpu')}")
+        print(f"[DRY-RUN] Cores: {self.hw_info.get('cores')}")
+        print(f"[DRY-RUN] Memory(GB): {self.hw_info.get('memory_gb')}")
+        print(f"[DRY-RUN] MAC count: {len(self.hw_info.get('macs', []))}")
+        print(f"[DRY-RUN] Serial present: {'yes' if self.hw_info.get('serial') else 'no'}")
+
+        if FINGERPRINT_AVAILABLE:
+            if not self.fingerprint_data:
+                self._run_fingerprint_checks()
+            print(f"[DRY-RUN] Fingerprint checks available: yes")
+            print(f"[DRY-RUN] Fingerprint pass status: {self.fingerprint_passed}")
+        else:
+            print("[DRY-RUN] Fingerprint checks available: no")
+
+        # Optional health probe (read-only)
+        try:
+            r = requests.get(f"{self.node_url}/health", timeout=8, verify=False)
+            print(f"[DRY-RUN] Health probe: HTTP {r.status_code}")
+            if r.ok:
+                data = r.json()
+                print(f"[DRY-RUN] Node version: {data.get('version', 'n/a')}")
+        except Exception as e:
+            print(f"[DRY-RUN] Health probe failed: {e}")
+
+        print("[DRY-RUN] Next real steps would be: attest -> enroll -> mine loop")
+        return True
+
     def mine(self):
         """Start mining"""
         print(f"\n⛏️  Starting mining...")
@@ -451,6 +488,7 @@ if __name__ == "__main__":
     parser.add_argument("--wart-pool", help="Warthog mining pool API URL")
     parser.add_argument("--bzminer-path", help="Path to BzMiner binary")
     parser.add_argument("--manage-bzminer", action="store_true", help="Auto-start/stop BzMiner")
+    parser.add_argument("--dry-run", action="store_true", help="Run preflight checks only; do not start mining")
     args = parser.parse_args()
 
     miner = LocalMiner(
@@ -460,4 +498,7 @@ if __name__ == "__main__":
         bzminer_path=args.bzminer_path,
         manage_bzminer=args.manage_bzminer,
     )
-    miner.mine()
+    if args.dry_run:
+        miner.dry_run()
+    else:
+        miner.mine()
