@@ -28,6 +28,24 @@
 
 ---
 
+## Q1 2026 トラクション
+
+> *データは [ライブGitHub APIレポート](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) を基に、[GitClear](https://www.gitclear.com/research_studies/git_commit_count_percentiles_annual_days_active_from_largest_data_set)（878K dev-years）、[LinearB](https://linearb.io/resources/software-engineering-benchmarks-report)（8.1M PRs）、[Electric Capital](https://www.developerreport.com) のベンチマークと比較。*
+
+| 指標（90日） | Elyan Labs | 業界中央値 | Sei Protocol ($85M) |
+|-------------------|-----------|----------------|---------------------|
+| コミット数 | **1,882** | 105-168 | 297 |
+| 出荷リポジトリ数 | **97** | 1-3 | 0 new |
+| GitHubスター | **1,334** | 5-30 | 2,837（累計） |
+| 開発者インタラクション | **150+** | 0-2 | 78（累計） |
+| 開発者あたり月間コミット | **627** | 56 | 7.6 |
+| 外部コントリビューション | **32 PRs** | 0-2 | 0 |
+| 資金調達 | **$0** | $0 | $85,000,000 |
+
+**[手法・ソースを含む完全版レポート →](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md)**
+
+---
+
 ## 🪙 Solana上のwRTC
 
 RustChainトークン（RTC）は、BoTTube Bridgeを通じてSolana上で**wRTC**として利用可能です：
