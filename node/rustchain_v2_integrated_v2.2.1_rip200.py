@@ -95,6 +95,18 @@ except ImportError as e:
     HW_PROOF_AVAILABLE = False
     print(f"[INIT] Hardware proof module not found: {e}")
 
+# Warthog dual-mining verification
+try:
+    from warthog_verification import (
+        verify_warthog_proof, record_warthog_proof,
+        get_warthog_bonus, init_warthog_tables
+    )
+    HAVE_WARTHOG = True
+    print("[INIT] [OK] Warthog dual-mining verification loaded")
+except ImportError as _e:
+    HAVE_WARTHOG = False
+    print(f"[INIT] Warthog verification not available: {_e}")
+
 app = Flask(__name__)
 # Supports running from repo `node/` dir or a flat deployment directory (e.g. /root/rustchain).
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -966,6 +978,11 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS beacon_envelopes (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL, kind TEXT NOT NULL, nonce TEXT UNIQUE NOT NULL, sig TEXT NOT NULL, pubkey TEXT NOT NULL, payload_hash TEXT NOT NULL, anchored INTEGER DEFAULT 0, created_at INTEGER NOT NULL)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_beacon_anchored ON beacon_envelopes(anchored)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_beacon_agent ON beacon_envelopes(agent_id, created_at)")
+
+        # Warthog dual-mining tables
+        if HAVE_WARTHOG:
+            init_warthog_tables(c)
+
         c.commit()
 
 # Hardware multipliers
@@ -2090,8 +2107,40 @@ def submit_attestation():
         print(f"[VM_CHECK] Miner: {miner} - VM DETECTED (zero rewards): {vm_reason}")
         fingerprint_passed = False  # Mark as failed for zero weight
 
+    # Warthog dual-mining proof verification
+    # SECURITY: Warthog bonus requires passing hardware fingerprint.
+    # Without this gate, VMs could fake/run Warthog and farm the bonus.
+    warthog_proof = data.get('warthog')
+    warthog_bonus = 1.0
+    if HAVE_WARTHOG and warthog_proof and isinstance(warthog_proof, dict) and warthog_proof.get('enabled'):
+        if not fingerprint_passed:
+            print(f"[WARTHOG] Miner: {miner[:20]}... DENIED - fingerprint failed, no dual-mining bonus")
+        else:
+            try:
+                verified, bonus_tier, wart_reason = verify_warthog_proof(warthog_proof, miner)
+                warthog_bonus = bonus_tier if verified else 1.0
+                _wart_epoch = slot_to_epoch(current_slot())
+                with sqlite3.connect(DB_PATH) as wart_conn:
+                    record_warthog_proof(wart_conn, miner, _wart_epoch, warthog_proof, verified, warthog_bonus, wart_reason)
+                print(f"[WARTHOG] Miner: {miner[:20]}... verified={verified} bonus={warthog_bonus}x reason={wart_reason}")
+            except Exception as _we:
+                print(f"[WARTHOG] Verification error for {miner[:20]}...: {_we}")
+                warthog_bonus = 1.0
+
     # Record successful attestation (with fingerprint status)
     record_attestation_success(miner, device, fingerprint_passed, client_ip, signals=signals, fingerprint=fingerprint)
+
+    # Update warthog_bonus in attestation record
+    if warthog_bonus > 1.0:
+        try:
+            with sqlite3.connect(DB_PATH) as wb_conn:
+                wb_conn.execute(
+                    "UPDATE miner_attest_recent SET warthog_bonus=? WHERE miner=?",
+                    (warthog_bonus, miner)
+                )
+                wb_conn.commit()
+        except Exception:
+            pass  # Column may not exist yet
 
     # Record MACs if provided
     if macs:
@@ -2161,7 +2210,8 @@ def submit_attestation():
         "status": "accepted",
         "device": device,
         "fingerprint_passed": fingerprint_passed,
-        "macs_recorded": len(macs) if macs else 0
+        "macs_recorded": len(macs) if macs else 0,
+        "warthog_bonus": warthog_bonus
     })
 
 # ============= EPOCH ENDPOINTS =============
