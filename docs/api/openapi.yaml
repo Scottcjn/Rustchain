@@ -2,39 +2,45 @@ openapi: 3.0.3
 info:
   title: RustChain Node API
   description: |
-    RustChain is a Proof-of-Antiquity blockchain network. This API provides
-    access to node health, miner data, epoch information, Hall of Fame, and more.
-  version: 2.2.1-rip200
+    Public API for RustChain node operations, including epoch data, miner attestations,
+    Hall of Fame leaderboard, and fee pool statistics.
+    
+    ## Authentication
+    Most endpoints are public. Admin endpoints require `X-Admin-Key` header.
+  version: 2.2.1
   contact:
     name: RustChain
     url: https://rustchain.org
 
 servers:
   - url: https://rustchain.org
-    description: Production Node
+    description: Production node
 
 tags:
   - name: Health
-    description: Node health and readiness endpoints
+    description: Node health and status endpoints
   - name: Epoch
     description: Current epoch and slot information
   - name: Miners
-    description: Active miner data and attestations
+    description: Miner data and attestations
   - name: Hall of Fame
-    description: Leaderboard and statistics
-  - name: Fees
-    description: RIP-301 fee pool information
-  - name: Wallet
-    description: Balance lookup and transfers
+    description: Hardware leaderboard and statistics
+  - name: Fee Pool
+    description: RIP-301 fee pool data
+  - name: Balance
+    description: Miner balance lookups
+  - name: Lottery
+    description: Epoch eligibility checks
   - name: Admin
-    description: Authenticated admin operations
+    description: Admin-only endpoints (requires X-Admin-Key)
 
 paths:
   /health:
     get:
-      tags: [Health]
+      tags:
+        - Health
       summary: Node health check
-      description: Returns node version and basic health status
+      description: Returns node health status including database read/write status, uptime, and version.
       operationId: getHealth
       responses:
         '200':
@@ -44,15 +50,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
               example:
-                status: ok
-                version: 2.2.1-rip200
-                uptime: 12345
+                ok: true
+                db_rw: true
+                uptime_s: 40668
+                version: "2.2.1-rip200"
+                tip_age_slots: 0
+                backup_age_hours: 22.5
 
   /ready:
     get:
-      tags: [Health]
+      tags:
+        - Health
       summary: Readiness probe
-      description: Check if node is ready to accept requests
+      description: Checks if the node is ready to serve requests.
       operationId: getReady
       responses:
         '200':
@@ -68,29 +78,32 @@ paths:
 
   /epoch:
     get:
-      tags: [Epoch]
+      tags:
+        - Epoch
       summary: Current epoch information
-      description: Returns current epoch, slot, enrolled miners, and timing
+      description: Returns the current epoch number, slot, enrolled miners count, and epoch pot.
       operationId: getEpoch
       responses:
         '200':
-          description: Epoch data
+          description: Successful response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/EpochResponse'
               example:
-                epoch: 88
-                slot: 12700
-                slot_progress: 0.45
-                seconds_remaining: 300
-                enrolled_miners: 20
+                epoch: 90
+                slot: 12992
+                blocks_per_epoch: 144
+                enrolled_miners: 21
+                epoch_pot: 1.5
+                total_supply_rtc: 8388608
 
   /api/miners:
     get:
-      tags: [Miners]
+      tags:
+        - Miners
       summary: List active miners
-      description: Returns all active miners with attestation data
+      description: Returns all active miners with their attestation data.
       operationId: getMiners
       responses:
         '200':
@@ -98,27 +111,47 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MinersResponse'
+                type: object
+                properties:
+                  miners:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Miner'
 
   /api/stats:
     get:
-      tags: [Health]
+      tags:
+        - Miners
       summary: Network statistics
-      description: Returns overall network statistics
+      description: Returns overall network statistics.
       operationId: getStats
       responses:
         '200':
-          description: Network stats
+          description: Network statistics
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatsResponse'
+                type: object
+                properties:
+                  total_miners:
+                    type: integer
+                    example: 21
+                  total_attestations:
+                    type: integer
+                    example: 500000
 
   /api/hall_of_fame:
     get:
-      tags: [Hall of Fame]
+      tags:
+        - Hall of Fame
       summary: Hall of Fame leaderboard
-      description: Returns Hall of Fame statistics across 5 categories
+      description: |
+        Returns the Hall of Fame leaderboard with machines categorized by rust score:
+        - ancient_iron: 25+ year old hardware
+        - vintage_silicon: 15-24 years
+        - classic_chips: 10-14 years
+        - modern_metal: 5-9 years
+        - fresh_steel: <5 years
       operationId: getHallOfFame
       responses:
         '200':
@@ -127,17 +160,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HallOfFameResponse'
-              example:
-                total_machines: 79
-                total_attestations: 675550
-                oldest_machine_year: 2001
-                highest_rust_score: 557.8
+
+  /api/hall_of_fame/machine:
+    get:
+      tags:
+        - Hall of Fame
+      summary: Machine detail page
+      description: Returns detailed information about a specific machine by fingerprint hash or miner ID.
+      operationId: getMachineDetail
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: Machine fingerprint hash or miner ID
+          schema:
+            type: string
+          example: "9ccabd3e5b799c588c5b35f4d8390584"
+      responses:
+        '200':
+          description: Machine details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MachineDetail'
+        '404':
+          description: Machine not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /api/fee_pool:
     get:
-      tags: [Fees]
-      summary: Fee pool statistics
-      description: Returns RIP-301 fee pool data
+      tags:
+        - Fee Pool
+      summary: RIP-301 fee pool statistics
+      description: Returns current fee pool balance and distribution data.
       operationId: getFeePool
       responses:
         '200':
@@ -145,68 +203,114 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FeePoolResponse'
-              example:
-                total_fees_rtc: 0
-                fee_events: 0
+                type: object
+                properties:
+                  pool_balance:
+                    type: number
+                    format: float
+                    example: 1250.5
+                  pending_claims:
+                    type: integer
+                    example: 5
+                  total_distributed:
+                    type: number
+                    format: float
+                    example: 50000.0
 
   /balance:
     get:
-      tags: [Wallet]
-      summary: Get miner balance
-      description: Lookup balance for a specific miner
+      tags:
+        - Balance
+      summary: Miner balance lookup
+      description: Returns the RTC balance for a specific miner.
       operationId: getBalance
       parameters:
-        - name: miner
+        - name: miner_id
           in: query
           required: true
+          description: Miner ID to look up
           schema:
             type: string
-          description: Miner ID to lookup
+          example: "RTC72d3966b4074d00219aa25a812829f411f0acca9"
       responses:
         '200':
           description: Balance data
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BalanceResponse'
-        '400':
-          description: Missing miner parameter
+                type: object
+                properties:
+                  miner_id:
+                    type: string
+                  balance:
+                    type: number
+                    format: float
+                    example: 1500.75
+                  pending_rewards:
+                    type: number
+                    format: float
+                    example: 25.0
+        '404':
+          description: Miner not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /lottery/eligibility:
     get:
-      tags: [Wallet]
-      summary: Check lottery eligibility
-      description: Check if a miner is eligible for the epoch lottery
+      tags:
+        - Lottery
+      summary: Check epoch eligibility
+      description: Checks if a miner is eligible for the current epoch lottery.
       operationId: getLotteryEligibility
       parameters:
         - name: miner_id
           in: query
           required: true
+          description: Miner ID to check
           schema:
             type: string
       responses:
         '200':
           description: Eligibility data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  miner_id:
+                    type: string
+                  eligible:
+                    type: boolean
+                  reason:
+                    type: string
+                    description: Reason if not eligible
 
   /explorer:
     get:
-      tags: [Health]
-      summary: Block explorer
-      description: Returns block explorer page data
+      tags:
+        - Health
+      summary: Block explorer page
+      description: Returns the block explorer HTML page.
       operationId: getExplorer
       responses:
         '200':
-          description: Explorer data
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
 
   /attest/submit:
     post:
-      tags: [Admin]
+      tags:
+        - Admin
       summary: Submit hardware attestation
-      description: Submit a new hardware attestation (requires auth)
+      description: Submit a new hardware attestation (requires admin key).
       operationId: submitAttestation
       security:
-        - adminKey: []
+        - AdminKey: []
       requestBody:
         required: true
         content:
@@ -216,68 +320,105 @@ paths:
       responses:
         '200':
           description: Attestation accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  fingerprint_hash:
+                    type: string
         '401':
-          description: Unauthorized
+          description: Unauthorized - invalid admin key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /wallet/transfer/signed:
     post:
-      tags: [Wallet]
-      summary: Submit signed transfer
-      description: Submit an Ed25519 signed transfer transaction
-      operationId: submitSignedTransfer
+      tags:
+        - Admin
+      summary: Ed25519 signed transfer
+      description: Transfer RTC using Ed25519 signature (requires admin key).
+      operationId: transferSigned
+      security:
+        - AdminKey: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SignedTransferRequest'
+              type: object
+              properties:
+                to:
+                  type: string
+                amount:
+                  type: number
+                signature:
+                  type: string
       responses:
         '200':
-          description: Transfer submitted
-        '400':
-          description: Invalid signature
+          description: Transfer successful
+        '401':
+          description: Unauthorized
 
   /wallet/transfer:
     post:
-      tags: [Admin]
+      tags:
+        - Admin
       summary: Admin transfer
-      description: Transfer RTC (requires admin key)
-      operationId: adminTransfer
+      description: Transfer RTC (requires admin key).
+      operationId: transfer
       security:
-        - adminKey: []
+        - AdminKey: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TransferRequest'
+              type: object
+              properties:
+                to:
+                  type: string
+                amount:
+                  type: number
       responses:
         '200':
-          description: Transfer completed
+          description: Transfer successful
         '401':
           description: Unauthorized
 
   /withdraw/request:
     post:
-      tags: [Admin]
-      summary: Request withdrawal
-      description: Request a withdrawal (requires admin key)
-      operationId: requestWithdrawal
+      tags:
+        - Admin
+      summary: Withdrawal request
+      description: Request a withdrawal (requires admin key).
+      operationId: withdrawRequest
       security:
-        - adminKey: []
+        - AdminKey: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WithdrawRequest'
+              type: object
+              properties:
+                amount:
+                  type: number
+                address:
+                  type: string
       responses:
         '200':
           description: Withdrawal requested
+        '401':
+          description: Unauthorized
 
 components:
   securitySchemes:
-    adminKey:
+    AdminKey:
       type: apiKey
       in: header
       name: X-Admin-Key
@@ -287,140 +428,178 @@ components:
     HealthResponse:
       type: object
       properties:
-        status:
-          type: string
-          example: ok
+        ok:
+          type: boolean
+          description: Overall health status
+        db_rw:
+          type: boolean
+          description: Database read/write status
+        uptime_s:
+          type: integer
+          description: Node uptime in seconds
         version:
           type: string
-          example: 2.2.1-rip200
-        uptime:
+          description: Node software version
+        tip_age_slots:
           type: integer
-          example: 12345
+          description: Age of chain tip in slots
+        backup_age_hours:
+          type: number
+          format: float
+          description: Age of last backup in hours
 
     EpochResponse:
       type: object
       properties:
         epoch:
           type: integer
-          example: 88
+          description: Current epoch number
         slot:
           type: integer
-          example: 12700
-        slot_progress:
-          type: number
-          format: float
-          example: 0.45
-        seconds_remaining:
+          description: Current slot within epoch
+        blocks_per_epoch:
           type: integer
-          example: 300
+          description: Total blocks per epoch
         enrolled_miners:
           type: integer
-          example: 20
-
-    MinersResponse:
-      type: object
-      properties:
-        miners:
-          type: array
-          items:
-            type: object
-            properties:
-              miner_id:
-                type: string
-              balance:
-                type: number
-              last_attestation:
-                type: integer
-
-    StatsResponse:
-      type: object
-      properties:
-        total_miners:
-          type: integer
-        total_epochs:
-          type: integer
-        network_hashrate:
+          description: Number of enrolled miners
+        epoch_pot:
           type: number
-
-    HallOfFameResponse:
-      type: object
-      properties:
-        total_machines:
-          type: integer
-          example: 79
-        total_attestations:
-          type: integer
-          example: 675550
-        oldest_machine_year:
-          type: integer
-          example: 2001
-        highest_rust_score:
+          format: float
+          description: Total RTC rewards for this epoch
+        total_supply_rtc:
           type: number
-          example: 557.8
+          format: float
+          description: Total RTC supply in circulation
 
-    FeePoolResponse:
-      type: object
-      properties:
-        total_fees_rtc:
-          type: number
-          example: 0
-        fee_events:
-          type: integer
-          example: 0
-
-    BalanceResponse:
+    Miner:
       type: object
       properties:
         miner_id:
           type: string
-        balance:
-          type: number
-        currency:
+        fingerprint_hash:
           type: string
-          example: RTC
+        device_family:
+          type: string
+        device_arch:
+          type: string
+        device_model:
+          type: string
+        manufacture_year:
+          type: integer
+        rust_score:
+          type: number
+          format: float
+        total_attestations:
+          type: integer
+        first_attestation:
+          type: integer
+          format: int64
+        last_attestation:
+          type: integer
+          format: int64
+        is_deceased:
+          type: boolean
+        capacitor_plague:
+          type: boolean
+        thermal_events:
+          type: integer
+
+    HallOfFameResponse:
+      type: object
+      properties:
+        categories:
+          type: object
+          properties:
+            ancient_iron:
+              type: array
+              items:
+                $ref: '#/components/schemas/Miner'
+              description: Machines 25+ years old
+            vintage_silicon:
+              type: array
+              items:
+                $ref: '#/components/schemas/Miner'
+              description: Machines 15-24 years old
+            classic_chips:
+              type: array
+              items:
+                $ref: '#/components/schemas/Miner'
+              description: Machines 10-14 years old
+            modern_metal:
+              type: array
+              items:
+                $ref: '#/components/schemas/Miner'
+              description: Machines 5-9 years old
+            fresh_steel:
+              type: array
+              items:
+                $ref: '#/components/schemas/Miner'
+              description: Machines <5 years old
+
+    MachineDetail:
+      allOf:
+        - $ref: '#/components/schemas/Miner'
+        - type: object
+          properties:
+            nickname:
+              type: string
+              nullable: true
+            badge:
+              type: string
+              description: Rust score badge name
+            attestation_timeline:
+              type: array
+              items:
+                type: object
+                properties:
+                  date:
+                    type: string
+                    format: date
+                  count:
+                    type: integer
+              description: Last 30 days of attestations
+            reward_participation:
+              type: object
+              properties:
+                total_earned:
+                  type: number
+                  format: float
+                epochs_participated:
+                  type: integer
 
     AttestationRequest:
       type: object
-      required: [miner_id, hardware_data, signature]
+      required:
+        - miner_id
+        - hardware_data
+        - signature
       properties:
         miner_id:
           type: string
         hardware_data:
           type: object
+          properties:
+            device_family:
+              type: string
+            device_arch:
+              type: string
+            device_model:
+              type: string
+            manufacture_year:
+              type: integer
+            serial_number:
+              type: string
         signature:
           type: string
+          description: Ed25519 signature of hardware data
 
-    SignedTransferRequest:
+    Error:
       type: object
-      required: [from, to, amount, signature]
       properties:
-        from:
+        error:
           type: string
-        to:
+          description: Error message
+        code:
           type: string
-        amount:
-          type: number
-        signature:
-          type: string
-
-    TransferRequest:
-      type: object
-      required: [from, to, amount]
-      properties:
-        from:
-          type: string
-        to:
-          type: string
-        amount:
-          type: number
-
-    WithdrawRequest:
-      type: object
-      required: [miner_id, amount, address]
-      properties:
-        miner_id:
-          type: string
-        amount:
-          type: number
-        address:
-          type: string
+          description: Error code
