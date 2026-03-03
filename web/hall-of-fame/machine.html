@@ -5,54 +5,122 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>RustChain Hall of Fame · Machine Profile</title>
   <style>
-    :root { --bg:#07110b; --panel:#0d1d14; --txt:#a8ffc6; --muted:#78c492; --accent:#39ff88; --danger:#9fa3a7; }
-    *{box-sizing:border-box} body{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:radial-gradient(circle at top,#0a1a11,#040906);color:var(--txt)}
-    .wrap{max-width:1000px;margin:24px auto;padding:0 16px}
-    .card{background:var(--panel);border:1px solid #1f3d2b;border-radius:12px;padding:16px;box-shadow:0 0 28px rgba(57,255,136,.08)}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    .k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
-    .v{font-size:16px}
-    .head{display:flex;justify-content:space-between;align-items:center;gap:12px}
-    .badge{border:1px solid #2a6f4a;padding:6px 10px;border-radius:999px;color:var(--accent)}
-    .deceased{filter:grayscale(1);opacity:.75;box-shadow:none;border-color:#4b5563;color:#d1d5db}
-    table{width:100%;border-collapse:collapse;margin-top:8px}
-    th,td{padding:8px;border-bottom:1px solid #1d3526;text-align:left;font-size:13px}
-    .sil{font-size:12px;white-space:pre;color:var(--muted)}
-    .err{color:#ff8f8f}
-    a{color:var(--accent)}
+    :root {
+      --bg: #020604;
+      --panel: #08130d;
+      --line: #183626;
+      --txt: #aff7c9;
+      --muted: #7fcc9f;
+      --accent: #38ff8d;
+      --warn: #ffe28a;
+      --dead: #9aa39d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Courier New", monospace;
+      color: var(--txt);
+      background:
+        radial-gradient(circle at 50% -10%, rgba(56, 255, 141, 0.12), transparent 45%),
+        linear-gradient(#020604, #010302);
+      text-shadow: 0 0 8px rgba(56, 255, 141, 0.2);
+      position: relative;
+      overflow-x: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.03) 0px,
+        rgba(255, 255, 255, 0.03) 1px,
+        transparent 2px,
+        transparent 4px
+      );
+      opacity: 0.18;
+    }
+    .wrap { max-width: 1060px; margin: 22px auto; padding: 0 14px 24px; }
+    .head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px;
+      box-shadow: 0 0 24px rgba(56, 255, 141, 0.1), inset 0 0 18px rgba(56, 255, 141, 0.05);
+    }
+    .profile-deceased {
+      filter: grayscale(1);
+      opacity: 0.8;
+      box-shadow: 0 0 10px rgba(200, 210, 205, 0.1), inset 0 0 8px rgba(180, 190, 185, 0.08);
+      border-color: #3f4a44;
+      color: #cad3cd;
+    }
+    .title { margin: 0 0 6px 0; font-size: 22px; letter-spacing: 0.03em; }
+    .sub { color: var(--muted); font-size: 13px; word-break: break-all; }
+    .badge {
+      border: 1px solid #2c7d56;
+      border-radius: 999px;
+      color: var(--accent);
+      padding: 6px 11px;
+      font-size: 13px;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+    .sil {
+      margin-top: 8px;
+      font-size: 11px;
+      line-height: 1.2;
+      white-space: pre;
+      color: var(--muted);
+    }
+    .row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+    .field { border: 1px solid #132b1f; border-radius: 8px; padding: 9px; background: rgba(0, 0, 0, 0.16); }
+    .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em; margin-bottom: 4px; }
+    .v { font-size: 15px; }
+    .status-warn { color: var(--warn); }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { padding: 8px; border-bottom: 1px solid #143021; text-align: left; font-size: 13px; }
+    th { color: var(--muted); font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 0.08em; }
+    .err { color: #ff9b9b; }
+    a { color: var(--accent); }
+    @media (max-width: 760px) { .row { grid-template-columns: 1fr; } .title { font-size: 19px; } }
   </style>
 </head>
 <body>
 <div class="wrap">
   <div class="head">
     <h2>Hall of Fame · Machine Profile</h2>
-    <a href="/hall-of-fame/">← Back to leaderboard</a>
+    <a href="/hall-of-fame/">Back to leaderboard</a>
   </div>
-  <div id="status" class="card">Loading machine profile…</div>
+  <div id="status" class="card">Loading machine profile...</div>
   <div id="profile" class="card" style="display:none;margin-top:14px">
     <div class="head">
       <div>
-        <h3 id="name" style="margin:0 0 6px 0"></h3>
+        <h3 id="name" class="title"></h3>
+        <div id="fingerprint" class="sub"></div>
         <div id="sil" class="sil"></div>
       </div>
       <div id="badge" class="badge"></div>
     </div>
-    <div class="row" style="margin-top:10px">
-      <div><div class="k">Architecture</div><div class="v" id="arch"></div></div>
-      <div><div class="k">Model</div><div class="v" id="model"></div></div>
-      <div><div class="k">Manufacture Year</div><div class="v" id="year"></div></div>
-      <div><div class="k">Age</div><div class="v" id="age"></div></div>
-      <div><div class="k">Rust Score</div><div class="v" id="score"></div></div>
-      <div><div class="k">Miner ID</div><div class="v" id="miner"></div></div>
-      <div><div class="k">Total Attestations</div><div class="v" id="attest"></div></div>
-      <div><div class="k">First / Last Attestation</div><div class="v" id="attestRange"></div></div>
-      <div><div class="k">Capacitor Plague</div><div class="v" id="plague"></div></div>
-      <div><div class="k">Status</div><div class="v" id="statusFlag"></div></div>
+    <div class="row">
+      <div class="field"><div class="k">Architecture</div><div class="v" id="arch"></div></div>
+      <div class="field"><div class="k">Model</div><div class="v" id="model"></div></div>
+      <div class="field"><div class="k">Manufacture Year</div><div class="v" id="year"></div></div>
+      <div class="field"><div class="k">Age</div><div class="v" id="age"></div></div>
+      <div class="field"><div class="k">Rust Score</div><div class="v" id="score"></div></div>
+      <div class="field"><div class="k">Miner ID (Operator)</div><div class="v" id="miner"></div></div>
+      <div class="field"><div class="k">Total Attestations</div><div class="v" id="attest"></div></div>
+      <div class="field"><div class="k">First / Last Attestation</div><div class="v" id="attestRange"></div></div>
+      <div class="field"><div class="k">Capacitor Plague</div><div class="v" id="plague"></div></div>
+      <div class="field"><div class="k">Deceased Status</div><div class="v" id="statusFlag"></div></div>
     </div>
   </div>
   <div id="timelineCard" class="card" style="display:none;margin-top:14px">
-    <h3 style="margin-top:0">Attestation/Rust Timeline (last 30 days)</h3>
-    <table><thead><tr><th>Date</th><th>Rust Score</th><th>Samples</th></tr></thead><tbody id="timeline"></tbody></table>
+    <h3 style="margin-top:0">Attestation Timeline (Last 30 Days)</h3>
+    <table><thead><tr><th>Date</th><th>Attestations</th><th>Rust Score</th></tr></thead><tbody id="timeline"></tbody></table>
   </div>
   <div id="rewardCard" class="card" style="display:none;margin-top:14px">
     <h3 style="margin-top:0">Reward Participation</h3>
@@ -66,7 +134,9 @@
 <script>
 function q(name){ return new URLSearchParams(location.search).get(name) || ''; }
 function ts(v){ if(!v) return '—'; try { return new Date(v*1000).toISOString().slice(0,10); } catch { return '—'; } }
-function art(arch){ arch=(arch||'').toLowerCase(); if(arch.includes('g4')||arch.includes('g5')) return '  .----.\n / .--. \\n| |    | |\n| |.-""-.|\n\\ `----´ /\n `------´'; if(arch.includes('x86')||arch.includes('486')||arch.includes('pentium')) return '┌───────────┐\n│  RETRO PC │\n│ [====] [] │\n└───────────┘'; return '┌───────────┐\n│  MACHINE  │\n└───────────┘'; }
+function fallbackArt(){
+  return '    _____________\n   / ___________ \\\n  | |  MACHINE  | |\n  | |___________| |\n  |  ___________  |\n  | |           | |\n  |_|___________|_|';
+}
 (async()=>{
   const id=q('id')||q('machine');
   if(!id){ document.getElementById('status').innerHTML='<span class="err">Missing machine id. Use ?id=&lt;fingerprint_hash&gt;.</span>'; return; }
@@ -77,9 +147,10 @@ function art(arch){ arch=(arch||'').toLowerCase(); if(arch.includes('g4')||arch.
   document.getElementById('status').style.display='none';
   const profile=document.getElementById('profile');
   profile.style.display='block';
-  if(m.is_deceased){ profile.classList.add('deceased'); }
-  document.getElementById('name').textContent=(m.nickname||'Unnamed Machine')+' · '+(m.fingerprint_hash||'');
-  document.getElementById('sil').textContent=art(m.device_arch);
+  if(m.is_deceased){ profile.classList.add('profile-deceased'); }
+  document.getElementById('name').textContent=(m.nickname||'Unnamed Machine');
+  document.getElementById('fingerprint').textContent='Fingerprint: '+(m.fingerprint_hash||'—');
+  document.getElementById('sil').textContent=m.ascii_silhouette||fallbackArt();
   document.getElementById('badge').textContent=m.badge||'—';
   document.getElementById('arch').textContent=m.device_arch||'—';
   document.getElementById('model').textContent=m.device_model||'—';
@@ -90,11 +161,12 @@ function art(arch){ arch=(arch||'').toLowerCase(); if(arch.includes('g4')||arch.
   document.getElementById('attest').textContent=m.total_attestations||0;
   document.getElementById('attestRange').textContent=ts(m.first_attestation)+' / '+ts(m.last_attestation);
   document.getElementById('plague').textContent=m.capacitor_plague? 'Yes':'No';
-  document.getElementById('statusFlag').textContent=m.is_deceased? 'Deceased memorial':'Active';
+  document.getElementById('statusFlag').textContent=m.is_deceased? 'Deceased memorial':'Active service';
+  if(m.is_deceased){ document.getElementById('statusFlag').classList.add('status-warn'); }
 
   const t=data.attestation_timeline_30d||[];
   document.getElementById('timelineCard').style.display='block';
-  document.getElementById('timeline').innerHTML=t.length?t.map(x=>`<tr><td>${x.date||'—'}</td><td>${x.rust_score??'—'}</td><td>${x.samples??0}</td></tr>`).join(''):'<tr><td colspan="3">No recent timeline samples</td></tr>';
+  document.getElementById('timeline').innerHTML=t.length?t.map(x=>`<tr><td>${x.date||'—'}</td><td>${x.attestations??x.samples??0}</td><td>${x.rust_score??m.rust_score??'—'}</td></tr>`).join(''):'<tr><td colspan="3">No recent attestation activity</td></tr>';
 
   const r=data.reward_participation||{};
   document.getElementById('rewardCard').style.display='block';

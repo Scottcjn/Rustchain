@@ -1,139 +1,94 @@
 # RustChain Prometheus Exporter
 
-Prometheus-compatible metrics exporter for RustChain nodes with Grafana dashboard.
+Prometheus exporter for the RustChain node API.
 
-## Features
+This implementation closes issue `#504` in `Scottcjn/rustchain-bounties`.
 
-- ✅ Real-time metrics collection from RustChain API
-- ✅ Prometheus-compatible `/metrics` endpoint
-- ✅ Pre-built Grafana dashboard
-- ✅ Docker Compose setup with Prometheus + Grafana
-- ✅ Alert rules for node health, miner status, and balances
-- ✅ Systemd service file for production deployment
+## Files
 
-## Quick Start
+- `rustchain_exporter.py` - exporter process
+- `requirements.txt` - Python dependencies
+- `rustchain-exporter.service` - systemd unit
+- `docker-compose.yml` - exporter + Prometheus + Grafana stack
+- `prometheus.yml` - Prometheus scrape config
+- `dashboard.json` - Grafana dashboard
+- `alerts.yml` - Prometheus alert rules
 
-### Docker Compose (Recommended)
+## Metrics
 
-```bash
-# Start all services (exporter + Prometheus + Grafana)
-docker-compose up -d
+Implemented metrics:
 
-# Access Grafana at http://localhost:3000
-# Default credentials: admin / admin
-```
+- `rustchain_node_up{version}`
+- `rustchain_node_uptime_seconds`
+- `rustchain_active_miners_total`
+- `rustchain_enrolled_miners_total`
+- `rustchain_miner_last_attest_timestamp{miner,arch}`
+- `rustchain_current_epoch`
+- `rustchain_current_slot`
+- `rustchain_epoch_slot_progress`
+- `rustchain_epoch_seconds_remaining`
+- `rustchain_balance_rtc{miner}`
+- `rustchain_total_machines`
+- `rustchain_total_attestations`
+- `rustchain_oldest_machine_year`
+- `rustchain_highest_rust_score`
+- `rustchain_total_fees_collected_rtc`
+- `rustchain_fee_events_total`
 
-### Manual Installation
+## API Endpoints Scraped (every 60s)
 
-```bash
-# Install dependencies
-pip3 install -r requirements.txt
-
-# Run exporter
-python3 rustchain_exporter.py
-
-# Metrics available at http://localhost:9100/metrics
-```
-
-### Systemd Service
-
-```bash
-# Copy files
-sudo cp rustchain_exporter.py /opt/rustchain-exporter/
-sudo cp requirements.txt /opt/rustchain-exporter/
-sudo cp rustchain-exporter.service /etc/systemd/system/
-
-# Install dependencies
-cd /opt/rustchain-exporter
-pip3 install -r requirements.txt
-
-# Start service
-sudo systemctl daemon-reload
-sudo systemctl enable rustchain-exporter
-sudo systemctl start rustchain-exporter
-
-# Check status
-sudo systemctl status rustchain-exporter
-```
+- `/health`
+- `/epoch`
+- `/api/miners`
+- `/api/hall_of_fame`
+- `/api/fee_pool`
+- `/api/stats`
 
 ## Configuration
 
 Environment variables:
 
-- `RUSTCHAIN_NODE_URL` - RustChain node URL (default: `https://rustchain.org`)
-- `EXPORTER_PORT` - Metrics port (default: `9100`)
-- `SCRAPE_INTERVAL` - Scrape interval in seconds (default: `60`)
+- `NODE_URL` (default: `https://rustchain.org`)
+- `EXPORTER_PORT` (default: `9100`)
+- `SCRAPE_INTERVAL` (default: `60`)
+- `REQUEST_TIMEOUT` (default: `15`)
 
-## Metrics
+## Run Locally
 
-### Node Health
-- `rustchain_node_up` - Node is up and responding
-- `rustchain_node_uptime_seconds` - Node uptime
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python rustchain_exporter.py
+```
 
-### Miners
-- `rustchain_active_miners_total` - Number of active miners
-- `rustchain_enrolled_miners_total` - Number of enrolled miners
-- `rustchain_miner_last_attest_timestamp` - Last attestation timestamp per miner
+Metrics endpoint:
 
-### Epoch
-- `rustchain_current_epoch` - Current epoch number
-- `rustchain_current_slot` - Current slot number
-- `rustchain_epoch_slot_progress` - Epoch progress (0-1)
-- `rustchain_epoch_seconds_remaining` - Estimated seconds until next epoch
+- `http://localhost:9100/metrics`
 
-### Balances
-- `rustchain_balance_rtc` - Miner balance in RTC
+## Docker Stack
 
-### Hall of Fame
-- `rustchain_total_machines` - Total machines
-- `rustchain_total_attestations` - Total attestations
-- `rustchain_oldest_machine_year` - Oldest machine year
-- `rustchain_highest_rust_score` - Highest rust score
+```bash
+docker compose up -d
+```
 
-### Fees
-- `rustchain_total_fees_collected_rtc` - Total fees collected
-- `rustchain_fee_events_total` - Total fee events
+Services:
 
-## Grafana Dashboard
+- Exporter: `http://localhost:9100/metrics`
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000` (`admin` / `admin`)
 
-The included dashboard provides:
-- Node status and uptime
-- Epoch progress gauge
-- Active vs enrolled miners chart
-- Top 10 miner balances table
-- Hall of Fame statistics
-- Auto-refresh every 30 seconds
+## Systemd
 
-Import `grafana-dashboard.json` or use the Docker Compose setup for automatic provisioning.
+```bash
+sudo cp rustchain_exporter.py /opt/rustchain-exporter/
+sudo cp requirements.txt /opt/rustchain-exporter/
+sudo cp rustchain-exporter.service /etc/systemd/system/
 
-## Alert Rules
+cd /opt/rustchain-exporter
+pip3 install -r requirements.txt
 
-Included alerts:
-- **RustChainNodeDown** - Node offline for >5 minutes
-- **MinerOffline** - Miner hasn't attested in >30 minutes
-- **LowMinerBalance** - Balance below 10 RTC
-- **FewActiveMiners** - Less than 5 active miners
-- **EpochStalled** - No new slots in 10 minutes
-
-## API Endpoints Used
-
-- `/health` - Node health and version
-- `/epoch` - Current epoch and slot info
-- `/api/miners` - Miner list and attestations
-- `/api/stats` - Top balances
-- `/api/hall_of_fame` - Hall of Fame data
-- `/api/fee_pool` - Fee pool statistics
-
-## Requirements
-
-- Python 3.7+
-- `prometheus-client`
-- `requests`
-
-## License
-
-MIT
-
-## Author
-
-Created for RustChain bounty #504
+sudo systemctl daemon-reload
+sudo systemctl enable rustchain-exporter
+sudo systemctl start rustchain-exporter
+```

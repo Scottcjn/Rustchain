@@ -390,6 +390,51 @@ def get_rust_badge(score):
     else:
         return "Fresh Metal"
 
+def get_ascii_silhouette(device_arch, device_model=""):
+    """Return an ASCII silhouette for known machine families."""
+    arch = str(device_arch or "").lower()
+    model = str(device_model or "").lower()
+
+    if any(k in arch for k in ("g4", "g5", "powerpc")) or "powermac" in model:
+        return (
+            "      __________\n"
+            "     / ________ \\\n"
+            "    / / ______ \\ \\\n"
+            "   | | |  __  | | |\n"
+            "   | | | |  | | | |\n"
+            "   | | | |__| | | |\n"
+            "   | | |______| | |\n"
+            "   | |  ______  | |\n"
+            "   | | |      | | |\n"
+            "   |_|_|______|_|_|\n"
+        )
+    if any(k in arch for k in ("486", "pentium", "x86")):
+        return (
+            "   __________________\n"
+            "  /_________________/|\n"
+            "  |  ___      ___  | |\n"
+            "  | |___|    |___| | |\n"
+            "  |   _________    | |\n"
+            "  |  |  FLOPPY |   | |\n"
+            "  |  |_________|   | |\n"
+            "  |_______________ |/\n"
+        )
+    return (
+        "    _____________\n"
+        "   / ___________ \\\n"
+        "  | |  MACHINE  | |\n"
+        "  | |___________| |\n"
+        "  |  ___________  |\n"
+        "  | |           | |\n"
+        "  |_|___________|_|\n"
+    )
+
+def _table_exists(cursor, table_name):
+    row = cursor.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
 
 
 @hall_bp.route('/api/hall_of_fame/machine', methods=['GET'])
@@ -405,6 +450,7 @@ def api_hall_of_fame_machine():
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
+        now = int(time.time())
 
         c.execute("SELECT * FROM hall_of_rust WHERE fingerprint_hash = ?", (machine_id,))
         row = c.fetchone()
@@ -414,43 +460,89 @@ def api_hall_of_fame_machine():
 
         machine = dict(row)
         machine['badge'] = get_rust_badge(float(machine.get('rust_score') or 0))
+        machine['ascii_silhouette'] = get_ascii_silhouette(
+            machine.get('device_arch'),
+            machine.get('device_model'),
+        )
         mfg = machine.get('manufacture_year')
-        machine['age_years'] = max(0, 2026 - int(mfg)) if mfg else None
+        current_year = time.gmtime(now).tm_year
+        machine['age_years'] = max(0, current_year - int(mfg)) if mfg else None
 
-        # Last 30 days timeline from rust score history (best-effort)
-        now = int(time.time())
+        # Last 30 days timeline from attestation history (best-effort).
         start_ts = now - 30 * 86400
-        c.execute(
-            """
-            SELECT date(calculated_at, 'unixepoch') AS day,
-                   MAX(rust_score) AS rust_score,
-                   COUNT(*) AS samples
-            FROM rust_score_history
-            WHERE fingerprint_hash = ? AND calculated_at >= ?
-            GROUP BY day
-            ORDER BY day ASC
-            """,
-            (machine_id, start_ts)
-        )
-        timeline = [
-            {'date': r[0], 'rust_score': r[1], 'samples': r[2]}
-            for r in c.fetchall()
-        ]
-
-        # Reward participation (best-effort) from enrollments + pending ledger credits
         miner_pk = machine.get('miner_id') or ''
-        c.execute("SELECT COUNT(*) FROM epoch_enroll WHERE miner_pk = ?", (miner_pk,))
-        enrolled_epochs = c.fetchone()[0] or 0
+        timeline = []
+        if miner_pk and _table_exists(c, 'miner_attest_history'):
+            c.execute(
+                """
+                SELECT date(ts_ok, 'unixepoch') AS day,
+                       COUNT(*) AS attestations
+                FROM miner_attest_history
+                WHERE miner = ? AND ts_ok >= ?
+                GROUP BY day
+                ORDER BY day ASC
+                """,
+                (miner_pk, start_ts),
+            )
+            timeline = [
+                {
+                    'date': r['day'],
+                    'attestations': int(r['attestations'] or 0),
+                    'rust_score': machine.get('rust_score'),
+                    'samples': int(r['attestations'] or 0),
+                }
+                for r in c.fetchall()
+            ]
+        elif _table_exists(c, 'rust_score_history'):
+            c.execute(
+                """
+                SELECT date(calculated_at, 'unixepoch') AS day,
+                       MAX(rust_score) AS rust_score,
+                       COUNT(*) AS samples
+                FROM rust_score_history
+                WHERE fingerprint_hash = ? AND calculated_at >= ?
+                GROUP BY day
+                ORDER BY day ASC
+                """,
+                (machine_id, start_ts),
+            )
+            timeline = [
+                {
+                    'date': r['day'],
+                    'rust_score': r['rust_score'],
+                    'samples': int(r['samples'] or 0),
+                    'attestations': int(r['samples'] or 0),
+                }
+                for r in c.fetchall()
+            ]
 
-        c.execute(
-            """
-            SELECT COUNT(*), COALESCE(SUM(amount_i64),0)
-            FROM pending_ledger
-            WHERE to_miner = ? AND status = 'confirmed'
-            """,
-            (miner_pk,)
-        )
-        reward_count, reward_sum_i64 = c.fetchone()
+        # Reward participation (best-effort) from enrollments + pending ledger credits.
+        enrolled_epochs = 0
+        reward_count = 0
+        reward_sum_i64 = 0
+        if miner_pk and _table_exists(c, 'epoch_enroll'):
+            try:
+                c.execute("SELECT COUNT(*) AS n FROM epoch_enroll WHERE miner_pk = ?", (miner_pk,))
+                enrolled_epochs = int((c.fetchone() or {'n': 0})['n'] or 0)
+            except Exception:
+                enrolled_epochs = 0
+
+        if miner_pk and _table_exists(c, 'pending_ledger'):
+            try:
+                c.execute(
+                    """
+                    SELECT COUNT(*) AS n, COALESCE(SUM(amount_i64),0) AS s
+                    FROM pending_ledger
+                    WHERE to_miner = ? AND status = 'confirmed'
+                    """,
+                    (miner_pk,),
+                )
+                ledger_row = c.fetchone()
+                reward_count = int((ledger_row or {'n': 0})['n'] or 0)
+                reward_sum_i64 = int((ledger_row or {'s': 0})['s'] or 0)
+            except Exception:
+                reward_count = 0
+                reward_sum_i64 = 0
 
         reward_participation = {
             'enrolled_epochs': int(enrolled_epochs),

@@ -1,0 +1,15 @@
+{
+  "miner": "report-scalar-miner",
+  "device": {
+    "device_family": "PowerPC",
+    "device_arch": "power8",
+    "cores": 8
+  },
+  "signals": {
+    "hostname": "report-scalar-host",
+    "macs": [
+      "AA:BB:CC:DD:EE:44"
+    ]
+  },
+  "report": "not-a-report-object"
+}

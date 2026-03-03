@@ -1,43 +1,795 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RustChain Miner Dashboard</title><style>
-:root{--bg:#030805;--card:#08120d;--line:#17442a;--txt:#b8ffcf;--muted:#7bcf9d;--accent:#49ff97;--glow:rgba(73,255,151,.25)}
-*{box-sizing:border-box}
-body{margin:0;font-family:ui-monospace,Menlo,Consolas,monospace;background:radial-gradient(circle at top,#0a1b13,#030805 62%);color:var(--txt);text-shadow:0 0 6px rgba(73,255,151,.08)}
-body:before{content:'';position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(180deg,rgba(255,255,255,.03) 0px,rgba(255,255,255,.03) 1px,transparent 2px,transparent 4px);opacity:.06}
-body:after{content:'';position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at center,transparent 60%,rgba(0,0,0,.35) 100%)}
-.wrap{max-width:1120px;margin:18px auto;padding:0 14px}
-h2{letter-spacing:.04em}
-.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.top input,.top button{background:#06100b;color:var(--txt);border:1px solid var(--line);padding:10px;border-radius:8px;box-shadow:inset 0 0 10px rgba(73,255,151,.05)}.top input{min-width:260px}.top button{cursor:pointer}
-.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:12px}
-.card{background:linear-gradient(180deg,#08120d,#06100b);border:1px solid var(--line);border-radius:10px;padding:12px;box-shadow:0 0 20px rgba(73,255,151,.08), inset 0 0 20px rgba(73,255,151,.03)}
-.k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}.v{font-size:22px;margin-top:6px;color:var(--accent)}
-.wide{grid-column:span 2}.full{grid-column:1/-1}
-table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #143625;text-align:left;font-size:13px}th{color:var(--muted)}
-.muted{color:var(--muted)}.err{color:#ff9a9a}.ok{color:#9affc2}.small{font-size:12px}
-.bar{height:10px;background:#07110b;border:1px solid var(--line);border-radius:999px;overflow:hidden}.fill{height:100%;background:linear-gradient(90deg,#1fcf6c,#49ff97);box-shadow:0 0 10px var(--glow)}
-canvas{box-shadow:inset 0 0 20px rgba(73,255,151,.04)}
-a{color:var(--accent)}
-@media (max-width:900px){.grid{grid-template-columns:1fr 1fr}.wide{grid-column:span 2}}
-@media (max-width:560px){.grid{grid-template-columns:1fr}.wide,.full{grid-column:1/-1}}
-</style></head><body><div class="wrap"><h2>RustChain Miner Dashboard <span class="muted small">(personal stats page)</span></h2><div class="top"><input id="miner" placeholder="Enter miner ID (e.g. createkr)"><input id="api" value="https://rustchain.org" placeholder="API base"><button id="load">Load</button><span id="msg" class="muted small">Supports share URL: ?miner=&lt;id&gt;</span></div><div class="grid"><div class="card"><div class="k">Current Balance</div><div id="bal" class="v">—</div></div><div class="card"><div class="k">Epoch Participation (est.)</div><div id="ep" class="v">—</div></div><div class="card"><div class="k">Total Earned (est.)</div><div id="earned" class="v">—</div></div><div class="card"><div class="k">Epoch Countdown</div><div id="count" class="v">—</div></div><div class="card wide"><div class="k">Hardware</div><div id="hw" class="small">—</div></div><div class="card"><div class="k">Rust Score</div><div id="score" class="v">—</div><div id="badge" class="muted small"></div></div><div class="card"><div class="k">Manufacture Year</div><div id="year" class="v">—</div><div id="age" class="muted small"></div></div><div class="card"><div class="k">Attestation Freshness (24h)</div><div class="bar" style="margin-top:8px"><div id="fresh" class="fill" style="width:0%"></div></div><div id="freshTxt" class="muted small" style="margin-top:6px">—</div></div><div class="card full"><div class="k">Attestation Timeline (last 24h, hourly)</div><table><thead><tr><th>Hour</th><th>Status</th><th>Signal</th></tr></thead><tbody id="tl"></tbody></table></div><div class="card full"><div class="k">Fleet View (operator machines)</div><table><thead><tr><th>Machine</th><th>Arch</th><th>Last Attest</th><th>Entropy</th></tr></thead><tbody id="fleet"></tbody></table></div><div class="card full"><div class="k">Earnings Performance (last 20 epochs)</div><canvas id="chart" height="120" style="width:100%;background:#07110b;border:1px solid #1f3a2a;border-radius:8px"></canvas><div class="muted small" id="chartNote" style="margin-top:8px"></div></div><div class="card full"><div class="k">Reward History (last 20 epochs)</div><table><thead><tr><th>Epoch</th><th>Status</th><th>Amount</th><th>Notes</th></tr></thead><tbody id="rh"></tbody></table><div class="muted small" style="margin-top:8px">Public API currently provides limited per-epoch payout detail. This panel shows deterministic estimates from available live data.</div></div></div></div><script>
-const $=id=>document.getElementById(id);const state={};
-function fmt(n,d=6){const x=Number(n);return Number.isFinite(x)?x.toFixed(d):'—'}
-function now(){return Math.floor(Date.now()/1000)}
-function qs(k){return new URLSearchParams(location.search).get(k)||''}
-async function j(url){const r=await fetch(url,{headers:{'accept':'application/json'}});if(!r.ok)throw new Error(r.status+' '+url);return r.json()}
-function badgeFromScore(s){s=Number(s)||0;if(s>=200)return'Oxidized Legend';if(s>=150)return'Tetanus Master';if(s>=100)return'Patina Veteran';if(s>=70)return'Rust Warrior';if(s>=50)return'Corroded Knight';if(s>=30)return'Tarnished Squire';return'Fresh Metal'}
-function setMsg(t,ok=true){$('msg').textContent=t;$('msg').className=(ok?'ok':'err')+' small'}
-function renderCountdown(slot,bpe){if(!Number.isFinite(slot)||!Number.isFinite(bpe)||bpe<=0){$('count').textContent='—';return}const remain=bpe-(slot%bpe);const sec=remain*6;$('count').textContent=Math.floor(sec/60)+'m '+(sec%60)+'s'}
-function renderTimeline(lastTs){const tbody=$('tl');tbody.innerHTML='';const n=now();for(let i=23;i>=0;i--){const hStart=n-i*3600;const hEnd=hStart+3600;const hit=Number.isFinite(lastTs)&&lastTs>=hStart&&lastTs<hEnd;const tr=document.createElement('tr');const hh=new Date(hStart*1000).toISOString().slice(11,13)+':00';tr.innerHTML=`<td>${hh}</td><td>${hit?'Seen':'—'}</td><td>${hit?'attestation heartbeat':'no signal'}</td>`;tbody.appendChild(tr)}}
-function drawChart(points){const c=$('chart');if(!c)return;const ctx=c.getContext('2d');const w=c.width=c.clientWidth*2;const h=c.height=240;ctx.scale(2,2);ctx.clearRect(0,0,w,h);const W=c.clientWidth,H=120;ctx.strokeStyle='#214734';ctx.lineWidth=1;for(let i=0;i<=4;i++){const y=i*(H/4);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}if(!points.length){ctx.fillStyle='#78c492';ctx.fillText('No reward data',10,20);return}
-const vals=points.map(p=>p.amount);const max=Math.max(...vals,1e-9);ctx.strokeStyle='#39ff88';ctx.lineWidth=2;ctx.beginPath();points.forEach((p,i)=>{const x=(i/(points.length-1||1))*(W-20)+10;const y=H-((p.amount/max)*(H-20))-10;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();ctx.fillStyle='#b2ffcb';ctx.font='11px Menlo';ctx.fillText('max '+max.toFixed(6)+' RTC',10,12)}
-function renderRewardHistory(epoch,balance,epEst){const tbody=$('rh');tbody.innerHTML='';const e=Number(epoch)||0;const per=(epEst>0&&balance>0)?(balance/Math.max(1,epEst)):0;const points=[];for(let i=0;i<20;i++){const cur=e-i;const participated=i<epEst;const amt=participated?Number(per):0;points.unshift({epoch:cur,amount:amt});const tr=document.createElement('tr');tr.innerHTML=`<td>${cur>0?cur:'—'}</td><td>${participated?'participated?':'n/a'}</td><td>${amt.toFixed(6)} RTC</td><td>${i===0?'current epoch':'estimated from public data'}</td>`;tbody.appendChild(tr)}drawChart(points);$('chartNote').textContent='Performance chart currently uses deterministic estimate from public APIs because per-epoch payout endpoint is not publicly exposed.';return points}
-function renderFleet(minerId,miners){const tbody=$('fleet');tbody.innerHTML='';const arr=(miners||[]).filter(x=>String(x.miner||'').toLowerCase()===String(minerId).toLowerCase());if(!arr.length){tbody.innerHTML='<tr><td colspan="4">No multiple-machine fleet data detected for this miner id</td></tr>';return;}arr.forEach(m=>{const dt=m.last_attest?new Date(Number(m.last_attest)*1000).toISOString().replace('T',' ').slice(0,19):'—';const tr=document.createElement('tr');tr.innerHTML=`<td>${m.hardware_type||'machine'}</td><td>${m.device_arch||'—'}</td><td>${dt}</td><td>${(m.entropy_score??'—')}</td>`;tbody.appendChild(tr)})}
+<!doctype html>
+<!-- Closes #501 from Scottcjn/rustchain-bounties -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RustChain Miner Dashboard</title>
+  <style>
+    :root {
+      --bg: #020604;
+      --panel: #08130d;
+      --line: #183626;
+      --txt: #aff7c9;
+      --muted: #7fcc9f;
+      --accent: #38ff8d;
+      --warn: #ffd97e;
+      --err: #ff9b9b;
+      --glow: rgba(56, 255, 141, 0.22);
+    }
 
-function renderRealRewardHistory(items){const tbody=$('rh');tbody.innerHTML='';const points=[];if(!Array.isArray(items)||!items.length){return null;}items.forEach((x)=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${x.epoch??'—'}</td><td>confirmed</td><td>${Number(x.amount_rtc||0).toFixed(6)} RTC</td><td>${x.tx_hash?String(x.tx_hash).slice(0,12)+'...':'ledger'}</td>`;tbody.appendChild(tr);points.push({epoch:x.epoch,amount:Number(x.amount_rtc||0)});});drawChart(points);$('chartNote').textContent='Performance chart based on confirmed reward history from server ledger.';return points;}
+    * { box-sizing: border-box; }
 
-async function load(){const miner=$('miner').value.trim();const base=$('api').value.trim().replace(/\/$/,'');if(!miner){setMsg('Please enter miner ID',false);return}history.replaceState({},'',`?miner=${encodeURIComponent(miner)}&api=${encodeURIComponent(base)}`);setMsg('Loading...');try{const [miners,b,hof,ep,dash]=await Promise.all([j(`${base}/api/miners`),j(`${base}/wallet/balance?miner_id=${encodeURIComponent(miner)}`),j(`${base}/api/hall_of_fame`),j(`${base}/epoch`),j(`${base}/api/miner_dashboard/${encodeURIComponent(miner)}`).catch(()=>null)]);const arr=Array.isArray(miners)?miners:[];const m=arr.find(x=>String(x.miner||'').toLowerCase()===miner.toLowerCase())||null;const cats=(hof&&hof.categories)||{};const all=[];Object.keys(cats).forEach(k=>{if(Array.isArray(cats[k]))all.push(...cats[k])});const machine=all.find(x=>String(x.miner_id||'').toLowerCase()===miner.toLowerCase())||null;const balance=Number((b&&b.balance)||0);$('bal').textContent=fmt(balance)+' RTC';const first=(m&&m.first_attest)|| (machine&&machine.first_attestation) || null;const last=(m&&m.last_attest)|| (machine&&machine.last_attestation)||null;const nowTs=now();let epEst=0;if(first&&ep&&ep.blocks_per_epoch){const sec=Math.max(0,nowTs-Number(first));epEst=Math.floor(sec/(Number(ep.blocks_per_epoch)*6));}
-if(dash&&dash.ok){$('ep').textContent=dash.epoch_participation??0;$('earned').textContent=fmt(dash.total_earned_rtc||0)+' RTC';}else{$('ep').textContent=epEst||0;$('earned').textContent=(balance>0?fmt(balance):'0.000000')+' RTC';}renderCountdown(Number(ep.slot),Number(ep.blocks_per_epoch));if(machine){$('score').textContent=fmt(machine.rust_score||0,2);$('badge').textContent=badgeFromScore(machine.rust_score||0);$('year').textContent=machine.manufacture_year||'—';$('age').textContent=machine.manufacture_year?(`${new Date().getFullYear()-Number(machine.manufacture_year)} years`):'—';$('hw').textContent=`${machine.device_arch||'—'} · ${machine.device_model||'—'} · family: ${machine.device_family||'—'} · plague: ${machine.capacitor_plague?'yes':'no'} · deceased: ${machine.is_deceased?'yes':'no'}`;}else{$('score').textContent='—';$('badge').textContent='No Hall profile';$('year').textContent='—';$('age').textContent='—';$('hw').textContent=m?`${m.device_arch||'—'} · ${m.hardware_type||'—'}`:'No machine profile found';}
-const ageSec=last?Math.max(0,nowTs-Number(last)):86400;const freshness=Math.max(0,Math.min(100,100-(ageSec/86400)*100));$('fresh').style.width=freshness.toFixed(1)+'%';$('freshTxt').textContent=last?`Last attestation ${Math.floor(ageSec/60)} min ago`:'No recent attestation';renderTimeline(Number(last)||null);renderFleet(miner,arr);if(!(dash&&dash.ok&&renderRealRewardHistory(dash.reward_history))){renderRewardHistory(Number(ep.epoch)||0,balance,epEst);}setMsg('Loaded');}catch(e){setMsg('Load failed: '+e.message,false)}}
-$('load').addEventListener('click',load);
-(()=>{const m=qs('miner'),a=qs('api');if(m)$('miner').value=m;if(a)$('api').value=a;if(location.pathname==='/dashboard'){/* route alias */}if(m)load();})();
-</script></body></html>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Courier New", Courier, monospace;
+      color: var(--txt);
+      text-shadow: 0 0 8px rgba(56, 255, 141, 0.18);
+      background:
+        radial-gradient(circle at 50% -10%, rgba(56, 255, 141, 0.13), transparent 40%),
+        linear-gradient(#020604, #010302 55%, #010201);
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.03) 0px,
+        rgba(255, 255, 255, 0.03) 1px,
+        transparent 2px,
+        transparent 4px
+      );
+      opacity: 0.14;
+      z-index: 2;
+    }
+
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(circle at center, transparent 60%, rgba(0, 0, 0, 0.44));
+      z-index: 1;
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 3;
+      max-width: 1160px;
+      margin: 18px auto;
+      padding: 0 14px 24px;
+    }
+
+    .card {
+      background: linear-gradient(180deg, #08130d, #06100b);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      box-shadow: 0 0 24px rgba(56, 255, 141, 0.08), inset 0 0 16px rgba(56, 255, 141, 0.05);
+    }
+
+    .head {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0.04em;
+    }
+
+    .sub {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 8px;
+      align-items: stretch;
+    }
+
+    input, button {
+      font: inherit;
+      color: var(--txt);
+      background: #06100b;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    input:focus, button:focus {
+      outline: 1px solid rgba(56, 255, 141, 0.6);
+      outline-offset: 1px;
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      min-width: 100px;
+    }
+
+    button:hover { filter: brightness(1.07); }
+
+    .status {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .status.ok { color: var(--accent); }
+    .status.err { color: var(--err); }
+
+    .share {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      word-break: break-all;
+    }
+
+    .share a { color: var(--accent); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .wide { grid-column: span 2; }
+    .full { grid-column: 1 / -1; }
+
+    .k {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+    }
+
+    .v {
+      margin-top: 4px;
+      color: var(--accent);
+      font-size: 22px;
+      line-height: 1.15;
+      word-break: break-word;
+    }
+
+    .minor {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .terminal {
+      margin-top: 8px;
+      border: 1px solid #132f21;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.22);
+      padding: 10px;
+      font-size: 13px;
+      line-height: 1.35;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .progress {
+      margin-top: 8px;
+      height: 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      overflow: hidden;
+      background: #07110b;
+    }
+
+    .progress > div {
+      height: 100%;
+      background: linear-gradient(90deg, #1fd37a, #38ff8d);
+      box-shadow: 0 0 12px var(--glow);
+      width: 0%;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+    }
+
+    th, td {
+      border-bottom: 1px solid #143021;
+      padding: 8px;
+      text-align: left;
+      font-size: 13px;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.07em;
+    }
+
+    .mono { font-family: "Courier New", Courier, monospace; }
+    .warn { color: var(--warn); }
+
+    #perfChart {
+      width: 100%;
+      height: 140px;
+      background: #07110b;
+      border: 1px solid #1c3f2c;
+      border-radius: 8px;
+      margin-top: 8px;
+    }
+
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .controls { grid-template-columns: 1fr auto; }
+      .controls button:last-child { grid-column: 1 / -1; }
+    }
+
+    @media (max-width: 620px) {
+      .grid { grid-template-columns: 1fr; }
+      .wide, .full { grid-column: 1 / -1; }
+      .controls { grid-template-columns: 1fr; }
+      h1 { font-size: 20px; }
+      .v { font-size: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <div>
+        <h1>RustChain Miner Dashboard</h1>
+        <p class="sub">Personal telemetry console</p>
+      </div>
+      <div class="sub mono">/dashboard?miner=&lt;miner-id&gt;</div>
+    </div>
+
+    <div class="card">
+      <div class="controls">
+        <input id="minerInput" placeholder="Enter miner ID (wallet)">
+        <button id="loadBtn">Load</button>
+        <button id="copyBtn" type="button">Copy URL</button>
+      </div>
+      <div id="status" class="status">Enter a miner ID and load dashboard.</div>
+      <div id="shareRow" class="share">Share link: <span class="mono">not generated</span></div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="k">Current Balance</div>
+        <div id="balance" class="v">-</div>
+      </div>
+      <div class="card">
+        <div class="k">Total Earned</div>
+        <div id="earned" class="v">-</div>
+        <div class="minor">Estimated from public data if ledger detail is unavailable.</div>
+      </div>
+      <div class="card">
+        <div class="k">Epoch Participation</div>
+        <div id="epochs" class="v">-</div>
+      </div>
+      <div class="card">
+        <div class="k">Epoch Countdown</div>
+        <div id="countdown" class="v">-</div>
+        <div id="epochMeta" class="minor">-</div>
+      </div>
+
+      <div class="card wide">
+        <div class="k">Hardware</div>
+        <div id="hardware" class="terminal">No hardware profile loaded.</div>
+      </div>
+      <div class="card">
+        <div class="k">Rust Score</div>
+        <div id="rustScore" class="v">-</div>
+      </div>
+      <div class="card">
+        <div class="k">Badge</div>
+        <div id="badge" class="v" style="font-size:18px">-</div>
+      </div>
+
+      <div class="card full">
+        <div class="k">Attestation History (Last 24h)</div>
+        <div class="progress"><div id="freshBar"></div></div>
+        <div id="freshText" class="minor">-</div>
+        <table>
+          <thead>
+            <tr><th>Hour</th><th>Status</th><th>Signal</th></tr>
+          </thead>
+          <tbody id="attestationTbody"></tbody>
+        </table>
+      </div>
+
+      <div class="card full">
+        <div class="k">Reward History (Last 20 Epochs)</div>
+        <canvas id="perfChart" width="860" height="140"></canvas>
+        <div id="chartNote" class="minor">-</div>
+        <table>
+          <thead>
+            <tr><th>Epoch</th><th>Amount</th><th>Type</th></tr>
+          </thead>
+          <tbody id="rewardsTbody"></tbody>
+        </table>
+      </div>
+
+      <div class="card full">
+        <div class="k">Fleet View</div>
+        <table>
+          <thead>
+            <tr><th>Machine</th><th>Architecture</th><th>Last Attestation</th><th>Rust Score</th><th>Badge</th></tr>
+          </thead>
+          <tbody id="fleetTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "https://rustchain.org";
+    const SLOT_SECONDS = 600;
+
+    const el = (id) => document.getElementById(id);
+    const state = {
+      epoch: null,
+      countdownTimer: null,
+      minerId: "",
+      shareUrl: "",
+      rewardRows: []
+    };
+
+    function fmtRtc(n) {
+      const v = Number(n);
+      return Number.isFinite(v) ? v.toFixed(6) + " RTC" : "-";
+    }
+
+    function fmtNum(n, digits) {
+      const v = Number(n);
+      return Number.isFinite(v) ? v.toFixed(digits) : "-";
+    }
+
+    function fmtTs(ts) {
+      const v = Number(ts);
+      if (!Number.isFinite(v) || v <= 0) return "-";
+      return new Date(v * 1000).toISOString().replace("T", " ").slice(0, 19) + " UTC";
+    }
+
+    function relTime(ts) {
+      const v = Number(ts);
+      if (!Number.isFinite(v) || v <= 0) return "-";
+      const delta = Math.max(0, Math.floor(Date.now() / 1000) - v);
+      const h = Math.floor(delta / 3600);
+      const m = Math.floor((delta % 3600) / 60);
+      return h > 0 ? h + "h " + m + "m ago" : m + "m ago";
+    }
+
+    function setStatus(msg, isErr) {
+      const s = el("status");
+      s.textContent = msg;
+      s.className = "status " + (isErr ? "err" : "ok");
+    }
+
+    function sharePath(minerId) {
+      return "/dashboard?miner=" + encodeURIComponent(minerId);
+    }
+
+    function updateShare(minerId) {
+      const path = sharePath(minerId);
+      const full = window.location.origin + path;
+      state.shareUrl = full;
+      el("shareRow").innerHTML = "Share link: <a href=\"" + full + "\" class=\"mono\">" + full + "</a>";
+    }
+
+    async function getJson(url) {
+      const res = await fetch(url, { headers: { "accept": "application/json" }, cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
+      return res.json();
+    }
+
+    async function getBalance(minerId) {
+      try {
+        return await getJson(API_BASE + "/balance?miner_id=" + encodeURIComponent(minerId));
+      } catch (e) {
+        return await getJson(API_BASE + "/wallet/balance?miner_id=" + encodeURIComponent(minerId));
+      }
+    }
+
+    function normalizeHallRows(hof) {
+      const rows = [];
+      if (!hof || typeof hof !== "object") return rows;
+      if (Array.isArray(hof)) return hof;
+      const categories = hof.categories || hof;
+      for (const key of Object.keys(categories || {})) {
+        const list = categories[key];
+        if (!Array.isArray(list)) continue;
+        for (const r of list) rows.push(r || {});
+      }
+      return rows;
+    }
+
+    function findHallProfile(rows, minerId) {
+      const target = String(minerId).toLowerCase();
+      for (const r of rows) {
+        const rid = String(r.miner_id || r.miner || r.operator || "").toLowerCase();
+        if (rid && rid === target) return r;
+      }
+      return null;
+    }
+
+    function badgeByScore(score) {
+      const s = Number(score) || 0;
+      if (s >= 240) return "Oxidized Titan";
+      if (s >= 180) return "Patina Warlord";
+      if (s >= 130) return "Corrosion Knight";
+      if (s >= 85) return "Rust Veteran";
+      if (s >= 45) return "Aged Operator";
+      return "Fresh Metal";
+    }
+
+    function valueFrom(obj, keys, fallback) {
+      for (const k of keys) {
+        if (obj && obj[k] !== undefined && obj[k] !== null) return obj[k];
+      }
+      return fallback;
+    }
+
+    function renderHardware(minerRow, hallRow) {
+      const arch = valueFrom(hallRow || minerRow, ["device_arch", "architecture", "arch"], "unknown");
+      const model = valueFrom(hallRow || minerRow, ["device_model", "hardware_type", "model"], "unknown");
+      const year = valueFrom(hallRow || minerRow, ["manufacture_year", "year"], null);
+      const score = valueFrom(hallRow || minerRow, ["rust_score", "score", "entropy_score"], null);
+      const badge = valueFrom(hallRow || minerRow, ["badge"], null) || badgeByScore(score);
+
+      const yearText = year ? String(year) : "unknown";
+      el("hardware").textContent =
+        "architecture : " + arch + "\n" +
+        "model        : " + model + "\n" +
+        "year         : " + yearText + "\n" +
+        "rust_score   : " + fmtNum(score, 2) + "\n" +
+        "badge        : " + badge;
+
+      el("rustScore").textContent = fmtNum(score, 2);
+      el("badge").textContent = badge;
+    }
+
+    function renderAttestationTimeline(lastAttestTs) {
+      const tbody = el("attestationTbody");
+      tbody.innerHTML = "";
+      const now = Math.floor(Date.now() / 1000);
+      const last = Number(lastAttestTs);
+
+      for (let i = 23; i >= 0; i -= 1) {
+        const hourStart = now - (i * 3600);
+        const hourEnd = hourStart + 3600;
+        const hour = new Date(hourStart * 1000).toISOString().slice(11, 13) + ":00";
+        const hit = Number.isFinite(last) && last >= hourStart && last < hourEnd;
+
+        const tr = document.createElement("tr");
+        tr.innerHTML =
+          "<td class=\"mono\">" + hour + "</td>" +
+          "<td>" + (hit ? "Seen" : "-") + "</td>" +
+          "<td>" + (hit ? "attestation heartbeat" : "no signal") + "</td>";
+        tbody.appendChild(tr);
+      }
+
+      if (Number.isFinite(last) && last > 0) {
+        const age = Math.max(0, now - last);
+        const fresh = Math.max(0, Math.min(100, 100 - ((age / 86400) * 100)));
+        el("freshBar").style.width = fresh.toFixed(1) + "%";
+        el("freshText").textContent = "Last attestation: " + relTime(last) + " (" + fmtTs(last) + ")";
+      } else {
+        el("freshBar").style.width = "0%";
+        el("freshText").textContent = "No recent attestation timestamp available.";
+      }
+    }
+
+    function estimateEpochParticipation(minerRow, epoch) {
+      const first = Number(minerRow && minerRow.first_attest);
+      const bpe = Number(epoch && epoch.blocks_per_epoch);
+      if (!Number.isFinite(first) || !Number.isFinite(bpe) || bpe <= 0) return 0;
+      const ageSec = Math.max(0, Math.floor(Date.now() / 1000) - first);
+      const epochSec = bpe * SLOT_SECONDS;
+      return Math.floor(ageSec / epochSec);
+    }
+
+    function estimateRewardRows(currentEpoch, totalEarned, participation) {
+      const rows = [];
+      const count = 20;
+      const ep = Number(currentEpoch) || 0;
+      const earned = Number(totalEarned) || 0;
+      const part = Math.max(0, Number(participation) || 0);
+      const avg = part > 0 ? earned / part : 0;
+
+      for (let i = count - 1; i >= 0; i -= 1) {
+        const epochNo = ep - i;
+        const participated = i < part;
+        rows.push({
+          epoch: epochNo > 0 ? epochNo : "-",
+          amount: participated ? avg : 0,
+          type: participated ? "estimated" : "none"
+        });
+      }
+      return rows;
+    }
+
+    function renderRewardRows(rows) {
+      const tbody = el("rewardsTbody");
+      tbody.innerHTML = "";
+      for (const r of rows) {
+        const tr = document.createElement("tr");
+        tr.innerHTML =
+          "<td class=\"mono\">" + r.epoch + "</td>" +
+          "<td>" + fmtRtc(r.amount) + "</td>" +
+          "<td>" + r.type + "</td>";
+        tbody.appendChild(tr);
+      }
+      state.rewardRows = rows;
+      drawPerformanceChart(rows);
+    }
+
+    function drawPerformanceChart(rows) {
+      const canvas = el("perfChart");
+      const ctx = canvas.getContext("2d");
+      const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+      const cssW = Math.max(300, canvas.clientWidth || 860);
+      const cssH = 140;
+
+      canvas.width = cssW * dpr;
+      canvas.height = cssH * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssW, cssH);
+
+      ctx.strokeStyle = "#1d3e2c";
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i += 1) {
+        const y = 10 + (i * (cssH - 20) / 4);
+        ctx.beginPath();
+        ctx.moveTo(8, y);
+        ctx.lineTo(cssW - 8, y);
+        ctx.stroke();
+      }
+
+      const points = rows.map(r => Number(r.amount) || 0);
+      const max = Math.max(0.000001, ...points);
+      if (!rows.length || points.every(v => v === 0)) {
+        ctx.fillStyle = "#7fcc9f";
+        ctx.font = "12px Courier New";
+        ctx.fillText("No non-zero earnings in visible window.", 14, 22);
+        return;
+      }
+
+      ctx.strokeStyle = "#38ff8d";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < points.length; i += 1) {
+        const x = 12 + (i * (cssW - 24) / Math.max(1, points.length - 1));
+        const y = cssH - 10 - ((points[i] / max) * (cssH - 22));
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      ctx.fillStyle = "#aff7c9";
+      ctx.font = "11px Courier New";
+      ctx.fillText("max " + max.toFixed(6) + " RTC", 12, 12);
+    }
+
+    function renderFleet(minerId, miners, hallRows) {
+      const tbody = el("fleetTbody");
+      tbody.innerHTML = "";
+      const target = String(minerId).toLowerCase();
+
+      const minerRows = (miners || []).filter(m => String(m.miner || "").toLowerCase() === target);
+      const hallMatches = (hallRows || []).filter(r => String(r.miner_id || r.miner || "").toLowerCase() === target);
+
+      const seen = new Set();
+      const fleet = [];
+
+      for (const m of minerRows) {
+        const key = "miner:" + (m.device_arch || "") + ":" + (m.last_attest || "");
+        if (!seen.has(key)) {
+          seen.add(key);
+          fleet.push({
+            machine: m.hardware_type || "active machine",
+            arch: m.device_arch || "-",
+            last: m.last_attest,
+            score: m.entropy_score,
+            badge: "active"
+          });
+        }
+      }
+
+      for (const r of hallMatches) {
+        const key = "hall:" + (r.fingerprint_hash || r.device_model || r.device_arch || "");
+        if (!seen.has(key)) {
+          seen.add(key);
+          const score = valueFrom(r, ["rust_score", "score"], null);
+          fleet.push({
+            machine: r.device_model || r.hardware_type || r.nickname || "hall machine",
+            arch: valueFrom(r, ["device_arch", "architecture", "arch"], "-"),
+            last: valueFrom(r, ["last_attestation", "last_attest"], null),
+            score: score,
+            badge: valueFrom(r, ["badge"], null) || badgeByScore(score)
+          });
+        }
+      }
+
+      if (!fleet.length) {
+        tbody.innerHTML = "<tr><td colspan=\"5\">No fleet data detected for this miner ID.</td></tr>";
+        return;
+      }
+
+      for (const m of fleet) {
+        const tr = document.createElement("tr");
+        tr.innerHTML =
+          "<td>" + m.machine + "</td>" +
+          "<td>" + m.arch + "</td>" +
+          "<td class=\"mono\">" + (Number.isFinite(Number(m.last)) ? fmtTs(Number(m.last)) : "-") + "</td>" +
+          "<td>" + fmtNum(m.score, 2) + "</td>" +
+          "<td>" + (m.badge || "-") + "</td>";
+        tbody.appendChild(tr);
+      }
+    }
+
+    function getSecondsRemaining(epoch) {
+      const e = epoch || {};
+      if (Number.isFinite(Number(e.seconds_remaining))) return Math.max(0, Math.floor(Number(e.seconds_remaining)));
+      if (Number.isFinite(Number(e.next_settlement))) {
+        return Math.max(0, Math.floor(Number(e.next_settlement) - (Date.now() / 1000)));
+      }
+      const slot = Number(e.slot);
+      const bpe = Number(e.blocks_per_epoch);
+      if (!Number.isFinite(slot) || !Number.isFinite(bpe) || bpe <= 0) return null;
+      const slotInEpoch = slot % bpe;
+      const remainingSlots = (bpe - slotInEpoch) % bpe;
+      return remainingSlots * SLOT_SECONDS;
+    }
+
+    function renderEpochMeta(epoch) {
+      if (!epoch) {
+        el("epochMeta").textContent = "-";
+        return;
+      }
+      const epochNo = Number(epoch.epoch);
+      const slot = Number(epoch.slot);
+      const bpe = Number(epoch.blocks_per_epoch);
+      const enrolled = epoch.enrolled_miners;
+      el("epochMeta").textContent =
+        "Epoch " + (Number.isFinite(epochNo) ? epochNo : "-") +
+        " | slot " + (Number.isFinite(slot) ? slot : "-") +
+        " / " + (Number.isFinite(bpe) ? bpe : "-") +
+        " | enrolled: " + (enrolled !== undefined ? enrolled : "-");
+    }
+
+    function tickCountdown() {
+      const seconds = getSecondsRemaining(state.epoch);
+      if (seconds === null) {
+        el("countdown").textContent = "-";
+        return;
+      }
+      const hh = Math.floor(seconds / 3600);
+      const mm = Math.floor((seconds % 3600) / 60);
+      const ss = seconds % 60;
+      el("countdown").textContent =
+        String(hh).padStart(2, "0") + ":" +
+        String(mm).padStart(2, "0") + ":" +
+        String(ss).padStart(2, "0");
+
+      if (state.epoch && Number.isFinite(Number(state.epoch.seconds_remaining))) {
+        state.epoch.seconds_remaining = Math.max(0, Number(state.epoch.seconds_remaining) - 1);
+      }
+    }
+
+    async function loadDashboard() {
+      const minerId = el("minerInput").value.trim();
+      if (!minerId) {
+        setStatus("Missing miner ID.", true);
+        return;
+      }
+
+      state.minerId = minerId;
+      updateShare(minerId);
+      history.replaceState({}, "", sharePath(minerId));
+      setStatus("Loading live data from rustchain.org ...", false);
+
+      try {
+        const [minersRes, balRes, hofRes, epochRes] = await Promise.all([
+          getJson(API_BASE + "/api/miners"),
+          getBalance(minerId),
+          getJson(API_BASE + "/api/hall_of_fame"),
+          getJson(API_BASE + "/epoch")
+        ]);
+
+        const miners = Array.isArray(minersRes) ? minersRes : (minersRes.miners || []);
+        const minerRow = miners.find(m => String(m.miner || "").toLowerCase() === minerId.toLowerCase()) || null;
+        const hallRows = normalizeHallRows(hofRes);
+        const hallRow = findHallProfile(hallRows, minerId);
+        const epoch = epochRes || {};
+
+        state.epoch = Object.assign({}, epoch);
+        renderEpochMeta(epoch);
+        tickCountdown();
+        if (state.countdownTimer) clearInterval(state.countdownTimer);
+        state.countdownTimer = setInterval(tickCountdown, 1000);
+
+        const balance = valueFrom(balRes, ["amount_rtc", "balance", "amount"], 0);
+        el("balance").textContent = fmtRtc(balance);
+
+        const participation = Math.max(
+          Number(valueFrom(hallRow, ["enrolled_epochs", "epoch_participation_count", "attestation_count"], NaN)) || 0,
+          estimateEpochParticipation(minerRow, epoch)
+        );
+        el("epochs").textContent = String(participation);
+
+        const totalEarned = Number(valueFrom(hallRow, ["total_earned", "total_earned_rtc", "confirmed_reward_rtc"], NaN));
+        const earned = Number.isFinite(totalEarned) ? totalEarned : Number(balance) || 0;
+        el("earned").textContent = fmtRtc(earned);
+
+        renderHardware(minerRow, hallRow);
+        renderAttestationTimeline(valueFrom(minerRow || hallRow || {}, ["last_attest", "last_attestation"], null));
+
+        const currentEpoch = Number(valueFrom(epoch, ["epoch"], 0));
+        const rewardRows = estimateRewardRows(currentEpoch, earned, participation);
+        renderRewardRows(rewardRows);
+        el("chartNote").textContent = "Public endpoints do not expose full per-epoch rewards for a miner; rows are deterministic estimates from total earned and participation.";
+
+        renderFleet(minerId, miners, hallRows);
+
+        setStatus("Dashboard loaded for miner: " + minerId, false);
+      } catch (err) {
+        setStatus("Load failed: " + (err && err.message ? err.message : String(err)), true);
+      }
+    }
+
+    function bootstrap() {
+      const params = new URLSearchParams(window.location.search);
+      const miner = params.get("miner") || "";
+      if (miner) {
+        el("minerInput").value = miner;
+        updateShare(miner);
+        loadDashboard();
+      }
+
+      el("loadBtn").addEventListener("click", loadDashboard);
+      el("minerInput").addEventListener("keydown", function (e) {
+        if (e.key === "Enter") loadDashboard();
+      });
+
+      el("copyBtn").addEventListener("click", async function () {
+        if (!state.shareUrl && state.minerId) updateShare(state.minerId);
+        if (!state.shareUrl) {
+          setStatus("No share URL yet. Load a miner first.", true);
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(state.shareUrl);
+          setStatus("Share URL copied to clipboard.", false);
+        } catch (_e) {
+          setStatus("Clipboard copy blocked by browser permissions.", true);
+        }
+      });
+
+      window.addEventListener("resize", function () {
+        if (state.rewardRows.length) drawPerformanceChart(state.rewardRows);
+      });
+    }
+
+    bootstrap();
+  </script>
+</body>
+</html>

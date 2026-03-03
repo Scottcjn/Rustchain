@@ -3,7 +3,7 @@
 RustChain v2 - Integrated Server
 Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
-import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math
+import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math, re
 import ipaddress
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort
@@ -95,6 +95,18 @@ except ImportError as e:
     HW_PROOF_AVAILABLE = False
     print(f"[INIT] Hardware proof module not found: {e}")
 
+# Warthog dual-mining verification
+try:
+    from warthog_verification import (
+        verify_warthog_proof, record_warthog_proof,
+        get_warthog_bonus, init_warthog_tables
+    )
+    HAVE_WARTHOG = True
+    print("[INIT] [OK] Warthog dual-mining verification loaded")
+except ImportError as _e:
+    HAVE_WARTHOG = False
+    print(f"[INIT] Warthog verification not available: {_e}")
+
 app = Flask(__name__)
 # Supports running from repo `node/` dir or a flat deployment directory (e.g. /root/rustchain).
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -103,6 +115,185 @@ LIGHTCLIENT_DIR = os.path.join(REPO_ROOT, "web", "light-client")
 MUSEUM_DIR = os.path.join(REPO_ROOT, "web", "museum")
 HOF_DIR = os.path.join(REPO_ROOT, "web", "hall-of-fame")
 DASHBOARD_DIR = os.path.join(REPO_ROOT, "tools", "miner_dashboard")
+
+
+def _attest_mapping(value):
+    """Return a dict-like payload section or an empty mapping."""
+    return value if isinstance(value, dict) else {}
+
+
+_ATTEST_MINER_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+
+
+def _attest_text(value):
+    """Accept only non-empty text values from untrusted attestation input."""
+    if isinstance(value, str):
+        value = value.strip()
+        if value:
+            return value
+    return None
+
+
+def _attest_valid_miner(value):
+    """Accept only bounded miner identifiers with a conservative character set."""
+    text = _attest_text(value)
+    if text and _ATTEST_MINER_RE.fullmatch(text):
+        return text
+    return None
+
+
+def _attest_field_error(code, message, status=400):
+    """Build a consistent error payload for malformed attestation inputs."""
+    return jsonify({
+        "ok": False,
+        "error": code.lower(),
+        "message": message,
+        "code": code,
+    }), status
+
+
+def _attest_is_valid_positive_int(value, max_value=4096):
+    """Validate positive integer-like input without silently coercing hostile shapes."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            return False
+    try:
+        coerced = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return 1 <= coerced <= max_value
+
+
+def client_ip_from_request(req) -> str:
+    """Return trusted client IP from reverse proxy (X-Real-IP) or remote address."""
+    client_ip = req.headers.get("X-Real-IP") or req.remote_addr
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+    return client_ip
+
+
+def _attest_positive_int(value, default=1):
+    """Coerce untrusted integer-like values to a safe positive integer."""
+    try:
+        coerced = int(value)
+    except (TypeError, ValueError):
+        return default
+    return coerced if coerced > 0 else default
+
+
+def _attest_string_list(value):
+    """Coerce a list-like field into a list of non-empty strings."""
+    if not isinstance(value, list):
+        return []
+    items = []
+    for item in value:
+        text = _attest_text(item)
+        if text:
+            items.append(text)
+    return items
+
+
+def _validate_attestation_payload_shape(data):
+    """Reject malformed attestation payload shapes before normalization."""
+    for field_name, code in (
+        ("device", "INVALID_DEVICE"),
+        ("signals", "INVALID_SIGNALS"),
+        ("report", "INVALID_REPORT"),
+        ("fingerprint", "INVALID_FINGERPRINT"),
+    ):
+        if field_name in data and data[field_name] is not None and not isinstance(data[field_name], dict):
+            return _attest_field_error(code, f"Field '{field_name}' must be a JSON object")
+
+    for field_name in ("miner", "miner_id"):
+        if field_name in data and data[field_name] is not None and not isinstance(data[field_name], str):
+            return _attest_field_error("INVALID_MINER", f"Field '{field_name}' must be a non-empty string")
+
+    miner = _attest_valid_miner(data.get("miner")) or _attest_valid_miner(data.get("miner_id"))
+    if not miner and not (_attest_text(data.get("miner")) or _attest_text(data.get("miner_id"))):
+        return _attest_field_error(
+            "MISSING_MINER",
+            "Field 'miner' or 'miner_id' must be a non-empty identifier using only letters, numbers, '.', '_', ':' or '-'",
+        )
+    if not miner:
+        return _attest_field_error(
+            "INVALID_MINER",
+            "Field 'miner' or 'miner_id' must use only letters, numbers, '.', '_', ':' or '-' and be at most 128 characters",
+        )
+
+    device = data.get("device")
+    if isinstance(device, dict):
+        if "cores" in device and not _attest_is_valid_positive_int(device.get("cores")):
+            return _attest_field_error("INVALID_DEVICE_CORES", "Field 'device.cores' must be a positive integer between 1 and 4096", status=422)
+        for field_name in ("device_family", "family", "device_arch", "arch", "device_model", "model", "cpu", "serial_number", "serial"):
+            if field_name in device and device[field_name] is not None and not isinstance(device[field_name], str):
+                return _attest_field_error("INVALID_DEVICE", f"Field 'device.{field_name}' must be a string")
+
+    signals = data.get("signals")
+    if isinstance(signals, dict):
+        if "macs" in signals:
+            macs = signals.get("macs")
+            if not isinstance(macs, list) or any(_attest_text(mac) is None for mac in macs):
+                return _attest_field_error("INVALID_SIGNALS_MACS", "Field 'signals.macs' must be a list of non-empty strings")
+        for field_name in ("hostname", "serial"):
+            if field_name in signals and signals[field_name] is not None and not isinstance(signals[field_name], str):
+                return _attest_field_error("INVALID_SIGNALS", f"Field 'signals.{field_name}' must be a string")
+
+    report = data.get("report")
+    if isinstance(report, dict):
+        for field_name in ("nonce", "commitment"):
+            if field_name in report and report[field_name] is not None and not isinstance(report[field_name], str):
+                return _attest_field_error("INVALID_REPORT", f"Field 'report.{field_name}' must be a string")
+
+    fingerprint = data.get("fingerprint")
+    if isinstance(fingerprint, dict) and "checks" in fingerprint and not isinstance(fingerprint.get("checks"), dict):
+        return _attest_field_error("INVALID_FINGERPRINT_CHECKS", "Field 'fingerprint.checks' must be a JSON object")
+
+    return None
+
+
+def _normalize_attestation_device(device):
+    """Shallow-normalize device metadata so malformed JSON shapes fail closed."""
+    raw = _attest_mapping(device)
+    normalized = {"cores": _attest_positive_int(raw.get("cores"), default=1)}
+    for field in (
+        "device_family",
+        "family",
+        "device_arch",
+        "arch",
+        "device_model",
+        "model",
+        "cpu",
+        "serial_number",
+        "serial",
+    ):
+        text = _attest_text(raw.get(field))
+        if text is not None:
+            normalized[field] = text
+    return normalized
+
+
+def _normalize_attestation_signals(signals):
+    """Shallow-normalize signal metadata used by attestation validation."""
+    raw = _attest_mapping(signals)
+    normalized = {"macs": _attest_string_list(raw.get("macs"))}
+    for field in ("hostname", "serial"):
+        text = _attest_text(raw.get(field))
+        if text is not None:
+            normalized[field] = text
+    return normalized
+
+
+def _normalize_attestation_report(report):
+    """Normalize report metadata used by challenge/ticket handling."""
+    raw = _attest_mapping(report)
+    normalized = {}
+    for field in ("nonce", "commitment"):
+        text = _attest_text(raw.get(field))
+        if text is not None:
+            normalized[field] = text
+    return normalized
 
 # Register Hall of Rust blueprint (tables initialized after DB_PATH is set)
 try:
@@ -127,7 +318,10 @@ def _start_timer():
 
 def get_client_ip():
     """Trust reverse-proxy X-Real-IP, not client X-Forwarded-For."""
-    return request.headers.get("X-Real-IP") or request.remote_addr
+    client_ip = request.headers.get("X-Real-IP") or request.remote_addr
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+    return client_ip
 
 @app.after_request
 def _after(resp):
@@ -791,6 +985,11 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS beacon_envelopes (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL, kind TEXT NOT NULL, nonce TEXT UNIQUE NOT NULL, sig TEXT NOT NULL, pubkey TEXT NOT NULL, payload_hash TEXT NOT NULL, anchored INTEGER DEFAULT 0, created_at INTEGER NOT NULL)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_beacon_anchored ON beacon_envelopes(anchored)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_beacon_agent ON beacon_envelopes(agent_id, created_at)")
+
+        # Warthog dual-mining tables
+        if HAVE_WARTHOG:
+            init_warthog_tables(c)
+
         c.commit()
 
 # Hardware multipliers
@@ -985,9 +1184,13 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     if not fingerprint:
         # FIX #305: Missing fingerprint data is a validation failure
         return False, "no_fingerprint_data"
+    if not isinstance(fingerprint, dict):
+        return False, "fingerprint_not_dict"
 
     checks = fingerprint.get("checks", {})
-    claimed_device = claimed_device or {}
+    if not isinstance(checks, dict):
+        checks = {}
+    claimed_device = claimed_device if isinstance(claimed_device, dict) else {}
 
     # FIX #305: Reject empty fingerprint payloads (e.g. fingerprint={} or checks={})
     if not checks:
@@ -1797,23 +2000,25 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
 def submit_attestation():
     """Submit hardware attestation with fingerprint validation"""
     data = request.get_json(silent=True)
-
-    # Type guard: reject non-dict JSON payloads (null, array, scalar)
     if not isinstance(data, dict):
-        return jsonify({"ok": False, "error": "Request body must be a JSON object", "code": "INVALID_JSON_OBJECT"}), 400
+        return jsonify({
+            "ok": False,
+            "error": "invalid_json_object",
+            "message": "Expected a JSON object request body",
+            "code": "INVALID_JSON_OBJECT"
+        }), 400
+    payload_error = _validate_attestation_payload_shape(data)
+    if payload_error is not None:
+        return payload_error
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
 
-    # Extract attestation data (type guards for fuzz safety)
-    miner = data.get('miner') or data.get('miner_id')
-    if miner is not None and not isinstance(miner, str):
-        miner = str(miner)
-    report = data.get('report', {}) if isinstance(data.get('report'), dict) else {}
-    nonce = report.get('nonce') or data.get('nonce')
-    device = data.get('device', {}) if isinstance(data.get('device'), dict) else {}
+    # Extract attestation data
+    miner = _attest_valid_miner(data.get('miner')) or _attest_valid_miner(data.get('miner_id'))
+    report = _normalize_attestation_report(data.get('report'))
+    nonce = report.get('nonce') or _attest_text(data.get('nonce'))
+    device = _normalize_attestation_device(data.get('device'))
 
     # IP rate limiting (Security Hardening 2026-02-02)
     ip_ok, ip_reason = check_ip_rate_limit(client_ip, miner)
@@ -1825,12 +2030,8 @@ def submit_attestation():
             "message": "Too many unique miners from this IP address",
             "code": "IP_RATE_LIMIT"
         }), 429
-    signals = data.get('signals', {}) if isinstance(data.get('signals'), dict) else {}
-    fingerprint = data.get('fingerprint')  # FIX #305: None default to detect missing vs empty
-
-    # Basic validation
-    if not miner:
-        miner = f"anon_{secrets.token_hex(8)}"
+    signals = _normalize_attestation_signals(data.get('signals'))
+    fingerprint = _attest_mapping(data.get('fingerprint'))  # NEW: Extract fingerprint
 
     # SECURITY: Check blocked wallets
     with sqlite3.connect(DB_PATH) as conn:
@@ -1842,9 +2043,9 @@ def submit_attestation():
 
     # SECURITY: Hardware binding check v2.0 (serial + entropy validation)
     serial = device.get('serial_number') or device.get('serial') or signals.get('serial')
-    cores = device.get('cores', 1)
-    arch = device.get('arch') or device.get('device_arch', 'modern')
-    macs = signals.get('macs', [])
+    cores = _attest_positive_int(device.get('cores'), default=1)
+    arch = _attest_text(device.get('arch')) or _attest_text(device.get('device_arch')) or 'modern'
+    macs = _attest_string_list(signals.get('macs'))
     
     if HW_BINDING_V2 and serial:
         hw_ok, hw_msg, hw_details = bind_hardware_v2(
@@ -1877,7 +2078,6 @@ def submit_attestation():
             }), 409
 
     # RIP-0147a: Check OUI gate
-    macs = signals.get('macs', [])
     if macs:
         oui_ok, oui_info = _check_oui_gate(macs)
         if not oui_ok:
@@ -1914,8 +2114,40 @@ def submit_attestation():
         print(f"[VM_CHECK] Miner: {miner} - VM DETECTED (zero rewards): {vm_reason}")
         fingerprint_passed = False  # Mark as failed for zero weight
 
+    # Warthog dual-mining proof verification
+    # SECURITY: Warthog bonus requires passing hardware fingerprint.
+    # Without this gate, VMs could fake/run Warthog and farm the bonus.
+    warthog_proof = data.get('warthog')
+    warthog_bonus = 1.0
+    if HAVE_WARTHOG and warthog_proof and isinstance(warthog_proof, dict) and warthog_proof.get('enabled'):
+        if not fingerprint_passed:
+            print(f"[WARTHOG] Miner: {miner[:20]}... DENIED - fingerprint failed, no dual-mining bonus")
+        else:
+            try:
+                verified, bonus_tier, wart_reason = verify_warthog_proof(warthog_proof, miner)
+                warthog_bonus = bonus_tier if verified else 1.0
+                _wart_epoch = slot_to_epoch(current_slot())
+                with sqlite3.connect(DB_PATH) as wart_conn:
+                    record_warthog_proof(wart_conn, miner, _wart_epoch, warthog_proof, verified, warthog_bonus, wart_reason)
+                print(f"[WARTHOG] Miner: {miner[:20]}... verified={verified} bonus={warthog_bonus}x reason={wart_reason}")
+            except Exception as _we:
+                print(f"[WARTHOG] Verification error for {miner[:20]}...: {_we}")
+                warthog_bonus = 1.0
+
     # Record successful attestation (with fingerprint status)
     record_attestation_success(miner, device, fingerprint_passed, client_ip, signals=signals, fingerprint=fingerprint)
+
+    # Update warthog_bonus in attestation record
+    if warthog_bonus > 1.0:
+        try:
+            with sqlite3.connect(DB_PATH) as wb_conn:
+                wb_conn.execute(
+                    "UPDATE miner_attest_recent SET warthog_bonus=? WHERE miner=?",
+                    (warthog_bonus, miner)
+                )
+                wb_conn.commit()
+        except Exception:
+            pass  # Column may not exist yet
 
     # Record MACs if provided
     if macs:
@@ -1985,7 +2217,8 @@ def submit_attestation():
         "status": "accepted",
         "device": device,
         "fingerprint_passed": fingerprint_passed,
-        "macs_recorded": len(macs) if macs else 0
+        "macs_recorded": len(macs) if macs else 0,
+        "warthog_bonus": warthog_bonus
     })
 
 # ============= EPOCH ENDPOINTS =============
@@ -2019,8 +2252,6 @@ def enroll_epoch():
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     miner_pk = data.get('miner_pubkey')
     miner_id = data.get('miner_id', miner_pk)  # Use miner_id if provided
     device = data.get('device', {})
@@ -2385,8 +2616,6 @@ def register_withdrawal_key():
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     miner_pk = data.get('miner_pk')
     pubkey_sr25519 = data.get('pubkey_sr25519')
 
@@ -2438,8 +2667,6 @@ def request_withdrawal():
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     miner_pk = data.get('miner_pk')
     amount = float(data.get('amount', 0))
     destination = data.get('destination')
@@ -3390,8 +3617,6 @@ def add_oui_deny():
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
     vendor = data.get('vendor', 'Unknown')
     enforce = int(data.get('enforce', 0))
@@ -3417,8 +3642,6 @@ def remove_oui_deny():
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
 
     with sqlite3.connect(DB_PATH) as conn:
@@ -3483,8 +3706,6 @@ def attest_debug():
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     miner = data.get('miner') or data.get('miner_id')
 
     if not miner:
@@ -4157,8 +4378,6 @@ def wallet_transfer_OLD():
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     from_miner = data.get('from_miner')
     to_miner = data.get('to_miner')
     amount_rtc = float(data.get('amount_rtc', 0))
@@ -4583,8 +4802,6 @@ def wallet_transfer_signed():
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
     
     from_address = pre.details["from_address"]
     to_address = pre.details["to_address"]

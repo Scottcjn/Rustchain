@@ -1,5 +1,5 @@
 groups:
-  - name: rustchain_alerts
+  - name: rustchain-exporter-alerts
     interval: 60s
     rules:
       - alert: RustChainNodeDown
@@ -8,26 +8,26 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "RustChain node is down"
-          description: "RustChain node has been down for more than 5 minutes"
+          summary: RustChain node is down
+          description: RustChain /health has reported down for 5+ minutes.
 
       - alert: MinerOffline
-        expr: (time() - rustchain_miner_last_attest_timestamp) > 1800
+        expr: time() - rustchain_miner_last_attest_timestamp > 1800
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: "Miner {{ $labels.miner }} is offline"
-          description: "Miner {{ $labels.miner }} ({{ $labels.arch }}) has not attested in over 30 minutes"
+          summary: Miner offline ({{ $labels.miner }})
+          description: Miner {{ $labels.miner }} on {{ $labels.arch }} has not attested for over 30 minutes.
 
       - alert: LowMinerBalance
         expr: rustchain_balance_rtc < 10
-        for: 1h
+        for: 30m
         labels:
           severity: warning
         annotations:
-          summary: "Low balance for miner {{ $labels.miner }}"
-          description: "Miner {{ $labels.miner }} has balance below 10 RTC"
+          summary: Low miner balance ({{ $labels.miner }})
+          description: Miner {{ $labels.miner }} balance is below 10 RTC.
 
       - alert: FewActiveMiners
         expr: rustchain_active_miners_total < 5
@@ -35,14 +35,23 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Low number of active miners"
-          description: "Only {{ $value }} miners are currently active"
+          summary: Few active miners
+          description: Active miner count is below 5.
 
       - alert: EpochStalled
-        expr: rate(rustchain_current_slot[10m]) == 0
+        expr: max_over_time(rustchain_current_slot[10m]) - min_over_time(rustchain_current_slot[10m]) == 0
         for: 10m
         labels:
           severity: critical
         annotations:
-          summary: "Epoch progression has stalled"
-          description: "No new slots have been produced in the last 10 minutes"
+          summary: Epoch progression stalled
+          description: Slot value has not advanced for at least 10 minutes.
+
+      - alert: FeeEventsStopped
+        expr: increase(rustchain_fee_events_total[30m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: Fee events stopped
+          description: No fee events observed in the last 30 minutes.
