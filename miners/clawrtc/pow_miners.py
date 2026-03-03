@@ -65,11 +65,21 @@ KNOWN_MINERS = {
         "display": "Warthog (Janushash)",
         "algo": "janushash",
         "node_ports": [3000, 3001],
-        "process_names": ["wart-miner", "warthog-miner", "wart-node", "janushash"],
+        "process_names": [
+            "wart-node-linux", "wart-node", "janusminer", "janusminer-ubuntu",
+            "janusminer-ubuntu22", "bzminer", "wart-miner", "warthog-miner", "janushash",
+        ],
         "node_info_path": "/chain/head",
         "pool_api_templates": {
             "woolypooly": "https://api.woolypooly.com/api/wart-0/accounts/{address}",
+            "cedric-crispin": "https://warthog.cedric-crispin.com/api/accounts/{address}",
+            "herominers": "https://warthog.herominers.com/api/stats_address?address={address}",
             "acc-pool": "https://warthog.acc-pool.pw/api/accounts/{address}",
+        },
+        "miner_commands": {
+            "bzminer": ["bzminer", "-a", "warthog", "-w", "{wallet}", "-p", "{pool}"],
+            "janusminer": ["janusminer-ubuntu22", "-a", "{wallet}", "-h", "127.0.0.1", "-p", "3000"],
+            "wart-node": ["wart-node-linux", "--wallet", "{wallet}"],
         },
     },
     "kaspa": {
@@ -545,6 +555,131 @@ def _verify_pool_account(
         }
     except Exception:
         return None
+
+
+# ============================================================
+# Subprocess Launch (Managed Mining)
+# ============================================================
+
+def launch_miner_subprocess(
+    chain: str,
+    wallet: str,
+    pool_url: Optional[str] = None,
+    miner_name: Optional[str] = None,
+    dry_run: bool = False,
+) -> Tuple[bool, Optional[subprocess.Popen], str]:
+    """Launch a PoW miner as a managed subprocess.
+
+    Args:
+        chain: Chain name (warthog, ergo, monero, etc.)
+        wallet: Wallet address for mining
+        pool_url: Pool stratum URL (e.g., stratum+tcp://pool.woolypooly.com:3140)
+        miner_name: Specific miner to use (bzminer, janusminer, etc.)
+        dry_run: If True, don't actually launch, just return command
+
+    Returns:
+        Tuple of (success, process_or_None, message)
+    """
+    if chain not in KNOWN_MINERS:
+        return False, None, f"Unknown chain: {chain}"
+
+    info = KNOWN_MINERS[chain]
+    miner_commands = info.get("miner_commands", {})
+
+    if not miner_commands:
+        return False, None, f"No miner commands configured for {chain}"
+
+    # Auto-detect miner if not specified
+    if not miner_name:
+        # Check which miners are available
+        for name in miner_commands.keys():
+            if _check_command_exists(name):
+                miner_name = name
+                break
+
+    if not miner_name or miner_name not in miner_commands:
+        available = list(miner_commands.keys())
+        return False, None, f"No available miner found for {chain}. Available: {available}"
+
+    # Build command
+    cmd_template = miner_commands[miner_name]
+    cmd = []
+    for arg in cmd_template:
+        if arg == "{wallet}":
+            cmd.append(wallet)
+        elif arg == "{pool}":
+            cmd.append(pool_url or "")
+        else:
+            cmd.append(arg)
+
+    if dry_run:
+        return True, None, f"Would execute: {' '.join(cmd)}"
+
+    # Launch the miner
+    try:
+        # Check if miner is already running
+        running_procs = _get_running_processes()
+        for proc_name in info["process_names"]:
+            if proc_name.lower() in running_procs:
+                return False, None, f"Miner {proc_name} already running"
+
+        # Start the miner
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            preexec_fn=os.setsid if platform.system() != "Windows" else None,
+        )
+        return True, proc, f"Launched {miner_name} for {chain} (PID: {proc.pid})"
+    except FileNotFoundError:
+        return False, None, f"Miner executable not found: {miner_name}"
+    except Exception as e:
+        return False, None, f"Failed to launch miner: {e}"
+
+
+def _check_command_exists(cmd_name: str) -> bool:
+    """Check if a command exists in PATH."""
+    return subprocess.call(
+        ["which", cmd_name] if platform.system() != "Windows" else ["where", cmd_name],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ) == 0
+
+
+def stop_miner_subprocess(chain: str) -> Tuple[bool, str]:
+    """Stop a running miner for the specified chain.
+
+    Args:
+        chain: Chain name (warthog, ergo, monero, etc.)
+
+    Returns:
+        Tuple of (success, message)
+    """
+    if chain not in KNOWN_MINERS:
+        return False, f"Unknown chain: {chain}"
+
+    info = KNOWN_MINERS[chain]
+    running_procs = _get_running_processes()
+
+    stopped = []
+    for proc_name in info["process_names"]:
+        if proc_name.lower() in running_procs:
+            try:
+                # Try to find and kill the process
+                result = subprocess.run(
+                    ["pkill", "-f", proc_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                stopped.append(proc_name)
+            except Exception as e:
+                return False, f"Failed to stop {proc_name}: {e}"
+
+    if stopped:
+        return True, f"Stopped miners: {', '.join(stopped)}"
+    else:
+        return False, f"No running miners found for {chain}"
 
 
 # ============================================================
