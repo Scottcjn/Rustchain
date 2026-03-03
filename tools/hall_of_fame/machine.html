@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Machine Profile - RustChain Hall of Fame</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a0a;
+            color: #00ff41;
+            font-family: 'Courier New', monospace;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 900px; margin: 0 auto; }
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 2px solid #00ff41;
+            margin-bottom: 30px;
+        }
+        h1 { font-size: 2em; text-shadow: 0 0 10px #00ff41; }
+        .back-link {
+            color: #888;
+            text-decoration: none;
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+        .back-link:hover { color: #00ff41; }
+        .machine-card {
+            background: #111;
+            border: 2px solid #00ff41;
+            padding: 30px;
+            margin-bottom: 30px;
+            position: relative;
+        }
+        .machine-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #00ff41, transparent);
+        }
+        .machine-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .machine-name {
+            font-size: 1.8em;
+            color: #00ff41;
+        }
+        .badge {
+            background: #00ff41;
+            color: #0a0a0a;
+            padding: 5px 15px;
+            font-weight: bold;
+            font-size: 0.8em;
+        }
+        .deceased .machine-name { color: #666; }
+        .deceased .machine-card {
+            border-color: #444;
+            background: #0d0d0d;
+        }
+        .deceased .badge { background: #444; color: #888; }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        .info-item {
+            background: #1a1a1a;
+            padding: 15px;
+            border-left: 3px solid #00ff41;
+        }
+        .deceased .info-item { border-left-color: #444; }
+        .info-label {
+            color: #888;
+            font-size: 0.8em;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        .info-value {
+            font-size: 1.3em;
+            color: #00ff41;
+        }
+        .deceased .info-value { color: #888; }
+        .ascii-art {
+            text-align: center;
+            padding: 30px;
+            background: #0d0d0d;
+            margin: 20px 0;
+            font-size: 0.7em;
+            line-height: 1.2;
+            color: #00ff41;
+        }
+        .deceased .ascii-art { color: #444; }
+        .timeline {
+            margin-top: 30px;
+        }
+        .timeline h3 {
+            color: #00ff41;
+            border-bottom: 1px solid #00ff41;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .timeline-item {
+            display: flex;
+            padding: 15px 0;
+            border-bottom: 1px solid #222;
+        }
+        .timeline-date {
+            color: #888;
+            width: 150px;
+            flex-shrink: 0;
+        }
+        .timeline-content {
+            flex: 1;
+        }
+        .memorial {
+            text-align: center;
+            padding: 40px;
+            background: #0a0a0a;
+            border: 1px solid #333;
+            margin-top: 30px;
+        }
+        .memorial h2 {
+            color: #666;
+            font-style: italic;
+        }
+        .memorial p {
+            color: #444;
+            margin-top: 10px;
+        }
+        .loading, .error {
+            text-align: center;
+            padding: 50px;
+        }
+        .error { color: #ff4444; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/hall-of-fame/" class="back-link">← Back to Hall of Fame</a>
+        
+        <header>
+            <h1>⚡ MACHINE PROFILE</h1>
+        </header>
+
+        <div id="machineProfile">
+            <div class="loading">Loading machine data...</div>
+        </div>
+
+        <div style="text-align: center; padding: 30px; color: #444; font-size: 0.8em; margin-top: 50px;">
+            RustChain Hall of Fame | Machine Detail Page
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://rustchain.org';
+
+        async function loadMachineProfile() {
+            const params = new URLSearchParams(window.location.search);
+            const machineId = params.get('machine') || params.get('id');
+            
+            if (!machineId) {
+                document.getElementById('machineProfile').innerHTML = 
+                    '<div class="error">No machine ID provided. Use ?machine=&lt;fingerprint_hash&gt;</div>';
+                return;
+            }
+
+            try {
+                // Try to get machine data from hall of fame API
+                const response = await fetch(`${API_BASE}/api/hall_of_fame`);
+                const data = await response.json();
+                
+                // Find machine by fingerprint
+                let machine = null;
+                for (const category of Object.values(data)) {
+                    if (Array.isArray(category)) {
+                        machine = category.find(m => m.fingerprint_hash === machineId || m.id === machineId);
+                        if (machine) break;
+                    }
+                }
+
+                if (!machine) {
+                    // Show demo data if machine not found
+                    showDemoProfile(machineId);
+                    return;
+                }
+
+                renderProfile(machine);
+            } catch (error) {
+                console.error('Failed to load machine:', error);
+                showDemoProfile(machineId);
+            }
+        }
+
+        function showDemoProfile(machineId) {
+            // Demo data for development
+            const demoMachine = {
+                fingerprint_hash: machineId,
+                nickname: "Retro Beast",
+                device_family: "Power Macintosh",
+                device_arch: "powerpc",
+                device_model: "G4 Cube",
+                manufacture_year: 2000,
+                rust_score: 95,
+                total_attestations: 1337,
+                is_deceased: false,
+                capacitor_plague: false,
+                first_attestation: "2024-01-15T10:30:00Z",
+                last_attestation: "2024-03-03T08:45:00Z",
+                miner_id: "miner_abc123"
+            };
+            renderProfile(demoMachine);
+        }
+
+        function renderProfile(machine) {
+            const isDeceased = machine.is_deceased;
+            const age = new Date().getFullYear() - (machine.manufacture_year || 2000);
+            
+            const badge = getRustBadge(machine.rust_score);
+            const asciiSilhouette = getAsciiSilhouette(machine.device_arch);
+            
+            document.getElementById('machineProfile').innerHTML = `
+                <div class="${isDeceased ? 'deceased' : ''}">
+                    <div class="machine-card">
+                        <div class="machine-header">
+                            <div class="machine-name">${machine.nickname || machine.device_model || 'Unknown Machine'}</div>
+                            <div class="badge">${badge}</div>
+                        </div>
+
+                        <div class="ascii-art"><pre>${asciiSilhouette}</pre></div>
+
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <div class="info-label">Architecture</div>
+                                <div class="info-value">${machine.device_arch || 'Unknown'}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">Model</div>
+                                <div class="info-value">${machine.device_model || 'Unknown'}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">Manufacture Year</div>
+                                <div class="info-value">${machine.manufacture_year || 'Unknown'}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">Age</div>
+                                <div class="info-value">${age} years</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">Rust Score</div>
+                                <div class="info-value">${machine.rust_score || 0}/100</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">Total Attestations</div>
+                                <div class="info-value">${machine.total_attestations || 0}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">Operator</div>
+                                <div class="info-value">${machine.miner_id || 'Unknown'}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">Status</div>
+                                <div class="info-value">${isDeceased ? '⚰️ Deceased' : '✅ Active'}</div>
+                            </div>
+                        </div>
+
+                        ${machine.capacitor_plague ? '<div style="color: #ff6600; margin-top: 20px;">⚠️ Capacitor Plague Detected</div>' : ''}
+                    </div>
+
+                    <div class="timeline">
+                        <h3>ATTESTATION TIMELINE</h3>
+                        <div class="timeline-item">
+                            <div class="timeline-date">${formatDate(machine.first_attestation)}</div>
+                            <div class="timeline-content">First Attestation</div>
+                        </div>
+                        <div class="timeline-item">
+                            <div class="timeline-date">${formatDate(machine.last_attestation)}</div>
+                            <div class="timeline-content">Last Attestation</div>
+                        </div>
+                    </div>
+
+                    ${isDeceased ? `
+                    <div class="memorial">
+                        <h2>In Memoriam</h2>
+                        <p>This machine has completed its service to the RustChain network.<br>May its silicon rest in peace. ⚰️</p>
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        function getRustBadge(score) {
+            if (score >= 90) return 'PLATINUM';
+            if (score >= 75) return 'GOLD';
+            if (score >= 50) return 'SILVER';
+            return 'BRONZE';
+        }
+
+        function getAsciiSilhouette(arch) {
+            const silhouettes = {
+                powerpc: `
+    +--------+
+    |  G4    |
+    |  CUBE  |
+    +--------+
+        ||
+    +--------+
+    |        |
+    |   🖥️   |
+    |        |
+    +--------+`,
+                x86_64: `
+    +----------+
+    |  SERVER  |
+    |  [====]  |
+    |  [====]  |
+    |  [====]  |
+    +----------+`,
+                arm64: `
+        +--+
+        |🍎|
+        +--+
+       +----+
+       | M1 |
+       +----+`,
+                default: `
+    +--------+
+    |   💻   |
+    |  CPU   |
+    +--------+`
+            };
+            return silhouettes[arch] || silhouettes.default;
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return 'Unknown';
+            return new Date(dateStr).toLocaleDateString();
+        }
+
+        window.onload = loadMachineProfile;
+    </script>
+</body>
+</html>
