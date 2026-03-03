@@ -32,6 +32,7 @@ from urllib.error import URLError, HTTPError
 # Default configuration
 DEFAULT_NODE = "https://rustchain.org"
 TIMEOUT = 10
+__version__ = "0.1.0"
 
 def get_node_url():
     """Get node URL from env var or default."""
@@ -246,6 +247,7 @@ def main():
     parser.add_argument("--node", help="Node URL (default: https://rustchain.org)")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--no-color", action="store_true", help="Disable color output")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     
     subparsers = parser.add_subparsers(dest="command", help="Commands")
     
