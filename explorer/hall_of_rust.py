@@ -257,6 +257,61 @@ def get_machine(fingerprint):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@hall_bp.route('/api/hall_of_fame/machine', methods=['GET'])
+def get_machine_by_query():
+    """Get a machine's Hall of Rust entry by query param (for Hall of Fame detail pages)."""
+    fingerprint = request.args.get('id') or request.args.get('fingerprint')
+    if not fingerprint:
+        return jsonify({'error': 'Missing machine ID. Use ?id=<fingerprint_hash>'}), 400
+    
+    try:
+        from flask import current_app
+        db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        c.execute("SELECT * FROM hall_of_rust WHERE fingerprint_hash = ?", (fingerprint,))
+        row = c.fetchone()
+        conn.close()
+        
+        if not row:
+            return jsonify({'error': 'Machine not found in Hall of Rust'}), 404
+        
+        machine = dict(row)
+        
+        # Add computed fields for display
+        machine['badge'] = get_rust_badge(machine.get('rust_score', 0))
+        machine['age_years'] = 2025 - (machine.get('manufacture_year') or 2020)
+        
+        # Get attestation timeline (last 30 days)
+        c.execute("""
+            SELECT attested_at, rust_score 
+            FROM attestation_history 
+            WHERE fingerprint_hash = ? 
+            ORDER BY attested_at DESC 
+            LIMIT 30
+        """, (fingerprint,))
+        timeline_rows = c.fetchall()
+        machine['attestation_timeline'] = [dict(r) for r in timeline_rows]
+        
+        # Calculate reward participation
+        c.execute("""
+            SELECT COUNT(*) as epoch_count, SUM(reward) as total_reward
+            FROM epoch_rewards
+            WHERE fingerprint_hash = ?
+        """, (fingerprint,))
+        reward_row = c.fetchone()
+        if reward_row:
+            machine['epoch_participation'] = reward_row['epoch_count']
+            machine['total_reward'] = reward_row['total_reward'] or 0
+        
+        conn.close()
+        
+        return jsonify(machine)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @hall_bp.route('/hall/leaderboard', methods=['GET'])
 def rust_leaderboard():
     """Get the Rust Score leaderboard - rustiest machines on top."""

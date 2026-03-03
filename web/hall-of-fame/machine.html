@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Machine Profile | RustChain Hall of Fame</title>
+    <meta name="description" content="RustChain Hall of Fame - Machine Profile and Attestation History">
+    <link rel="stylesheet" href="/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --green: #33ff33;
+            --green-dim: #1a8c1a;
+            --green-glow: #00ff0044;
+            --amber: #ffb000;
+            --amber-dim: #996a00;
+            --amber-glow: #ffb00033;
+            --red: #ff4444;
+            --cyan: #00ffff;
+            --bg-dark: #0a0a0a;
+            --bg-card: #0d1117;
+            --bg-terminal: #000800;
+            --border: #1a331a;
+            --text-dim: #668866;
+            --text-body: #a0c8a0;
+            --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+            --font-display: 'VT323', monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--bg-dark);
+            color: var(--text-body);
+            font-family: var(--font-mono);
+            font-size: 14px;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* ========== NAV ========== */
+        .terminal-nav {
+            background: rgba(0,0,0,0.95);
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem 1.5rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(8px);
+        }
+        .nav-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .nav-logo {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            color: var(--green);
+            text-shadow: 0 0 10px var(--green-glow);
+            text-decoration: none;
+        }
+        .nav-links {
+            display: flex;
+            gap: 1.5rem;
+            align-items: center;
+        }
+        .nav-links a {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover, .nav-links a.active {
+            color: var(--green);
+            text-shadow: 0 0 8px var(--green-glow);
+        }
+
+        /* ========== MAIN CONTAINER ========== */
+        .machine-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+        }
+
+        /* ========== HEADER ========== */
+        .machine-header {
+            text-align: center;
+            padding: 2rem 0;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 2rem;
+        }
+        .machine-ascii {
+            font-family: var(--font-display);
+            font-size: clamp(0.5rem, 2vw, 0.9rem);
+            color: var(--amber);
+            text-shadow: 0 0 15px var(--amber-glow);
+            white-space: pre;
+            line-height: 1.2;
+            margin-bottom: 1rem;
+            overflow-x: auto;
+        }
+        .machine-title {
+            font-family: var(--font-display);
+            font-size: 2rem;
+            color: var(--green);
+            text-shadow: 0 0 10px var(--green-glow);
+            margin-bottom: 0.5rem;
+        }
+        .machine-badge {
+            display: inline-block;
+            padding: 0.25rem 1rem;
+            background: var(--bg-terminal);
+            border: 1px solid var(--green);
+            border-radius: 4px;
+            color: var(--green);
+            font-family: var(--font-display);
+            font-size: 1.1rem;
+            text-shadow: 0 0 8px var(--green-glow);
+        }
+
+        /* ========== STATS GRID ========== */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .stat-card {
+            background: var(--bg-terminal);
+            border: 1px solid var(--border);
+            padding: 1.25rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green-glow);
+        }
+        .stat-card.deceased::before {
+            background: var(--red);
+            box-shadow: 0 0 8px #ff444444;
+        }
+        .stat-value {
+            font-family: var(--font-display);
+            font-size: 1.8rem;
+            color: var(--green);
+            text-shadow: 0 0 10px var(--green-glow);
+        }
+        .stat-card.deceased .stat-value {
+            color: var(--text-dim);
+            text-shadow: none;
+        }
+        .stat-label {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-top: 0.25rem;
+        }
+
+        /* ========== DETAILS SECTION ========== */
+        .details-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            border-radius: 8px;
+        }
+        .details-title {
+            font-family: var(--font-display);
+            font-size: 1.3rem;
+            color: var(--amber);
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .details-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            border-bottom: 1px dashed var(--border);
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-label {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+        .detail-value {
+            color: var(--green);
+            font-weight: 600;
+        }
+
+        /* ========== TIMELINE ========== */
+        .timeline-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            border-radius: 8px;
+        }
+        .timeline-title {
+            font-family: var(--font-display);
+            font-size: 1.3rem;
+            color: var(--cyan);
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .timeline-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .timeline-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem;
+            border-left: 2px solid var(--green);
+            margin-left: 1rem;
+            padding-left: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        .timeline-date {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+        .timeline-score {
+            color: var(--green);
+            font-weight: 600;
+        }
+
+        /* ========== BACK LINK ========== */
+        .back-link {
+            display: inline-block;
+            margin-bottom: 1.5rem;
+            color: var(--green);
+            text-decoration: none;
+            font-size: 0.9rem;
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--green);
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        .back-link:hover {
+            background: var(--green);
+            color: var(--bg-dark);
+            box-shadow: 0 0 15px var(--green-glow);
+        }
+
+        /* ========== LOADING ========== */
+        .loading {
+            text-align: center;
+            padding: 4rem 2rem;
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            color: var(--amber);
+        }
+        .loading-dots::after {
+            content: '';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+        @keyframes dots {
+            0%, 20% { content: ''; }
+            40% { content: '.'; }
+            60% { content: '..'; }
+            80%, 100% { content: '...'; }
+        }
+
+        /* ========== ERROR ========== */
+        .error-box {
+            background: rgba(255, 68, 68, 0.1);
+            border: 1px solid var(--red);
+            padding: 2rem;
+            text-align: center;
+            border-radius: 8px;
+            margin-top: 2rem;
+        }
+        .error-title {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            color: var(--red);
+            margin-bottom: 1rem;
+        }
+
+        /* ========== DECEASED STYLING ========== */
+        .deceased-banner {
+            background: linear-gradient(90deg, transparent, rgba(255, 68, 68, 0.1), transparent);
+            border-top: 1px solid var(--red);
+            border-bottom: 1px solid var(--red);
+            padding: 1rem;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .deceased-text {
+            font-family: var(--font-display);
+            font-size: 1.2rem;
+            color: var(--red);
+            letter-spacing: 3px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="terminal-nav">
+        <div class="nav-inner">
+            <a href="/" class="nav-logo">RUSTCHAIN</a>
+            <div class="nav-links">
+                <a href="/">Home</a>
+                <a href="/explorer">Explorer</a>
+                <a href="/hall-of-fame/" class="active">Hall of Fame</a>
+                <a href="/museum">Museum</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="machine-container">
+        <!-- Back Link -->
+        <a href="/hall-of-fame/" class="back-link">← Back to Hall of Fame</a>
+
+        <!-- Loading State -->
+        <div id="loading" class="loading">
+            <div class="loading-dots">SUMMONING MACHINE SPIRIT</div>
+        </div>
+
+        <!-- Error State -->
+        <div id="error" class="error-box" style="display: none;">
+            <div class="error-title">MACHINE NOT FOUND</div>
+            <p id="errorMessage">The requested machine could not be found in the Hall of Rust.</p>
+        </div>
+
+        <!-- Machine Profile -->
+        <div id="machineProfile" style="display: none;">
+            <!-- Header -->
+            <div class="machine-header">
+                <pre id="machineAscii" class="machine-ascii"></pre>
+                <h1 id="machineTitle" class="machine-title">Loading...</h1>
+                <span id="machineBadge" class="machine-badge">--</span>
+            </div>
+
+            <!-- Deceased Banner (if applicable) -->
+            <div id="deceasedBanner" class="deceased-banner" style="display: none;">
+                <div class="deceased-text">⚠ THIS MACHINE HAS PASSED TO THE GREAT SERVER ROOM IN THE SKY ⚠</div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-card" id="rustScoreCard">
+                    <div id="rustScoreValue" class="stat-value">--</div>
+                    <div class="stat-label">Rust Score</div>
+                </div>
+                <div class="stat-card">
+                    <div id="attestationsValue" class="stat-value">--</div>
+                    <div class="stat-label">Total Attestations</div>
+                </div>
+                <div class="stat-card">
+                    <div id="ageValue" class="stat-value">--</div>
+                    <div class="stat-label">Age (Years)</div>
+                </div>
+                <div class="stat-card">
+                    <div id="rewardValue" class="stat-value">--</div>
+                    <div class="stat-label">Total Rewards (RTC)</div>
+                </div>
+            </div>
+
+            <!-- Details Section -->
+            <div class="details-section">
+                <h2 class="details-title">🔧 HARDWARE SPECIFICATIONS</h2>
+                <div class="details-grid">
+                    <div class="detail-row">
+                        <span class="detail-label">Architecture</span>
+                        <span id="archValue" class="detail-value">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Device Family</span>
+                        <span id="familyValue" class="detail-value">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Model</span>
+                        <span id="modelValue" class="detail-value">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Manufacture Year</span>
+                        <span id="yearValue" class="detail-value">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Miner ID</span>
+                        <span id="minerValue" class="detail-value">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">First Attestation</span>
+                        <span id="firstAttValue" class="detail-value">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Last Attestation</span>
+                        <span id="lastAttValue" class="detail-value">--</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Fingerprint</span>
+                        <span id="fpValue" class="detail-value" style="font-size: 0.75rem;">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Attestation Timeline -->
+            <div class="timeline-section">
+                <h2 class="timeline-title">📜 ATTESTATION HISTORY (Last 30)</h2>
+                <div id="timelineList" class="timeline-list">
+                    <!-- Timeline items will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get machine ID from URL query param
+        const urlParams = new URLSearchParams(window.location.search);
+        const machineId = urlParams.get('id') || urlParams.get('machine');
+
+        // ASCII art for different architectures
+        function getAsciiArt(arch) {
+            const arts = {
+                'G4': `
+   _____
+  /     \\
+ |  G4   |
+  \\_____/\n`,
+                'G5': `
+   _____
+  /     \\
+ |  G5   |
+  \\_____/\n`,
+                'PowerPC': `
+   _____
+  /     \\
+ |  PPC  |
+  \\_____/\n`,
+                '486': `
+   _____
+  /     \\
+ |  486  |
+  \\_____/\n`,
+                'pentium': `
+   _____
+  /     \\
+ | PENTIUM|
+  \\_____/\n`,
+                'x86': `
+   _____
+  /     \\
+ |  x86  |
+  \\_____/\n`,
+                'default': `
+   _____
+  /     \\
+ | MACHINE|
+  \\_____/\n`
+            };
+            
+            if (!arch) return arts['default'];
+            const archLower = arch.toLowerCase();
+            for (const [key, art] of Object.entries(arts)) {
+                if (archLower.includes(key)) return art;
+            }
+            return arts['default'];
+        }
+
+        // Format timestamp to readable date
+        function formatDate(ts) {
+            if (!ts) return '--';
+            const date = new Date(ts * 1000);
+            return date.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Format large numbers
+        function fmtNum(n) {
+            if (!n && n !== 0) return '--';
+            if (n >= 1000000) return (n / 1000000).toFixed(2) + 'M';
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+            return n.toString();
+        }
+
+        // Load machine data
+        async function loadMachine() {
+            if (!machineId) {
+                showError('No machine ID provided. Please use ?id=<fingerprint_hash>');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/hall_of_fame/machine?id=${machineId}`);
+                
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({ error: 'Machine not found' }));
+                    throw new Error(error.error || 'Machine not found');
+                }
+
+                const machine = await response.json();
+                displayMachine(machine);
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        // Display machine data
+        function displayMachine(machine) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('machineProfile').style.display = 'block';
+
+            // Set ASCII art
+            document.getElementById('machineAscii').textContent = getAsciiArt(machine.device_arch);
+
+            // Set title
+            const nickname = machine.nickname || machine.device_model || 'Unknown Machine';
+            document.getElementById('machineTitle').textContent = nickname;
+
+            // Set badge
+            document.getElementById('machineBadge').textContent = machine.badge || getRustBadge(machine.rust_score);
+
+            // Set stats
+            document.getElementById('rustScoreValue').textContent = machine.rust_score ? machine.rust_score.toFixed(1) : '--';
+            document.getElementById('attestationsValue').textContent = fmtNum(machine.total_attestations);
+            document.getElementById('ageValue').textContent = machine.age_years || '--';
+            document.getElementById('rewardValue').textContent = machine.total_reward ? machine.total_reward.toFixed(2) : '0';
+
+            // Set details
+            document.getElementById('archValue').textContent = machine.device_arch || '--';
+            document.getElementById('familyValue').textContent = machine.device_family || '--';
+            document.getElementById('modelValue').textContent = machine.device_model || '--';
+            document.getElementById('yearValue').textContent = machine.manufacture_year || '--';
+            document.getElementById('minerValue').textContent = machine.miner_id || '--';
+            document.getElementById('firstAttValue').textContent = formatDate(machine.first_attestation);
+            document.getElementById('lastAttValue').textContent = formatDate(machine.last_attestation);
+            document.getElementById('fpValue').textContent = machine.fingerprint_hash || '--';
+
+            // Handle deceased machines
+            if (machine.is_deceased) {
+                document.getElementById('deceasedBanner').style.display = 'block';
+                document.getElementById('rustScoreCard').classList.add('deceased');
+            }
+
+            // Populate timeline
+            const timeline = machine.attestation_timeline || [];
+            const timelineList = document.getElementById('timelineList');
+            
+            if (timeline.length === 0) {
+                timelineList.innerHTML = '<div style="text-align: center; color: var(--text-dim); padding: 2rem;">No recent attestations found</div>';
+            } else {
+                timelineList.innerHTML = timeline.map(item => `
+                    <div class="timeline-item">
+                        <span class="timeline-date">${formatDate(item.attested_at)}</span>
+                        <span class="timeline-score">Rust: ${item.rust_score ? item.rust_score.toFixed(1) : '--'}</span>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // Show error
+        function showError(msg) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('errorMessage').textContent = msg;
+        }
+
+        // Get rust badge from score
+        function getRustBadge(score) {
+            if (!score) return 'Unknown';
+            if (score >= 200) return 'Oxidized Legend';
+            if (score >= 150) return 'Tetanus Master';
+            if (score >= 100) return 'Patina Veteran';
+            if (score >= 70) return 'Rust Warrior';
+            if (score >= 50) return 'Corroded Knight';
+            if (score >= 30) return 'Tarnished Squire';
+            return 'Fresh Metal';
+        }
+
+        // Load on page ready
+        loadMachine();
+    </script>
+</body>
+</html>
