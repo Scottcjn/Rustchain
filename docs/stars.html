@@ -1,0 +1,92 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>5,000 Stars Drive - RustChain</title>
+  <style>
+    body { font-family: sans-serif; max-width: 800px; margin: auto; padding: 1em; }
+    #progress-container { background: #eee; border-radius: 4px; overflow: hidden; }
+    #progress-bar { height: 20px; background: #4caf50; width: 0%; transition: width 0.5s; }
+    table { width: 100%; border-collapse: collapse; margin: .5em 0; }
+    th, td { border: 1px solid #ccc; padding: .5em; text-align: center; }
+    form label { display: block; margin: .5em 0; }
+    input[type=text], input[type=number] { width: 100%; padding: .4em; }
+    button { padding: .6em 1.2em; margin-top: .5em; }
+    pre { background: #f8f8f8; padding: .5em; }
+  </style>
+</head>
+<body>
+  <h1>5,000 Stars Drive — Earn Up to 430 RTC</h1>
+  <div id="progress-container">
+    <div id="progress-bar"></div>
+  </div>
+  <p id="progress-text">Loading star count…</p>
+
+  <h2>Reward Tiers</h2>
+  <table>
+    <tr><th>Repos Starred</th><th>RTC Per Star</th><th>Max Payout</th></tr>
+    <tr><td>1-2</td><td>1</td><td>2</td></tr>
+    <tr><td>3-4</td><td>1.5</td><td>6</td></tr>
+    <tr><td>5-9</td><td>2</td><td>18</td></tr>
+    <tr><td>10-19</td><td>2.5</td><td>50</td></tr>
+    <tr><td>20-49</td><td>3</td><td>150</td></tr>
+    <tr><td>All 86 repos</td><td>5</td><td>430</td></tr>
+  </table>
+
+  <h2>Social Amplifier Bonus</h2>
+  <table>
+    <tr><th>Action</th><th>Bonus</th></tr>
+    <tr><td>Tweet + link</td><td>+5 RTC</td></tr>
+    <tr><td>Dev.to / Medium article</td><td>+15 RTC</td></tr>
+    <tr><td>Reddit post</td><td>+10 RTC</td></tr>
+    <tr><td>HN submission</td><td>+25 RTC</td></tr>
+  </table>
+
+  <h2>Claim Your Rewards</h2>
+  <form id="claim-form">
+    <label>GitHub Username:<br><input type="text" name="username" required></label>
+    <label>Repos Starred (count):<br><input type="number" name="count" min="1" max="86" required></label>
+    <label>RTC Wallet Address:<br><input type="text" name="wallet" pattern="^[A-Za-z0-9]+RTC$" required></label>
+    <button type="submit">Verify &amp; Submit Claim</button>
+  </form>
+  <pre id="claim-result"></pre>
+
+  <script>
+    const REPO_LIST = [
+      // ... full list of 86 repos in "owner/name" format ...
+      "Scottcjn/Rustchain", "Scottcjn/BoTTube" // required main repos
+      // add all others here
+    ];
+    async function fetchStarCounts() {
+      let total=0;
+      for (let repo of REPO_LIST) {
+        try {
+          let res = await fetch(`https://api.github.com/repos/${repo}`);
+          if(res.ok) { let data = await res.json(); total += data.stargazers_count; }
+        } catch(e) { console.warn(repo, e); }
+      }
+      return total;
+    }
+    async function updateProgress() {
+      const starCount = await fetchStarCounts();
+      const pct = Math.min(100, (starCount/5000*100).toFixed(1));
+      document.getElementById('progress-bar').style.width = pct+ '%';
+      document.getElementById('progress-text').textContent = starCount + '/5000 stars (' + pct + '%)';
+    }
+    document.getElementById('claim-form').addEventListener('submit', async e=>{
+      e.preventDefault();
+      const f=new FormData(e.target);
+      const user=f.get('username'), cnt=+f.get('count'), wallet=f.get('wallet');
+      document.getElementById('claim-result').textContent = 'Verifying…';
+      try {
+        const resp = await fetch('/scripts/verify_stars.py?username='+user+'&count='+cnt+'&wallet='+wallet);
+        const txt = await resp.text();
+        document.getElementById('claim-result').textContent = txt;
+      } catch(err) { document.getElementById('claim-result').textContent = 'Error: '+err; }
+    });
+    updateProgress();
+  </script>
+</body>
+</html>
