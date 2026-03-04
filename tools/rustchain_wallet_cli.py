@@ -86,11 +86,31 @@ def _encrypt_private_key(priv_hex: str, password: str) -> dict:
     }
 
 
+def _pick(enc: dict, *names: str):
+    for n in names:
+        if n in enc and enc[n] not in (None, ""):
+            return enc[n]
+    return None
+
+
 def _decrypt_private_key(enc: dict, password: str) -> str:
-    salt = base64.b64decode(enc["salt_b64"])
-    nonce = base64.b64decode(enc["nonce_b64"])
-    ct = base64.b64decode(enc["ciphertext_b64"])
-    key = _pbkdf2_key(password, salt, int(enc.get("kdf_iterations", 100000)))
+    """Decrypt keystore payload with compatibility aliases.
+
+    Supports current keys (salt_b64/nonce_b64/ciphertext_b64) and common
+    legacy aliases (salt, nonce, ciphertext, encrypted_private_key).
+    """
+    salt_s = _pick(enc, "salt_b64", "salt")
+    nonce_s = _pick(enc, "nonce_b64", "nonce", "iv_b64", "iv")
+    ct_s = _pick(enc, "ciphertext_b64", "ciphertext", "encrypted_private_key")
+    if not (salt_s and nonce_s and ct_s):
+        raise ValueError("Unsupported keystore crypto format")
+
+    salt = base64.b64decode(salt_s)
+    nonce = base64.b64decode(nonce_s)
+    ct = base64.b64decode(ct_s)
+
+    iterations = int(_pick(enc, "kdf_iterations", "iterations", "pbkdf2_iterations") or 100000)
+    key = _pbkdf2_key(password, salt, iterations)
     aes = AESGCM(key)
     pt = aes.decrypt(nonce, ct, None)
     if len(pt) != 32:

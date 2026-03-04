@@ -9,6 +9,19 @@ def test_encrypt_decrypt_roundtrip():
     assert out == priv
 
 
+def test_decrypt_compat_alias_fields():
+    priv = "22" * 32
+    enc = cli._encrypt_private_key(priv, "pw456")
+    legacy = {
+        "salt": enc["salt_b64"],
+        "nonce": enc["nonce_b64"],
+        "encrypted_private_key": enc["ciphertext_b64"],
+        "iterations": enc["kdf_iterations"],
+    }
+    out = cli._decrypt_private_key(legacy, "pw456")
+    assert out == priv
+
+
 def test_address_format_from_pubkey():
     pub = "22" * 32
     addr = cli._address_from_pubkey_hex(pub)
