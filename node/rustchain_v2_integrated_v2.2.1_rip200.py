@@ -565,13 +565,46 @@ MIN_WITHDRAWAL = 0.1  # RTC
 WITHDRAWAL_FEE = 0.01  # RTC
 MAX_DAILY_WITHDRAWAL = 1000.0  # RTC
 
-# Prometheus metrics
+# Prometheus metrics - Core node health
+node_up = Gauge('rustchain_node_up', 'Node is up and responding', ['version'])
+node_uptime = Gauge('rustchain_node_uptime_seconds', 'Node uptime in seconds')
+node_info = Info('rustchain_node', 'Node information')
+
+# Prometheus metrics - Withdrawals
 withdrawal_requests = Counter('rustchain_withdrawal_requests', 'Total withdrawal requests')
 withdrawal_completed = Counter('rustchain_withdrawal_completed', 'Completed withdrawals')
 withdrawal_failed = Counter('rustchain_withdrawal_failed', 'Failed withdrawals')
 balance_gauge = Gauge('rustchain_miner_balance', 'Miner balance', ['miner_pk'])
 epoch_gauge = Gauge('rustchain_current_epoch', 'Current epoch')
 withdrawal_queue_size = Gauge('rustchain_withdrawal_queue', 'Pending withdrawals')
+
+# Prometheus metrics - Miners
+active_miners = Gauge('rustchain_active_miners_total', 'Number of active miners')
+enrolled_miners = Gauge('rustchain_enrolled_miners_total', 'Number of enrolled miners')
+miner_last_attest = Gauge('rustchain_miner_last_attest_timestamp', 
+                          'Last attestation timestamp for miner',
+                          ['miner', 'arch', 'device_family'])
+
+# Prometheus metrics - Epoch
+current_epoch = Gauge('rustchain_current_epoch', 'Current epoch number')
+current_slot = Gauge('rustchain_current_slot', 'Current slot number')
+epoch_slot_progress = Gauge('rustchain_epoch_slot_progress', 'Epoch slot progress (0-1)')
+epoch_seconds_remaining = Gauge('rustchain_epoch_seconds_remaining', 'Estimated seconds until next epoch')
+epoch_pot = Gauge('rustchain_epoch_pot_rtc', 'Current epoch pot in RTC')
+blocks_per_epoch = Gauge('rustchain_blocks_per_epoch', 'Blocks per epoch')
+
+# Prometheus metrics - Hall of Fame
+total_machines = Gauge('rustchain_total_machines', 'Total machines in Hall of Fame')
+total_attestations = Gauge('rustchain_total_attestations', 'Total attestations across all machines')
+oldest_machine_year = Gauge('rustchain_oldest_machine_year', 'Manufacture year of oldest machine')
+highest_rust_score = Gauge('rustchain_highest_rust_score', 'Highest rust score in Hall of Fame')
+
+# Prometheus metrics - Fees (RIP-301)
+total_fees_collected = Gauge('rustchain_total_fees_collected_rtc', 'Total fees collected in RTC')
+fee_events_total = Gauge('rustchain_fee_events_total', 'Total number of fee events')
+
+# Prometheus metrics - Supply
+total_supply = Gauge('rustchain_total_supply_rtc', 'Total RTC supply')
 
 # Database setup
 # Allow env override for local dev / different deployments.
@@ -3686,10 +3719,102 @@ def api_ready():
     except Exception:
         return jsonify({"ready": False, "version": APP_VERSION}), 503
 
+def collect_metrics():
+    """Collect and update all Prometheus metrics from node state"""
+    import time as time_module
+    
+    # Node health metrics
+    try:
+        uptime = time_module.time() - APP_START_TS
+        node_up.labels(version=APP_VERSION).set(1)
+        node_uptime.set(uptime)
+        node_info.info({'version': APP_VERSION})
+    except Exception as e:
+        logger.error(f"Error collecting health metrics: {e}")
+    
+    # Epoch metrics
+    try:
+        with sqlite3.connect(DB_PATH) as db:
+            row = db.execute("SELECT epoch, slot FROM epoch_state ORDER BY epoch DESC LIMIT 1").fetchone()
+            if row:
+                epoch, slot = row[0], row[1]
+                current_epoch.set(epoch)
+                current_slot.set(slot)
+                blocks = 144  # Default blocks per epoch
+                blocks_per_epoch.set(blocks)
+                slot_in_epoch = slot % blocks if blocks > 0 else 0
+                progress = slot_in_epoch / blocks if blocks > 0 else 0
+                epoch_slot_progress.set(progress)
+                remaining_blocks = blocks - slot_in_epoch
+                epoch_seconds_remaining.set(remaining_blocks * 600)
+    except Exception as e:
+        logger.error(f"Error collecting epoch metrics: {e}")
+    
+    # Miner metrics
+    try:
+        with sqlite3.connect(DB_PATH) as db:
+            # Get enrolled miners count
+            row = db.execute("SELECT COUNT(*) FROM epoch_enroll WHERE epoch=(SELECT MAX(epoch) FROM epoch_enroll)").fetchone()
+            if row:
+                enrolled_miners.set(row[0])
+            
+            # Get active miners (attested in last 30 minutes)
+            now = int(time_module.time())
+            cutoff = now - 1800
+            rows = db.execute("""
+                SELECT miner_id, device_arch, device_family, last_attest_ts 
+                FROM miner_macs 
+                WHERE last_attest_ts >= ?
+            """, (cutoff,)).fetchall()
+            active_miners.set(len(rows))
+            
+            # Update per-miner attestation timestamps
+            for row in rows:
+                miner_id, arch, family, last_attest_ts = row
+                miner_last_attest.labels(
+                    miner=miner_id or 'unknown',
+                    arch=arch or 'unknown',
+                    device_family=family or 'unknown'
+                ).set(last_attest_ts or 0)
+    except Exception as e:
+        logger.error(f"Error collecting miner metrics: {e}")
+    
+    # Hall of Fame metrics
+    try:
+        from hall_of_rust import get_hall_stats
+        stats = get_hall_stats(DB_PATH)
+        if stats:
+            total_machines.set(stats.get('total_machines', 0))
+            total_attestations.set(stats.get('total_attestations', 0))
+            oldest_machine_year.set(stats.get('oldest_year', 0))
+            highest_rust_score.set(stats.get('highest_rust_score', 0))
+    except Exception as e:
+        logger.error(f"Error collecting Hall of Fame metrics: {e}")
+    
+    # Fee metrics (RIP-301)
+    try:
+        with sqlite3.connect(DB_PATH) as db:
+            row = db.execute("SELECT COALESCE(SUM(fee_rtc), 0) FROM fee_events").fetchone()
+            if row:
+                total_fees_collected.set(row[0])
+            row = db.execute("SELECT COUNT(*) FROM fee_events").fetchone()
+            if row:
+                fee_events_total.set(row[0])
+    except Exception as e:
+        logger.error(f"Error collecting fee metrics: {e}")
+    
+    # Supply metrics
+    try:
+        total_supply.set(TOTAL_SUPPLY_RTC)
+    except Exception as e:
+        logger.error(f"Error collecting supply metrics: {e}")
+
+
 @app.route('/metrics', methods=['GET'])
 def metrics():
-    """Prometheus metrics endpoint"""
-    return generate_latest()
+    """Prometheus metrics endpoint - collects and exports all node metrics"""
+    collect_metrics()
+    return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
 
 @app.route('/rewards/settle', methods=['POST'])

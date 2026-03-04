@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 60s
+  evaluation_interval: 60s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files:
+  - "alerts.yml"
+
+scrape_configs:
+  # Scrape RustChain node's built-in /metrics endpoint
+  - job_name: 'rustchain-node'
+    static_configs:
+      # If node runs on same host
+      - targets: ['host.docker.internal:8099']
+    # For production, replace with actual node IP/hostname
+    # - targets: ['your-node-ip:8099']
