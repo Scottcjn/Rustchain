@@ -13,10 +13,10 @@ mv elyan_logo.png docs/media/
 
 # Optional: zip the landing site for distribution
 cd docs
-zip -r rustchain_landing_bundle.zip index.html media/
+zip -r rustchain_landing_bundle.zip index.html stars.html media/
 cd ..
 
 # Git add, commit, and push
-git add docs/index.html docs/media/ docs/rustchain_landing_bundle.zip
+git add docs/index.html docs/stars.html docs/media/ docs/rustchain_landing_bundle.zip
 git commit -m "🌐 GitHub Pages: Added landing page with RustChain media visuals"
 git push origin main
