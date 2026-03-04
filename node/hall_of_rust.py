@@ -392,6 +392,99 @@ def get_rust_badge(score):
 
 
 
+@hall_bp.route('/api/hall_of_fame', methods=['GET'])
+def api_hall_of_fame():
+    """Hall of Fame leaderboard endpoint."""
+    try:
+        from flask import current_app
+        db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        limit = request.args.get('limit', 100, type=int)
+        
+        c.execute("""
+            SELECT fingerprint_hash, miner_id, device_arch, device_model,
+                   manufacture_year, rust_score, total_attestations,
+                   total_rtc_earned, capacitor_plague, is_deceased, nickname
+            FROM hall_of_rust 
+            ORDER BY rust_score DESC 
+            LIMIT ?
+        """, (limit,))
+        
+        rows = c.fetchall()
+        
+        # Get stats for the response
+        c.execute("""SELECT COUNT(*) FROM hall_of_rust WHERE device_arch NOT IN ('unknown', 'default')""")
+        total_machines = c.fetchone()[0]
+        
+        c.execute("""SELECT SUM(total_attestations) FROM hall_of_rust WHERE device_arch NOT IN ('unknown', 'default')""")
+        total_attestations = c.fetchone()[0] or 0
+        
+        c.execute("""SELECT MIN(manufacture_year) FROM hall_of_rust WHERE manufacture_year IS NOT NULL""")
+        oldest_year = c.fetchone()[0] or 0
+        
+        c.execute("SELECT MAX(rust_score) FROM hall_of_rust")
+        highest_score = c.fetchone()[0] or 0
+        
+        conn.close()
+        
+        leaderboard = []
+        for i, row in enumerate(rows, 1):
+            entry = dict(row)
+            entry['rank'] = i
+            entry['badge'] = get_rust_badge(entry['rust_score'])
+            leaderboard.append(entry)
+        
+        return jsonify({
+            'leaderboard': leaderboard,
+            'stats': {
+                'total_machines': total_machines,
+                'total_attestations': total_attestations,
+                'oldest_year': oldest_year,
+                'highest_rust_score': highest_score
+            },
+            'total_machines': len(leaderboard),
+            'generated_at': int(time.time())
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@hall_bp.route('/api/hall_of_fame/stats', methods=['GET'])
+def api_hall_of_fame_stats():
+    """Hall of Fame statistics endpoint."""
+    try:
+        from flask import current_app
+        db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+        
+        stats = {}
+        
+        c.execute("""SELECT COUNT(*) FROM hall_of_rust WHERE device_arch NOT IN ('unknown', 'default')""")
+        stats['total_machines'] = c.fetchone()[0]
+        
+        c.execute("SELECT COUNT(*) FROM hall_of_rust WHERE is_deceased = 1")
+        stats['deceased_machines'] = c.fetchone()[0]
+        
+        c.execute("""SELECT SUM(total_attestations) FROM hall_of_rust WHERE device_arch NOT IN ('unknown', 'default')""")
+        stats['total_attestations'] = c.fetchone()[0] or 0
+        
+        c.execute("""SELECT AVG(rust_score) FROM hall_of_rust WHERE device_arch NOT IN ('unknown', 'default')""")
+        stats['average_rust_score'] = round(c.fetchone()[0] or 0, 2)
+        
+        c.execute("SELECT MAX(rust_score) FROM hall_of_rust")
+        stats['highest_rust_score'] = c.fetchone()[0] or 0
+        
+        c.execute("SELECT COUNT(*) FROM hall_of_rust WHERE capacitor_plague = 1")
+        stats['capacitor_plague_survivors'] = c.fetchone()[0]
+        
+        conn.close()
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @hall_bp.route('/api/hall_of_fame/machine', methods=['GET'])
 def api_hall_of_fame_machine():
     """Machine profile endpoint for Hall of Fame detail page."""
