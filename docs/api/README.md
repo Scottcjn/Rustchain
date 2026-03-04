@@ -1,161 +1,146 @@
-# RustChain Node API Documentation
+# RustChain API Documentation
 
-OpenAPI 3.0 specification and Swagger UI for the RustChain node API.
+This directory contains the OpenAPI 3.0 specification and Swagger UI for the RustChain Proof-of-Antiquity blockchain API.
 
-## Files
+## Quick Start
 
-- `openapi.yaml` - OpenAPI 3.0 specification
-- `swagger.html` - Self-contained Swagger UI page
+### View Swagger UI
 
-## Endpoints Documented
-
-### Public Endpoints (No Authentication)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Node health check |
-| GET | `/ready` | Readiness probe |
-| GET | `/epoch` | Current epoch, slot, enrolled miners |
-| GET | `/api/miners` | Active miners with attestation data |
-| GET | `/api/stats` | Network statistics |
-| GET | `/api/hall_of_fame` | Hall of Fame leaderboard (5 categories) |
-| GET | `/api/fee_pool` | RIP-301 fee pool statistics |
-| GET | `/balance?miner_id=X` | Miner balance lookup |
-| GET | `/lottery/eligibility?miner_id=X` | Epoch eligibility check |
-| GET | `/explorer` | Block explorer page |
-
-### Authenticated Endpoints (X-Admin-Key Header)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/attest/submit` | Submit hardware attestation |
-| POST | `/wallet/transfer/signed` | Ed25519 signed transfer |
-| POST | `/wallet/transfer` | Admin transfer (requires admin key) |
-| POST | `/withdraw/request` | Withdrawal request |
-
-## Usage
-
-### View Documentation Locally
-
-1. Open `swagger.html` in a web browser
-2. The page will load the OpenAPI spec from `openapi.yaml`
-3. Use "Try it out" to test endpoints against the live node
-
-### Host with Python
+Open `swagger.html` in your browser:
 
 ```bash
-# Serve files locally
-python3 -m http.server 8080
-
-# Open in browser
-open http://localhost:8080/swagger.html
+# Serve locally with Python
+python3 -m http.server 8000
+# Then visit: http://localhost:8000/swagger.html
 ```
 
-### Validate Spec
+Or use the live production API at https://rustchain.org
+
+### Download OpenAPI Spec
+
+```bash
+curl -O https://raw.githubusercontent.com/Scottcjn/Rustchain/main/docs/api/openapi.yaml
+```
+
+### Validate the Spec
 
 ```bash
 # Install swagger-cli
-npm install -g swagger-cli
+npm install -g @apidevtools/swagger-cli
 
 # Validate
 swagger-cli validate openapi.yaml
 ```
 
-### Test Against Live Node
-
-Test endpoints against the production node:
+### Test Endpoints
 
 ```bash
 # Health check
-curl -sk https://rustchain.org/health | jq
+curl https://rustchain.org/health
 
-# Epoch info
-curl -sk https://rustchain.org/epoch | jq
+# Current epoch
+curl https://rustchain.org/epoch
 
-# Active miners
-curl -sk https://rustchain.org/api/miners | jq
+# List active miners
+curl https://rustchain.org/api/miners
 
-# Hall of Fame
-curl -sk https://rustchain.org/api/hall_of_fame | jq
+# Hall of Fame leaderboard
+curl https://rustchain.org/api/hall_of_fame
+
+# Check miner balance
+curl "https://rustchain.org/balance?miner_id=YOUR_MINER_ID"
+
+# Check mining eligibility
+curl "https://rustchain.org/lottery/eligibility?miner_id=YOUR_MINER_ID"
 ```
 
-## Integration
+## API Overview
 
-### Import into Postman
+### Public Endpoints (No Authentication)
 
-1. Open Postman
-2. File → Import
-3. Select `openapi.yaml`
-4. Collection created with all endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Node health status |
+| `/epoch` | GET | Current epoch and slot info |
+| `/api/miners` | GET | List all active miners |
+| `/api/hall_of_fame` | GET | Hall of Fame leaderboard |
+| `/api/fee_pool` | GET | RIP-301 fee pool statistics |
+| `/balance` | GET | Miner balance query |
+| `/lottery/eligibility` | GET | Mining eligibility check |
+| `/explorer` | GET | Block explorer page |
 
-### Generate Client SDKs
+### Authenticated Endpoints (Require X-Admin-Key)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/attest/submit` | POST | Submit hardware attestation |
+| `/wallet/transfer/signed` | POST | Submit signed transfer |
+| `/wallet/transfer` | POST | Admin transfer |
+| `/withdraw/request` | POST | Request withdrawal |
+
+## Antiquity Multipliers
+
+RustChain rewards older hardware with higher multipliers:
+
+| Hardware | Age | Multiplier |
+|----------|-----|------------|
+| Modern x86_64 | < 10 years | 1.0x |
+| Apple Silicon (M1/M2/M3) | < 5 years | 1.2x |
+| PowerPC G5 | 18-21 years | 2.0x |
+| PowerPC G4 | 20-25 years | 2.5x |
+
+## Epoch Structure
+
+- **Blocks per epoch:** 144
+- **Block time:** ~10 minutes
+- **Epoch duration:** ~24 hours
+- **Total Supply:** 8,388,608 RTC
+- **Block reward:** Variable (based on epoch pot)
+
+## Hall of Fame Categories
+
+The Hall of Fame recognizes top miners in 5 categories:
+
+1. **Ancient Iron** - PowerPC G4/G5 systems (25+ years old)
+2. **Rust Belt Veterans** - Core 2 Duo / early x86_64 (15-25 years)
+3. **Silicon Survivors** - Modern systems with high uptime
+4. **Thermal Warriors** - Systems surviving thermal events
+5. **Capacitor Plague Resistance** - Systems resistant to capacitor plague
+
+## Authentication
+
+Protected endpoints require an `X-Admin-Key` header:
 
 ```bash
-# Python client
-openapi-generator generate -i openapi.yaml -g python -o ./client-python
-
-# JavaScript client
-openapi-generator generate -i openapi.yaml -g javascript -o ./client-js
-
-# Go client
-openapi-generator generate -i openapi.yaml -g go -o ./client-go
+curl -X POST https://rustchain.org/attest/submit \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Key: YOUR_ADMIN_KEY" \
+  -d '{"wallet":"...","hardware_info":{...}}'
 ```
 
-### Embed in Documentation
+## Error Codes
 
-The `swagger.html` file is self-contained and can be:
-- Hosted on any static web server
-- Embedded in existing documentation sites
-- Served directly from the RustChain node
+| Code | Description |
+|------|-------------|
+| 200 | Success |
+| 400 | Bad Request (invalid parameters) |
+| 401 | Unauthorized (missing/invalid admin key) |
+| 403 | Forbidden (insufficient privileges) |
+| 404 | Not Found (endpoint or resource) |
+| 500 | Internal Server Error |
 
-## API Response Examples
+## SDK & Libraries
 
-### Health Check
-```json
-{
-  "status": "ok",
-  "version": "2.2.1-rip200",
-  "uptime_seconds": 12345,
-  "timestamp": 1740783600
-}
-```
+- **Python:** See `/sdk/python/` for RustChain client
+- **JavaScript:** Coming soon
+- **Go:** Coming soon
 
-### Epoch Info
-```json
-{
-  "epoch": 88,
-  "slot": 12700,
-  "slot_progress": 0.45,
-  "seconds_remaining": 300,
-  "enrolled_miners": [
-    {
-      "miner_id": "dual-g4-125",
-      "architecture": "G4",
-      "rust_score": 450.5
-    }
-  ]
-}
-```
+## Support
 
-### Miner List
-```json
-{
-  "miners": [
-    {
-      "miner_id": "dual-g4-125",
-      "architecture": "G4",
-      "rust_score": 450.5,
-      "last_attestation_timestamp": 1740783600,
-      "attestations_count": 150,
-      "status": "active"
-    }
-  ]
-}
-```
+- **GitHub Issues:** https://github.com/Scottcjn/Rustchain/issues
+- **Discord:** [Join the RustChain Discord]
+- **Documentation:** https://docs.rustchain.org
 
-## Version History
+## License
 
-- **2.2.1-rip200** - Current version with RIP-200 and RIP-301 support
-- Added fee pool endpoints
-- Added Hall of Fame categories
-- Enhanced attestation response format
+MIT License - See LICENSE file for details

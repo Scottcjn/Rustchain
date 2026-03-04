@@ -1,76 +1,213 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RustChain Node API - Swagger UI</title>
-  <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
-  <style>
-    html {
-      box-sizing: border-box;
-      overflow: -moz-scrollbars-vertical;
-      overflow-y: scroll;
-    }
-    *, *:before, *:after {
-      box-sizing: inherit;
-    }
-    body {
-      margin: 0;
-      background: #fafafa;
-    }
-    .topbar {
-      background-color: #1a1a2e !important;
-    }
-    .title {
-      color: #fff;
-    }
-    .info .title {
-      color: #3b82f6;
-    }
-    .scheme-container {
-      background: #f8f9fa;
-      padding: 20px;
-      margin-bottom: 20px;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain API Documentation</title>
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.10.0/swagger-ui.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #0a0e0a;
+            color: #00ff41;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 20px;
+            border-bottom: 2px solid #00ff41;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0;
+            color: #00ff41;
+            font-size: 2em;
+            text-shadow: 0 0 10px #00ff41;
+        }
+        
+        .header p {
+            color: #7fdf7f;
+            margin: 10px 0 0 0;
+            font-size: 0.9em;
+        }
+        
+        #swagger-ui {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .swagger-ui .info {
+            margin: 20px 0;
+        }
+        
+        .swagger-ui .info .title {
+            color: #00ff41;
+            font-size: 2em;
+        }
+        
+        /* Custom terminal-style styling */
+        .swagger-ui .topbar {
+            background-color: #1a1a2e;
+            border-bottom: 1px solid #00ff41;
+        }
+        
+        .swagger-ui .topbar .download-url-wrapper .download-url-button {
+            background: #00ff41;
+            color: #0a0e0a;
+            border: none;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+        }
+        
+        .swagger-ui .opblock.opblock-get {
+            border-color: #61affe;
+        }
+        
+        .swagger-ui .opblock.opblock-post {
+            border-color: #49cc90;
+        }
+        
+        .swagger-ui .opblock .opblock-summary {
+            border-color: #00ff41;
+        }
+        
+        .swagger-ui .opblock .opblock-summary-description {
+            color: #7fdf7f;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .swagger-ui .scheme-container {
+            background: #1a1a2e;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #00ff41;
+        }
+        
+        .swagger-ui .model {
+            background: #1a1a2e;
+            color: #00ff41;
+        }
+        
+        .swagger-ui .model-title {
+            color: #00ff41;
+        }
+        
+        .swagger-ui .prop-type {
+            color: #61affe;
+        }
+        
+        .swagger-ui .response-col_status {
+            color: #00ff41;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .rust-badge {
+            background: #00ff41;
+            color: #0a0e0a;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        
+        .terminal-prompt {
+            color: #00ff41;
+        }
+        
+        .terminal-text {
+            color: #7fdf7f;
+        }
+        
+        /* Response examples */
+        .swagger-ui .example {
+            background: #0a0e0a;
+            border: 1px solid #00ff41;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+        }
+    </style>
 </head>
 <body>
-  <div id="swagger-ui"></div>
-
-  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js" charset="UTF-8"></script>
-  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js" charset="UTF-8"></script>
-  <script>
-    window.onload = function() {
-      // Build the Swagger UI
-      const ui = SwaggerUIBundle({
-        url: 'openapi.yaml',
-        dom_id: '#swagger-ui',
-        deepLinking: true,
-        presets: [
-          SwaggerUIBundle.presets.apis,
-          SwaggerUIStandalonePreset
-        ],
-        plugins: [
-          SwaggerUIBundle.plugins.DownloadUrl
-        ],
-        layout: "StandaloneLayout",
-        validatorUrl: "https://validator.swagger.io/validator",
-        displayRequestDuration: true,
-        filter: true,
-        showExtensions: true,
-        showCommonExtensions: true,
-        docExpansion: 'list',
-        defaultModelsExpandDepth: 2,
-        defaultModelExpandDepth: 2,
-        tagsSorter: 'alpha',
-        operationsSorter: 'alpha'
-      });
-
-      window.ui = ui;
-
-      // Add try-it-out for all endpoints
-      console.log('RustChain API Documentation loaded');
-    };
-  </script>
+    <div class="header">
+        <h1>RustChain API Documentation</h1>
+        <p>
+            <span class="terminal-prompt">rustchain@mainnet:~$</span>
+            <span class="terminal-text">Proof-of-Antiquity Blockchain API</span>
+            <span class="rust-badge">v2.2.1</span>
+        </p>
+        <p style="color: #00ff41; font-size: 0.85em; margin-top: 15px;">
+            <span style="color: #ff6b6b;">⚡</span>
+            <strong>Network:</strong> rustchain-mainnet-1
+            <span style="margin: 0 20px;">|</span>
+            <span style="color: #ffd93d;">⛏️</span>
+            <strong>Base URL:</strong> https://rustchain.org
+            <span style="margin: 0 20px;">|</span>
+            <span style="color: #6bcb77;">💾</span>
+            <strong>Total Supply:</strong> 8,388,608 RTC
+        </p>
+    </div>
+    
+    <div id="swagger-ui"></div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.10.0/swagger-ui-bundle.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.10.0/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function() {
+            const ui = SwaggerUIBundle({
+                url: "./openapi.yaml",
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                defaultModelsExpandDepth: 1,
+                defaultModelExpandDepth: 1,
+                docExpansion: "list",
+                filter: true,
+                tryItOutEnabled: true,
+                persistAuthorization: true,
+                syntaxHighlight: {
+                    activate: true,
+                    theme: "monokai"
+                },
+                validatorUrl: null,
+                displayRequestDuration: true,
+                displayOperationId: false,
+                supportedSubmitMethods: ['get', 'post', 'put', 'delete'],
+                onComplete: function() {
+                    console.log("RustChain API Documentation Loaded");
+                },
+                onFailure: function(data) {
+                    console.error("Failed to load spec:", data);
+                }
+            });
+            
+            window.ui = ui;
+        };
+    </script>
+    
+    <footer style="background: #1a1a2e; padding: 20px; text-align: center; border-top: 1px solid #00ff41; margin-top: 40px;">
+        <p style="color: #7fdf7f; margin: 0;">
+            <span style="color: #00ff41;">⚡</span> RustChain - Every vintage computer has historical potential
+        </p>
+        <p style="color: #5a5a5a; margin: 10px 0 0 0; font-size: 0.85em;">
+            <a href="https://github.com/Scottcjn/Rustchain" style="color: #00ff41; text-decoration: none;">GitHub</a>
+            <span style="margin: 0 10px;">|</span>
+            <a href="https://rustchain.org" style="color: #00ff41; text-decoration: none;">Live Network</a>
+            <span style="margin: 0 10px;">|</span>
+            <a href="./openapi.yaml" style="color: #00ff41; text-decoration: none;">Download OpenAPI Spec</a>
+        </p>
+    </footer>
 </body>
 </html>
