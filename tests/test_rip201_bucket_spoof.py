@@ -155,8 +155,62 @@ def _spoofed_g4_payload(miner: str) -> dict:
     }
 
 
-def test_validate_fingerprint_data_accepts_spoofed_g4_without_ppc_evidence():
+def _verified_g4_fingerprint() -> dict:
+    return {
+        "checks": {
+            "anti_emulation": {
+                "passed": True,
+                "data": {
+                    "vm_indicators": [],
+                    "paths_checked": ["/proc/cpuinfo"],
+                    "dmesg_scanned": True,
+                },
+            },
+            "clock_drift": {
+                "passed": True,
+                "data": {
+                    "cv": 0.06,
+                    "samples": 80,
+                },
+            },
+            "simd_identity": {
+                "passed": True,
+                "data": {
+                    "has_altivec": True,
+                    "has_sse": False,
+                    "has_avx": False,
+                    "vec_perm": True,
+                },
+            },
+            "cache_timing": {
+                "passed": True,
+                "data": {
+                    "arch": "powerpc",
+                    "l2_l1_ratio": 1.42,
+                    "l3_l2_ratio": 1.18,
+                },
+            },
+        },
+        "all_passed": True,
+    }
+
+
+def test_validate_fingerprint_data_rejects_spoofed_g4_with_x86_cpu_brand():
     payload = _spoofed_g4_payload("spoof-direct")
+
+    passed, reason = integrated_node.validate_fingerprint_data(
+        payload["fingerprint"],
+        claimed_device=payload["device"],
+    )
+
+    assert passed is False
+    assert "cpu_brand_mismatch" in reason
+
+
+def test_validate_fingerprint_data_accepts_verified_g4_claim():
+    payload = _spoofed_g4_payload("verified-g4")
+    payload["device"]["cpu"] = "PowerPC G4 7447A"
+    payload["fingerprint"] = _verified_g4_fingerprint()
 
     passed, reason = integrated_node.validate_fingerprint_data(
         payload["fingerprint"],
@@ -167,7 +221,7 @@ def test_validate_fingerprint_data_accepts_spoofed_g4_without_ppc_evidence():
     assert reason == "valid"
 
 
-def test_attestation_accepts_modern_x86_claiming_g4_and_grants_vintage_weight(attest_client):
+def test_attestation_downgrades_spoofed_g4_claim_to_non_vintage_weight(attest_client):
     client, db_path = attest_client
     payload = _spoofed_g4_payload("spoof-g4-accepted")
 
@@ -181,7 +235,7 @@ def test_attestation_accepts_modern_x86_claiming_g4_and_grants_vintage_weight(at
     assert response.status_code == 200
     data = response.get_json()
     assert data["ok"] is True
-    assert data["fingerprint_passed"] is True
+    assert data["fingerprint_passed"] is False
 
     with sqlite3.connect(db_path) as conn:
         recent = conn.execute(
@@ -193,16 +247,42 @@ def test_attestation_accepts_modern_x86_claiming_g4_and_grants_vintage_weight(at
             (payload["miner"],),
         ).fetchone()
 
-    assert recent == ("PowerPC", "G4", 1)
-    assert enrollment == (85, 2.5)
-    assert fleet_mod.classify_miner_bucket("g4") == "vintage_powerpc"
+    assert recent == ("x86_64", "default", 0)
+    assert enrollment == (85, 0.000000001)
+    assert fleet_mod.classify_miner_bucket(recent[1]) != "vintage_powerpc"
 
 
-def test_bucket_spoof_produces_10x_reward_gain_over_honest_modern_miners():
+def test_public_apis_do_not_expose_spoofed_claim_as_vintage(attest_client):
+    client, _db_path = attest_client
+    payload = _spoofed_g4_payload("spoof-g4-public-api")
+
+    response = client.post(
+        "/attest/submit",
+        json=payload,
+        headers={"X-Forwarded-For": "198.51.100.26"},
+        environ_base={"REMOTE_ADDR": "10.0.0.10"},
+    )
+
+    assert response.status_code == 200
+
+    badge = client.get(f"/api/badge/{payload['miner']}")
+    badge_body = badge.get_json()
+    assert badge_body["message"] == "Active"
+
+    miners = client.get("/api/miners")
+    miners_body = miners.get_json()
+    miner_row = next(row for row in miners_body if row["miner"] == payload["miner"])
+    assert miner_row["device_family"] == "x86_64"
+    assert miner_row["device_arch"] == "default"
+    assert miner_row["hardware_type"] == "x86-64 (Modern)"
+    assert miner_row["antiquity_multiplier"] == 1.0
+
+
+def test_verified_server_side_classification_blocks_10x_reward_gain():
     db = sqlite3.connect(":memory:")
     fleet_mod.ensure_schema(db)
 
-    miners = [("spoof-g4", "g4")] + [(f"modern-{index}", "modern") for index in range(10)]
+    miners = [("spoof-g4", "default")] + [(f"modern-{index}", "modern") for index in range(10)]
     rewards = fleet_mod.calculate_immune_rewards_equal_split(
         db=db,
         epoch=91,
@@ -211,7 +291,5 @@ def test_bucket_spoof_produces_10x_reward_gain_over_honest_modern_miners():
         total_reward_urtc=1_100_000,
     )
 
-    assert rewards["spoof-g4"] == 550_000
-    assert rewards["modern-0"] == 55_000
-    assert rewards["spoof-g4"] == rewards["modern-0"] * 10
+    assert rewards["spoof-g4"] == rewards["modern-0"]
     assert sum(rewards.values()) == 1_100_000
