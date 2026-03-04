@@ -3,7 +3,7 @@
 RustChain v2 - Integrated Server
 Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
-import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math, re
+import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math, re, statistics
 import ipaddress
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort
@@ -807,6 +807,7 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
+        ensure_fingerprint_history_table(c)
 
         # Pending transfers (2-phase commit)
         # NOTE: Production DBs may already have a different balances schema; this table is additive.
@@ -1116,6 +1117,7 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
             INSERT OR REPLACE INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, source_ip)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (miner, now, device.get("device_family", device.get("family", "unknown")), device.get("device_arch", device.get("arch", "unknown")), 0.0, 1 if fingerprint_passed else 0, source_ip))
+        _ = append_fingerprint_snapshot(conn, miner, fingerprint if isinstance(fingerprint, dict) else {}, now)
         conn.commit()
 
         # RIP-201: Record fleet immune system signals
@@ -1127,6 +1129,155 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
                 print(f"[RIP-201] Fleet signal recording warning: {_fe}")
     # Auto-induct to Hall of Rust
     auto_induct_to_hall(miner, device)
+
+
+TEMPORAL_HISTORY_LIMIT = 10
+TEMPORAL_DRIFT_BANDS = {
+    "clock_drift_cv": (0.0005, 0.35),
+    "thermal_variance": (0.05, 25.0),
+    "jitter_cv": (0.0001, 0.50),
+    "cache_hierarchy_ratio": (1.10, 20.0),
+}
+
+
+def ensure_fingerprint_history_table(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS miner_fingerprint_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            miner TEXT NOT NULL,
+            ts INTEGER NOT NULL,
+            profile_json TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_mfh_miner_ts ON miner_fingerprint_history(miner, ts DESC)")
+
+
+def extract_temporal_profile(fingerprint: dict) -> dict:
+    checks = (fingerprint or {}).get("checks", {}) if isinstance(fingerprint, dict) else {}
+
+    def _check_data(name):
+        item = checks.get(name, {})
+        if isinstance(item, dict):
+            data = item.get("data", {})
+            return data if isinstance(data, dict) else {}
+        return {}
+
+    clock = _check_data("clock_drift")
+    thermal = _check_data("thermal_entropy") or _check_data("thermal_drift")
+    jitter = _check_data("instruction_jitter")
+    cache = _check_data("cache_timing")
+
+    return {
+        "clock_drift_cv": float(clock.get("cv", 0.0) or 0.0),
+        "thermal_variance": float(thermal.get("variance", 0.0) or 0.0),
+        "jitter_cv": float(jitter.get("cv", 0.0) or jitter.get("stddev_ns", 0.0) or 0.0),
+        "cache_hierarchy_ratio": float(cache.get("hierarchy_ratio", 0.0) or 0.0),
+    }
+
+
+def append_fingerprint_snapshot(conn, miner: str, fingerprint: dict, now: int) -> list:
+    ensure_fingerprint_history_table(conn)
+    profile = extract_temporal_profile(fingerprint)
+    conn.execute(
+        "INSERT INTO miner_fingerprint_history (miner, ts, profile_json) VALUES (?, ?, ?)",
+        (miner, now, json.dumps(profile, separators=(",", ":"))),
+    )
+    conn.execute(
+        """
+        DELETE FROM miner_fingerprint_history
+        WHERE miner = ? AND id NOT IN (
+            SELECT id FROM miner_fingerprint_history
+            WHERE miner = ?
+            ORDER BY ts DESC, id DESC
+            LIMIT ?
+        )
+        """,
+        (miner, miner, TEMPORAL_HISTORY_LIMIT),
+    )
+    rows = conn.execute(
+        "SELECT ts, profile_json FROM miner_fingerprint_history WHERE miner = ? ORDER BY ts ASC, id ASC",
+        (miner,),
+    ).fetchall()
+    seq = []
+    for ts, profile_json in rows:
+        try:
+            seq.append({"ts": int(ts), "profile": json.loads(profile_json or "{}")})
+        except Exception:
+            continue
+    return seq
+
+
+def fetch_miner_fingerprint_sequence(conn, miner: str) -> list:
+    ensure_fingerprint_history_table(conn)
+    rows = conn.execute(
+        "SELECT ts, profile_json FROM miner_fingerprint_history WHERE miner = ? ORDER BY ts ASC, id ASC",
+        (miner,),
+    ).fetchall()
+    out = []
+    for ts, profile_json in rows:
+        try:
+            out.append({"ts": int(ts), "profile": json.loads(profile_json or "{}")})
+        except Exception:
+            continue
+    return out
+
+
+def validate_temporal_consistency(sequence: list, current_profile: dict = None) -> dict:
+    samples = list(sequence or [])
+    if current_profile is not None:
+        samples.append({"ts": int(time.time()), "profile": current_profile})
+    if len(samples) < 3:
+        return {
+            "score": 1.0,
+            "review_flag": False,
+            "reason": "insufficient_history",
+            "flags": [],
+            "check_scores": {},
+        }
+
+    flags = []
+    check_scores = {}
+    for metric, (low, high) in TEMPORAL_DRIFT_BANDS.items():
+        values = []
+        for s in samples:
+            p = s.get("profile", {}) if isinstance(s, dict) else {}
+            if isinstance(p, dict):
+                v = float(p.get(metric, 0.0) or 0.0)
+                if v > 0:
+                    values.append(v)
+
+        if len(values) < 3:
+            check_scores[metric] = 1.0
+            continue
+
+        avg = sum(values) / len(values)
+        spread = statistics.pstdev(values)
+        rel_var = spread / max(abs(avg), 1e-9)
+
+        score = 1.0
+        if rel_var < 0.01:
+            flags.append(f"frozen_profile:{metric}")
+            score = min(score, 0.2)
+        if rel_var > 0.8:
+            flags.append(f"noisy_profile:{metric}")
+            score = min(score, 0.3)
+        if avg < low or avg > high:
+            flags.append(f"drift_out_of_band:{metric}")
+            score = min(score, 0.4)
+
+        check_scores[metric] = score
+
+    score = sum(check_scores.values()) / max(len(check_scores), 1)
+    review_flag = any(f.startswith("frozen_profile") or f.startswith("noisy_profile") or f.startswith("drift_out_of_band") for f in flags)
+    return {
+        "score": round(score, 4),
+        "review_flag": review_flag,
+        "reason": "temporal_review_required" if review_flag else "temporal_consistent",
+        "flags": flags,
+        "check_scores": check_scores,
+    }
 # =============================================================================
 # FINGERPRINT VALIDATION (RIP-PoA Anti-Emulation)
 # =============================================================================
@@ -2130,6 +2281,13 @@ def submit_attestation():
     # Record successful attestation (with fingerprint status)
     record_attestation_success(miner, device, fingerprint_passed, client_ip, signals=signals, fingerprint=fingerprint)
 
+    temporal_review = {"score": 1.0, "review_flag": False, "reason": "insufficient_history", "flags": [], "check_scores": {}}
+    try:
+        with sqlite3.connect(DB_PATH) as tconn:
+            temporal_review = validate_temporal_consistency(fetch_miner_fingerprint_sequence(tconn, miner))
+    except Exception as _te:
+        print(f"[TEMPORAL] Warning: {_te}")
+
     # Update warthog_bonus in attestation record
     if warthog_bonus > 1.0:
         try:
@@ -2159,6 +2317,10 @@ def submit_attestation():
             enroll_weight = 0.000000001
         else:
             enroll_weight = hw_weight
+
+        # Issue #19 temporal consistency only sets a review flag (no hard-fail).
+        if temporal_review.get("review_flag"):
+            app.logger.warning(f"[TEMPORAL-REVIEW] {miner[:20]}... flags={temporal_review.get('flags', [])}")
         
         miner_id = data.get("miner_id", miner)
         
@@ -2210,6 +2372,7 @@ def submit_attestation():
         "status": "accepted",
         "device": device,
         "fingerprint_passed": fingerprint_passed,
+        "temporal_review_flag": bool(temporal_review.get("review_flag")),
         "macs_recorded": len(macs) if macs else 0,
         "warthog_bonus": warthog_bonus
     })
