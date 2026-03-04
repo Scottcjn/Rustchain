@@ -17,6 +17,6 @@ zip -r rustchain_landing_bundle.zip index.html media/
 cd ..
 
 # Git add, commit, and push
-git add docs/index.html docs/media/ docs/rustchain_landing_bundle.zip
-git commit -m "🌐 GitHub Pages: Added landing page with RustChain media visuals"
+git add docs/index.html docs/stars.html docs/media/ docs/rustchain_landing_bundle.zip
+git commit -m "📈 GitHub Pages: Added 5,000 Stars Drive page and landing visuals\n\nSigned-off-by: Contributor Name <email@example.com>"
 git push origin main

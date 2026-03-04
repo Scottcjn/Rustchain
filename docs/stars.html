@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- SPDX-License-Identifier: Apache-2.0 -->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RustChain 5,000 Stars Drive</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    .progress-bar { width: 100%; background: #eee; border-radius: 4px; overflow: hidden; margin-bottom: 1rem; }
+    .progress { height: 20px; background: #4caf50; width: 0%; transition: width 0.5s; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
+    th, td { border: 1px solid #999; padding: 0.5rem; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>🚀 RustChain 5,000 Stars Drive</h1>
+  <div class="progress-bar"><div id="progress" class="progress"></div></div>
+  <p id="progress-text">Initializing...</p>
+  <h2>Earn RTC by Starring</h2>
+  <table>
+    <tr><th>Repos Starred</th><th>RTC Per Star</th><th>Max Payout</th></tr>
+    <tr><td>1-2</td><td>1 RTC</td><td>2 RTC</td></tr>
+    <tr><td>3-4</td><td>1.5 RTC</td><td>6 RTC</td></tr>
+    <tr><td>5-9</td><td>2 RTC</td><td>18 RTC</td></tr>
+    <tr><td>10-19</td><td>2.5 RTC</td><td>50 RTC</td></tr>
+    <tr><td>20-49</td><td>3 RTC</td><td>150 RTC</td></tr>
+    <tr><td>All 86 repos</td><td>5 RTC</td><td>430 RTC</td></tr>
+  </table>
+  <h2>Social Amplifier Bonus</h2>
+  <table>
+    <tr><th>Action</th><th>Bonus</th></tr>
+    <tr><td>Tweet + link</td><td>+5 RTC</td></tr>
+    <tr><td>Dev.to / Medium article</td><td>+15 RTC</td></tr>
+    <tr><td>Reddit post</td><td>+10 RTC</td></tr>
+    <tr><td>HN submission</td><td>+25 RTC</td></tr>
+  </table>
+  <h2>How to Claim</h2>
+  <ol>
+    <li>Star all repos at <a href="https://rustchain.org/stars.html" target="_blank">rustchain.org/stars</a>.</li>
+    <li>Reply with your GitHub username, repos starred count, and RTC wallet address.</li>
+  </ol>
+  <script>
+    // List of 86 repos (owner/name)
+    const repos = [
+      "Scottcjn/Rustchain"
+      // ... add all qualifying repos here ...
+    ];
+    async function updateProgress() {
+      let stars = 0;
+      const results = await Promise.all(repos.map(async r => {
+        try {
+          const res = await fetch(`https://api.github.com/repos/${r}`);
+          const data = await res.json();
+          return data.stargazers_count || 0;
+        } catch {
+          return 0;
+        }
+      }));
+      stars = results.reduce((a, b) => a + b, 0);
+      const pct = Math.min((stars / 5000) * 100, 100).toFixed(2);
+      document.getElementById('progress').style.width = pct + '%';
+      document.getElementById('progress-text').textContent = `${pct}% (${stars}/5000)`;
+    }
+    updateProgress();
+  </script>
+  <!-- Signed-off-by: Contributor Name <email@example.com> -->
+</body>
+</html>
