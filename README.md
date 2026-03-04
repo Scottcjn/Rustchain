@@ -347,6 +347,50 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 open https://rustchain.org/explorer
 ```
 
+### Governance Proposals & Voting
+
+Rules:
+- Proposal lifecycle: `Draft -> Active (7 days) -> Passed/Failed`
+- Proposal creation: wallet must hold **more than 10 RTC**
+- Voting eligibility: voter must be an **active miner** (from the attested miners view)
+- Signature: votes require **Ed25519** signature verification
+- Vote weight: `1 RTC = 1 base vote`, then multiplied by the miner antiquity multiplier
+- Pass condition at close: `yes_weight > no_weight`
+
+Endpoints:
+
+```bash
+# Create proposal
+curl -sk -X POST https://rustchain.org/governance/propose \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "wallet":"RTC...",
+    "title":"Enable parameter X",
+    "description":"Rationale and implementation details"
+  }'
+
+# List proposals
+curl -sk https://rustchain.org/governance/proposals
+
+# Proposal detail
+curl -sk https://rustchain.org/governance/proposal/1
+
+# Submit signed vote
+curl -sk -X POST https://rustchain.org/governance/vote \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "proposal_id":1,
+    "wallet":"RTC...",
+    "vote":"yes",
+    "nonce":"1700000000",
+    "public_key":"<ed25519_pubkey_hex>",
+    "signature":"<ed25519_signature_hex>"
+  }'
+```
+
+Web UI:
+- `GET /governance/ui` serves a lightweight page to list proposals and submit votes.
+
 ## 🖥️ Supported Platforms
 
 | Platform | Architecture | Status | Notes |
