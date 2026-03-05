@@ -4,11 +4,10 @@ pythonpath = ["node", "."]
 
 [tool.ruff]
 line-length = 120
-select = ["E", "F", "W", "B", "I"]
-ignore = []
 exclude = ["deprecated", "node_backups"]
 
 [tool.ruff.lint]
+select = ["E", "F", "W", "B", "I"]
 ignore = ["E501"] # Ignore long lines for legacy code
 
 [tool.mypy]
