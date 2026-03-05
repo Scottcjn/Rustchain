@@ -178,7 +178,7 @@ def _shared_fleet_fingerprint() -> dict:
     }
 
 
-def test_client_ip_from_request_trusts_spoofed_x_forwarded_for(attest_client):
+def test_client_ip_from_request_ignores_spoofed_x_forwarded_for(attest_client):
     client, db_path = attest_client
     payload = {
         "miner": "spoof-demo-1",
@@ -218,7 +218,8 @@ def test_client_ip_from_request_trusts_spoofed_x_forwarded_for(attest_client):
             (payload["miner"],),
         ).fetchone()
 
-    assert row == ("198.51.100.77",)
+    # RIP-201 fix: server ignores X-Forwarded-For, uses REMOTE_ADDR
+    assert row == ("10.0.0.9",)
 
 
 def test_same_subnet_and_shared_fingerprint_get_flagged():
