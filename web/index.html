@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Network Status</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-online { background-color: #22c55e; }
+        .status-offline { background-color: #ef4444; }
+        .pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold mb-2">🔗 RustChain Network Status</h1>
+            <p class="text-gray-400">Real-time status of the Proof-of-Antiquity blockchain</p>
+            <p class="text-sm text-gray-500 mt-2">Last updated: <span id="lastUpdate">-</span></p>
+        </div>
+
+        <!-- Network Overview -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <!-- Node Status -->
+            <div class="bg-gray-800 rounded-lg p-6">
+                <h2 class="text-xl font-semibold mb-4">Network Status</h2>
+                <div class="flex items-center gap-2">
+                    <span id="networkStatus" class="status-dot status-online pulse"></span>
+                    <span id="networkStatusText" class="text-xl">Operational</span>
+                </div>
+                <div class="mt-4 text-gray-400">
+                    <p>Version: <span id="nodeVersion" class="text-white">-</span></p>
+                    <p>Uptime: <span id="nodeUptime" class="text-white">-</span></p>
+                </div>
+            </div>
+
+            <!-- Miners -->
+            <div class="bg-gray-800 rounded-lg p-6">
+                <h2 class="text-xl font-semibold mb-4">Active Miners</h2>
+                <p class="text-5xl font-bold text-blue-400" id="minerCount">-</p>
+                <p class="text-gray-400 mt-2">miners online</p>
+            </div>
+
+            <!-- Epoch -->
+            <div class="bg-gray-800 rounded-lg p-6">
+                <h2 class="text-xl font-semibold mb-4">Current Epoch</h2>
+                <p class="text-5xl font-bold text-purple-400" id="epochNumber">-</p>
+                <p class="text-gray-400 mt-2">Slot <span id="currentSlot">-</span> / <span id="blocksPerEpoch">-</span></p>
+                <div class="w-full bg-gray-700 rounded-full h-2 mt-4">
+                    <div id="epochProgress" class="bg-purple-500 h-2 rounded-full" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Miner Distribution -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Miner Architecture Distribution</h2>
+            <div id="minerDistribution" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <!-- Active Miners List -->
+        <div class="bg-gray-800 rounded-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">Top Miners</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="border-b border-gray-700">
+                            <th class="pb-2">Miner</th>
+                            <th class="pb-2">Hardware</th>
+                            <th class="pb-2">Architecture</th>
+                            <th class="pb-2">Multiplier</th>
+                        </tr>
+                    </thead>
+                    <tbody id="minersTable">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center mt-8 text-gray-500 text-sm">
+            <p>Auto-refreshes every 60 seconds</p>
+            <p class="mt-1">Powered by RustChain Node API</p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://50.28.86.131';
+        
+        // Since CORS might be an issue, we'll use JSONP-like approach or just try fetch
+        async function fetchJSON(endpoint) {
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'GET',
+                    mode: 'cors',
+                    headers: { 'Accept': 'application/json' }
+                });
+                return await response.json();
+            } catch (e) {
+                console.error('Fetch error:', e);
+                return null;
+            }
+        }
+
+        // Fetch all data and update UI
+        async function updateStatus() {
+            const now = new Date();
+            document.getElementById('lastUpdate').textContent = now.toLocaleTimeString();
+
+            // Get health
+            const health = await fetchJSON(`${API_BASE}/health`);
+            if (health) {
+                document.getElementById('nodeVersion').textContent = health.version || 'Unknown';
+                const uptime = health.uptime_s || 0;
+                const hours = Math.floor(uptime / 3600);
+                const minutes = Math.floor((uptime % 3600) / 60);
+                document.getElementById('nodeUptime').textContent = `${hours}h ${minutes}m`;
+                
+                const statusDot = document.getElementById('networkStatus');
+                const statusText = document.getElementById('networkStatusText');
+                if (health.ok) {
+                    statusDot.className = 'status-dot status-online';
+                    statusText.textContent = 'Operational';
+                } else {
+                    statusDot.className = 'status-dot status-offline';
+                    statusText.textContent = 'Degraded';
+                }
+            }
+
+            // Get miners
+            const miners = await fetchJSON(`${API_BASE}/api/miners`);
+            if (miners && Array.isArray(miners)) {
+                document.getElementById('minerCount').textContent = miners.length;
+                
+                // Architecture distribution
+                const archCounts = {};
+                miners.forEach(m => {
+                    const arch = m.hardware_type || m.device_family || 'Unknown';
+                    archCounts[arch] = (archCounts[arch] || 0) + 1;
+                });
+                
+                const distContainer = document.getElementById('minerDistribution');
+                distContainer.innerHTML = '';
+                for (const [arch, count] of Object.entries(archCounts)) {
+                    const pct = Math.round((count / miners.length) * 100);
+                    distContainer.innerHTML += `
+                        <div class="bg-gray-700 rounded p-3">
+                            <div class="text-2xl font-bold">${count}</div>
+                            <div class="text-sm text-gray-400">${arch}</div>
+                            <div class="text-xs text-gray-500">${pct}%</div>
+                        </div>
+                    `;
+                }
+                
+                // Miners table (top 10)
+                const tableBody = document.getElementById('minersTable');
+                tableBody.innerHTML = '';
+                miners.slice(0, 10).forEach(m => {
+                    tableBody.innerHTML += class="border-b `
+                        <tr border-gray-700">
+                            <td class="py-2 font-mono text-sm">${m.miner}</td>
+                            <td class="py-2">${m.hardware_type || '-'}</td>
+                            <td class="py-2 text-gray-400">${m.device_arch || '-'}</td>
+                            <td class="py-2 text-yellow-400">x${m.antiquity_multiplier}</td>
+                        </tr>
+                    `;
+                });
+            }
+
+            // Get epoch
+            const epoch = await fetchJSON(`${API_BASE}/epoch`);
+            if (epoch) {
+                document.getElementById('epochNumber').textContent = epoch.epoch || '-';
+                document.getElementById('currentSlot').textContent = epoch.slot || '0';
+                document.getElementById('blocksPerEpoch').textContent = epoch.blocks_per_epoch || '-';
+                
+                const progress = epoch.blocks_per_epoch ? (epoch.slot / epoch.blocks_per_epoch * 100) : 0;
+                document.getElementById('epochProgress').style.width = `${progress}%`;
+            }
+        }
+
+        // Initial load
+        updateStatus();
+
+        // Auto-refresh every 60 seconds
+        setInterval(updateStatus, 60000);
+    </script>
+</body>
+</html>
