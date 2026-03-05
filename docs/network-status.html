@@ -1,156 +1,322 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>RustChain Network Status</title>
-    <style>
-      :root { color-scheme: dark; }
-      body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #0d1117; color: #e6edf3; }
-      .wrap { max-width: 1100px; margin: 0 auto; padding: 20px; }
-      h1 { margin: 0 0 8px; font-size: 26px; }
-      .sub { color: #8b949e; margin-bottom: 20px; }
-      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
-      .card { border: 1px solid #30363d; border-radius: 12px; padding: 14px; background: #161b22; }
-      .row { display: flex; justify-content: space-between; margin: 7px 0; font-size: 14px; }
-      .status { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
-      .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-      .g { background: #3fb950; }
-      .y { background: #d29922; }
-      .r { background: #f85149; }
-      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-      .small { color: #8b949e; font-size: 12px; }
-      canvas { width: 100%; height: 110px; background: #0d1117; border: 1px solid #30363d; border-radius: 10px; }
-    </style>
-  </head>
-  <body>
-    <div class="wrap">
-      <h1>RustChain Network Status</h1>
-      <div class="sub" id="last">Polling every 60s…</div>
-      <div class="grid" id="cards"></div>
-      <h3 style="margin:20px 0 8px">Response Time (recent)</h3>
-      <canvas id="chart" width="1080" height="140"></canvas>
-      <div class="small">Green = healthy, Yellow = slow (>2s), Red = down. Uptime windows are computed from local history in your browser.</div>
-    </div>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RustChain Public Network Status</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <div class="max-w-7xl mx-auto px-4 py-6">
+    <header class="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div>
+        <h1 class="text-2xl md:text-3xl font-bold">RustChain Network Status</h1>
+        <p class="text-slate-400 text-sm">Static single-page status dashboard · GitHub Pages compatible · auto-refresh 60s</p>
+      </div>
+      <div class="text-sm text-slate-300">Last refresh: <span id="lastRefresh">-</span></div>
+    </header>
 
-    <script>
-      const nodes = [
-        { name: 'Node 1 (Primary)', url: 'https://rustchain.org' },
-        { name: 'Node 2 (Ergo Anchor)', url: 'https://50.28.86.153' },
-        { name: 'Node 3 (External)', url: 'http://76.8.228.245:8099' },
-      ]
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div class="rounded-xl border border-slate-800 bg-slate-900 p-4">
+        <div class="text-xs text-slate-400 mb-1">Current Epoch</div>
+        <div class="text-2xl font-semibold" id="epochNumber">-</div>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900 p-4">
+        <div class="text-xs text-slate-400 mb-1">Next Settlement In</div>
+        <div class="text-2xl font-semibold" id="epochCountdown">-</div>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900 p-4">
+        <div class="text-xs text-slate-400 mb-1">Active Miners</div>
+        <div class="text-2xl font-semibold" id="minerCount">-</div>
+      </div>
+    </section>
 
-      const storeKey = 'rustchain_status_history_v1'
-      const pollMs = 60_000
-      const history = JSON.parse(localStorage.getItem(storeKey) || '{}')
-      for (const n of nodes) history[n.name] ||= []
+    <section class="rounded-xl border border-slate-800 bg-slate-900 p-4 mb-6">
+      <h2 class="text-lg font-semibold mb-3">Attestation Nodes (3)</h2>
+      <div id="nodesGrid" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
+      <p class="text-xs text-slate-500 mt-3">Node status is fetched from each <code>/health</code> endpoint.</p>
+    </section>
 
-      function trim(samples, ms = 31 * 24 * 3600_000) {
-        const cutoff = Date.now() - ms
-        return samples.filter((s) => s.t >= cutoff)
+    <section class="rounded-xl border border-slate-800 bg-slate-900 p-4 mb-6">
+      <h2 class="text-lg font-semibold mb-3">Miner Architecture Distribution</h2>
+      <div id="archList" class="space-y-2 text-sm"></div>
+    </section>
+
+    <section class="rounded-xl border border-slate-800 bg-slate-900 p-4 mb-6">
+      <h2 class="text-lg font-semibold mb-3">90-Day Uptime History (client-side)</h2>
+      <p class="text-xs text-slate-400 mb-3">History is recorded in browser localStorage and retained for up to 90 days.</p>
+      <div id="historyList" class="space-y-3"></div>
+    </section>
+
+    <section class="rounded-xl border border-slate-800 bg-slate-900 p-4 mb-6">
+      <h2 class="text-lg font-semibold mb-3">Incident Log</h2>
+      <div id="incidentLog" class="space-y-2 text-sm"></div>
+    </section>
+
+    <section class="rounded-xl border border-slate-800 bg-slate-900 p-4 mb-6">
+      <h2 class="text-lg font-semibold mb-3">Outage Feeds (RSS / Atom)</h2>
+      <div class="flex flex-wrap gap-2 mb-2">
+        <a id="rssLink" class="px-3 py-1 rounded bg-cyan-700 hover:bg-cyan-600 text-sm" href="#">Download RSS</a>
+        <a id="atomLink" class="px-3 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-sm" href="#">Download Atom</a>
+      </div>
+      <p class="text-xs text-slate-400">Feed is generated from incident history directly in the browser (no backend).</p>
+    </section>
+
+    <section class="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <h2 class="text-lg font-semibold mb-3">README Badge / Shield</h2>
+      <img id="statusBadge" alt="RustChain network status badge" class="mb-3" />
+      <label class="text-xs text-slate-400 block mb-1">Markdown snippet</label>
+      <textarea id="badgeMarkdown" class="w-full h-20 bg-slate-950 border border-slate-700 rounded p-2 text-xs"></textarea>
+      <p class="text-xs text-slate-500 mt-2">Uses a data URI SVG so it works without a badge backend.</p>
+    </section>
+  </div>
+
+  <script>
+    const REFRESH_MS = 60_000;
+    const HISTORY_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+    const STATUS_KEY = 'rustchain_status_history_v1';
+    const INCIDENT_KEY = 'rustchain_incidents_v1';
+
+    const NODE_ENDPOINTS = [
+      'https://rustchain.org',
+      'https://50.28.86.131',
+      'https://38.76.217.189:8099'
+    ];
+
+    const fmtTime = (s) => {
+      if (!Number.isFinite(s) || s < 0) return '-';
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = Math.floor(s % 60);
+      return `${h}h ${m}m ${sec}s`;
+    };
+
+    const safeJson = (k, d) => {
+      try { return JSON.parse(localStorage.getItem(k) || 'null') ?? d; } catch { return d; }
+    };
+
+    const saveJson = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+
+    async function fetchJson(url) {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    }
+
+    function recordNodeStatus(base, up) {
+      const now = Date.now();
+      const history = safeJson(STATUS_KEY, {});
+      const arr = history[base] || [];
+      arr.push({ t: now, up: !!up });
+      history[base] = arr.filter(x => now - x.t <= HISTORY_RETENTION_MS);
+      saveJson(STATUS_KEY, history);
+
+      const incidents = safeJson(INCIDENT_KEY, []);
+      const prev = arr.length > 1 ? arr[arr.length - 2] : null;
+      if (prev && prev.up !== up) {
+        incidents.unshift({
+          t: now,
+          node: base,
+          type: up ? 'RECOVERY' : 'OUTAGE',
+          message: up ? 'Node recovered (health=up)' : 'Node became unreachable/down'
+        });
       }
+      saveJson(INCIDENT_KEY, incidents.slice(0, 500));
+    }
 
-      function uptime(samples, hours) {
-        const cutoff = Date.now() - hours * 3600_000
-        const s = samples.filter((x) => x.t >= cutoff)
-        if (!s.length) return 'n/a'
-        const ok = s.filter((x) => x.state !== 'red').length
-        return `${((ok / s.length) * 100).toFixed(1)}%`
-      }
+    function uptimePct(base) {
+      const history = safeJson(STATUS_KEY, {});
+      const arr = history[base] || [];
+      if (!arr.length) return '-';
+      const upCount = arr.filter(x => x.up).length;
+      return ((upCount / arr.length) * 100).toFixed(1) + '%';
+    }
 
-      function stateFrom(lat, ok) {
-        if (!ok || lat == null) return 'red'
-        if (lat > 2000) return 'yellow'
-        return 'green'
-      }
+    function sparkline(base) {
+      const history = safeJson(STATUS_KEY, {});
+      const arr = (history[base] || []).slice(-120);
+      if (!arr.length) return '<div class="text-xs text-slate-500">No history yet.</div>';
+      const w = 220, h = 28;
+      const step = w / Math.max(arr.length - 1, 1);
+      const pts = arr.map((p, i) => `${(i * step).toFixed(1)},${p.up ? 4 : h - 4}`).join(' ');
+      return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" class="block"><polyline fill="none" stroke="#22d3ee" stroke-width="2" points="${pts}"/></svg>`;
+    }
 
-      async function probe(node) {
-        const started = performance.now()
-        let health = null
-        let epoch = null
-        let ok = false
-
-        try {
-          const h = await fetch(`${node.url}/health`, { cache: 'no-store' })
-          if (h.ok) {
-            health = await h.json()
-            ok = !!health.ok
-          }
-        } catch (_) {}
-
-        try {
-          const e = await fetch(`${node.url}/epoch`, { cache: 'no-store' })
-          if (e.ok) epoch = await e.json()
-        } catch (_) {}
-
-        const latency = Math.round(performance.now() - started)
-        const state = stateFrom(latency, ok)
-        const sample = {
-          t: Date.now(),
-          latency,
-          state,
-          ok,
-          epoch: epoch?.epoch ?? null,
-          miners: epoch?.enrolled_miners ?? null,
-          tipSlots: health?.tip_age_slots ?? null,
-        }
-
-        history[node.name].push(sample)
-        history[node.name] = trim(history[node.name])
-        return sample
-      }
-
-      function card(node, s) {
-        const dot = s.state === 'green' ? 'g' : s.state === 'yellow' ? 'y' : 'r'
-        const statusText = s.state === 'green' ? 'Healthy' : s.state === 'yellow' ? 'Slow' : 'Down'
-        const samples = history[node.name]
-        return `
-          <div class="card">
-            <div class="status"><span class="dot ${dot}"></span>${node.name} — ${statusText}</div>
-            <div class="row"><span>URL</span><span class="mono">${node.url}</span></div>
-            <div class="row"><span>Response</span><span>${s.latency} ms</span></div>
-            <div class="row"><span>Uptime (24h / 7d / 30d)</span><span>${uptime(samples,24)} / ${uptime(samples,24*7)} / ${uptime(samples,24*30)}</span></div>
-            <div class="row"><span>Current epoch</span><span>${s.epoch ?? 'n/a'}</span></div>
-            <div class="row"><span>Active miners</span><span>${s.miners ?? 'n/a'}</span></div>
-            <div class="row"><span>Last block age (slots)</span><span>${s.tipSlots ?? 'n/a'}</span></div>
+    function renderHistory() {
+      const box = document.getElementById('historyList');
+      box.innerHTML = '';
+      for (const base of NODE_ENDPOINTS) {
+        const row = document.createElement('div');
+        row.className = 'rounded border border-slate-800 bg-slate-950 p-3';
+        row.innerHTML = `
+          <div class="flex items-center justify-between mb-2">
+            <div class="font-mono text-xs break-all">${base}</div>
+            <div class="text-xs text-slate-300">90d uptime: <span class="text-emerald-300">${uptimePct(base)}</span></div>
           </div>
-        `
+          ${sparkline(base)}
+        `;
+        box.appendChild(row);
+      }
+    }
+
+    function renderIncidents() {
+      const log = document.getElementById('incidentLog');
+      const incidents = safeJson(INCIDENT_KEY, []);
+      if (!incidents.length) {
+        log.innerHTML = '<div class="text-slate-400 text-sm">No incidents recorded yet.</div>';
+        return;
+      }
+      log.innerHTML = incidents.slice(0, 30).map(i => `
+        <div class="rounded border border-slate-800 bg-slate-950 p-2">
+          <div class="text-xs text-slate-400">${new Date(i.t).toLocaleString()}</div>
+          <div><span class="font-semibold ${i.type === 'OUTAGE' ? 'text-red-300' : 'text-emerald-300'}">${i.type}</span> · <span class="font-mono text-xs">${i.node}</span></div>
+          <div class="text-sm text-slate-300">${i.message}</div>
+        </div>
+      `).join('');
+    }
+
+    function escapeXml(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+    }
+
+    function buildFeeds() {
+      const incidents = safeJson(INCIDENT_KEY, []).slice(0, 100);
+      const site = location.href;
+      const rssItems = incidents.map(i => `
+        <item>
+          <title>${escapeXml(i.type + ': ' + i.node)}</title>
+          <description>${escapeXml(i.message)}</description>
+          <pubDate>${new Date(i.t).toUTCString()}</pubDate>
+          <guid>${escapeXml(String(i.t) + '-' + i.node)}</guid>
+        </item>`).join('');
+      const rss = `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>RustChain Status Incidents</title><link>${escapeXml(site)}</link><description>Client-generated outage feed</description>${rssItems}</channel></rss>`;
+
+      const atomEntries = incidents.map(i => `
+        <entry>
+          <title>${escapeXml(i.type + ': ' + i.node)}</title>
+          <id>${escapeXml('urn:rustchain:incident:' + i.t + ':' + i.node)}</id>
+          <updated>${new Date(i.t).toISOString()}</updated>
+          <summary>${escapeXml(i.message)}</summary>
+        </entry>`).join('');
+      const atom = `<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>RustChain Status Incidents</title><id>${escapeXml(site)}</id><updated>${new Date().toISOString()}</updated>${atomEntries}</feed>`;
+
+      const rssBlob = URL.createObjectURL(new Blob([rss], { type: 'application/rss+xml' }));
+      const atomBlob = URL.createObjectURL(new Blob([atom], { type: 'application/atom+xml' }));
+      document.getElementById('rssLink').href = rssBlob;
+      document.getElementById('rssLink').download = 'rustchain-status-incidents.xml';
+      document.getElementById('atomLink').href = atomBlob;
+      document.getElementById('atomLink').download = 'rustchain-status-incidents.atom.xml';
+    }
+
+    function renderBadge() {
+      const history = safeJson(STATUS_KEY, {});
+      const all = NODE_ENDPOINTS.flatMap(n => history[n] || []);
+      const recent = all.slice(-NODE_ENDPOINTS.length);
+      const upNodes = NODE_ENDPOINTS.filter(n => {
+        const arr = history[n] || [];
+        return arr.length ? arr[arr.length - 1].up : false;
+      }).length;
+      const status = `${upNodes}/${NODE_ENDPOINTS.length} up`;
+      const color = upNodes === NODE_ENDPOINTS.length ? '#16a34a' : (upNodes === 0 ? '#dc2626' : '#d97706');
+
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="180" height="20" role="img" aria-label="RustChain status: ${status}"><linearGradient id="b" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient><mask id="m"><rect width="180" height="20" rx="3" fill="#fff"/></mask><g mask="url(#m)"><rect width="110" height="20" fill="#334155"/><rect x="110" width="70" height="20" fill="${color}"/><rect width="180" height="20" fill="url(#b)"/></g><g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="11"><text x="55" y="15">RustChain status</text><text x="145" y="15">${status}</text></g></svg>`;
+      const uri = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+      document.getElementById('statusBadge').src = uri;
+      document.getElementById('badgeMarkdown').value = `![RustChain status](${uri})`;
+    }
+
+    async function loadNodes() {
+      const grid = document.getElementById('nodesGrid');
+      grid.innerHTML = '';
+
+      await Promise.all(NODE_ENDPOINTS.map(async (base) => {
+        const card = document.createElement('div');
+        card.className = 'rounded-lg border border-slate-800 bg-slate-950 p-3';
+        card.innerHTML = `<div class="font-mono text-xs break-all mb-2">${base}</div><div class="text-sm">Checking...</div>`;
+        grid.appendChild(card);
+
+        try {
+          const health = await fetchJson(`${base}/health`);
+          const ok = !!health.ok;
+          recordNodeStatus(base, ok);
+          card.innerHTML = `
+            <div class="font-mono text-xs break-all mb-2">${base}</div>
+            <div class="flex items-center gap-2 mb-1">
+              <span class="inline-block w-2.5 h-2.5 rounded-full ${ok ? 'bg-emerald-400' : 'bg-red-500'}"></span>
+              <span class="text-sm font-semibold ${ok ? 'text-emerald-300' : 'text-red-300'}">${ok ? 'UP' : 'DOWN'}</span>
+            </div>
+            <div class="text-xs text-slate-400">version: ${health.version ?? '-'}</div>
+          `;
+        } catch (e) {
+          recordNodeStatus(base, false);
+          card.innerHTML = `
+            <div class="font-mono text-xs break-all mb-2">${base}</div>
+            <div class="flex items-center gap-2 mb-1">
+              <span class="inline-block w-2.5 h-2.5 rounded-full bg-red-500"></span>
+              <span class="text-sm font-semibold text-red-300">DOWN</span>
+            </div>
+            <div class="text-xs text-slate-400">${String(e.message || e)}</div>
+          `;
+        }
+      }));
+    }
+
+    async function loadEpochAndMiners() {
+      const base = 'https://rustchain.org';
+
+      try {
+        const epoch = await fetchJson(`${base}/epoch`);
+        document.getElementById('epochNumber').textContent = epoch.epoch ?? epoch.current_epoch ?? '-';
+        const now = Date.now() / 1000;
+        const endTs = epoch.ends_at || epoch.settlement_at || epoch.next_settlement_at;
+        document.getElementById('epochCountdown').textContent = endTs ? fmtTime(endTs - now) : '-';
+      } catch {
+        document.getElementById('epochNumber').textContent = 'N/A';
+        document.getElementById('epochCountdown').textContent = 'N/A';
       }
 
-      function drawChart() {
-        const cv = document.getElementById('chart')
-        const ctx = cv.getContext('2d')
-        ctx.clearRect(0,0,cv.width,cv.height)
-        const colors = ['#58a6ff','#3fb950','#d29922']
-        const all = nodes.flatMap((n) => history[n.name].slice(-60).map((x) => x.latency))
-        const max = Math.max(2500, ...all, 1)
+      try {
+        const miners = await fetchJson(`${base}/api/miners`);
+        const list = Array.isArray(miners) ? miners : (miners.miners || []);
+        document.getElementById('minerCount').textContent = String(list.length);
 
-        nodes.forEach((n, idx) => {
-          const arr = history[n.name].slice(-60)
-          if (!arr.length) return
-          ctx.beginPath()
-          ctx.strokeStyle = colors[idx]
-          ctx.lineWidth = 2
-          arr.forEach((p, i) => {
-            const x = (i / 59) * (cv.width - 20) + 10
-            const y = cv.height - (p.latency / max) * (cv.height - 20) - 10
-            if (i === 0) ctx.moveTo(x, y)
-            else ctx.lineTo(x, y)
-          })
-          ctx.stroke()
-        })
+        const counts = {};
+        for (const m of list) {
+          const key = m.arch || m.family || m.machine || 'unknown';
+          counts[key] = (counts[key] || 0) + 1;
+        }
+        const total = list.length || 1;
+
+        const archList = document.getElementById('archList');
+        archList.innerHTML = '';
+        Object.entries(counts)
+          .sort((a, b) => b[1] - a[1])
+          .forEach(([arch, n]) => {
+            const pct = Math.round((n / total) * 100);
+            const row = document.createElement('div');
+            row.innerHTML = `
+              <div class="flex justify-between mb-1"><span>${arch}</span><span>${n} (${pct}%)</span></div>
+              <div class="h-2 w-full bg-slate-800 rounded"><div class="h-2 bg-cyan-400 rounded" style="width:${pct}%"></div></div>
+            `;
+            archList.appendChild(row);
+          });
+      } catch {
+        document.getElementById('minerCount').textContent = 'N/A';
+        document.getElementById('archList').innerHTML = '<div class="text-slate-400 text-sm">Unable to fetch miners.</div>';
       }
+    }
 
-      async function tick() {
-        const samples = await Promise.all(nodes.map(probe))
-        localStorage.setItem(storeKey, JSON.stringify(history))
-        document.getElementById('cards').innerHTML = nodes.map((n, i) => card(n, samples[i])).join('')
-        drawChart()
-        document.getElementById('last').textContent = `Last updated: ${new Date().toLocaleString()} (polling every 60s)`
-      }
+    async function refreshAll() {
+      document.getElementById('lastRefresh').textContent = new Date().toLocaleString();
+      await Promise.all([loadNodes(), loadEpochAndMiners()]);
+      renderHistory();
+      renderIncidents();
+      buildFeeds();
+      renderBadge();
+    }
 
-      tick()
-      setInterval(tick, pollMs)
-    </script>
-  </body>
+    refreshAll();
+    setInterval(refreshAll, REFRESH_MS);
+  </script>
+</body>
 </html>
