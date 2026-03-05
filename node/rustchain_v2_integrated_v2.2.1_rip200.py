@@ -167,8 +167,8 @@ def _attest_is_valid_positive_int(value, max_value=4096):
 
 
 def client_ip_from_request(req) -> str:
-    """Return the left-most forwarded IP when present, otherwise the remote address."""
-    client_ip = req.headers.get("X-Forwarded-For", req.remote_addr)
+    """Return trusted client IP from reverse proxy (X-Real-IP) or remote address."""
+    client_ip = req.headers.get("X-Real-IP") or req.remote_addr
     if client_ip and "," in client_ip:
         client_ip = client_ip.split(",")[0].strip()
     return client_ip
@@ -316,6 +316,13 @@ def _start_timer():
     g._ts = time.time()
     g.request_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex
 
+def get_client_ip():
+    """Trust reverse-proxy X-Real-IP, not client X-Forwarded-For."""
+    client_ip = request.headers.get("X-Real-IP") or request.remote_addr
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+    return client_ip
+
 @app.after_request
 def _after(resp):
     try:
@@ -327,7 +334,7 @@ def _after(resp):
             "method": request.method,
             "path": request.path,
             "status": resp.status_code,
-            "ip": request.headers.get("X-Forwarded-For", request.remote_addr),
+            "ip": get_client_ip(),
             "dur_ms": int(dur * 1000),
         }
         log.info(json.dumps(rec, separators=(",", ":")))
@@ -756,6 +763,11 @@ MIN_WITHDRAWAL = 0.1  # RTC
 WITHDRAWAL_FEE = 0.01  # RTC
 MAX_DAILY_WITHDRAWAL = 1000.0  # RTC
 
+GOVERNANCE_ACTIVE_SECONDS = 7 * 24 * 60 * 60
+GOVERNANCE_MIN_PROPOSER_BALANCE_RTC = 10.0
+GOVERNANCE_ACTIVE_MINER_WINDOW_SECONDS = 3600
+
+
 # Prometheus metrics
 withdrawal_requests = Counter('rustchain_withdrawal_requests', 'Total withdrawal requests')
 withdrawal_completed = Counter('rustchain_withdrawal_completed', 'Completed withdrawals')
@@ -903,6 +915,9 @@ def init_db():
                 PRIMARY KEY (miner_pk, nonce)
             )
         """)
+
+        # Governance proposal and voting tables
+        _ensure_governance_tables(c)
 
         # Governance tables (RIP-0142)
         c.execute("""
@@ -2156,7 +2171,7 @@ def submit_attestation():
         return payload_error
 
     # Extract client IP (handle nginx proxy)
-    client_ip = client_ip_from_request(request)
+    client_ip = get_client_ip()
 
     # Extract attestation data
     miner = _attest_valid_miner(data.get('miner')) or _attest_valid_miner(data.get('miner_id'))
@@ -2407,9 +2422,7 @@ def enroll_epoch():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = get_client_ip()
     miner_pk = data.get('miner_pubkey')
     miner_id = data.get('miner_id', miner_pk)  # Use miner_id if provided
     device = data.get('device', {})
@@ -2773,9 +2786,7 @@ def register_withdrawal_key():
         return jsonify({"error": "Invalid JSON body"}), 400
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = get_client_ip()
     miner_pk = data.get('miner_pk')
     pubkey_sr25519 = data.get('pubkey_sr25519')
 
@@ -2826,9 +2837,7 @@ def request_withdrawal():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = get_client_ip()
     miner_pk = data.get('miner_pk')
     amount = float(data.get('amount', 0))
     destination = data.get('destination')
@@ -3258,6 +3267,268 @@ def gov_rotate_commit():
             "approvals": int(count),
             "threshold": thr
         })
+
+@app.route('/governance/propose', methods=['POST'])
+def governance_propose():
+    data = request.get_json(silent=True) or {}
+    proposer_wallet = str(data.get('wallet', '')).strip()
+    title = str(data.get('title', '')).strip()
+    description = str(data.get('description', '')).strip()
+
+    if not proposer_wallet or not title or not description:
+        return jsonify({"ok": False, "error": "wallet, title and description are required"}), 400
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        _ensure_governance_tables(c)
+
+        balance_i64 = _balance_i64_for_wallet(c, proposer_wallet)
+        balance_rtc = balance_i64 / 1_000_000.0
+        if balance_rtc <= GOVERNANCE_MIN_PROPOSER_BALANCE_RTC:
+            return jsonify({
+                "ok": False,
+                "error": "insufficient_balance_to_propose",
+                "required_gt_rtc": GOVERNANCE_MIN_PROPOSER_BALANCE_RTC,
+                "balance_rtc": balance_rtc,
+            }), 403
+
+        now = int(time.time())
+        ends_at = now + GOVERNANCE_ACTIVE_SECONDS
+        c.execute(
+            """
+            INSERT INTO governance_proposals
+            (proposer_wallet, title, description, created_at, activated_at, ends_at, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'active')
+            """,
+            (proposer_wallet, title, description, now, now, ends_at),
+        )
+        proposal_id = c.lastrowid
+        conn.commit()
+
+    return jsonify({
+        "ok": True,
+        "proposal": {
+            "id": proposal_id,
+            "wallet": proposer_wallet,
+            "title": title,
+            "description": description,
+            "status": "active",
+            "created_at": now,
+            "activated_at": now,
+            "ends_at": ends_at,
+            "rules": {
+                "lifecycle": "Draft -> Active (7 days) -> Passed/Failed",
+                "pass_condition": "yes_weight > no_weight at close"
+            }
+        }
+    }), 201
+
+
+@app.route('/governance/proposals', methods=['GET'])
+def governance_proposals():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        _ensure_governance_tables(c)
+
+        rows = c.execute(
+            """
+            SELECT id, proposer_wallet, title, description, created_at, activated_at, ends_at,
+                   status, yes_weight, no_weight
+            FROM governance_proposals
+            ORDER BY id DESC
+            """
+        ).fetchall()
+
+        proposals = []
+        for row in rows:
+            status = _refresh_proposal_status(c, row)
+            proposals.append({
+                "id": row["id"],
+                "proposer_wallet": row["proposer_wallet"],
+                "title": row["title"],
+                "description": row["description"],
+                "created_at": row["created_at"],
+                "activated_at": row["activated_at"],
+                "ends_at": row["ends_at"],
+                "status": status,
+                "yes_weight": float(row["yes_weight"] or 0.0),
+                "no_weight": float(row["no_weight"] or 0.0),
+            })
+        conn.commit()
+
+    return jsonify({"ok": True, "count": len(proposals), "proposals": proposals})
+
+
+@app.route('/governance/proposal/<int:proposal_id>', methods=['GET'])
+def governance_proposal_detail(proposal_id: int):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        _ensure_governance_tables(c)
+        row = c.execute(
+            """
+            SELECT id, proposer_wallet, title, description, created_at, activated_at, ends_at,
+                   status, yes_weight, no_weight
+            FROM governance_proposals
+            WHERE id = ?
+            """,
+            (proposal_id,),
+        ).fetchone()
+
+        if not row:
+            return jsonify({"ok": False, "error": "proposal_not_found"}), 404
+
+        status = _refresh_proposal_status(c, row)
+
+        votes = c.execute(
+            """
+            SELECT voter_wallet, vote, weight, multiplier, base_balance_rtc, created_at
+            FROM governance_votes
+            WHERE proposal_id = ?
+            ORDER BY created_at DESC
+            """,
+            (proposal_id,),
+        ).fetchall()
+        conn.commit()
+
+    yes_weight = float(row["yes_weight"] or 0.0)
+    no_weight = float(row["no_weight"] or 0.0)
+    total_weight = yes_weight + no_weight
+
+    return jsonify({
+        "ok": True,
+        "proposal": {
+            "id": row["id"],
+            "proposer_wallet": row["proposer_wallet"],
+            "title": row["title"],
+            "description": row["description"],
+            "created_at": row["created_at"],
+            "activated_at": row["activated_at"],
+            "ends_at": row["ends_at"],
+            "status": status,
+            "yes_weight": yes_weight,
+            "no_weight": no_weight,
+            "total_weight": total_weight,
+            "result": "passed" if status == "passed" else ("failed" if status == "failed" else "pending"),
+        },
+        "votes": [dict(v) for v in votes],
+    })
+
+
+@app.route('/governance/vote', methods=['POST'])
+def governance_vote():
+    data = request.get_json(silent=True) or {}
+    proposal_id = int(data.get('proposal_id') or 0)
+    wallet = str(data.get('wallet', '')).strip()
+    vote = str(data.get('vote', '')).strip().lower()
+    nonce = str(data.get('nonce', '')).strip()
+    signature = str(data.get('signature', '')).strip()
+    public_key = str(data.get('public_key', '')).strip()
+
+    if not all([proposal_id, wallet, vote in ('yes', 'no'), nonce, signature, public_key]):
+        return jsonify({
+            "ok": False,
+            "error": "proposal_id, wallet, vote(yes/no), nonce, signature, public_key are required",
+        }), 400
+
+    expected_wallet = address_from_pubkey(public_key)
+    if wallet != expected_wallet:
+        return jsonify({
+            "ok": False,
+            "error": "wallet_does_not_match_public_key",
+            "expected": expected_wallet,
+            "got": wallet,
+        }), 400
+
+    vote_message = json.dumps({
+        "proposal_id": proposal_id,
+        "wallet": wallet,
+        "vote": vote,
+        "nonce": nonce,
+    }, sort_keys=True, separators=(",", ":")).encode()
+
+    if not verify_rtc_signature(public_key, vote_message, signature):
+        return jsonify({"ok": False, "error": "invalid_signature"}), 401
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        _ensure_governance_tables(c)
+
+        proposal = c.execute(
+            "SELECT * FROM governance_proposals WHERE id = ?",
+            (proposal_id,),
+        ).fetchone()
+        if not proposal:
+            return jsonify({"ok": False, "error": "proposal_not_found"}), 404
+
+        status = _refresh_proposal_status(c, proposal)
+        if status != 'active':
+            conn.commit()
+            return jsonify({"ok": False, "error": "proposal_not_active", "status": status}), 409
+
+        already = c.execute(
+            "SELECT 1 FROM governance_votes WHERE proposal_id = ? AND voter_wallet = ?",
+            (proposal_id, wallet),
+        ).fetchone()
+        if already:
+            return jsonify({"ok": False, "error": "already_voted"}), 409
+
+        miner_active, multiplier, miner_reason = _get_active_miner_antiquity_multiplier(c, wallet)
+        if not miner_active:
+            return jsonify({"ok": False, "error": "inactive_miner", "reason": miner_reason}), 403
+
+        base_balance_i64 = _balance_i64_for_wallet(c, wallet)
+        base_balance_rtc = base_balance_i64 / 1_000_000.0
+        if base_balance_rtc <= 0:
+            return jsonify({"ok": False, "error": "no_balance"}), 403
+
+        weight = base_balance_rtc * multiplier
+        c.execute(
+            """
+            INSERT INTO governance_votes
+            (proposal_id, voter_wallet, vote, weight, multiplier, base_balance_rtc, signature, public_key, nonce, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (proposal_id, wallet, vote, weight, multiplier, base_balance_rtc, signature, public_key, nonce, int(time.time())),
+        )
+
+        if vote == 'yes':
+            c.execute("UPDATE governance_proposals SET yes_weight = yes_weight + ? WHERE id = ?", (weight, proposal_id))
+        else:
+            c.execute("UPDATE governance_proposals SET no_weight = no_weight + ? WHERE id = ?", (weight, proposal_id))
+
+        updated = c.execute(
+            "SELECT yes_weight, no_weight, status, ends_at FROM governance_proposals WHERE id = ?",
+            (proposal_id,),
+        ).fetchone()
+        conn.commit()
+
+    yes_weight = float(updated[0] or 0.0)
+    no_weight = float(updated[1] or 0.0)
+    status = updated[2]
+
+    return jsonify({
+        "ok": True,
+        "proposal_id": proposal_id,
+        "voter_wallet": wallet,
+        "vote": vote,
+        "base_balance_rtc": base_balance_rtc,
+        "antiquity_multiplier": multiplier,
+        "vote_weight": weight,
+        "status": status,
+        "yes_weight": yes_weight,
+        "no_weight": no_weight,
+        "result": "passed" if status == "passed" else ("failed" if status == "failed" else "pending"),
+    })
+
+
+@app.route('/governance/ui', methods=['GET'])
+def governance_ui_page():
+    return send_file(os.path.join(REPO_ROOT, 'web', 'governance.html'))
+
 
 # ============= GENESIS EXPORT (RIP-0144) =============
 
@@ -3778,9 +4049,7 @@ def add_oui_deny():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = get_client_ip()
     oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
     vendor = data.get('vendor', 'Unknown')
     enforce = int(data.get('enforce', 0))
@@ -3805,9 +4074,7 @@ def remove_oui_deny():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = get_client_ip()
     oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
 
     with sqlite3.connect(DB_PATH) as conn:
@@ -3871,9 +4138,7 @@ def attest_debug():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = get_client_ip()
     miner = data.get('miner') or data.get('miner_id')
 
     if not miner:
@@ -4545,9 +4810,7 @@ def wallet_transfer_OLD():
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = get_client_ip()
     from_miner = data.get('from_miner')
     to_miner = data.get('to_miner')
     amount_rtc = float(data.get('amount_rtc', 0))
@@ -4815,6 +5078,92 @@ def address_from_pubkey(public_key_hex: str) -> str:
     pubkey_hash = hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
     return f"RTC{pubkey_hash}"
 
+def _ensure_governance_tables(c: sqlite3.Cursor) -> None:
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS governance_proposals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            proposer_wallet TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            activated_at INTEGER,
+            ends_at INTEGER,
+            status TEXT NOT NULL DEFAULT 'draft',
+            yes_weight REAL NOT NULL DEFAULT 0,
+            no_weight REAL NOT NULL DEFAULT 0
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS governance_votes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            proposal_id INTEGER NOT NULL,
+            voter_wallet TEXT NOT NULL,
+            vote TEXT NOT NULL,
+            weight REAL NOT NULL,
+            multiplier REAL NOT NULL,
+            base_balance_rtc REAL NOT NULL,
+            signature TEXT NOT NULL,
+            public_key TEXT NOT NULL,
+            nonce TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(proposal_id, voter_wallet),
+            FOREIGN KEY (proposal_id) REFERENCES governance_proposals(id)
+        )
+    """)
+
+
+def _get_active_miner_antiquity_multiplier(c: sqlite3.Cursor, wallet: str):
+    row = c.execute(
+        """
+        SELECT ts_ok, device_family, device_arch
+        FROM miner_attest_recent
+        WHERE miner = ?
+        """,
+        (wallet,),
+    ).fetchone()
+    if not row or not row[0]:
+        return False, 0.0, "miner_not_attested"
+
+    age = int(time.time()) - int(row[0])
+    if age > GOVERNANCE_ACTIVE_MINER_WINDOW_SECONDS:
+        return False, 0.0, "miner_not_active"
+
+    family = row[1] or "unknown"
+    arch = row[2] or "unknown"
+    multiplier = HARDWARE_WEIGHTS.get(family, {}).get(
+        arch,
+        HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0),
+    )
+    return True, float(multiplier), "ok"
+
+
+def _refresh_proposal_status(c: sqlite3.Cursor, proposal_row: sqlite3.Row):
+    now = int(time.time())
+    status = (proposal_row["status"] or "draft").lower()
+    ends_at = proposal_row["ends_at"]
+
+    if status == "draft":
+        activated_at = now
+        ends_at = now + GOVERNANCE_ACTIVE_SECONDS
+        c.execute(
+            "UPDATE governance_proposals SET status='active', activated_at=?, ends_at=? WHERE id=?",
+            (activated_at, ends_at, proposal_row["id"]),
+        )
+        status = "active"
+
+    if status == "active" and ends_at and now >= int(ends_at):
+        yes_weight = float(proposal_row["yes_weight"] or 0.0)
+        no_weight = float(proposal_row["no_weight"] or 0.0)
+        final_status = "passed" if yes_weight > no_weight else "failed"
+        c.execute(
+            "UPDATE governance_proposals SET status=? WHERE id=?",
+            (final_status, proposal_row["id"]),
+        )
+        status = final_status
+
+    return status
+
+
 def _balance_i64_for_wallet(c: sqlite3.Cursor, wallet_id: str) -> int:
     """
     Return wallet balance in micro-units (i64), tolerant to historical schema.
@@ -4971,9 +5320,7 @@ def wallet_transfer_signed():
         return jsonify({"error": pre.error, "details": pre.details}), 400
 
     # Extract client IP (handle nginx proxy)
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()  # First IP in chain
+    client_ip = get_client_ip()
     
     from_address = pre.details["from_address"]
     to_address = pre.details["to_address"]
