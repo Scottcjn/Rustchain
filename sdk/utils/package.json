@@ -1,0 +1,30 @@
+{
+  "name": "rustchain-utils",
+  "version": "1.0.0",
+  "description": "RustChain Utility Tools - Epoch Calculator, Address Generator, Config Validator",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "rustchain-epoch": "./dist/epoch.js",
+    "rustchain-address": "./dist/address.js",
+    "rustchain-config": "./dist/config.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": ["rustchain", "blockchain", "utils"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "commander": "^11.0.0",
+    "chalk": "^4.1.0",
+    "inquirer": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/inquirer": "^8.0.0",
+    "typescript": "^5.0.0"
+  }
+}
