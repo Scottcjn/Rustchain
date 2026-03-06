@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OTC Bridge | RTC ↔ wRTC Swap - RustChain</title>
+    <meta name="description" content="Over-the-Counter bridge for swapping RTC and wRTC. Secure, validated, and integration-ready.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="otc-bridge.css">
+</head>
+<body>
+    <!-- CRT scanline effect -->
+    <div class="scanlines"></div>
+    <div class="crt-overlay"></div>
+
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-container">
+            <a href="/" class="nav-logo">[RTC] OTC Bridge</a>
+            <button class="nav-toggle" onclick="toggleNav()" aria-label="Menu">&#9776;</button>
+            <div class="nav-links" id="navLinks">
+                <a href="/">HOME</a>
+                <a href="/wallets.html">WALLETS</a>
+                <a href="/wrtc/">wRTC</a>
+                <a href="/otc-bridge/" class="active">OTC BRIDGE</a>
+                <a href="/explorer">EXPLORER</a>
+                <a href="/beacon/">ATLAS</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <!-- Hero Section -->
+        <section class="hero-section">
+            <div class="container">
+                <div class="hero-content">
+                    <h1 class="hero-title">
+                        <span class="prompt-char">$</span> otc-bridge --swap RTC⇄wRTC
+                    </h1>
+                    <p class="hero-subtitle">
+                        Over-the-Counter bridge for direct RTC ↔ wRTC swaps. 
+                        Secure validation, transparent pricing, and seamless integration.
+                    </p>
+                    
+                    <!-- Security Banner -->
+                    <div class="security-banner">
+                        <div class="security-icon">🔒</div>
+                        <div class="security-text">
+                            <strong>Security First:</strong> Always verify token addresses and never share your private keys.
+                            <a href="#security" class="security-link">Learn more →</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Swap Interface -->
+        <section class="swap-section">
+            <div class="container">
+                <div class="swap-container">
+                    <!-- Main Swap Card -->
+                    <div class="swap-card">
+                        <div class="swap-header">
+                            <h2 class="swap-title">Swap Tokens</h2>
+                            <div class="swap-settings">
+                                <button class="icon-btn" onclick="openSettings()" aria-label="Settings">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Direction Selector -->
+                        <div class="direction-selector">
+                            <button class="direction-btn active" data-direction="rtc-to-wrtc" onclick="setDirection('rtc-to-wrtc')">
+                                <span class="direction-icon">🔗</span>
+                                <span class="direction-label">RTC → wRTC</span>
+                            </button>
+                            <button class="direction-btn" data-direction="wrtc-to-rtc" onclick="setDirection('wrtc-to-rtc')">
+                                <span class="direction-icon">🌉</span>
+                                <span class="direction-label">wRTC → RTC</span>
+                            </button>
+                        </div>
+
+                        <!-- Swap Form -->
+                        <form id="swapForm" class="swap-form" onsubmit="handleSwap(event)">
+                            <!-- From Section -->
+                            <div class="swap-field">
+                                <label class="field-label">
+                                    <span>You Pay</span>
+                                    <span class="balance-label">Balance: <span id="fromBalance">0.00</span></span>
+                                </label>
+                                <div class="input-group">
+                                    <input 
+                                        type="text" 
+                                        id="fromAmount" 
+                                        class="input-amount" 
+                                        placeholder="0.00"
+                                        inputmode="decimal"
+                                        autocomplete="off"
+                                        oninput="validateAmount('from')"
+                                        required
+                                    >
+                                    <div class="token-selector">
+                                        <button type="button" class="token-btn" id="fromTokenBtn" onclick="openTokenModal('from')">
+                                            <span class="token-icon">🪙</span>
+                                            <span class="token-symbol" id="fromTokenSymbol">RTC</span>
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <polyline points="6 9 12 15 18 9"></polyline>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="quick-amounts">
+                                    <button type="button" class="quick-btn" onclick="setPercentage(25)">25%</button>
+                                    <button type="button" class="quick-btn" onclick="setPercentage(50)">50%</button>
+                                    <button type="button" class="quick-btn" onclick="setPercentage(75)">75%</button>
+                                    <button type="button" class="quick-btn" onclick="setPercentage(100)">MAX</button>
+                                </div>
+                                <div class="field-error" id="fromAmountError"></div>
+                            </div>
+
+                            <!-- Swap Direction Arrow -->
+                            <div class="swap-arrow">
+                                <button type="button" class="arrow-btn" onclick="swapDirection()" aria-label="Swap direction">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="17 1 21 5 17 9"></polyline>
+                                        <path d="M7 17l4 4 4-4"></path>
+                                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <!-- To Section -->
+                            <div class="swap-field">
+                                <label class="field-label">
+                                    <span>You Receive</span>
+                                    <span class="balance-label">Balance: <span id="toBalance">0.00</span></span>
+                                </label>
+                                <div class="input-group">
+                                    <input 
+                                        type="text" 
+                                        id="toAmount" 
+                                        class="input-amount" 
+                                        placeholder="0.00"
+                                        inputmode="decimal"
+                                        autocomplete="off"
+                                        readonly
+                                    >
+                                    <div class="token-selector">
+                                        <button type="button" class="token-btn" id="toTokenBtn" onclick="openTokenModal('to')">
+                                            <span class="token-icon">🪙</span>
+                                            <span class="token-symbol" id="toTokenSymbol">wRTC</span>
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <polyline points="6 9 12 15 18 9"></polyline>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Exchange Rate -->
+                            <div class="exchange-rate" id="exchangeRate">
+                                <span class="rate-label">Rate</span>
+                                <span class="rate-value">1 RTC = 1.00 wRTC</span>
+                                <span class="rate-source">Live OTC Rate</span>
+                            </div>
+
+                            <!-- Advanced Details -->
+                            <div class="advanced-details" id="advancedDetails">
+                                <div class="detail-row">
+                                    <span class="detail-label">Price Impact</span>
+                                    <span class="detail-value" id="priceImpact">&lt;0.01%</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">Network Fee</span>
+                                    <span class="detail-value" id="networkFee">~0.001 SOL</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">Bridge Fee</span>
+                                    <span class="detail-value" id="bridgeFee">0.1%</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">Slippage Tolerance</span>
+                                    <span class="detail-value" id="slippageTolerance">0.5%</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">Minimum Received</span>
+                                    <span class="detail-value" id="minimumReceived">0.00</span>
+                                </div>
+                            </div>
+
+                            <!-- Destination Address (for bridge) -->
+                            <div class="swap-field address-field" id="destinationField">
+                                <label class="field-label">
+                                    <span>Destination Address</span>
+                                    <span class="required-mark">*</span>
+                                </label>
+                                <div class="input-group">
+                                    <input 
+                                        type="text" 
+                                        id="destinationAddress" 
+                                        class="input-address" 
+                                        placeholder="Enter your Solana wallet address"
+                                        autocomplete="off"
+                                        oninput="validateAddress()"
+                                        required
+                                    >
+                                    <button type="button" class="paste-btn" onclick="pasteAddress()">Paste</button>
+                                </div>
+                                <div class="field-error" id="addressError"></div>
+                                <div class="field-hint" id="addressHint">
+                                    💡 Solana addresses are 32-44 characters (base58 format)
+                                </div>
+                            </div>
+
+                            <!-- Security Warnings -->
+                            <div class="security-warnings" id="securityWarnings">
+                                <div class="warning-card warning-critical">
+                                    <div class="warning-icon">⚠️</div>
+                                    <div class="warning-content">
+                                        <strong>Verify Address</strong>
+                                        <p>Double-check your destination address. Transactions are irreversible.</p>
+                                    </div>
+                                </div>
+                                <div class="warning-card warning-info">
+                                    <div class="warning-icon">ℹ️</div>
+                                    <div class="warning-content">
+                                        <strong>Bridge Time</strong>
+                                        <p>Expected completion: 5-30 minutes depending on network congestion.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Submit Button -->
+                            <button type="submit" class="swap-btn" id="swapBtn" disabled>
+                                <span class="btn-text">Connect Wallet to Start</span>
+                                <span class="btn-loading" style="display: none;">
+                                    <span class="spinner"></span>
+                                    Processing...
+                                </span>
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Info Panel -->
+                    <div class="info-panel">
+                        <div class="info-card">
+                            <h3 class="info-title">📊 Market Info</h3>
+                            <div class="info-grid">
+                                <div class="info-item">
+                                    <span class="info-label">24h Volume</span>
+                                    <span class="info-value" id="volume24h">Loading...</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Liquidity</span>
+                                    <span class="info-value" id="liquidity">Loading...</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Last Price</span>
+                                    <span class="info-value" id="lastPrice">Loading...</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Price Change</span>
+                                    <span class="info-value" id="priceChange">Loading...</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="info-card">
+                            <h3 class="info-title">🔗 Recent Transactions</h3>
+                            <div class="tx-list" id="recentTxs">
+                                <div class="tx-loading">Loading recent transactions...</div>
+                            </div>
+                        </div>
+
+                        <div class="info-card">
+                            <h3 class="info-title">📖 How It Works</h3>
+                            <ol class="steps-list">
+                                <li>
+                                    <strong>Connect Wallet</strong>
+                                    <p>Link your RustChain or Solana wallet</p>
+                                </li>
+                                <li>
+                                    <strong>Enter Amount</strong>
+                                    <p>Specify how much you want to swap</p>
+                                </li>
+                                <li>
+                                    <strong>Review Details</strong>
+                                    <p>Check rate, fees, and destination address</p>
+                                </li>
+                                <li>
+                                    <strong>Confirm Swap</strong>
+                                    <p>Sign the transaction in your wallet</p>
+                                </li>
+                                <li>
+                                    <strong>Wait for Bridge</strong>
+                                    <p>Transaction completes in 5-30 minutes</p>
+                                </li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Security Section -->
+        <section class="security-section" id="security">
+            <div class="container">
+                <h2 class="section-title">
+                    <span class="prompt-char">$</span> cat security-checklist.md
+                </h2>
+                
+                <div class="security-grid">
+                    <div class="security-card">
+                        <div class="security-card-icon">🛡️</div>
+                        <h3 class="security-card-title">Anti-Scam Verification</h3>
+                        <ul class="security-list">
+                            <li>✅ Token Mint: <code class="code-inline">12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X</code></li>
+                            <li>✅ Decimals: <code class="code-inline">6</code></li>
+                            <li>✅ Official Bridge: <code class="code-inline">bottube.ai/bridge/wrtc</code></li>
+                            <li>✅ Never share seed phrases or private keys</li>
+                            <li>✅ Always verify URLs character-by-character</li>
+                        </ul>
+                    </div>
+
+                    <div class="security-card">
+                        <div class="security-card-icon">🔍</div>
+                        <h3 class="security-card-title">Transaction Safety</h3>
+                        <ul class="security-list">
+                            <li>Verify destination address before submitting</li>
+                            <li>Start with small test amounts</li>
+                            <li>Check slippage tolerance (recommended: 0.5-1%)</li>
+                            <li>Monitor transaction status on explorer</li>
+                            <li>Keep records of transaction hashes</li>
+                        </ul>
+                    </div>
+
+                    <div class="security-card">
+                        <div class="security-card-icon">⚡</div>
+                        <h3 class="security-card-title">Network Security</h3>
+                        <ul class="security-list">
+                            <li>Use secure HTTPS connections only</li>
+                            <li>Ensure wallet software is up to date</li>
+                            <li>Beware of phishing sites and DMs</li>
+                            <li>Bookmark official URLs</li>
+                            <li>Enable wallet transaction notifications</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- API Integration Section -->
+        <section class="api-section">
+            <div class="container">
+                <h2 class="section-title">
+                    <span class="prompt-char">$</span> api-integration --docs
+                </h2>
+                
+                <div class="api-content">
+                    <div class="api-docs">
+                        <h3 class="api-title">Developer API</h3>
+                        <p class="api-description">
+                            Integrate OTC bridge functionality into your applications with our REST API.
+                            All endpoints support JSON-RPC and return standardized responses.
+                        </p>
+
+                        <div class="api-endpoint">
+                            <div class="endpoint-header">
+                                <span class="endpoint-method get">GET</span>
+                                <code class="endpoint-path">/api/otc/quote</code>
+                            </div>
+                            <p class="endpoint-description">Get a quote for swapping tokens</p>
+                            <div class="endpoint-example">
+                                <div class="example-request">
+                                    <strong>Request:</strong>
+                                    <pre><code>curl -X GET "https://rustchain.org/api/otc/quote?from=RTC&to=wRTC&amount=100"</code></pre>
+                                </div>
+                                <div class="example-response">
+                                    <strong>Response:</strong>
+                                    <pre><code>{
+  "ok": true,
+  "quote": {
+    "from": "RTC",
+    "to": "wRTC",
+    "fromAmount": "100.00",
+    "toAmount": "99.90",
+    "rate": "0.999",
+    "fee": "0.10",
+    "feePercent": "0.1%",
+    "slippage": "0.5%",
+    "minimumReceived": "99.40",
+    "validUntil": 1709856000
+  }
+}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="api-endpoint">
+                            <div class="endpoint-header">
+                                <span class="endpoint-method post">POST</span>
+                                <code class="endpoint-path">/api/otc/swap</code>
+                            </div>
+                            <p class="endpoint-description">Execute a token swap</p>
+                            <div class="endpoint-example">
+                                <div class="example-request">
+                                    <strong>Request:</strong>
+                                    <pre><code>curl -X POST "https://rustchain.org/api/otc/swap" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "RTC",
+    "to": "wRTC",
+    "fromAmount": "100.00",
+    "toAddress": "7nx8QmzxD1wKX7QJ1FVqT5hX9YvJxKqZb8yPoR3dL8mN",
+    "slippage": "0.5",
+    "quoteId": "quote_123456"
+  }'</code></pre>
+                                </div>
+                                <div class="example-response">
+                                    <strong>Response:</strong>
+                                    <pre><code>{
+  "ok": true,
+  "swap": {
+    "id": "swap_789012",
+    "status": "pending",
+    "from": "RTC",
+    "to": "wRTC",
+    "fromAmount": "100.00",
+    "toAmount": "99.90",
+    "txHash": "5KtP7xQmzxD1wKX7QJ1FVqT5hX9YvJxKqZb8yPoR3dL8mN...",
+    "estimatedTime": "5-30 minutes",
+    "createdAt": 1709856000
+  }
+}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="api-endpoint">
+                            <div class="endpoint-header">
+                                <span class="endpoint-method get">GET</span>
+                                <code class="endpoint-path">/api/otc/status/:swapId</code>
+                            </div>
+                            <p class="endpoint-description">Check swap status</p>
+                            <div class="endpoint-example">
+                                <div class="example-request">
+                                    <strong>Request:</strong>
+                                    <pre><code>curl -X GET "https://rustchain.org/api/otc/status/swap_789012"</code></pre>
+                                </div>
+                                <div class="example-response">
+                                    <strong>Response:</strong>
+                                    <pre><code>{
+  "ok": true,
+  "status": {
+    "id": "swap_789012",
+    "state": "completed",
+    "progress": 100,
+    "steps": [
+      {"name": "initiated", "completed": true, "timestamp": 1709856000},
+      {"name": "locked", "completed": true, "timestamp": 1709856120},
+      {"name": "bridging", "completed": true, "timestamp": 1709856300},
+      {"name": "completed", "completed": true, "timestamp": 1709856600}
+    ],
+    "txHash": "5KtP7xQmzxD1wKX7QJ1FVqT5hX9YvJxKqZb8yPoR3dL8mN..."
+  }
+}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+
+                        <a href="/docs/api/otc-bridge.md" class="api-link">
+                            View Full API Documentation →
+                        </a>
+                    </div>
+
+                    <div class="api-sdk">
+                        <h3 class="api-title">SDK & Libraries</h3>
+                        <p class="api-description">
+                            Official SDKs for popular programming languages and frameworks.
+                        </p>
+
+                        <div class="sdk-list">
+                            <div class="sdk-item">
+                                <div class="sdk-icon">🟨</div>
+                                <div class="sdk-info">
+                                    <strong>JavaScript/TypeScript</strong>
+                                    <code>npm install @rustchain/otc-bridge</code>
+                                </div>
+                            </div>
+                            <div class="sdk-item">
+                                <div class="sdk-icon">🐍</div>
+                                <div class="sdk-info">
+                                    <strong>Python</strong>
+                                    <code>pip install rustchain-otc</code>
+                                </div>
+                            </div>
+                            <div class="sdk-item">
+                                <div class="sdk-icon">🦀</div>
+                                <div class="sdk-info">
+                                    <strong>Rust</strong>
+                                    <code>cargo add rustchain-otc</code>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="code-example">
+                            <h4>Example Usage (JavaScript)</h4>
+                            <pre><code>import { OTCBridge } from '@rustchain/otc-bridge';
+
+const bridge = new OTCBridge({
+  network: 'mainnet',
+  apiKey: 'your-api-key'
+});
+
+// Get a quote
+const quote = await bridge.getQuote({
+  from: 'RTC',
+  to: 'wRTC',
+  amount: 100
+});
+
+console.log(`You'll receive: ${quote.toAmount} wRTC`);
+
+// Execute swap
+const swap = await bridge.swap({
+  ...quote,
+  toAddress: '7nx8QmzxD1wKX7QJ1FVqT5hX9YvJxKqZb8yPoR3dL8mN',
+  slippage: 0.5
+});
+
+console.log(`Swap ID: ${swap.id}`);
+console.log(`TX Hash: ${swap.txHash}`);</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ Section -->
+        <section class="faq-section">
+            <div class="container">
+                <h2 class="section-title">
+                    <span class="prompt-char">$</span> faq --read
+                </h2>
+                
+                <div class="faq-grid">
+                    <div class="faq-item">
+                        <h3 class="faq-question">What is the OTC Bridge?</h3>
+                        <p class="faq-answer">
+                            The OTC (Over-the-Counter) Bridge allows direct swaps between RTC (RustChain native token) 
+                            and wRTC (wrapped RTC on Solana) without using a traditional DEX. It provides better rates 
+                            for large transactions and direct wallet-to-wallet transfers.
+                        </p>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <h3 class="faq-question">How long does a bridge transaction take?</h3>
+                        <p class="faq-answer">
+                            Typical bridge transactions complete within 5-30 minutes. The process involves:
+                            (1) locking tokens on the source chain (~1-5 min), 
+                            (2) cross-chain verification (~1-5 min), 
+                            (3) minting/releasing on the destination chain (~1-5 min).
+                        </p>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <h3 class="faq-question">What are the fees?</h3>
+                        <p class="faq-answer">
+                            Bridge fees are typically 0.1% of the transaction amount. Additionally, you'll need to pay 
+                            network gas fees on both chains (approximately 0.001 SOL for Solana transactions).
+                        </p>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <h3 class="faq-question">Is there a minimum or maximum amount?</h3>
+                        <p class="faq-answer">
+                            Minimum: 1 RTC/wRTC<br>
+                            Maximum: No hard limit, but transactions over 10,000 RTC may require additional verification 
+                            and could take longer to process.
+                        </p>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <h3 class="faq-question">What if my transaction gets stuck?</h3>
+                        <p class="faq-answer">
+                            If your transaction is pending for more than 1 hour, contact support with your transaction 
+                            hash. Most "stuck" transactions are simply experiencing network congestion and will complete 
+                            automatically.
+                        </p>
+                    </div>
+                    
+                    <div class="faq-item">
+                        <h3 class="faq-question">Can I cancel a pending transaction?</h3>
+                        <p class="faq-answer">
+                            Once a transaction is submitted to the blockchain, it cannot be cancelled. This is a security 
+                            feature of blockchain networks. Always verify all details before confirming.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>RustChain OTC Bridge</h4>
+                    <p>Secure, validated token swaps for the RustChain ecosystem.</p>
+                </div>
+                <div class="footer-section">
+                    <h4>Resources</h4>
+                    <ul>
+                        <li><a href="/docs/wrtc.md">wRTC Guide</a></li>
+                        <li><a href="/docs/api/otc-bridge.md">API Docs</a></li>
+                        <li><a href="https://github.com/Scottcjn/Rustchain">GitHub</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Community</h4>
+                    <ul>
+                        <li><a href="https://discord.gg/rustchain">Discord</a></li>
+                        <li><a href="https://twitter.com/rustchain">Twitter</a></li>
+                        <li><a href="https://t.me/rustchain">Telegram</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 RustChain. All rights reserved.</p>
+                <p>Bounty #695 Implementation</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Token Selection Modal -->
+    <div class="modal" id="tokenModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Select Token</h3>
+                <button class="modal-close" onclick="closeTokenModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="token-option" onclick="selectToken('RTC')">
+                    <div class="token-option-icon">🪙</div>
+                    <div class="token-option-info">
+                        <strong>RTC</strong>
+                        <span>RustChain Token</span>
+                    </div>
+                </div>
+                <div class="token-option" onclick="selectToken('wRTC')">
+                    <div class="token-option-icon">🌉</div>
+                    <div class="token-option-info">
+                        <strong>wRTC</strong>
+                        <span>Wrapped RTC (Solana)</span>
+                        <code class="token-mint">12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X</code>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Swap Settings</h3>
+                <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <label class="setting-label">Slippage Tolerance</label>
+                    <div class="slippage-options">
+                        <button class="slippage-btn" onclick="setSlippage(0.1)">0.1%</button>
+                        <button class="slippage-btn active" onclick="setSlippage(0.5)">0.5%</button>
+                        <button class="slippage-btn" onclick="setSlippage(1.0)">1.0%</button>
+                        <div class="slippage-custom">
+                            <input type="number" id="customSlippage" placeholder="Custom" min="0.01" max="5" step="0.01">
+                            <button onclick="setCustomSlippage()">Set</button>
+                        </div>
+                    </div>
+                    <p class="setting-hint">Recommended: 0.5% for stable pairs, 1-2% for volatile markets</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal" id="confirmModal">
+        <div class="modal-content modal-confirm">
+            <div class="modal-header">
+                <h3>Confirm Swap</h3>
+                <button class="modal-close" onclick="closeConfirmModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="confirm-summary">
+                    <div class="confirm-amount">
+                        <span class="confirm-label">You're paying</span>
+                        <span class="confirm-value" id="confirmFromAmount">0.00 RTC</span>
+                    </div>
+                    <div class="confirm-arrow">↓</div>
+                    <div class="confirm-amount">
+                        <span class="confirm-label">You'll receive (minimum)</span>
+                        <span class="confirm-value" id="confirmToAmount">0.00 wRTC</span>
+                    </div>
+                </div>
+                
+                <div class="confirm-details">
+                    <div class="confirm-row">
+                        <span>Rate</span>
+                        <span id="confirmRate">1 RTC = 1.00 wRTC</span>
+                    </div>
+                    <div class="confirm-row">
+                        <span>Price Impact</span>
+                        <span id="confirmImpact">&lt;0.01%</span>
+                    </div>
+                    <div class="confirm-row">
+                        <span>Network Fee</span>
+                        <span id="confirmFee">~0.001 SOL</span>
+                    </div>
+                    <div class="confirm-row">
+                        <span>Bridge Fee</span>
+                        <span id="confirmBridgeFee">0.1%</span>
+                    </div>
+                    <div class="confirm-row">
+                        <span>Destination</span>
+                        <span class="confirm-address" id="confirmAddress">7nx8Q...L8mN</span>
+                    </div>
+                </div>
+
+                <div class="confirm-warning">
+                    ⚠️ This transaction is irreversible. Verify all details before confirming.
+                </div>
+
+                <button class="confirm-btn" onclick="executeSwap()">
+                    Confirm Swap
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="otc-bridge.js"></script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+{
+  "name": "@rustchain/otc-bridge",
+  "version": "1.0.0",
+  "description": "OTC Bridge for RTC ↔ wRTC swaps - Bounty #695 Implementation",
+  "main": "example-integration.js",
+  "scripts": {
+    "test": "node test-otc-bridge.js",
+    "example": "node example-integration.js",
+    "start": "python3 -m http.server 8000"
+  },
+  "keywords": [
+    "rustchain",
+    "rtc",
+    "wrtc",
+    "bridge",
+    "swap",
+    "otc",
+    "blockchain",
+    "crypto"
+  ],
+  "author": "RustChain Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Scottcjn/Rustchain.git",
+    "directory": "web/otc-bridge"
+  },
+  "bugs": {
+    "url": "https://github.com/Scottcjn/Rustchain/issues"
+  },
+  "homepage": "https://rustchain.org/otc-bridge/",
+  "dependencies": {
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "index.html",
+    "otc-bridge.css",
+    "otc-bridge.js",
+    "example-integration.js",
+    "test-otc-bridge.js",
+    "README.md",
+    "API_INTEGRATION.md"
+  ]
+}
