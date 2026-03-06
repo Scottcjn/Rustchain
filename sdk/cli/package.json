@@ -1,0 +1,27 @@
+{
+  "name": "rustchain-agent-cli",
+  "version": "1.0.0",
+  "description": "RustChain Agent Economy CLI Tool",
+  "main": "dist/index.js",
+  "bin": {
+    "rustchain-agent": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": ["rustchain", "blockchain", "agent", "cli"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "commander": "^11.0.0",
+    "chalk": "^4.1.0",
+    "inquirer": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/inquirer": "^8.0.0",
+    "typescript": "^5.0.0"
+  }
+}
