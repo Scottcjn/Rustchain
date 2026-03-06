@@ -44,6 +44,10 @@ required-features = ["network"]
 name = "rustchain-miner"
 path = "src/bin/miner.rs"
 
+[[bin]]
+name = "entropy-verifier"
+path = "src/bin/entropy_verifier.rs"
+
 [dev-dependencies]
 criterion = "0.5"
 
