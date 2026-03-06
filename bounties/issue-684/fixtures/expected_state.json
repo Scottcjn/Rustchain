@@ -1,0 +1,55 @@
+{
+  "description": "Expected final state for RIP-302 challenge scenarios",
+  "scenarios": {
+    "heartbeat": {
+      "required_steps": ["heartbeat_sent", "heartbeat_received", "envelopes_verified"],
+      "expected_status": "completed",
+      "min_steps": 3,
+      "verification": {
+        "envelopes_signed": true,
+        "pubkeys_matched": true
+      }
+    },
+    "contracts": {
+      "required_steps": [
+        "contract_listed",
+        "offer_made",
+        "offer_accepted",
+        "escrow_funded",
+        "contract_activated",
+        "contract_settled"
+      ],
+      "expected_status": "completed",
+      "min_steps": 6,
+      "verification": {
+        "contract_id_present": true,
+        "escrow_funded": true,
+        "settled": true
+      }
+    },
+    "grazer": {
+      "required_steps": ["grazer_query", "capabilities_verified", "service_requested"],
+      "expected_status": "completed",
+      "min_steps": 3,
+      "verification": {
+        "capabilities_hash_present": true,
+        "service_request_valid": true
+      }
+    },
+    "payment": {
+      "required_steps": ["payment_intent_created", "payment_header_validated", "payment_recorded"],
+      "expected_status": "completed",
+      "min_steps": 3,
+      "verification": {
+        "payment_intent_valid": true,
+        "tx_recorded": true
+      }
+    }
+  },
+  "global_requirements": {
+    "all_agents_have_ids": true,
+    "all_steps_have_hashes": true,
+    "evidence_digest_computable": true,
+    "timestamps_valid_iso8601": true
+  }
+}

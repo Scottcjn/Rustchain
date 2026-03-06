@@ -1,0 +1,451 @@
+{
+  "rip": "RIP-302",
+  "challenge_type": "Agent-to-Agent Transaction Test",
+  "proof_digest": "3c2d4b856f700da5028699c8d9e15a102a75d1a2f7c322fb2b0ec85d59a9a055",
+  "results": [
+    {
+      "challenge_id": "a2a_rip302_contracts",
+      "run_id": "run_7a23e6cb1bda",
+      "scenario": "contracts",
+      "timestamp": "2026-03-06T07:22:12.012050+00:00",
+      "agents": {
+        "initiator": {
+          "agent_id": "bcn_alpha_rip302",
+          "name": "Agent Alpha",
+          "role": "initiator",
+          "pubkey": "0x_alpha_pubkey_deterministic_seed_rip302_test",
+          "wallet": "0xAlphaWallet000000000000000000000000000001",
+          "capabilities": [
+            "heartbeat",
+            "contracts",
+            "payment",
+            "grazer_discovery"
+          ]
+        },
+        "responder": {
+          "agent_id": "bcn_beta_rip302",
+          "name": "Agent Beta",
+          "role": "responder",
+          "pubkey": "0x_beta_pubkey_deterministic_seed_rip302_test",
+          "wallet": "0xBetaWallet0000000000000000000000000000002",
+          "capabilities": [
+            "heartbeat",
+            "contracts",
+            "payment",
+            "service_provider"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "step": 1,
+          "action": "contract_listed",
+          "evidence_hash": "b5c75b9235534f47974dff54445a37c64b1700242f2994e7fa249feba5e5e7af",
+          "payload": {
+            "seller": "bcn_alpha_rip302",
+            "contract_id": "ctr_ec3d3fc5",
+            "price_rtc": 10.0,
+            "terms": {
+              "contract_id": "ctr_ec3d3fc5",
+              "status": "listed"
+            }
+          },
+          "verified": true,
+          "timestamp": "2026-03-06T07:22:12.011941+00:00"
+        },
+        {
+          "step": 2,
+          "action": "offer_made",
+          "evidence_hash": "e4742d45aab1be633fb1854ffc4e50c51988c0a5f99c2acd026d4bd99a4694c4",
+          "payload": {
+            "buyer": "bcn_beta_rip302",
+            "contract_id": "ctr_ec3d3fc5",
+            "offered_price": 10.0
+          },
+          "verified": true,
+          "timestamp": "2026-03-06T07:22:12.011961+00:00"
+        },
+        {
+          "step": 3,
+          "action": "offer_accepted",
+          "evidence_hash": "6a2cffbdb7eb2973d285be4b310b30dd59513b387bbbe393e579f84b04539f9c",
+          "payload": {
+            "contract_id": "ctr_ec3d3fc5",
+            "accepted_by": "bcn_alpha_rip302"
+          },
+          "verified": true,
+          "timestamp": "2026-03-06T07:22:12.011977+00:00"
+        },
+        {
+          "step": 4,
+          "action": "escrow_funded",
+          "evidence_hash": "b4d0097ba6a873536b03cdb9d8148913d0fbfe74b7a7caa28d9abee5dd0d10f0",
+          "payload": {
+            "contract_id": "ctr_ec3d3fc5",
+            "tx_ref": "tx_mock_rip302"
+          },
+          "verified": true,
+          "timestamp": "2026-03-06T07:22:12.011992+00:00"
+        },
+        {
+          "step": 5,
+          "action": "contract_activated",
+          "evidence_hash": "ad500f5a9aa0c104c6d6394d8ac23aa94ad27c96c0c0f5a83d5dff83148706d0",
+          "payload": {
+            "contract_id": "ctr_ec3d3fc5",
+            "status": "active"
+          },
+          "verified": true,
+          "timestamp": "2026-03-06T07:22:12.012005+00:00"
+        },
+        {
+          "step": 6,
+          "action": "contract_settled",
+          "evidence_hash": "192ea769e3da22438515a45a65b8030ec40bd39ea87d16dc286a0a27388e7c23",
+          "payload": {
+            "contract_id": "ctr_ec3d3fc5",
+            "settled_at": "2026-03-06T07:22:12.012016+00:00"
+          },
+          "verified": true,
+          "timestamp": "2026-03-06T07:22:12.012020+00:00"
+        }
+      ],
+      "final_state": {
+        "status": "completed",
+        "evidence_digest": "43adfb6a0568097354f89aa1e88f3e498a2bd32fa5c50f6d9b28357ea07d04e2",
+        "proof_file": "evidence/proof_run_7a23e6cb1bda.json",
+        "steps_count": 6
+      },
+      "duration_ms": 0,
+      "reproducible": true
+    },
+    {
+      "challenge_id": "a2a_rip302_grazer",
+      "run_id": "run_fdcb0c954b1c",
+      "scenario": "grazer",
+      "timestamp": "2026-03-06T07:22:12.012412+00:00",
+      "agents": {
+        "initiator": {
+          "agent_id": "bcn_alpha_rip302",
+          "name": "Agent Alpha",
+          "role": "initiator",
+          "pubkey": "0x_alpha_pubkey_deterministic_seed_rip302_test",
+          "wallet": "0xAlphaWallet000000000000000000000000000001",
+          "capabilities": [
+            "heartbeat",
+            "contracts",
+            "payment",
+            "grazer_discovery"
+          ]
+        },
+        "responder": {
+          "agent_id": "bcn_beta_rip302",
+          "name": "Agent Beta",
+          "role": "responder",
+          "pubkey": "0x_beta_pubkey_deterministic_seed_rip302_test",
+          "wallet": "0xBetaWallet0000000000000000000000000000002",
+          "capabilities": [
+            "heartbeat",
+            "contracts",
+            "payment",
+            "service_provider"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "step": 1,
+          "action": "grazer_query",
+          "evidence_hash": "689f0a1fa19bfa75b540d24662e5cfd6f87857f1e49df20906ffa08fdc2d581d",
+          "payload": {
+            "queried_agent": "bcn_beta_rip302",
+            "capabilities": {
+              "agent_id": "bcn_beta_rip302",
+              "skills": [
+                "heartbeat",
+                "contracts",
+                "payment"
+              ],
+              "reputation": 100,
+              "last_seen": "2026-03-06T07:22:12.012338+00:00"
+            }
+          },
+          "verified": true,
+          "timestamp": "2026-03-06T07:22:12.012346+00:00"
+        },
+        {
+          "step": 2,
+          "action": "capabilities_verified",
+          "evidence_hash": "821f54db430766d2fb4ad57c27d2c4c17547c448d37d0c239e26a1be198c61d9",
+          "payload": {
+            "agent_id": "bcn_beta_rip302",
+            "capability_hash": "5aadb508026bdee0a2a707d07b6dc66ed688171d757101a0f4d8e035bcc6dad5",
+            "skills_count": 3
+          },
+          "verified": true,
+          "timestamp": "2026-03-06T07:22:12.012366+00:00"
+        },
+        {
+          "step": 3,
+          "action": "service_requested",
+          "evidence_hash": "565d6a4977db396293ac99010083e21582ed38641d641c2f27502b0dab989b5d",
+          "payload": {
+            "request": {
+              "from": "bcn_alpha_rip302",
+              "to": "bcn_beta_rip302",
+              "service": "compute",
+              "parameters": {
+                "task": "hash_verification",
+                "input": "rip302_test"
+              }
+            },
+            "request_hash": "ebf26bae8a415cd8dd40f573c49f257ded82d3866f8e50316471eebeaa320249"
+          },
+          "verified": true,
+          "timestamp": "2026-03-06T07:22:12.012383+00:00"
+        }
+      ],
+      "final_state": {
+        "status": "completed",
+        "evidence_digest": "60891b33d84bef3e25f1eea6d888a51e3c4048b1d7b9983ee63c1c28bf1bd8b9",
+        "proof_file": "evidence/proof_run_fdcb0c954b1c.json",
+        "steps_count": 3
+      },
+      "duration_ms": 0,
+      "reproducible": true
+    },
+    {
+      "challenge_id": "a2a_rip302_heartbeat",
+      "run_id": "run_3dcb0da2a335",
+      "scenario": "heartbeat",
+      "timestamp": "2026-03-06T07:22:12.011546+00:00",
+      "agents": {
+        "initiator": {
+          "agent_id": "bcn_alpha_rip302",
+          "name": "Agent Alpha",
+          "role": "initiator",
+          "pubkey": "0x_alpha_pubkey_deterministic_seed_rip302_test",
+          "wallet": "0xAlphaWallet000000000000000000000000000001",
+          "capabilities": [
+            "heartbeat",
+            "contracts",
+            "payment",
+            "grazer_discovery"
+          ]
+        },
+        "responder": {
+          "agent_id": "bcn_beta_rip302",
+          "name": "Agent Beta",
+          "role": "responder",
+          "pubkey": "0x_beta_pubkey_deterministic_seed_rip302_test",
+          "wallet": "0xBetaWallet0000000000000000000000000000002",
+          "capabilities": [
+            "heartbeat",
+            "contracts",
+            "payment",
+            "service_provider"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "step": 1,
+          "action": "heartbeat_sent",
+          "evidence_hash": "337f1b1de7b8adc4a04fc11bc8e0d47fcf45e3f86f6b9a967fe46ff80cb53df6",
+          "payload": {
+            "from": "bcn_alpha_rip302",
+            "envelope": {
+              "agent_id": "bcn_alpha_rip302",
+              "kind": "heartbeat",
+              "status": "alive",
+              "health": {
+                "cpu": "vintage",
+                "uptime": 100
+              },
+              "config": {
+                "beacon": {
+                  "agent_name": "Agent Alpha"
+                }
+              },
+              "timestamp": 1772781732
+            },
+            "direction": "alpha->beta"
+          },
+          "verified": true,
+          "timestamp": "2026-03-06T07:22:12.011332+00:00"
+        },
+        {
+          "step": 2,
+          "action": "heartbeat_received",
+          "evidence_hash": "41293379c9f934fd19980c51cba3d7e81a24f609a6f38ce4f9a776b62108e0b0",
+          "payload": {
+            "from": "bcn_beta_rip302",
+            "envelope": {
+              "agent_id": "bcn_beta_rip302",
+              "kind": "heartbeat",
+              "status": "alive",
+              "health": {
+                "cpu": "retro",
+                "uptime": 200
+              },
+              "config": {
+                "beacon": {
+                  "agent_name": "Agent Beta"
+                }
+              },
+              "timestamp": 1772781732
+            },
+            "direction": "beta->alpha"
+          },
+          "verified": true,
+          "timestamp": "2026-03-06T07:22:12.011481+00:00"
+        },
+        {
+          "step": 3,
+          "action": "envelopes_verified",
+          "evidence_hash": "c67c674da50d97ac80c4f639607413e4ab6edea487be900f4d9a167774b8ea46",
+          "payload": {
+            "alpha_verified": true,
+            "beta_verified": true
+          },
+          "verified": true,
+          "timestamp": "2026-03-06T07:22:12.011504+00:00"
+        }
+      ],
+      "final_state": {
+        "status": "completed",
+        "evidence_digest": "806ab7632a18a46ec3f0a4099874092ccba31fa595e98fd912aa10de2bdaa4c1",
+        "proof_file": "evidence/proof_run_3dcb0da2a335.json",
+        "steps_count": 3
+      },
+      "duration_ms": 0,
+      "reproducible": true
+    },
+    {
+      "challenge_id": "a2a_rip302_payment",
+      "run_id": "run_ea22ec04ce30",
+      "scenario": "payment",
+      "timestamp": "2026-03-06T07:22:12.012767+00:00",
+      "agents": {
+        "initiator": {
+          "agent_id": "bcn_alpha_rip302",
+          "name": "Agent Alpha",
+          "role": "initiator",
+          "pubkey": "0x_alpha_pubkey_deterministic_seed_rip302_test",
+          "wallet": "0xAlphaWallet000000000000000000000000000001",
+          "capabilities": [
+            "heartbeat",
+            "contracts",
+            "payment",
+            "grazer_discovery"
+          ]
+        },
+        "responder": {
+          "agent_id": "bcn_beta_rip302",
+          "name": "Agent Beta",
+          "role": "responder",
+          "pubkey": "0x_beta_pubkey_deterministic_seed_rip302_test",
+          "wallet": "0xBetaWallet0000000000000000000000000000002",
+          "capabilities": [
+            "heartbeat",
+            "contracts",
+            "payment",
+            "service_provider"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "step": 1,
+          "action": "payment_intent_created",
+          "evidence_hash": "5cccb5dadee01df0c2fc37cc2b11e9d920c9767b120521e53c839ae1eb4e213a",
+          "payload": {
+            "intent": {
+              "from_agent": "bcn_alpha_rip302",
+              "to_agent": "bcn_beta_rip302",
+              "amount_usdc": "5.00",
+              "network": "Base (eip155:8453)",
+              "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+              "description": "RIP-302 test payment"
+            },
+            "intent_hash": "4b7873c9883fc75e4a1fef5e10dd3bdcca2eebaf556fe28bdaabfc7e94c16593"
+          },
+          "verified": true,
+          "timestamp": "2026-03-06T07:22:12.012701+00:00"
+        },
+        {
+          "step": 2,
+          "action": "payment_header_validated",
+          "evidence_hash": "cfd91242bf9953afc43cf7d425c8830903e30de48df4a84ce1633fe0a71fbc90",
+          "payload": {
+            "header_present": true,
+            "header_hash": "def7755d4ffeab4e5929b563f4f6f6ec614ef097bb807acd44ed71bc6883b52d"
+          },
+          "verified": true,
+          "timestamp": "2026-03-06T07:22:12.012720+00:00"
+        },
+        {
+          "step": 3,
+          "action": "payment_recorded",
+          "evidence_hash": "901e8f19b1f682b6afe82e91036a61c16b9479aaabc0ba5bcd821f32fdde0e27",
+          "payload": {
+            "tx_record": {
+              "tx_hash": "0x29b13dad47261c78fec12a788dd35b134b04a9a2b60d09033938a4cd299f18a5",
+              "from_wallet": "0xAlphaWallet000000000000000000000000000001",
+              "to_wallet": "0xBetaWallet0000000000000000000000000000002",
+              "amount_usdc": "5.00",
+              "network": "Base",
+              "timestamp": "2026-03-06T07:22:12.012733+00:00"
+            },
+            "verified": true
+          },
+          "verified": true,
+          "timestamp": "2026-03-06T07:22:12.012738+00:00"
+        }
+      ],
+      "final_state": {
+        "status": "completed",
+        "evidence_digest": "c2d9d23c4df09c9e15b23c805a5ad312dc52a18bd40113a79a4e5eb641252886",
+        "proof_file": "evidence/proof_run_ea22ec04ce30.json",
+        "steps_count": 3
+      },
+      "duration_ms": 0,
+      "reproducible": true
+    }
+  ],
+  "metadata": {
+    "collected_at": "2026-03-06T07:22:21.497191+00:00",
+    "evidence_dir": "/private/tmp/rustchain-wt/issue684/bounties/issue-684/evidence",
+    "results_count": 4,
+    "environment": {
+      "python_version": "3.9.6",
+      "platform": "macOS-26.1-arm64-arm-64bit",
+      "machine": "arm64",
+      "processor": "arm",
+      "timestamp": "2026-03-06T07:22:21.521106+00:00",
+      "cwd": "/private/tmp/rustchain-wt/issue684/bounties/issue-684",
+      "script_path": "/private/tmp/rustchain-wt/issue684/bounties/issue-684/scripts/collect_proof.py"
+    },
+    "dependencies": {
+      "beacon-skill": "not_installed",
+      "grazer-skill": "not_installed",
+      "pytest": "8.4.2"
+    },
+    "git": {
+      "commit": "2f4572e558ec0acadeee8edb038dc4848b98ca2c",
+      "branch": "feat/issue684-qwen"
+    }
+  },
+  "summary": {
+    "total_scenarios": 4,
+    "scenarios": [
+      "contracts",
+      "grazer",
+      "heartbeat",
+      "payment"
+    ],
+    "total_steps": 15,
+    "all_completed": true,
+    "proof_digest": "3c2d4b856f700da5028699c8d9e15a102a75d1a2f7c322fb2b0ec85d59a9a055"
+  }
+}

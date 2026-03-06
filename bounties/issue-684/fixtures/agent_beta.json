@@ -1,0 +1,8 @@
+{
+  "agent_id": "bcn_beta_rip302",
+  "name": "Agent Beta",
+  "role": "responder",
+  "pubkey": "0x_beta_pubkey_deterministic_seed_rip302_test",
+  "wallet": "0xBetaWallet0000000000000000000000000000002",
+  "capabilities": ["heartbeat", "contracts", "payment", "service_provider"]
+}
