@@ -1892,7 +1892,7 @@ def openapi_spec():
 
 @app.route('/explorer', methods=['GET'])
 def explorer():
-    """Real-time block explorer dashboard (Tier 1 miner view)."""
+    """Real-time block explorer dashboard (Tier 1 + Tier 2 views)."""
     html = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2041,6 +2041,60 @@ def explorer():
       color: var(--muted);
       text-align: center;
     }
+    .section-title {
+      margin: 18px 0 10px;
+      font-size: 20px;
+      letter-spacing: 0.3px;
+    }
+    .section-sub {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .agent-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .agent-controls input, .agent-controls select, .agent-controls button {
+      background: #20345f;
+      color: var(--text);
+      border: 1px solid #35508a;
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+    .agent-controls button {
+      cursor: pointer;
+    }
+    .agent-controls button:hover {
+      background: #2a4478;
+    }
+    .lifecycle {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .lifecycle .node {
+      background: #1b2d52;
+      border: 1px solid #2a4578;
+      border-radius: 10px;
+      padding: 10px;
+    }
+    .lifecycle .node .k {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+    .lifecycle .node .v {
+      margin-top: 4px;
+      color: var(--accent);
+      font-size: 24px;
+      font-weight: 700;
+      font-family: "Consolas", "Courier New", monospace;
+    }
   </style>
 </head>
 <body>
@@ -2048,7 +2102,7 @@ def explorer():
     <div class="hero">
       <div class="title-wrap">
         <h1>RustChain Explorer</h1>
-        <p>Tier 1 Miner Dashboard · 30s live refresh · architecture + multiplier + status</p>
+        <p>Tier 1 + Tier 2 dashboard - miner telemetry + agent economy marketplace</p>
       </div>
       <div class="links">
         <a href="/museum">Museum 2D</a>
@@ -2089,6 +2143,57 @@ def explorer():
       </table>
       <div id="empty" class="empty" style="display:none;">No miners matched the current filter.</div>
     </div>
+
+    <h2 class="section-title">Agent Economy Marketplace</h2>
+    <p class="section-sub">Open jobs, lifecycle state, market stats, and reputation lookup.</p>
+
+    <div class="card-grid" id="agentCards"></div>
+    <div class="lifecycle" id="lifecycleGrid"></div>
+
+    <div class="agent-controls">
+      <button id="agentRefreshBtn">Refresh Agent Data</button>
+      <label for="jobCategoryFilter">Category:</label>
+      <select id="jobCategoryFilter"><option value="all">All</option></select>
+      <label for="repWallet">Reputation:</label>
+      <input id="repWallet" type="text" placeholder="wallet id (e.g. founder_community)">
+      <button id="repLookupBtn">Lookup</button>
+      <span class="muted" id="agentUpdatedAt">Agent update: --</span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Job ID</th>
+            <th>Category</th>
+            <th>Reward (RTC)</th>
+            <th>Status</th>
+            <th>Posted By</th>
+            <th>Updated</th>
+          </tr>
+        </thead>
+        <tbody id="jobRows"></tbody>
+      </table>
+      <div id="jobsEmpty" class="empty" style="display:none;">No agent jobs for the selected filter.</div>
+    </div>
+
+    <div class="table-wrap" style="margin-top:10px;">
+      <table>
+        <thead>
+          <tr>
+            <th>Wallet</th>
+            <th>Trust</th>
+            <th>Level</th>
+            <th>Jobs Posted</th>
+            <th>Completed</th>
+            <th>Total Paid (RTC)</th>
+            <th>Last Active</th>
+          </tr>
+        </thead>
+        <tbody id="repRows"></tbody>
+      </table>
+      <div id="repEmpty" class="empty">Lookup a wallet to view reputation.</div>
+    </div>
   </div>
 
   <script>
@@ -2098,6 +2203,10 @@ def explorer():
       sortDir: "desc",
       archFilter: "all",
       statusFilter: "all",
+      agentStats: null,
+      agentJobs: [],
+      jobCategoryFilter: "all",
+      reputation: null,
     };
 
     function nowSeconds() {
@@ -2213,18 +2322,127 @@ def explorer():
       }
     }
 
+    function renderAgentCards() {
+      const payload = state.agentStats && state.agentStats.stats ? state.agentStats.stats : {};
+      const cards = [
+        { label: "Open Jobs", value: payload.open_jobs ?? 0 },
+        { label: "Active Agents", value: payload.active_agents ?? 0 },
+        { label: "Total Jobs", value: payload.total_jobs ?? 0 },
+        { label: "Completed Jobs", value: payload.completed_jobs ?? 0 },
+        { label: "Volume (RTC)", value: Number(payload.total_rtc_volume || 0).toFixed(1) },
+        { label: "Fees (RTC)", value: Number(payload.total_fees_collected || 0).toFixed(1) },
+      ];
+      document.getElementById("agentCards").innerHTML = cards.map((c) => `
+        <div class="card">
+          <div class="label">${c.label}</div>
+          <div class="value">${c.value}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderLifecycle() {
+      const counts = { posted: 0, claimed: 0, delivered: 0, completed: 0 };
+      for (const job of state.agentJobs) {
+        const status = String(job.status || "").toLowerCase();
+        if (counts[status] !== undefined) counts[status] += 1;
+        if (status === "open") counts.posted += 1;
+      }
+      document.getElementById("lifecycleGrid").innerHTML = [
+        ["Posted/Open", counts.posted],
+        ["Claimed", counts.claimed],
+        ["Delivered", counts.delivered],
+        ["Completed", counts.completed],
+      ].map(([k, v]) => `
+        <div class="node">
+          <div class="k">${k}</div>
+          <div class="v">${v}</div>
+        </div>
+      `).join("");
+    }
+
+    function setupJobCategoryFilter() {
+      const categories = new Set(state.agentJobs.map((j) => String(j.category || "other")));
+      const select = document.getElementById("jobCategoryFilter");
+      const current = select.value;
+      select.innerHTML = '<option value="all">All</option>' + [...categories].sort().map((c) => `<option value="${c}">${c}</option>`).join("");
+      if ([...categories, "all"].includes(current)) {
+        select.value = current;
+      }
+    }
+
+    function renderJobsTable() {
+      let rows = [...state.agentJobs];
+      if (state.jobCategoryFilter !== "all") {
+        rows = rows.filter((r) => String(r.category || "other") === state.jobCategoryFilter);
+      }
+      const tbody = document.getElementById("jobRows");
+      tbody.innerHTML = rows.map((job) => `
+        <tr>
+          <td class="mono">${job.job_id || "-"}</td>
+          <td>${job.category || "other"}</td>
+          <td>${Number(job.reward_rtc || 0).toFixed(2)}</td>
+          <td><span class="chip ${String(job.status || "").toLowerCase() === "completed" ? "ok" : "warn"}">${job.status || "unknown"}</span></td>
+          <td class="mono">${job.poster_wallet || "-"}</td>
+          <td class="mono">${job.updated_at || job.created_at || "-"}</td>
+        </tr>
+      `).join("");
+      document.getElementById("jobsEmpty").style.display = rows.length ? "none" : "block";
+    }
+
+    function renderReputation() {
+      const rep = state.reputation && state.reputation.reputation ? state.reputation.reputation : null;
+      const rows = document.getElementById("repRows");
+      if (!rep) {
+        rows.innerHTML = "";
+        document.getElementById("repEmpty").style.display = "block";
+        return;
+      }
+      document.getElementById("repEmpty").style.display = "none";
+      rows.innerHTML = `
+        <tr>
+          <td class="mono">${rep.wallet_id || "-"}</td>
+          <td>${rep.trust_score ?? "-"}</td>
+          <td>${rep.trust_level || "-"}</td>
+          <td>${rep.jobs_posted ?? 0}</td>
+          <td>${rep.jobs_completed_as_poster ?? 0}</td>
+          <td>${Number(rep.total_rtc_paid || 0).toFixed(2)}</td>
+          <td class="mono">${rep.last_active || "-"}</td>
+        </tr>
+      `;
+    }
+
+    async function lookupReputation() {
+      const wallet = document.getElementById("repWallet").value.trim();
+      if (!wallet) return;
+      try {
+        state.reputation = await fetchJson(`/agent/reputation/${encodeURIComponent(wallet)}`);
+      } catch (_err) {
+        state.reputation = null;
+      }
+      renderReputation();
+    }
+
     async function refresh() {
       try {
-        const [health, epoch, miners] = await Promise.all([
+        const [health, epoch, miners, agentStats, agentJobs] = await Promise.all([
           fetchJson("/health"),
           fetchJson("/epoch"),
           fetchJson("/api/miners"),
+          fetchJson("/agent/stats").catch(() => ({ stats: {} })),
+          fetchJson("/agent/jobs").catch(() => ({ jobs: [] })),
         ]);
         state.miners = Array.isArray(miners) ? miners : [];
+        state.agentStats = agentStats;
+        state.agentJobs = Array.isArray(agentJobs.jobs) ? agentJobs.jobs : [];
         renderTopCards(health, epoch);
         setupFilters();
         renderMinerTable();
+        renderAgentCards();
+        renderLifecycle();
+        setupJobCategoryFilter();
+        renderJobsTable();
         document.getElementById("updatedAt").textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+        document.getElementById("agentUpdatedAt").textContent = `Agent update: ${new Date().toLocaleTimeString()}`;
       } catch (err) {
         document.getElementById("topCards").innerHTML = `<div class="card"><div class="label">Error</div><div class="value">${String(err.message || err)}</div></div>`;
         document.getElementById("minerRows").innerHTML = "";
@@ -2240,6 +2458,12 @@ def explorer():
       state.statusFilter = e.target.value;
       renderMinerTable();
     });
+    document.getElementById("jobCategoryFilter").addEventListener("change", (e) => {
+      state.jobCategoryFilter = e.target.value;
+      renderJobsTable();
+    });
+    document.getElementById("agentRefreshBtn").addEventListener("click", refresh);
+    document.getElementById("repLookupBtn").addEventListener("click", lookupReputation);
     document.querySelectorAll("th button[data-sort]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const key = btn.getAttribute("data-sort");
