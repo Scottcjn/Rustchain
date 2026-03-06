@@ -45,3 +45,4 @@ Rustchain/miners/windows/python-3.11.5-embed-win32.zip
 # Windows miner build artifacts (repo-relative)
 miners/windows/dist/
 miners/windows/release/
+target/
