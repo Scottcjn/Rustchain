@@ -1,0 +1,4 @@
+# Micro Liquidity Tools Requirements (Bounty #692)
+# Install with: pip install -r requirements-liquidity.txt
+
+requests>=2.28.0

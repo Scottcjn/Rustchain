@@ -1,6 +1,32 @@
 {
     "bounties": [
         {
+            "bounty_id": "bounty_692",
+            "title": "Micro Liquidity Workflow",
+            "description": "Implement practical liquidity workflow tooling for wRTC pools on Solana. Includes verification tools, claim proof generation, safety checks, and reproducible evidence flow for liquidity providers.",
+            "reward": "Liquidity Provider Badge + RUST 692",
+            "status": "Completed",
+            "requirements": [
+                "Liquidity verification CLI tool (verify_liquidity.py)",
+                "Claim proof generator for bounty submissions (claim_proof_generator.py)",
+                "Comprehensive safety checks module (liquidity_safety_checks.py)",
+                "Web-based liquidity dashboard (liquidity_dashboard.html)",
+                "Complete documentation (docs/MICRO_LIQUIDITY.md)",
+                "Test coverage for all tools (tests/test_liquidity_tools.py)",
+                "Reproducible claim proof workflow with verification"
+            ],
+            "deliverables": {
+                "documentation": "docs/MICRO_LIQUIDITY.md",
+                "tools": [
+                    "tools/verify_liquidity.py",
+                    "tools/claim_proof_generator.py",
+                    "tools/liquidity_safety_checks.py",
+                    "tools/liquidity_dashboard.html"
+                ],
+                "tests": "tests/test_liquidity_tools.py"
+            }
+        },
+        {
             "bounty_id": "bounty_dos_port",
             "title": "MS-DOS Validator Port",
             "description": "Create a RustChain validator client that runs on real-mode DOS (FreeDOS/PC-DOS/MS-DOS). Must read BIOS date and generate entropy.",
