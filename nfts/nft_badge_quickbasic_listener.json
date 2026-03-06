@@ -1,0 +1,24 @@
+{
+    "nft_id": "badge_quickbasic_listener",
+    "name": "QuickBASIC Listener",
+    "description": "Awarded for implementing a RustChain listener or validator in QBasic or QuickBASIC.",
+    "image": "ipfs://placeholder_quickbasic_listener.png",
+    "attributes": [
+        {
+            "trait_type": "Language",
+            "value": "QuickBASIC"
+        },
+        {
+            "trait_type": "Flame State",
+            "value": "Vintage Polling"
+        },
+        {
+            "trait_type": "Rarity",
+            "value": "Rare"
+        },
+        {
+            "trait_type": "Soulbound",
+            "value": "Yes"
+        }
+    ]
+}

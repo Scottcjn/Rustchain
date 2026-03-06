@@ -1,0 +1,51 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Suggest a Feature
+        Great ideas can become bounties! Feature implementations earn RTC.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description: What problem does this solve?
+      placeholder: Currently there's no way to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How should this work?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you thought about
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - Small (few hours)
+        - Medium (1-2 days)
+        - Large (week+)
+        - Not sure
+
+  - type: checkboxes
+    id: willing
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd like to implement this myself (for RTC bounty)
+        - label: I need help implementing this

@@ -1,0 +1,19 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_it_belongs_in_a_museum",
+            "title": "It Belongs in a Museum",
+            "class": "Ultra Rare",
+            "description": "Awarded for validating a RustChain block on a machine so historic, its mere boot sequence deserves display behind glass. Applies to rare PCs, Macs, Amigas, and true artifact hardware.",
+            "emotional_resonance": {
+                "state": "awe and reverence",
+                "trigger": "Validator heartbeat from hardware considered museum-grade or display-worthy",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\ud83c\udfdb\ufe0f\ud83d\udda5\ufe0f\ud83d\udd6f\ufe0f",
+            "visual_anchor": "validator glyph projected in a museum hall with velvet rope and amber backlight",
+            "rarity": "Ultra Rare",
+            "soulbound": true
+        }
+    ]
+}

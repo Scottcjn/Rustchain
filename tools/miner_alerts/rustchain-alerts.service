@@ -1,0 +1,25 @@
+# /etc/systemd/system/rustchain-alerts.service
+# Systemd service for running the RustChain Miner Alert System as a daemon
+
+[Unit]
+Description=RustChain Miner Alert System
+Documentation=https://github.com/Scottcjn/Rustchain/tree/main/tools/miner_alerts
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/rustchain-alerts
+ExecStart=/usr/bin/python3 miner_alerts.py monitor
+Restart=always
+RestartSec=30
+EnvironmentFile=/opt/rustchain-alerts/.env
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/rustchain-alerts
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

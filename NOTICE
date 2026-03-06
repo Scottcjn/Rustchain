@@ -1,0 +1,15 @@
+RustChain - Proof of Antiquity Blockchain
+Copyright 2024-2026 Scott Boudreaux / Elyan Labs
+https://github.com/Scottcjn/Rustchain
+
+Originally created by Scott Boudreaux (https://github.com/Scottcjn).
+
+This product includes software developed at Elyan Labs.
+
+RustChain implements Proof of Antiquity (PoA) consensus where older
+hardware earns more than newer hardware. A PowerPC G4 from 1999 earns
+2.5x more than a modern processor. Six hardware fingerprint checks
+prevent VM spoofing.
+
+If you use this software, you must include this NOTICE file in your
+distribution per Section 4(d) of the Apache License, Version 2.0.

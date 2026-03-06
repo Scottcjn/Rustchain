@@ -1,0 +1,4 @@
+python-telegram-bot>=20.0
+requests
+urllib3
+python-dotenv

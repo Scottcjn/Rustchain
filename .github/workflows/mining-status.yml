@@ -1,0 +1,32 @@
+name: RustChain Mining Status Badge
+
+on:
+  workflow_dispatch:
+    inputs:
+      wallet:
+        description: 'RustChain wallet for badge endpoint'
+        required: false
+        default: 'frozen-factorio-ryan'
+
+jobs:
+  verify-badge:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify badge endpoint
+        run: |
+          WALLET="${{ github.event.inputs.wallet || 'frozen-factorio-ryan' }}"
+          RESPONSE=$(curl -s --fail --max-time 10 "https://rustchain.org/api/badge/${WALLET}" || echo '{}')
+          SCHEMA=$(echo "$RESPONSE" | jq -r '.schemaVersion // empty' 2>/dev/null)
+          if [ "$SCHEMA" = "1" ]; then
+            echo "Badge endpoint healthy"
+            echo "$RESPONSE" | jq .
+          else
+            echo "Badge endpoint not deployed or unreachable yet"
+            echo "Response: $RESPONSE"
+          fi

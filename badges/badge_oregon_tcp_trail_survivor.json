@@ -1,0 +1,19 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_oregon_tcp_trail_survivor",
+            "title": "Oregon TCP Trail Survivor",
+            "class": "Ultra Rare",
+            "description": "Awarded for running a RustChain validator on an Apple II with TCP/IP capability. You didn't just reach the frontier \u2014 you staked it over a serial bus and nobody died of dysentery.",
+            "emotional_resonance": {
+                "state": "victory over absurdity",
+                "trigger": "Validator executed over TCP stack on Apple II-class hardware",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\ud83e\uddfa\ud83c\udf32\ud83d\udce1",
+            "visual_anchor": "8-bit wagon floating over ASCII TCP stream with flame on its flag",
+            "rarity": "Ultra Rare",
+            "soulbound": true
+        }
+    ]
+}

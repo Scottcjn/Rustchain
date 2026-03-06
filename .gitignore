@@ -1,0 +1,47 @@
+# Sensitive - never commit
+*founder*
+*premine*
+*genesis*
+*private*key*
+*secret*
+*.env
+*.db
+*.sqlite
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+.pytest_cache/
+pytest-cache-files-*/
+tests/.tmp_attestation/
+
+# Windows miner build artifacts
+Rustchain/miners/windows/dist/
+Rustchain/miners/windows/release/
+Rustchain/miners/windows/python-3.11.5*.exe
+Rustchain/miners/windows/python-3.11.5-embed-win32.zip
+
+# Windows miner build artifacts (repo-relative)
+miners/windows/dist/
+miners/windows/release/

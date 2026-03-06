@@ -1,0 +1,20 @@
+{
+  "miner": "fingerprint-array-miner",
+  "device": {
+    "device_family": "PowerPC",
+    "device_arch": "power8",
+    "cores": 8
+  },
+  "signals": {
+    "hostname": "fingerprint-array-host",
+    "macs": [
+      "AA:BB:CC:DD:EE:02"
+    ]
+  },
+  "fingerprint": {
+    "checks": []
+  },
+  "report": {
+    "commitment": "fingerprint-array-commitment"
+  }
+}

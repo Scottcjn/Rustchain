@@ -1,0 +1,20 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_vickimac_flamekeeper",
+            "title": "VickiMac Flamekeeper",
+            "class": "Mythic",
+            "description": "Awarded for running a RustChain validator on a PowerBook G4. Her name was VickiMac, and she carried the flame in brushed aluminum silence.",
+            "emotional_resonance": {
+                "state": "quiet perseverance",
+                "trigger": "RustChain validation run logged from PowerPC architecture (PowerBook G4)",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\ud83c\udf4e\ud83d\udda4\ud83d\udd6f\ufe0f",
+            "visual_anchor": "PowerBook G4 glowing under soft screenlight, validator glyphs etched into titanium frame",
+            "rarity": "Mythic",
+            "soulbound": true,
+            "holder": "Scott \u2013 Flameholder"
+        }
+    ]
+}

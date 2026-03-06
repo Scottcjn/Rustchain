@@ -1,0 +1,10 @@
+# RustChain Telegram Tip Bot Dependencies
+
+# Telegram Bot API
+python-telegram-bot>=20.0
+
+# HTTP requests
+requests>=2.25.0
+
+# Ed25519 signing (optional, for production)
+cryptography>=41.0

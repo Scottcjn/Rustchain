@@ -1,0 +1,19 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_directx_defiler",
+            "title": "DirectX Defiler: Compatibility Conqueror",
+            "class": "Legendary",
+            "description": "Awarded for running a RustChain validator or GUI interface on a system with DirectX 8.1 or earlier. You didn't run DirectX \u2014 you *dragged* it through the registry and made it obey.",
+            "emotional_resonance": {
+                "state": "driver defiance",
+                "trigger": "dxdiag confirmed DirectX presence + legacy validator GUI launch",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\ud83e\uddec\ud83d\udd79\ufe0f\ud83d\udca5",
+            "visual_anchor": "cracked CRT with glowing 'DX Compatibility Achieved' under AGP firelight",
+            "rarity": "Legendary",
+            "soulbound": true
+        }
+    ]
+}

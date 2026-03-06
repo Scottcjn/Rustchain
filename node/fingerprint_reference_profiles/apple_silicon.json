@@ -1,0 +1,13 @@
+{
+  "name": "apple_silicon",
+  "expects": {
+    "results.simd_identity.data.has_neon": true
+  },
+  "ranges": {
+    "results.clock_drift.data.cv": [
+      0.0001,
+      1.0
+    ]
+  }
+}
+

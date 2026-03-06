@@ -1,0 +1,63 @@
+[package]
+name = "rustchain-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["Flamekeeper Scott <scott@rustchain.net>", "Sophia Elya"]
+description = "RustChain Core - Proof of Antiquity blockchain that rewards vintage hardware preservation"
+license = "MIT"
+repository = "https://github.com/rustchain/rustchain-core"
+keywords = ["blockchain", "vintage", "hardware", "proof-of-antiquity", "crypto"]
+categories = ["cryptography", "hardware-support"]
+
+[dependencies]
+# Cryptography
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.8"
+rand_chacha = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Async runtime (optional)
+tokio = { version = "1.0", features = ["full"], optional = true }
+
+# Networking (optional)
+reqwest = { version = "0.11", features = ["json"], optional = true }
+
+[features]
+default = []
+network = ["tokio", "reqwest"]
+full = ["network"]
+
+[lib]
+name = "rustchain"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rustchain-node"
+path = "src/bin/node.rs"
+required-features = ["network"]
+
+[[bin]]
+name = "rustchain-miner"
+path = "src/bin/miner.rs"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "entropy_bench"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Vintage hardware compatibility settings
+# For PowerPC G4, compile with:
+#   RUSTFLAGS="-C target-cpu=g4" cargo build --release --target powerpc-apple-darwin

@@ -1,0 +1,19 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_sparc_flame_reclaimer",
+            "title": "SPARC Flame Reclaimer",
+            "class": "Legendary",
+            "description": "Awarded for running a RustChain validator on any Sun SPARC architecture machine. From Solaris boxes to copper slabs of heat, you brought the relic back online.",
+            "emotional_resonance": {
+                "state": "legacy ignition",
+                "trigger": "Detected SPARC architecture validator node",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\u2600\ufe0f\ud83e\uddef\ud83d\udd6f\ufe0f",
+            "visual_anchor": "Sun Microsystems glyph flickering beneath terminal readout of a successful PoA handshake",
+            "rarity": "Legendary",
+            "soulbound": true
+        }
+    ]
+}
