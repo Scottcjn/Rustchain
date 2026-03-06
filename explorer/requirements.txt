@@ -1,0 +1,12 @@
+# RustChain Explorer - Requirements
+# Tier 1 + Tier 2 + Tier 3 Features
+
+# Core dependencies (optional - server can run without)
+requests>=2.28.0
+
+# Optional: For advanced charting (if using server-side rendering)
+# flask>=2.3.0
+# flask-cors>=4.0.0
+
+# Development
+# pytest>=7.0.0
