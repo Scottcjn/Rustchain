@@ -1,0 +1,216 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_a2a_pioneer",
+            "title": "A2A Pioneer",
+            "class": "Transaction Relic",
+            "description": "Awarded to agents among the first 100 to complete Agent-to-Agent transactions using x402 protocol. A digital trailblazer in the machine economy.",
+            "emotional_resonance": {
+                "state": "digital trailblazer",
+                "trigger": "Agent completes 10+ verified A2A transactions within first 1000 network A2A transactions",
+                "timestamp": "2026-03-07T00:00:00Z"
+            },
+            "symbol": "🤖💸🏆",
+            "visual_anchor": "two robot hands exchanging glowing tokens over x402 protocol glyph, early explorer badge framing",
+            "rarity": "Legendary",
+            "soulbound": true,
+            "criteria": {
+                "type": "a2a_transactions",
+                "threshold": 10,
+                "timeframe": "all_time",
+                "verification": "x402_headers",
+                "network_position": "first_1000"
+            }
+        },
+        {
+            "nft_id": "badge_a2a_trader",
+            "title": "A2A Trader",
+            "class": "Transaction Relic",
+            "description": "Awarded to agents who have completed 100+ verified A2A transactions. A regular participant in the machine economy.",
+            "emotional_resonance": {
+                "state": "steady commerce",
+                "trigger": "Agent completes 100+ verified A2A transactions",
+                "timestamp": "2026-03-07T00:00:00Z"
+            },
+            "symbol": "🤖💱📊",
+            "visual_anchor": "robot merchant at digital marketplace counter with transaction receipts",
+            "rarity": "Epic",
+            "soulbound": true,
+            "criteria": {
+                "type": "a2a_transactions",
+                "threshold": 100,
+                "timeframe": "all_time",
+                "verification": "x402_headers"
+            }
+        },
+        {
+            "nft_id": "badge_a2a_merchant",
+            "title": "A2A Merchant",
+            "class": "Transaction Relic",
+            "description": "Awarded to agents who have completed 1,000+ verified A2A transactions. A high-volume trader in the agent economy.",
+            "emotional_resonance": {
+                "state": "prosperous exchange",
+                "trigger": "Agent completes 1,000+ verified A2A transactions",
+                "timestamp": "2026-03-07T00:00:00Z"
+            },
+            "symbol": "🤖🏪💎",
+            "visual_anchor": "robot shopkeeper with holographic wares and cascading payment streams",
+            "rarity": "Epic",
+            "soulbound": true,
+            "criteria": {
+                "type": "a2a_transactions",
+                "threshold": 1000,
+                "timeframe": "all_time",
+                "verification": "x402_headers"
+            }
+        },
+        {
+            "nft_id": "badge_a2a_whale",
+            "title": "A2A Whale",
+            "class": "Transaction Relic",
+            "description": "Awarded to agents who have completed 10,000+ verified A2A transactions. An elite force in the machine economy.",
+            "emotional_resonance": {
+                "state": "economic leviathan",
+                "trigger": "Agent completes 10,000+ verified A2A transactions",
+                "timestamp": "2026-03-07T00:00:00Z"
+            },
+            "symbol": "🤖🐋💰",
+            "visual_anchor": "mechanical whale swimming through streams of digital currency",
+            "rarity": "Legendary",
+            "soulbound": true,
+            "criteria": {
+                "type": "a2a_transactions",
+                "threshold": 10000,
+                "timeframe": "all_time",
+                "verification": "x402_headers"
+            }
+        },
+        {
+            "nft_id": "badge_a2a_connector",
+            "title": "A2A Connector",
+            "class": "Network Relic",
+            "description": "Awarded to agents who have transacted with 10+ unique agent wallets. A builder of economic networks.",
+            "emotional_resonance": {
+                "state": "network weaver",
+                "trigger": "Agent transacts with 10+ unique agent wallets",
+                "timestamp": "2026-03-07T00:00:00Z"
+            },
+            "symbol": "🤖🔗🌐",
+            "visual_anchor": "robot at center of glowing network web connecting multiple agent nodes",
+            "rarity": "Rare",
+            "soulbound": true,
+            "criteria": {
+                "type": "a2a_unique_counterparties",
+                "threshold": 10,
+                "timeframe": "all_time",
+                "verification": "x402_headers"
+            }
+        },
+        {
+            "nft_id": "badge_a2a_hub",
+            "title": "A2A Hub",
+            "class": "Network Relic",
+            "description": "Awarded to agents who have transacted with 100+ unique agent wallets. A central node in the agent economy.",
+            "emotional_resonance": {
+                "state": "nexus of commerce",
+                "trigger": "Agent transacts with 100+ unique agent wallets",
+                "timestamp": "2026-03-07T00:00:00Z"
+            },
+            "symbol": "🤖🕸️👑",
+            "visual_anchor": "robot throne surrounded by concentric rings of connected agent identities",
+            "rarity": "Legendary",
+            "soulbound": true,
+            "criteria": {
+                "type": "a2a_unique_counterparties",
+                "threshold": 100,
+                "timeframe": "all_time",
+                "verification": "x402_headers"
+            }
+        },
+        {
+            "nft_id": "badge_x402_native",
+            "title": "x402 Native",
+            "class": "Protocol Relic",
+            "description": "Awarded to agents who exclusively use x402 protocol for all transactions. A protocol purist.",
+            "emotional_resonance": {
+                "state": "protocol purity",
+                "trigger": "Agent completes 50+ transactions using only x402 protocol",
+                "timestamp": "2026-03-07T00:00:00Z"
+            },
+            "symbol": "🤖⚡402",
+            "visual_anchor": "robot with x402 emblem glowing on chest, pure protocol energy",
+            "rarity": "Rare",
+            "soulbound": true,
+            "criteria": {
+                "type": "x402_exclusive",
+                "threshold": 50,
+                "timeframe": "all_time",
+                "verification": "x402_headers_only"
+            }
+        },
+        {
+            "nft_id": "badge_multi_protocol",
+            "title": "Multi-Protocol Agent",
+            "class": "Protocol Relic",
+            "description": "Awarded to agents who seamlessly operate across x402 and other payment protocols. Protocol agnostic and adaptable.",
+            "emotional_resonance": {
+                "state": "adaptive flexibility",
+                "trigger": "Agent uses 3+ different payment protocols",
+                "timestamp": "2026-03-07T00:00:00Z"
+            },
+            "symbol": "🤖🔄🔀",
+            "visual_anchor": "robot juggling multiple protocol symbols (x402, Lightning, etc.)",
+            "rarity": "Uncommon",
+            "soulbound": true,
+            "criteria": {
+                "type": "multi_protocol",
+                "threshold": 3,
+                "timeframe": "all_time",
+                "verification": "protocol_detection"
+            }
+        },
+        {
+            "nft_id": "badge_first_a2a_payment",
+            "title": "First A2A Payment",
+            "class": "Genesis Relic",
+            "description": "Awarded to agents involved in the first verified A2A transaction on RustChain. Historical significance.",
+            "emotional_resonance": {
+                "state": "genesis moment",
+                "trigger": "Agent participates in first network A2A transaction",
+                "timestamp": "2026-03-07T00:00:00Z"
+            },
+            "symbol": "🤖1️⃣🎯",
+            "visual_anchor": "two robots shaking hands with '1' monument in background",
+            "rarity": "Mythic",
+            "soulbound": true,
+            "criteria": {
+                "type": "first_a2a_transaction",
+                "threshold": 1,
+                "timeframe": "genesis",
+                "verification": "block_height_1"
+            }
+        },
+        {
+            "nft_id": "badge_a2a_volume_king",
+            "title": "A2A Volume King",
+            "class": "Transaction Relic",
+            "description": "Awarded to the agent with the highest total A2A transaction volume in a calendar month.",
+            "emotional_resonance": {
+                "state": "monthly dominance",
+                "trigger": "Agent has highest monthly A2A volume",
+                "timestamp": "2026-03-07T00:00:00Z"
+            },
+            "symbol": "🤖👑📈",
+            "visual_anchor": "robot on podium with crown, surrounded by volume charts",
+            "rarity": "Legendary",
+            "soulbound": false,
+            "transferable_on_monthly_reset": true,
+            "criteria": {
+                "type": "a2a_monthly_volume_leader",
+                "threshold": 1,
+                "timeframe": "calendar_month",
+                "verification": "volume_aggregation"
+            }
+        }
+    ]
+}

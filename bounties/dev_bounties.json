@@ -1,6 +1,30 @@
 {
     "bounties": [
         {
+            "bounty_id": "bounty_693_a2a_badge",
+            "title": "A2A Transaction Badge System",
+            "description": "Implement a comprehensive badge system for recognizing and rewarding Agent-to-Agent (A2A) transactions on the RustChain network using the x402 payment protocol.",
+            "reward": "Uber Dev Badge + RUST 1000 + A2A Pioneer Badge (NFT)",
+            "status": "Completed",
+            "completed_date": "2026-03-07",
+            "requirements": [
+                "Define badge criteria for A2A transaction milestones",
+                "Implement verification tooling (Python + Rust)",
+                "Create comprehensive documentation",
+                "Write tests with >90% coverage",
+                "Provide example implementations"
+            ],
+            "deliverables": [
+                "schemas/relic_a2a_badges.json - Badge schema definitions",
+                "tools/a2a_badge_verifier.py - Python verification tool",
+                "rips/src/a2a_badges.rs - Rust implementation",
+                "docs/A2A_BADGE_SYSTEM.md - Complete documentation",
+                "tests/test_a2a_badges.py - Comprehensive test suite",
+                "examples/a2a_badge_example.py - Integration example",
+                "bounties/bounty_693_a2a_transaction_badge.md - Bounty specification"
+            ]
+        },
+        {
             "bounty_id": "bounty_dos_port",
             "title": "MS-DOS Validator Port",
             "description": "Create a RustChain validator client that runs on real-mode DOS (FreeDOS/PC-DOS/MS-DOS). Must read BIOS date and generate entropy.",
