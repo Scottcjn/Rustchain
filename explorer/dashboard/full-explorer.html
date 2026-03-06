@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Explorer - Full Suite</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card: #0f3460;
+            --accent-gold: #f39c12;
+            --accent-blue: #00d9ff;
+            --accent-green: #00c853;
+            --accent-red: #ff5252;
+            --text-primary: #eaeaea;
+            --text-secondary: #a0a0a0;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        header {
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 2px solid var(--accent-gold);
+            margin-bottom: 20px;
+        }
+        h1 { color: var(--accent-gold); font-size: 2rem; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        .tab {
+            padding: 10px 20px;
+            background: var(--bg-secondary);
+            border: none;
+            border-radius: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 0.95rem;
+        }
+        .tab.active { background: var(--accent-gold); color: var(--bg-primary); }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        .stat-card {
+            background: var(--bg-secondary);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            border-left: 3px solid var(--accent-gold);
+        }
+        .stat-value { font-size: 1.5rem; font-weight: bold; color: var(--accent-gold); }
+        .stat-label { color: var(--text-secondary); font-size: 0.85rem; margin-top: 5px; }
+        
+        .section-title { font-size: 1.2rem; margin: 20px 0 15px; color: var(--accent-blue); }
+        
+        .search-box {
+            width: 100%;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--bg-card);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 1rem;
+            margin-bottom: 15px;
+        }
+        .search-box:focus { outline: none; border-color: var(--accent-gold); }
+        
+        .miners-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+        }
+        .miner-card {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 12px;
+            border: 1px solid #2a2a4a;
+        }
+        .miner-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
+        .miner-name { font-weight: bold; font-size: 0.95rem; word-break: break-all; }
+        .status-badge {
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+        }
+        .status-online { background: rgba(0,200,83,0.2); color: var(--accent-green); }
+        .status-offline { background: rgba(255,82,82,0.2); color: var(--accent-red); }
+        .miner-details { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .detail-item { background: var(--bg-card); padding: 8px; border-radius: 5px; }
+        .detail-label { font-size: 0.7rem; color: var(--text-secondary); }
+        .detail-value { font-weight: bold; font-size: 0.9rem; }
+        .multiplier-gold { color: var(--accent-gold); }
+        
+        .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px; }
+        .filter-btn {
+            padding: 6px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--accent-blue);
+            border-radius: 15px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        .filter-btn.active { background: var(--accent-blue); color: var(--bg-primary); }
+        
+        .hidden { display: none; }
+        .loading { text-align: center; padding: 30px; color: var(--accent-gold); }
+        
+        .jobs-grid { display: grid; gap: 12px; }
+        .job-card {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .job-header { display: flex; justify-content: space-between; align-items: flex-start; }
+        .job-title { font-weight: bold; color: var(--accent-gold); }
+        .job-reward { background: var(--accent-gold); color: var(--bg-primary); padding: 4px 10px; border-radius: 12px; font-weight: bold; }
+        .job-desc { color: var(--text-secondary); margin: 8px 0; font-size: 0.9rem; }
+        .job-meta { display: flex; gap: 12px; font-size: 0.8rem; color: var(--text-secondary); flex-wrap: wrap; }
+        
+        .node-status { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .node-card { background: var(--bg-secondary); padding: 15px; border-radius: 8px; text-align: center; }
+        .node-name { font-weight: bold; margin-bottom: 8px; }
+        .node-online { color: var(--accent-green); }
+        .node-offline { color: var(--accent-red); }
+        
+        .curl-box {
+            background: #0a0a1a;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            margin-top: 10px;
+            overflow-x: auto;
+        }
+        
+        @media (max-width: 768px) {
+            h1 { font-size: 1.5rem; }
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+            .miners-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⛏️ RustChain Explorer</h1>
+        </header>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('dashboard')">Dashboard</button>
+            <button class="tab" onclick="showTab('miners')">Miners</button>
+            <button class="tab" onclick="showTab('jobs')">Jobs</button>
+            <button class="tab" onclick="showTab('wallet')">Wallet</button>
+            <button class="tab" onclick="showTab('network')">Network</button>
+        </div>
+        
+        <!-- Dashboard Tab -->
+        <div id="dashboard">
+            <div class="stats-grid" id="dashStats"></div>
+        </div>
+        
+        <!-- Miners Tab -->
+        <div id="miners" class="hidden">
+            <div class="filters" id="minerFilters"></div>
+            <div id="minersContainer"><div class="loading">Loading...</div></div>
+        </div>
+        
+        <!-- Jobs Tab -->
+        <div id="jobs" class="hidden">
+            <input type="text" class="search-box" placeholder="Search jobs..." id="jobSearch" oninput="filterJobs()">
+            <div class="filters">
+                <button class="filter-btn active" onclick="filterJobCat('all')">All</button>
+                <button class="filter-btn" onclick="filterJobCat('code')">Code</button>
+                <button class="filter-btn" onclick="filterJobCat('writing')">Writing</button>
+                <button class="filter-btn" onclick="filterJobCat('video')">Video</button>
+                <button class="filter-btn" onclick="filterJobCat('research')">Research</button>
+            </div>
+            <div id="jobsContainer"><div class="loading">Loading...</div></div>
+        </div>
+        
+        <!-- Wallet Tab -->
+        <div id="wallet" class="hidden">
+            <input type="text" class="search-box" placeholder="Enter wallet address..." id="walletInput">
+            <button class="tab" onclick="checkWallet()" style="margin-bottom: 15px;">Check Balance</button>
+            <div id="walletResult"></div>
+        </div>
+        
+        <!-- Network Tab -->
+        <div id="network" class="hidden">
+            <h3 class="section-title">Node Status</h3>
+            <div class="node-status">
+                <div class="node-card">
+                    <div class="node-name">Node 1 (Primary)</div>
+                    <div id="node1Status">Checking...</div>
+                </div>
+                <div class="node-card">
+                    <div class="node-name">Node 2</div>
+                    <div id="node2Status">Checking...</div>
+                </div>
+                <div class="node-card">
+                    <div class="node-name">Node 3</div>
+                    <div id="node3Status">Checking...</div>
+                </div>
+            </div>
+            <h3 class="section-title">Epoch Info</h3>
+            <div class="stats-grid" id="epochStats"></div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'https://50.28.86.131';
+        let allMiners = [];
+        let allJobs = [];
+        
+        // Tab switching
+        function showTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            ['dashboard', 'miners', 'jobs', 'wallet', 'network'].forEach(t => {
+                document.getElementById(t).classList.add('hidden');
+            });
+            document.getElementById(tab).classList.remove('hidden');
+            
+            if (tab === 'dashboard') loadDashboard();
+            if (tab === 'miners') loadMiners();
+            if (tab === 'jobs') loadJobs();
+            if (tab === 'network') loadNetwork();
+        }
+        
+        // Load dashboard stats
+        async function loadDashboard() {
+            const container = document.getElementById('dashStats');
+            container.innerHTML = '<div class="loading">Loading...</div>';
+            
+            try {
+                const [minersRes, jobsRes, epochRes] = await Promise.all([
+                    fetch(`${API_BASE}/api/miners`),
+                    fetch(`${API_BASE}/agent/stats`),
+                    fetch(`${API_BASE}/epoch`)
+                ]);
+                
+                const miners = await minersRes.json();
+                const jobs = await jobsRes.json();
+                const epoch = await epochRes.json();
+                
+                container.innerHTML = `
+                    <div class="stat-card"><div class="stat-value">${miners.length}</div><div class="stat-label">Active Miners</div></div>
+                    <div class="stat-card"><div class="stat-value">${jobs.total_jobs || 0}</div><div class="stat-label">Total Jobs</div></div>
+                    <div class="stat-card"><div class="stat-value">${jobs.open_jobs || 0}</div><div class="stat-label">Open Jobs</div></div>
+                    <div class="stat-card"><div class="stat-value">${epoch.epoch || 0}</div><div class="stat-label">Current Epoch</div></div>
+                    <div class="stat-card"><div class="stat-value">${epoch.epoch_pot || 0}</div><div class="stat-label">RTC/Epoch</div></div>
+                    <div class="stat-card"><div class="stat-value">${(epoch.total_supply_rtc/1000000).toFixed(1)}M</div><div class="stat-label">Total Supply</div></div>
+                `;
+            } catch(e) {
+                container.innerHTML = `<div class="loading">Error: ${e.message}</div>`;
+            }
+        }
+        
+        // Load miners
+        async function loadMiners() {
+            const container = document.getElementById('minersContainer');
+            container.innerHTML = '<div class="loading">Loading...</div>';
+            
+            try {
+                allMiners = await (await fetch(`${API_BASE}/api/miners`)).json();
+                renderMiners(allMiners);
+            } catch(e) {
+                container.innerHTML = `<div class="loading">Error: ${e.message}</div>`;
+            }
+        }
+        
+        function renderMiners(miners) {
+            const container = document.getElementById('minersContainer');
+            const sorted = [...miners].sort((a,b) => b.antiquity_multiplier - a.antiquity_multiplier);
+            
+            container.innerHTML = `<div class="miners-grid">
+                ${sorted.map(m => `
+                    <div class="miner-card">
+                        <div class="miner-header">
+                            <span class="miner-name">${m.miner.substring(0,20)}</span>
+                            <span class="status-badge ${isOnline(m.last_attest) ? 'status-online' : 'status-offline'}">
+                                ${isOnline(m.last_attest) ? '🟢' : '🔴'}
+                            </span>
+                        </div>
+                        <div class="miner-details">
+                            <div class="detail-item">
+                                <div class="detail-label">Arch</div>
+                                <div class="detail-value">${(m.device_arch || 'Unknown').substring(0,12)}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Multiplier</div>
+                                <div class="detail-value ${m.antiquity_multiplier >= 2.5 ? 'multiplier-gold' : ''}">${m.antiquity_multiplier}x</div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>`;
+        }
+        
+        function isOnline(lastAttest) {
+            if (!lastAttest) return false;
+            return (Date.now()/1000 - lastAttest) < 300;
+        }
+        
+        function filterJobCat(cat) {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            if (cat === 'all') renderJobs(allJobs);
+            else renderJobs(allJobs.filter(j => j.category === cat));
+        }
+        
+        // Load jobs
+        async function loadJobs() {
+            const container = document.getElementById('jobsContainer');
+            container.innerHTML = '<div class="loading">Loading...</div>';
+            
+            try {
+                allJobs = await (await fetch(`${API_BASE}/agent/jobs?limit=50`)).json();
+                renderJobs(allJobs);
+            } catch(e) {
+                container.innerHTML = `<div class="loading">Error: ${e.message}</div>`;
+            }
+        }
+        
+        function renderJobs(jobs) {
+            const container = document.getElementById('jobsContainer');
+            if (!jobs.length) {
+                container.innerHTML = '<div class="loading">No jobs found</div>';
+                return;
+            }
+            
+            container.innerHTML = `<div class="jobs-grid">
+                ${jobs.map(j => `
+                    <div class="job-card">
+                        <div class="job-header">
+                            <span class="job-title">${j.title.substring(0,40)}</span>
+                            <span class="job-reward">${j.reward_rtc} RTC</span>
+                        </div>
+                        <p class="job-desc">${j.description.substring(0,100)}...</p>
+                        <div class="job-meta">
+                            <span>📂 ${j.category || 'other'}</span>
+                            <span>👤 ${j.poster_wallet}</span>
+                        </div>
+                        <div class="curl-box">
+                            curl -X POST ${API_BASE}/agent/jobs/${j.id}/claim -H "Content-Type: application/json" -d '{"worker_wallet":"YOUR_WALLET"}'
+                        </div>
+                    </div>
+                `).join('')}
+            </div>`;
+        }
+        
+        function filterJobs() {
+            const search = document.getElementById('jobSearch').value.toLowerCase();
+            const filtered = allJobs.filter(j => 
+                j.title.toLowerCase().includes(search) || 
+                j.description.toLowerCase().includes(search)
+            );
+            renderJobs(filtered);
+        }
+        
+        // Wallet check
+        async function checkWallet() {
+            const wallet = document.getElementById('walletInput').value.trim();
+            const container = document.getElementById('walletResult');
+            
+            if (!wallet) {
+                container.innerHTML = '<div class="loading">Please enter a wallet address</div>';
+                return;
+            }
+            
+            container.innerHTML = '<div class="loading">Loading...</div>';
+            
+            try {
+                const res = await fetch(`${API_BASE}/balance/${wallet}`);
+                const data = await res.json();
+                
+                container.innerHTML = `
+                    <div class="stat-card" style="text-align: left;">
+                        <div class="stat-value">${data.balance_rtc || 0} RTC</div>
+                        <div class="stat-label">Wallet: ${wallet}</div>
+                    </div>
+                `;
+            } catch(e) {
+                container.innerHTML = `<div class="loading">Error: ${e.message}</div>`;
+            }
+        }
+        
+        // Network status
+        async function loadNetwork() {
+            const nodes = [
+                { id: 'node1', url: 'https://50.28.86.131' },
+                { id: 'node2', url: 'http://100.88.109.32:8099' },
+                { id: 'node3', url: 'http://第三节点' }
+            ];
+            
+            for (const node of nodes.slice(0,2)) {
+                try {
+                    const res = await fetch(`${node.url}/health`);
+                    document.getElementById(node.id + 'Status').innerHTML = 
+                        res.ok ? '<span class="node-online">🟢 Online</span>' : '<span class="node-offline">🔴 Offline</span>';
+                } catch {
+                    document.getElementById(node.id + 'Status').innerHTML = '<span class="node-offline">🔴 Offline</span>';
+                }
+            }
+            
+            try {
+                const epoch = await (await fetch(`${API_BASE}/epoch`)).json();
+                document.getElementById('epochStats').innerHTML = `
+                    <div class="stat-card"><div class="stat-value">${epoch.epoch}</div><div class="stat-label">Epoch</div></div>
+                    <div class="stat-card"><div class="stat-value">${epoch.epoch_pot}</div><div class="stat-label">RTC/Epoch</div></div>
+                    <div class="stat-card"><div class="stat-value">${epoch.blocks_per_epoch}</div><div class="stat-label">Blocks/Epoch</div></div>
+                    <div class="stat-card"><div class="stat-value">${epoch.enrolled_miners}</div><div class="stat-label">Enrolled Miners</div></div>
+                    <div class="stat-card"><div class="stat-value">${epoch.slot}</div><div class="stat-label">Current Slot</div></div>
+                `;
+            } catch(e) {
+                console.error(e);
+            }
+        }
+        
+        // Initial load
+        loadDashboard();
+    </script>
+</body>
+</html>
