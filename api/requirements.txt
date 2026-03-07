@@ -1,0 +1,21 @@
+# RustChain API Server - Bounty #695 Rework
+# Flask-based API with real data integration
+
+# Core framework
+Flask>=3.0.0
+Werkzeug>=3.0.0
+
+# HTTP client for upstream API calls
+requests>=2.31.0
+
+# Rate limiting
+flask-limiter>=3.5.0
+
+# Input validation
+marshmallow>=3.20.0
+
+# Production server
+gunicorn>=21.0.0
+
+# Utilities
+python-dotenv>=1.0.0
