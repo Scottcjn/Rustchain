@@ -1,0 +1,32 @@
+[package]
+name = "rustchain-client"
+version = "0.1.0"
+edition = "2021"
+description = "HTTP client for RustChain node API - health, miners, epochs, balances"
+authors = ["sososonia-cyber"]
+license = "MIT"
+repository = "https://github.com/sososonia-cyber/rustchain-client"
+readme = "README.md"
+keywords = ["rustchain", "blockchain", "api-client", "crypto", "web3"]
+categories = ["api-bindings", "network-programming", "cryptography::cryptocurrencies"]
+
+[dependencies]
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util", "macros"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lib]
+name = "rustchain_client"
+path = "src/lib.rs"
+
+[[example]]
+name = "basic"
+path = "examples/basic.rs"
