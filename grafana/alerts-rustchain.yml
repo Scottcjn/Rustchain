@@ -1,0 +1,83 @@
+groups:
+  - name: rustchain_alerts
+    interval: 30s
+    rules:
+      # Alert: Node is down
+      - alert: NodeDown
+        expr: rustchain_node_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RustChain node is down"
+          description: "RustChain node has been down for more than 1 minute"
+
+      # Alert: Epoch stuck (no progress for 15 minutes = 1.5 epochs)
+      - alert: EpochStuck
+        expr: (time() - rustchain_epoch_current) > 900
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Epoch progress stuck"
+          description: "Epoch has not progressed in 5 minutes"
+
+      # Alert: Database growing too fast
+      - alert: DatabaseGrowth
+        expr: rate(rustchain_db_size_bytes[1h]) > 1073741824  # > 1GB/hour
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database growing too fast"
+          description: "Database is growing faster than 1GB/hour"
+
+      # Alert: No active miners
+      - alert: NoActiveMiners
+        expr: rustchain_miners_active == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No active miners"
+          description: "No miners have attested in the last 2 epochs"
+
+      # Alert: Low enrolled miners
+      - alert: LowEnrolledMiners
+        expr: rustchain_epoch_enrolled_miners < 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low miner enrollment"
+          description: "Less than 5 miners enrolled in current epoch"
+
+      # Alert: High API latency
+      - alert: HighAPILatency
+        expr: histogram_quantile(0.95, rate(rustchain_api_request_duration_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API latency"
+          description: "API p95 latency is above 5 seconds"
+
+      # Alert: Backup too old
+      - alert: BackupTooOld
+        expr: rustchain_backup_age_hours > 24
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Backup is too old"
+          description: "Last backup is more than 24 hours old"
+
+      # Alert: Node restarted recently
+      - alert: NodeRestarted
+        expr: rustchain_node_uptime_seconds < 300
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: "Node recently restarted"
+          description: "Node has been up for less than 5 minutes"

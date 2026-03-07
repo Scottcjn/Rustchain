@@ -769,12 +769,41 @@ GOVERNANCE_ACTIVE_MINER_WINDOW_SECONDS = 3600
 
 
 # Prometheus metrics
+# --- Existing metrics ---
 withdrawal_requests = Counter('rustchain_withdrawal_requests', 'Total withdrawal requests')
 withdrawal_completed = Counter('rustchain_withdrawal_completed', 'Completed withdrawals')
 withdrawal_failed = Counter('rustchain_withdrawal_failed', 'Failed withdrawals')
 balance_gauge = Gauge('rustchain_miner_balance', 'Miner balance', ['miner_pk'])
 epoch_gauge = Gauge('rustchain_current_epoch', 'Current epoch')
 withdrawal_queue_size = Gauge('rustchain_withdrawal_queue', 'Pending withdrawals')
+
+# --- Bounty #765: Prometheus Metrics Exporter ---
+# Node health metrics
+node_up = Gauge('rustchain_node_up', 'Node health status (1=up, 0=down)')
+node_uptime_seconds = Gauge('rustchain_node_uptime_seconds', 'Node uptime in seconds')
+node_version_info = Gauge('rustchain_node_version_info', 'Node version info', ['version'])
+
+# Epoch state metrics
+epoch_current = Gauge('rustchain_epoch_current', 'Current epoch number')
+epoch_slot = Gauge('rustchain_epoch_slot', 'Current slot within epoch')
+epoch_enrolled_miners = Gauge('rustchain_epoch_enrolled_miners', 'Number of enrolled miners')
+epoch_pot_rtc = Gauge('rustchain_epoch_pot_rtc', 'Reward pool for current epoch (RTC)')
+
+# Miner metrics
+miners_active = Gauge('rustchain_miners_active', 'Number of active miners')
+miners_total = Gauge('rustchain_miners_total', 'Total miners (all time)')
+attestation_age_seconds = Gauge('rustchain_attestation_age_seconds', 'Time since last attestation', ['miner'])
+
+# Balance metrics
+total_supply_rtc = Gauge('rustchain_total_supply_rtc', 'Total RTC supply')
+wallet_balance_rtc = Gauge('rustchain_wallet_balance_rtc', 'Wallet balance', ['wallet'])
+
+# Database metrics
+db_size_bytes = Gauge('rustchain_db_size_bytes', 'Database size in bytes')
+backup_age_hours = Gauge('rustchain_backup_age_hours', 'Age of last backup in hours')
+
+# API performance histogram
+api_request_duration_seconds = Histogram('rustchain_api_request_duration_seconds', 'API request duration', ['endpoint'], buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0))
 
 # Database setup
 # Allow env override for local dev / different deployments.
@@ -4428,8 +4457,84 @@ def api_ready():
 
 @app.route('/metrics', methods=['GET'])
 def metrics():
-    """Prometheus metrics endpoint"""
-    return generate_latest()
+    """Prometheus metrics endpoint - Bounty #765: Prometheus Metrics Exporter"""
+    # Update node health metrics
+    node_up.set(1)
+    node_uptime_seconds.set(int(time.time() - APP_START_TS))
+    node_version_info.labels(version=APP_VERSION).set(1)
+    
+    # Update epoch state metrics
+    try:
+        with sqlite3.connect(DB_PATH, timeout=3) as conn:
+            # Get current epoch
+            epoch_row = conn.execute("SELECT epoch FROM chain_tip LIMIT 1").fetchone()
+            if epoch_row:
+                current_epoch = epoch_row[0]
+                epoch_current.set(current_epoch)
+                epoch_gauge.set(current_epoch)
+                
+                # Get enrolled miners count
+                enrolled = conn.execute("SELECT COUNT(*) FROM epoch_enrolled WHERE epoch = ?", (current_epoch,)).fetchone()
+                if enrolled:
+                    epoch_enrolled_miners.set(enrolled[0])
+                
+                # Get pot (rewards per epoch = 1.5 RTC)
+                epoch_pot_rtc.set(1.5)
+    except Exception:
+        pass
+    
+    # Update miner metrics
+    try:
+        with sqlite3.connect(DB_PATH, timeout=3) as conn:
+            # Active miners (attested in last 2 epochs)
+            active = conn.execute("SELECT COUNT(DISTINCT miner) FROM attestations WHERE epoch >= (SELECT MAX(epoch) FROM chain_tip) - 1").fetchone()
+            if active:
+                miners_active.set(active[0])
+            
+            # Total miners
+            total = conn.execute("SELECT COUNT(DISTINCT miner) FROM attestations").fetchone()
+            if total:
+                miners_total.set(total[0])
+            
+            # Attestation age for recent miners
+            now = int(time.time())
+            attest_rows = conn.execute(
+                "SELECT miner, MAX(ts_ok) as last_attest FROM miner_attest_recent GROUP BY miner LIMIT 100"
+            ).fetchall()
+            for row in attest_rows:
+                age = now - row[1]
+                attestation_age_seconds.labels(miner=row[0]).set(age)
+    except Exception:
+        pass
+    
+    # Update balance metrics
+    try:
+        with sqlite3.connect(DB_PATH, timeout=3) as conn:
+            # Total supply (sum of all balances)
+            total_supply = conn.execute("SELECT SUM(balance) FROM accounts").fetchone()
+            if total_supply and total_supply[0]:
+                total_supply_rtc.set(total_supply[0] / 1e8)  # Convert from base units
+    except Exception:
+        pass
+    
+    # Update database metrics
+    try:
+        db_path = os.path.abspath(DB_PATH)
+        if os.path.exists(db_path):
+            db_size_bytes.set(os.path.getsize(db_path))
+    except Exception:
+        pass
+    
+    # Backup age
+    try:
+        backup_file = DB_PATH + ".bak"
+        if os.path.exists(backup_file):
+            backup_age = (time.time() - os.path.getmtime(backup_file)) / 3600
+            backup_age_hours.set(backup_age)
+    except Exception:
+        pass
+    
+    return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
 
 @app.route('/rewards/settle', methods=['POST'])
