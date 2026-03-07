@@ -1,0 +1,55 @@
+# RustChain Bounty Verifier Configuration
+# Issue #747 - Automated Bounty Claim Verification
+
+# GitHub API Configuration
+github:
+  # GitHub Personal Access Token (set via GITHUB_TOKEN env var in production)
+  token: ""  # Use environment variable GITHUB_TOKEN
+  owner: "Scottcjn"
+  repo: "rustchain-bounties"
+  target_user: "Scottcjn"  # User that must be followed
+  rate_limit_buffer: 100  # Keep this many requests in reserve
+  requests_per_hour: 1000  # GitHub API rate limit
+
+# RustChain Node Configuration (optional)
+rustchain:
+  enabled: false  # Set true to enable wallet balance checks
+  node_url: "http://localhost:8099"
+  wallet_check_timeout: 10  # seconds
+  min_balance: 0.0  # Minimum balance required (in WRTC)
+
+# URL Liveness Check Configuration (optional)
+url_check:
+  enabled: false  # Set true to enable URL liveness verification
+  timeout: 5  # seconds
+  require_https: true  # Require HTTPS for all URLs
+  allowed_domains:
+    - "github.com"
+    - "twitter.com"
+    - "x.com"
+    - "discord.com"
+    - "medium.com"
+    - "substack.com"
+
+# Payout Coefficients
+payout:
+  base_amount: 100.0  # Base payout in WRTC
+  follow_multiplier: 1.0  # Multiplier for following
+  star_multiplier: 0.05  # Per-star bonus (5% per star)
+  max_stars_bonus: 0.5  # Maximum bonus from stars (50%)
+  vintage_cpu_bonus: 0.1  # 10% bonus for vintage CPU attestations
+  node_operator_bonus: 0.15  # 15% bonus for node operators
+
+# Verification Criteria
+criteria:
+  require_follow: true  # Must follow @Scottcjn
+  require_stars: true  # Must have starred repos
+  min_star_count: 3  # Minimum number of stars required
+  require_wallet: true  # Must provide wallet address
+  require_url_liveness: false  # Check if proof URLs are live
+  check_duplicates: true  # Check for duplicate claims
+
+# Operational Settings
+dry_run: false  # Set true to run without posting comments
+post_comments: true  # Post verification results as comments
+log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
