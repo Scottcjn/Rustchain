@@ -74,6 +74,40 @@
                 "Submissions accepted via GitHub Pull Request into the lore directory",
                 "Creative writing experience preferred; bonus for retro computing knowledge"
             ]
+        },
+        {
+            "bounty_id": "stars_campaign_5000",
+            "title": "5,000 Stars Drive \u2013 Earn Up to 430 RTC (5,000 RTC Pool)",
+            "description": "Star 86 RustChain repositories to help us reach 5,000 total stars and qualify for the Claude Code Open Source program. Earn RTC rewards based on how many repos you star, with bonus RTC for social amplification.",
+            "reward": "Up to 430 RTC per participant (5,000 RTC total pool)",
+            "status": "Active",
+            "requirements": [
+                "Star repos at rustchain.org/stars",
+                "Reply to bounty #478 with GitHub username, number of repos starred, and RTC wallet",
+                "Social bonus: Tweet (+5 RTC), Dev.to/Medium article (+15 RTC), Reddit post (+10 RTC), HN submission (+25 RTC)"
+            ],
+            "metadata": {
+                "total_stars_needed": 5000,
+                "current_stars": 337,
+                "repos_count": 86,
+                "progress_percentage": 6.7,
+                "reward_tiers": [
+                    {"repos_starred": "1-2", "rtc_per_star": 1, "max_payout": 2},
+                    {"repos_starred": "3-4", "rtc_per_star": 1.5, "max_payout": 6},
+                    {"repos_starred": "5-9", "rtc_per_star": 2, "max_payout": 18},
+                    {"repos_starred": "10-19", "rtc_per_star": 2.5, "max_payout": 50},
+                    {"repos_starred": "20-49", "rtc_per_star": 3, "max_payout": 150},
+                    {"repos_starred": "86", "rtc_per_star": 5, "max_payout": 430}
+                ],
+                "social_bonuses": {
+                    "tweet": 5,
+                    "devto_medium": 15,
+                    "reddit": 10,
+                    "hn": 25
+                },
+                "tracking_url": "https://rustchain.org/stars.html",
+                "bounty_issue_url": "https://github.com/Scottcjn/rustchain-bounties/issues/478"
+            }
         }
     ]
 }
