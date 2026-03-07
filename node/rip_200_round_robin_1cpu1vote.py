@@ -451,7 +451,20 @@ def calculate_epoch_rewards_time_aged(
             print(f"[REWARD] {miner_id[:20]}... fingerprint=FAIL -> weight=0")
         else:
             weight = get_time_aged_multiplier(device_arch, chain_age_years)
-        
+
+        # Apply Warthog dual-mining bonus (1.0x/1.1x/1.15x)
+        # Double-gated: fingerprint must pass (weight>0) AND fingerprint_ok==1
+        if weight > 0 and fingerprint_ok == 1:
+            try:
+                wart_row = cursor.execute(
+                    "SELECT warthog_bonus FROM miner_attest_recent WHERE miner=?",
+                    (miner_id,)
+                ).fetchone()
+                if wart_row and wart_row[0] and wart_row[0] > 1.0:
+                    weight *= wart_row[0]
+            except Exception:
+                pass  # Column may not exist on older schemas
+
         weighted_miners.append((miner_id, weight))
         total_weight += weight
 
