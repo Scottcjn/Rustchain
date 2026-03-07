@@ -1,0 +1,32 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Wallet files (encrypted)
+*.wallet
+
+# Debug
+*.pdb
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Test
+*.pending
+
+# Coverage
+*.gcno
+*.gcda
+coverage/
+tarpaulin-report.html
+
+# Benchmarks
+criterion/
