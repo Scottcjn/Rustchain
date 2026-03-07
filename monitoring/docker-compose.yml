@@ -1,6 +1,26 @@
 version: '3.8'
 
 services:
+  # RustChain Node with /metrics endpoint
+  rustchain-node:
+    image: scottcjn/rustchain:latest
+    container_name: rustchain-node
+    restart: unless-stopped
+    environment:
+      - RUSTCHAIN_DB_PATH=/data/rustchain_v2.db
+      - FLASK_ENV=production
+    volumes:
+      - rustchain-data:/data
+    ports:
+      - "5000:5000"
+    networks:
+      - monitoring
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   rustchain-exporter:
     build:
       context: .
@@ -29,6 +49,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     ports:
       - "9090:9090"
@@ -39,6 +60,7 @@ services:
     networks:
       - monitoring
     depends_on:
+      - rustchain-node
       - rustchain-exporter
 
   grafana:
@@ -62,6 +84,7 @@ services:
 volumes:
   prometheus-data:
   grafana-data:
+  rustchain-data:
 
 networks:
   monitoring:

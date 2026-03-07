@@ -1,0 +1,86 @@
+# RustChain Prometheus Alert Rules
+# Bounty #765 - Alert rules for node down, epoch stuck, DB growth
+
+groups:
+  - name: rustchain_alerts
+    interval: 30s
+    rules:
+      # Node down alert
+      - alert: RustChainNodeDown
+        expr: rustchain_node_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: rustchain
+        annotations:
+          summary: "RustChain node is down"
+          description: "RustChain node has been down for more than 2 minutes"
+          runbook_url: "https://rustchain.org/docs/runbook#node-down"
+
+      # Epoch stuck alert
+      - alert: RustChainEpochStuck
+        expr: rustchain_epoch_slot == 0
+        for: 10m
+        labels:
+          severity: warning
+          team: rustchain
+        annotations:
+          summary: "RustChain epoch may be stuck"
+          description: "Epoch {{ $value }} has had no slot progress for 10 minutes"
+          runbook_url: "https://rustchain.org/docs/runbook#epoch-stuck"
+
+      # Database growth alert
+      - alert: RustChainDbGrowth
+        expr: increase(rustchain_db_size_bytes[1h]) > 1073741824  # > 1GB growth per hour
+        for: 5m
+        labels:
+          severity: warning
+          team: rustchain
+        annotations:
+          summary: "RustChain database is growing too fast"
+          description: "Database grew by more than 1GB in the last hour"
+          runbook_url: "https://rustchain.org/docs/runbook#db-growth"
+
+      # Low enrolled miners alert
+      - alert: RustChainLowMiners
+        expr: rustchain_epoch_enrolled_miners < 5
+        for: 15m
+        labels:
+          severity: warning
+          team: rustchain
+        annotations:
+          summary: "Low number of enrolled miners"
+          description: "Only {{ $value }} miners enrolled in current epoch"
+
+      # Backup age alert
+      - alert: RustChainBackupStale
+        expr: rustchain_backup_age_hours > 36
+        for: 10m
+        labels:
+          severity: warning
+          team: rustchain
+        annotations:
+          summary: "RustChain backup is stale"
+          description: "Last backup was {{ $value }} hours ago"
+
+      # High epoch pot alert
+      - alert: RustChainHighPot
+        expr: rustchain_epoch_pot_rtc > 10
+        for: 5m
+        labels:
+          severity: info
+          team: rustchain
+        annotations:
+          summary: "High epoch pot"
+          description: "Epoch pot is unusually high at {{ $value }} RTC"
+
+      # Node uptime reset alert (node restarted)
+      - alert: RustChainNodeRestarted
+        expr: rustchain_node_uptime_seconds < 300
+        for: 1m
+        labels:
+          severity: info
+          team: rustchain
+        annotations:
+          summary: "RustChain node recently restarted"
+          description: "Node has been up for less than 5 minutes"

@@ -3,6 +3,13 @@ global:
   evaluation_interval: 30s
 
 scrape_configs:
+  # Scrape metrics directly from RustChain node /metrics endpoint
+  - job_name: 'rustchain-node'
+    static_configs:
+      - targets: ['rustchain-node:5000']
+    metrics_path: /metrics
+    scrape_interval: 30s
+  # Scrape from standalone exporter (optional)
   - job_name: 'rustchain-exporter'
     static_configs:
       - targets: ['rustchain-exporter:9100']
@@ -12,6 +19,6 @@ alerting:
     - static_configs:
         - targets: []
 
-# Optional: uncomment after adding alerts.yml
-# rule_files:
-#   - '/etc/prometheus/alerts.yml'
+# Alert rules
+rule_files:
+  - 'alerts.yml'

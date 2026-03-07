@@ -776,6 +776,23 @@ balance_gauge = Gauge('rustchain_miner_balance', 'Miner balance', ['miner_pk'])
 epoch_gauge = Gauge('rustchain_current_epoch', 'Current epoch')
 withdrawal_queue_size = Gauge('rustchain_withdrawal_queue', 'Pending withdrawals')
 
+# Comprehensive metrics for Prometheus Exporter Bounty #765
+node_up = Gauge('rustchain_node_up', 'Node up (1=yes, 0=no)')
+node_uptime_seconds = Gauge('rustchain_node_uptime_seconds', 'Node uptime in seconds')
+node_version_info = Info('rustchain_node_version', 'Node version information')
+epoch_current = Gauge('rustchain_epoch_current', 'Current epoch number')
+epoch_slot = Gauge('rustchain_epoch_slot', 'Current slot in epoch')
+epoch_enrolled_miners = Gauge('rustchain_epoch_enrolled_miners', 'Number of enrolled miners')
+epoch_pot_rtc = Gauge('rustchain_epoch_pot_rtc', 'Epoch pot size in RTC')
+miners_active = Gauge('rustchain_miners_active', 'Number of active miners')
+miners_total = Gauge('rustchain_miners_total', 'Total miners (all time)')
+attestation_age_seconds = Gauge('rustchain_attestation_age_seconds', 'Time since last attestation', ['miner_id'])
+total_supply_rtc = Gauge('rustchain_total_supply_rtc', 'Total RTC supply')
+wallet_balance_rtc = Gauge('rustchain_wallet_balance_rtc', 'Wallet balance in RTC', ['wallet'])
+db_size_bytes = Gauge('rustchain_db_size_bytes', 'Database size in bytes')
+backup_age_hours = Gauge('rustchain_backup_age_hours', 'Backup age in hours')
+api_request_duration = Histogram('rustchain_api_request_duration_seconds', 'API request duration', ['endpoint'])
+
 # Database setup
 # Allow env override for local dev / different deployments.
 DB_PATH = os.environ.get("RUSTCHAIN_DB_PATH") or os.environ.get("DB_PATH") or "./rustchain_v2.db"
@@ -4798,8 +4815,69 @@ def api_ready():
 
 @app.route('/metrics', methods=['GET'])
 def metrics():
-    """Prometheus metrics endpoint"""
-    return generate_latest()
+    """Prometheus metrics endpoint - collects comprehensive node metrics"""
+    import requests
+    
+    # Node URL for internal API calls
+    node_url = os.environ.get('RUSTCHAIN_NODE_URL', 'http://localhost:5000')
+    
+    try:
+        # Health metrics
+        try:
+            health_resp = requests.get(f"{node_url}/health", timeout=2)
+            if health_resp.status_code == 200:
+                health = health_resp.json()
+                node_up.set(1 if health.get('ok') else 0)
+                node_uptime_seconds.set(health.get('uptime_s', 0))
+                node_version_info.info({'version': health.get('version', APP_VERSION)})
+                backup_age_hours.set(health.get('backup_age_hours') or 0)
+        except Exception:
+            node_up.set(0)
+        
+        # Epoch metrics
+        try:
+            epoch_resp = requests.get(f"{node_url}/epoch", timeout=2)
+            if epoch_resp.status_code == 200:
+                epoch = epoch_resp.json()
+                epoch_current.set(epoch.get('epoch', 0))
+                epoch_slot.set(epoch.get('slot', 0))
+                epoch_enrolled_miners.set(epoch.get('enrolled_miners', 0))
+                epoch_pot_rtc.set(float(epoch.get('epoch_pot', 0)))
+        except Exception:
+            pass
+        
+        # Miner metrics
+        try:
+            miners_resp = requests.get(f"{node_url}/api/miners?limit=1000", timeout=2)
+            if miners_resp.status_code == 200:
+                miners = miners_resp.json()
+                if isinstance(miners, list):
+                    miners_active.set(len(miners))
+                    # Get total count from header or estimate
+                    miners_total.set(max(len(miners), epoch_enrolled_miners._value._value if hasattr(epoch_enrolled_miners, '_value') else 0))
+        except Exception:
+            pass
+        
+        # DB size
+        try:
+            if os.path.exists(DB_PATH):
+                db_size_bytes.set(os.path.getsize(DB_PATH))
+        except Exception:
+            pass
+        
+        # Total supply from epoch endpoint
+        try:
+            epoch_resp = requests.get(f"{node_url}/epoch", timeout=2)
+            if epoch_resp.status_code == 200:
+                epoch = epoch_resp.json()
+                total_supply_rtc.set(epoch.get('total_supply_rtc', 0))
+        except Exception:
+            pass
+            
+    except Exception as e:
+        pass  # Best effort metrics collection
+    
+    return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
 
 @app.route('/rewards/settle', methods=['POST'])
