@@ -18,6 +18,49 @@ pub const BLOCK_TIME_SECONDS: u64 = 120;
 /// Chain ID for RustChain mainnet
 pub const CHAIN_ID: u64 = 2718;
 
+// ═══════════════════════════════════════════════════════════
+// RIP-0683: Console CPU Families
+// ═══════════════════════════════════════════════════════════
+
+/// Console-specific CPU families with release year and base multiplier
+/// Format: (arch_alias, release_year, base_multiplier)
+pub const CONSOLE_CPU_FAMILIES: &[(&str, u32, f64)] = &[
+    // Nintendo consoles
+    ("nes_6502", 1983, 2.8),        // Ricoh 2A03 (6502 derivative) - NES/Famicom
+    ("snes_65c816", 1990, 2.7),     // Ricoh 5A22 (65C816) - SNES/Super Famicom
+    ("n64_mips", 1996, 2.5),        // NEC VR4300 (MIPS R4300i) - Nintendo 64
+    ("gameboy_z80", 1989, 2.6),     // Sharp LR35902 (Z80 derivative) - Game Boy
+    ("gba_arm7", 2001, 2.3),        // ARM7TDMI - Game Boy Advance
+    
+    // Sega consoles
+    ("genesis_68000", 1988, 2.5),   // Motorola 68000 - Genesis/Mega Drive
+    ("sms_z80", 1986, 2.6),         // Zilog Z80 - Sega Master System
+    ("saturn_sh2", 1994, 2.6),      // Hitachi SH-2 (dual) - Sega Saturn
+    
+    // Sony consoles
+    ("ps1_mips", 1994, 2.8),        // MIPS R3000A - PlayStation 1
+    
+    // Generic CPU families (used across multiple platforms)
+    ("6502", 1975, 2.8),            // MOS 6502 - NES, Apple II, Commodore 64
+    ("65c816", 1983, 2.7),          // WDC 65C816 - SNES, Apple IIGS
+    ("z80", 1976, 2.6),             // Zilog Z80 - Game Boy, SMS, MSX, ZX Spectrum
+    ("sh2", 1994, 2.6),             // Hitachi SH-2 - Saturn, 32X
+];
+
+/// Get console CPU info by architecture alias
+pub fn get_console_cpu_info(arch: &str) -> Option<(&str, u32, f64)> {
+    let arch_lower = arch.to_lowercase();
+    CONSOLE_CPU_FAMILIES
+        .iter()
+        .find(|(name, _, _)| name.to_lowercase() == arch_lower)
+        .copied()
+}
+
+/// Check if an architecture is a console CPU
+pub fn is_console_arch(arch: &str) -> bool {
+    get_console_cpu_info(arch).is_some()
+}
+
 /// Hardware tiers based on age
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HardwareTier {
@@ -347,5 +390,97 @@ mod tests {
 
         let invalid = WalletAddress::new("BTC123");
         assert!(!invalid.is_valid());
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // RIP-0683: Console CPU Tests
+    // ═══════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_console_cpu_families_exist() {
+        // Verify console CPU families are defined
+        assert!(!CONSOLE_CPU_FAMILIES.is_empty());
+        assert!(CONSOLE_CPU_FAMILIES.len() >= 12); // At least 12 console CPUs
+    }
+
+    #[test]
+    fn test_console_cpu_lookup() {
+        // Test Nintendo consoles
+        let nes = get_console_cpu_info("nes_6502");
+        assert!(nes.is_some());
+        let (name, year, mult) = nes.unwrap();
+        assert_eq!(name, "nes_6502");
+        assert_eq!(year, 1983);
+        assert!((mult - 2.8).abs() < 0.01);
+
+        let n64 = get_console_cpu_info("n64_mips");
+        assert!(n64.is_some());
+        let (_, year, _) = n64.unwrap();
+        assert_eq!(year, 1996);
+
+        // Test Sega consoles
+        let genesis = get_console_cpu_info("genesis_68000");
+        assert!(genesis.is_some());
+        let (_, year, _) = genesis.unwrap();
+        assert_eq!(year, 1988);
+
+        // Test Sony consoles
+        let ps1 = get_console_cpu_info("ps1_mips");
+        assert!(ps1.is_some());
+        let (_, year, _) = ps1.unwrap();
+        assert_eq!(year, 1994);
+    }
+
+    #[test]
+    fn test_console_cpu_case_insensitive() {
+        // Lookup should be case-insensitive
+        let upper = get_console_cpu_info("NES_6502");
+        let lower = get_console_cpu_info("nes_6502");
+        assert_eq!(upper, lower);
+
+        let mixed = get_console_cpu_info("N64_MiPs");
+        assert!(mixed.is_some());
+    }
+
+    #[test]
+    fn test_console_arch_detection() {
+        // Valid console arches
+        assert!(is_console_arch("nes_6502"));
+        assert!(is_console_arch("n64_mips"));
+        assert!(is_console_arch("genesis_68000"));
+        assert!(is_console_arch("ps1_mips"));
+        assert!(is_console_arch("6502"));
+        assert!(is_console_arch("z80"));
+
+        // Invalid console arches
+        assert!(!is_console_arch("pentium"));
+        assert!(!is_console_arch("modern"));
+        assert!(!is_console_arch("x86_64"));
+        assert!(!is_console_arch(""));
+    }
+
+    #[test]
+    fn test_console_cpu_multipliers() {
+        // Verify multipliers are in expected range (2.3x - 2.8x)
+        for (_, _, mult) in CONSOLE_CPU_FAMILIES {
+            assert!(*mult >= 2.3 && *mult <= 2.8, 
+                "Multiplier {} out of range for console CPU", mult);
+        }
+
+        // NES should have highest multiplier (oldest)
+        let nes = get_console_cpu_info("nes_6502").unwrap();
+        let gba = get_console_cpu_info("gba_arm7").unwrap();
+        assert!(nes.2 > gba.2); // NES multiplier > GBA multiplier
+    }
+
+    #[test]
+    fn test_console_vs_modern_multiplier() {
+        // Console CPUs should have better multipliers than modern hardware
+        let modern_mult = HardwareTier::Modern.multiplier(); // 1.0x
+        for (_, _, console_mult) in CONSOLE_CPU_FAMILIES {
+            assert!(*console_mult > modern_mult,
+                "Console multiplier {} should exceed modern {}", 
+                console_mult, modern_mult);
+        }
     }
 }

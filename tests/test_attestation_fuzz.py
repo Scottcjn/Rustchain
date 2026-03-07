@@ -45,6 +45,14 @@ def _init_attestation_db(db_path: Path) -> None:
             vendor TEXT,
             enforce INTEGER DEFAULT 0
         );
+        CREATE TABLE hardware_bindings (
+            hardware_id TEXT PRIMARY KEY,
+            bound_miner TEXT NOT NULL,
+            device_arch TEXT,
+            device_model TEXT,
+            bound_at INTEGER,
+            attestation_count INTEGER DEFAULT 0
+        );
         """
     )
     conn.commit()
@@ -84,22 +92,22 @@ def _base_payload() -> dict:
     }
 
 
-@pytest.fixture
-def client(monkeypatch):
+def _client_fixture(monkeypatch, *, strict_security_path=False):
     local_tmp_dir = Path(__file__).parent / ".tmp_attestation"
     local_tmp_dir.mkdir(exist_ok=True)
     db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
     _init_attestation_db(db_path)
 
     monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
-    monkeypatch.setattr(integrated_node, "HW_BINDING_V2", False, raising=False)
-    monkeypatch.setattr(integrated_node, "HW_PROOF_AVAILABLE", False, raising=False)
     monkeypatch.setattr(integrated_node, "check_ip_rate_limit", lambda client_ip, miner_id: (True, "ok"))
-    monkeypatch.setattr(integrated_node, "_check_hardware_binding", lambda *args, **kwargs: (True, "ok", ""))
     monkeypatch.setattr(integrated_node, "record_attestation_success", lambda *args, **kwargs: None)
     monkeypatch.setattr(integrated_node, "record_macs", lambda *args, **kwargs: None)
     monkeypatch.setattr(integrated_node, "current_slot", lambda: 12345)
     monkeypatch.setattr(integrated_node, "slot_to_epoch", lambda slot: 85)
+    monkeypatch.setattr(integrated_node, "HW_BINDING_V2", False, raising=False)
+    monkeypatch.setattr(integrated_node, "HW_PROOF_AVAILABLE", False, raising=False)
+    if not strict_security_path:
+        monkeypatch.setattr(integrated_node, "_check_hardware_binding", lambda *args, **kwargs: (True, "ok", ""))
 
     integrated_node.app.config["TESTING"] = True
     with integrated_node.app.test_client() as test_client:
@@ -110,6 +118,16 @@ def client(monkeypatch):
             db_path.unlink()
         except PermissionError:
             pass
+
+
+@pytest.fixture
+def client(monkeypatch):
+    yield from _client_fixture(monkeypatch, strict_security_path=False)
+
+
+@pytest.fixture
+def strict_client(monkeypatch):
+    yield from _client_fixture(monkeypatch, strict_security_path=True)
 
 
 def _post_raw_json(client, raw_json: str):
@@ -132,31 +150,99 @@ def test_attest_submit_rejects_non_object_json(client, file_name, expected_statu
 
 
 @pytest.mark.parametrize(
-    "file_name",
+    ("file_name", "expected_code"),
     [
-        "malformed_device_scalar.json",
-        "malformed_signals_scalar.json",
-        "malformed_signals_macs_object.json",
-        "malformed_fingerprint_checks_array.json",
+        ("malformed_device_scalar.json", "INVALID_DEVICE"),
+        ("malformed_miner_array.json", "INVALID_MINER"),
+        ("malformed_signals_scalar.json", "INVALID_SIGNALS"),
+        ("malformed_signals_macs_object.json", "INVALID_SIGNALS_MACS"),
+        ("malformed_fingerprint_checks_array.json", "INVALID_FINGERPRINT_CHECKS"),
+        ("malformed_report_scalar.json", "INVALID_REPORT"),
     ],
 )
-def test_attest_submit_corpus_cases_do_not_raise_server_errors(client, file_name):
+def test_attest_submit_rejects_malformed_payload_shapes(client, file_name, expected_code):
     response = _post_raw_json(client, (CORPUS_DIR / file_name).read_text(encoding="utf-8"))
 
-    assert response.status_code < 500
-    assert response.get_json()["ok"] is True
+    assert response.status_code in (400, 422)
+    assert response.get_json()["ok"] is False
+    assert response.get_json()["code"] == expected_code
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_code"),
+    [
+        ({"miner": "", "device": {"cores": 8}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "MISSING_MINER"),
+        ({"miner": "   ", "device": {"cores": 8}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "MISSING_MINER"),
+        ({"miner": "fuzz\u200bminer", "device": {"cores": 8}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "INVALID_MINER"),
+        ({"miner": "'; DROP TABLE balances; --", "device": {"cores": 8}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "INVALID_MINER"),
+        ({"miner": "f" * 129, "device": {"cores": 8}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "INVALID_MINER"),
+        ({"miner": "fuzz-miner", "device": {"cores": "999999999999999999999999"}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "INVALID_DEVICE_CORES"),
+        ({"miner": "fuzz-miner", "device": {"cores": []}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "INVALID_DEVICE_CORES"),
+        ({"miner": "fuzz-miner", "device": {"cores": 8}, "signals": {"macs": ["AA:BB:CC:DD:EE:10", None]}, "report": {}}, "INVALID_SIGNALS_MACS"),
+        ({"miner": "fuzz-miner", "device": {"cores": 8, "cpu": ["nested"]}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "INVALID_DEVICE"),
+        ({"miner": "fuzz-miner", "device": {"cores": 8}, "signals": {"hostname": ["nested"], "macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "INVALID_SIGNALS"),
+        ({"miner": "fuzz-miner", "device": {"cores": 8}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {"nonce": {"nested": "bad"}}}, "INVALID_REPORT"),
+    ],
+)
+def test_attest_submit_rejects_attack_vector_shapes(client, payload, expected_code):
+    response = client.post("/attest/submit", json=payload)
+
+    assert response.status_code in (400, 422)
+    assert response.get_json()["ok"] is False
+    assert response.get_json()["code"] == expected_code
+
+
+def test_attest_submit_sql_like_miner_does_not_mutate_schema(client):
+    payload = _base_payload()
+    payload["miner"] = "'; DROP TABLE balances; --"
+
+    response = client.post("/attest/submit", json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "INVALID_MINER"
+
+
+def test_validate_fingerprint_data_rejects_non_dict_input():
+    passed, reason = integrated_node.validate_fingerprint_data(["not", "a", "dict"])
+
+    assert passed is False
+    assert reason == "fingerprint_not_dict"
+
+
+def test_attest_submit_strict_fixture_rejects_malformed_fingerprint(strict_client):
+    payload = _base_payload()
+    payload["fingerprint"]["checks"] = []
+
+    response = strict_client.post("/attest/submit", json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json()["ok"] is False
+    assert response.get_json()["code"] == "INVALID_FINGERPRINT_CHECKS"
+
+
+def test_attest_submit_strict_fixture_enforces_hardware_binding(strict_client):
+    first = _base_payload()
+    second = _base_payload()
+    second["miner"] = "different-miner"
+
+    first_response = strict_client.post("/attest/submit", json=first)
+    second_response = strict_client.post("/attest/submit", json=second)
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 409
+    assert second_response.get_json()["code"] == "DUPLICATE_HARDWARE"
 
 
 def _mutate_payload(rng: random.Random) -> dict:
     payload = _base_payload()
-    mutation = rng.randrange(8)
+    mutation = rng.randrange(14)
 
     if mutation == 0:
         payload["miner"] = ["not", "a", "string"]
     elif mutation == 1:
         payload["device"] = "not-a-device-object"
     elif mutation == 2:
-        payload["device"]["cores"] = rng.choice([0, -1, "NaN", [], {}])
+        payload["device"]["cores"] = rng.choice([0, -1, "NaN", [], {}, "999999999999999999999999"])
     elif mutation == 3:
         payload["signals"] = "not-a-signals-object"
     elif mutation == 4:
@@ -171,16 +257,29 @@ def _mutate_payload(rng: random.Random) -> dict:
         payload["report"] = rng.choice(["not-a-report-object", [], {"commitment": ["bad"]}])
     elif mutation == 6:
         payload["fingerprint"] = {"checks": rng.choice([[], "bad", {"anti_emulation": True}])}
-    else:
+    elif mutation == 7:
         payload["device"]["cpu"] = rng.choice(["qemu-system-ppc", "IBM POWER8", None, ["nested"]])
         payload["signals"]["hostname"] = rng.choice(["vmware-host", "power8-host", None, ["nested"]])
+    elif mutation == 8:
+        payload["miner"] = rng.choice(["", " ", "\t", "fuzz\u200bminer", "'; DROP TABLE balances; --"])
+    elif mutation == 9:
+        payload["miner"] = "f" * 300
+    elif mutation == 10:
+        payload["device"]["device_family"] = {"nested": {"too": "deep"}}
+    elif mutation == 11:
+        payload["signals"]["macs"] = ["AA:BB:CC:DD:EE:10", None]
+    elif mutation == 12:
+        payload["fingerprint"] = ["bad", "shape"]
+    else:
+        payload["report"]["nonce"] = {"nested": "bad"}
 
     return payload
 
 
-def test_attest_submit_fuzz_no_unhandled_exceptions(client):
+def test_attest_submit_mutation_regression_no_unhandled_exceptions(client):
     cases = int(os.getenv("ATTEST_FUZZ_CASES", "250"))
-    rng = random.Random(475)
+    seed = os.getenv("ATTEST_FUZZ_SEED")
+    rng = random.Random(int(seed)) if seed else random.Random()
 
     for index in range(cases):
         payload = _mutate_payload(rng)
