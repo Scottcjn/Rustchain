@@ -803,6 +803,15 @@ if HAVE_REWARDS:
         except Exception as e:
             print(f"[RIP-201] Failed to register fleet endpoints: {e}")
 
+    # Bounty Claims System (Issue #614 Rework)
+    try:
+        from bounty_claims import init_bounty_tables, register_bounty_endpoints
+        init_bounty_tables(DB_PATH)
+        register_bounty_endpoints(app, DB_PATH, os.environ.get("RC_ADMIN_KEY", ""))
+        print("[BOUNTY CLAIMS] Endpoints registered successfully")
+    except Exception as e:
+        print(f"[BOUNTY CLAIMS] Failed to register: {e}")
+
 def init_db():
     """Initialize all database tables"""
     with sqlite3.connect(DB_PATH) as c:

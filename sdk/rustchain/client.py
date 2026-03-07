@@ -14,6 +14,7 @@ from rustchain.exceptions import (
     APIError,
     AttestationError,
     TransferError,
+    BountyError,
 )
 
 
@@ -398,6 +399,211 @@ class RustChainClient:
 
         except APIError as e:
             raise RustChainError(f"Enrollment failed: {e}") from e
+
+    def list_bounties(self) -> List[Dict[str, Any]]:
+        """
+        List all available bounties with their details.
+
+        Returns:
+            List of bounty dicts with:
+                - bounty_id (str): Unique bounty identifier
+                - title (str): Bounty title
+                - description (str): Bounty description
+                - reward (str): Reward description
+                - status (str): Bounty status (Open/Closed)
+                - claim_count (int): Number of claims submitted
+                - pending_claims (int): Number of pending claims
+
+        Raises:
+            ConnectionError: If connection fails
+            APIError: If API returns error
+
+        Example:
+            >>> client = RustChainClient("https://rustchain.org")
+            >>> bounties = client.list_bounties()
+            >>> for bounty in bounties:
+            ...     print(f"{bounty['title']}: {bounty['reward']}")
+        """
+        result = self._request("GET", "/api/bounty/list")
+        return result.get("bounties", []) if isinstance(result, dict) else []
+
+    def submit_bounty_claim(
+        self,
+        bounty_id: str,
+        claimant_miner_id: str,
+        description: str,
+        claimant_pubkey: str = None,
+        github_pr_url: str = None,
+        github_repo: str = None,
+        commit_hash: str = None,
+        evidence_urls: List[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Submit a bounty claim.
+
+        Args:
+            bounty_id: Bounty identifier (e.g., "bounty_dos_port")
+            claimant_miner_id: Miner wallet address
+            description: Claim description (1-5000 chars)
+            claimant_pubkey: Optional miner public key
+            github_pr_url: Optional GitHub PR URL
+            github_repo: Optional GitHub repository name
+            commit_hash: Optional Git commit hash
+            evidence_urls: Optional list of evidence URLs
+
+        Returns:
+            Dict with claim result:
+                - claim_id (str): Unique claim identifier
+                - bounty_id (str): Bounty identifier
+                - status (str): Claim status (pending/under_review/approved/rejected)
+                - submitted_at (int): Submission timestamp
+                - message (str): Success message
+
+        Raises:
+            ConnectionError: If connection fails
+            APIError: If API returns error
+            ValidationError: If parameters are invalid
+            BountyError: If claim submission fails
+
+        Example:
+            >>> client = RustChainClient("https://rustchain.org")
+            >>> result = client.submit_bounty_claim(
+            ...     bounty_id="bounty_dos_port",
+            ...     claimant_miner_id="RTC_wallet_address",
+            ...     description="Completed MS-DOS validator with BIOS entropy",
+            ...     github_pr_url="https://github.com/user/rustchain-dos/pull/1"
+            ... )
+            >>> print(f"Claim ID: {result['claim_id']}")
+        """
+        if not bounty_id or not isinstance(bounty_id, str):
+            raise ValidationError("bounty_id must be a non-empty string")
+        if not claimant_miner_id or not isinstance(claimant_miner_id, str):
+            raise ValidationError("claimant_miner_id must be a non-empty string")
+        if not description or not isinstance(description, str):
+            raise ValidationError("description must be a non-empty string")
+        if len(description) > 5000:
+            raise ValidationError("description must be 1-5000 characters")
+
+        payload = {
+            "bounty_id": bounty_id,
+            "claimant_miner_id": claimant_miner_id,
+            "description": description,
+        }
+
+        if claimant_pubkey:
+            payload["claimant_pubkey"] = claimant_pubkey
+        if github_pr_url:
+            payload["github_pr_url"] = github_pr_url
+        if github_repo:
+            payload["github_repo"] = github_repo
+        if commit_hash:
+            payload["commit_hash"] = commit_hash
+        if evidence_urls:
+            payload["evidence_urls"] = evidence_urls
+
+        try:
+            result = self._request("POST", "/api/bounty/claims", json_payload=payload)
+
+            if "error" in result:
+                error_msg = result.get("message", result.get("error", "Claim submission failed"))
+                raise BountyError(f"Claim submission failed: {error_msg}", response=result)
+
+            return result
+
+        except APIError as e:
+            raise BountyError(f"Claim submission failed: {e}", status_code=e.status_code) from e
+
+    def get_bounty_claim(self, claim_id: str) -> Dict[str, Any]:
+        """
+        Get details of a specific bounty claim.
+
+        Args:
+            claim_id: Claim identifier (e.g., "CLM-ABC123DEF456")
+
+        Returns:
+            Dict with claim details:
+                - claim_id (str): Unique claim identifier
+                - bounty_id (str): Bounty identifier
+                - claimant_miner_id (str): Claimant's miner ID (partial)
+                - submission_ts (int): Submission timestamp
+                - status (str): Claim status
+                - github_pr_url (str): GitHub PR URL if provided
+                - reward_amount_rtc (float): Reward amount if approved
+                - reward_paid (int): Payment status (0/1)
+
+        Raises:
+            ConnectionError: If connection fails
+            APIError: If API returns error
+            ValidationError: If claim_id is invalid
+
+        Example:
+            >>> client = RustChainClient("https://rustchain.org")
+            >>> claim = client.get_bounty_claim("CLM-ABC123DEF456")
+            >>> print(f"Status: {claim['status']}")
+        """
+        if not claim_id or not isinstance(claim_id, str):
+            raise ValidationError("claim_id must be a non-empty string")
+
+        result = self._request("GET", f"/api/bounty/claims/{claim_id}")
+        return result
+
+    def get_miner_bounty_claims(self, miner_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Get all bounty claims for a specific miner.
+
+        Args:
+            miner_id: Miner wallet address
+            limit: Maximum number of claims to return (1-200, default: 50)
+
+        Returns:
+            List of claim dicts with:
+                - claim_id (str): Unique claim identifier
+                - bounty_id (str): Bounty identifier
+                - submission_ts (int): Submission timestamp
+                - status (str): Claim status
+                - github_pr_url (str): GitHub PR URL if provided
+                - reward_amount_rtc (float): Reward amount if approved
+                - reward_paid (int): Payment status (0/1)
+
+        Raises:
+            ConnectionError: If connection fails
+            APIError: If API returns error
+            ValidationError: If miner_id is invalid
+
+        Example:
+            >>> client = RustChainClient("https://rustchain.org")
+            >>> claims = client.get_miner_bounty_claims("RTC_wallet_address")
+            >>> for claim in claims:
+            ...     print(f"{claim['claim_id']}: {claim['status']}")
+        """
+        if not miner_id or not isinstance(miner_id, str):
+            raise ValidationError("miner_id must be a non-empty string")
+
+        result = self._request("GET", f"/api/bounty/claims/miner/{miner_id}", params={"limit": limit})
+        return result.get("claims", []) if isinstance(result, dict) else []
+
+    def get_bounty_statistics(self) -> Dict[str, Any]:
+        """
+        Get aggregate statistics for bounty claims.
+
+        Returns:
+            Dict with statistics:
+                - total_claims (int): Total number of claims
+                - status_breakdown (dict): Claims by status
+                - total_rewards_paid_rtc (float): Total rewards paid
+                - by_bounty (dict): Claims breakdown by bounty
+
+        Raises:
+            ConnectionError: If connection fails
+            APIError: If API returns error
+
+        Example:
+            >>> client = RustChainClient("https://rustchain.org")
+            >>> stats = client.get_bounty_statistics()
+            >>> print(f"Total claims: {stats['total_claims']}")
+            >>> print(f"Rewards paid: {stats['total_rewards_paid_rtc']} RTC")
+        """
+        return self._request("GET", "/api/bounty/statistics")
 
     def close(self):
         """Close the HTTP session"""
