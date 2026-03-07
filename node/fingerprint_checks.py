@@ -724,6 +724,138 @@ def check_rom_fingerprint() -> Tuple[bool, Dict]:
     return True, data
 
 
+def check_pico_bridge_attestation(
+    fingerprint_data: Optional[Dict] = None,
+    bridge_type: Optional[str] = None,
+) -> Tuple[bool, Dict]:
+    """
+    Check: Pico Serial Bridge Attestation (RIP-304)
+
+    Validates attestation data from retro console mining via Pico bridge.
+    This check replaces standard timing checks for console miners.
+
+    Expected fingerprint_data structure for pico_serial bridge:
+    {
+        "bridge_type": "pico_serial",
+        "checks": {
+            "ctrl_port_timing": {"data": {"cv": 0.005, "samples": 500}},
+            "rom_execution_timing": {"data": {"hash_time_us": 847000}},
+            "bus_jitter": {"data": {"jitter_stdev_ns": 1250}},
+            "anti_emulation": {"data": {"emulator_indicators": []}}
+        }
+    }
+
+    Validation criteria:
+    - Controller port timing CV > 0.0001 (anti-emulation threshold)
+    - ROM execution timing within expected range for claimed console
+    - Bus jitter present (real hardware characteristic)
+    - No emulator indicators
+
+    Args:
+        fingerprint_data: Full fingerprint dict from attestation
+        bridge_type: Explicit bridge type override
+
+    Returns:
+        (passed, data) tuple with validation results
+    """
+    # Determine bridge type
+    detected_bridge = None
+    checks_data = {}
+
+    if fingerprint_data and isinstance(fingerprint_data, dict):
+        detected_bridge = fingerprint_data.get("bridge_type")
+        checks_data = fingerprint_data.get("checks", {})
+
+    effective_bridge = bridge_type or detected_bridge
+
+    # If not a Pico bridge attestation, skip this check
+    if effective_bridge != "pico_serial":
+        return True, {
+            "skipped": True,
+            "reason": "not_pico_bridge",
+            "bridge_type": effective_bridge,
+        }
+
+    # Validate controller port timing (primary anti-emulation check)
+    ctrl_timing = checks_data.get("ctrl_port_timing", {})
+    timing_data = ctrl_timing.get("data", {})
+    cv = timing_data.get("cv", 0)
+    samples = timing_data.get("samples", 0)
+
+    # CV threshold: real hardware has measurable jitter, emulators don't
+    # RIP-304 specifies CV > 0.0001 as the anti-emulation threshold
+    timing_passed = cv > 0.0001 and samples >= 100
+
+    # Validate ROM execution timing
+    rom_timing = checks_data.get("rom_execution_timing", {})
+    rom_data = rom_timing.get("data", {})
+    hash_time_us = rom_data.get("hash_time_us", 0)
+
+    # ROM hash time should be in realistic range (100ms - 10s)
+    # Too fast = modern CPU, too slow = timeout/error
+    rom_passed = 100000 <= hash_time_us <= 10000000
+
+    # Validate bus jitter (real hardware characteristic)
+    bus_jitter = checks_data.get("bus_jitter", {})
+    jitter_data = bus_jitter.get("data", {})
+    jitter_stdev = jitter_data.get("jitter_stdev_ns", 0)
+
+    # Real hardware has measurable jitter (>100ns stdev)
+    jitter_passed = jitter_stdev >= 100
+
+    # Check anti-emulation indicators
+    anti_emul = checks_data.get("anti_emulation", {})
+    anti_emul_data = anti_emul.get("data", {})
+    emulator_indicators = anti_emul_data.get("emulator_indicators", [])
+
+    anti_emul_passed = len(emulator_indicators) == 0
+
+    # Overall pass/fail
+    all_passed = timing_passed and rom_passed and jitter_passed and anti_emul_passed
+
+    # Build detailed result
+    fail_reasons = []
+    if not timing_passed:
+        fail_reasons.append(f"ctrl_port_timing_cv_too_low (cv={cv}, need >0.0001)")
+    if not rom_passed:
+        fail_reasons.append(f"rom_execution_timing_out_of_range (time_us={hash_time_us})")
+    if not jitter_passed:
+        fail_reasons.append(f"bus_jitter_too_low (stdev={jitter_stdev}ns, need >=100ns)")
+    if not anti_emul_passed:
+        fail_reasons.append(f"emulator_indicators_present: {emulator_indicators}")
+
+    data = {
+        "bridge_type": "pico_serial",
+        "ctrl_port_timing": {
+            "passed": timing_passed,
+            "cv": cv,
+            "samples": samples,
+            "threshold": 0.0001,
+        },
+        "rom_execution_timing": {
+            "passed": rom_passed,
+            "hash_time_us": hash_time_us,
+            "valid_range": (100000, 10000000),
+        },
+        "bus_jitter": {
+            "passed": jitter_passed,
+            "stdev_ns": jitter_stdev,
+            "threshold": 100,
+        },
+        "anti_emulation": {
+            "passed": anti_emul_passed,
+            "indicators": emulator_indicators,
+        },
+        "all_checks_passed": all_passed,
+        "fail_reasons": fail_reasons,
+    }
+
+    if not all_passed:
+        data["fail_reason"] = "pico_bridge_validation_failed"
+
+    return all_passed, data
+
+
 def validate_all_checks(include_rom_check: bool = True) -> Tuple[bool, Dict]:
     """Run all core fingerprint checks (and optional ROM check)."""
     results = {}
