@@ -154,7 +154,7 @@ impl ProofOfAntiquity {
 
         // Create validated proof
         let validated = ValidatedProof {
-            wallet: proof.wallet,
+            wallet: proof.wallet.clone(),
             hardware: proof.hardware,
             multiplier: capped_multiplier,
             anti_emulation_hash: proof.anti_emulation_hash,

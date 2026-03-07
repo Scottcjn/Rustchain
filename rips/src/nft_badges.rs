@@ -501,6 +501,7 @@ impl BadgeMinter {
             match self.mint_badge(badge_type, stats.wallet.clone(), block, timestamp) {
                 Ok(badge) => minted.push(badge),
                 Err(MintError::AlreadyMinted(_)) => continue, // Already has this badge
+                Err(MintError::InvalidCriteria(_)) => continue, // Doesn't meet criteria
             }
         }
 
@@ -544,33 +545,33 @@ impl BadgeSvgGenerator {
 
   <!-- Inner frame -->
   <rect x="20" y="20" width="260" height="310" rx="15" ry="15"
-        fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.5"/>
+        fill="none" stroke="white" stroke-width="2" opacity="0.5"/>
 
   <!-- Icon background -->
-  <circle cx="150" cy="100" r="60" fill="#FFFFFF" opacity="0.2"/>
+  <circle cx="150" cy="100" r="60" fill="white" opacity="0.2"/>
 
   <!-- Icon -->
-  <text x="150" y="120" font-family="Arial" font-size="60" text-anchor="middle" fill="#FFFFFF">
+  <text x="150" y="120" font-family="Arial" font-size="60" text-anchor="middle" fill="white">
     {icon}
   </text>
 
   <!-- Badge name -->
-  <text x="150" y="200" font-family="Arial Black" font-size="18" text-anchor="middle" fill="#FFFFFF">
+  <text x="150" y="200" font-family="Arial" font-size="18" text-anchor="middle" fill="white">
     {name}
   </text>
 
   <!-- Description -->
-  <text x="150" y="240" font-family="Arial" font-size="12" text-anchor="middle" fill="#FFFFFF" opacity="0.9">
+  <text x="150" y="240" font-family="Arial" font-size="12" text-anchor="middle" fill="white" opacity="0.9">
     {description}
   </text>
 
   <!-- Stars -->
-  <text x="150" y="290" font-family="Arial" font-size="24" text-anchor="middle" fill="#FFD700">
+  <text x="150" y="290" font-family="Arial" font-size="24" text-anchor="middle" fill="gold">
     {stars_display}
   </text>
 
   <!-- Badge ID -->
-  <text x="150" y="320" font-family="monospace" font-size="10" text-anchor="middle" fill="#FFFFFF" opacity="0.6">
+  <text x="150" y="320" font-family="monospace" font-size="10" text-anchor="middle" fill="white" opacity="0.6">
     {badge_id}
   </text>
 </svg>"#,
