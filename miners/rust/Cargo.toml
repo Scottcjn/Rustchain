@@ -1,0 +1,61 @@
+[package]
+name = "rustchain-miner"
+version = "0.1.0"
+edition = "2021"
+authors = ["RustChain Contributors"]
+description = "Native Rust miner for RustChain Proof-of-Antiquity blockchain"
+license = "MIT"
+repository = "https://github.com/Scottcjn/Rustchain"
+keywords = ["blockchain", "mining", "proof-of-antiquity", "rustchain"]
+categories = ["cryptography", "command-line-utilities"]
+
+[dependencies]
+# CLI
+clap = { version = "4.4", features = ["derive", "env"] }
+
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Cryptography
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.8"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# System information (phase-2 placeholder)
+sysinfo = "0.30"
+
+# CPUID for hardware detection (phase-2 placeholder)
+raw-cpuid = "11.0"
+
+[dev-dependencies]
+tokio-test = "0.4"
+mockito = "1.2"
+
+[[bin]]
+name = "rustchain-miner"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
