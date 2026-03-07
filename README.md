@@ -522,9 +522,58 @@ Expected: all 6 hardware fingerprint checks execute on native ARM64 without arch
 
 ---
 
+
+## Tech Stack
+
+*Other projects flex React and Kubernetes. We flex COBOL and N64 assembly.*
+
+**Vintage & Retro** — the stuff nobody else runs:
+
+![COBOL](https://img.shields.io/badge/COBOL-%F0%9F%91%B4_Grandpa_Code-8B4513?style=flat-square)
+![68K](https://img.shields.io/badge/68K-Mac_Classic-000000?style=flat-square&logo=apple&logoColor=white)
+![i386](https://img.shields.io/badge/i386-DOS-808080?style=flat-square&logo=intel&logoColor=white)
+![N64](https://img.shields.io/badge/N64-MIPS_R4300i-E60012?style=flat-square&logo=nintendo&logoColor=white)
+![N64 ASM](https://img.shields.io/badge/N64_ASM-f3d_opcodes-228B22?style=flat-square)
+![NES](https://img.shields.io/badge/NES-6502-CC0000?style=flat-square)
+![Game Boy](https://img.shields.io/badge/Game_Boy-Z80-8DB600?style=flat-square)
+![Amiga](https://img.shields.io/badge/Amiga-Kickstart-FF4500?style=flat-square)
+![SPARC](https://img.shields.io/badge/SPARC-Sun-FF6600?style=flat-square)
+
+**PowerPC & POWER** — where the antiquity bonus lives:
+
+![G4](https://img.shields.io/badge/G4-2.5x_Antiquity-7B68EE?style=flat-square&logo=apple&logoColor=white)
+![G5](https://img.shields.io/badge/G5-Dual_970-9370DB?style=flat-square&logo=apple&logoColor=white)
+![POWER8](https://img.shields.io/badge/POWER8-128_Threads-0530AD?style=flat-square&logo=ibm&logoColor=white)
+![512GB](https://img.shields.io/badge/RAM-512_GB-DC143C?style=flat-square)
+![VSX](https://img.shields.io/badge/VSX-vec__perm-4B0082?style=flat-square)
+![AltiVec](https://img.shields.io/badge/AltiVec-Velocity_Engine-8A2BE2?style=flat-square)
+
+**AI & Blockchain** — the frontier:
+
+![llama.cpp](https://img.shields.io/badge/llama.cpp-PSE_Fork-00ADD8?style=flat-square)
+![Claude](https://img.shields.io/badge/Claude-Opus_4-D4A574?style=flat-square&logo=anthropic&logoColor=white)
+![CUDA](https://img.shields.io/badge/CUDA-V100_%C3%973-76B900?style=flat-square&logo=nvidia&logoColor=white)
+![GGUF](https://img.shields.io/badge/GGUF-Q4__K__M-FF6347?style=flat-square)
+![Ergo](https://img.shields.io/badge/Ergo-Anchor-FF5733?style=flat-square)
+![Rust](https://img.shields.io/badge/Rust-Ed25519-DEA584?style=flat-square&logo=rust&logoColor=black)
+![Python](https://img.shields.io/badge/Python-Flask-3776AB?style=flat-square&logo=python&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-Every_DB-003B57?style=flat-square&logo=sqlite&logoColor=white)
+
+**Hardware** — 18 GPUs, all from pawn shops and eBay:
+
+![228GB VRAM](https://img.shields.io/badge/VRAM-228_GB-FF1493?style=flat-square)
+![18 GPUs](https://img.shields.io/badge/GPUs-18-76B900?style=flat-square)
+![FPGA](https://img.shields.io/badge/Alveo_U30-FPGA_%C3%972-EE3524?style=flat-square)
+![Hailo](https://img.shields.io/badge/Hailo--8-TPU-00BFFF?style=flat-square)
+![VC](https://img.shields.io/badge/VC_Funding-$0-228B22?style=flat-square)
+![Pawn Shop](https://img.shields.io/badge/Source-%F0%9F%8F%AA_Pawn_Shops-DAA520?style=flat-square)
+
+
+---
+
 <div align="center">
 
-**[Elyan Labs](https://github.com/Scottcjn)** · 1,882 commits · 97 repos · 1,334 stars · $0 raised
+**[Elyan Labs](https://github.com/Scottcjn)** · 2,000+ commits · 113 repos · 2,500+ stars · $0 raised
 
 [⭐ Star Rustchain](https://github.com/Scottcjn/Rustchain) · [📊 Q1 2026 Traction Report](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) · [Follow @Scottcjn](https://github.com/Scottcjn)
 
