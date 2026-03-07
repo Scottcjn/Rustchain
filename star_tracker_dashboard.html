@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GitHub Star Growth Tracker - Scottcjn</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+               max-width: 900px; margin: 0 auto; padding: 20px; background: #0d1117; color: #c9d1d9; }
+        h1 { color: #58a6ff; }
+        .stats { display: flex; gap: 20px; margin: 20px 0; }
+        .stat-card { background: #161b22; padding: 20px; border-radius: 8px; border: 1px solid #30363d; }
+        .stat-value { font-size: 32px; font-weight: bold; color: #58a6ff; }
+        .stat-label { color: #8b949e; margin-top: 5px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #30363d; }
+        th { color: #58a6ff; }
+        .positive { color: #3fb950; }
+    </style>
+</head>
+<body>
+    <h1>⭐ GitHub Star Growth Tracker</h1>
+    <p>Owner: <strong>Scottcjn</strong></p>
+    
+    <div class="stats">
+        <div class="stat-card">
+            <div class="stat-value">2693</div>
+            <div class="stat-label">Total Stars</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value positive">+0</div>
+            <div class="stat-label">Today's Delta</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">1</div>
+            <div class="stat-label">Days Tracked</div>
+        </div>
+    </div>
+    
+    <h2>📈 Star Growth Chart</h2>
+    <canvas id="chart" height="80"></canvas>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        new Chart(document.getElementById('chart'), {
+            type: 'line',
+            data: {
+                labels: ['2026-03-08'],
+                datasets: [{
+                    label: 'Total Stars',
+                    data: 2693,
+                    borderColor: '#58a6ff',
+                    backgroundColor: 'rgba(88, 166, 255, 0.1)',
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { grid: { color: '#30363d' } },
+                    x: { grid: { color: '#30363d' } }
+                }
+            }
+        });
+    </script>
+    
+    <h2>🏆 Top Growers (7 days)</h2>
+    <table>
+        <tr><th>Repo</th><th>Current</th><th>Previous</th><th>Growth</th></tr>
+    </table>
+</body>
+</html>
