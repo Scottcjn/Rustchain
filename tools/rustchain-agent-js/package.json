@@ -1,0 +1,29 @@
+{
+  "name": "rustchain-agent",
+  "version": "0.1.0",
+  "description": "JavaScript/TypeScript SDK for RustChain Agent Economy (RIP-302)",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "keywords": [
+    "rustchain",
+    "rip-302",
+    "agent",
+    "economy",
+    "blockchain",
+    "cryptocurrency"
+  ],
+  "author": "RustChain Community",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0"
+  },
+  "dependencies": {}
+}
