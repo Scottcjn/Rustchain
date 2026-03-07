@@ -47,9 +47,9 @@ path = "src/bin/miner.rs"
 [dev-dependencies]
 criterion = "0.5"
 
-[[bench]]
-name = "entropy_bench"
-harness = false
+# [[bench]]
+# name = "entropy_bench"
+# harness = false
 
 [profile.release]
 opt-level = 3
