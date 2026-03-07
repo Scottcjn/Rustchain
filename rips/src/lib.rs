@@ -68,6 +68,7 @@ pub mod nft_badges;
 pub mod network;
 pub mod governance;
 pub mod ergo_bridge;
+pub mod miner_client;
 
 // Re-export commonly used types
 pub use core_types::{
@@ -102,8 +103,8 @@ pub use deep_entropy::{
     DeepEntropyVerifier,
     EntropyProof,
     VerificationResult,
-    EntropyScores,
     Challenge,
+    ChallengeType,
 };
 
 pub use nft_badges::{
