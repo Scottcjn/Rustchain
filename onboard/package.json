@@ -1,0 +1,13 @@
+{
+  "name": "rustchain-onboard",
+  "version": "1.0.0",
+  "description": "Interactive CLI wizard for new RustChain contributors",
+  "main": "index.js",
+  "bin": {
+    "rustchain-onboard": "./index.js"
+  },
+  "keywords": ["rustchain", "crypto", "cli", "onboarding"],
+  "author": "noxventures_rtc",
+  "license": "MIT",
+  "dependencies": {}
+}
