@@ -8,6 +8,11 @@ Features:
 - Send RTC to another wallet
 - Transaction history
 - Create new wallet
+
+Network Error Handling:
+- Distinguishes between network unreachable, timeouts, and API errors
+- Implements retry strategy with exponential backoff for transient failures
+- Provides clear user-facing diagnostics for troubleshooting
 """
 
 import tkinter as tk
@@ -18,6 +23,9 @@ import hashlib
 import secrets
 from datetime import datetime
 import urllib3
+import socket
+import time
+from typing import Optional, Tuple, Dict, Any
 
 # Disable SSL warnings for self-signed certs
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -25,6 +33,12 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Configuration
 NODE_URL = "https://rustchain.org"
 VERIFY_SSL = False
+
+# Retry configuration
+MAX_RETRIES = 3
+INITIAL_RETRY_DELAY = 1.0  # seconds
+MAX_RETRY_DELAY = 10.0  # seconds
+NETWORK_TIMEOUT = 15  # seconds
 
 
 class RustChainWallet:
@@ -139,21 +153,164 @@ class RustChainWallet:
         status_bar = ttk.Label(main_frame, textvariable=self.status_var, font=("Helvetica", 9))
         status_bar.pack(pady=10)
 
-    def api_call(self, endpoint, method="GET", data=None):
-        """Make API call to RustChain node"""
-        url = f"{NODE_URL}{endpoint}"
+    def _check_network_connectivity(self, url: str = NODE_URL) -> Tuple[bool, str]:
+        """
+        Check network connectivity to the node.
+        
+        Returns:
+            Tuple of (is_reachable, error_message)
+        """
+        import urllib.parse
+        
         try:
-            if method == "GET":
-                resp = requests.get(url, verify=VERIFY_SSL, timeout=10)
-            else:
-                resp = requests.post(url, json=data, verify=VERIFY_SSL, timeout=10)
-            return resp.json()
+            parsed = urllib.parse.urlparse(url)
+            host = parsed.hostname
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            
+            # Try to resolve hostname
+            try:
+                socket.gethostbyname(host)
+            except socket.gaierror as e:
+                return False, f"DNS resolution failed for {host}: {e}"
+            
+            # Try to establish TCP connection
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            
+            if result != 0:
+                return False, f"Cannot connect to {host}:{port} (error code: {result})"
+            
+            return True, ""
+            
         except Exception as e:
-            self.status_var.set(f"Error: {e}")
+            return False, f"Network check failed: {e}"
+
+    def _fetch_with_retry(
+        self,
+        url: str,
+        method: str = "GET",
+        data: Dict = None,
+        max_retries: int = MAX_RETRIES,
+        timeout: int = NETWORK_TIMEOUT,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """
+        Fetch JSON from URL with retry logic and proper error classification.
+        
+        Args:
+            url: URL to fetch
+            method: HTTP method (GET or POST)
+            data: JSON data for POST requests
+            max_retries: Maximum number of retry attempts
+            timeout: Request timeout in seconds
+            
+        Returns:
+            Tuple of (data_dict, error_message)
+            - On success: (data, None)
+            - On failure: (None, error_description)
+        """
+        from requests.exceptions import ConnectionError, Timeout, HTTPError
+        
+        last_error = None
+        delay = INITIAL_RETRY_DELAY
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                if method == "GET":
+                    resp = requests.get(url, verify=VERIFY_SSL, timeout=timeout)
+                else:
+                    resp = requests.post(url, json=data, verify=VERIFY_SSL, timeout=timeout)
+                
+                resp.raise_for_status()
+                return resp.json(), None
+                
+            except ConnectionError as e:
+                last_error = str(e)
+                # Check if it's a real network issue
+                is_reachable, net_error = self._check_network_connectivity(url)
+                if not is_reachable:
+                    return None, f"Network unreachable: {net_error}"
+                
+                # Transient connection issue - retry
+                if attempt < max_retries:
+                    time.sleep(delay)
+                    delay = min(delay * 2, MAX_RETRY_DELAY)
+                    
+            except Timeout as e:
+                last_error = str(e)
+                if attempt < max_retries:
+                    time.sleep(delay)
+                    delay = min(delay * 2, MAX_RETRY_DELAY)
+                else:
+                    return None, f"Request timeout after {timeout}s (tried {max_retries}x)"
+                    
+            except HTTPError as e:
+                status = e.response.status_code if e.response else "unknown"
+                return None, f"API error: HTTP {status}"
+                
+            except Exception as e:
+                last_error = str(e)
+                if attempt < max_retries:
+                    time.sleep(delay)
+                    delay = min(delay * 2, MAX_RETRY_DELAY)
+                else:
+                    return None, f"Request failed: {e}"
+        
+        return None, f"Request failed after {max_retries} retries: {last_error}"
+
+    def api_call(self, endpoint, method="GET", data=None):
+        """Make API call to RustChain node with retry logic and error classification."""
+        url = f"{NODE_URL}{endpoint}"
+        
+        if method == "POST":
+            result, error = self._fetch_with_retry(url, method="POST", data=data)
+        else:
+            result, error = self._fetch_with_retry(url, method="GET")
+        
+        if error:
+            # Classify and display error with troubleshooting hints
+            error_lower = error.lower()
+            
+            if "network unreachable" in error_lower or "dns resolution" in error_lower:
+                self.status_var.set("Network error - Check connection")
+                self._show_network_error_dialog(error)
+            elif "timeout" in error_lower:
+                self.status_var.set("Request timeout - Node may be busy")
+            elif "api error" in error_lower:
+                self.status_var.set(f"API error: {error}")
+            else:
+                self.status_var.set(f"Error: {error}")
+            
             return None
+        
+        return result
+
+    def _show_network_error_dialog(self, error: str):
+        """Show detailed network error dialog with troubleshooting hints."""
+        is_reachable, net_err = self._check_network_connectivity(NODE_URL)
+        
+        message = f"Network Error\n\n{error}\n\n"
+        
+        if not is_reachable:
+            message += "⚠ Network Issue Detected:\n"
+            message += f"   {net_err}\n\n"
+            message += "Troubleshooting:\n"
+            message += "   1. Check your internet connection\n"
+            message += f"   2. Verify DNS is working (try: ping {NODE_URL})\n"
+            message += "   3. Check firewall/proxy settings\n"
+            message += "   4. Node may be temporarily offline"
+        else:
+            message += "⚠ Node Response Issue:\n\n"
+            message += "Troubleshooting:\n"
+            message += "   1. Node may be syncing or under maintenance\n"
+            message += "   2. Try again in a few moments\n"
+            message += "   3. Check node status at the RustChain dashboard"
+        
+        messagebox.showerror("Network Error", message)
 
     def load_wallet(self):
-        """Load wallet and display balance"""
+        """Load wallet and display balance with proper error handling."""
         wallet_id = self.current_wallet.get().strip()
         if not wallet_id:
             messagebox.showwarning("Warning", "Please enter a wallet ID")
@@ -161,18 +318,18 @@ class RustChainWallet:
 
         self.status_var.set(f"Loading wallet {wallet_id}...")
 
-        # Get balance
+        # Get balance with retry logic
         data = self.api_call(f"/wallet/balance?miner_id={wallet_id}")
         if data:
-            balance = data.get("amount_rtc", 0)
+            balance = data.get("amount_rtc", data.get("balance", 0))
             self.balance.set(f"{balance:.8f} RTC")
             self.status_var.set(f"Wallet loaded: {wallet_id}")
         else:
-            # Wallet doesn't exist, show 0 balance
+            # API call failed - show 0 balance but keep status message with error
             self.balance.set("0.00000000 RTC")
-            self.status_var.set(f"New wallet: {wallet_id}")
-
-        # Load transaction history
+            # Status already set by api_call with error details
+        
+        # Load transaction history (may also fail if network is down)
         self.load_history(wallet_id)
 
     def load_history(self, wallet_id):

@@ -9,6 +9,11 @@ Features:
 - Ed25519 signed transactions
 - Multiple wallet support (founder wallets)
 - Transaction history
+
+Network Error Handling:
+- Distinguishes between network unreachable, timeouts, and API errors
+- Implements retry strategy with exponential backoff for transient failures
+- Provides clear user-facing diagnostics for troubleshooting
 """
 
 import tkinter as tk
@@ -19,6 +24,9 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 import urllib3
+import socket
+import time
+from typing import Optional, Tuple, Dict, Any
 
 # Import our crypto module
 from rustchain_crypto import RustChainWallet, verify_transaction
@@ -30,6 +38,12 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 NODE_URL = "https://rustchain.org"
 VERIFY_SSL = False
 KEYSTORE_DIR = Path.home() / ".rustchain" / "wallets"
+
+# Retry configuration
+MAX_RETRIES = 3
+INITIAL_RETRY_DELAY = 1.0  # seconds
+MAX_RETRY_DELAY = 10.0  # seconds
+NETWORK_TIMEOUT = 15  # seconds
 
 # Ensure keystore directory exists
 KEYSTORE_DIR.mkdir(parents=True, exist_ok=True)
@@ -227,6 +241,123 @@ class SecureFounderWallet:
 
         ttk.Label(status_frame, text="Ed25519 Signatures | BIP39 Seed Phrases",
                  style="Secure.TLabel").pack(side=tk.RIGHT)
+
+    def _check_network_connectivity(self, url: str = NODE_URL) -> Tuple[bool, str]:
+        """
+        Check network connectivity to the node.
+        
+        Returns:
+            Tuple of (is_reachable, error_message)
+        """
+        import urllib.parse
+        
+        try:
+            parsed = urllib.parse.urlparse(url)
+            host = parsed.hostname
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            
+            # Try to resolve hostname
+            try:
+                socket.gethostbyname(host)
+            except socket.gaierror as e:
+                return False, f"DNS resolution failed for {host}: {e}"
+            
+            # Try to establish TCP connection
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            
+            if result != 0:
+                return False, f"Cannot connect to {host}:{port} (error code: {result})"
+            
+            return True, ""
+            
+        except Exception as e:
+            return False, f"Network check failed: {e}"
+
+    def _fetch_with_retry(
+        self,
+        url: str,
+        method: str = "GET",
+        data: Dict = None,
+        max_retries: int = MAX_RETRIES,
+        timeout: int = NETWORK_TIMEOUT,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """
+        Fetch JSON from URL with retry logic and proper error classification.
+        
+        Returns:
+            Tuple of (data_dict, error_message)
+        """
+        from requests.exceptions import ConnectionError, Timeout, HTTPError
+        
+        last_error = None
+        delay = INITIAL_RETRY_DELAY
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                if method == "GET":
+                    resp = requests.get(url, verify=VERIFY_SSL, timeout=timeout)
+                else:
+                    resp = requests.post(url, json=data, verify=VERIFY_SSL, timeout=timeout)
+                
+                resp.raise_for_status()
+                return resp.json(), None
+                
+            except ConnectionError as e:
+                last_error = str(e)
+                is_reachable, net_error = self._check_network_connectivity(url)
+                if not is_reachable:
+                    return None, f"Network unreachable: {net_error}"
+                
+                if attempt < max_retries:
+                    time.sleep(delay)
+                    delay = min(delay * 2, MAX_RETRY_DELAY)
+                    
+            except Timeout as e:
+                last_error = str(e)
+                if attempt < max_retries:
+                    time.sleep(delay)
+                    delay = min(delay * 2, MAX_RETRY_DELAY)
+                else:
+                    return None, f"Request timeout after {timeout}s (tried {max_retries}x)"
+                    
+            except HTTPError as e:
+                status = e.response.status_code if e.response else "unknown"
+                return None, f"API error: HTTP {status}"
+                
+            except Exception as e:
+                last_error = str(e)
+                if attempt < max_retries:
+                    time.sleep(delay)
+                    delay = min(delay * 2, MAX_RETRY_DELAY)
+                else:
+                    return None, f"Request failed: {e}"
+        
+        return None, f"Request failed after {max_retries} retries: {last_error}"
+
+    def _show_network_error(self, error: str):
+        """Show network error dialog with troubleshooting hints."""
+        is_reachable, net_err = self._check_network_connectivity(NODE_URL)
+        
+        message = f"Network Error\n\n{error}\n\n"
+        
+        if not is_reachable:
+            message += "⚠ Network Issue Detected:\n"
+            message += f"   {net_err}\n\n"
+            message += "Troubleshooting:\n"
+            message += "   1. Check your internet connection\n"
+            message += f"   2. Verify DNS is working\n"
+            message += "   3. Check firewall/proxy settings\n"
+            message += "   4. Node may be temporarily offline"
+        else:
+            message += "⚠ Node Response Issue:\n\n"
+            message += "Troubleshooting:\n"
+            message += "   1. Node may be syncing or under maintenance\n"
+            message += "   2. Try again in a few moments"
+        
+        messagebox.showerror("Network Error", message)
 
     def check_existing_wallets(self):
         """Check for existing wallet files."""
@@ -500,22 +631,21 @@ class SecureFounderWallet:
         self.amount_entry.insert(0, str(amount))
 
     def refresh_balance(self):
-        """Refresh wallet balance."""
+        """Refresh wallet balance with retry logic and error handling."""
         if not self.wallet:
             return
 
-        try:
-            # Query by RTC address
-            resp = requests.get(
-                f"{NODE_URL}/wallet/balance?miner_id={self.wallet.address}",
-                verify=VERIFY_SSL, timeout=10
-            )
-            data = resp.json()
-            balance = data.get("amount_rtc", 0)
-            self.balance.set(f"{balance:,.4f} RTC")
-            self.status_var.set("Balance refreshed")
-        except Exception as e:
-            self.status_var.set(f"Error: {e}")
+        url = f"{NODE_URL}/wallet/balance?miner_id={self.wallet.address}"
+        data, error = self._fetch_with_retry(url)
+        
+        if error:
+            self.status_var.set(f"Error: {error}")
+            self._show_network_error(error)
+            return
+        
+        balance = data.get("amount_rtc", data.get("balance", 0))
+        self.balance.set(f"{balance:,.4f} RTC")
+        self.status_var.set("Balance refreshed")
 
     def send_signed_payment(self):
         """Send a cryptographically signed payment."""
@@ -570,15 +700,14 @@ class SecureFounderWallet:
             self.sig_label.config(text=f"Signature: {tx['signature'][:40]}...")
             self.status_var.set("Transaction signed, sending...")
 
-            # Send to node
-            resp = requests.post(
-                f"{NODE_URL}/wallet/transfer/signed",
-                json=tx,
-                verify=VERIFY_SSL,
-                timeout=15
-            )
+            # Send to node with retry logic
+            url = f"{NODE_URL}/wallet/transfer/signed"
+            result, error = self._fetch_with_retry(url, method="POST", data=tx, timeout=15)
 
-            result = resp.json()
+            if error:
+                self.status_var.set(f"Error: {error}")
+                self._show_network_error(error)
+                return
 
             if result.get("ok"):
                 self.status_var.set(f"Sent {amount:,.4f} RTC")
