@@ -46,10 +46,20 @@ HARDWARE_BUCKETS = {
     "modern":          ["modern", "x86_64"],
     "exotic":          ["power8", "power9", "sparc", "mips", "riscv", "s390x"],
     "arm":             ["aarch64", "arm", "armv7", "armv7l"],
-    "retro_console":   ["nes_6502", "snes_65c816", "n64_mips", "gba_arm7",
-                        "genesis_68000", "sms_z80", "saturn_sh2",
-                        "gameboy_z80", "gameboy_color_z80", "ps1_mips",
-                        "6502", "65c816", "z80", "sh2"],
+    # RIP-0683: Retro Console Mining via Pico Serial Bridge
+    # Consoles from 1983-2001 with extreme antiquity value
+    "retro_console":   [
+        # Nintendo consoles
+        "nes_6502", "snes_65c816", "n64_mips", "gameboy_z80", "gba_arm7",
+        # Sega consoles
+        "genesis_68000", "sms_z80", "saturn_sh2",
+        # Sony consoles
+        "ps1_mips",
+        # Generic CPU families (used across multiple platforms)
+        "6502", "65c816", "z80", "sh2",
+        # Additional console variants
+        "gameboy_color_z80",
+    ],
 }
 
 # Reverse lookup: arch → bucket name
