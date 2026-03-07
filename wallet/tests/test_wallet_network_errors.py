@@ -82,9 +82,11 @@ class TestFetchWithRetry:
 
     def test_connection_error_with_network_unreachable(self):
         """Test connection error when network is truly unreachable."""
-        from coinbase_wallet import _fetch_with_retry, _check_network_connectivity
+        from coinbase_wallet import _fetch_with_retry
+        from requests.exceptions import ConnectionError
         
-        with patch('requests.get', side_effect=Exception("Connection refused")):
+        # Use proper ConnectionError exception type
+        with patch('requests.get', side_effect=ConnectionError("Connection refused")):
             with patch('coinbase_wallet._check_network_connectivity', 
                       return_value=(False, "DNS resolution failed")):
                 data, error = _fetch_with_retry("https://example.com/api", max_retries=1)
