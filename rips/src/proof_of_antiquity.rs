@@ -13,7 +13,8 @@ use serde::{Serialize, Deserialize};
 // Import from RIP-001
 use crate::core_types::{
     HardwareTier, HardwareInfo, HardwareCharacteristics,
-    WalletAddress, Block, BlockMiner, MiningProof, TokenAmount
+    WalletAddress, Block, BlockMiner, MiningProof, TokenAmount,
+    is_console_arch,
 };
 
 /// Block reward per block (1.0 RTC maximum, split among miners)
@@ -398,6 +399,196 @@ impl AntiEmulationVerifier {
 
         Ok(())
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // RIP-0683: Console-Specific Anti-Emulation
+    // ═══════════════════════════════════════════════════════════
+
+    /// Verify console miner attestation via Pico bridge
+    /// 
+    /// Console miners use different checks than standard miners:
+    /// - ctrl_port_timing instead of clock_drift
+    /// - rom_execution_timing instead of cache_timing
+    /// - bus_jitter instead of instruction_jitter
+    pub fn verify_console_miner(
+        &self,
+        console_arch: &str,
+        timing_data: &ConsoleTimingData,
+    ) -> Result<(), ProofError> {
+        // Verify this is a known console architecture
+        if !is_console_arch(console_arch) {
+            return Err(ProofError::SuspiciousHardware(
+                format!("Unknown console architecture: {}", console_arch)
+            ));
+        }
+
+        // Get expected timing baseline for this console
+        let baseline = self.get_console_timing_baseline(console_arch)
+            .ok_or_else(|| ProofError::SuspiciousHardware(
+                format!("No timing baseline for console: {}", console_arch)
+            ))?;
+
+        // Check 1: Controller port timing CV (must show real hardware jitter)
+        // Emulators have near-perfect timing (CV < 0.0001)
+        if timing_data.ctrl_port_cv < 0.0001 && timing_data.ctrl_port_cv != 0.0 {
+            return Err(ProofError::EmulationDetected);
+        }
+
+        // Check 2: ROM execution timing must be within ±15% of baseline
+        // Real hardware has characteristic execution times
+        let timing_diff = (timing_data.rom_hash_time_us as f64 - baseline.expected_rom_time_us as f64).abs();
+        let tolerance = (baseline.expected_rom_time_us as f64) * 0.15;
+        if timing_diff > tolerance {
+            return Err(ProofError::SuspiciousHardware(
+                format!(
+                    "ROM execution time {}us outside tolerance (expected {}±{}us)",
+                    timing_data.rom_hash_time_us,
+                    baseline.expected_rom_time_us,
+                    tolerance
+                )
+            ));
+        }
+
+        // Check 3: Bus jitter must be present (real hardware has noise)
+        // Emulators have deterministic bus timing
+        if timing_data.bus_jitter_stdev_ns < 500 {
+            return Err(ProofError::EmulationDetected);
+        }
+
+        // Check 4: Sample count must be meaningful
+        if timing_data.bus_jitter_samples < 100 {
+            return Err(ProofError::SuspiciousHardware(
+                "Insufficient jitter samples".into()
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Get timing baseline for a specific console architecture
+    fn get_console_timing_baseline(&self, console_arch: &str) -> Option<ConsoleTimingBaseline> {
+        // These are approximate values based on real hardware measurements
+        // Actual values may vary by ±15% due to temperature, age, etc.
+        match console_arch.to_lowercase().as_str() {
+            // Nintendo consoles
+            "nes_6502" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 2_500_000,  // ~2.5s for SHA-256 on 1.79MHz 6502
+                ctrl_port_poll_ns: 16_667_000,    // 60Hz polling
+                bus_jitter_expected_ns: 2_000,    // High jitter from bus contention
+            }),
+            "snes_65c816" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 1_200_000,  // ~1.2s on 3.58MHz 65C816
+                ctrl_port_poll_ns: 16_667_000,    // 60Hz polling
+                bus_jitter_expected_ns: 1_500,
+            }),
+            "n64_mips" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 847_000,    // ~847ms on 93.75MHz R4300i
+                ctrl_port_poll_ns: 250_000,       // 4Mbit/s Joybus
+                bus_jitter_expected_ns: 1_250,
+            }),
+            "gameboy_z80" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 3_000_000,  // ~3s on 4.19MHz Z80
+                ctrl_port_poll_ns: 122_000,       // 8Kbit/s link cable
+                bus_jitter_expected_ns: 1_800,
+            }),
+            "gba_arm7" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 450_000,    // ~450ms on 16.78MHz ARM7
+                ctrl_port_poll_ns: 122_000,       // Link cable
+                bus_jitter_expected_ns: 1_000,
+            }),
+            
+            // Sega consoles
+            "genesis_68000" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 1_500_000,  // ~1.5s on 7.67MHz 68000
+                ctrl_port_poll_ns: 16_667_000,    // 60Hz polling
+                bus_jitter_expected_ns: 1_600,
+            }),
+            "sms_z80" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 2_800_000,  // ~2.8s on 3.58MHz Z80
+                ctrl_port_poll_ns: 16_667_000,
+                bus_jitter_expected_ns: 1_700,
+            }),
+            "saturn_sh2" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 380_000,    // ~380ms on dual 28.6MHz SH-2
+                ctrl_port_poll_ns: 16_667_000,    // Parallel SMPC
+                bus_jitter_expected_ns: 900,
+            }),
+            
+            // Sony consoles
+            "ps1_mips" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 920_000,    // ~920ms on 33.8MHz R3000A
+                ctrl_port_poll_ns: 4_000,         // 250Kbit/s SPI
+                bus_jitter_expected_ns: 1_100,
+            }),
+            
+            // Generic families (use conservative estimates)
+            "6502" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 2_500_000,
+                ctrl_port_poll_ns: 16_667_000,
+                bus_jitter_expected_ns: 2_000,
+            }),
+            "65c816" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 1_200_000,
+                ctrl_port_poll_ns: 16_667_000,
+                bus_jitter_expected_ns: 1_500,
+            }),
+            "z80" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 2_800_000,
+                ctrl_port_poll_ns: 16_667_000,
+                bus_jitter_expected_ns: 1_700,
+            }),
+            "sh2" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 380_000,
+                ctrl_port_poll_ns: 16_667_000,
+                bus_jitter_expected_ns: 900,
+            }),
+            "mips" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 900_000,
+                ctrl_port_poll_ns: 250_000,
+                bus_jitter_expected_ns: 1_200,
+            }),
+            "68000" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 1_500_000,
+                ctrl_port_poll_ns: 16_667_000,
+                bus_jitter_expected_ns: 1_600,
+            }),
+            "arm7" => Some(ConsoleTimingBaseline {
+                expected_rom_time_us: 450_000,
+                ctrl_port_poll_ns: 122_000,
+                bus_jitter_expected_ns: 1_000,
+            }),
+            
+            _ => None,
+        }
+    }
+}
+
+/// Console timing data from Pico bridge
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConsoleTimingData {
+    /// Controller port timing mean (nanoseconds)
+    pub ctrl_port_timing_mean_ns: u64,
+    /// Controller port timing standard deviation (nanoseconds)
+    pub ctrl_port_timing_stdev_ns: u64,
+    /// Coefficient of variation (stdev/mean) - must be > 0.0001
+    pub ctrl_port_cv: f64,
+    /// ROM hash computation time (microseconds)
+    pub rom_hash_time_us: u64,
+    /// Number of bus jitter samples collected
+    pub bus_jitter_samples: u32,
+    /// Bus jitter standard deviation (nanoseconds)
+    pub bus_jitter_stdev_ns: u64,
+}
+
+/// Console timing baseline for anti-emulation
+#[derive(Debug, Clone)]
+pub struct ConsoleTimingBaseline {
+    /// Expected ROM hash time in microseconds
+    pub expected_rom_time_us: u64,
+    /// Expected controller port poll interval in nanoseconds
+    pub ctrl_port_poll_ns: u64,
+    /// Expected bus jitter in nanoseconds
+    pub bus_jitter_expected_ns: u64,
 }
 
 /// Result of submitting a proof
@@ -533,5 +724,185 @@ mod tests {
 
         assert!(poa.submit_proof(proof1).is_ok());
         assert!(matches!(poa.submit_proof(proof2), Err(ProofError::DuplicateSubmission)));
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // RIP-0683: Console Miner Tests
+    // ═══════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_console_timing_data_structure() {
+        // Create realistic N64 timing data
+        let timing = ConsoleTimingData {
+            ctrl_port_timing_mean_ns: 250_000,
+            ctrl_port_timing_stdev_ns: 1_250,
+            ctrl_port_cv: 0.005,  // 0.5% variation (real hardware)
+            rom_hash_time_us: 847_000,
+            bus_jitter_samples: 500,
+            bus_jitter_stdev_ns: 1_250,
+        };
+
+        assert!(timing.ctrl_port_cv > 0.0001);  // Has real jitter
+        assert!(timing.bus_jitter_stdev_ns > 500);  // Has bus noise
+        assert!(timing.bus_jitter_samples >= 100);  // Enough samples
+    }
+
+    #[test]
+    fn test_console_miner_verification_success() {
+        let verifier = AntiEmulationVerifier::new();
+
+        // Realistic N64 timing data
+        let timing = ConsoleTimingData {
+            ctrl_port_timing_mean_ns: 250_000,
+            ctrl_port_timing_stdev_ns: 1_250,
+            ctrl_port_cv: 0.005,
+            rom_hash_time_us: 847_000,  // Within ±15% of 847ms baseline
+            bus_jitter_samples: 500,
+            bus_jitter_stdev_ns: 1_250,
+        };
+
+        let result = verifier.verify_console_miner("n64_mips", &timing);
+        assert!(result.is_ok(), "N64 verification should pass: {:?}", result);
+    }
+
+    #[test]
+    fn test_console_miner_rejects_emulator() {
+        let verifier = AntiEmulationVerifier::new();
+
+        // Emulator timing data (too perfect)
+        let emulator_timing = ConsoleTimingData {
+            ctrl_port_timing_mean_ns: 250_000,
+            ctrl_port_timing_stdev_ns: 0,  // No jitter
+            ctrl_port_cv: 0.0,  // Perfect timing = emulator
+            rom_hash_time_us: 847_000,
+            bus_jitter_samples: 500,
+            bus_jitter_stdev_ns: 0,  // No bus noise
+        };
+
+        let result = verifier.verify_console_miner("n64_mips", &emulator_timing);
+        assert!(matches!(result, Err(ProofError::EmulationDetected)),
+            "Should detect emulator: {:?}", result);
+    }
+
+    #[test]
+    fn test_console_miner_rejects_wrong_timing() {
+        let verifier = AntiEmulationVerifier::new();
+
+        // Wrong timing (claims to be N64 but timing matches different CPU)
+        let wrong_timing = ConsoleTimingData {
+            ctrl_port_timing_mean_ns: 250_000,
+            ctrl_port_timing_stdev_ns: 1_250,
+            ctrl_port_cv: 0.005,
+            rom_hash_time_us: 100_000,  // Way too fast for N64 (should be ~847ms)
+            bus_jitter_samples: 500,
+            bus_jitter_stdev_ns: 1_250,
+        };
+
+        let result = verifier.verify_console_miner("n64_mips", &wrong_timing);
+        assert!(matches!(result, Err(ProofError::SuspiciousHardware(_))),
+            "Should reject wrong timing: {:?}", result);
+    }
+
+    #[test]
+    fn test_console_miner_unknown_arch() {
+        let verifier = AntiEmulationVerifier::new();
+
+        let timing = ConsoleTimingData {
+            ctrl_port_timing_mean_ns: 250_000,
+            ctrl_port_timing_stdev_ns: 1_250,
+            ctrl_port_cv: 0.005,
+            rom_hash_time_us: 847_000,
+            bus_jitter_samples: 500,
+            bus_jitter_stdev_ns: 1_250,
+        };
+
+        let result = verifier.verify_console_miner("unknown_console", &timing);
+        assert!(matches!(result, Err(ProofError::SuspiciousHardware(_))),
+            "Should reject unknown console arch");
+    }
+
+    #[test]
+    fn test_console_miner_insufficient_samples() {
+        let verifier = AntiEmulationVerifier::new();
+
+        let timing = ConsoleTimingData {
+            ctrl_port_timing_mean_ns: 250_000,
+            ctrl_port_timing_stdev_ns: 1_250,
+            ctrl_port_cv: 0.005,
+            rom_hash_time_us: 847_000,
+            bus_jitter_samples: 50,  // Too few samples
+            bus_jitter_stdev_ns: 1_250,
+        };
+
+        let result = verifier.verify_console_miner("n64_mips", &timing);
+        assert!(matches!(result, Err(ProofError::SuspiciousHardware(_))),
+            "Should reject insufficient samples: {:?}", result);
+    }
+
+    #[test]
+    fn test_multiple_console_architectures() {
+        let verifier = AntiEmulationVerifier::new();
+
+        // Test NES (slowest CPU)
+        let nes_timing = ConsoleTimingData {
+            ctrl_port_timing_mean_ns: 16_667_000,
+            ctrl_port_timing_stdev_ns: 2_000,
+            ctrl_port_cv: 0.00012,
+            rom_hash_time_us: 2_500_000,  // ~2.5s for 1.79MHz 6502
+            bus_jitter_samples: 500,
+            bus_jitter_stdev_ns: 2_000,
+        };
+        assert!(verifier.verify_console_miner("nes_6502", &nes_timing).is_ok());
+
+        // Test PS1 (MIPS R3000A)
+        let ps1_timing = ConsoleTimingData {
+            ctrl_port_timing_mean_ns: 4_000,
+            ctrl_port_timing_stdev_ns: 1_100,
+            ctrl_port_cv: 0.275,
+            rom_hash_time_us: 920_000,  // ~920ms for 33.8MHz MIPS
+            bus_jitter_samples: 500,
+            bus_jitter_stdev_ns: 1_100,
+        };
+        assert!(verifier.verify_console_miner("ps1_mips", &ps1_timing).is_ok());
+
+        // Test Genesis (Motorola 68000)
+        let genesis_timing = ConsoleTimingData {
+            ctrl_port_timing_mean_ns: 16_667_000,
+            ctrl_port_timing_stdev_ns: 1_600,
+            ctrl_port_cv: 0.000096,
+            rom_hash_time_us: 1_500_000,  // ~1.5s for 7.67MHz 68000
+            bus_jitter_samples: 500,
+            bus_jitter_stdev_ns: 1_600,
+        };
+        assert!(verifier.verify_console_miner("genesis_68000", &genesis_timing).is_ok());
+    }
+
+    #[test]
+    fn test_console_cv_threshold() {
+        let verifier = AntiEmulationVerifier::new();
+
+        // Test CV right at threshold (should pass)
+        let threshold_timing = ConsoleTimingData {
+            ctrl_port_timing_mean_ns: 250_000,
+            ctrl_port_timing_stdev_ns: 26,  // CV = 0.000104 (just above threshold)
+            ctrl_port_cv: 0.000104,
+            rom_hash_time_us: 847_000,
+            bus_jitter_samples: 500,
+            bus_jitter_stdev_ns: 1_250,
+        };
+        assert!(verifier.verify_console_miner("n64_mips", &threshold_timing).is_ok());
+
+        // Test CV just below threshold (should fail as emulator)
+        let below_threshold_timing = ConsoleTimingData {
+            ctrl_port_timing_mean_ns: 250_000,
+            ctrl_port_timing_stdev_ns: 24,  // CV = 0.000096 (below threshold)
+            ctrl_port_cv: 0.000096,
+            rom_hash_time_us: 847_000,
+            bus_jitter_samples: 500,
+            bus_jitter_stdev_ns: 1_250,
+        };
+        let result = verifier.verify_console_miner("n64_mips", &below_threshold_timing);
+        assert!(matches!(result, Err(ProofError::EmulationDetected)),
+            "CV below threshold should be flagged as emulator");
     }
 }

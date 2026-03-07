@@ -64,7 +64,34 @@ ANTIQUITY_MULTIPLIERS = {
     "armv7": 0.0005,
     "armv7l": 0.0005,
     "default": 1.0,
-    "unknown": 1.0
+    "unknown": 1.0,
+    
+    # ═══════════════════════════════════════════════════════════
+    # RIP-0683: Retro Console Mining Multipliers
+    # ═══════════════════════════════════════════════════════════
+    # Console CPUs from 1983-2001 with extreme antiquity value
+    # Multipliers based on release year (older = higher)
+    
+    # Nintendo consoles
+    "nes_6502": 2.8,         # Ricoh 2A03 (1983, 1.79MHz)
+    "snes_65c816": 2.7,      # Ricoh 5A22 (1990, 3.58MHz)
+    "n64_mips": 2.5,         # NEC VR4300 (1996, 93.75MHz)
+    "gameboy_z80": 2.6,      # Sharp LR35902 (1989, 4.19MHz)
+    "gba_arm7": 2.3,         # ARM7TDMI (2001, 16.78MHz)
+    
+    # Sega consoles
+    "genesis_68000": 2.5,    # Motorola 68000 (1988, 7.67MHz)
+    "sms_z80": 2.6,          # Zilog Z80 (1986, 3.58MHz)
+    "saturn_sh2": 2.6,       # Hitachi SH-2 (1994, 28.6MHz)
+    
+    # Sony consoles
+    "ps1_mips": 2.8,         # MIPS R3000A (1994, 33.8MHz)
+    
+    # Generic CPU families (used across multiple platforms)
+    "6502": 2.8,             # MOS 6502 (1975) - NES, Apple II, C64
+    "65c816": 2.7,           # WDC 65C816 (1983) - SNES, Apple IIGS
+    "z80": 2.6,              # Zilog Z80 (1976) - Game Boy, SMS, ZX Spectrum
+    "sh2": 2.6,              # Hitachi SH-2 (1994) - Saturn, 32X
 }
 
 # Time decay parameters
