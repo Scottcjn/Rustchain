@@ -83,7 +83,7 @@ impl Box {
         // Simplified: create a P2PK-like proposition
         // In real implementation, this would be proper ErgoTree encoding
         let mut tree = vec![0x00, 0x08]; // Header for P2PK
-        tree.extend(wallet.address.as_bytes());
+        tree.extend(wallet.0.as_bytes());
         tree
     }
 }
@@ -104,8 +104,8 @@ pub enum RegisterValue {
     Long(i64),
     /// Byte array
     ByteArray(Vec<u8>),
-    /// Group element (for sigma protocols)
-    GroupElement([u8; 33]),
+    /// Group element (for sigma protocols) - using Vec instead of fixed array for serialization
+    GroupElement(Vec<u8>),
     /// Collection of values
     Collection(Vec<RegisterValue>),
 }
@@ -279,10 +279,10 @@ impl ErgoTransaction {
             tokens: Vec::new(),
             additional_registers: {
                 let mut regs = HashMap::new();
-                // R4: Antiquity Score
-                regs.insert("R4".to_string(), RegisterValue::Long((proof.antiquity_score * 100.0) as i64));
+                // R4: Multiplier (scaled)
+                regs.insert("R4".to_string(), RegisterValue::Long((proof.multiplier * 100.0) as i64));
                 // R5: Hardware model
-                regs.insert("R5".to_string(), RegisterValue::ByteArray(proof.hardware.cpu_model.as_bytes().to_vec()));
+                regs.insert("R5".to_string(), RegisterValue::ByteArray(proof.hardware.model.as_bytes().to_vec()));
                 regs
             },
             transaction_id: [0u8; 32],
@@ -293,9 +293,9 @@ impl ErgoTransaction {
             vec![TransactionInput {
                 box_id: [0u8; 32], // Genesis/mining input
                 spending_proof: SpendingProof::AntiquityProof {
-                    hardware_hash: proof.hardware.generate_hardware_hash(),
-                    antiquity_score: proof.antiquity_score,
-                    entropy_hash: proof.anti_emulation_hash.clone(),
+                    hardware_hash: hex::encode(&proof.anti_emulation_hash),
+                    antiquity_score: proof.multiplier, // Using multiplier as proxy
+                    entropy_hash: hex::encode(&proof.anti_emulation_hash),
                 },
                 extension: HashMap::new(),
             }],
@@ -314,18 +314,18 @@ pub enum SigmaProposition {
     /// Prove knowledge of discrete log
     ProveDLog {
         /// Public key (group element)
-        public_key: [u8; 33],
+        public_key: Vec<u8>,
     },
     /// Prove knowledge of Diffie-Hellman tuple
     ProveDHTuple {
         /// Generator g
-        g: [u8; 33],
+        g: Vec<u8>,
         /// Generator h
-        h: [u8; 33],
+        h: Vec<u8>,
         /// u = g^x
-        u: [u8; 33],
+        u: Vec<u8>,
         /// v = h^x
-        v: [u8; 33],
+        v: Vec<u8>,
     },
     /// AND composition
     And(Vec<SigmaProposition>),
@@ -347,12 +347,12 @@ pub enum SigmaProposition {
 
 impl SigmaProposition {
     /// Create a simple P2PK proposition
-    pub fn p2pk(public_key: [u8; 33]) -> Self {
+    pub fn p2pk(public_key: Vec<u8>) -> Self {
         Self::ProveDLog { public_key }
     }
 
     /// Create 2-of-3 multisig
-    pub fn multisig_2of3(keys: [[u8; 33]; 3]) -> Self {
+    pub fn multisig_2of3(keys: [Vec<u8>; 3]) -> Self {
         Self::Threshold {
             k: 2,
             children: keys.into_iter().map(|pk| Self::ProveDLog { public_key: pk }).collect(),
@@ -382,7 +382,7 @@ pub mod contracts {
     use super::*;
 
     /// Mining reward distribution contract
-    pub fn mining_reward_contract(miner_pk: [u8; 33], min_antiquity: f64) -> Vec<u8> {
+    pub fn mining_reward_contract(miner_pk: Vec<u8>, min_antiquity: f64) -> Vec<u8> {
         // Simplified encoding - real implementation would compile ErgoScript
         let mut contract = vec![0x01]; // Version
         contract.extend(&miner_pk);
@@ -399,7 +399,7 @@ pub mod contracts {
     }
 
     /// NFT badge minting contract
-    pub fn badge_mint_contract(badge_type: &str, recipient_pk: [u8; 33]) -> Vec<u8> {
+    pub fn badge_mint_contract(badge_type: &str, recipient_pk: Vec<u8>) -> Vec<u8> {
         let mut contract = vec![0x03]; // Version
         contract.extend(badge_type.as_bytes());
         contract.extend(&recipient_pk);
@@ -407,7 +407,7 @@ pub mod contracts {
     }
 
     /// Time-locked release contract (for founder allocations)
-    pub fn timelock_contract(recipient_pk: [u8; 33], unlock_height: u64) -> Vec<u8> {
+    pub fn timelock_contract(recipient_pk: Vec<u8>, unlock_height: u64) -> Vec<u8> {
         let mut contract = vec![0x04]; // Version
         contract.extend(&recipient_pk);
         contract.extend(&unlock_height.to_le_bytes());
@@ -498,13 +498,14 @@ impl ErgoCompatible for crate::core_types::BlockMiner {
     fn to_ergo_box(&self, height: u64) -> Box {
         Box {
             box_id: [0u8; 32],
-            value: self.reward.to_rtc() as u64 * 1_000_000_000, // nanoRTC
+            value: self.reward, // Already in smallest unit
             ergo_tree: Box::wallet_to_ergo_tree(&self.wallet),
             creation_height: height,
             tokens: Vec::new(),
             additional_registers: {
                 let mut regs = HashMap::new();
-                regs.insert("R4".to_string(), RegisterValue::Long((self.antiquity_score * 100.0) as i64));
+                // R4: Multiplier (scaled)
+                regs.insert("R4".to_string(), RegisterValue::Long((self.multiplier * 100.0) as i64));
                 regs.insert("R5".to_string(), RegisterValue::ByteArray(self.hardware.as_bytes().to_vec()));
                 regs
             },
@@ -518,18 +519,10 @@ impl ErgoCompatible for crate::core_types::BlockMiner {
 pub fn rustchain_block_to_ergo(block: &Block) -> (BlockHeader, Vec<ErgoTransaction>) {
     let header = BlockHeader {
         height: block.height,
-        id: {
-            let mut id = [0u8; 32];
-            hex::decode_to_slice(&block.hash, &mut id).ok();
-            id
-        },
-        parent_id: {
-            let mut id = [0u8; 32];
-            hex::decode_to_slice(&block.previous_hash, &mut id).ok();
-            id
-        },
+        id: block.hash.0,
+        parent_id: block.previous_hash.0,
         timestamp: block.timestamp,
-        total_antiquity_score: block.miners.iter().map(|m| m.antiquity_score).sum(),
+        total_antiquity_score: block.miners.iter().map(|m| m.multiplier).sum(),
     };
 
     let transactions: Vec<ErgoTransaction> = block.miners.iter().map(|miner| {
@@ -556,19 +549,19 @@ mod tests {
             Vec::new(),
         );
 
-        utxo_set.add_box(b.clone(), &wallet.address);
+        utxo_set.add_box(b.clone(), &wallet.0);
 
-        assert_eq!(utxo_set.get_balance(&wallet.address), 1_000_000_000);
+        assert_eq!(utxo_set.get_balance(&wallet.0), 1_000_000_000);
 
         utxo_set.spend_box(&b.box_id);
-        assert_eq!(utxo_set.get_balance(&wallet.address), 0);
+        assert_eq!(utxo_set.get_balance(&wallet.0), 0);
     }
 
     #[test]
     fn test_sigma_propositions() {
-        let pk = [0u8; 33];
+        let pk = vec![0u8; 33];
 
-        let p2pk = SigmaProposition::p2pk(pk);
+        let p2pk = SigmaProposition::p2pk(pk.clone());
         assert!(matches!(p2pk, SigmaProposition::ProveDLog { .. }));
 
         let antiquity = SigmaProposition::antiquity_gate(50.0);
@@ -581,7 +574,7 @@ mod tests {
 
     #[test]
     fn test_contracts() {
-        let pk = [0u8; 33];
+        let pk = vec![0u8; 33];
 
         let reward = contracts::mining_reward_contract(pk, 25.0);
         assert_eq!(reward[0], 0x01);
@@ -589,7 +582,7 @@ mod tests {
         let vote = contracts::governance_vote_contract("RCP-0001", 10000);
         assert_eq!(vote[0], 0x02);
 
-        let badge = contracts::badge_mint_contract("pioneer", pk);
+        let badge = contracts::badge_mint_contract("pioneer", vec![0u8; 33]);
         assert_eq!(badge[0], 0x03);
     }
 }

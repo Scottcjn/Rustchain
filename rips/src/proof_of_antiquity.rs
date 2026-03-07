@@ -137,8 +137,9 @@ impl ProofOfAntiquity {
 
         // Generate hardware hash to detect duplicate hardware
         let hw_hash = self.hash_hardware(&proof.hardware);
+        let wallet_clone = proof.wallet.clone();
         if let Some(existing_wallet) = self.known_hardware.get(&hw_hash) {
-            if existing_wallet != &proof.wallet {
+            if existing_wallet != &wallet_clone {
                 return Err(ProofError::HardwareAlreadyRegistered(existing_wallet.clone()));
             }
         }
@@ -162,7 +163,7 @@ impl ProofOfAntiquity {
         };
 
         self.pending_proofs.push(validated);
-        self.known_hardware.insert(hw_hash, proof.wallet.clone());
+        self.known_hardware.insert(hw_hash, wallet_clone);
 
         Ok(SubmitResult {
             accepted: true,
