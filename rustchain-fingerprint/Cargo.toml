@@ -1,0 +1,67 @@
+[package]
+name = "rustchain-fingerprint"
+version = "0.1.0"
+edition = "2021"
+authors = ["Flamekeeper Scott <scott@rustchain.net>", "Sophia Elya"]
+description = "RIP-PoA Hardware Fingerprint Suite - 6 high-tier continuation checks for vintage hardware attestation"
+license = "MIT"
+repository = "https://github.com/Scottcjn/Rustchain"
+keywords = ["blockchain", "proof-of-antiquity", "fingerprint", "hardware", "anti-emulation"]
+categories = ["cryptography", "hardware-support"]
+
+[dependencies]
+# Cryptography
+sha2 = "0.10"
+hex = "0.4"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Regex for CPU detection
+regex = "1.10"
+
+# Platform-specific
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+# CLI
+clap = { version = "4.4", features = ["derive"] }
+
+# Async runtime (optional)
+tokio = { version = "1.0", features = ["full"], optional = true }
+
+[features]
+default = []
+full = ["tokio"]
+
+[lib]
+name = "rustchain_fingerprint"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rustchain-fingerprint"
+path = "src/bin/cli.rs"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "fingerprint_bench"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Cross-compilation targets:
+# x86_64: cargo build --release --target x86_64-unknown-linux-gnu
+# aarch64: cargo build --release --target aarch64-unknown-linux-gnu  
+# ppc64le: cargo build --release --target powerpc64le-unknown-linux-gnu
+# powerpc (G4): cargo build --release --target powerpc-unknown-linux-gnu
