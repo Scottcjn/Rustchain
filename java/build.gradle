@@ -1,0 +1,62 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
+group = 'com.rustchain'
+version = '1.0.0'
+sourceCompatibility = '11'
+targetCompatibility = '11'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // JSON Processing
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.16.1'
+    
+    // CLI Argument Parsing
+    implementation 'info.picocli:picocli:4.7.5'
+    annotationProcessor 'info.picocli:picocli-codegen:4.7.5'
+    
+    // Logging
+    implementation 'org.slf4j:slf4j-api:2.0.11'
+    implementation 'org.slf4j:slf4j-simple:2.0.11'
+    
+    // Testing
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+    testImplementation 'org.mockito:mockito-core:5.8.0'
+}
+
+application {
+    mainClass = 'com.rustchain.cli.RustChainCLI'
+}
+
+jar {
+    manifest {
+        attributes(
+            'Main-Class': 'com.rustchain.cli.RustChainCLI',
+            'Implementation-Title': 'RustChain Java SDK',
+            'Implementation-Version': archiveVersion
+        )
+    }
+}
+
+shadowJar {
+    archiveBaseName.set('rustchain')
+    archiveClassifier.set('')
+    archiveVersion.set('1.0.0')
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}

@@ -1,0 +1,8 @@
+{
+  "agent_id": "bcn_alpha_rip302",
+  "name": "Agent Alpha",
+  "role": "initiator",
+  "pubkey": "0x_alpha_pubkey_deterministic_seed_rip302_test",
+  "wallet": "0xAlphaWallet000000000000000000000000000001",
+  "capabilities": ["heartbeat", "contracts", "payment", "grazer_discovery"]
+}
