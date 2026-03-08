@@ -309,8 +309,12 @@ def cmd_install(args):
     log("Checking RustChain network...")
     try:
         import urllib.request
+        import ssl
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
         req = urllib.request.Request(f"{NODE_URL}/api/miners")
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
             miners = json.loads(resp.read())
             log(f"Active miners on network: {len(miners)}")
     except Exception:
@@ -548,8 +552,12 @@ def cmd_status(args):
     # Network check
     try:
         import urllib.request
+        import ssl
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
         req = urllib.request.Request(f"{NODE_URL}/health")
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
             health = json.loads(resp.read())
             status = "online" if health.get("ok") else "offline"
             log(f"Network: {status} (v{health.get('version', '?')})")
@@ -728,13 +736,23 @@ def _wallet_show(args):
     # Check balance from network
     try:
         import urllib.request
+        import ssl
         url = f"{NODE_URL}/wallet/balance?miner_id={address}"
+        # Create SSL context that doesn't verify certificates for IP-based URLs
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
         req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
             data = json.loads(resp.read())
             balance = data.get("amount_rtc", data.get("balance_rtc", data.get("balance", 0)))
             print(f"  {GREEN}Balance:{NC}      {GREEN}{BOLD}{balance} RTC{NC}")
-    except Exception:
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            print(f"  {DIM}Balance:{NC}      {DIM}0 RTC (wallet not found){NC}")
+        else:
+            print(f"  {DIM}Balance:{NC}      {DIM}(network error: {e.code}){NC}")
+    except Exception as e:
         print(f"  {DIM}Balance:{NC}      {DIM}(could not reach network){NC}")
 
     print()
