@@ -1,4 +1,4 @@
-# Protocol Design (RIP-200 Proof-of-Antiquity)
+# Protocol Design (RIP-200 Proof-of-Attestation)
 
 ## Overview
 

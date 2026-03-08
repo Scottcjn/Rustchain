@@ -313,44 +313,22 @@ class TestClockDriftDetection:
 class TestVintageHardwareTiming:
     """Test vintage hardware-specific timing requirements."""
 
-    @staticmethod
-    def _verified_g4_checks(cv: float) -> dict:
-        return {
-            "anti_emulation": VALID_ANTI_EMULATION,
-            "clock_drift": {
-                "passed": True,
-                "data": {
-                    "cv": cv,
-                    "samples": 100,
-                },
-            },
-            "simd_identity": {
-                "passed": True,
-                "data": {
-                    "has_altivec": True,
-                    "has_sse": False,
-                    "has_avx": False,
-                    "vec_perm": True,
-                },
-            },
-            "cache_timing": {
-                "passed": True,
-                "data": {
-                    "arch": "powerpc",
-                    "l2_l1_ratio": 1.4,
-                    "l3_l2_ratio": 1.15,
-                },
-            },
-        }
-
     def test_vintage_stability_too_high(self):
         """Verify rejection of suspicious stability on vintage hardware."""
         claimed_device = {
-            "device_arch": "G4",
-            "cpu": "PowerPC G4 7447A",
+            "device_arch": "G4"
         }
         fingerprint = {
-            "checks": self._verified_g4_checks(0.001)
+            "checks": {
+                "anti_emulation": VALID_ANTI_EMULATION,
+                "clock_drift": {
+                    "passed": True,
+                    "data": {
+                        "cv": 0.001,  # Too stable for G4
+                        "samples": 100
+                    }
+                }
+            }
         }
         passed, reason = validate_fingerprint_data(fingerprint, claimed_device)
         assert passed is False, "Suspiciously stable vintage timing should fail"
@@ -359,11 +337,19 @@ class TestVintageHardwareTiming:
     def test_vintage_normal_variation_passes(self):
         """Normal variation for vintage hardware should pass."""
         claimed_device = {
-            "device_arch": "G4",
-            "cpu": "PowerPC G4 7447A",
+            "device_arch": "G4"
         }
         fingerprint = {
-            "checks": self._verified_g4_checks(0.05)
+            "checks": {
+                "anti_emulation": VALID_ANTI_EMULATION,
+                "clock_drift": {
+                    "passed": True,
+                    "data": {
+                        "cv": 0.05,  # Normal variation
+                        "samples": 100
+                    }
+                }
+            }
         }
         passed, reason = validate_fingerprint_data(fingerprint, claimed_device)
         assert passed is True, "Normal vintage timing should pass"
