@@ -1,5 +1,13 @@
 # Issue #1147 Fix: /attest/submit 500 Crash
 
+## Status
+
+**FIXED** - PR #695 submitted
+- **PR**: https://github.com/Scottcjn/Rustchain/pull/695
+- **Commit**: 4d12153
+- **Branch**: `feat/issue1147-attest-fix` (pushed to `createkr/Rustchain`)
+- **Bounty Payout Wallet**: `RTC1d48d848a5aa5ecf2c5f01aa5fb64837daaf2f35` (split createkr-wallet)
+
 ## Summary
 
 Fixed a critical bug where the `/attest/submit` endpoint would crash with HTTP 500 errors when receiving malformed attestation payloads, particularly in fingerprint validation.
