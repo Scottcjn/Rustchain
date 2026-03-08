@@ -1,0 +1,35 @@
+name: RTC Tip Bot
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  tip-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install requests
+      
+      - name: Run Tip Bot
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_PAYLOAD: ${{ github.event_name == 'issue_comment' && github.event.comment || github.event.pull_request_review_comment }}
+          GITHUB_REPO: ${{ github.repository }}
+          GITHUB_REPO_OWNER: ${{ github.repository_owner }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          RPC_URL: ${{ secrets.RUSTCHAIN_RPC_URL }}
+          TIP_BOT_ADMIN_KEY: ${{ secrets.TIP_BOT_ADMIN_KEY }}
+          TIP_BOT_DB: ${{ secrets.TIP_BOT_DB_PATH }}
+        run: python tools/github_tip_bot/tip_bot.py
