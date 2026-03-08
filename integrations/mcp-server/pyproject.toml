@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rustchain-mcp-server"
+version = "1.0.0"
+description = "Model Context Protocol (MCP) server for RustChain blockchain"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "RustChain Contributors"}
+]
+keywords = [
+    "rustchain",
+    "mcp",
+    "model-context-protocol",
+    "blockchain",
+    "ai-agents",
+    "vintage-computing"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Distributed Computing",
+]
+
+dependencies = [
+    "mcp>=1.0.0",
+    "aiohttp>=3.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+rustchain-mcp = "mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/Scottcjn/RustChain"
+Documentation = "https://github.com/Scottcjn/RustChain/tree/main/integrations/mcp-server"
+Repository = "https://github.com/Scottcjn/RustChain"
+Issues = "https://github.com/Scottcjn/RustChain/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312']
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = ["E", "F", "W", "I", "N", "UP"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
