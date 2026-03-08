@@ -13,7 +13,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *      Mint/burn functions for bridge integration (Phase 1: admin-controlled)
  */
 contract WrappedRTC is ERC20, ERC20Burnable, Ownable {
-    uint256 public constant MAX_SUPPLY = 50_000 * 10**6; // 50,000 wRTC (6 decimals)
+    uint256 public constant MAX_SUPPLY = 20_000 * 10**6; // 20,000 wRTC (6 decimals)
     
     address public bridge;
     
