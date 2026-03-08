@@ -251,38 +251,48 @@ def cmd_fees(args):
 def cmd_wallet(args):
     """Manage Agent Economy wallets."""
     use_json = getattr(args, 'json', False)
-    
+    dry_run = getattr(args, 'dry_run', False)
+
     if args.action == "create":
         if not args.name:
             print("Error: Please provide a wallet name", file=sys.stderr)
             sys.exit(1)
-        
-        # Generate wallet address from name + timestamp
+
+        # Wallet creation requires server interaction - not implemented in CLI-only mode
+        if not dry_run:
+            print("Error: Wallet creation requires a running RustChain node.", file=sys.stderr)
+            print("This CLI is read-only. Use --dry-run for local simulation only.", file=sys.stderr)
+            print("SIMULATION ONLY: No server call will be made.", file=sys.stderr)
+            return 1
+
+        # Generate wallet address from name + timestamp (SIMULATION ONLY)
         timestamp = str(int(datetime.now().timestamp()))
         wallet_id = hashlib.sha256(f"{args.name}:{timestamp}".encode()).hexdigest()[:16]
         address = f"rtc_{args.name.lower().replace(' ', '_')}_{wallet_id}"
-        
+
         wallet_data = {
             "name": args.name,
             "address": address,
             "created_at": datetime.now().isoformat(),
             "type": "agent" if args.agent else "user",
             "balance_rtc": 0,
-            "x402_enabled": True
+            "x402_enabled": True,
+            "_simulation_only": True
         }
-        
+
         if use_json:
             print(json.dumps(wallet_data, indent=2))
         else:
-            print("=== Wallet Created ===")
+            print("=== SIMULATION ONLY - NO SERVER CALL MADE ===")
             print(f"Name:      {wallet_data['name']}")
             print(f"Address:   {wallet_data['address']}")
             print(f"Type:      {wallet_data['type'].title()}")
             print(f"Created:   {wallet_data['created_at']}")
             print(f"X402:      {'Enabled' if wallet_data['x402_enabled'] else 'Disabled'}")
-            print("\n⚠️  Save this address! It cannot be recovered.")
-        
-        return
+            print("\n⚠️  SIMULATION ONLY: This wallet was NOT created on the server.")
+            print("⚠️  Save this address! It cannot be recovered.")
+
+        return 0
     
     elif args.action == "balance":
         if not args.address:
@@ -332,6 +342,7 @@ def cmd_wallet(args):
 def cmd_agent(args):
     """Manage AI agents in the Agent Economy."""
     use_json = getattr(args, 'json', False)
+    dry_run = getattr(args, 'dry_run', False)
     
     if args.action == "list":
         data = fetch_api("/api/agents")
@@ -387,13 +398,20 @@ def cmd_agent(args):
         if not args.name:
             print("Error: Please provide an agent name", file=sys.stderr)
             sys.exit(1)
-        
+
         wallet = args.wallet or os.environ.get("RUSTCHAIN_WALLET")
         if not wallet:
             print("Error: Please provide a wallet address or set RUSTCHAIN_WALLET", file=sys.stderr)
             sys.exit(1)
-        
-        # Simulate agent registration
+
+        # Agent registration requires server interaction - not implemented in CLI-only mode
+        if not dry_run:
+            print("Error: Agent registration requires a running RustChain node.", file=sys.stderr)
+            print("This CLI is read-only. Use --dry-run for local simulation only.", file=sys.stderr)
+            print("SIMULATION ONLY: No server call will be made.", file=sys.stderr)
+            return 1
+
+        # Simulate agent registration (SIMULATION ONLY)
         agent_id = hashlib.sha256(f"{args.name}:{wallet}".encode()).hexdigest()[:16]
         agent_data = {
             "agent_id": f"agent_{agent_id}",
@@ -402,20 +420,21 @@ def cmd_agent(args):
             "type": args.type or "service",
             "registered_at": datetime.now().isoformat(),
             "x402_enabled": True,
-            "status": "active"
+            "status": "active",
+            "_simulation_only": True
         }
-        
+
         if use_json:
             print(json.dumps(agent_data, indent=2))
         else:
-            print("=== Agent Registered ===")
+            print("=== SIMULATION ONLY - NO SERVER CALL MADE ===")
             print(f"Agent ID:   {agent_data['agent_id']}")
             print(f"Name:       {agent_data['name']}")
             print(f"Owner:      {agent_data['owner_wallet']}")
             print(f"Type:       {agent_data['type'].title()}")
             print(f"Status:     {agent_data['status'].title()}")
-            print(f"\nAgent can now accept x402 payments!")
-        return
+            print(f"\n⚠️  SIMULATION ONLY: This agent was NOT registered on the server.")
+        return 0
     
     parser = argparse.ArgumentParser(prog="rustchain-cli agent")
     parser.print_help()
@@ -424,6 +443,7 @@ def cmd_agent(args):
 def cmd_bounty(args):
     """Manage RustChain bounties."""
     use_json = getattr(args, 'json', False)
+    dry_run = getattr(args, 'dry_run', False)
     
     if args.action == "list":
         data = fetch_api("/api/bounties")
@@ -483,31 +503,39 @@ def cmd_bounty(args):
         if not args.bounty_id:
             print("Error: Please provide a bounty ID", file=sys.stderr)
             sys.exit(1)
-        
+
         wallet = args.wallet or os.environ.get("RUSTCHAIN_WALLET")
         if not wallet:
             print("Error: Please provide a wallet address or set RUSTCHAIN_WALLET", file=sys.stderr)
             sys.exit(1)
-        
-        # Simulate bounty claim submission
+
+        # Bounty claim requires server interaction - not implemented in CLI-only mode
+        if not dry_run:
+            print("Error: Bounty claim requires a running RustChain node.", file=sys.stderr)
+            print("This CLI is read-only. Use --dry-run for local simulation only.", file=sys.stderr)
+            print("SIMULATION ONLY: No server call will be made.", file=sys.stderr)
+            return 1
+
+        # Simulate bounty claim submission (SIMULATION ONLY)
         claim_data = {
             "bounty_id": args.bounty_id,
             "claimant_wallet": wallet,
             "claimed_at": datetime.now().isoformat(),
             "status": "pending_review",
-            "claim_id": hashlib.sha256(f"{args.bounty_id}:{wallet}".encode()).hexdigest()[:12]
+            "claim_id": hashlib.sha256(f"{args.bounty_id}:{wallet}".encode()).hexdigest()[:12],
+            "_simulation_only": True
         }
-        
+
         if use_json:
             print(json.dumps(claim_data, indent=2))
         else:
-            print("=== Bounty Claim Submitted ===")
+            print("=== SIMULATION ONLY - NO SERVER CALL MADE ===")
             print(f"Claim ID:    {claim_data['claim_id']}")
             print(f"Bounty ID:   {claim_data['bounty_id']}")
             print(f"Your Wallet: {claim_data['claimant_wallet']}")
             print(f"Status:      {claim_data['status'].replace('_', ' ').title()}")
-            print(f"\n⏳ Claim is under review. You will be notified when approved.")
-        return
+            print(f"\n⚠️  SIMULATION ONLY: This claim was NOT submitted to the server.")
+        return 0
     
     parser = argparse.ArgumentParser(prog="rustchain-cli bounty")
     parser.print_help()
@@ -516,24 +544,32 @@ def cmd_bounty(args):
 def cmd_x402(args):
     """Handle x402 protocol payments (machine-to-machine)."""
     use_json = getattr(args, 'json', False)
-    
+    dry_run = getattr(args, 'dry_run', False)
+
     if args.action == "pay":
         if not args.recipient or not args.amount:
             print("Error: Please provide recipient and amount", file=sys.stderr)
             sys.exit(1)
-        
+
         wallet = args.wallet or os.environ.get("RUSTCHAIN_WALLET")
         if not wallet:
             print("Error: Please provide a wallet address or set RUSTCHAIN_WALLET", file=sys.stderr)
             sys.exit(1)
-        
+
         try:
             amount = float(args.amount)
         except ValueError:
             print("Error: Amount must be a number", file=sys.stderr)
             sys.exit(1)
-        
-        # Simulate x402 payment
+
+        # x402 payment requires server interaction - not implemented in CLI-only mode
+        if not dry_run:
+            print("Error: x402 payment requires a running RustChain node.", file=sys.stderr)
+            print("This CLI is read-only. Use --dry-run for local simulation only.", file=sys.stderr)
+            print("SIMULATION ONLY: No server call will be made.", file=sys.stderr)
+            return 1
+
+        # Simulate x402 payment (SIMULATION ONLY)
         payment_id = hashlib.sha256(f"{wallet}:{args.recipient}:{amount}".encode()).hexdigest()[:16]
         payment_data = {
             "payment_id": f"x402_{payment_id}",
@@ -543,21 +579,22 @@ def cmd_x402(args):
             "timestamp": datetime.now().isoformat(),
             "status": "completed",
             "protocol": "x402",
-            "fee_rtc": amount * 0.001  # 0.1% fee
+            "fee_rtc": amount * 0.001,  # 0.1% fee
+            "_simulation_only": True
         }
-        
+
         if use_json:
             print(json.dumps(payment_data, indent=2))
         else:
-            print("=== x402 Payment Sent ===")
+            print("=== SIMULATION ONLY - NO SERVER CALL MADE ===")
             print(f"Payment ID: {payment_data['payment_id']}")
             print(f"From:       {payment_data['from']}")
             print(f"To:         {payment_data['to']}")
             print(f"Amount:     {payment_data['amount_rtc']:.2f} RTC")
             print(f"Fee:        {payment_data['fee_rtc']:.4f} RTC")
             print(f"Status:     {payment_data['status'].title()}")
-            print(f"\n✓ Payment completed via x402 protocol")
-        return
+            print(f"\n⚠️  SIMULATION ONLY: This payment was NOT sent on the server.")
+        return 0
     
     elif args.action == "history":
         wallet = args.wallet or os.environ.get("RUSTCHAIN_WALLET")
@@ -657,9 +694,10 @@ def main():
     wallet_parser.add_argument("--json", action="store_true", help="Output as JSON")
     wallet_subparsers = wallet_parser.add_subparsers(dest="action", help="Wallet actions")
     
-    wallet_create = wallet_subparsers.add_parser("create", help="Create a new wallet")
+    wallet_create = wallet_subparsers.add_parser("create", help="Create a new wallet (--dry-run for simulation)")
     wallet_create.add_argument("name", help="Wallet name")
     wallet_create.add_argument("--agent", action="store_true", help="Create agent wallet")
+    wallet_create.add_argument("--dry-run", action="store_true", help="Simulate locally; no server call (SIMULATION ONLY)")
     wallet_create.set_defaults(func=cmd_wallet)
     
     wallet_balance = wallet_subparsers.add_parser("balance", help="Check wallet balance")
@@ -681,10 +719,11 @@ def main():
     agent_info.add_argument("agent_id", help="Agent ID")
     agent_info.set_defaults(func=cmd_agent)
     
-    agent_register = agent_subparsers.add_parser("register", help="Register new agent")
+    agent_register = agent_subparsers.add_parser("register", help="Register new agent (--dry-run for simulation)")
     agent_register.add_argument("name", help="Agent name")
     agent_register.add_argument("--wallet", help="Owner wallet address")
     agent_register.add_argument("--type", choices=["service", "bot", "oracle"], help="Agent type")
+    agent_register.add_argument("--dry-run", action="store_true", help="Simulate locally; no server call (SIMULATION ONLY)")
     agent_register.set_defaults(func=cmd_agent)
 
     # bounty command (Agent Economy)
@@ -700,9 +739,10 @@ def main():
     bounty_info.add_argument("bounty_id", help="Bounty ID")
     bounty_info.set_defaults(func=cmd_bounty)
     
-    bounty_claim = bounty_subparsers.add_parser("claim", help="Claim a bounty")
+    bounty_claim = bounty_subparsers.add_parser("claim", help="Claim a bounty (--dry-run for simulation)")
     bounty_claim.add_argument("bounty_id", help="Bounty ID to claim")
     bounty_claim.add_argument("--wallet", help="Wallet address for reward")
+    bounty_claim.add_argument("--dry-run", action="store_true", help="Simulate locally; no server call (SIMULATION ONLY)")
     bounty_claim.set_defaults(func=cmd_bounty)
 
     # x402 command (Agent Economy payments)
@@ -710,10 +750,11 @@ def main():
     x402_parser.add_argument("--json", action="store_true", help="Output as JSON")
     x402_subparsers = x402_parser.add_subparsers(dest="action", help="x402 actions")
     
-    x402_pay = x402_subparsers.add_parser("pay", help="Send x402 payment")
+    x402_pay = x402_subparsers.add_parser("pay", help="Send x402 payment (--dry-run for simulation)")
     x402_pay.add_argument("recipient", help="Recipient wallet/agent")
     x402_pay.add_argument("amount", help="Amount in RTC")
     x402_pay.add_argument("--wallet", help="Sender wallet address")
+    x402_pay.add_argument("--dry-run", action="store_true", help="Simulate locally; no server call (SIMULATION ONLY)")
     x402_pay.set_defaults(func=cmd_x402)
     
     x402_history = x402_subparsers.add_parser("history", help="Payment history")
@@ -734,7 +775,9 @@ def main():
     if args.node:
         os.environ["RUSTCHAIN_NODE"] = args.node
 
-    args.func(args)
+    result = args.func(args)
+    if result is not None:
+        sys.exit(result)
 
 if __name__ == "__main__":
     main()
