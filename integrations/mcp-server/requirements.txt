@@ -1,0 +1,10 @@
+# RustChain MCP Server Dependencies
+
+# MCP SDK
+mcp>=1.0.0
+
+# Async HTTP client
+aiohttp>=3.9.0
+
+# Optional: for enhanced JSON handling
+orjson>=3.9.0
