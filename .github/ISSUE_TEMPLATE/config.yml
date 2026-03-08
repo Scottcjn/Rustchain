@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Bounty Claim or Proof Submission
+    url: https://github.com/Scottcjn/rustchain-bounties/issues/new?template=bounty-proof.yml
+    about: Use rustchain-bounties for completed work, marketing proof, install reports, merged PR payout requests, and other claim evidence.
+  - name: Wallet Registration or Payout Target
+    url: https://github.com/Scottcjn/rustchain-bounties/issues/new?template=wallet-registration.yml
+    about: Register your RTC wallet or payout target in rustchain-bounties, not in Rustchain issues.
+  - name: Create a New RTC Bounty
+    url: https://github.com/Scottcjn/rustchain-bounties/issues/new?template=bounty.yml
+    about: Open new bounty definitions in rustchain-bounties.

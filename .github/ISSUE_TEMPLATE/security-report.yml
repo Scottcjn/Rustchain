@@ -1,0 +1,84 @@
+name: Security Report
+description: Report a security, abuse, or payout-integrity issue in RustChain
+title: "[Security] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Report a Security Issue
+        Use this form for security-sensitive bugs, abuse vectors, payout integrity problems, or consensus bypasses.
+
+        Do **not** use this form for bounty claims, wallet registration, or generic support.
+        Do **not** paste private keys, admin keys, tokens, or live secrets into this issue.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - API / request validation
+        - Wallet / transfer / signing
+        - Miner enrollment / attestation
+        - Consensus / fleet detection
+        - Explorer / public data exposure
+        - Infrastructure / deployment
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Low
+        - Medium
+        - High
+        - Critical
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: What can an attacker, abusive miner, or malicious client accomplish?
+      placeholder: A malformed payload can trigger a 500 and leak internal behavior...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest reproducible example you can.
+      placeholder: |
+        1. Send POST /attest/submit with ...
+        2. Observe ...
+        3. Expected ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: affected_versions
+    attributes:
+      label: Affected versions / environments
+      description: Include commit, branch, deployed node, or release if known.
+      placeholder: main at commit abc123, node 50.28.86.131, v1.0.0-miner
+
+  - type: textarea
+    id: mitigation
+    attributes:
+      label: Suggested mitigation
+      description: Optional, but useful if you already know the likely fix.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I did not include secrets, private keys, or unpublished credentials.
+          required: true
+        - label: This is not a bounty claim or wallet registration request.
+          required: true
