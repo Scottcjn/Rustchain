@@ -108,6 +108,34 @@ except ImportError as _e:
     print(f"[INIT] Warthog verification not available: {_e}")
 
 app = Flask(__name__)
+
+# Global error handlers for unhandled exceptions
+@app.errorhandler(500)
+def handle_500(e):
+    """Catch-all handler for 500 errors - return proper JSON instead of HTML."""
+    print(f"[ERROR] Unhandled exception: {e}")
+    import traceback
+    traceback.print_exc()
+    return jsonify({
+        "ok": False,
+        "error": "internal_server_error",
+        "message": "An internal error occurred. Please try again later.",
+        "code": "INTERNAL_ERROR"
+    }), 500
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Catch-all handler for all unhandled exceptions."""
+    print(f"[ERROR] Unhandled exception: {e}")
+    import traceback
+    traceback.print_exc()
+    return jsonify({
+        "ok": False,
+        "error": "internal_server_error", 
+        "message": str(e),
+        "code": "INTERNAL_ERROR"
+    }), 500
+
 # Supports running from repo `node/` dir or a flat deployment directory (e.g. /root/rustchain).
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(_BASE_DIR, "..")) if os.path.basename(_BASE_DIR) == "node" else _BASE_DIR
@@ -1626,6 +1654,10 @@ ATTEST_IP_WINDOW = 3600  # 1 hour window
 
 def check_ip_rate_limit(client_ip, miner_id):
     """Rate limit attestations per source IP using SQLite (shared across workers)."""
+    # Guard against None miner_id
+    if not miner_id:
+        return True, "ok"
+        
     now = int(time.time())
     cutoff = now - ATTEST_IP_WINDOW
     
