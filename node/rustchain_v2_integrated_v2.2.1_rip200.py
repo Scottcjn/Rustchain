@@ -107,6 +107,15 @@ except ImportError as _e:
     HAVE_WARTHOG = False
     print(f"[INIT] Warthog verification not available: {_e}")
 
+# RIP-305: Cross-Chain Airdrop (standalone module)
+try:
+    from airdrop_v2 import AirdropV2, init_airdrop_routes
+    HAVE_AIRDROP = True
+    print("[RIP-305] Airdrop V2 module loaded")
+except ImportError as _e:
+    HAVE_AIRDROP = False
+    print(f"[RIP-305] Airdrop V2 module not available: {_e}")
+
 app = Flask(__name__)
 # Supports running from repo `node/` dir or a flat deployment directory (e.g. /root/rustchain).
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -808,6 +817,15 @@ if HAVE_REWARDS:
             print("[RIP-201] Fleet immune endpoints registered")
         except Exception as e:
             print(f"[RIP-201] Failed to register fleet endpoints: {e}")
+
+# RIP-305: Airdrop V2 endpoints
+if HAVE_AIRDROP:
+    try:
+        airdrop_instance = AirdropV2()
+        init_airdrop_routes(app, airdrop_instance, DB_PATH)
+        print("[RIP-305] Airdrop V2 endpoints registered")
+    except Exception as e:
+        print(f"[RIP-305] Failed to register airdrop endpoints: {e}")
 
 def init_db():
     """Initialize all database tables"""
