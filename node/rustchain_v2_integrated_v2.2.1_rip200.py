@@ -225,6 +225,20 @@ def _attest_string_list(value):
 
 def _validate_attestation_payload_shape(data):
     """Reject malformed attestation payload shapes before normalization."""
+    # Handle edge cases that should return 400, not 500
+    if data is None:
+        return _attest_field_error("INVALID_JSON", "Request body must be a valid JSON object")
+    
+    if not isinstance(data, dict):
+        return _attest_field_error("INVALID_JSON", "Request body must be a JSON object")
+    
+    # Reject empty object - missing required fields
+    if not data:
+        return _attest_field_error(
+            "MISSING_MINER",
+            "Field 'miner' or 'miner_id' must be a non-empty identifier"
+        )
+    
     for field_name, code in (
         ("device", "INVALID_DEVICE"),
         ("signals", "INVALID_SIGNALS"),
