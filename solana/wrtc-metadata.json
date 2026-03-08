@@ -1,0 +1,24 @@
+{
+  "name": "Wrapped RTC",
+  "symbol": "wRTC",
+  "description": "Wrapped RustChain Token (wRTC) on Solana — cross-chain bridge asset for the RIP-305 airdrop. Represents locked RTC tokens bridged to Solana via the admin-controlled Phase 1 bridge.",
+  "image": "https://rustchain.org/assets/wrtc-logo.png",
+  "external_url": "https://rustchain.org",
+  "attributes": [
+    { "trait_type": "Protocol", "value": "RIP-305" },
+    { "trait_type": "Chain", "value": "Solana" },
+    { "trait_type": "Decimals", "value": "6" },
+    { "trait_type": "Total Supply", "value": "30000" },
+    { "trait_type": "Mint Authority", "value": "Elyan Labs (Phase 1)" },
+    { "trait_type": "Bridge", "value": "RustChain <> Solana" }
+  ],
+  "properties": {
+    "files": [
+      {
+        "uri": "https://rustchain.org/assets/wrtc-logo.png",
+        "type": "image/png"
+      }
+    ],
+    "category": "fungible"
+  }
+}
