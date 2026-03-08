@@ -302,7 +302,7 @@ def cmd_wallet(args):
                 print("Error: Please provide a wallet address or set RUSTCHAIN_WALLET", file=sys.stderr)
                 sys.exit(1)
         
-        data = fetch_api(f"/api/wallet/{args.address}")
+        data = fetch_api(f"/wallet/balance?miner_id={args.address}")
         
         if use_json:
             print(json.dumps(data, indent=2))
@@ -310,7 +310,7 @@ def cmd_wallet(args):
         
         print(f"=== Wallet Balance ===")
         print(f"Address:  {args.address}")
-        print(f"RTC:      {data.get('balance_rtc', data.get('balance', 0))}")
+        print(f"RTC:      {data.get('amount_rtc', data.get('balance_rtc', data.get('balance', 0)))}")
         print(f"USD:      ${data.get('balance_usd', 0):.2f}")
         print(f"Pending:  {data.get('pending_rtc', 0)} RTC")
         return
