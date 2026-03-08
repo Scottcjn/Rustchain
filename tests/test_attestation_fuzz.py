@@ -285,3 +285,74 @@ def test_attest_submit_mutation_regression_no_unhandled_exceptions(client):
         payload = _mutate_payload(rng)
         response = client.post("/attest/submit", json=payload)
         assert response.status_code < 500, f"case={index} payload={payload!r}"
+
+
+# =============================================================================
+# Issue #1147 Regression Tests - 500 Crash Fix
+# =============================================================================
+
+@pytest.mark.parametrize("malformed_fingerprint", [
+    # Non-string bridge_type that could cause AttributeError
+    {"checks": {"anti_emulation": {"passed": True, "data": {"vm_indicators": []}}}, "bridge_type": None},
+    {"checks": {"anti_emulation": {"passed": True, "data": {"vm_indicators": []}}}, "bridge_type": 123},
+    {"checks": {"anti_emulation": {"passed": True, "data": {"vm_indicators": []}}}, "bridge_type": {"nested": "dict"}},
+    # Non-string device_arch that could cause AttributeError on .lower()
+    {"checks": {"anti_emulation": {"passed": True, "data": {"vm_indicators": []}}}, "device_arch": None},
+    {"checks": {"anti_emulation": {"passed": True, "data": {"vm_indicators": []}}}, "device_arch": 123},
+    # Non-list x86_features that could cause issues
+    {"checks": {
+        "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
+        "simd_identity": {"passed": True, "data": {"x86_features": "not-a-list"}}
+    }},
+    # Empty/malformed checks
+    {"checks": None},
+    {},
+], ids=[
+    "bridge_type_none", "bridge_type_int", "bridge_type_dict",
+    "device_arch_none", "device_arch_int",
+    "x86_features_not_list",
+    "checks_none", "checks_empty"
+])
+def test_validate_fingerprint_data_handles_malformed_inputs_no_crash(malformed_fingerprint):
+    """
+    FIX #1147: validate_fingerprint_data must handle malformed inputs gracefully
+    without raising exceptions that cause 500 errors.
+    """
+    # Should not raise, should return (False, reason)
+    passed, reason = integrated_node.validate_fingerprint_data(malformed_fingerprint)
+    assert isinstance(passed, bool)
+    assert isinstance(reason, str)
+    # Malformed inputs should fail validation
+    assert passed is False
+
+
+def test_attest_submit_no_500_on_malformed_fingerprint(client):
+    """
+    FIX #1147: The /attest/submit endpoint must never return 500,
+    even with malformed fingerprint payloads.
+    """
+    payload = _base_payload()
+    # Inject malformed fingerprint with non-string bridge_type
+    payload["fingerprint"] = {
+        "checks": {"anti_emulation": {"passed": True, "data": {"vm_indicators": []}}},
+        "bridge_type": None  # This would previously cause AttributeError
+    }
+    
+    response = client.post("/attest/submit", json=payload)
+    
+    # Should NEVER be 500 - should be 400/422 for bad input or 200 for accepted
+    assert response.status_code < 500, f"Got 500 error with malformed fingerprint"
+    data = response.get_json()
+    assert "ok" in data or "error" in data
+
+
+def test_attest_submit_no_500_on_edge_case_architectures(client):
+    """
+    FIX #1147: Edge case device architectures should not cause crashes.
+    """
+    payload = _base_payload()
+    # Test various non-string arch values
+    for bad_arch in [None, 123, [], {}]:
+        payload["device"]["device_arch"] = bad_arch
+        response = client.post("/attest/submit", json=payload)
+        assert response.status_code < 500, f"Got 500 error with device_arch={bad_arch!r}"
