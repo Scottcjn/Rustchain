@@ -1437,6 +1437,9 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     Handles BOTH formats:
     - New Python format: {"checks": {"clock_drift": {"passed": true, "data": {...}}}}
     - C miner format: {"checks": {"clock_drift": true}}
+    
+    FIX #1147: Added defensive type checking for all nested access to prevent crashes
+    from malformed payloads.
     """
     if not fingerprint:
         # FIX #305: Missing fingerprint data is a validation failure
@@ -1455,8 +1458,12 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     # FIX 2026-02-28: PowerPC/legacy miners may not support clock_drift
     # (time.perf_counter_ns requires Python 3.7+, old Macs run Python 2.x)
     # For known vintage architectures, relax clock_drift if anti_emulation passes.
-    claimed_arch_lower = (claimed_device.get("device_arch") or
-                         claimed_device.get("arch", "modern")).lower()
+    # FIX #1147: Defensive type checking for claimed_arch_lower
+    claimed_arch = (claimed_device.get("device_arch") or
+                   claimed_device.get("arch", "modern"))
+    if not isinstance(claimed_arch, str):
+        claimed_arch = "modern"
+    claimed_arch_lower = claimed_arch.lower()
     vintage_relaxed_archs = {"g4", "g5", "g3", "powerpc", "power macintosh",
                              "powerpc g4", "powerpc g5", "powerpc g3",
                              "power8", "power9", "68k", "m68k"}
@@ -1470,7 +1477,10 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
 
     # RIP-304: Console miners use Pico bridge fingerprinting (ctrl_port_timing
     # replaces clock_drift; anti_emulation still required via timing CV)
+    # FIX #1147: Ensure bridge_type is a string
     bridge_type = fingerprint.get("bridge_type", "")
+    if not isinstance(bridge_type, str):
+        bridge_type = ""
     if is_console or bridge_type == "pico_serial":
         # Console: accept ctrl_port_timing OR anti_emulation
         # Pico bridge provides its own set of checks
@@ -1573,11 +1583,26 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
             return False, "clock_drift_failed_bool"
 
     # ── PHASE 2: Cross-validate device claims against fingerprint ──
-    claimed_arch = (claimed_device.get("device_arch") or
-                   claimed_device.get("arch", "modern")).lower()
+    # FIX #1147: Defensive type checking for claimed_arch
+    claimed_arch = claimed_device.get("device_arch") or claimed_device.get("arch", "modern")
+    if not isinstance(claimed_arch, str):
+        claimed_arch = "modern"
+    claimed_arch = claimed_arch.lower()
 
     # If claiming PowerPC, check for x86-specific signals in fingerprint
     if claimed_arch in POWERPC_ARCHES:
+        # FIX #1147: Check for x86 SIMD features on PowerPC claims (defensive type checking)
+        simd_check = checks.get("simd_identity")
+        if isinstance(simd_check, dict):
+            simd_data = simd_check.get("data", {})
+            if not isinstance(simd_data, dict):
+                simd_data = {}
+            x86_features = simd_data.get("x86_features", [])
+            if not isinstance(x86_features, list):
+                x86_features = []
+            if x86_features:
+                print(f"[FINGERPRINT] REJECT: claims {claimed_arch} but has x86 SIMD: {x86_features}")
+                return False, f"arch_mismatch:claims_{claimed_arch}_has_x86_simd"
         if not _powerpc_cpu_brand_matches(claimed_device):
             print(f"[FINGERPRINT] REJECT: claims {claimed_arch} but CPU brand does not match PowerPC")
             return False, f"cpu_brand_mismatch:claims_{claimed_arch}"
@@ -2035,6 +2060,24 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
 @app.route('/attest/submit', methods=['POST'])
 def submit_attestation():
     """Submit hardware attestation with fingerprint validation"""
+    try:
+        return _submit_attestation_impl()
+    except Exception as e:
+        # FIX #1147: Catch all unhandled exceptions to prevent 500 crashes
+        # Log the error for debugging but return a graceful error response
+        import traceback
+        app.logger.error(f"[ATTEST/submit] Unhandled exception: {e}")
+        app.logger.error(f"[ATTEST/submit] Traceback: {traceback.format_exc()}")
+        return jsonify({
+            "ok": False,
+            "error": "internal_error",
+            "message": "Attestation submission failed due to an internal error",
+            "code": "INTERNAL_ERROR"
+        }), 500
+
+
+def _submit_attestation_impl():
+    """Internal implementation of attest/submit with proper error handling"""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({
