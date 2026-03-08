@@ -1,19 +1,30 @@
-openapi: 3.0.0
+openapi: 3.0.3
 info:
   title: RustChain Node API
-  description: Public API documentation for the RustChain Node endpoints.
-  version: 1.0.0
+  description: |
+    REST API for RustChain blockchain node.
+    
+    RustChain is a Proof-of-Antiquity blockchain that rewards vintage hardware.
+  version: 2.2.1-rip200
+  contact:
+    name: RustChain
+    url: https://rustchain.org
+  license:
+    name: MIT
 servers:
-  - url: https://rustchain.org
-    description: Public Live Node
+  - url: https://50.28.86.131
+    description: Mainnet node
 paths:
   /health:
     get:
       summary: Node health check
-      description: Returns health status, uptime, and version.
+      description: Returns the health status of the node
+      operationId: getHealth
+      tags:
+        - Node
       responses:
         '200':
-          description: OK
+          description: Node is healthy
           content:
             application/json:
               schema:
@@ -21,48 +32,42 @@ paths:
                 properties:
                   ok:
                     type: boolean
-                  uptime_s:
-                    type: integer
+                    description: Whether node is operational
                   version:
                     type: string
-                  backup_age_hours:
-                    type: number
+                    description: Node software version
+                  uptime_s:
+                    type: integer
+                    description: Node uptime in seconds
                   db_rw:
                     type: boolean
+                    description: Database read/write status
+                  backup_age_hours:
+                    type: number
+                    description: Age of last backup in hours
                   tip_age_slots:
                     type: integer
-              example:
-                ok: true
-                uptime_s: 58480
-                version: "2.2.1-rip200"
-                backup_age_hours: 13.65
-                db_rw: true
-                tip_age_slots: 0
-
+                    description: Age of chain tip in slots
   /ready:
     get:
       summary: Readiness probe
-      description: Indicates if the node is fully synced and ready to serve traffic.
+      description: Check if node is ready to accept requests
+      operationId: getReady
+      tags:
+        - Node
       responses:
         '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ready:
-                    type: boolean
-              example:
-                ready: true
-
+          description: Node is ready
   /epoch:
     get:
-      summary: Current epoch status
-      description: Returns current epoch, slot, and enrolled miners.
+      summary: Current epoch information
+      description: Returns current epoch details including slot and enrolled miners
+      operationId: getEpoch
+      tags:
+        - Epoch
       responses:
         '200':
-          description: OK
+          description: Current epoch info
           content:
             application/json:
               schema:
@@ -70,31 +75,175 @@ paths:
                 properties:
                   epoch:
                     type: integer
+                    description: Current epoch number
                   slot:
                     type: integer
-                  enrolled_miners:
-                    type: integer
+                    description: Current slot within epoch
                   blocks_per_epoch:
                     type: integer
+                    description: Number of blocks per epoch
                   epoch_pot:
                     type: number
+                    description: Epoch reward pot (RTC)
+                  enrolled_miners:
+                    type: integer
+                    description: Number of enrolled miners
                   total_supply_rtc:
-                    type: number
-              example:
-                epoch: 91
-                slot: 13227
-                enrolled_miners: 20
-                blocks_per_epoch: 144
-                epoch_pot: 1.5
-                total_supply_rtc: 8388608
-
-  /api/miners:
+                    type: integer
+                    description: Total RTC supply
+  /api/stats:
     get:
-      summary: Active miners
-      description: Returns list of active miners with attestation data.
+      summary: Network statistics
+      description: Returns comprehensive network statistics
+      operationId: getNetworkStats
+      tags:
+        - Network
       responses:
         '200':
-          description: OK
+          description: Network statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    description: Node software version
+                  chain_id:
+                    type: string
+                    description: Chain identifier
+                  epoch:
+                    type: integer
+                  block_time:
+                    type: integer
+                    description: Block time in seconds
+                  total_miners:
+                    type: integer
+                    description: Total number of miners
+                  total_balance:
+                    type: number
+                    description: Total RTC balance
+                  pending_withdrawals:
+                    type: integer
+                    description: Number of pending withdrawals
+                  features:
+                    type: array
+                    items:
+                      type: string
+                    description: Enabled network features
+                  security:
+                    type: array
+                    items:
+                      type: string
+                    description: Security features enabled
+  /api/hall_of_fame:
+    get:
+      summary: Hall of Fame leaderboard
+      description: Returns the Hall of Fame leaderboard with 5 categories
+      operationId: getHallOfFame
+      tags:
+        - Network
+      responses:
+        '200':
+          description: Hall of Fame data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories:
+                    type: object
+                    properties:
+                      ancient_iron:
+                        type: array
+                        items:
+                          type: object
+                        description: Oldest hardware
+                      exotic_arch:
+                        type: array
+                        items:
+                          type: object
+                        description: Most exotic architectures
+                      fleet_commanders:
+                        type: array
+                        items:
+                          type: object
+                        description: Most machines operated
+                      most_dedicated:
+                        type: array
+                        items:
+                          type: object
+                        description: Most epochs participated
+                      top_earners:
+                        type: array
+                        items:
+                          type: object
+                        description: Highest RTC balances
+                  epoch:
+                    type: object
+                    description: Current epoch info
+                  generated_at:
+                    type: integer
+                    description: Timestamp of generation
+                  stats:
+                    type: object
+                    description: Overall statistics
+                  spotlight:
+                    type: object
+                    description: Featured miner
+  /api/fee_pool:
+    get:
+      summary: Fee pool statistics
+      description: Returns RIP-301 fee pool statistics (fees recycled to mining pool)
+      operationId: getFeePool
+      tags:
+        - Network
+      responses:
+        '200':
+          description: Fee pool statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rip:
+                    type: integer
+                    description: RIP number (301)
+                  description:
+                    type: string
+                  total_fees_collected_rtc:
+                    type: number
+                    description: Total fees collected
+                  total_fee_events:
+                    type: integer
+                    description: Number of fee events
+                  withdrawal_fee_rtc:
+                    type: number
+                    description: Withdrawal fee
+                  destination:
+                    type: string
+                    description: Fee destination
+                  destination_balance_rtc:
+                    type: number
+                    description: Destination balance
+                  fees_by_source:
+                    type: object
+                    description: Fees grouped by source
+                  recent_events:
+                    type: array
+                    items:
+                      type: object
+                    description: Recent fee events
+  /api/miners:
+    get:
+      summary: List active miners
+      description: Returns list of all active miners with their hardware details
+      operationId: getMiners
+      tags:
+        - Miners
+      responses:
+        '200':
+          description: List of active miners
           content:
             application/json:
               schema:
@@ -102,126 +251,48 @@ paths:
                 items:
                   type: object
                   properties:
-                    miner_id:
+                    miner:
                       type: string
-                    attested:
-                      type: boolean
-              example:
-                - miner_id: "m_12345"
-                  attested: true
-
-  /api/stats:
-    get:
-      summary: Network statistics
-      description: Returns overall network statistics.
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  total_blocks:
-                    type: integer
-                  total_transactions:
-                    type: integer
-              example:
-                total_blocks: 150000
-                total_transactions: 1205000
-
-  /api/hall_of_fame:
-    get:
-      summary: Hall of Fame leaderboard
-      description: Leaderboard for 5 categories of miners/participants.
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  top_miners:
-                    type: array
-                    items:
-                      type: object
-              example:
-                top_miners: []
-
-  /api/fee_pool:
-    get:
-      summary: Fee pool statistics
-      description: RIP-301 fee pool statistics (fees recycled to mining pool).
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  description:
-                    type: string
-                  destination:
-                    type: string
-                  destination_balance_rtc:
-                    type: number
-                  rip:
-                    type: integer
-                  total_fee_events:
-                    type: integer
-                  total_fees_collected_rtc:
-                    type: number
-                  withdrawal_fee_rtc:
-                    type: number
-              example:
-                description: "Fee Pool Statistics"
-                destination: "founder_community"
-                destination_balance_rtc: 83246.13
-                rip: 301
-                total_fee_events: 0
-                total_fees_collected_rtc: 0
-                withdrawal_fee_rtc: 0.01
-
-  /balance:
-    get:
-      summary: Miner balance lookup
-      description: Returns the RTC balance for a specific miner ID.
-      parameters:
-        - name: miner_id
-          in: query
-          required: true
-          schema:
-            type: string
-          description: Miner ID or public key
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  balance:
-                    type: number
-              example:
-                balance: 150.5
-
+                      description: Miner identifier/name
+                    antiquity_multiplier:
+                      type: number
+                      description: Hardware antiquity multiplier
+                    device_arch:
+                      type: string
+                      description: CPU architecture
+                    device_family:
+                      type: string
+                      description: Device family
+                    hardware_type:
+                      type: string
+                      description: Type of hardware
+                    entropy_score:
+                      type: number
+                      description: Entropy score
+                    first_attest:
+                      type: string
+                      nullable: true
+                      description: First attestation timestamp
+                    last_attest:
+                      type: integer
+                      description: Last attestation timestamp
   /lottery/eligibility:
     get:
-      summary: Epoch eligibility check
-      description: Checks if a miner is eligible for the current epoch block lottery.
+      summary: Check lottery eligibility
+      description: Check if a miner is eligible for the current lottery
+      operationId: checkEligibility
+      tags:
+        - Lottery
       parameters:
         - name: miner_id
           in: query
           required: true
           schema:
             type: string
-          description: Miner ID or public key
+          description: Miner wallet ID
       responses:
         '200':
-          description: OK
+          description: Eligibility status
           content:
             application/json:
               schema:
@@ -229,118 +300,227 @@ paths:
                 properties:
                   eligible:
                     type: boolean
-                  reason:
-                    type: string
-                  rotation_size:
-                    type: integer
+                    description: Whether miner is eligible
                   slot:
                     type: integer
-              example:
-                eligible: false
-                reason: "not_attested"
-                rotation_size: 20
-                slot: 13227
-
+                    description: Assigned slot if eligible
+                  slot_producer:
+                    type: string
+                    nullable: true
+                    description: Slot producer
+                  rotation_size:
+                    type: integer
+                    description: Current rotation size
+                  reason:
+                    type: string
+                    description: Reason if not eligible
+  /wallet/balance:
+    get:
+      summary: Get wallet balance
+      description: Get RTC balance for a wallet address
+      operationId: getBalance
+      tags:
+        - Wallet
+      parameters:
+        - name: miner_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Miner wallet ID
+      responses:
+        '200':
+          description: Wallet balance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  balance:
+                    type: number
+                    description: Wallet balance in RTC
+                  miner_id:
+                    type: string
+                    description: Miner ID
+  /attest/submit:
+    post:
+      summary: Submit attestation
+      description: Submit hardware attestation to the network
+      operationId: submitAttestation
+      tags:
+        - Attestation
+      parameters:
+        - name: X-Admin-Key
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Admin key for authenticated requests
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                miner_id:
+                  type: string
+                  description: Miner identifier
+                signature:
+                  type: string
+                  description: Hardware attestation signature
+                payload:
+                  type: object
+                  description: Attestation payload data
+      responses:
+        '200':
+          description: Attestation submitted successfully
+        '400':
+          description: Invalid attestation data
+        '401':
+          description: Unauthorized
+  /wallet/transfer/signed:
+    post:
+      summary: Transfer RTC (Ed25519 signed)
+      description: Transfer RTC between wallets using Ed25519 signature
+      operationId: transferSigned
+      tags:
+        - Wallet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - from
+                - to
+                - amount
+                - private_key
+              properties:
+                from:
+                  type: string
+                  description: Source wallet address
+                to:
+                  type: string
+                  description: Destination wallet address
+                amount:
+                  type: number
+                  description: Amount to transfer in RTC
+                private_key:
+                  type: string
+                  description: Ed25519 private key for signing
+      responses:
+        '200':
+          description: Transfer successful
+        '400':
+          description: Invalid transfer request
+  /wallet/transfer:
+    post:
+      summary: Transfer RTC (Admin)
+      description: Admin transfer requiring admin key authentication
+      operationId: transferAdmin
+      tags:
+        - Wallet
+      parameters:
+        - name: X-Admin-Key
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Admin key for authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - from
+                - to
+                - amount
+              properties:
+                from:
+                  type: string
+                  description: Source wallet address
+                to:
+                  type: string
+                  description: Destination wallet address
+                amount:
+                  type: number
+                  description: Amount to transfer in RTC
+      responses:
+        '200':
+          description: Transfer successful
+        '401':
+          description: Unauthorized - invalid admin key
+        '403':
+          description: Forbidden - insufficient permissions
+  /withdraw/request:
+    post:
+      summary: Request withdrawal
+      description: Request a withdrawal of RTC to external wallet
+      operationId: requestWithdrawal
+      tags:
+        - Wallet
+      parameters:
+        - name: X-Admin-Key
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Admin key for authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - miner_id
+                - amount
+              properties:
+                miner_id:
+                  type: string
+                  description: Miner wallet ID
+                amount:
+                  type: number
+                  description: Amount to withdraw in RTC
+      responses:
+        '200':
+          description: Withdrawal request submitted
+        '400':
+          description: Invalid withdrawal request
+        '401':
+          description: Unauthorized
   /explorer:
     get:
       summary: Block explorer page
-      description: Returns the HTML page for the block explorer.
+      description: Returns the block explorer HTML page
+      operationId: getExplorer
+      tags:
+        - Explorer
       responses:
         '200':
-          description: HTML page returned
+          description: HTML page
           content:
             text/html:
               schema:
                 type: string
-              example: "<html>...</html>"
-
-  /attest/submit:
-    post:
-      summary: Submit hardware attestation
-      description: Submit an attestation proof. Requires X-Admin-Key.
-      security:
-        - AdminKeyAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                miner_id:
-                  type: string
-                proof:
-                  type: string
-      responses:
-        '200':
-          description: Attestation accepted
-
-  /wallet/transfer/signed:
-    post:
-      summary: Ed25519 signed transfer
-      description: Submit a signed transfer transaction. Requires X-Admin-Key.
-      security:
-        - AdminKeyAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                tx_payload:
-                  type: string
-                signature:
-                  type: string
-      responses:
-        '200':
-          description: Transfer accepted
-
-  /wallet/transfer:
-    post:
-      summary: Admin transfer
-      description: Transfer funds directly as admin. Requires X-Admin-Key.
-      security:
-        - AdminKeyAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                to:
-                  type: string
-                amount:
-                  type: number
-      responses:
-        '200':
-          description: Transfer executed
-
-  /withdraw/request:
-    post:
-      summary: Withdrawal request
-      description: Request a withdrawal. Requires X-Admin-Key.
-      security:
-        - AdminKeyAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                miner_id:
-                  type: string
-                amount:
-                  type: number
-      responses:
-        '200':
-          description: Withdrawal requested
-
-components:
-  securitySchemes:
-    AdminKeyAuth:
-      type: apiKey
-      in: header
-      name: X-Admin-Key
+tags:
+  - name: Node
+    description: Node-level operations
+  - name: Epoch
+    description: Epoch information
+  - name: Network
+    description: Network statistics and leaderboards
+  - name: Miners
+    description: Miner operations
+  - name: Lottery
+    description: Lottery and eligibility
+  - name: Wallet
+    description: Wallet operations
+  - name: Attestation
+    description: Attestation operations
+  - name: Explorer
+    description: Block explorer
