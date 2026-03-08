@@ -1,0 +1,22 @@
+[project]
+name = "rustchain-mcp"
+version = "0.1.0"
+description = "MCP Server for RustChain blockchain"
+authors = [{name = "sososonia-cyber"}]
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[project.scripts]
+rustchain-mcp = "rustchain_mcp:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
