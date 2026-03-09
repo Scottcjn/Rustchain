@@ -1,11 +1,12 @@
 /**
- * RustChain Wallet - Popup Script
- * 
+ * RustChain Wallet - Popup Script (Phase 2)
+ *
  * Handles UI interactions for the wallet popup including:
  * - Wallet creation and selection
  * - Balance display
- * - Send/receive/sign flows
+ * - Send/receive/sign flows with MetaMask Snap fallback
  * - Transaction history
+ * - MetaMask Snap detection and integration
  */
 
 // DOM Elements
@@ -34,22 +35,68 @@ const tabPanels = document.querySelectorAll('.tab-panel');
 // State
 let currentWallet = null;
 let wallets = [];
+let snapDetected = false;
+let snapAvailable = false;
+let useSnapFallback = false;
 
 /**
  * Initialize the popup
  */
 async function init() {
+  await detectMetaMaskSnap();
   await loadWallets();
   setupEventListeners();
   setupTabNavigation();
   setupModalHandlers();
-  
+
   // Listen for balance updates
   chrome.runtime.onMessage.addListener((message) => {
     if (message.type === 'BALANCE_UPDATED' && message.payload.address === currentWallet?.address) {
       updateBalanceDisplay(message.payload.balance);
     }
   });
+}
+
+/**
+ * Detect MetaMask Snap availability
+ * Phase 2: Snap integration with fallback behavior
+ */
+async function detectMetaMaskSnap() {
+  try {
+    // Check if MetaMask is installed
+    if (typeof window.ethereum !== 'undefined') {
+      try {
+        // Check if RustChain Snap is installed
+        const snapId = 'npm:rustchain-snap';
+        const snapResult = await window.ethereum.request({
+          method: 'wallet_getSnaps',
+        });
+
+        if (snapResult && snapResult[snapId]) {
+          snapDetected = true;
+          snapAvailable = true;
+          console.log('[RustChain] MetaMask Snap detected:', snapId);
+        }
+      } catch (e) {
+        // Snap not installed or not accessible
+        console.log('[RustChain] Snap not available:', e.message);
+      }
+    }
+  } catch (error) {
+    console.error('[RustChain] Snap detection error:', error);
+  }
+
+  // Determine if we should use Snap fallback
+  // Use Snap if: detected AND user prefers it OR extension has no wallets
+  useSnapFallback = snapAvailable && wallets.length === 0;
+}
+
+/**
+ * Check if Snap should be used for operations
+ * @returns {boolean}
+ */
+function shouldUseSnap() {
+  return useSnapFallback && snapAvailable;
 }
 
 /**
@@ -229,45 +276,118 @@ async function selectWallet(address) {
 }
 
 /**
- * Send transaction
+ * Send transaction with Snap fallback
+ * Phase 2: Integrated send flow with clear fallback behavior
  */
 async function sendTransaction() {
   const recipient = document.getElementById('recipientAddress').value.trim();
   const amount = document.getElementById('sendAmount').value;
   const memo = document.getElementById('sendMemo').value.trim();
-  
+
   if (!recipient || !amount) {
     showNotification('Please fill in all required fields', 'error');
     return;
   }
-  
+
+  // Validate recipient address
+  if (!recipient.endsWith('RTC')) {
+    showNotification('Invalid recipient address (must end with RTC)', 'error');
+    return;
+  }
+
+  // Validate amount
+  const amountNum = parseFloat(amount);
+  if (isNaN(amountNum) || amountNum <= 0) {
+    showNotification('Invalid amount', 'error');
+    return;
+  }
+
   try {
-    const response = await sendMessage({
-      type: 'CREATE_TRANSACTION',
-      payload: {
-        from: currentWallet.address,
+    // Try Snap first if available (fallback path)
+    if (shouldUseSnap() && typeof window.ethereum !== 'undefined') {
+      await sendTransactionViaSnap(recipient, amount, memo);
+    } else {
+      // Use extension's background script (primary path)
+      await sendTransactionViaExtension(recipient, amount, memo);
+    }
+  } catch (error) {
+    showNotification('Error: ' + error.message, 'error');
+  }
+}
+
+/**
+ * Send transaction via MetaMask Snap (fallback path)
+ * @param {string} recipient
+ * @param {string} amount
+ * @param {string} memo
+ */
+async function sendTransactionViaSnap(recipient, amount, memo) {
+  try {
+    const response = await window.ethereum.request({
+      method: 'rustchain_sendTransaction',
+      params: [{
+        from: currentWallet?.address,
         to: recipient,
-        amount,
+        value: amount,
         memo
-      }
+      }]
     });
-    
-    if (response.success) {
+
+    if (response && response.txHash) {
       closeModal(sendModal);
-      showNotification('Transaction submitted! Hash: ' + truncateAddress(response.txHash), 'success');
-      
+      showNotification('Transaction submitted via Snap! Hash: ' + truncateHash(response.txHash), 'success');
+
       // Clear form
       document.getElementById('recipientAddress').value = '';
       document.getElementById('sendAmount').value = '';
       document.getElementById('sendMemo').value = '';
-      
-      // Refresh balance
+
+      // Refresh wallets
       await loadWallets();
     } else {
-      showNotification('Transaction failed: ' + response.error, 'error');
+      throw new Error('Invalid response from Snap');
     }
-  } catch (error) {
-    showNotification('Error: ' + error.message, 'error');
+  } catch (snapError) {
+    console.error('[RustChain] Snap send failed, falling back to extension:', snapError);
+    // Fall back to extension
+    await sendTransactionViaExtension(recipient, amount, memo);
+  }
+}
+
+/**
+ * Send transaction via extension background (primary path)
+ * @param {string} recipient
+ * @param {string} amount
+ * @param {string} memo
+ */
+async function sendTransactionViaExtension(recipient, amount, memo) {
+  if (!currentWallet) {
+    throw new Error('No wallet selected');
+  }
+
+  const response = await sendMessage({
+    type: 'CREATE_TRANSACTION',
+    payload: {
+      from: currentWallet.address,
+      to: recipient,
+      amount,
+      memo
+    }
+  });
+
+  if (response.success) {
+    closeModal(sendModal);
+    showNotification('Transaction submitted! Hash: ' + truncateHash(response.txHash), 'success');
+
+    // Clear form
+    document.getElementById('recipientAddress').value = '';
+    document.getElementById('sendAmount').value = '';
+    document.getElementById('sendMemo').value = '';
+
+    // Refresh balance
+    await loadWallets();
+  } else {
+    throw new Error(response.error || 'Transaction failed');
   }
 }
 
@@ -301,34 +421,81 @@ async function copyAddress() {
 }
 
 /**
- * Sign message
+ * Sign message with Snap fallback
+ * Phase 2: Integrated sign flow with clear fallback behavior
  */
 async function signMessage() {
   const message = document.getElementById('signMessage').value.trim();
-  
+
   if (!message) {
     showNotification('Please enter a message to sign', 'error');
     return;
   }
-  
+
   try {
-    const response = await sendMessage({
-      type: 'SIGN_MESSAGE',
-      payload: {
-        address: currentWallet.address,
-        message
-      }
-    });
-    
-    if (response.success) {
-      document.getElementById('signResult').style.display = 'block';
-      document.querySelector('#signResult textarea').value = response.signature;
-      showNotification('Message signed successfully!', 'success');
+    // Try Snap first if available (fallback path)
+    if (shouldUseSnap() && typeof window.ethereum !== 'undefined') {
+      await signMessageViaSnap(message);
     } else {
-      showNotification('Signing failed: ' + response.error, 'error');
+      // Use extension's background script (primary path)
+      await signMessageViaExtension(message);
     }
   } catch (error) {
     showNotification('Error: ' + error.message, 'error');
+  }
+}
+
+/**
+ * Sign message via MetaMask Snap (fallback path)
+ * @param {string} message
+ */
+async function signMessageViaSnap(message) {
+  try {
+    const response = await window.ethereum.request({
+      method: 'rustchain_signMessage',
+      params: [{
+        address: currentWallet?.address,
+        message
+      }]
+    });
+
+    if (response && response.signature) {
+      document.getElementById('signResult').style.display = 'block';
+      document.querySelector('#signResult textarea').value = response.signature;
+      showNotification('Message signed via Snap!', 'success');
+    } else {
+      throw new Error('Invalid response from Snap');
+    }
+  } catch (snapError) {
+    console.error('[RustChain] Snap sign failed, falling back to extension:', snapError);
+    // Fall back to extension
+    await signMessageViaExtension(message);
+  }
+}
+
+/**
+ * Sign message via extension background (primary path)
+ * @param {string} message
+ */
+async function signMessageViaExtension(message) {
+  if (!currentWallet) {
+    throw new Error('No wallet selected');
+  }
+
+  const response = await sendMessage({
+    type: 'SIGN_MESSAGE',
+    payload: {
+      address: currentWallet.address,
+      message
+    }
+  });
+
+  if (response.success) {
+    document.getElementById('signResult').style.display = 'block';
+    document.querySelector('#signResult textarea').value = response.signature;
+    showNotification('Message signed successfully!', 'success');
+  } else {
+    throw new Error(response.error || 'Signing failed');
   }
 }
 
@@ -436,8 +603,18 @@ function sendMessage(message) {
 }
 
 /**
+ * Truncate hash for display
+ * @param {string} hash
+ * @returns {string}
+ */
+function truncateHash(hash) {
+  if (!hash) return '';
+  return `${hash.slice(0, 10)}...${hash.slice(-8)}`;
+}
+
+/**
  * Truncate address for display
- * @param {string} address 
+ * @param {string} address
  * @returns {string}
  */
 function truncateAddress(address) {

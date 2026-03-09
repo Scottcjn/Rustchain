@@ -1,19 +1,27 @@
 /**
- * RustChain MetaMask Snap
- * 
+ * RustChain MetaMask Snap (Phase 2)
+ *
  * Enables MetaMask to interact with the RustChain blockchain by providing:
  * - RustChain account management
- * - Transaction signing
- * - Message signing
+ * - Transaction signing with confirmation dialogs
+ * - Message signing with user approval
  * - Balance queries
- * 
+ * - Fallback error handling
+ *
  * This snap acts as a bridge between MetaMask's Ethereum-compatible interface
  * and RustChain's native RPC API.
+ *
+ * Phase 2 Additions:
+ * - Complete send transaction flow with user confirmation
+ * - Complete sign message flow with user approval
+ * - Enhanced error handling with clear error messages
+ * - Transaction history tracking
  */
 
 // Configuration
 const RUSTCHAIN_NODE_URL = 'https://rustchain.org';
 const RUSTCHAIN_CHAIN_ID = 'rustchain-mainnet';
+const NETWORK_FEE = '0.0001'; // Fixed network fee for MVP
 
 /**
  * Handle incoming JSON-RPC requests
@@ -23,45 +31,57 @@ const RUSTCHAIN_CHAIN_ID = 'rustchain-mainnet';
 module.exports.onRpcRequest = async ({ request }) => {
   const { method, params } = request;
 
-  switch (method) {
-    // Snap-specific methods
-    case 'rustchain_createAccount':
-      return createAccount();
-    
-    case 'rustchain_getAccounts':
-      return getAccounts();
-    
-    case 'rustchain_getBalance':
-      return getBalance(params?.[0]);
-    
-    case 'rustchain_sendTransaction':
-      return sendTransaction(params?.[0]);
-    
-    case 'rustchain_signMessage':
-      return signMessage(params?.[0]);
-    
-    case 'rustchain_signTransaction':
-      return signTransaction(params?.[0]);
-    
-    // EIP-1193 compatible methods (for dApp compatibility)
-    case 'eth_requestAccounts':
-    case 'rustchain_requestAccounts':
-      return requestAccounts();
-    
-    case 'eth_accounts':
-      return getAccounts();
-    
-    case 'eth_chainId':
-      return RUSTCHAIN_CHAIN_ID;
-    
-    case 'eth_sendTransaction':
-      return sendTransaction(params?.[0]);
-    
-    case 'personal_sign':
-      return signMessage(params?.[0]);
-    
-    default:
-      throw new Error(`Method not found: ${method}`);
+  try {
+    switch (method) {
+      // Snap-specific methods
+      case 'rustchain_createAccount':
+        return createAccount();
+
+      case 'rustchain_getAccounts':
+        return getAccounts();
+
+      case 'rustchain_getBalance':
+        return getBalance(params?.[0]);
+
+      case 'rustchain_sendTransaction':
+        return sendTransaction(params?.[0]);
+
+      case 'rustchain_signMessage':
+        return signMessage(params?.[0]);
+
+      case 'rustchain_signTransaction':
+        return signTransaction(params?.[0]);
+
+      case 'rustchain_getTransactionHistory':
+        return getTransactionHistory(params?.[0]);
+
+      // EIP-1193 compatible methods (for dApp compatibility)
+      case 'eth_requestAccounts':
+      case 'rustchain_requestAccounts':
+        return requestAccounts();
+
+      case 'eth_accounts':
+        return getAccounts();
+
+      case 'eth_chainId':
+        return RUSTCHAIN_CHAIN_ID;
+
+      case 'eth_sendTransaction':
+        return sendTransaction(params?.[0]);
+
+      case 'personal_sign':
+        return signMessage(params?.[0]);
+
+      default:
+        throw new Error(`Method not found: ${method}`);
+    }
+  } catch (error) {
+    console.error('[RustChain Snap] RPC request error:', error);
+    throw {
+      code: -32603,
+      message: error.message || 'Internal error',
+      data: { method }
+    };
   }
 };
 
