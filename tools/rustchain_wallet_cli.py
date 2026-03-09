@@ -242,16 +242,36 @@ def cmd_export(args):
     return 0
 
 
+def _safe_json(r: "requests.Response") -> "tuple[dict | list | None, int]":
+    """Parse JSON from a response, returning (data, exit_code).
+
+    Returns (None, 1) with a descriptive error printed to stderr when the
+    response body is not valid JSON (e.g. HTML 502 error pages).  This avoids
+    the opaque ``JSONDecodeError`` that previously surfaced to callers.
+    """
+    try:
+        return r.json(), 0 if r.ok else 1
+    except Exception:
+        print(
+            f"Error: Server returned HTTP {r.status_code} with non-JSON body"
+            f" (check node URL / connectivity)",
+            file=sys.stderr,
+        )
+        return None, 1
+
+
 def cmd_balance(args):
     url = f"{NODE_URL}/wallet/balance"
     r = requests.get(url, params={"miner_id": args.wallet_id}, timeout=12, verify=VERIFY_SSL)
-    data = r.json()
+    data, rc = _safe_json(r)
+    if data is None:
+        return rc
     if isinstance(data, dict):
         if "amount_rtc" not in data and "balance_rtc" in data:
             data["amount_rtc"] = data.get("balance_rtc")
         data["wallet_id"] = args.wallet_id
     print(json.dumps(data, indent=2))
-    return 0
+    return rc
 
 
 def cmd_send(args):
@@ -264,30 +284,38 @@ def cmd_send(args):
 
     url = f"{NODE_URL}/wallet/transfer/signed"
     r = requests.post(url, json=payload, timeout=20, verify=VERIFY_SSL)
-    print(json.dumps(r.json(), indent=2))
-    return 0 if r.ok else 1
+    data, rc = _safe_json(r)
+    if data is not None:
+        print(json.dumps(data, indent=2))
+    return rc
 
 
 def cmd_history(args):
     url = f"{NODE_URL}/wallet/ledger"
     r = requests.get(url, params={"miner_id": args.wallet_id}, timeout=12, verify=VERIFY_SSL)
-    data = r.json()
+    data, rc = _safe_json(r)
+    if data is None:
+        return rc
     if isinstance(data, list):
         data = {"wallet_id": args.wallet_id, "transactions": data}
     print(json.dumps(data, indent=2))
-    return 0
+    return rc
 
 
 def cmd_miners(args):
     r = requests.get(f"{NODE_URL}/api/miners", timeout=12, verify=VERIFY_SSL)
-    print(json.dumps(r.json(), indent=2))
-    return 0
+    data, rc = _safe_json(r)
+    if data is not None:
+        print(json.dumps(data, indent=2))
+    return rc
 
 
 def cmd_epoch(args):
     r = requests.get(f"{NODE_URL}/epoch", timeout=12, verify=VERIFY_SSL)
-    print(json.dumps(r.json(), indent=2))
-    return 0
+    data, rc = _safe_json(r)
+    if data is not None:
+        print(json.dumps(data, indent=2))
+    return rc
 
 
 def build_parser():
