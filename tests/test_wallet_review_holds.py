@@ -193,3 +193,25 @@ def test_wallet_review_escalation_hard_blocks_attestation(client):
     body = response.get_json()
     assert body["error"] == "wallet_blocked"
     assert body["status"] == "escalated"
+
+
+def test_wallet_review_ui_lists_entries_and_accepts_query_admin_key(client):
+    test_client, db_path = client
+    with sqlite3.connect(db_path) as conn:
+        integrated_node.ensure_wallet_review_tables(conn)
+        conn.execute(
+            """
+            INSERT INTO wallet_review_holds(wallet, status, reason, coach_note, reviewer_note, created_at, reviewed_at)
+            VALUES (?, 'held', ?, ?, ?, 1000, 0)
+            """,
+            ("review-miner", "manual review", "retry from the intended box", "seeded from test"),
+        )
+        conn.commit()
+
+    response = test_client.get("/admin/wallet-review-holds/ui?admin_key=" + ("0" * 32))
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "RustChain Wallet Review Holds" in html
+    assert "review-miner" in html
+    assert "retry from the intended box" in html

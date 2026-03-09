@@ -6,7 +6,7 @@ Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math, re, statistics
 import ipaddress
 from urllib.parse import urlparse
-from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort
+from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect
 from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, VALID_KINDS
 try:
     # Deployment compatibility: production may run this file as a single script.
@@ -2729,6 +2729,15 @@ def ensure_wallet_review_tables(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_wallet_review_status ON wallet_review_holds(status, created_at DESC)")
 
 
+def _wallet_review_ui_authorized(req):
+    """Allow the HTML admin review page to use either header auth or an explicit form/query key."""
+    if is_admin(req):
+        return True
+    need = os.environ.get("RC_ADMIN_KEY", "")
+    got = str(req.values.get("admin_key") or "").strip()
+    return bool(need and got and hmac.compare_digest(need, got))
+
+
 def get_wallet_review_entry(conn, wallet: str):
     ensure_wallet_review_tables(conn)
     conn.row_factory = sqlite3.Row
@@ -2909,6 +2918,214 @@ def admin_resolve_wallet_review_hold(hold_id: int):
         conn.commit()
         wallet = row["wallet"]
     return jsonify({"ok": True, "id": hold_id, "wallet": wallet, "status": new_status})
+
+
+@app.route('/admin/wallet-review-holds/ui', methods=['GET', 'POST'])
+def admin_wallet_review_holds_ui():
+    """Small operator UI for wallet review holds without changing the JSON admin API surface."""
+    if not _wallet_review_ui_authorized(request):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
+    admin_key = str(request.values.get("admin_key") or "").strip()
+    active_status = str(request.values.get("status") or "").strip().lower()
+
+    if request.method == 'POST':
+        now = int(time.time())
+        form_action = str(request.form.get("form_action") or "").strip().lower()
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            ensure_wallet_review_tables(conn)
+            if form_action == "create":
+                wallet = _attest_valid_miner(request.form.get("wallet") or request.form.get("miner") or "")
+                reason = str(request.form.get("reason") or "manual review required").strip()
+                coach_note = str(request.form.get("coach_note") or "").strip()
+                status = str(request.form.get("review_status") or "needs_review").strip().lower()
+                if wallet and status in {"needs_review", "held", "escalated", "blocked"}:
+                    conn.execute(
+                        """
+                        INSERT INTO wallet_review_holds(wallet, status, reason, coach_note, reviewer_note, created_at, reviewed_at)
+                        VALUES (?, ?, ?, ?, '', ?, 0)
+                        """,
+                        (wallet, status, reason, coach_note, now),
+                    )
+                    conn.commit()
+            elif form_action == "resolve":
+                hold_id = int(request.form.get("hold_id") or "0")
+                action = str(request.form.get("review_action") or "release").strip().lower()
+                reviewer_note = str(request.form.get("reviewer_note") or "").strip()
+                coach_note = str(request.form.get("coach_note") or "").strip()
+                if action in {"release", "dismiss", "escalate", "block"} and hold_id > 0:
+                    row = conn.execute(
+                        "SELECT id, coach_note FROM wallet_review_holds WHERE id = ?",
+                        (hold_id,),
+                    ).fetchone()
+                    if row:
+                        new_status = {
+                            "release": "released",
+                            "dismiss": "dismissed",
+                            "escalate": "escalated",
+                            "block": "blocked",
+                        }[action]
+                        conn.execute(
+                            """
+                            UPDATE wallet_review_holds
+                            SET status = ?, reviewer_note = ?, coach_note = ?, reviewed_at = ?
+                            WHERE id = ?
+                            """,
+                            (new_status, reviewer_note, coach_note or row["coach_note"], now, hold_id),
+                        )
+                        conn.commit()
+        query = ""
+        if active_status or admin_key:
+            parts = []
+            if active_status:
+                parts.append(f"status={active_status}")
+            if admin_key:
+                parts.append(f"admin_key={admin_key}")
+            query = "?" + "&".join(parts)
+        return redirect(f"/admin/wallet-review-holds/ui{query}", code=303)
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        ensure_wallet_review_tables(conn)
+        sql = """
+            SELECT id, wallet, status, reason, coach_note, reviewer_note, created_at, reviewed_at
+            FROM wallet_review_holds
+        """
+        params = []
+        if active_status:
+            sql += " WHERE status = ?"
+            params.append(active_status)
+        sql += " ORDER BY created_at DESC LIMIT 200"
+        rows = conn.execute(sql, params).fetchall()
+
+    entries = [
+        {
+            "id": int(r["id"]),
+            "wallet": r["wallet"],
+            "status": r["status"],
+            "reason": r["reason"],
+            "coach_note": r["coach_note"] or "",
+            "reviewer_note": r["reviewer_note"] or "",
+            "created_at": int(r["created_at"] or 0),
+            "reviewed_at": int(r["reviewed_at"] or 0),
+        }
+        for r in rows
+    ]
+    return render_template_string(
+        """
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>RustChain Wallet Review Holds</title>
+  <style>
+    body { font-family: monospace; margin: 24px; background: #111; color: #eee; }
+    a { color: #89dceb; }
+    form { margin: 0; }
+    .panel { border: 1px solid #444; padding: 16px; margin: 0 0 18px 0; background: #181818; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+    input, select, textarea, button { width: 100%; padding: 8px; box-sizing: border-box; background: #222; color: #eee; border: 1px solid #555; }
+    textarea { min-height: 68px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid #444; padding: 10px; vertical-align: top; }
+    th { background: #1f1f1f; text-align: left; }
+    .filters { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0 14px; }
+    .meta { color: #bbb; }
+    .status-needs_review, .status-held { color: #f9e2af; }
+    .status-escalated, .status-blocked { color: #f38ba8; }
+    .status-released, .status-dismissed { color: #a6e3a1; }
+  </style>
+</head>
+<body>
+  <h1>RustChain Wallet Review Holds</h1>
+  <p class="meta">Use this page to create review holds, coach miners, and release or escalate wallets without touching the legacy hard-block list.</p>
+  <div class="filters">
+    <a href="/admin/wallet-review-holds/ui{% if admin_key %}?admin_key={{ admin_key|urlencode }}{% endif %}">all</a>
+    {% for status_value in statuses %}
+    <a href="/admin/wallet-review-holds/ui?status={{ status_value }}{% if admin_key %}&admin_key={{ admin_key|urlencode }}{% endif %}">{{ status_value }}</a>
+    {% endfor %}
+  </div>
+  <div class="panel">
+    <h2>Create Hold</h2>
+    <form method="post" action="/admin/wallet-review-holds/ui">
+      <input type="hidden" name="form_action" value="create">
+      <input type="hidden" name="admin_key" value="{{ admin_key }}">
+      <input type="hidden" name="status" value="{{ active_status }}">
+      <div class="grid">
+        <label>Wallet<input name="wallet" placeholder="RTC... or miner id" required></label>
+        <label>Status
+          <select name="review_status">
+            <option value="needs_review">needs_review</option>
+            <option value="held">held</option>
+            <option value="escalated">escalated</option>
+            <option value="blocked">blocked</option>
+          </select>
+        </label>
+        <label>Reason<input name="reason" placeholder="manual review required" required></label>
+      </div>
+      <p><label>Coach note<textarea name="coach_note" placeholder="Explain what the miner should fix before retrying."></textarea></label></p>
+      <button type="submit">Create Hold</button>
+    </form>
+  </div>
+  <div class="panel">
+    <h2>Open Entries ({{ entries|length }})</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Wallet</th>
+          <th>Status</th>
+          <th>Reason</th>
+          <th>Coach Note</th>
+          <th>Reviewer Note</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for entry in entries %}
+        <tr>
+          <td>{{ entry.id }}</td>
+          <td>{{ entry.wallet }}</td>
+          <td class="status-{{ entry.status }}">{{ entry.status }}</td>
+          <td>{{ entry.reason }}</td>
+          <td>{{ entry.coach_note }}</td>
+          <td>{{ entry.reviewer_note }}</td>
+          <td>
+            <div class="meta">created {{ entry.created_at }}{% if entry.reviewed_at %}, reviewed {{ entry.reviewed_at }}{% endif %}</div>
+            <form method="post" action="/admin/wallet-review-holds/ui" style="margin-top:10px">
+              <input type="hidden" name="form_action" value="resolve">
+              <input type="hidden" name="hold_id" value="{{ entry.id }}">
+              <input type="hidden" name="admin_key" value="{{ admin_key }}">
+              <input type="hidden" name="status" value="{{ active_status }}">
+              <label>Action
+                <select name="review_action">
+                  <option value="release">release</option>
+                  <option value="dismiss">dismiss</option>
+                  <option value="escalate">escalate</option>
+                  <option value="block">block</option>
+                </select>
+              </label>
+              <p><label>Coach note<textarea name="coach_note">{{ entry.coach_note }}</textarea></label></p>
+              <p><label>Reviewer note<textarea name="reviewer_note">{{ entry.reviewer_note }}</textarea></label></p>
+              <button type="submit">Apply</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7">No wallet review holds for this filter.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>
+        """,
+        entries=entries,
+        active_status=active_status,
+        admin_key=admin_key,
+        statuses=["needs_review", "held", "escalated", "blocked", "released", "dismissed"],
+    )
 
 @app.route('/ops/oui/enforce', methods=['GET'])
 def ops_oui_enforce():
