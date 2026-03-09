@@ -8,7 +8,7 @@ version = "1.0.0"
 description = "Model Context Protocol (MCP) server for RustChain blockchain"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
     {name = "RustChain Contributors"}
 ]
@@ -65,6 +65,8 @@ target-version = ['py310', 'py311', 'py312']
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP"]
 
 [tool.pytest.ini_options]
