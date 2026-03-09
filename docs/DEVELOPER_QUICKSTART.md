@@ -301,7 +301,7 @@ PUBLIC_KEY=$(openssl pkey -in public_key.pem -pubout -outform DER 2>/dev/null | 
 
 # Create canonical message to sign (note: uses from/to/amount, not from_address/to_address/amount_rtc)
 MESSAGE=$(cat <<EOF
-{"amount":${AMOUNT},"from":"${FROM_WALLET}","memo":"${MEMO}","nonce":"${NONCE}","to":"${TO_WALLET}"}
+{"amount_rtc":${AMOUNT},"from_address":"${FROM_WALLET}","memo":"${MEMO}","nonce":"${NONCE}","to_address":"${TO_WALLET}"}
 EOF
 )
 
