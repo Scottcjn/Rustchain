@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RustChain Wallet</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="14" stroke="#00d4ff" stroke-width="2"/>
+          <path d="M10 16L14 20L22 12" stroke="#00ff88" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h1>RustChain</h1>
+      </div>
+      <button class="settings-btn" id="settingsBtn" title="Settings">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+      <!-- Wallet Selector -->
+      <div class="wallet-selector" id="walletSelector">
+        <select id="walletSelect">
+          <option value="">Select Wallet</option>
+        </select>
+        <button class="btn btn-small" id="newWalletBtn">+ New</button>
+      </div>
+
+      <!-- Balance Display -->
+      <div class="balance-card" id="balanceCard">
+        <div class="balance-label">Total Balance</div>
+        <div class="balance-amount" id="balanceAmount">0.00000000 RTC</div>
+        <div class="balance-usd" id="balanceUsd">≈ $0.00 USD</div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="actions">
+        <button class="action-btn" id="sendBtn">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+          <span>Send</span>
+        </button>
+        <button class="action-btn" id="receiveBtn">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
+            <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+          </svg>
+          <span>Receive</span>
+        </button>
+        <button class="action-btn" id="signBtn">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="M9 12l2 2 4-4"/>
+          </svg>
+          <span>Sign</span>
+        </button>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab active" data-tab="activity">Activity</button>
+        <button class="tab" data-tab="assets">Assets</button>
+        <button class="tab" data-tab="settings">Settings</button>
+      </div>
+
+      <!-- Tab Content -->
+      <div class="tab-content">
+        <!-- Activity Tab -->
+        <div class="tab-panel active" id="activityPanel">
+          <div class="transactions" id="transactionsList">
+            <div class="empty-state">No transactions yet</div>
+          </div>
+        </div>
+
+        <!-- Assets Tab -->
+        <div class="tab-panel" id="assetsPanel">
+          <div class="asset-item">
+            <div class="asset-icon">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                <circle cx="16" cy="16" r="14" fill="#00d4ff" opacity="0.2"/>
+                <circle cx="16" cy="16" r="10" fill="#00d4ff" opacity="0.4"/>
+              </svg>
+            </div>
+            <div class="asset-info">
+              <div class="asset-name">RustChain Token</div>
+              <div class="asset-symbol">RTC</div>
+            </div>
+            <div class="asset-balance" id="assetBalance">0.00000000</div>
+          </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div class="tab-panel" id="settingsPanel">
+          <div class="settings-item">
+            <div class="settings-label">Network</div>
+            <div class="settings-value" id="networkStatus">
+              <span class="status-dot"></span>
+              <span>Mainnet</span>
+            </div>
+          </div>
+          <div class="settings-item">
+            <div class="settings-label">Wallet Address</div>
+            <div class="settings-value address" id="walletAddress">Not selected</div>
+          </div>
+          <div class="settings-item">
+            <div class="settings-label">Version</div>
+            <div class="settings-value">1.0.0</div>
+          </div>
+          <button class="btn btn-danger" id="clearDataBtn">Clear All Data</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Modals -->
+    <!-- Send Modal -->
+    <div class="modal" id="sendModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Send RTC</h2>
+          <button class="modal-close" id="sendModalClose">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="recipientAddress">Recipient Address</label>
+            <input type="text" id="recipientAddress" placeholder="Enter RTC address..." />
+          </div>
+          <div class="form-group">
+            <label for="sendAmount">Amount (RTC)</label>
+            <input type="number" id="sendAmount" placeholder="0.00000000" step="0.00000001" min="0" />
+          </div>
+          <div class="form-group">
+            <label for="sendMemo">Memo (optional)</label>
+            <input type="text" id="sendMemo" placeholder="Add a note..." />
+          </div>
+          <div class="form-summary">
+            <div class="summary-row">
+              <span>Balance:</span>
+              <span id="sendBalance">0.00000000 RTC</span>
+            </div>
+            <div class="summary-row">
+              <span>Network Fee:</span>
+              <span>0.0001 RTC</span>
+            </div>
+            <div class="summary-row total">
+              <span>Total:</span>
+              <span id="sendTotal">0.00000000 RTC</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="sendCancel">Cancel</button>
+          <button class="btn btn-primary" id="sendConfirm">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Receive Modal -->
+    <div class="modal" id="receiveModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Receive RTC</h2>
+          <button class="modal-close" id="receiveModalClose">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="qr-code" id="qrCode">
+            <canvas id="qrCanvas" width="200" height="200"></canvas>
+          </div>
+          <div class="address-display">
+            <input type="text" id="receiveAddress" readonly />
+            <button class="btn btn-small" id="copyAddress">Copy</button>
+          </div>
+          <p class="receive-note">Send only RTC tokens to this address</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sign Modal -->
+    <div class="modal" id="signModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Sign Message</h2>
+          <button class="modal-close" id="signModalClose">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="signMessage">Message to Sign</label>
+            <textarea id="signMessage" rows="4" placeholder="Enter message to sign..."></textarea>
+          </div>
+          <div class="sign-result" id="signResult" style="display: none;">
+            <label>Signature</label>
+            <textarea readonly rows="3"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="signCancel">Cancel</button>
+          <button class="btn btn-primary" id="signConfirm">Sign</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

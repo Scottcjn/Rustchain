@@ -1,0 +1,42 @@
+{
+  "name": "rustchain-snap",
+  "version": "1.0.0",
+  "description": "MetaMask Snap for RustChain blockchain integration",
+  "author": "RustChain Contributors",
+  "license": "MIT",
+  "main": "src/index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Scottcjn/rustchain-bounties.git"
+  },
+  "keywords": [
+    "metamask",
+    "snap",
+    "rustchain",
+    "rtc",
+    "blockchain",
+    "wallet"
+  ],
+  "scripts": {
+    "build": "node scripts/build.js",
+    "test": "node --test tests/*.test.js",
+    "lint": "eslint src/ tests/",
+    "serve": "mm-snap serve",
+    "watch": "mm-snap watch"
+  },
+  "dependencies": {
+    "@metamask/snaps-sdk": "^3.0.0"
+  },
+  "devDependencies": {
+    "@metamask/snaps-cli": "^4.0.0",
+    "eslint": "^8.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/",
+    "snap/",
+    "images/"
+  ]
+}
