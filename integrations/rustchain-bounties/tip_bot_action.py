@@ -9,10 +9,10 @@ import os
 import sys
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add current directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent))
 
-from integrations.rustchain-bounties.tip_bot import TipBot
+from tip_bot import TipBot
 
 
 def main():
