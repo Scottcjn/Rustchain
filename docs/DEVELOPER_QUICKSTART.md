@@ -286,8 +286,8 @@ print(response.json())
 #!/bin/bash
 
 NODE_URL="https://50.28.86.131"
-FROM_WALLET="your_wallet_id"
-TO_WALLET="recipient_wallet_id"
+FROM_ADDRESS="RTC1234567890123456789012345678901234567890"
+TO_ADDRESS="RTC0987654321098765432109876543210987654321"
 AMOUNT=1.0
 MEMO="Test transfer"
 NONCE=$(date +%s%3N)
@@ -299,9 +299,11 @@ NONCE=$(date +%s%3N)
 # Extract public key
 PUBLIC_KEY=$(openssl pkey -in public_key.pem -pubout -outform DER 2>/dev/null | tail -c 32 | xxd -p -c 64)
 
-# Create canonical message to sign (note: uses from/to/amount, not from_address/to_address/amount_rtc)
+# Create the canonical message the node verifies.
+# The signed bytes use legacy keys {from,to,amount,memo,nonce}
+# even though the outer request body uses {from_address,to_address,amount_rtc,...}.
 MESSAGE=$(cat <<EOF
-{"amount":${AMOUNT},"from":"${FROM_WALLET}","memo":"${MEMO}","nonce":"${NONCE}","to":"${TO_WALLET}"}
+{"amount":${AMOUNT},"from":"${FROM_ADDRESS}","memo":"${MEMO}","nonce":"${NONCE}","to":"${TO_ADDRESS}"}
 EOF
 )
 
@@ -312,8 +314,8 @@ SIGNATURE=$(echo -n "$MESSAGE" | openssl pkeyutl -sign -inkey private_key.pem -r
 curl -k -X POST "$NODE_URL/wallet/transfer/signed" \
   -H "Content-Type: application/json" \
   -d "{
-    \"from_address\": \"${FROM_WALLET}\",
-    \"to_address\": \"${TO_WALLET}\",
+    \"from_address\": \"${FROM_ADDRESS}\",
+    \"to_address\": \"${TO_ADDRESS}\",
     \"amount_rtc\": ${AMOUNT},
     \"memo\": \"${MEMO}\",
     \"nonce\": \"${NONCE}\",
