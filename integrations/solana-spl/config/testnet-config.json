@@ -1,0 +1,35 @@
+{
+  "token": {
+    "name": "Wrapped RustChain",
+    "symbol": "wRTC",
+    "decimals": 9,
+    "description": "Solana-wrapped version of RustChain (RTC) token, backed 1:1 by locked RTC on RustChain.",
+    "image_url": "https://rustchain.org/wrtc-logo.png",
+    "external_url": "https://rustchain.org",
+    "bridge_name": "BoTTube"
+  },
+  "multisig": {
+    "signers": [
+      "FoundationTreasuryPubkey",
+      "BoTTubeOperatorPubkey",
+      "CommunityRepresentativePubkey",
+      "SecurityAuditorPubkey",
+      "CoreDeveloperPubkey"
+    ],
+    "threshold": 3,
+    "description": "RustChain wRTC Multi-Sig Governance"
+  },
+  "escrow": {
+    "escrow_authority": "BridgeProgramPDA",
+    "mint_address": "TO_BE_DEPLOYED",
+    "daily_mint_cap": 100000000000000,
+    "per_tx_limit": 10000000000000,
+    "total_supply_cap": null
+  },
+  "deployment": {
+    "network": "devnet",
+    "enable_freeze_authority": true,
+    "enable_metadata": true,
+    "verify_after_deploy": true
+  }
+}
