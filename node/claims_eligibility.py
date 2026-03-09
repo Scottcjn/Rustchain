@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 RIP-305 Track D: Claims Eligibility Verification
 ================================================
