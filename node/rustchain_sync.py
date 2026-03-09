@@ -99,21 +99,22 @@ class RustChainSyncManager:
         if not schema:
             return ""
 
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
         pk = schema["pk"]
-        cursor.execute(f"SELECT * FROM {table_name} ORDER BY {pk} ASC")
-        rows = cursor.fetchall()
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT * FROM {table_name} ORDER BY {pk} ASC")
+            rows = cursor.fetchall()
 
-        hasher = hashlib.sha256()
-        for row in rows:
-            row_dict = dict(row)
-            row_str = json.dumps(row_dict, sort_keys=True, separators=(",", ":"))
-            hasher.update(row_str.encode())
+            hasher = hashlib.sha256()
+            for row in rows:
+                row_dict = dict(row)
+                row_str = json.dumps(row_dict, sort_keys=True, separators=(",", ":"))
+                hasher.update(row_str.encode())
 
-        conn.close()
-        return hasher.hexdigest()
+            return hasher.hexdigest()
+        finally:
+            conn.close()
 
     def get_merkle_root(self) -> str:
         """Generates a master Merkle root hash for all synced tables."""
@@ -262,8 +263,10 @@ class RustChainSyncManager:
         if table_name not in self.SYNC_TABLES:
             return 0
         conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
-        count = cursor.fetchone()[0]
-        conn.close()
-        return int(count)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+            count = cursor.fetchone()[0]
+            return int(count)
+        finally:
+            conn.close()
