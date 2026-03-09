@@ -20,9 +20,27 @@
 
 *Tu PowerPC G4 gana más que un Threadripper moderno. Ese es el punto.*
 
-[Website](https://rustchain.org) • [Live Explorer](https://rustchain.org/explorer) • [Swap wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Quickstart](docs/wrtc.md) • [wRTC Tutorial](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia Ref](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [Quick Start](#-quick-start) • [How It Works](#-how-proof-of-antiquity-works)
+[Website](https://rustchain.org) • [Manifesto](https://rustchain.org/manifesto.html) • [Principios Boudreaux](docs/BOUDREAUX_COMPUTING_PRINCIPLES.md) • [Live Explorer](https://rustchain.org/explorer) • [Swap wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Quickstart](docs/wrtc.md) • [Tutorial wRTC](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Ref. Grokipedia](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [Inicio Rápido](#-inicio-rápido) • [Cómo Funciona](#-cómo-funciona-proof-of-antiquity)
 
 </div>
+
+---
+
+## Tracción Q1 2026
+
+> *Todos los datos provienen de una [extracción en vivo de la API de GitHub](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md), comparada con benchmarks de [GitClear](https://www.gitclear.com/research_studies/git_commit_count_percentiles_annual_days_active_from_largest_data_set) (878 mil años-dev), [LinearB](https://linearb.io/resources/software-engineering-benchmarks-report) (8.1 millones de PRs) y [Electric Capital](https://www.developerreport.com).*
+
+| Métrica (90 días) | Elyan Labs | Mediana de industria | Sei Protocol ($85M) |
+|-------------------|-----------|----------------------|---------------------|
+| Commits | **1,882** | 105-168 | 297 |
+| Repos entregados | **97** | 1-3 | 0 nuevos |
+| GitHub stars | **1,334** | 5-30 | 2,837 (histórico) |
+| Interacciones de desarrolladores | **150+** | 0-2 | 78 (histórico) |
+| Commits/dev/mes | **627** | 56 | 7.6 |
+| Contribuciones externas | **32 PRs** | 0-2 | 0 |
+| Financiación | **$0** | $0 | $85,000,000 |
+
+**[Informe completo de tracción con metodología y fuentes →](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md)**
 
 ---
 
@@ -220,6 +238,16 @@ bash install-miner.sh --dry-run --wallet TU_BILLETERA
 | **Cazador de Agentes AI** | 200 RTC | [Agent Bounty #34](https://github.com/Scottcjn/rustchain-bounties/issues/34) |
 
 ---
+
+## Notas de Pruebas
+
+- Ejecuta la batería automatizada con `pytest -q` para validar serialización JSON, `/api/miners`, alias de health y flujo de transferencias firmadas.
+- Usa `pytest -q tests/test_signed_transfer.py` para cobertura enfocada de validación de firma y persistencia.
+- Para pruebas manuales del endpoint firmado:
+  - `POST /wallet/create` para generar un `miner_id`.
+  - `POST /wallet/sign-transfer` para crear el payload de transferencia.
+  - `POST /wallet/transfer` con `{ from_miner, to_miner, amount, nonce, timestamp, pubkey, signature }`.
+- El endpoint devuelve errores estructurados para `missing_fields`, `invalid_signature`, `nonce_already_used` y fondos insuficientes.
 
 ## 💰 Multiplicadores de Antigüedad
 
@@ -452,3 +480,60 @@ clawrtc mine --dry-run
 ```
 
 Esperado: las 6 verificaciones de huella digital de hardware se ejecutan en ARM64 nativo sin errores de fallback de arquitectura.
+
+---
+
+## Stack Tecnológico
+
+*Otros proyectos presumen de React y Kubernetes. Nosotros presumimos de COBOL y ensamblador de N64.*
+
+**Vintage y Retro** — lo que nadie más ejecuta:
+
+![COBOL](https://img.shields.io/badge/COBOL-%F0%9F%91%B4_Grandpa_Code-8B4513?style=flat-square)
+![68K](https://img.shields.io/badge/68K-Mac_Classic-000000?style=flat-square&logo=apple&logoColor=white)
+![i386](https://img.shields.io/badge/i386-DOS-808080?style=flat-square&logo=intel&logoColor=white)
+![N64](https://img.shields.io/badge/N64-MIPS_R4300i-E60012?style=flat-square&logo=nintendo&logoColor=white)
+![N64 ASM](https://img.shields.io/badge/N64_ASM-f3d_opcodes-228B22?style=flat-square)
+![NES](https://img.shields.io/badge/NES-6502-CC0000?style=flat-square)
+![Game Boy](https://img.shields.io/badge/Game_Boy-Z80-8DB600?style=flat-square)
+![Amiga](https://img.shields.io/badge/Amiga-Kickstart-FF4500?style=flat-square)
+![SPARC](https://img.shields.io/badge/SPARC-Sun-FF6600?style=flat-square)
+
+**PowerPC y POWER** — donde vive el bonus de antigüedad:
+
+![G4](https://img.shields.io/badge/G4-2.5x_Antiquity-7B68EE?style=flat-square&logo=apple&logoColor=white)
+![G5](https://img.shields.io/badge/G5-Dual_970-9370DB?style=flat-square&logo=apple&logoColor=white)
+![POWER8](https://img.shields.io/badge/POWER8-128_Threads-0530AD?style=flat-square&logo=ibm&logoColor=white)
+![512GB](https://img.shields.io/badge/RAM-512_GB-DC143C?style=flat-square)
+![VSX](https://img.shields.io/badge/VSX-vec__perm-4B0082?style=flat-square)
+![AltiVec](https://img.shields.io/badge/AltiVec-Velocity_Engine-8A2BE2?style=flat-square)
+
+**IA y Blockchain** — la frontera:
+
+![llama.cpp](https://img.shields.io/badge/llama.cpp-PSE_Fork-00ADD8?style=flat-square)
+![Claude](https://img.shields.io/badge/Claude-Opus_4-D4A574?style=flat-square&logo=anthropic&logoColor=white)
+![CUDA](https://img.shields.io/badge/CUDA-V100_%C3%973-76B900?style=flat-square&logo=nvidia&logoColor=white)
+![GGUF](https://img.shields.io/badge/GGUF-Q4__K__M-FF6347?style=flat-square)
+![Ergo](https://img.shields.io/badge/Ergo-Anchor-FF5733?style=flat-square)
+![Rust](https://img.shields.io/badge/Rust-Ed25519-DEA584?style=flat-square&logo=rust&logoColor=black)
+![Python](https://img.shields.io/badge/Python-Flask-3776AB?style=flat-square&logo=python&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-Every_DB-003B57?style=flat-square&logo=sqlite&logoColor=white)
+
+**Hardware** — 18 GPUs, todas de casas de empeño y eBay:
+
+![228GB VRAM](https://img.shields.io/badge/VRAM-228_GB-FF1493?style=flat-square)
+![18 GPUs](https://img.shields.io/badge/GPUs-18-76B900?style=flat-square)
+![FPGA](https://img.shields.io/badge/Alveo_U30-FPGA_%C3%972-EE3524?style=flat-square)
+![Hailo](https://img.shields.io/badge/Hailo--8-TPU-00BFFF?style=flat-square)
+![VC](https://img.shields.io/badge/VC_Funding-$0-228B22?style=flat-square)
+![Pawn Shop](https://img.shields.io/badge/Source-%F0%9F%8F%AA_Pawn_Shops-DAA520?style=flat-square)
+
+---
+
+<div align="center">
+
+**[Elyan Labs](https://github.com/Scottcjn)** · 1,882 commits · 97 repos · 1,334 stars · $0 recaudados
+
+[⭐ Star Rustchain](https://github.com/Scottcjn/Rustchain) · [📊 Informe de Tracción Q1 2026](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) · [Follow @Scottcjn](https://github.com/Scottcjn)
+
+</div>
