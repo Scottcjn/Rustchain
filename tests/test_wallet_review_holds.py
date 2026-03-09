@@ -218,7 +218,17 @@ def test_wallet_review_ui_lists_entries_and_accepts_query_admin_key(client):
 
 
 def test_admin_operator_ui_links_to_wallet_review_surface(client):
-    test_client, _db_path = client
+    test_client, db_path = client
+    with sqlite3.connect(db_path) as conn:
+        integrated_node.ensure_wallet_review_tables(conn)
+        conn.execute(
+            """
+            INSERT INTO wallet_review_holds(wallet, status, reason, coach_note, reviewer_note, created_at, reviewed_at)
+            VALUES (?, 'needs_review', ?, ?, '', 1000, 0)
+            """,
+            ("review-miner", "manual review", "coach note"),
+        )
+        conn.commit()
 
     response = test_client.get("/admin/ui?admin_key=" + ("0" * 32))
 
@@ -226,3 +236,6 @@ def test_admin_operator_ui_links_to_wallet_review_surface(client):
     html = response.get_data(as_text=True)
     assert "RustChain Admin" in html
     assert "/admin/wallet-review-holds/ui" in html
+    assert "Wallet Review Queue" in html
+    assert "needs_review" in html
+    assert ">1<" in html

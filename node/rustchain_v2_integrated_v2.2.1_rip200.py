@@ -2738,6 +2738,22 @@ def _wallet_review_ui_authorized(req):
     return bool(need and got and hmac.compare_digest(need, got))
 
 
+def get_wallet_review_counts():
+    """Return grouped wallet review counts for the operator summary surface."""
+    with sqlite3.connect(DB_PATH) as conn:
+        ensure_wallet_review_tables(conn)
+        rows = conn.execute(
+            """
+            SELECT status, COUNT(*) AS count
+            FROM wallet_review_holds
+            GROUP BY status
+            """
+        ).fetchall()
+    counts = {str(status): int(count) for status, count in rows}
+    counts["open_total"] = sum(counts.get(key, 0) for key in ("needs_review", "held", "escalated", "blocked"))
+    return counts
+
+
 def get_wallet_review_entry(conn, wallet: str):
     ensure_wallet_review_tables(conn)
     conn.row_factory = sqlite3.Row
@@ -2927,6 +2943,7 @@ def admin_operator_ui():
         return jsonify({"ok": False, "error": "forbidden"}), 403
 
     admin_key = str(request.values.get("admin_key") or "").strip()
+    counts = get_wallet_review_counts()
     return render_template_string(
         """
 <!doctype html>
@@ -2941,11 +2958,24 @@ def admin_operator_ui():
     ul { margin: 0; padding-left: 20px; }
     .meta { color: #bbb; }
     code { color: #f9e2af; }
+    .statline { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+    .stat { border: 1px solid #444; padding: 8px 12px; background: #141414; min-width: 120px; }
+    .count { display: block; font-size: 22px; color: #f9e2af; }
   </style>
 </head>
 <body>
   <h1>RustChain Admin</h1>
   <p class="meta">Thin operator index for the existing admin endpoints in this node process.</p>
+  <div class="panel">
+    <h2>Wallet Review Queue</h2>
+    <div class="statline">
+      <div class="stat"><span class="count">{{ counts.open_total }}</span>open total</div>
+      <div class="stat"><span class="count">{{ counts.get('needs_review', 0) }}</span>needs_review</div>
+      <div class="stat"><span class="count">{{ counts.get('held', 0) }}</span>held</div>
+      <div class="stat"><span class="count">{{ counts.get('escalated', 0) }}</span>escalated</div>
+      <div class="stat"><span class="count">{{ counts.get('blocked', 0) }}</span>blocked</div>
+    </div>
+  </div>
   <div class="panel">
     <h2>Review And Moderation</h2>
     <ul>
@@ -2965,6 +2995,7 @@ def admin_operator_ui():
 </html>
         """,
         admin_key=admin_key,
+        counts=counts,
     )
 
 
