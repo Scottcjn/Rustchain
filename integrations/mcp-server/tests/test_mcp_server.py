@@ -3,16 +3,15 @@
 Tests for RustChain MCP Server
 """
 
-import asyncio
-import json
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-
 # Import server module
 import sys
-sys.path.insert(0, '.')
+from unittest.mock import AsyncMock, MagicMock
 
-from mcp_server import RustChainMCP, RUSTCHAIN_API_BASE
+import pytest
+
+sys.path.insert(0, ".")
+
+from mcp_server import RustChainMCP
 
 
 @pytest.fixture
@@ -25,30 +24,32 @@ def mcp_server():
 def mock_aiohttp_session():
     """Mock aiohttp session with proper async context manager support."""
     session = AsyncMock()
-    
+
     # Create a mock response that can be configured per test
     mock_response = AsyncMock()
     mock_response.__aenter__ = AsyncMock(return_value=mock_response)
     mock_response.__aexit__ = AsyncMock(return_value=False)
-    
+
     # Setup session.get to return the context manager
-    session.get = MagicMock(return_value=AsyncMock(
-        __aenter__=AsyncMock(return_value=mock_response),
-        __aexit__=AsyncMock(return_value=False)
-    ))
-    
+    session.get = MagicMock(
+        return_value=AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_response),
+            __aexit__=AsyncMock(return_value=False),
+        )
+    )
+
     return session
 
 
 class AsyncContextManagerMock:
     """Mock for async context managers (async with)."""
-    
+
     def __init__(self, return_value):
         self.return_value = return_value
-    
+
     async def __aenter__(self):
         return self.return_value
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         return False
 
@@ -62,19 +63,21 @@ class TestMinerInfo:
         # Create mock session
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "miners": [
-                {
-                    "miner_id": "test_miner_123",
-                    "wallet": "wallet_abc",
-                    "hardware": "PowerPC G4",
-                    "score": 245.8,
-                    "epochs_mined": 1250,
-                    "status": "active"
-                }
-            ]
-        })
-        
+        mock_response.json = AsyncMock(
+            return_value={
+                "miners": [
+                    {
+                        "miner_id": "test_miner_123",
+                        "wallet": "wallet_abc",
+                        "hardware": "PowerPC G4",
+                        "score": 245.8,
+                        "epochs_mined": 1250,
+                        "status": "active",
+                    }
+                ]
+            }
+        )
+
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
         mcp_server.session = mock_session
@@ -94,7 +97,7 @@ class TestMinerInfo:
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value={"miners": []})
-        
+
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
         mcp_server.session = mock_session
@@ -116,13 +119,15 @@ class TestBlockInfo:
         # Create mock session
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "epoch": 1234,
-            "hash": "0xabc123",
-            "timestamp": 1234567890,
-            "miner": "miner_xyz"
-        })
-        
+        mock_response.json = AsyncMock(
+            return_value={
+                "epoch": 1234,
+                "hash": "0xabc123",
+                "timestamp": 1234567890,
+                "miner": "miner_xyz",
+            }
+        )
+
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
         mcp_server.session = mock_session
@@ -144,12 +149,10 @@ class TestNetworkStats:
         # Create mock session
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "current_epoch": 5678,
-            "active_miners": 142,
-            "total_rewards": 12345.67
-        })
-        
+        mock_response.json = AsyncMock(
+            return_value={"current_epoch": 5678, "active_miners": 142, "total_rewards": 12345.67}
+        )
+
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
         mcp_server.session = mock_session
@@ -171,14 +174,16 @@ class TestActiveMiners:
         # Create mock session
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "miners": [
-                {"miner_id": "m1", "score": 300},
-                {"miner_id": "m2", "score": 200},
-                {"miner_id": "m3", "score": 100}
-            ]
-        })
-        
+        mock_response.json = AsyncMock(
+            return_value={
+                "miners": [
+                    {"miner_id": "m1", "score": 300},
+                    {"miner_id": "m2", "score": 200},
+                    {"miner_id": "m3", "score": 100},
+                ]
+            }
+        )
+
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
         mcp_server.session = mock_session
@@ -198,23 +203,22 @@ class TestActiveMiners:
         # Create mock session
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "miners": [
-                {"miner_id": "m1", "hardware": "PowerPC G4", "score": 300},
-                {"miner_id": "m2", "hardware": "x86_64", "score": 200},
-                {"miner_id": "m3", "hardware": "PowerPC G5", "score": 100}
-            ]
-        })
-        
+        mock_response.json = AsyncMock(
+            return_value={
+                "miners": [
+                    {"miner_id": "m1", "hardware": "PowerPC G4", "score": 300},
+                    {"miner_id": "m2", "hardware": "x86_64", "score": 200},
+                    {"miner_id": "m3", "hardware": "PowerPC G5", "score": 100},
+                ]
+            }
+        )
+
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
         mcp_server.session = mock_session
 
         # Call tool with hardware filter
-        result = await mcp_server._tool_get_active_miners({
-            "limit": 10,
-            "hardware_type": "PowerPC"
-        })
+        result = await mcp_server._tool_get_active_miners({"limit": 10, "hardware_type": "PowerPC"})
 
         # Verify - should only include PowerPC miners
         assert result["count"] == 2
@@ -231,11 +235,8 @@ class TestWalletBalance:
         # Create mock session
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "balance": 1234.56,
-            "transactions": 42
-        })
-        
+        mock_response.json = AsyncMock(return_value={"balance": 1234.56, "transactions": 42})
+
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
         mcp_server.session = mock_session
@@ -253,7 +254,7 @@ class TestWalletBalance:
         # Create mock session
         mock_response = AsyncMock()
         mock_response.status = 404
-        
+
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
         mcp_server.session = mock_session
@@ -274,15 +275,17 @@ class TestBountyInfo:
         # Create mock session
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "number": 23,
-            "title": "🔗 BOUNTY: ERGO MAINNET BRIDGE (150 RTC)",
-            "body": "Anchor RustChain state to Ergo mainnet",
-            "created_at": "2026-02-03T00:00:00Z",
-            "html_url": "https://github.com/Scottcjn/RustChain/issues/23",
-            "labels": [{"name": "bounty"}, {"name": "enhancement"}]
-        })
-        
+        mock_response.json = AsyncMock(
+            return_value={
+                "number": 23,
+                "title": "🔗 BOUNTY: ERGO MAINNET BRIDGE (150 RTC)",
+                "body": "Anchor RustChain state to Ergo mainnet",
+                "created_at": "2026-02-03T00:00:00Z",
+                "html_url": "https://github.com/Scottcjn/RustChain/issues/23",
+                "labels": [{"name": "bounty"}, {"name": "enhancement"}],
+            }
+        )
+
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
         mcp_server.session = mock_session
@@ -304,7 +307,7 @@ class TestBountyInfo:
             "body": "Pool: 500 RTC",
             "created_at": "2026-02-13T00:00:00Z",
             "html_url": "https://github.com/Scottcjn/RustChain/issues/166",
-            "labels": [{"name": "bounty"}, {"name": "good first issue"}]
+            "labels": [{"name": "bounty"}, {"name": "good first issue"}],
         }
 
         result = mcp_server._parse_bounty_issue(issue)
@@ -320,11 +323,9 @@ class TestHardwareVerification:
     @pytest.mark.asyncio
     async def test_verify_hardware_powerpc_g4(self, mcp_server):
         """Test verifying PowerPC G4 hardware."""
-        result = await mcp_server._tool_verify_hardware({
-            "cpu_model": "PowerPC G4",
-            "architecture": "PowerPC",
-            "is_vm": False
-        })
+        result = await mcp_server._tool_verify_hardware(
+            {"cpu_model": "PowerPC G4", "architecture": "PowerPC", "is_vm": False}
+        )
 
         assert result["eligible"] is True
         assert result["multiplier"] == 2.5
@@ -334,11 +335,9 @@ class TestHardwareVerification:
     @pytest.mark.asyncio
     async def test_verify_hardware_vm_penalty(self, mcp_server):
         """Test VM penalty on hardware verification."""
-        result = await mcp_server._tool_verify_hardware({
-            "cpu_model": "PowerPC G4",
-            "architecture": "PowerPC",
-            "is_vm": True
-        })
+        result = await mcp_server._tool_verify_hardware(
+            {"cpu_model": "PowerPC G4", "architecture": "PowerPC", "is_vm": True}
+        )
 
         assert result["multiplier"] == 0.025  # 2.5 * 0.01
         assert "significantly reduce" in result["warning"]
@@ -346,11 +345,9 @@ class TestHardwareVerification:
     @pytest.mark.asyncio
     async def test_verify_hardware_modern_x86(self, mcp_server):
         """Test verifying modern x86 hardware."""
-        result = await mcp_server._tool_verify_hardware({
-            "cpu_model": "Intel Core i7",
-            "architecture": "x86_64",
-            "is_vm": False
-        })
+        result = await mcp_server._tool_verify_hardware(
+            {"cpu_model": "Intel Core i7", "architecture": "x86_64", "is_vm": False}
+        )
 
         assert result["eligible"] is True
         assert result["multiplier"] == 1.0
@@ -363,11 +360,9 @@ class TestMiningRewards:
     @pytest.mark.asyncio
     async def test_calculate_rewards_powerpc_g4(self, mcp_server):
         """Test calculating rewards for PowerPC G4."""
-        result = await mcp_server._tool_calculate_mining_rewards({
-            "hardware_type": "PowerPC G4",
-            "epochs": 1008,  # 7 days
-            "uptime_percent": 100
-        })
+        result = await mcp_server._tool_calculate_mining_rewards(
+            {"hardware_type": "PowerPC G4", "epochs": 1008, "uptime_percent": 100}  # 7 days
+        )
 
         assert result["hardware_type"] == "PowerPC G4"
         assert result["multiplier"] == 2.5
@@ -378,11 +373,9 @@ class TestMiningRewards:
     @pytest.mark.asyncio
     async def test_calculate_rewards_with_uptime(self, mcp_server):
         """Test calculating rewards with less than 100% uptime."""
-        result = await mcp_server._tool_calculate_mining_rewards({
-            "hardware_type": "Modern x86",
-            "epochs": 1008,
-            "uptime_percent": 80
-        })
+        result = await mcp_server._tool_calculate_mining_rewards(
+            {"hardware_type": "Modern x86", "epochs": 1008, "uptime_percent": 80}
+        )
 
         # Base: 1008 * 0.1 = 100.8, Adjusted: 100.8 * 1.0 * 0.8 = 80.64
         assert result["estimated_rewards_rtc"] == 80.64
@@ -390,11 +383,9 @@ class TestMiningRewards:
     @pytest.mark.asyncio
     async def test_calculate_rewards_breakdown(self, mcp_server):
         """Test reward calculation breakdown."""
-        result = await mcp_server._tool_calculate_mining_rewards({
-            "hardware_type": "PowerPC G5",
-            "epochs": 100,
-            "uptime_percent": 100
-        })
+        result = await mcp_server._tool_calculate_mining_rewards(
+            {"hardware_type": "PowerPC G5", "epochs": 100, "uptime_percent": 100}
+        )
 
         assert "breakdown" in result
         assert "base" in result["breakdown"]
@@ -412,7 +403,7 @@ class TestResources:
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value={"current_epoch": 1234})
-        
+
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
         mcp_server.session = mock_session
@@ -440,10 +431,8 @@ class TestResources:
         # Create mock session
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "miners": [{"miner_id": "test123"}]
-        })
-        
+        mock_response.json = AsyncMock(return_value={"miners": [{"miner_id": "test123"}]})
+
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
         mcp_server.session = mock_session
@@ -477,7 +466,7 @@ class TestToolList:
         # Verify the server has the tool handlers registered
         # The tools are registered via @self.app.list_tools() decorator
         # We verify by checking the handler methods exist on the server
-        
+
         expected_tools = [
             "get_miner_info",
             "get_block_info",
@@ -488,14 +477,16 @@ class TestToolList:
             "get_bounty_info",
             "get_agent_info",
             "verify_hardware",
-            "calculate_mining_rewards"
+            "calculate_mining_rewards",
         ]
 
         # Check that all tool handler methods exist
         for tool in expected_tools:
             handler_name = f"_tool_{tool}"
             assert hasattr(mcp_server, handler_name), f"Missing tool handler: {handler_name}"
-            assert callable(getattr(mcp_server, handler_name)), f"Tool handler not callable: {handler_name}"
+            assert callable(
+                getattr(mcp_server, handler_name)
+            ), f"Tool handler not callable: {handler_name}"
 
 
 if __name__ == "__main__":
