@@ -6,7 +6,7 @@ Part of [RIP-305: Cross-Chain Airdrop Protocol](../../docs/RIP-305-cross-chain-a
 
 ## Overview
 
-Phase 1 bridge: admin-controlled mint/burn (upgrades to trustless lock in Phase 2).
+Phase 1 bridge: admin-controlled mint/burn with explicit proof confirmation (upgrades to trustless lock in Phase 2).
 
 ### Architecture
 
@@ -14,13 +14,15 @@ Phase 1 bridge: admin-controlled mint/burn (upgrades to trustless lock in Phase 
 User / Agent
     │
     ▼
-POST /bridge/lock   ─── lock_id ──▶ Admin processes
-                                        │
-                            Solana: spl-token mint-to
-                            Base:   ERC-20.mint()
-                                        │
-                                        ▼
-                        POST /bridge/release  (with release_tx)
+POST /bridge/lock   ─── lock_id,state=requested/confirmed ──▶ Admin confirms proof if needed
+                                                           │
+                                               POST /bridge/confirm
+                                                           │
+                                               Solana: spl-token mint-to
+                                               Base:   ERC-20.mint()
+                                                           │
+                                                           ▼
+                                             POST /bridge/release  (with release_tx)
                                         │
                                         ▼
                           GET /bridge/status/<lock_id>
@@ -40,7 +42,8 @@ Lock RTC and request wRTC mint on a target chain.
   "amount": 100.0,
   "target_chain": "solana",
   "target_wallet": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
-  "tx_hash": "optional-rustchain-tx-hash"
+  "tx_hash": "rustchain-lock-tx-hash",
+  "receipt_signature": "optional-hmac-sha256-receipt"
 }
 ```
 
@@ -48,12 +51,14 @@ Lock RTC and request wRTC mint on a target chain.
 ```json
 {
   "lock_id": "lock_6752ac1dc0140e90a2852eab",
-  "state": "pending",
+  "state": "requested",
   "amount_rtc": 100.0,
   "target_chain": "solana",
   "target_wallet": "7xKXtg2CW87d...",
+  "tx_hash": "rustchain-lock-tx-hash",
+  "proof_type": "tx_hash_review",
   "expires_at": 1741680000,
-  "message": "Lock created. Admin will mint 100.0 wRTC on solana to 7xKXtg2CW87... within 24h."
+  "message": "Lock requested. Admin will only mint 100.0 wRTC on solana to 7xKXtg2CW87... after proof confirmation."
 }
 ```
 
@@ -62,13 +67,46 @@ Lock RTC and request wRTC mint on a target chain.
 - `amount`: min 1 RTC, max 10,000 RTC
 - Base wallet: must start with `0x`
 - Solana wallet: must be ≥32 chars (base58)
+- `tx_hash`: required for every lock request
 - Locks expire after 24h
+- Duplicate `tx_hash` values are rejected
+
+**Proof modes:**
+- `tx_hash_review`: default Phase 1 mode. Creates a `requested` lock that must be confirmed by an admin before release.
+- `signed_receipt`: if `BRIDGE_RECEIPT_SECRET` is configured and `receipt_signature` is valid, the lock is created directly as `confirmed`.
+
+---
+
+### `POST /bridge/confirm` _(admin only)_
+
+Confirm a requested lock after independent proof review.
+
+**Headers:** `X-Admin-Key: <admin-key>`
+
+**Request:**
+```json
+{
+  "lock_id": "lock_6752ac1dc0140e90a2852eab",
+  "proof_ref": "manual-review:explorer-proof-or-receipt-id",
+  "notes": "optional proof review notes"
+}
+```
+
+**Response (200):**
+```json
+{
+  "lock_id": "lock_6752ac1dc0140e90a2852eab",
+  "state": "confirmed",
+  "proof_ref": "manual-review:explorer-proof-or-receipt-id",
+  "message": "Lock confirmed and eligible for release"
+}
+```
 
 ---
 
 ### `POST /bridge/release` _(admin only)_
 
-Mark a lock as released after minting wRTC on target chain.
+Mark a confirmed lock as released after minting wRTC on target chain.
 
 **Headers:** `X-Admin-Key: <admin-key>`
 
@@ -99,7 +137,7 @@ Query the transparent lock ledger.
 **Query params:**
 | Param | Description |
 |-------|-------------|
-| `state` | Filter: `pending`, `confirmed`, `complete`, `failed` |
+| `state` | Filter: `requested`, `pending`, `confirmed`, `complete`, `failed` |
 | `chain` | Filter: `solana`, `base` |
 | `sender` | Filter by sender wallet |
 | `limit` | Max results (default 50, max 200) |
@@ -169,7 +207,11 @@ register_bridge_routes(app)
 
 ## SPL Token Integration (Track A)
 
-The `/bridge/lock` endpoint creates a lock record. Admin then calls:
+The `/bridge/lock` endpoint now creates either:
+- a `requested` lock that must be proof-confirmed by admin
+- a directly `confirmed` lock if a valid signed receipt is supplied
+
+Admin then calls:
 ```bash
 # Solana: mint wRTC to target wallet
 spl-token mint <WRTC_MINT_ADDRESS> <AMOUNT> <TARGET_WALLET>
@@ -190,6 +232,7 @@ cast send <WRTC_CONTRACT> "mint(address,uint256)" <TARGET_WALLET> <AMOUNT>
 |----------|-------------|---------|
 | `BRIDGE_DB_PATH` | SQLite DB path | `bridge_ledger.db` |
 | `BRIDGE_ADMIN_KEY` | Admin API key (required) | _(empty)_ |
+| `BRIDGE_RECEIPT_SECRET` | Optional HMAC secret for signed lock receipts | _(empty)_ |
 
 ## Tests
 
@@ -202,9 +245,9 @@ python3 -m pytest bridge/test_bridge_api.py -v
 ## Lock States
 
 ```
-pending → confirmed → releasing → complete
-             ↓                        ↑
-           failed                 refunded
+requested → confirmed → releasing → complete
+                ↓                        ↑
+              failed                 refunded
 ```
 
 | State | Description |

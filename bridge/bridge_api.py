@@ -15,6 +15,7 @@ import os
 import json
 import sqlite3
 import hashlib
+import hmac
 import time
 import threading
 import uuid
@@ -24,6 +25,7 @@ from flask import Flask, Blueprint, request, jsonify
 # ─── Config ──────────────────────────────────────────────────────────────────
 BRIDGE_DB_PATH = os.environ.get("BRIDGE_DB_PATH", "bridge_ledger.db")
 BRIDGE_ADMIN_KEY = os.environ.get("BRIDGE_ADMIN_KEY", "")  # set in production
+BRIDGE_RECEIPT_SECRET = os.environ.get("BRIDGE_RECEIPT_SECRET", "")
 
 # Target chain identifiers
 CHAIN_SOLANA = "solana"
@@ -38,6 +40,7 @@ MIN_LOCK_AMOUNT = 1  # 1 RTC
 MAX_LOCK_AMOUNT = 10_000  # 10,000 RTC per transaction
 
 # Lock states
+STATE_REQUESTED = "requested"  # User submitted request, awaiting proof review
 STATE_PENDING   = "pending"    # Lock received, awaiting processing
 STATE_CONFIRMED = "confirmed"  # Lock confirmed on-chain
 STATE_RELEASING = "releasing"  # Admin is minting wRTC
@@ -70,7 +73,11 @@ def init_bridge_db():
             target_wallet TEXT NOT NULL,
             state         TEXT NOT NULL DEFAULT 'pending',
             tx_hash       TEXT,                  -- RustChain tx that locked RTC
+            proof_type    TEXT DEFAULT '',
+            proof_ref     TEXT DEFAULT '',
             release_tx    TEXT,                  -- Target chain tx that minted wRTC
+            confirmed_at  INTEGER DEFAULT 0,
+            confirmed_by  TEXT DEFAULT '',
             created_at    INTEGER NOT NULL,
             updated_at    INTEGER NOT NULL,
             expires_at    INTEGER NOT NULL,
@@ -90,6 +97,17 @@ def init_bridge_db():
             ts            INTEGER NOT NULL
         );
         """)
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(bridge_locks)").fetchall()}
+        migrations = {
+            "proof_type": "ALTER TABLE bridge_locks ADD COLUMN proof_type TEXT DEFAULT ''",
+            "proof_ref": "ALTER TABLE bridge_locks ADD COLUMN proof_ref TEXT DEFAULT ''",
+            "confirmed_at": "ALTER TABLE bridge_locks ADD COLUMN confirmed_at INTEGER DEFAULT 0",
+            "confirmed_by": "ALTER TABLE bridge_locks ADD COLUMN confirmed_by TEXT DEFAULT ''",
+        }
+        for col, sql in migrations.items():
+            if col not in cols:
+                conn.execute(sql)
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_locks_tx_hash ON bridge_locks(tx_hash) WHERE tx_hash IS NOT NULL AND tx_hash != ''")
     print("[bridge] DB initialized:", BRIDGE_DB_PATH)
 
 
@@ -115,6 +133,27 @@ def _generate_lock_id(sender: str, amount: int, target_chain: str, ts: int) -> s
     """Deterministic lock ID from key fields."""
     raw = f"{sender}:{amount}:{target_chain}:{ts}:{uuid.uuid4()}"
     return "lock_" + hashlib.sha256(raw.encode()).hexdigest()[:24]
+
+
+def _canonical_lock_receipt(sender: str, amount_base: int, target_chain: str, target_wallet: str, tx_hash: str) -> bytes:
+    """Canonical payload for signed lock receipts."""
+    payload = {
+        "sender_wallet": sender,
+        "amount_base": amount_base,
+        "target_chain": target_chain,
+        "target_wallet": target_wallet,
+        "tx_hash": tx_hash,
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _verify_receipt_signature(sender: str, amount_base: int, target_chain: str, target_wallet: str, tx_hash: str, receipt_signature: str) -> bool:
+    """Verify HMAC-SHA256 bridge receipt signature when a receipt secret is configured."""
+    if not BRIDGE_RECEIPT_SECRET:
+        return False
+    message = _canonical_lock_receipt(sender, amount_base, target_chain, target_wallet, tx_hash)
+    expected = hmac.new(BRIDGE_RECEIPT_SECRET.encode("utf-8"), message, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, receipt_signature.lower())
 
 
 def _require_admin(fn):
@@ -144,11 +183,12 @@ def lock_rtc():
       amount         : float - RTC to lock (e.g. 100.5)
       target_chain   : str   - "solana" or "base"
       target_wallet  : str   - Solana address or Base EVM address
-      tx_hash        : str   - (optional) RustChain tx confirming the lock
+      tx_hash        : str   - RustChain tx confirming the lock request
+      receipt_signature : str - (optional) HMAC-SHA256 signed receipt for direct confirmation
 
     Returns:
       lock_id        : str   - Unique identifier for this lock
-      state          : str   - "pending"
+      state          : str   - "requested" or "confirmed"
       expires_at     : int   - Unix timestamp when lock expires
       amount_rtc     : float - Amount locked
     """
@@ -159,6 +199,7 @@ def lock_rtc():
     target_chain = data.get("target_chain", "").lower().strip()
     target_wallet = data.get("target_wallet", "").strip()
     tx_hash = data.get("tx_hash", "").strip() or None
+    receipt_signature = data.get("receipt_signature", "").strip().lower()
 
     try:
         amount_float = float(data.get("amount", 0))
@@ -171,6 +212,8 @@ def lock_rtc():
         return jsonify({"error": f"target_chain must be one of: {', '.join(sorted(SUPPORTED_CHAINS))}"}), 400
     if not target_wallet:
         return jsonify({"error": "target_wallet is required"}), 400
+    if not tx_hash:
+        return jsonify({"error": "tx_hash is required for bridge lock requests"}), 400
     if amount_float < MIN_LOCK_AMOUNT:
         return jsonify({"error": f"minimum lock amount is {MIN_LOCK_AMOUNT} RTC"}), 400
     if amount_float > MAX_LOCK_AMOUNT:
@@ -186,40 +229,133 @@ def lock_rtc():
     now = int(time.time())
     expires_at = now + LOCK_EXPIRY_SECONDS
     lock_id = _generate_lock_id(sender, amount_base, target_chain, now)
+    proof_type = "tx_hash_review"
+    proof_ref = tx_hash
+    state = STATE_REQUESTED
+
+    if receipt_signature:
+        if not BRIDGE_RECEIPT_SECRET:
+            return jsonify({"error": "bridge receipt verification is not configured on server"}), 503
+        if not _verify_receipt_signature(sender, amount_base, target_chain, target_wallet, tx_hash, receipt_signature):
+            return jsonify({"error": "invalid receipt_signature"}), 403
+        proof_type = "signed_receipt"
+        proof_ref = f"receipt:{tx_hash}"
+        state = STATE_CONFIRMED
 
     with _db_lock:
         with get_db() as conn:
-            conn.execute(
-                """
-                INSERT INTO bridge_locks
-                  (lock_id, sender_wallet, amount_rtc, target_chain, target_wallet,
-                   state, tx_hash, created_at, updated_at, expires_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?)
-                """,
-                (lock_id, sender, amount_base, target_chain, target_wallet,
-                 STATE_PENDING, tx_hash, now, now, expires_at)
-            )
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO bridge_locks
+                      (lock_id, sender_wallet, amount_rtc, target_chain, target_wallet,
+                       state, tx_hash, proof_type, proof_ref, confirmed_at, confirmed_by,
+                       created_at, updated_at, expires_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        lock_id,
+                        sender,
+                        amount_base,
+                        target_chain,
+                        target_wallet,
+                        state,
+                        tx_hash,
+                        proof_type,
+                        proof_ref,
+                        now if state == STATE_CONFIRMED else 0,
+                        "receipt" if state == STATE_CONFIRMED else "",
+                        now,
+                        now,
+                        expires_at,
+                    )
+                )
+            except sqlite3.IntegrityError:
+                return jsonify({"error": "tx_hash already used for another bridge lock"}), 409
+
             log_event(conn, lock_id, "lock_created", actor=sender, details={
                 "amount": amount_float,
                 "target_chain": target_chain,
                 "target_wallet": target_wallet,
                 "tx_hash": tx_hash,
+                "proof_type": proof_type,
+                "state": state,
+            })
+            if state == STATE_CONFIRMED:
+                log_event(conn, lock_id, "lock_confirmed", actor="receipt", details={
+                    "proof_type": proof_type,
+                    "proof_ref": proof_ref,
+                })
+            conn.commit()
+
+    return jsonify({
+        "lock_id": lock_id,
+        "state": state,
+        "sender_wallet": sender,
+        "amount_rtc": amount_float,
+        "target_chain": target_chain,
+        "target_wallet": target_wallet,
+        "tx_hash": tx_hash,
+        "proof_type": proof_type,
+        "expires_at": expires_at,
+        "message": (
+            f"Lock {'confirmed' if state == STATE_CONFIRMED else 'requested'}. "
+            f"Admin will only mint {amount_float} wRTC on {target_chain} "
+            f"to {target_wallet[:12]}... after proof confirmation."
+        )
+    }), 201
+
+
+@bridge_bp.route("/confirm", methods=["POST"])
+@_require_admin
+def confirm_lock():
+    """Admin: confirm a requested lock after reviewing proof."""
+    data = request.get_json(force=True, silent=True) or {}
+    lock_id = data.get("lock_id", "").strip()
+    proof_ref = data.get("proof_ref", "").strip()
+    notes = data.get("notes", "").strip() or None
+
+    if not lock_id:
+        return jsonify({"error": "lock_id is required"}), 400
+    if not proof_ref:
+        return jsonify({"error": "proof_ref is required"}), 400
+
+    now = int(time.time())
+    with _db_lock:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT * FROM bridge_locks WHERE lock_id = ?",
+                (lock_id,),
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "lock not found"}), 404
+            if row["state"] == STATE_CONFIRMED:
+                return jsonify({"error": "lock already confirmed"}), 409
+            if row["state"] != STATE_REQUESTED:
+                return jsonify({"error": f"cannot confirm lock in state '{row['state']}'"}), 409
+            if row["expires_at"] < now:
+                return jsonify({"error": "lock has expired"}), 410
+
+            conn.execute(
+                """
+                UPDATE bridge_locks
+                SET state = ?, proof_ref = ?, confirmed_at = ?, confirmed_by = ?, updated_at = ?, notes = ?
+                WHERE lock_id = ?
+                """,
+                (STATE_CONFIRMED, proof_ref, now, "admin", now, notes, lock_id),
+            )
+            log_event(conn, lock_id, "lock_confirmed", actor="admin", details={
+                "proof_ref": proof_ref,
+                "notes": notes,
             })
             conn.commit()
 
     return jsonify({
         "lock_id": lock_id,
-        "state": STATE_PENDING,
-        "sender_wallet": sender,
-        "amount_rtc": amount_float,
-        "target_chain": target_chain,
-        "target_wallet": target_wallet,
-        "expires_at": expires_at,
-        "message": (
-            f"Lock created. Admin will mint {amount_float} wRTC on {target_chain} "
-            f"to {target_wallet[:12]}... within 24h."
-        )
-    }), 201
+        "state": STATE_CONFIRMED,
+        "proof_ref": proof_ref,
+        "message": "Lock confirmed and eligible for release",
+    })
 
 
 @bridge_bp.route("/release", methods=["POST"])
@@ -254,7 +390,7 @@ def release_wrtc():
 
             if not row:
                 return jsonify({"error": "lock not found"}), 404
-            if row["state"] not in (STATE_PENDING, STATE_CONFIRMED, STATE_RELEASING):
+            if row["state"] not in (STATE_CONFIRMED, STATE_RELEASING):
                 return jsonify({
                     "error": f"cannot release lock in state '{row['state']}'"
                 }), 409
@@ -317,7 +453,8 @@ def get_ledger():
         rows = conn.execute(
             f"""
             SELECT lock_id, sender_wallet, amount_rtc, target_chain, target_wallet,
-                   state, tx_hash, release_tx, created_at, updated_at, expires_at
+                   state, tx_hash, proof_type, proof_ref, release_tx, confirmed_at, confirmed_by,
+                   created_at, updated_at, expires_at
             FROM bridge_locks
             {where_sql}
             ORDER BY created_at DESC
@@ -340,7 +477,11 @@ def get_ledger():
             "target_wallet": r["target_wallet"],
             "state":         r["state"],
             "tx_hash":       r["tx_hash"],
+            "proof_type":    r["proof_type"],
+            "proof_ref":     r["proof_ref"],
             "release_tx":    r["release_tx"],
+            "confirmed_at":  r["confirmed_at"],
+            "confirmed_by":  r["confirmed_by"],
             "created_at":    r["created_at"],
             "updated_at":    r["updated_at"],
             "expires_at":    r["expires_at"],
@@ -385,7 +526,11 @@ def lock_status(lock_id: str):
         "target_wallet": row["target_wallet"],
         "state":         row["state"],
         "tx_hash":       row["tx_hash"],
+        "proof_type":    row["proof_type"],
+        "proof_ref":     row["proof_ref"],
         "release_tx":    row["release_tx"],
+        "confirmed_at":  row["confirmed_at"],
+        "confirmed_by":  row["confirmed_by"],
         "created_at":    row["created_at"],
         "updated_at":    row["updated_at"],
         "expires_at":    row["expires_at"],
@@ -398,7 +543,7 @@ def bridge_stats():
     """Bridge statistics overview."""
     with get_db() as conn:
         stats = {}
-        for state in [STATE_PENDING, STATE_CONFIRMED, STATE_RELEASING,
+        for state in [STATE_REQUESTED, STATE_PENDING, STATE_CONFIRMED, STATE_RELEASING,
                       STATE_COMPLETE, STATE_FAILED, STATE_REFUNDED]:
             row = conn.execute(
                 "SELECT COUNT(*), COALESCE(SUM(amount_rtc),0) FROM bridge_locks WHERE state = ?",
