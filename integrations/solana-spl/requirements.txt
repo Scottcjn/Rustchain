@@ -1,0 +1,11 @@
+# Solana SDK and dependencies
+solana>=0.30.2
+solders>=0.21.0
+spl-token>=0.4.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Utilities
+requests>=2.31.0
