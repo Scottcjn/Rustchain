@@ -101,6 +101,8 @@
     import { buildCities } from './cities.js';
     import { buildAgents } from './agents.js';
     import { buildConnections } from './connections.js';
+    import { buildVehicles } from './vehicles.js';
+    import { buildBounties } from './bounties.js';
     import { initUI, openContractForm, openBountiesPanel } from './ui.js';
     import { replaceContracts, mergeRelayAgents } from './data.js';
 
@@ -192,13 +194,38 @@
       }
 
       // Step 6: Connections
-      fill.style.width = '80%';
+      fill.style.width = '75%';
       status.textContent = 'Establishing contract lines...';
       await tick();
       buildConnections();
 
-      // Step 7: UI
-      fill.style.width = '90%';
+      // Step 7: Bounties (3D visualization)
+      fill.style.width = '82%';
+      status.textContent = 'Activating bounty beacons...';
+      await tick();
+      try {
+        const apiBase = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+          ? 'http://localhost:8071' : '/beacon';
+        const bResp = await fetch(`${apiBase}/api/bounties`);
+        if (bResp.ok) {
+          const bounties = await bResp.json();
+          if (Array.isArray(bounties) && bounties.length > 0) {
+            buildBounties(bounties);
+            console.log(`[boot] Visualized ${bounties.length} bounties`);
+          }
+        }
+      } catch (e) {
+        console.warn('[boot] Bounties API unavailable:', e.message);
+      }
+
+      // Step 8: Vehicles (ambient animation)
+      fill.style.width = '88%';
+      status.textContent = 'Deploying ambient vehicles...';
+      await tick();
+      buildVehicles();
+
+      // Step 9: UI
+      fill.style.width = '94%';
       status.textContent = 'Mounting terminal interface...';
       await tick();
       setupInteraction(canvas);
