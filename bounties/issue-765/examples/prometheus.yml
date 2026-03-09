@@ -1,0 +1,105 @@
+# Prometheus Configuration for RustChain - Bounty #765
+#
+# This configuration file sets up Prometheus to scrape metrics from the
+# RustChain Prometheus Exporter.
+#
+# Usage:
+#   prometheus --config.file=prometheus_rustchain.yml
+
+global:
+  # How frequently to scrape targets
+  scrape_interval: 30s
+  
+  # How frequently to evaluate rules
+  evaluation_interval: 30s
+  
+  # Attach these labels to any time series or alerts when communicating with
+  # external systems (federation, remote storage, Alertmanager)
+  external_labels:
+    monitor: 'rustchain-monitor'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 'alertmanager:9093'
+      timeout: 10s
+      api_version: v2
+
+# Load alerting rules
+rule_files:
+  - '/etc/prometheus/rules/rustchain_alerts.yml'
+  # - '/etc/prometheus/rules/*.yml'  # Load all rule files
+
+# Scrape configurations
+scrape_configs:
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: /metrics
+    scheme: http
+
+  # RustChain Exporter
+  - job_name: 'rustchain'
+    static_configs:
+      - targets: ['rustchain-exporter:9100']
+        labels:
+          node_url: 'https://rustchain.org'
+          node_type: 'mainnet'
+    
+    # Override global scrape interval for this job
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    
+    # Metrics path
+    metrics_path: /metrics
+    
+    # HTTP scheme
+    scheme: http
+    
+    # Relabel configurations
+    relabel_configs:
+      # Add node label from target
+      - source_labels: [node_url]
+        target_label: node
+        replacement: '${1}'
+      
+      # Add environment label
+      - target_label: environment
+        replacement: 'production'
+
+  # RustChain Exporter - Testnet (example)
+  - job_name: 'rustchain-testnet'
+    static_configs:
+      - targets: ['rustchain-exporter-testnet:9101']
+        labels:
+          node_url: 'https://testnet.rustchain.org'
+          node_type: 'testnet'
+    
+    scrape_interval: 60s
+    scrape_timeout: 15s
+    metrics_path: /metrics
+    scheme: http
+
+  # Node Exporter for system metrics (optional)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    metrics_path: /metrics
+
+# Remote write configuration (optional - for long-term storage)
+# remote_write:
+#   - url: "http://cortex:9009/api/v1/push"
+#     remote_timeout: 30s
+#     queue_config:
+#       max_samples_per_send: 500
+#       batch_send_deadline: 5s
+#       capacity: 2500
+
+# Remote read configuration (optional)
+# remote_read:
+#   - url: "http://cortex:9009/api/v1/read"
+#     read_recent: true
