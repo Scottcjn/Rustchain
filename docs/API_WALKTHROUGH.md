@@ -143,10 +143,11 @@ POST /wallet/transfer/signed
 
 ```json
 {
-  "from": "sender_wallet_id",
-  "to": "recipient_wallet_id", 
-  "amount": 100,
+  "from_address": "RTC_sender_address",
+  "to_address": "RTC_recipient_address",
+  "amount_rtc": 100,
   "nonce": "unique_value",
+  "public_key": "sender_ed25519_public_key_hex",
   "signature": "ed25519_signature_hex"
 }
 ```
@@ -163,22 +164,34 @@ import nacl.encoding
 with open("/path/to/your/agent.key", "rb") as f:
     private_key = nacl.signing.SigningKey(f.read())
 
-# Create transfer message
+# Derive RTC address from public key
+import hashlib
+public_key_hex = private_key.verify_key.encode().hex()
+from_address = "RTC" + hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
+
+# Create canonical message to sign (uses from/to/amount, not from_address/to_address/amount_rtc)
 transfer_msg = {
-    "from": "sender_wallet",
-    "to": "recipient_wallet",
+    "from": from_address,
+    "to": "RTC_recipient_address",
     "amount": 100,
-    "nonce": "1234567890"
+    "nonce": "1234567890",
+    "memo": ""
 }
 
-# Sign the message
-signed = private_key.sign(json.dumps(transfer_msg).encode())
-signature = signed.signature.hex()
+# Sign the canonical message
+message = json.dumps(transfer_msg, sort_keys=True, separators=(",", ":")).encode()
+signed = private_key.sign(message)
+signature_hex = signed.signature.hex()
 
-# Add signature to payload
+# Build outer payload (uses from_address/to_address/amount_rtc)
 payload = {
-    **transfer_msg,
-    "signature": signature
+    "from_address": from_address,
+    "to_address": "RTC_recipient_address",
+    "amount_rtc": 100,
+    "nonce": "1234567890",
+    "memo": "",
+    "public_key": public_key_hex,
+    "signature": signature_hex
 }
 
 # Send transfer
@@ -192,9 +205,10 @@ print(response.json())
 
 ### Important Notes
 
-- **Wallet ID ≠ Blockchain Address**: RustChain uses simple string IDs (like `tomisnotcat`), not ETH/SOL addresses
+- **RustChain Addresses**: Signed transfers require `RTC...` addresses (43 chars: `RTC` + 40 hex), not simple wallet IDs or ETH/SOL addresses
 - **Private Key**: Your Ed25519 key from `beacon identity new`
 - **Nonce**: Must be unique per transfer (use timestamp or counter)
+- **Public Key**: Required in outer payload; must match the `from_address`
 
 ---
 

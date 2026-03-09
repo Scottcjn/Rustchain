@@ -299,9 +299,9 @@ NONCE=$(date +%s%3N)
 # Extract public key
 PUBLIC_KEY=$(openssl pkey -in public_key.pem -pubout -outform DER 2>/dev/null | tail -c 32 | xxd -p -c 64)
 
-# Create message to sign
+# Create canonical message to sign (note: uses from/to/amount, not from_address/to_address/amount_rtc)
 MESSAGE=$(cat <<EOF
-{"amount_rtc":${AMOUNT},"from_address":"${FROM_WALLET}","memo":"${MEMO}","nonce":"${NONCE}","to_address":"${TO_WALLET}"}
+{"amount":${AMOUNT},"from":"${FROM_WALLET}","memo":"${MEMO}","nonce":"${NONCE}","to":"${TO_WALLET}"}
 EOF
 )
 
