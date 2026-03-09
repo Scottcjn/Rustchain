@@ -54,8 +54,9 @@
 
   <!-- HUD (top-left) -->
   <div class="hud">
-    <div class="hud-title">[BEACON ATLAS v2.7]</div>
+    <div class="hud-title">[BEACON ATLAS v4.0]</div>
     <div class="hud-stats">Loading...</div>
+    <div class="hud-chain" id="hud-chain" style="font-size:10px;color:#888;margin-top:4px"></div>
     <div class="hud-actions">
       <div class="hud-action" id="hud-new-contract">[NEW CONTRACT]</div>
       <div class="hud-action" id="hud-bounties" style="color:#ffd700">[BOUNTIES]</div>
@@ -104,97 +105,66 @@
     import { buildVehicles } from './vehicles.js';
     import { buildBounties } from './bounties.js';
     import { initUI, openContractForm, openBountiesPanel } from './ui.js';
-    import { replaceContracts, mergeRelayAgents } from './data.js';
+    import { fetchAllAgents, replaceContracts, AGENTS, CITIES, CONTRACTS } from './data.js';
 
     const fill = document.getElementById('loading-fill');
     const status = document.getElementById('loading-status');
     const loading = document.getElementById('loading');
 
     async function boot() {
+      const apiBase = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        ? 'http://localhost:8071' : '/beacon';
+
       // Step 1: Scene
       fill.style.width = '15%';
       status.textContent = 'Initializing renderer...';
       await tick();
-
       const canvas = document.getElementById('atlas-canvas');
       initScene(canvas);
 
       // Step 2: Cities
-      fill.style.width = '35%';
+      fill.style.width = '30%';
       status.textContent = 'Generating city clusters...';
       await tick();
       buildCities();
 
-      // Step 3: Relay agents (fetch from backend before building)
+      // Step 3: Fetch ALL agents from live APIs
+      // Polls: BoTTube, Beacon Relay, SwarmHub, RustChain miners, Grazer
       fill.style.width = '45%';
-      status.textContent = 'Scanning relay frequencies...';
+      status.textContent = 'Polling BoTTube + Beacon + RustChain...';
       await tick();
-      try {
-        const apiBase = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-          ? 'http://localhost:8071' : '/beacon';
-        const rResp = await fetch(`${apiBase}/relay/discover`);
-        if (rResp.ok) {
-          const relayAgents = await rResp.json();
-          if (Array.isArray(relayAgents) && relayAgents.length > 0) {
-            mergeRelayAgents(relayAgents);
-            console.log(`[boot] Merged ${relayAgents.length} relay agents into Atlas`);
-          }
-        }
-      } catch (e) {
-        console.warn('[boot] Relay discover unavailable:', e.message);
-      }
+      const results = await fetchAllAgents(apiBase);
 
-      // Step 3b: SwarmHub agents
-      try {
-        const shResp = await fetch('https://swarmhub.onrender.com/api/v1/agents');
-        if (shResp.ok) {
-          const shData = await shResp.json();
-          const shAgents = (shData.agents || []).map(a => ({
-            agent_id: `bcn_swarm_${a.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}`,
-            name: a.name,
-            model_id: 'swarmhub',
-            provider: 'swarmhub',
-            provider_name: 'SwarmHub',
-            capabilities: a.skills || ['collaboration'],
-            status: a.available ? 'active' : 'silent',
-            beat_count: a.completed_swarms || 0,
-          }));
-          if (shAgents.length > 0) {
-            mergeRelayAgents(shAgents);
-            console.log(`[boot] Merged ${shAgents.length} SwarmHub agents`);
-          }
-        }
-      } catch (e) {
-        console.warn('[boot] SwarmHub unavailable:', e.message);
-      }
+      const btCount = results.bottube || 0;
+      const beaconCount = results.beacon || 0;
+      const minerCount = results.miners || 0;
+      console.log(`[boot] Atlas: ${AGENTS.length} agents (${btCount} BoTTube, ${beaconCount} Beacon, ${minerCount} miners)`);
 
-      // Step 4: Agents
-      fill.style.width = '55%';
-      status.textContent = 'Spawning agents...';
-      await tick();
-      buildAgents();
-
-      // Step 5: Fetch persistent contracts from backend
-      fill.style.width = '65%';
+      // Step 4: Fetch contracts before building agents so legacy participants get meshes
+      fill.style.width = '58%';
       status.textContent = 'Loading contract ledger...';
       await tick();
       try {
-        const apiBase = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-          ? 'http://localhost:8071' : '/beacon';
         const cResp = await fetch(`${apiBase}/api/contracts`);
         if (cResp.ok) {
           const contracts = await cResp.json();
           if (Array.isArray(contracts) && contracts.length > 0) {
             replaceContracts(contracts);
-            console.log(`[boot] Loaded ${contracts.length} contracts from backend`);
+            console.log(`[boot] Loaded ${contracts.length} contracts`);
           }
         }
       } catch (e) {
-        console.warn('[boot] Backend unavailable, using hardcoded contracts:', e.message);
+        console.warn('[boot] Contracts unavailable:', e.message);
       }
 
+      // Step 5: Build 3D agents
+      fill.style.width = '72%';
+      status.textContent = `Spawning ${AGENTS.length} agents...`;
+      await tick();
+      buildAgents();
+
       // Step 6: Connections
-      fill.style.width = '75%';
+      fill.style.width = '82%';
       status.textContent = 'Establishing contract lines...';
       await tick();
       buildConnections();
@@ -231,15 +201,46 @@
       setupInteraction(canvas);
       initUI();
 
+      // Force HUD update with current counts
+      const hudEl = document.querySelector('.hud-stats');
+      if (hudEl) {
+        const bt = AGENTS.filter(a => a.sources && a.sources.includes('bottube')).length;
+        const bcn = AGENTS.filter(a => a.sources && a.sources.includes('beacon')).length;
+        const mnr = AGENTS.filter(a => a.sources && a.sources.includes('miner')).length;
+        const h = AGENTS.filter(a => a.human).length;
+        let tag = `${AGENTS.length}`;
+        const parts = [];
+        if (bt) parts.push(`${bt}BT`);
+        if (bcn) parts.push(`${bcn}BCN`);
+        if (mnr) parts.push(`${mnr}M`);
+        if (h) parts.push(`${h}H`);
+        if (parts.length) tag += ` (${parts.join('+')})`;
+        hudEl.innerHTML = `AGENTS: <span>${tag}</span> | CITIES: <span>${CITIES.length}</span> | CONTRACTS: <span>${CONTRACTS.length}</span>`;
+      }
+
       // HUD buttons
       const hudBtn = document.getElementById('hud-new-contract');
       if (hudBtn) hudBtn.addEventListener('click', openContractForm);
       const bountyBtn = document.getElementById('hud-bounties');
       if (bountyBtn) bountyBtn.addEventListener('click', openBountiesPanel);
 
+      // Update HUD with live stats
+      const chainEl = document.getElementById('hud-chain');
+      if (chainEl) {
+        const rc = window.__rustchain || {};
+        const gr = window.__grazer || {};
+        const parts = [];
+        if (rc.count) parts.push(`${rc.count} miners`);
+        if (gr && gr.stars) parts.push(`Grazer: ${gr.stars}★`);
+        const humans = AGENTS.filter(a => a.human).length;
+        const bots = AGENTS.filter(a => !a.human && !a.relay && !a.miner).length;
+        parts.push(`${humans} humans, ${bots} bots`);
+        chainEl.textContent = parts.length ? `RustChain: ${parts.join(' | ')}` : '';
+      }
+
       // Done
       fill.style.width = '100%';
-      status.textContent = 'Atlas online.';
+      status.textContent = `Atlas online — ${AGENTS.length} agents.`;
       await tick();
 
       setTimeout(() => {

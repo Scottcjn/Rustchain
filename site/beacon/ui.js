@@ -4,7 +4,7 @@
 
 import {
   AGENTS, CITIES, CONTRACTS, CALIBRATIONS,
-  GRADE_COLORS, cityRegion, addContract, getProviderColor,
+  GRADE_COLORS, cityRegion, addContract, getProviderColor, resolveAgentId,
 } from './data.js';
 import { lerpCameraTo, resetCamera, setClickHandler, setMissHandler, setHoverHandler } from './scene.js';
 import { getAgentPosition, highlightAgent } from './agents.js';
@@ -26,6 +26,18 @@ let reputationCache = {};
 let reputationTs = 0;
 const REP_CACHE_TTL = 60 * 1000; // 1 min
 
+function mergeReputationRecord(existing, incoming) {
+  if (!existing) return incoming;
+  return {
+    agent_id: incoming.agent_id,
+    score: Math.max(existing.score || 0, incoming.score || 0),
+    bounties_completed: Math.max(existing.bounties_completed || 0, incoming.bounties_completed || 0),
+    contracts_completed: Math.max(existing.contracts_completed || 0, incoming.contracts_completed || 0),
+    contracts_breached: Math.max(existing.contracts_breached || 0, incoming.contracts_breached || 0),
+    total_rtc_earned: Math.max(existing.total_rtc_earned || 0, incoming.total_rtc_earned || 0),
+  };
+}
+
 async function loadReputation() {
   if (Date.now() - reputationTs < REP_CACHE_TTL) return reputationCache;
   try {
@@ -33,7 +45,13 @@ async function loadReputation() {
     if (resp.ok) {
       const data = await resp.json();
       reputationCache = {};
-      for (const r of data) reputationCache[r.agent_id] = r;
+      for (const r of data) {
+        const agentId = resolveAgentId(r.agent_id);
+        reputationCache[agentId] = mergeReputationRecord(reputationCache[agentId], {
+          ...r,
+          agent_id: agentId,
+        });
+      }
       reputationTs = Date.now();
     }
   } catch (e) {
@@ -86,9 +104,17 @@ export function initUI() {
 function updateHUD() {
   const el = document.querySelector('.hud-stats');
   if (el) {
-    const native = AGENTS.filter(a => !a.relay).length;
-    const relay = AGENTS.filter(a => a.relay).length;
-    const agentStr = relay > 0 ? `${native}+${relay}R` : `${AGENTS.length}`;
+    const bt = AGENTS.filter(a => a.sources && a.sources.includes('bottube')).length;
+    const bcn = AGENTS.filter(a => a.sources && a.sources.includes('beacon')).length;
+    const miners = AGENTS.filter(a => a.sources && a.sources.includes('miner')).length;
+    const humans = AGENTS.filter(a => a.human).length;
+    const parts = [];
+    if (bt) parts.push(`${bt}BT`);
+    if (bcn) parts.push(`${bcn}BCN`);
+    if (miners) parts.push(`${miners}M`);
+    if (humans) parts.push(`${humans}H`);
+    let agentStr = `${AGENTS.length}`;
+    if (parts.length) agentStr += ` (${parts.join('+')})`;
     el.innerHTML = `AGENTS: <span>${agentStr}</span> | CITIES: <span>${CITIES.length}</span> | CONTRACTS: <span>${CONTRACTS.length}</span>`;
   }
 }
@@ -210,7 +236,7 @@ function selectAgent(agentId) {
     html += `</div>`;
   } else {
     // Native agent: original display
-    html += `<div><span class="t-label">BEACON</span> <span class="t-value" style="color: var(--text-dim)">${agent.beacon}</span></div>`;
+    html += `<div><span class="t-label">BEACON</span> <span class="t-value" style="color: var(--text-dim)">${agent.beacon || agent.relay_agent_id || agent.id}</span></div>`;
     html += `<div><span class="t-label">ROLE</span> <span class="t-value">${agent.role}</span></div>`;
     html += `<div><span class="t-label">GRADE</span> <span class="grade-badge grade-${agent.grade}">${agent.grade}</span>`;
     html += `${renderBar(agent.score, agent.maxScore, gradeColor)} ${agent.score}/${agent.maxScore}</div>`;
@@ -264,13 +290,43 @@ function selectAgent(agentId) {
     }
   }
 
+  // Source badges
+  if (agent.sources && agent.sources.length > 0) {
+    const SOURCE_BADGE = {
+      bottube:  { label: 'BoTTube',  color: '#ff4488' },
+      beacon:   { label: 'Beacon',   color: '#00ccff' },
+      miner:    { label: 'Miner',    color: '#88ff88' },
+      grazer:   { label: 'Grazer',   color: '#ffd700' },
+      swarmhub: { label: 'SwarmHub', color: '#ff6600' },
+      legacy:   { label: 'Legacy',   color: '#aaaaaa' },
+    };
+    html += `<div class="t-section">-- SOURCES --</div>`;
+    html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0">`;
+    for (const src of agent.sources) {
+      const b = SOURCE_BADGE[src] || { label: src, color: '#aaa' };
+      html += `<span style="background:${b.color}22;color:${b.color};border:1px solid ${b.color}44;padding:1px 6px;font-size:10px;border-radius:3px">${b.label}</span>`;
+    }
+    if (agent.human) {
+      html += `<span style="background:#ffd70022;color:#ffd700;border:1px solid #ffd70044;padding:1px 6px;font-size:10px;border-radius:3px">Human</span>`;
+    }
+    html += `</div>`;
+  }
+
   // External links
   if (agent.bottube) {
     html += `<div class="t-section">-- LINKS --</div>`;
     html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0">`;
     html += `<a href="https://bottube.ai/agent/${agent.bottube}" target="_blank" class="bounty-link">[BoTTube Profile]</a>`;
     if (agent.videos > 0) {
-      html += `<span style="color:var(--text-dim);font-size:11px;line-height:28px">${agent.videos} videos</span>`;
+      html += `<span style="color:var(--text-dim);font-size:11px;line-height:28px">${agent.videos} videos | ${(agent.totalViews||0).toLocaleString()} views</span>`;
+    }
+    html += `</div>`;
+  }
+  if (agent.miner) {
+    html += agent.bottube ? '' : `<div class="t-section">-- LINKS --</div>`;
+    html += `<div style="margin:4px 0"><span style="color:#88ff88">[Miner: ${agent.device_arch || 'unknown'}]</span>`;
+    if (agent.antiquity_multiplier && agent.antiquity_multiplier > 1) {
+      html += ` <span style="color:#ffd700">${agent.antiquity_multiplier}x antiquity</span>`;
     }
     html += `</div>`;
   }
@@ -534,8 +590,8 @@ async function submitContract() {
     }
 
     // Success — add to data, create 3D line, update HUD
-    addContract(data);
-    addContractLine(data);
+    const normalized = addContract(data);
+    addContractLine(normalized);
     updateHUD();
 
     successEl.textContent = `CONTRACT ${data.id} TRANSMITTED. State: ${data.state}`;
