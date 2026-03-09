@@ -14,8 +14,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("1. Initializing storage...");
     println!("   Storage path: {}\n", storage_path.display());
-    
-    let storage = WalletStorage::new(&storage_path);
+
+    let storage = WalletStorage::new(&storage_path)?;
 
     // Create and save multiple wallets
     println!("2. Creating and saving wallets...");
