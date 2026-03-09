@@ -116,6 +116,16 @@ except ImportError as _e:
     HAVE_AIRDROP = False
     print(f"[RIP-305] Airdrop V2 module not available: {_e}")
 
+# RIP-0305 Track C: Bridge API + Lock Ledger
+try:
+    from bridge_api import register_bridge_routes, init_bridge_schema
+    from lock_ledger import register_lock_ledger_routes, init_lock_ledger_schema
+    HAVE_BRIDGE = True
+    print("[RIP-0305 Track C] Bridge API + Lock Ledger modules loaded")
+except ImportError as _e:
+    HAVE_BRIDGE = False
+    print(f"[RIP-0305 Track C] Bridge modules not available: {_e}")
+
 app = Flask(__name__)
 # Supports running from repo `node/` dir or a flat deployment directory (e.g. /root/rustchain).
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -827,6 +837,15 @@ if HAVE_AIRDROP:
     except Exception as e:
         print(f"[RIP-305] Failed to register airdrop endpoints: {e}")
 
+# RIP-0305 Track C: Bridge API + Lock Ledger endpoints
+if HAVE_BRIDGE:
+    try:
+        register_bridge_routes(app)
+        register_lock_ledger_routes(app)
+        print("[RIP-0305 Track C] Bridge API + Lock Ledger endpoints registered")
+    except Exception as e:
+        print(f"[RIP-0305 Track C] Failed to register bridge endpoints: {e}")
+
 def init_db():
     """Initialize all database tables"""
     with sqlite3.connect(DB_PATH) as c:
@@ -1017,6 +1036,11 @@ def init_db():
         # Warthog dual-mining tables
         if HAVE_WARTHOG:
             init_warthog_tables(c)
+
+        # RIP-0305 Track C: Bridge API + Lock Ledger tables
+        if HAVE_BRIDGE:
+            init_bridge_schema(c)
+            init_lock_ledger_schema(c)
 
         c.commit()
 

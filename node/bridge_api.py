@@ -801,7 +801,7 @@ def register_bridge_routes(app):
         
         if not tx_hash or not external_tx_hash:
             return jsonify({"error": "tx_hash and external_tx_hash required"}), 400
-        
+
         conn = sqlite3.connect(DB_PATH)
         try:
             success, result = update_external_confirmation(
@@ -813,3 +813,62 @@ def register_bridge_routes(app):
                 return jsonify(result), 400
         finally:
             conn.close()
+
+
+# =============================================================================
+# Database Initialization
+# =============================================================================
+
+def init_bridge_schema(cursor):
+    """Initialize bridge_transfers table schema.
+    
+    Args:
+        cursor: SQLite cursor object
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bridge_transfers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            -- Core transfer data
+            direction TEXT NOT NULL CHECK (direction IN ('deposit', 'withdraw')),
+            source_chain TEXT NOT NULL,
+            dest_chain TEXT NOT NULL,
+            source_address TEXT NOT NULL,
+            dest_address TEXT NOT NULL,
+
+            -- Amount (stored in micro-units for precision)
+            amount_i64 INTEGER NOT NULL CHECK (amount_i64 > 0),
+            amount_rtc REAL NOT NULL,
+
+            -- Bridge metadata
+            bridge_type TEXT NOT NULL DEFAULT 'bottube',
+            bridge_fee_i64 INTEGER DEFAULT 0,
+            external_tx_hash TEXT,
+            external_confirmations INTEGER DEFAULT 0,
+            required_confirmations INTEGER DEFAULT 12,
+
+            -- State tracking
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'locked', 'confirming', 'completed', 'failed', 'voided')),
+            lock_epoch INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            expires_at INTEGER,
+            completed_at INTEGER,
+
+            -- Audit fields
+            tx_hash TEXT UNIQUE NOT NULL,
+            voided_by TEXT,
+            voided_reason TEXT,
+            failure_reason TEXT,
+
+            -- Optional memo
+            memo TEXT
+        )
+    """)
+    
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_status ON bridge_transfers(status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_source ON bridge_transfers(source_address)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_dest ON bridge_transfers(dest_address)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_lock_epoch ON bridge_transfers(lock_epoch)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_tx_hash ON bridge_transfers(tx_hash)")

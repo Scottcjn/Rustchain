@@ -777,54 +777,65 @@ def register_lock_ledger_routes(app):
 # Database Initialization
 # =============================================================================
 
-def init_lock_ledger_schema(db_path: str = DB_PATH):
-    """Initialize lock_ledger table schema."""
-    conn = sqlite3.connect(db_path)
-    try:
+def init_lock_ledger_schema(cursor_or_db_path=None):
+    """Initialize lock_ledger table schema.
+    
+    Args:
+        cursor_or_db_path: Either a SQLite cursor object (for integration with main node)
+                          or a database path string (for standalone usage)
+    """
+    # Support both cursor (from main node init_db) and db_path (standalone)
+    if hasattr(cursor_or_db_path, 'execute'):
+        # It's a cursor
+        cursor = cursor_or_db_path
+        conn = None
+    else:
+        # It's a db_path or None (use default)
+        db_path = cursor_or_db_path if cursor_or_db_path else DB_PATH
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS lock_ledger (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                
-                -- Reference to bridge transfer
-                bridge_transfer_id INTEGER,
-                
-                -- Lock metadata
-                miner_id TEXT NOT NULL,
-                amount_i64 INTEGER NOT NULL CHECK (amount_i64 > 0),
-                lock_type TEXT NOT NULL CHECK (lock_type IN (
-                    'bridge_deposit', 
-                    'bridge_withdraw', 
-                    'epoch_settlement',
-                    'admin_hold'
-                )),
-                
-                -- Timing
-                locked_at INTEGER NOT NULL,
-                unlock_at INTEGER NOT NULL,
-                unlocked_at INTEGER,
-                
-                -- State
-                status TEXT NOT NULL DEFAULT 'locked'
-                    CHECK (status IN ('locked', 'released', 'forfeited')),
-                
-                -- Audit
-                created_at INTEGER NOT NULL,
-                released_by TEXT,
-                release_tx_hash TEXT,
-                
-                FOREIGN KEY (bridge_transfer_id) REFERENCES bridge_transfers(id)
-            )
-        """)
-        
-        # Create indexes
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_lock_miner ON lock_ledger(miner_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_lock_status ON lock_ledger(status)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_lock_unlock_at ON lock_ledger(unlock_at)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_lock_bridge ON lock_ledger(bridge_transfer_id)")
-        
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lock_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            -- Reference to bridge transfer
+            bridge_transfer_id INTEGER,
+
+            -- Lock metadata
+            miner_id TEXT NOT NULL,
+            amount_i64 INTEGER NOT NULL CHECK (amount_i64 > 0),
+            lock_type TEXT NOT NULL CHECK (lock_type IN (
+                'bridge_deposit',
+                'bridge_withdraw',
+                'epoch_settlement',
+                'admin_hold'
+            )),
+
+            -- Timing
+            locked_at INTEGER NOT NULL,
+            unlock_at INTEGER NOT NULL,
+            unlocked_at INTEGER,
+
+            -- State
+            status TEXT NOT NULL DEFAULT 'locked'
+                CHECK (status IN ('locked', 'released', 'forfeited')),
+
+            -- Audit
+            created_at INTEGER NOT NULL,
+            released_by TEXT,
+            release_tx_hash TEXT,
+
+            FOREIGN KEY (bridge_transfer_id) REFERENCES bridge_transfers(id)
+        )
+    """)
+
+    # Create indexes
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_lock_miner ON lock_ledger(miner_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_lock_status ON lock_ledger(status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_lock_unlock_at ON lock_ledger(unlock_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_lock_bridge ON lock_ledger(bridge_transfer_id)")
+
+    if conn:
         conn.commit()
-        
-    finally:
         conn.close()
