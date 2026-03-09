@@ -16,6 +16,9 @@ let autoRotateSpeed = 0.001; // radians per frame (~0.06°)
 let lerpTarget = null;
 let lerpAlpha = 0;
 
+// Day/Night Cycle - Lighting references
+let ambientLight, dirLight;
+
 export function getScene() { return scene; }
 export function getCamera() { return camera; }
 export function getRenderer() { return renderer; }
@@ -60,13 +63,16 @@ export function initScene(canvas) {
   raycaster = new THREE.Raycaster();
   mouse = new THREE.Vector2();
 
-  // Lights
-  const ambient = new THREE.AmbientLight(0x112211, 0.4);
-  scene.add(ambient);
+  // Lights - Day/Night Cycle
+  ambientLight = new THREE.AmbientLight(0x112211, 0.4);
+  scene.add(ambientLight);
 
-  const dirLight = new THREE.DirectionalLight(0x33ff33, 0.15);
+  dirLight = new THREE.DirectionalLight(0x33ff33, 0.15);
   dirLight.position.set(50, 200, 100);
   scene.add(dirLight);
+
+  // Register day/night cycle update
+  onAnimate(updateDayNightCycle);
 
   // Ground grid
   const gridHelper = new THREE.GridHelper(500, 60, 0x0a1a0a, 0x060e06);
@@ -202,4 +208,53 @@ export function startLoop() {
 
 function smoothstep(t) {
   return t * t * (3 - 2 * t);
+}
+
+// --- Day/Night Cycle based on real UTC time ---
+function updateDayNightCycle(elapsed, dt) {
+  // Get current UTC time
+  const now = new Date();
+  const utcHours = now.getUTCHours();
+  const utcMinutes = now.getUTCMinutes();
+  const utcSeconds = now.getUTCSeconds();
+  
+  // Calculate time of day (0-24)
+  const timeOfDay = utcHours + utcMinutes / 60 + utcSeconds / 3600;
+  
+  // Sun position based on time (0 = midnight, 12 = noon)
+  const angle = ((timeOfDay - 6) / 24) * Math.PI * 2; // offset so 6am = sunrise
+  const radius = 200;
+  
+  const sunX = Math.cos(angle) * radius;
+  const sunY = Math.sin(angle) * radius;
+  
+  // Update directional light position
+  dirLight.position.set(sunX, Math.max(sunY, -50), 100);
+  
+  // Calculate day/night factor (0 = night, 1 = day)
+  const dayFactor = Math.max(0, Math.sin(angle));
+  
+  // Interpolate colors and intensities based on time of day
+  // Night: dark blue-green, Day: bright green
+  const nightColor = new THREE.Color(0x0a1a2a);
+  const dayColor = new THREE.Color(0x33ff33);
+  const currentColor = nightColor.clone().lerp(dayColor, dayFactor);
+  
+  dirLight.color = currentColor;
+  dirLight.intensity = 0.05 + dayFactor * 0.2;
+  
+  // Ambient light changes too
+  const nightAmbient = 0.15;
+  const dayAmbient = 0.5;
+  ambientLight.intensity = nightAmbient + (dayAmbient - nightAmbient) * dayFactor;
+  ambientLight.color = new THREE.Color(0x112211).lerp(new THREE.Color(0x224422), dayFactor);
+  
+  // Adjust scene background slightly
+  const nightBg = new THREE.Color(0x010301);
+  const dayBg = new THREE.Color(0x020502);
+  scene.background = nightBg.clone().lerp(dayBg, dayFactor);
+  scene.fog.color = scene.background;
+  
+  // Adjust exposure
+  renderer.toneMappingExposure = 0.5 + dayFactor * 0.4;
 }
