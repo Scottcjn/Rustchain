@@ -6,6 +6,7 @@ use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
 use crate::error::{Result, WalletError};
 use crate::keys::KeyPair;
+use crate::nonce_store::NonceStore;
 
 /// A RustChain transaction
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,6 +118,22 @@ impl Transaction {
     /// Deserialize a transaction from JSON
     pub fn from_json(json: &str) -> Result<Self> {
         Ok(serde_json::from_str(json)?)
+    }
+
+    /// Verify the transaction nonce against a nonce store (replay protection)
+    /// Returns Ok(()) if the nonce is valid (not previously used)
+    /// Returns Err if the nonce has already been used (replay attempt)
+    pub fn verify_nonce(&self, nonce_store: &NonceStore) -> Result<()> {
+        nonce_store.validate_nonce(&self.from, self.nonce)
+    }
+
+    /// Verify both signature and nonce (complete transaction validation)
+    /// Returns Ok(true) if signature is valid and nonce is not a replay
+    pub fn verify_complete(&self, keypair: &KeyPair, nonce_store: &NonceStore) -> Result<bool> {
+        // First check for replay
+        self.verify_nonce(nonce_store)?;
+        // Then verify signature
+        self.verify(keypair)
     }
 }
 
@@ -321,8 +338,129 @@ mod tests {
             100,
             1,
         );
-        
+
         let hash = tx.hash().unwrap();
         assert_eq!(hash.len(), 64); // SHA256 hex
+    }
+
+    // ==================== Replay Protection Tests ====================
+
+    #[test]
+    fn test_transaction_nonce_verification() {
+        let keypair = KeyPair::generate();
+        let mut tx = Transaction::new(
+            keypair.public_key_base58(),
+            "recipient".to_string(),
+            1000,
+            100,
+            0,
+        );
+        tx.sign(&keypair).unwrap();
+
+        let nonce_store = NonceStore::new();
+
+        // First use should succeed
+        assert!(tx.verify_nonce(&nonce_store).is_ok());
+
+        // Mark nonce as used
+        let mut store2 = NonceStore::new();
+        store2.mark_used(&tx.from, 0);
+
+        // Replay should fail
+        assert!(tx.verify_nonce(&store2).is_err());
+    }
+
+    #[test]
+    fn test_transaction_complete_verification() {
+        let keypair = KeyPair::generate();
+        let mut tx = Transaction::new(
+            keypair.public_key_base58(),
+            "recipient".to_string(),
+            1000,
+            100,
+            0,
+        );
+        tx.sign(&keypair).unwrap();
+
+        let nonce_store = NonceStore::new();
+
+        // Complete verification should succeed
+        assert!(tx.verify_complete(&keypair, &nonce_store).unwrap());
+
+        // Mark nonce as used
+        let mut store2 = NonceStore::new();
+        store2.mark_used(&tx.from, 0);
+
+        // Complete verification should fail (replay)
+        assert!(tx.verify_complete(&keypair, &store2).is_err());
+    }
+
+    #[test]
+    fn test_replay_protection_different_nonces() {
+        let keypair = KeyPair::generate();
+        let address = keypair.public_key_base58();
+
+        let mut tx1 = Transaction::new(
+            address.clone(),
+            "recipient".to_string(),
+            1000,
+            100,
+            0,
+        );
+        tx1.sign(&keypair).unwrap();
+
+        let mut tx2 = Transaction::new(
+            address.clone(),
+            "recipient".to_string(),
+            2000,
+            100,
+            1,
+        );
+        tx2.sign(&keypair).unwrap();
+
+        let mut nonce_store = NonceStore::new();
+
+        // First transaction should succeed
+        assert!(tx1.verify_complete(&keypair, &nonce_store).unwrap());
+        // Mark nonce as used after successful verification
+        nonce_store.mark_used(&address, 0);
+
+        // Second transaction with different nonce should also succeed
+        assert!(tx2.verify_complete(&keypair, &nonce_store).unwrap());
+        // Mark nonce as used
+        nonce_store.mark_used(&address, 1);
+
+        // First transaction replay should fail
+        assert!(tx1.verify_complete(&keypair, &nonce_store).is_err());
+    }
+
+    #[test]
+    fn test_replay_protection_different_addresses() {
+        let keypair1 = KeyPair::generate();
+        let keypair2 = KeyPair::generate();
+
+        let mut tx1 = Transaction::new(
+            keypair1.public_key_base58(),
+            "recipient".to_string(),
+            1000,
+            100,
+            0,
+        );
+        tx1.sign(&keypair1).unwrap();
+
+        let mut tx2 = Transaction::new(
+            keypair2.public_key_base58(),
+            "recipient".to_string(),
+            1000,
+            100,
+            0,
+        );
+        tx2.sign(&keypair2).unwrap();
+
+        let nonce_store = NonceStore::new();
+
+        // Both transactions with same nonce but different addresses should succeed
+        assert!(tx1.verify_complete(&keypair1, &nonce_store).unwrap());
+        assert!(tx2.verify_complete(&keypair2, &nonce_store).unwrap());
     }
 }

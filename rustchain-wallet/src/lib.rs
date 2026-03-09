@@ -28,12 +28,14 @@ pub mod keys;
 pub mod storage;
 pub mod transaction;
 pub mod client;
+pub mod nonce_store;
 
 pub use error::{Result, WalletError};
 pub use keys::KeyPair;
 pub use storage::WalletStorage;
 pub use transaction::{Transaction, TransactionBuilder};
 pub use client::RustChainClient;
+pub use nonce_store::NonceStore;
 
 /// Main wallet structure
 #[derive(Clone)]

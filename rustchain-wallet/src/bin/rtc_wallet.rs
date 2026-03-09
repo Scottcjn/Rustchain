@@ -194,12 +194,9 @@ async fn main() -> anyhow::Result<()> {
 
     // Get wallet storage
     let storage = if let Some(dir) = cli.wallet_dir {
-        WalletStorage::new(dir)
+        WalletStorage::new(dir)?
     } else {
-        WalletStorage::default().unwrap_or_else(|e| {
-            error!("Failed to initialize wallet storage: {}", e);
-            std::process::exit(1);
-        })
+        WalletStorage::default()?
     };
 
     // Execute command
