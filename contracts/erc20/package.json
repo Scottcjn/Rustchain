@@ -1,0 +1,60 @@
+{
+  "name": "rustchain-wrtc-erc20",
+  "version": "1.0.0",
+  "description": "RustChain Token (wRTC) ERC-20 contract for Base - RIP-305 Track B",
+  "scripts": {
+    "compile": "npx hardhat compile",
+    "test": "npx hardhat test",
+    "test:coverage": "npx hardhat coverage",
+    "test:gas": "REPORT_GAS=true npx hardhat test",
+    "deploy:base": "npx hardhat run scripts/deploy.js --network base",
+    "deploy:base-sepolia": "npx hardhat run scripts/deploy.js --network baseSepolia",
+    "deploy:local": "npx hardhat run scripts/deploy.js --network localhost",
+    "verify:base": "npx hardhat verify --network base",
+    "lint": "npx prettier --write contracts/**/*.sol scripts/**/*.js test/**/*.js",
+    "clean": "npx hardhat clean"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^2.0.7",
+    "@nomicfoundation/hardhat-ethers": "^3.0.5",
+    "@nomicfoundation/hardhat-ignition": "^0.15.4",
+    "@nomicfoundation/hardhat-ignition-ethers": "^0.15.4",
+    "@nomicfoundation/hardhat-network-helpers": "^1.0.10",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@nomicfoundation/hardhat-verify": "^2.0.8",
+    "@nomicfoundation/ignition-core": "^0.15.4",
+    "@openzeppelin/contracts": "^5.0.2",
+    "@typechain/ethers-v6": "^0.5.1",
+    "@typechain/hardhat": "^9.1.0",
+    "@types/chai": "^4.3.16",
+    "@types/mocha": "^10.0.6",
+    "chai": "^4.4.1",
+    "ethers": "^6.13.1",
+    "hardhat": "^2.22.5",
+    "hardhat-gas-reporter": "^1.0.10",
+    "prettier": "^3.3.2",
+    "prettier-plugin-solidity": "^1.3.1",
+    "solidity-coverage": "^0.8.12",
+    "ts-node": "^10.9.2",
+    "typechain": "^8.3.2",
+    "typescript": "^5.5.2"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "keywords": [
+    "rustchain",
+    "wrtc",
+    "erc20",
+    "base",
+    "blockchain",
+    "proof-of-antiquity"
+  ],
+  "author": "RustChain Core Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Scottcjn/Rustchain.git",
+    "directory": "contracts/erc20"
+  }
+}
