@@ -16,41 +16,30 @@ Welcome to RustChain! This guide gets you started in minutes.
 
 ## Path 1: Wallet User
 
-Get a wallet to hold and transfer RTC.
+Check balances and learn the current transfer flow.
 
-### Create Wallet
+### Pick Your RustChain Wallet ID
 
 ```bash
-# Install CLI
-npm install -g clawrtc
-
-# Create new wallet
-clawrtc wallet new
+# Example wallet/miner ID used across docs and miners
+YOUR_WALLET=retro-g5-miner
 ```
 
-**Output example:**
-```
-Wallet: Ivan-houzhiwen
-Address: RTCa...
-```
+Current `clawrtc` releases do **not** ship `wallet new`, `wallet show`, or `wallet pay` subcommands. `clawrtc` is the miner installer/service wrapper. For wallet basics, keep one consistent RustChain wallet ID (`miner_id`) and use the balance + signed transfer docs below.
 
 ### Check Balance
 
 ```bash
-# Via CLI
-clawrtc wallet show
-
-# Via API
-curl -s "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET"
+curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET"
 ```
 
-**Note:** Your RustChain wallet ID (e.g., `Ivan-houzhiwen`) is NOT an Ethereum or Solana address. It's a RustChain-specific identifier.
+**Note:** Your RustChain wallet ID is a RustChain-specific `miner_id`. It is not an Ethereum or Solana address.
 
 ### Transfer RTC
 
-```bash
-clawrtc wallet pay --to RECIPIENT --amount 10
-```
+- User transfers use the signed endpoint: `POST /wallet/transfer/signed`
+- Admin transfers use: `POST /wallet/transfer`
+- Canonical examples live in [docs/DEVELOPER_QUICKSTART.md](docs/DEVELOPER_QUICKSTART.md) and [docs/WALLET_USER_GUIDE.md](docs/WALLET_USER_GUIDE.md)
 
 ---
 
@@ -66,14 +55,20 @@ Earn RTC by contributing compute resources.
 
 ### Start Mining
 
-**Recommended: One-line installer**
+**Recommended: current `clawrtc` installer**
 
 ```bash
-# Install and start miner (auto-configures systemd/launchd)
-curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet YOUR_WALLET
+# Install the miner wrapper and write config for your wallet ID
+npm install -g clawrtc
+clawrtc install --wallet YOUR_WALLET
+
+# Start the miner
+clawrtc start --service
 ```
 
-**Alternative: Manual run**
+`clawrtc status` and `clawrtc logs` are the supported management commands in current releases.
+
+**Alternative: manual Python miner**
 
 ```bash
 # Download miner scripts
@@ -88,16 +83,15 @@ python3 rustchain_miner.py --wallet YOUR_WALLET
 ### Manage Miner
 
 ```bash
-# Linux (systemd user service)
-systemctl --user status rustchain-miner    # Check status
-systemctl --user stop rustchain-miner      # Stop mining
-systemctl --user start rustchain-miner     # Start mining
-journalctl --user -u rustchain-miner -f    # View logs
+# Cross-platform wrapper
+clawrtc status
+clawrtc logs
+clawrtc stop
+clawrtc start --service
 
-# macOS (launchd)
-launchctl list | grep rustchain            # Check status
-launchctl unload ~/Library/LaunchAgents/com.rustchain.miner.plist  # Stop
-launchctl load ~/Library/LaunchAgents/com.rustchain.miner.plist     # Start
+# Linux/macOS service manager fallback
+systemctl --user status rustchain-miner
+journalctl --user -u rustchain-miner -f
 ```
 
 ### Check Rewards
@@ -153,6 +147,8 @@ The nodes use self-signed certificates. Use `verify=False` in Python or `--insec
 - **Bounties:** https://github.com/Scottcjn/rustchain-bounties
 - **Explorer:** https://50.28.86.131/explorer
 - **Health:** https://50.28.86.131/health
+- **Wallet Guide:** [docs/WALLET_USER_GUIDE.md](docs/WALLET_USER_GUIDE.md)
+- **Developer Quickstart:** [docs/DEVELOPER_QUICKSTART.md](docs/DEVELOPER_QUICKSTART.md)
 
 ---
 
