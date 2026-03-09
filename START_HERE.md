@@ -1,155 +1,135 @@
 # RustChain Start Here
 
-Welcome to RustChain! This quickstart guide will help you enter the ecosystem in minutes.
-
-## Choose Your Path
-
-- **[Wallet/User](#wallet-user)** — I want to receive/send RTC tokens
-- **[Miner](#miner)** — I want to mine RTC with my hardware
-- **[Developer](#developer)** — I want to build apps on RustChain
+Welcome to RustChain! This guide gets you started in minutes.
 
 ---
 
-## 🚀 Wallet / User
+## Quick Comparison
 
-### Create a Wallet
+| Path | Best For | Reward Potential |
+|------|----------|------------------|
+| **Wallet** | Using RTC, payments | N/A |
+| **Miner** | Earning RTC passively | 1-100+ RTC/day |
+| **Developer** | Building apps, tools | Bounties |
 
-Any string can be your wallet ID. No registration needed!
+---
+
+## Path 1: Wallet User
+
+Get a wallet to hold and transfer RTC.
+
+### Create Wallet
 
 ```bash
-# Your wallet is just a name - no setup required
-# Example: "tomisnotcat"
+# Install CLI
+npm install -g clawrtc
+
+# Create new wallet
+clawrtc wallet new
+```
+
+**Output example:**
+```
+Wallet: Ivan-houzhiwen
+Address: RTCa...
 ```
 
 ### Check Balance
 
 ```bash
-curl "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_NAME"
+# Via CLI
+clawrtc wallet show
+
+# Via API
+curl -s "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET"
 ```
 
-Example:
-```bash
-curl "https://50.28.86.131/wallet/balance?miner_id=tomisnotcat"
-# Response: {"amount_i64":0,"amount_rtc":0.0,"miner_id":"tomisnotcat"}
-```
+**Note:** Your RustChain wallet ID (e.g., `Ivan-houzhiwen`) is NOT an Ethereum or Solana address. It's a RustChain-specific identifier.
 
-### Important: Wallet IDs ≠ ETH/SOL/Base Addresses
-
-⚠️ **RustChain wallet IDs are simple strings**, not blockchain addresses!
-
-- ✅ RustChain wallet: `tomisnotcat`
-- ❌ Not an ETH address: `0x123...`
-- ❌ Not SOL address: `abc...`
-
-When someone says "give me your wallet address" in RustChain, just give them your wallet ID (like `tomisnotcat`).
-
----
-
-## ⛏️ Miner
-
-### Install and Start Mining
+### Transfer RTC
 
 ```bash
-# Install the miner
-pip install clawrtc
-
-# Set up with your wallet
-clawrtc install --wallet YOUR_WALLET_NAME
-
-# Start mining
-clawrtc start
-```
-
-### Check Miner Status
-
-```bash
-clawrtc status
-clawrtc logs
-```
-
-### Hardware Multipliers
-
-| Hardware | Multiplier |
-|----------|------------|
-| Modern x86/ARM | 1.0x |
-| Apple Silicon (M1/M2/M3) | 1.2x |
-| PowerPC G5 | 2.0x |
-| PowerPC G4 | 2.5x |
-| VM/Emulator | ~0x |
-
-### View Active Miners
-
-```bash
-curl "https://50.28.86.131/api/miners"
+clawrtc wallet pay --to RECIPIENT --amount 10
 ```
 
 ---
 
-## 👨‍💻 Developer
+## Path 2: Miner
 
-### API Base URL
+Earn RTC by contributing compute resources.
 
-```
-https://50.28.86.131
-```
+### Requirements
 
-### Common API Endpoints
+- Linux (recommended) or Windows
+- 4GB+ RAM
+- GPU recommended (4GB+ VRAM) for better rewards
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Node health status |
-| `/wallet/balance?miner_id=...` | GET | Check wallet balance |
-| `/lottery/eligibility?miner_id=...` | GET | Check mining eligibility |
-| `/api/miners` | GET | List active miners |
-| `/wallet/transfer/signed` | POST | Signed transfer (requires key) |
-
-### Example: Check Node Health
+### Start Mining
 
 ```bash
-curl "https://50.28.86.131/health"
-# Response: {"ok":true,"version":"2.2.1-rip200",...}
+# Install
+git clone https://github.com/Scottcjn/Rustchain
+cd Rustchain
+cargo build --release
+
+# Run miner
+./target/release/rustchain-miner --wallet YOUR_WALLET
 ```
 
-### Example: Check Wallet Balance
+### Check Rewards
 
 ```bash
-curl "https://50.28.86.131/wallet/balance?miner_id=tomisnotcat"
-# Response: {"amount_i64":0,"amount_rtc":0.0,"miner_id":"tomisnotcat"}
-```
-
-### Example: Check Mining Eligibility
-
-```bash
-curl "https://50.28.86.131/lottery/eligibility?miner_id=tomisnotcat"
-# Response: {"eligible":false,"reason":"not_attested",...}
-```
-
-### Signed Transfers
-
-To send RTC, you need to sign the transaction with your Ed25519 key. See the [API Walkthrough](./docs/API_WALKTHROUGH.md) for detailed signed transfer instructions.
-
-### Self-Signed Certificate Note
-
-The node uses a self-signed certificate. Use `-k` or `--insecure` flag with curl:
-
-```bash
-curl -k "https://50.28.86.131/health"
+curl -s "https://50.28.86.131/api/miners?wallet=YOUR_WALLET"
 ```
 
 ---
 
-## 📚 Resources
+## Path 3: Developer
 
-- **Explorer**: https://rustchain.org/
-- **Bounties**: https://github.com/Scottcjn/rustchain-bounties
-- **GitHub Repo**: https://github.com/Scottcjn/Rustchain
-- **BoTTube** (Video Platform): https://bottube.ai
-- **Discord**: Join the community for help
+Build apps on RustChain.
+
+### API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/health` | Node health check |
+| `/ready` | Readiness probe |
+| `/epoch` | Current epoch info |
+| `/api/miners` | List active miners |
+| `/wallet/balance?miner_id=X` | Check balance |
+| `/api/stats` | Chain statistics |
+| `/api/hall_of_fame` | Top miners |
+
+**Primary Node:** `https://50.28.86.131`  
+**Explorer:** `https://50.28.86.131/explorer`
+
+### Python Example
+
+```python
+import requests
+
+# Check balance
+r = requests.get(
+    "https://50.28.86.131/wallet/balance",
+    params={"miner_id": "Ivan-houzhiwen"},
+    verify=False  # Self-signed cert
+)
+print(r.json())
+# {"amount_rtc": 155.0, "miner_id": "Ivan-houzhiwen"}
+```
+
+### Note on SSL
+
+The nodes use self-signed certificates. Use `verify=False` in Python or `--insecure` in curl.
 
 ---
 
-## Need Help?
+## Resources
 
-- Check existing issues: https://github.com/Scottcjn/Rustchain/issues
-- Open a new issue: https://github.com/Scottcjn/Rustchain/issues/new
-- Check bounty list: https://github.com/Scottcjn/rustchain-bounties
+- **Bounties:** https://github.com/Scottcjn/rustchain-bounties
+- **Explorer:** https://50.28.86.131/explorer
+- **Health:** https://50.28.86.131/health
+
+---
+
+*Last updated: 2026-03-09*
