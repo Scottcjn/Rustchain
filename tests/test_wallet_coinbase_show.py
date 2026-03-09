@@ -191,6 +191,8 @@ class TestWalletFilePermissions(unittest.TestCase):
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
         import coinbase_wallet
+        self.original_install_dir = coinbase_wallet.INSTALL_DIR
+        self.original_coinbase_file = coinbase_wallet.COINBASE_FILE
         coinbase_wallet.INSTALL_DIR = self.temp_dir
         coinbase_wallet.COINBASE_FILE = os.path.join(self.temp_dir, "coinbase_wallet.json")
 
@@ -198,7 +200,8 @@ class TestWalletFilePermissions(unittest.TestCase):
         """Clean up test fixtures."""
         import coinbase_wallet
         import shutil
-        coinbase_wallet.INSTALL_DIR = "/tmp/.clawrtc"  # Restore default
+        coinbase_wallet.INSTALL_DIR = self.original_install_dir
+        coinbase_wallet.COINBASE_FILE = self.original_coinbase_file
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
