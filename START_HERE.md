@@ -60,20 +60,44 @@ Earn RTC by contributing compute resources.
 
 ### Requirements
 
-- Linux (recommended) or Windows
+- Linux (recommended), macOS, or Windows
 - 4GB+ RAM
 - GPU recommended (4GB+ VRAM) for better rewards
 
 ### Start Mining
 
+**Recommended: One-line installer**
+
 ```bash
-# Install
-git clone https://github.com/Scottcjn/Rustchain
-cd Rustchain
-cargo build --release
+# Install and start miner (auto-configures systemd/launchd)
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet YOUR_WALLET
+```
+
+**Alternative: Manual run**
+
+```bash
+# Download miner scripts
+mkdir -p ~/.rustchain && cd ~/.rustchain
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/rustchain_linux_miner.py -o rustchain_miner.py
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/fingerprint_checks.py -o fingerprint_checks.py
 
 # Run miner
-./target/release/rustchain-miner --wallet YOUR_WALLET
+python3 rustchain_miner.py --wallet YOUR_WALLET
+```
+
+### Manage Miner
+
+```bash
+# Linux (systemd user service)
+systemctl --user status rustchain-miner    # Check status
+systemctl --user stop rustchain-miner      # Stop mining
+systemctl --user start rustchain-miner     # Start mining
+journalctl --user -u rustchain-miner -f    # View logs
+
+# macOS (launchd)
+launchctl list | grep rustchain            # Check status
+launchctl unload ~/Library/LaunchAgents/com.rustchain.miner.plist  # Stop
+launchctl load ~/Library/LaunchAgents/com.rustchain.miner.plist     # Start
 ```
 
 ### Check Rewards
