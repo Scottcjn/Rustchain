@@ -215,3 +215,14 @@ def test_wallet_review_ui_lists_entries_and_accepts_query_admin_key(client):
     assert "RustChain Wallet Review Holds" in html
     assert "review-miner" in html
     assert "retry from the intended box" in html
+
+
+def test_admin_operator_ui_links_to_wallet_review_surface(client):
+    test_client, _db_path = client
+
+    response = test_client.get("/admin/ui?admin_key=" + ("0" * 32))
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "RustChain Admin" in html
+    assert "/admin/wallet-review-holds/ui" in html

@@ -2920,6 +2920,54 @@ def admin_resolve_wallet_review_hold(hold_id: int):
     return jsonify({"ok": True, "id": hold_id, "wallet": wallet, "status": new_status})
 
 
+@app.route('/admin/ui', methods=['GET'])
+def admin_operator_ui():
+    """Minimal operator landing page for the admin surfaces in this single-file node."""
+    if not _wallet_review_ui_authorized(request):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
+    admin_key = str(request.values.get("admin_key") or "").strip()
+    return render_template_string(
+        """
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>RustChain Admin</title>
+  <style>
+    body { font-family: monospace; margin: 24px; background: #111; color: #eee; }
+    a { color: #89dceb; }
+    .panel { border: 1px solid #444; padding: 16px; margin: 0 0 18px 0; background: #181818; }
+    ul { margin: 0; padding-left: 20px; }
+    .meta { color: #bbb; }
+    code { color: #f9e2af; }
+  </style>
+</head>
+<body>
+  <h1>RustChain Admin</h1>
+  <p class="meta">Thin operator index for the existing admin endpoints in this node process.</p>
+  <div class="panel">
+    <h2>Review And Moderation</h2>
+    <ul>
+      <li><a href="/admin/wallet-review-holds/ui{% if admin_key %}?admin_key={{ admin_key|urlencode }}{% endif %}">Wallet Review Holds UI</a> — create holds, coach miners, release, dismiss, escalate, or block.</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <h2>JSON Admin Endpoints</h2>
+    <ul>
+      <li><code>GET /admin/wallet-review-holds</code> — list review entries</li>
+      <li><code>POST /admin/wallet-review-holds</code> — create review entries</li>
+      <li><code>POST /admin/wallet-review-holds/&lt;id&gt;/resolve</code> — resolve review entries</li>
+      <li><code>GET /admin/oui_deny/list</code> — inspect the OUI deny registry</li>
+    </ul>
+  </div>
+</body>
+</html>
+        """,
+        admin_key=admin_key,
+    )
+
+
 @app.route('/admin/wallet-review-holds/ui', methods=['GET', 'POST'])
 def admin_wallet_review_holds_ui():
     """Small operator UI for wallet review holds without changing the JSON admin API surface."""
@@ -3038,6 +3086,7 @@ def admin_wallet_review_holds_ui():
   </style>
 </head>
 <body>
+  <nav><a href="/admin/ui{% if admin_key %}?admin_key={{ admin_key|urlencode }}{% endif %}">admin index</a></nav>
   <h1>RustChain Wallet Review Holds</h1>
   <p class="meta">Use this page to create review holds, coach miners, and release or escalate wallets without touching the legacy hard-block list.</p>
   <div class="filters">
