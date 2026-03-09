@@ -32,14 +32,15 @@ This implementation provides production-ready Solana SPL token deployment infras
 | `integrations/solana-spl/config/testnet-config.json` | Testnet settings |
 | `integrations/solana-spl/config/mainnet-config.json` | Mainnet production settings |
 
-### Tests (2 files)
+### Tests (3 files)
 
 | File | Purpose | Tests |
 |------|---------|-------|
 | `integrations/solana-spl/tests/test_spl_deployment.py` | Unit tests | 26 |
+| `integrations/solana-spl/tests/test_sdk.py` | SDK tests | 20 |
 | `integrations/solana-spl/tests/conftest.py` | Pytest fixtures | - |
 
-**Total: 12 new files, ~1,900+ lines of code**
+**Total: 15 new files, ~3,400+ lines of code**
 
 ---
 
@@ -47,7 +48,7 @@ This implementation provides production-ready Solana SPL token deployment infras
 
 ### Test Results
 ```
-============================== 26 passed in 0.05s ==============================
+============================== 46 passed in 0.07s ==============================
 ```
 
 ### Test Coverage
@@ -62,6 +63,7 @@ This implementation provides production-ready Solana SPL token deployment infras
 | Config File Operations | 4 | ✅ |
 | Integration Scenarios | 2 | ✅ |
 | Edge Cases | 4 | ✅ |
+| WRtcToken/WRtcBridge/SDK | 20 | ✅ |
 
 ### Running Tests
 ```bash
@@ -263,7 +265,7 @@ ui_balance = token.to_ui_amount(balance)
 - [x] Configuration files (devnet/mainnet)
 - [x] Third-party SDK
 - [x] Comprehensive documentation
-- [x] Test suite (26 tests, all passing)
+- [x] Test suite (46 tests, all passing)
 - [x] Security considerations documented
 
 ### Out of Scope (Future Tracks)
