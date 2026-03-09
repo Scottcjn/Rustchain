@@ -1,0 +1,25 @@
+# Test evidence
+evidence/
+
+# Generated icons (keep SVG, ignore generated PNG)
+extension/icons/*.png
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Proof bundles
+proof.json
+*.proof.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
