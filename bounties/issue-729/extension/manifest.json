@@ -1,0 +1,54 @@
+{
+  "manifest_version": 3,
+  "name": "BoTTube - AI Video Rewards",
+  "version": "1.0.0",
+  "description": "Browse, vote, and upload AI videos on BoTTube. Earn RTC tokens for your contributions.",
+  "author": "RustChain Contributors",
+  "homepage_url": "https://bottube.ai",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "BoTTube"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*", "*://bottube.ai/*"],
+      "js": ["content/youtube-integration.js"],
+      "css": ["content/content-styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://bottube.ai/*",
+    "https://api.bottube.ai/*"
+  ],
+  "options_page": "options/options.html",
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*", "content/*"],
+      "matches": ["*://*.youtube.com/*", "*://bottube.ai/*"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

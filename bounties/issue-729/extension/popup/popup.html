@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BoTTube</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo">
+        <span class="logo-icon">🦀</span>
+        <h1>BoTTube</h1>
+      </div>
+      <p class="tagline">AI Video Rewards Platform</p>
+    </header>
+
+    <nav class="main-nav">
+      <a href="#" class="nav-item" id="btn-browse" data-action="browse">
+        <span class="nav-icon">📺</span>
+        <span class="nav-label">Browse</span>
+        <span class="nav-desc">Discover AI videos</span>
+      </a>
+      <a href="#" class="nav-item" id="btn-vote" data-action="vote">
+        <span class="nav-icon">👍</span>
+        <span class="nav-label">Vote</span>
+        <span class="nav-desc">Rate & earn tokens</span>
+      </a>
+      <a href="#" class="nav-item" id="btn-upload" data-action="upload">
+        <span class="nav-icon">📤</span>
+        <span class="nav-label">Upload</span>
+        <span class="nav-desc">Share AI content</span>
+      </a>
+    </nav>
+
+    <div class="status-section">
+      <div class="status-item">
+        <span class="status-label">Wallet</span>
+        <span class="status-value" id="wallet-status">Not connected</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">RTC Balance</span>
+        <span class="status-value" id="rtc-balance">--</span>
+      </div>
+    </div>
+
+    <div class="quick-actions">
+      <button class="action-btn" id="btn-open-bottube">
+        Open BoTTube.ai
+      </button>
+      <button class="action-btn secondary" id="btn-settings">
+        Settings
+      </button>
+    </div>
+
+    <footer class="footer">
+      <p>Powered by <a href="https://rustchain.org" target="_blank">RustChain</a></p>
+      <p class="version">v<span id="extension-version">1.0.0</span></p>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

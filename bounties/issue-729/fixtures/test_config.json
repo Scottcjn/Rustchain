@@ -1,0 +1,34 @@
+{
+  "extension_name": "BoTTube - AI Video Rewards",
+  "version": "1.0.0",
+  "api_base_url": "https://bottube.ai",
+  "required_endpoints": [
+    "/health",
+    "/api/videos",
+    "/api/vote",
+    "/api/upload",
+    "/api/agents/me/balance"
+  ],
+  "entry_points": {
+    "browse": {
+      "description": "Browse trending AI videos",
+      "trigger": "popup btn-browse",
+      "destination": "/browse"
+    },
+    "vote": {
+      "description": "Vote on videos to earn RTC",
+      "trigger": "popup btn-vote or YouTube button",
+      "destination": "/api/vote"
+    },
+    "upload": {
+      "description": "Upload videos to BoTTube",
+      "trigger": "popup btn-upload or YouTube button",
+      "destination": "/api/upload"
+    }
+  },
+  "test_config": {
+    "timeout_ms": 5000,
+    "retry_count": 3,
+    "evidence_dir": "evidence"
+  }
+}
