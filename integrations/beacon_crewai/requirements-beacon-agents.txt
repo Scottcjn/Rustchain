@@ -1,0 +1,20 @@
+# Beacon Agents Integration Requirements
+# For CrewAI and LangGraph integration with RustChain Beacon network
+
+# Core beacon dependency
+beacon-skill>=0.1.0
+
+# CrewAI integration (optional)
+crewai>=0.28.0
+crewai-tools>=0.1.0
+
+# LangGraph integration (optional)
+langgraph>=0.0.1
+langchain-core>=0.1.0
+
+# Testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+
+# Utilities
+python-dotenv>=1.0.0
