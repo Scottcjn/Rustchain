@@ -737,6 +737,19 @@ class BFTConsensus:
                 logging.warning(f"Miner {miner_id} in distribution but not in miners list")
                 return False
 
+        # Verify merkle_root matches the submitted miners list.
+        # Without this check a Byzantine leader can recycle a valid merkle_root
+        # from a previous epoch while submitting a different (falsified) miners
+        # list, and honest nodes would still send PREPARE for the forged proposal.
+        expected_merkle = self._compute_merkle_root(miners)
+        if proposal.get('merkle_root') != expected_merkle:
+            logging.warning(
+                f"Proposal merkle_root mismatch for epoch {epoch}: "
+                f"got {proposal.get('merkle_root', '')[:16]}... "
+                f"expected {expected_merkle[:16]}..."
+            )
+            return False
+
         return True
 
     # ========================================================================
