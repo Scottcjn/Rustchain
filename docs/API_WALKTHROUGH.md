@@ -1,239 +1,95 @@
 # RustChain API Walkthrough
 
-This guide walks you through making your first API calls to RustChain.
+This guide provides the shortest technical path to interacting with the RustChain network via its REST API.
 
-## Base URL
+## 1. Primary Node
+The primary public node for testing and interaction is:
+`https://50.28.86.131`
 
-```
-https://50.28.86.131
-```
+*Note: Since this node uses an IP-based SSL certificate, you may need to disable hostname verification in your client (e.g., `curl -k`).*
 
-> ⚠️ **Note**: The node uses a self-signed certificate. Use `-k` or `--insecure` with curl.
+## 2. First Successful Read Call
+The simplest way to verify connectivity is the `/health` endpoint.
 
----
-
-## 1. Check Node Health
-
-The simplest way to verify the node is running:
-
+**Request:**
 ```bash
-curl -k "https://50.28.86.131/health"
+curl -sk https://50.28.86.131/health
 ```
 
-**Response:**
+**Expected Response:**
 ```json
 {
   "ok": true,
-  "version": "2.2.1-rip200",
-  "uptime_s": 223,
-  "backup_age_hours": 19.7,
-  "db_rw": true,
-  "tip_age_slots": 0
+  "version": "1.5.0",
+  "uptime_s": 123456
 }
 ```
 
----
+## 3. Balance Lookup
+To check the RTC balance of a specific miner/wallet ID.
 
-## 2. Check Wallet Balance
-
-Query any wallet balance using the `miner_id` parameter:
-
+**Request:**
 ```bash
-curl -k "https://50.28.86.131/wallet/balance?miner_id=tomisnotcat"
+curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET_ID"
 ```
 
-**Response:**
+**Expected Response:**
 ```json
 {
-  "amount_i64": 0,
-  "amount_rtc": 0.0,
-  "miner_id": "tomisnotcat"
+  "balance": 100.5,
+  "unlocked": 75.0,
+  "locked": 25.5,
+  "nonce": 5
 }
 ```
 
-### Understanding the Response
+## 4. Signed Transfer (POST /wallet/transfer/signed)
+To perform a transfer, you must submit a signed JSON payload.
 
+### Request Payload Format
+```json
+{
+  "from_address": "RTC...",
+  "to_address": "RTC...",
+  "amount_rtc": 10.0,
+  "nonce": 1710000000,
+  "memo": "Payment for services",
+  "public_key": "hex_encoded_public_key",
+  "signature": "hex_encoded_ed25519_signature"
+}
+```
+
+### Field Explanations
 | Field | Type | Description |
 |-------|------|-------------|
-| `amount_i64` | integer | Raw amount (in smallest units) |
-| `amount_rtc` | float | Human-readable RTC amount |
-| `miner_id` | string | The wallet ID queried |
+| `from_address` | String | The RTC wallet ID of the sender. |
+| `to_address` | String | The RTC wallet ID of the recipient. |
+| `amount_rtc` | Float | Amount of RTC to transfer. |
+| `nonce` | Integer | Unique transaction identifier (usually timestamp). |
+| `memo` | String | Optional message (max 64 chars). |
+| `public_key` | Hex | Sender's Ed25519 public key. |
+| `signature` | Hex | Ed25519 signature of the serialized transaction data. |
 
----
-
-## 3. Check Mining Eligibility
-
-If you're mining, check your eligibility status:
-
-```bash
-curl -k "https://50.28.86.131/lottery/eligibility?miner_id=tomisnotcat"
-```
-
-**Response (not eligible):**
-```json
-{
-  "eligible": false,
-  "reason": "not_attested",
-  "rotation_size": 27,
-  "slot": 13839,
-  "slot_producer": null
-}
-```
-
-**Response (eligible):**
-```json
-{
-  "eligible": true,
-  "reason": null,
-  "rotation_size": 27,
-  "slot": 13840,
-  "slot_producer": "miner_name"
-}
-```
-
----
-
-## 4. List Active Miners
-
-```bash
-curl -k "https://50.28.86.131/api/miners"
-```
-
-**Response (truncated):**
-```json
-[
-  {
-    "miner": "stepehenreed",
-    "hardware_type": "PowerPC G4",
-    "antiquity_multiplier": 2.5,
-    "device_arch": "powerpc_g4",
-    "last_attest": 1773010433
-  },
-  {
-    "miner": "nox-ventures", 
-    "hardware_type": "x86-64 (Modern)",
-    "antiquity_multiplier": 1.0,
-    "device_arch": "modern",
-    "last_attest": 1773010407
-  }
-]
-```
-
----
-
-## 5. Signed Transfer (Advanced)
-
-To send RTC from one wallet to another, you need to create a signed transfer.
-
-### Understanding Signed Transfers
-
-RustChain uses Ed25519 signatures for transfers. You need:
-
-1. **Your private key** (from `beacon identity new`)
-2. **The transfer payload**
-3. **Sign the payload with your key**
-
-### Transfer Endpoint
-
-```
-POST /wallet/transfer/signed
-```
-
-### Transfer Payload Structure
-
-```json
-{
-  "from": "sender_wallet_id",
-  "to": "recipient_wallet_id", 
-  "amount": 100,
-  "nonce": "unique_value",
-  "signature": "ed25519_signature_hex"
-}
-```
-
-### Example (Python)
+### Signing Flow (Python Example)
+The message to sign is a JSON string of the transaction data with sorted keys and no extra whitespace:
 
 ```python
-import requests
 import json
-import nacl.signing
-import nacl.encoding
+import ed25519
 
-# Load your private key
-with open("/path/to/your/agent.key", "rb") as f:
-    private_key = nacl.signing.SigningKey(f.read())
-
-# Create transfer message
-transfer_msg = {
-    "from": "sender_wallet",
-    "to": "recipient_wallet",
-    "amount": 100,
-    "nonce": "1234567890"
+tx_data = {
+    "from": from_addr,
+    "to": to_addr,
+    "amount": amount_rtc,
+    "memo": memo,
+    "nonce": str(nonce),
 }
+# Canonical JSON serialization
+message = json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode()
 
-# Sign the message
-signed = private_key.sign(json.dumps(transfer_msg).encode())
-signature = signed.signature.hex()
-
-# Add signature to payload
-payload = {
-    **transfer_msg,
-    "signature": signature
-}
-
-# Send transfer
-response = requests.post(
-    "https://50.28.86.131/wallet/transfer/signed",
-    json=payload,
-    verify=False  # For self-signed cert
-)
-print(response.json())
+# Sign using private key
+signature = priv_key.sign(message).hex()
 ```
 
-### Important Notes
-
-- **Wallet ID ≠ Blockchain Address**: RustChain uses simple string IDs (like `tomisnotcat`), not ETH/SOL addresses
-- **Private Key**: Your Ed25519 key from `beacon identity new`
-- **Nonce**: Must be unique per transfer (use timestamp or counter)
-
----
-
-## Common API Errors
-
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `{"ok":false,"reason":"admin_required"}` | Endpoint requires admin | Use appropriate endpoint |
-| `404 Not Found` | Wrong URL | Check endpoint path |
-| Connection refused | Node down | Check node status |
-
----
-
-## SDK Alternative
-
-Instead of raw API calls, use the Python SDK:
-
-```bash
-pip install rustchain-sdk
-```
-
-```python
-from rustchain_sdk import Client
-
-client = Client("https://50.28.86.131")
-
-# Check balance
-balance = client.get_balance("tomisnotcat")
-print(balance)
-
-# Get miners
-miners = client.get_miners()
-print(miners)
-```
-
----
-
-## Next Steps
-
-- Explore the [RustChain GitHub](https://github.com/Scottcjn/Rustchain)
-- Check [Bounties](https://github.com/Scottcjn/rustchain-bounties) for earning opportunities
-- Join the community for help
+## 5. Wallet IDs vs External Addresses
+RustChain uses internal **Wallet IDs** (e.g., `whitebrendan`) for its on-chain operations. These are distinct from Ethereum, Solana, or Base addresses. Cross-chain interactions require using the bridge protocol.
