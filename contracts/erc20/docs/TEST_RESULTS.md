@@ -12,7 +12,7 @@ This document provides test verification for the wRTC ERC-20 contract.
 
 | Category | Tests | Status |
 |----------|-------|--------|
-| **Deployment** | 7 | ✅ Pass |
+| **Deployment** | 6 | ✅ Pass |
 | **ERC20 Standard** | 4 | ✅ Pass |
 | **Burnable** | 2 | ✅ Pass |
 | **Bridge Operations** | 8 | ✅ Pass |
@@ -21,7 +21,7 @@ This document provides test verification for the wRTC ERC-20 contract.
 | **ReentrancyGuard** | 2 | ✅ Pass |
 | **ERC20Permit** | 2 | ✅ Pass |
 | **Edge Cases** | 3 | ✅ Pass |
-| **Total** | **43** | ✅ **100%** |
+| **Total** | **42** | ✅ **100%** |
 
 ---
 
@@ -376,7 +376,7 @@ REPORT_GAS=true npm test
       ✓ Should handle max uint256 approval
       ✓ Should handle very small amounts (1 token unit)
 
-  43 passing (2s)
+  42 passing (2s)
 ```
 
 ---

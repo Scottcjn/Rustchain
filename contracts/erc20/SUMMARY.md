@@ -16,7 +16,7 @@
 | `scripts/deploy.js` | 145 | Automated deployment script |
 | `scripts/verify.js` | 78 | Contract verification on BaseScan |
 | `scripts/interact.js` | 227 | CLI for contract interaction |
-| `test/WRTC.test.js` | 380 | Comprehensive test suite (43 tests) |
+| `test/WRTC.test.js` | 380 | Comprehensive test suite (42 tests) |
 | `hardhat.config.js` | 95 | Hardhat configuration |
 | `package.json` | 60 | Dependencies and scripts |
 | `.env.example` | 68 | Environment template |
@@ -35,11 +35,11 @@
 
 ## ✅ Tests
 
-### Test Suite: 43 Tests
+### Test Suite: 42 Tests
 
 | Category | Tests | Status |
 |----------|-------|--------|
-| Deployment | 7 | ✅ Written |
+| Deployment | 6 | ✅ Written |
 | ERC20 Standard | 4 | ✅ Written |
 | Burnable | 2 | ✅ Written |
 | Bridge Operations | 8 | ✅ Written |
@@ -51,7 +51,7 @@
 
 **Execution**: Requires `npm install --legacy-peer-deps` then `npm test`
 
-**Expected**: 43 passing, 100% coverage
+**Expected**: 42 passing, 100% coverage
 
 ---
 
@@ -177,7 +177,7 @@ All documentation in `contracts/erc20/docs/`:
 - [x] Deployment scripts
 - [x] Verification scripts
 - [x] Interaction CLI
-- [x] Comprehensive tests (43 tests)
+- [x] Comprehensive tests (42 tests)
 - [x] README documentation
 - [x] Deployment guide
 - [x] Security analysis

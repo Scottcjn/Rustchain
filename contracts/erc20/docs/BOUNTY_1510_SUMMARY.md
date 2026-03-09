@@ -65,8 +65,8 @@ function unpause() external onlyOwner
 
 **File**: `test/WRTC.test.js`
 
-**Coverage**: 43 tests covering:
-- ✅ Deployment (7 tests)
+**Coverage**: 42 tests covering:
+- ✅ Deployment (6 tests)
 - ✅ ERC20 standard (4 tests)
 - ✅ Burnable functionality (2 tests)
 - ✅ Bridge operations (8 tests)
@@ -143,7 +143,7 @@ contracts/erc20/
 
 | Category | Tests | Status |
 |----------|-------|--------|
-| Deployment | 7 | ✅ Ready |
+| Deployment | 6 | ✅ Ready |
 | ERC20 | 4 | ✅ Ready |
 | Burnable | 2 | ✅ Ready |
 | Bridge Ops | 8 | ✅ Ready |
@@ -152,7 +152,7 @@ contracts/erc20/
 | Reentrancy | 2 | ✅ Ready |
 | Permit | 2 | ✅ Ready |
 | Edge Cases | 3 | ✅ Ready |
-| **Total** | **43** | ✅ **Ready** |
+| **Total** | **42** | ✅ **Ready** |
 
 ### Test Execution
 
@@ -164,7 +164,7 @@ npm install --legacy-peer-deps
 npm test
 ```
 
-Expected result: **43 passing tests**
+Expected result: **42 passing tests**
 
 ---
 
@@ -392,10 +392,10 @@ Expected result: **43 passing tests**
 
 The wRTC ERC-20 contract implementation for Base is **complete and ready for testing**. All deliverables have been created:
 
-✅ **Smart Contract**: Production-ready with security features  
-✅ **Deployment Scripts**: Automated deployment and verification  
-✅ **Test Suite**: 43 comprehensive tests  
-✅ **Documentation**: Complete guides and references  
+✅ **Smart Contract**: Production-ready with security features
+✅ **Deployment Scripts**: Automated deployment and verification
+✅ **Test Suite**: 42 comprehensive tests
+✅ **Documentation**: Complete guides and references
 ✅ **Security Analysis**: Risk assessment and mitigations  
 
 ### Files Changed Summary
