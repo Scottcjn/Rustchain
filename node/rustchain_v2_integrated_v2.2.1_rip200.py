@@ -1011,6 +1011,20 @@ def init_db():
             )
         """)
         c.execute("""
+            CREATE TABLE IF NOT EXISTS wallet_review_holds(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'needs_review',
+                reason TEXT NOT NULL,
+                coach_note TEXT DEFAULT '',
+                reviewer_note TEXT DEFAULT '',
+                created_at INTEGER NOT NULL,
+                reviewed_at INTEGER DEFAULT 0
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_wallet_review_wallet ON wallet_review_holds(wallet, created_at DESC)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_wallet_review_status ON wallet_review_holds(status, created_at DESC)")
+        c.execute("""
             CREATE TABLE IF NOT EXISTS headers(
                 slot INTEGER PRIMARY KEY,
                 header_json TEXT NOT NULL
@@ -2154,13 +2168,10 @@ def _submit_attestation_impl():
     signals = _normalize_attestation_signals(data.get('signals'))
     fingerprint = _attest_mapping(data.get('fingerprint'))  # NEW: Extract fingerprint
 
-    # SECURITY: Check blocked wallets
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("SELECT reason FROM blocked_wallets WHERE wallet = ?", (miner,))
-        blocked_row = c.fetchone()
-        if blocked_row:
-            return jsonify({"ok": False, "error": "wallet_blocked", "reason": blocked_row[0]}), 403
+    # SECURITY: Check wallet review / block registry
+    review_gate = wallet_review_gate_response(miner)
+    if review_gate is not None:
+        return review_gate
 
     # SECURITY: Hardware binding check v2.0 (serial + entropy validation)
     serial = device.get('serial_number') or device.get('serial') or signals.get('serial')
@@ -2698,6 +2709,82 @@ def is_admin(req):
     got = req.headers.get("X-Admin-Key", "") or req.headers.get("X-API-Key", "")
     return need and got and (need == got)
 
+
+def ensure_wallet_review_tables(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS wallet_review_holds(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            wallet TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'needs_review',
+            reason TEXT NOT NULL,
+            coach_note TEXT DEFAULT '',
+            reviewer_note TEXT DEFAULT '',
+            created_at INTEGER NOT NULL,
+            reviewed_at INTEGER DEFAULT 0
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_wallet_review_wallet ON wallet_review_holds(wallet, created_at DESC)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_wallet_review_status ON wallet_review_holds(status, created_at DESC)")
+
+
+def get_wallet_review_entry(conn, wallet: str):
+    ensure_wallet_review_tables(conn)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        """
+        SELECT id, wallet, status, reason, coach_note, reviewer_note, created_at, reviewed_at
+        FROM wallet_review_holds
+        WHERE wallet = ?
+          AND status IN ('needs_review', 'held', 'escalated', 'blocked')
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (wallet,),
+    ).fetchone()
+    if row:
+        return row
+
+    legacy = conn.execute("SELECT reason FROM blocked_wallets WHERE wallet = ?", (wallet,)).fetchone()
+    if legacy:
+        return {
+            "id": None,
+            "wallet": wallet,
+            "status": "blocked",
+            "reason": legacy[0] or "legacy blocked wallet",
+            "coach_note": "",
+            "reviewer_note": "legacy blocked_wallets entry",
+            "created_at": 0,
+            "reviewed_at": 0,
+        }
+    return None
+
+
+def wallet_review_gate_response(wallet: str):
+    with sqlite3.connect(DB_PATH) as conn:
+        entry = get_wallet_review_entry(conn, wallet)
+    if not entry:
+        return None
+
+    status = str(entry["status"])
+    coach_note = entry["coach_note"] if "coach_note" in entry.keys() else ""
+    payload = {
+        "ok": False,
+        "wallet": wallet,
+        "status": status,
+        "reason": entry["reason"],
+        "coach_note": coach_note,
+    }
+    if status in {"needs_review", "held"}:
+        payload["error"] = "wallet_under_review"
+        payload["message"] = "This wallet is under review. Correct the issue and wait for maintainer release."
+        return jsonify(payload), 409
+
+    payload["error"] = "wallet_blocked"
+    payload["message"] = "This wallet has been escalated and cannot attest until a maintainer releases it."
+    return jsonify(payload), 403
+
 @app.route('/admin/oui_deny/enforce', methods=['POST'])
 def admin_oui_enforce():
     """Toggle OUI enforcement (admin only)"""
@@ -2707,6 +2794,121 @@ def admin_oui_enforce():
     enforce = 1 if str(body.get("enforce", "0")).strip() in ("1", "true", "True", "yes") else 0
     kv_set("oui_enforce", enforce)
     return jsonify({"ok": True, "enforce": enforce})
+
+
+@app.route('/admin/wallet-review-holds', methods=['GET'])
+def admin_wallet_review_holds():
+    """List wallet review holds and escalations."""
+    if not is_admin(request):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    status = (request.args.get("status") or "").strip().lower()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        ensure_wallet_review_tables(conn)
+        sql = """
+            SELECT id, wallet, status, reason, coach_note, reviewer_note, created_at, reviewed_at
+            FROM wallet_review_holds
+        """
+        params = []
+        if status:
+            sql += " WHERE status = ?"
+            params.append(status)
+        sql += " ORDER BY created_at DESC LIMIT 200"
+        rows = conn.execute(sql, params).fetchall()
+    return jsonify({
+        "ok": True,
+        "count": len(rows),
+        "entries": [
+            {
+                "id": int(r["id"]),
+                "wallet": r["wallet"],
+                "status": r["status"],
+                "reason": r["reason"],
+                "coach_note": r["coach_note"],
+                "reviewer_note": r["reviewer_note"],
+                "created_at": int(r["created_at"] or 0),
+                "reviewed_at": int(r["reviewed_at"] or 0),
+            }
+            for r in rows
+        ],
+    })
+
+
+@app.route('/admin/wallet-review-holds', methods=['POST'])
+def admin_create_wallet_review_hold():
+    """Create a wallet review hold instead of hard-blocking by default."""
+    if not is_admin(request):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    data = request.get_json(force=True, silent=True) or {}
+    wallet = _attest_valid_miner(data.get("wallet") or data.get("miner") or "")
+    reason = str(data.get("reason") or "manual review required").strip()
+    coach_note = str(data.get("coach_note") or "").strip()
+    status = str(data.get("status") or "needs_review").strip().lower()
+    if not wallet:
+        return jsonify({"ok": False, "error": "invalid wallet"}), 400
+    if status not in {"needs_review", "held", "escalated", "blocked"}:
+        return jsonify({"ok": False, "error": "invalid status"}), 400
+    now = int(time.time())
+    with sqlite3.connect(DB_PATH) as conn:
+        ensure_wallet_review_tables(conn)
+        cur = conn.execute(
+            """
+            INSERT INTO wallet_review_holds(wallet, status, reason, coach_note, reviewer_note, created_at, reviewed_at)
+            VALUES (?, ?, ?, ?, '', ?, 0)
+            """,
+            (wallet, status, reason, coach_note, now),
+        )
+        conn.commit()
+        hold_id = int(cur.lastrowid)
+    return jsonify({"ok": True, "id": hold_id, "wallet": wallet, "status": status, "reason": reason})
+
+
+@app.route('/admin/wallet-review-holds/<int:hold_id>/resolve', methods=['POST'])
+def admin_resolve_wallet_review_hold(hold_id: int):
+    """Resolve a wallet review hold with explicit release/escalation actions."""
+    if not is_admin(request):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    data = request.get_json(force=True, silent=True) or {}
+    action = str(data.get("action") or "release").strip().lower()
+    reviewer_note = str(data.get("reviewer_note") or "").strip()
+    coach_note = str(data.get("coach_note") or "").strip()
+    now = int(time.time())
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        ensure_wallet_review_tables(conn)
+        row = conn.execute(
+            "SELECT id, wallet, status, reason, coach_note FROM wallet_review_holds WHERE id = ?",
+            (hold_id,),
+        ).fetchone()
+        if not row:
+            return jsonify({"ok": False, "error": "hold_not_found"}), 404
+        if action == "release":
+            new_status = "released"
+        elif action == "dismiss":
+            new_status = "dismissed"
+        elif action == "escalate":
+            new_status = "escalated"
+        elif action == "block":
+            new_status = "blocked"
+        else:
+            return jsonify({"ok": False, "error": "invalid_action"}), 400
+        conn.execute(
+            """
+            UPDATE wallet_review_holds
+            SET status = ?, reviewer_note = ?, coach_note = ?, reviewed_at = ?
+            WHERE id = ?
+            """,
+            (
+                new_status,
+                reviewer_note,
+                coach_note or row["coach_note"],
+                now,
+                hold_id,
+            ),
+        )
+        conn.commit()
+        wallet = row["wallet"]
+    return jsonify({"ok": True, "id": hold_id, "wallet": wallet, "status": new_status})
 
 @app.route('/ops/oui/enforce', methods=['GET'])
 def ops_oui_enforce():
