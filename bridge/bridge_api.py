@@ -27,6 +27,9 @@ BRIDGE_DB_PATH = os.environ.get("BRIDGE_DB_PATH", "bridge_ledger.db")
 BRIDGE_ADMIN_KEY = os.environ.get("BRIDGE_ADMIN_KEY", "")  # set in production
 BRIDGE_RECEIPT_SECRET = os.environ.get("BRIDGE_RECEIPT_SECRET", "")
 
+# Security: require proof for all bridge locks (Issue #727)
+BRIDGE_REQUIRE_PROOF = os.environ.get("BRIDGE_REQUIRE_PROOF", "true").lower() == "true"
+
 # Target chain identifiers
 CHAIN_SOLANA = "solana"
 CHAIN_BASE = "base"
@@ -191,6 +194,11 @@ def lock_rtc():
       state          : str   - "requested" or "confirmed"
       expires_at     : int   - Unix timestamp when lock expires
       amount_rtc     : float - Amount locked
+
+    Security (Issue #727):
+      - Requires verifiable proof (signed receipt) when BRIDGE_REQUIRE_PROOF is enabled
+      - Rejects requests with invalid proof signatures
+      - Validates proof before accepting lock into ledger
     """
     data = request.get_json(force=True, silent=True) or {}
 
@@ -199,7 +207,8 @@ def lock_rtc():
     target_chain = data.get("target_chain", "").lower().strip()
     target_wallet = data.get("target_wallet", "").strip()
     tx_hash = data.get("tx_hash", "").strip() or None
-    receipt_signature = data.get("receipt_signature", "").strip().lower()
+    receipt_signature_raw = data.get("receipt_signature")
+    receipt_signature = receipt_signature_raw.strip().lower() if receipt_signature_raw else None
 
     try:
         amount_float = float(data.get("amount", 0))
@@ -229,18 +238,42 @@ def lock_rtc():
     now = int(time.time())
     expires_at = now + LOCK_EXPIRY_SECONDS
     lock_id = _generate_lock_id(sender, amount_base, target_chain, now)
-    proof_type = "tx_hash_review"
-    proof_ref = tx_hash
-    state = STATE_REQUESTED
+
+    # ── Issue #727: Strict proof validation ──
+    proof_type = None
+    proof_ref = None
+    state = None
+    confirmed_at = 0
+    confirmed_by = ""
 
     if receipt_signature:
+        # User provided a signed receipt - verify it
         if not BRIDGE_RECEIPT_SECRET:
-            return jsonify({"error": "bridge receipt verification is not configured on server"}), 503
-        if not _verify_receipt_signature(sender, amount_base, target_chain, target_wallet, tx_hash, receipt_signature):
-            return jsonify({"error": "invalid receipt_signature"}), 403
+            return jsonify({
+                "error": "bridge receipt verification is not configured on server"
+            }), 503
+        if not _verify_receipt_signature(
+            sender, amount_base, target_chain, target_wallet, tx_hash, receipt_signature
+        ):
+            return jsonify({
+                "error": "invalid receipt_signature - proof verification failed"
+            }), 403
+        # Valid signed receipt - lock is confirmed immediately
         proof_type = "signed_receipt"
         proof_ref = f"receipt:{tx_hash}"
         state = STATE_CONFIRMED
+        confirmed_at = now
+        confirmed_by = "receipt"
+    elif BRIDGE_REQUIRE_PROOF:
+        # No proof provided but proof is required
+        return jsonify({
+            "error": "proof required: receipt_signature must be provided for bridge lock acceptance"
+        }), 400
+    else:
+        # Proof not required - accept for manual review (legacy mode)
+        proof_type = "tx_hash_review"
+        proof_ref = tx_hash
+        state = STATE_REQUESTED
 
     with _db_lock:
         with get_db() as conn:
@@ -263,8 +296,8 @@ def lock_rtc():
                         tx_hash,
                         proof_type,
                         proof_ref,
-                        now if state == STATE_CONFIRMED else 0,
-                        "receipt" if state == STATE_CONFIRMED else "",
+                        confirmed_at,
+                        confirmed_by,
                         now,
                         now,
                         expires_at,
@@ -282,7 +315,7 @@ def lock_rtc():
                 "state": state,
             })
             if state == STATE_CONFIRMED:
-                log_event(conn, lock_id, "lock_confirmed", actor="receipt", details={
+                log_event(conn, lock_id, "lock_confirmed", actor=confirmed_by, details={
                     "proof_type": proof_type,
                     "proof_ref": proof_ref,
                 })
@@ -297,6 +330,7 @@ def lock_rtc():
         "target_wallet": target_wallet,
         "tx_hash": tx_hash,
         "proof_type": proof_type,
+        "proof_ref": proof_ref,
         "expires_at": expires_at,
         "message": (
             f"Lock {'confirmed' if state == STATE_CONFIRMED else 'requested'}. "
