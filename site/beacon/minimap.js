@@ -3,6 +3,10 @@
 // Track B - 15 RTC
 // ============================================
 
+import { getAllAgentMeshes } from './agents.js';
+import { getAllCityGroups } from './cities.js';
+import { getAllContractLines } from './connections.js';
+
 class Minimap {
     constructor(scene, camera, renderer) {
         this.scene = scene;
@@ -18,11 +22,6 @@ class Minimap {
         // Canvas
         this.canvas = null;
         this.ctx = null;
-        
-        // Data references
-        this.agentsMap = null;
-        this.citiesData = null;
-        this.connectionsData = null;
         
         this.init();
     }
@@ -45,18 +44,23 @@ class Minimap {
         this.canvas.style.boxShadow = '0 0 20px rgba(0, 255, 136, 0.3)';
         this.canvas.style.pointerEvents = 'auto';
         
-       (this.canvas);
-        document.body.appendChild this.ctx = this.canvas.getContext('2d');
+        document.body.appendChild(this.canvas);
+        this.ctx = this.canvas.getContext('2d');
         
-        // Click handler
+        // Click handler for navigation
         this.canvas.addEventListener('click', (e) => this.handleClick(e));
+        
+        // Listen for minimap click events
+        document.addEventListener('minimapClick', (e) => {
+            this.onMinimapClick(e.detail);
+        });
     }
     
-    // Set data sources
-    setDataSources(agentsMap, citiesData, connectionsData) {
-        this.agentsMap = agentsMap;
-        this.citiesData = citiesData;
-        this.connectionsData = connectionsData;
+    onMinimapClick(detail) {
+        // Import dynamically to avoid circular dependency
+        import('./scene.js').then(({ lerpCameraTo }) => {
+            lerpCameraTo({ x: detail.x, y: 20, z: detail.z }, 100);
+        });
     }
     
     worldToMinimap(x, z) {
@@ -134,75 +138,92 @@ class Minimap {
             ctx.lineTo(i * gridStep, size);
             ctx.stroke();
             ctx.beginPath();
-            ctx.moveTo(0, i            ctx.lineTo(size, i * * gridStep);
- gridStep);
+            ctx.moveTo(0, i * gridStep);
+            ctx.lineTo(size, i * gridStep);
             ctx.stroke();
         }
         
         // Draw connections
-        if (this.connectionsData) {
-            ctx.strokeStyle = 'rgba(0, 200, 255, 0.4)';
-            ctx.lineWidth = 1;
-            for (const conn of this.connectionsData) {
-                if (conn.line) {
-                    const positions = conn.line.geometry.attributes.position;
-                    if (positions && positions.count >= 2) {
-                        const start = this.worldToMinimap(positions.getX(0), positions.getZ(0));
-                        const end = this.worldToMinimap(positions.getX(positions.count - 1), positions.getZ(positions.count - 1));
-                        ctx.beginPath();
-                        ctx.moveTo(start.x, start.y);
-                        ctx.lineTo(end.x, end.y);
-                        ctx.stroke();
+        try {
+            const connections = getAllContractLines();
+            if (connections) {
+                ctx.strokeStyle = 'rgba(0, 200, 255, 0.4)';
+                ctx.lineWidth = 1;
+                for (const conn of connections) {
+                    if (conn.line && conn.line.geometry && conn.line.geometry.attributes.position) {
+                        const positions = conn.line.geometry.attributes.position;
+                        if (positions.count >= 2) {
+                            const start = this.worldToMinimap(positions.getX(0), positions.getZ(0));
+                            const end = this.worldToMinimap(positions.getX(positions.count - 1), positions.getZ(positions.count - 1));
+                            ctx.beginPath();
+                            ctx.moveTo(start.x, start.y);
+                            ctx.lineTo(end.x, end.y);
+                            ctx.stroke();
+                        }
                     }
                 }
             }
+        } catch (e) {
+            // Connections not ready yet
         }
         
         // Draw cities
-        if (this.citiesData) {
-            for (const city of this.citiesData) {
-                const pos = this.worldToMinimap(city.mesh.position.x, city.mesh.position.z);
-                const radius = 5;
-                
-                ctx.beginPath();
-                ctx.arc(pos.x, pos.y, radius + 3, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255, 200, 0, 0.2)';
-                ctx.fill();
-                
-                ctx.beginPath();
-                ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-                ctx.fillStyle = '#ffcc00';
-                ctx.fill();
-                ctx.strokeStyle = '#ff8800';
-                ctx.lineWidth = 1;
-                ctx.stroke();
+        try {
+            const cityGroups = getAllCityGroups();
+            if (cityGroups) {
+                for (const [cityId, group] of cityGroups) {
+                    const pos = this.worldToMinimap(group.position.x, group.position.z);
+                    const radius = 5;
+                    
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, radius + 3, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(255, 200, 0, 0.2)';
+                    ctx.fill();
+                    
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffcc00';
+                    ctx.fill();
+                    ctx.strokeStyle = '#ff8800';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
             }
+        } catch (e) {
+            // Cities not ready yet
         }
         
         // Draw agents
-        if (this.agentsMap) {
-            for (const [agentId, agentData] of this.agentsMap) {
-                const pos = this.worldToMinimap(agentData.group.position.x, agentData.group.position.z);
-                
-                let color = '#00ff88';
-                if (agentData.status === 'silent' || agentData.status === 'offline') color = '#666666';
-                else if (agentData.status === 'busy') color = '#ff4444';
-                
-                ctx.beginPath();
-                ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
-                ctx.fillStyle = color;
-                ctx.fill();
-                
-                if (agentData.status !== 'silent' && agentData.status !== 'offline') {
+        try {
+            const agentMeshes = getAllAgentMeshes();
+            if (agentMeshes) {
+                for (const [agentId, agentData] of agentMeshes) {
+                    const group = agentData.group || agentData;
+                    const pos = this.worldToMinimap(group.position.x, group.position.z);
+                    
+                    let color = '#00ff88';
+                    const status = agentData.status;
+                    if (status === 'silent' || status === 'offline') color = '#666666';
+                    else if (status === 'busy') color = '#ff4444';
+                    
                     ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
-                    ctx.strokeStyle = color;
-                    ctx.globalAlpha = 0.5;
-                    ctx.lineWidth = 1;
-                    ctx.stroke();
-                    ctx.globalAlpha = 1;
+                    ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
+                    ctx.fillStyle = color;
+                    ctx.fill();
+                    
+                    if (status !== 'silent' && status !== 'offline') {
+                        ctx.beginPath();
+                        ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
+                        ctx.strokeStyle = color;
+                        ctx.globalAlpha = 0.5;
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                        ctx.globalAlpha = 1;
+                    }
                 }
             }
+        } catch (e) {
+            // Agents not ready yet
         }
         
         // Draw viewport
@@ -225,7 +246,7 @@ class Minimap {
             ctx.fillRect(minX, minY, maxX - minX, maxY - minY);
         }
         
-        // Center indicator
+        // Center indicator (camera position)
         const camPos = this.worldToMinimap(this.camera.position.x, this.camera.position.z);
         ctx.fillStyle = '#00ff88';
         ctx.font = 'bold 10px monospace';
@@ -249,7 +270,7 @@ class Minimap {
         
         const worldPos = this.minimapToWorld(mx, my);
         
-        // Emit event for camera to move
+        // Dispatch event for scene.js to handle
         const event = new CustomEvent('minimapClick', {
             detail: { x: worldPos.x, z: worldPos.z }
         });
@@ -275,4 +296,4 @@ class Minimap {
     }
 }
 
-window.Minimap = Minimap;
+export { Minimap };
