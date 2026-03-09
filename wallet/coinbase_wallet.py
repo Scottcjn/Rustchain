@@ -3,19 +3,11 @@ ClawRTC Coinbase Wallet Integration
 Optional module for creating/managing Coinbase Base wallets.
 
 Install with: pip install clawrtc[coinbase]
-
-Network Error Handling:
-- Distinguishes between network unreachable, timeouts, and API errors
-- Implements retry strategy with exponential backoff for transient failures
-- Provides clear user-facing diagnostics for troubleshooting
 """
 
 import json
 import os
 import sys
-import time
-import socket
-from typing import Optional, Tuple, Dict, Any
 
 # ANSI colors (match cli.py)
 CYAN = "\033[36m"
@@ -27,12 +19,6 @@ DIM = "\033[2m"
 NC = "\033[0m"
 
 NODE_URL = "https://bulbous-bouffant.metalseed.net"
-
-# Retry configuration for network requests
-MAX_RETRIES = 3
-INITIAL_RETRY_DELAY = 1.0  # seconds
-MAX_RETRY_DELAY = 10.0  # seconds
-NETWORK_TIMEOUT = 15  # seconds
 
 SWAP_INFO = {
     "wrtc_contract": "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6",
@@ -64,139 +50,6 @@ def _save_coinbase_wallet(data):
     with open(COINBASE_FILE, "w") as f:
         json.dump(data, f, indent=2)
     os.chmod(COINBASE_FILE, 0o600)
-
-
-def _check_network_connectivity(url: str = NODE_URL) -> Tuple[bool, str]:
-    """
-    Check network connectivity to the node.
-    
-    Returns:
-        Tuple of (is_reachable, error_message)
-    """
-    import urllib.parse
-    
-    try:
-        parsed = urllib.parse.urlparse(url)
-        host = parsed.hostname
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        
-        # Try to resolve hostname
-        try:
-            socket.gethostbyname(host)
-        except socket.gaierror as e:
-            return False, f"DNS resolution failed for {host}: {e}"
-        
-        # Try to establish TCP connection
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(5)
-        result = sock.connect_ex((host, port))
-        sock.close()
-        
-        if result != 0:
-            return False, f"Cannot connect to {host}:{port} (error code: {result})"
-        
-        return True, ""
-        
-    except Exception as e:
-        return False, f"Network check failed: {e}"
-
-
-def _fetch_with_retry(
-    url: str,
-    max_retries: int = MAX_RETRIES,
-    timeout: int = NETWORK_TIMEOUT,
-) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-    """
-    Fetch JSON from URL with retry logic and proper error classification.
-    
-    Args:
-        url: URL to fetch
-        max_retries: Maximum number of retry attempts
-        timeout: Request timeout in seconds
-        
-    Returns:
-        Tuple of (data_dict, error_message)
-        - On success: (data, None)
-        - On failure: (None, error_description)
-    """
-    import requests
-    from requests.exceptions import ConnectionError, Timeout, HTTPError
-    
-    last_error = None
-    delay = INITIAL_RETRY_DELAY
-    
-    for attempt in range(1, max_retries + 1):
-        try:
-            resp = requests.get(url, timeout=timeout, verify=True)
-            resp.raise_for_status()
-            return resp.json(), None
-            
-        except ConnectionError as e:
-            last_error = str(e)
-            # Check if it's a real network issue
-            is_reachable, net_error = _check_network_connectivity(url)
-            if not is_reachable:
-                return None, f"Network unreachable: {net_error}"
-            
-            # Transient connection issue - retry
-            if attempt < max_retries:
-                time.sleep(delay)
-                delay = min(delay * 2, MAX_RETRY_DELAY)
-                
-        except Timeout as e:
-            last_error = str(e)
-            if attempt < max_retries:
-                time.sleep(delay)
-                delay = min(delay * 2, MAX_RETRY_DELAY)
-            else:
-                return None, f"Request timeout after {timeout}s (tried {max_retries}x)"
-                
-        except HTTPError as e:
-            status = e.response.status_code if e.response else "unknown"
-            return None, f"API error: HTTP {status}"
-            
-        except Exception as e:
-            last_error = str(e)
-            if attempt < max_retries:
-                time.sleep(delay)
-                delay = min(delay * 2, MAX_RETRY_DELAY)
-            else:
-                return None, f"Request failed: {e}"
-    
-    return None, f"Request failed after {max_retries} retries: {last_error}"
-
-
-def _get_wallet_balance_from_node(address: str) -> Tuple[Optional[float], Optional[str]]:
-    """
-    Fetch wallet balance from the node with retry logic.
-    
-    Args:
-        address: Wallet address
-        
-    Returns:
-        Tuple of (balance, error_message)
-    """
-    url = f"{NODE_URL}/wallet/balance?miner_id={address}"
-    data, error = _fetch_with_retry(url)
-    
-    if error:
-        return None, error
-    
-    if data is None:
-        return None, "Empty response from node"
-    
-    # Extract balance from various possible response formats
-    balance = (
-        data.get("balance")
-        or data.get("amount_rtc")
-        or data.get("amount")
-        or 0.0
-    )
-    
-    try:
-        return float(balance), None
-    except (TypeError, ValueError):
-        return None, f"Invalid balance format in response: {data}"
 
 
 def coinbase_create(args):
@@ -280,7 +133,7 @@ def coinbase_create(args):
 
 
 def coinbase_show(args):
-    """Show Coinbase Base wallet info with optional network balance."""
+    """Show Coinbase Base wallet info."""
     wallet = _load_coinbase_wallet()
     if not wallet:
         print(f"\n  {YELLOW}No Coinbase wallet found.{NC}")
@@ -288,50 +141,12 @@ def coinbase_show(args):
         print(f"  Or link:    clawrtc wallet coinbase link 0xYourAddress\n")
         return
 
-    address = wallet['address']
-    
-    # Try to fetch balance from node with retry logic
-    balance = None
-    balance_error = None
-    
-    balance_result, balance_error = _get_wallet_balance_from_node(address)
-    if balance_error:
-        balance_error = balance_error
-    else:
-        balance = balance_result
-
     print(f"\n  {GREEN}{BOLD}Coinbase Base Wallet{NC}")
-    print(f"  {GREEN}Address:{NC}    {BOLD}{address}{NC}")
+    print(f"  {GREEN}Address:{NC}    {BOLD}{wallet['address']}{NC}")
     print(f"  {DIM}Network:{NC}    {DIM}{wallet.get('network', 'Base')}{NC}")
     print(f"  {DIM}Created:{NC}    {DIM}{wallet.get('created', 'unknown')}{NC}")
     print(f"  {DIM}Method:{NC}     {DIM}{wallet.get('method', 'unknown')}{NC}")
     print(f"  {DIM}Key File:{NC}   {DIM}{COINBASE_FILE}{NC}")
-    
-    # Display balance or error with clear diagnostics
-    if balance is not None:
-        print(f"  {GREEN}Balance:{NC}    {BOLD}{balance:.8f} RTC{NC}")
-    elif balance_error:
-        print(f"  {YELLOW}Balance:{NC}    {DIM}Unable to fetch{NC}")
-        print(f"             {YELLOW}Error: {balance_error}{NC}")
-        
-        # Provide troubleshooting hints
-        is_reachable, net_err = _check_network_connectivity(NODE_URL)
-        if not is_reachable:
-            print(f"\n  {RED}⚠ Network Issue Detected:{NC}")
-            print(f"     {net_err}")
-            print(f"  {DIM}Troubleshooting:{NC}")
-            print(f"     1. Check your internet connection")
-            print(f"     2. Verify DNS is working (try: ping {NODE_URL})")
-            print(f"     3. Check firewall/proxy settings")
-            print(f"     4. Node may be temporarily offline")
-        else:
-            print(f"\n  {YELLOW}⚠ Node Response Issue:{NC}")
-            print(f"     {balance_error}")
-            print(f"  {DIM}Troubleshooting:{NC}")
-            print(f"     1. Wallet address may not exist on chain yet")
-            print(f"     2. Node may be syncing or under maintenance")
-            print(f"     3. Try again in a few moments")
-    
     print()
 
 
@@ -403,7 +218,7 @@ def coinbase_swap_info(args):
 
 def cmd_coinbase(args):
     """Handle clawrtc wallet coinbase subcommand."""
-    action = getattr(args, "coinbase_action", "show")
+    action = getattr(args, "coinbase_action", None) or "show"
 
     dispatch = {
         "create": coinbase_create,
