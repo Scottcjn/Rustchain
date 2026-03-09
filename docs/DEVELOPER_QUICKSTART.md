@@ -83,18 +83,24 @@ curl -k "$NODE_URL/epoch"
 
 ## 3. Balance Lookup
 
-Query any wallet balance:
+Query a wallet balance with its RustChain address:
 
 ```bash
-curl -k "$NODE_URL/wallet/balance?miner_id=tomisnotcat"
+curl -k "$NODE_URL/wallet/balance?miner_id=YOUR_RTC_ADDRESS"
 ```
 
-**Response:**
+A placeholder value also returns the response shape, which is useful for onboarding:
+
+```bash
+curl -k "$NODE_URL/wallet/balance?miner_id=YOUR_WALLET_ID"
+```
+
+**Tested response (2026-03-09):**
 ```json
 {
-  "miner_id": "tomisnotcat",
   "amount_i64": 0,
-  "amount_rtc": 0.0
+  "amount_rtc": 0.0,
+  "miner_id": "YOUR_WALLET_ID"
 }
 ```
 
@@ -102,28 +108,37 @@ curl -k "$NODE_URL/wallet/balance?miner_id=tomisnotcat"
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `miner_id` | string | The wallet ID queried |
-| `amount_i64` | integer | Raw amount in smallest units (int64) |
+| `miner_id` | string | The wallet address that was queried |
+| `amount_i64` | integer | Raw amount in micro-RTC (6 decimal places) |
 | `amount_rtc` | float | Human-readable RTC amount |
 
-> 💡 **Replace `tomisnotcat`** with your actual RustChain wallet ID.
+> 💡 For signed transfers, the server validates `from_address` / `to_address` as `RTC...` addresses with a fixed length. Do not use an ETH / SOL / Base address here.
 
 ---
 
 ## 4. Signed Transfer: Complete Guide
 
-### ⚠️ Critical: RustChain Wallet IDs vs External Addresses
+### ⚠️ Critical: RustChain Addresses vs External Addresses
 
-**RustChain wallet IDs are NOT Ethereum/Solana/Base addresses!**
+**RustChain transfer addresses are not Ethereum / Solana / Base addresses.**
+
+The current server validation expects:
+- `from_address` starts with `RTC`
+- `to_address` starts with `RTC`
+- both addresses are fixed-length RustChain addresses derived from an Ed25519 public key
 
 | Chain | Address Format | Example |
 |-------|---------------|---------|
-| **RustChain** | Simple string ID | `tomisnotcat`, `miner001` |
-| Ethereum | 0x + 40 hex chars | `0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb` |
+| **RustChain** | `RTC` + 40 hex chars | `RTC0123456789abcdef0123456789abcdef01234567` |
+| Ethereum | `0x` + 40 hex chars | `0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb` |
 | Solana | Base58, 32-44 chars | `7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU` |
 | Base | Same as Ethereum | `0x...` |
 
-**RustChain uses Ed25519 keys** with human-readable wallet IDs, not EVM-style addresses.
+In the codebase, RustChain addresses are derived as:
+
+```text
+"RTC" + sha256(public_key_hex)[:40]
+```
 
 ---
 
@@ -137,25 +152,53 @@ POST /wallet/transfer/signed
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `from_address` | string | **Your RustChain wallet ID** (e.g., `tomisnotcat`) |
-| `to_address` | string | **Recipient's RustChain wallet ID** |
-| `amount_rtc` | number | Amount to send in RTC (e.g., `1.5`) |
-| `memo` | string | Optional transfer note (max 256 chars) |
-| `nonce` | string | Unique value per transfer (use timestamp or UUID) |
-| `public_key` | string | Your Ed25519 public key (64 hex chars) |
-| `signature` | string | Ed25519 signature of payload (128 hex chars) |
+| `from_address` | string | Sender RustChain address (`RTC...`) |
+| `to_address` | string | Recipient RustChain address (`RTC...`) |
+| `amount_rtc` | number | Amount to send in RTC |
+| `memo` | string | Optional memo; if omitted, the server treats it as an empty string |
+| `nonce` | integer or numeric string | Unique positive nonce; current examples use a timestamp |
+| `public_key` | string | Sender Ed25519 public key as hex |
+| `signature` | string | Ed25519 signature as hex |
 
 ---
 
-### Payload Structure
+### What Gets Signed
+
+The server does **not** verify the signature over the outer request body directly.
+It reconstructs this canonical JSON object and signs/verifies that exact byte sequence:
 
 ```json
 {
-  "from_address": "your_wallet_id",
-  "to_address": "recipient_wallet_id",
+  "amount": 1.0,
+  "from": "RTC...",
+  "memo": "Payment for services",
+  "nonce": "1709942400",
+  "to": "RTC..."
+}
+```
+
+Canonicalization rules from the server implementation:
+- keys are sorted alphabetically
+- separators are compact: `(",", ":")`
+- `nonce` is verified as a string inside the signed message, even if submitted as a number in the request body
+
+Equivalent Python used by the server:
+
+```python
+message = json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode()
+```
+
+---
+
+### Payload Structure Sent to the Endpoint
+
+```json
+{
+  "from_address": "RTC0123456789abcdef0123456789abcdef01234567",
+  "to_address": "RTC89abcdef0123456789abcdef0123456789abcdef",
   "amount_rtc": 1.0,
   "memo": "Payment for services",
-  "nonce": "1709942400000",
+  "nonce": 1709942400,
   "public_key": "a1b2c3d4e5f6...",
   "signature": "9f8e7d6c5b4a..."
 }
@@ -163,85 +206,76 @@ POST /wallet/transfer/signed
 
 ---
 
-### Step-by-Step: Create a Signed Transfer
+### Step-by-Step: Create and Sign Transfer
 
-#### Step 1: Generate Ed25519 Key Pair
-
-```bash
-# Using Python (requires pynacl)
-pip install pynacl
-```
+#### Step 1: Generate an Ed25519 key pair and derive the RustChain address
 
 ```python
-import nacl.signing
-import nacl.encoding
+import hashlib
+from nacl.signing import SigningKey
 
-# Generate new key pair
-signing_key = nacl.signing.SigningKey.generate()
+signing_key = SigningKey.generate()
 verify_key = signing_key.verify_key
 
-# Export keys (save these securely!)
 private_key_hex = signing_key.encode().hex()
 public_key_hex = verify_key.encode().hex()
+rustchain_address = "RTC" + hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
 
-print(f"Public Key: {public_key_hex}")
-print(f"Private Key: {private_key_hex}")
+print("Address:", rustchain_address)
+print("Public key:", public_key_hex)
 ```
 
-#### Step 2: Create and Sign Transfer
+#### Step 2: Create the canonical signed message and submit the outer payload
 
 ```python
-import requests
+import hashlib
 import json
-import nacl.signing
-import nacl.encoding
 import time
+import requests
+from nacl.signing import SigningKey
 
-# Configuration
 NODE_URL = "https://50.28.86.131"
-PRIVATE_KEY_HEX = "your_private_key_hex_here"  # From Step 1
-FROM_WALLET = "your_wallet_id"
-TO_WALLET = "recipient_wallet_id"
-AMOUNT = 1.0
+PRIVATE_KEY_HEX = "your_private_key_hex_here"
+TO_ADDRESS = "RTC89abcdef0123456789abcdef0123456789abcdef"
+AMOUNT_RTC = 1.0
 MEMO = "Test transfer"
+NONCE = int(time.time())
 
-# Load private key
-private_key_bytes = bytes.fromhex(PRIVATE_KEY_HEX)
-signing_key = nacl.signing.SigningKey(private_key_bytes)
-
-# Create transfer message (fields to sign)
-transfer_msg = {
-    "from_address": FROM_WALLET,
-    "to_address": TO_WALLET,
-    "amount_rtc": AMOUNT,
-    "memo": MEMO,
-    "nonce": str(int(time.time() * 1000))  # Millisecond timestamp
-}
-
-# Sign the message
-message_bytes = json.dumps(transfer_msg, sort_keys=True).encode('utf-8')
-signed = signing_key.sign(message_bytes)
-signature_hex = signed.signature.hex()
-
-# Get public key
+signing_key = SigningKey(bytes.fromhex(PRIVATE_KEY_HEX))
 public_key_hex = signing_key.verify_key.encode().hex()
+from_address = "RTC" + hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
 
-# Build full payload
-payload = {
-    **transfer_msg,
-    "public_key": public_key_hex,
-    "signature": signature_hex
+# This exact structure is what the server reconstructs and verifies.
+tx_data = {
+    "from": from_address,
+    "to": TO_ADDRESS,
+    "amount": AMOUNT_RTC,
+    "memo": MEMO,
+    "nonce": str(NONCE),
 }
 
-# Send transfer
+message = json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode()
+signature_hex = signing_key.sign(message).signature.hex()
+
+payload = {
+    "from_address": from_address,
+    "to_address": TO_ADDRESS,
+    "amount_rtc": AMOUNT_RTC,
+    "memo": MEMO,
+    "nonce": NONCE,
+    "public_key": public_key_hex,
+    "signature": signature_hex,
+}
+
 response = requests.post(
     f"{NODE_URL}/wallet/transfer/signed",
     json=payload,
-    verify=False  # Self-signed cert
+    verify=False,
+    timeout=15,
 )
 
-print(f"Status: {response.status_code}")
-print(f"Response: {response.json()}")
+print(response.status_code)
+print(response.json())
 ```
 
 ---
@@ -294,11 +328,12 @@ curl -k -X POST "$NODE_URL/wallet/transfer/signed" \
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| `invalid_from_address_format` | Wallet ID format incorrect | Use simple string ID, not 0x address |
-| `missing_required_fields` | Missing `from_address`, `to_address`, `amount_rtc`, or `public_key` | Include all 7 required fields |
-| `invalid_signature` | Signature doesn't match payload | Ensure JSON is sorted keys, UTF-8 encoded |
+| `invalid_from_address_format` | `from_address` is not a valid `RTC...` address | Derive the address from the Ed25519 public key; do not use `0x...` or a nickname |
+| `invalid_to_address_format` | Recipient is not a valid `RTC...` address | Use the recipient's RustChain address |
+| `missing_required_fields` | Missing one of the required outer payload fields | Include `from_address`, `to_address`, `amount_rtc`, `nonce`, `signature`, and `public_key` |
+| `Invalid signature` | The server-reconstructed canonical message does not match what you signed | Sign `{from,to,amount,memo,nonce}` with sorted keys and compact separators |
 | `insufficient_balance` | Wallet has insufficient RTC | Check balance first via `/wallet/balance` |
-| `duplicate_nonce` | Nonce already used | Use unique nonce (timestamp + random) |
+| `REPLAY_DETECTED` | Nonce already used for that sender | Use a fresh nonce for every transfer |
 
 ---
 
