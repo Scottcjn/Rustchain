@@ -1,13 +1,21 @@
 /**
- * Secure Wallet Storage
- * 
- * Provides encrypted storage for wallet keys using Expo SecureStore
- * with password-based encryption
+ * Secure Wallet Storage (Hardened)
+ *
+ * Provides encrypted storage for wallet keys using AES-256-GCM
+ * with PBKDF2/Argon2id key derivation
+ *
+ * Issue #785: Secure wallet storage hardening
+ * - AES-256-GCM authenticated encryption
+ * - PBKDF2-SHA256 with 600,000+ iterations
+ * - Argon2id-like memory-hard KDF option
+ * - Secure export with re-authentication
+ * - Correct key derivation (no password in router)
  */
 
 import * as SecureStore from 'expo-secure-store';
-import * as Crypto from 'expo-crypto';
 import { KeyPair, secretKeyToHex, keyPairFromHex, publicKeyToBase58 } from '../utils/crypto';
+import { encryptWithPassword, decryptWithPassword, EncryptedData } from '../utils/aes-gcm';
+import { KDFType } from '../utils/kdf';
 
 /**
  * Wallet metadata stored alongside encrypted keys
@@ -17,15 +25,7 @@ export interface WalletMetadata {
   address: string;
   createdAt: number;
   network?: string;
-}
-
-/**
- * Encrypted wallet data structure
- */
-interface EncryptedWalletData {
-  ciphertext: string;
-  iv: string;
-  salt: string;
+  kdfType?: KDFType;
 }
 
 /**
@@ -33,110 +33,48 @@ interface EncryptedWalletData {
  */
 export interface StoredWallet {
   metadata: WalletMetadata;
-  encrypted: EncryptedWalletData;
+  encrypted: EncryptedData;
+  version: number;
 }
 
 const WALLET_PREFIX = 'wallet:';
 const WALLET_LIST_KEY = 'rustchain_wallets';
-
-/**
- * Simple hash function for key derivation (using Expo Crypto)
- */
-async function hashPassword(password: string, salt: string): Promise<string> {
-  const combined = password + salt;
-  const hash = await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    combined
-  );
-  return hash;
-}
-
-/**
- * XOR-based encryption helper (simple but effective for our use case)
- * For production, consider using a more robust library
- */
-async function encryptData(data: string, password: string): Promise<EncryptedWalletData> {
-  // Generate random salt
-  const saltBytes = Crypto.getRandomValues(new Uint8Array(32));
-  const salt = Array.from(saltBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-  
-  // Generate random IV
-  const ivBytes = Crypto.getRandomValues(new Uint8Array(16));
-  const iv = Array.from(ivBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-  
-  // Derive key from password
-  const keyHash = await hashPassword(password, salt);
-  const keyBytes = new Uint8Array(
-    keyHash.match(/.{1,2}/g)!.map(b => parseInt(b, 16))
-  );
-  
-  // Convert data to bytes
-  const encoder = new TextEncoder();
-  const dataBytes = encoder.encode(data);
-  
-  // XOR encryption with key and IV
-  const ciphertext = new Uint8Array(dataBytes.length);
-  for (let i = 0; i < dataBytes.length; i++) {
-    ciphertext[i] = dataBytes[i] ^ keyBytes[i % keyBytes.length] ^ ivBytes[i % ivBytes.length];
-  }
-  
-  return {
-    ciphertext: Array.from(ciphertext).map(b => b.toString(16).padStart(2, '0')).join(''),
-    iv,
-    salt,
-  };
-}
-
-/**
- * Decrypt data
- */
-async function decryptData(encrypted: EncryptedWalletData, password: string): Promise<string> {
-  // Derive key from password
-  const keyHash = await hashPassword(password, encrypted.salt);
-  const keyBytes = new Uint8Array(
-    keyHash.match(/.{1,2}/g)!.map(b => parseInt(b, 16))
-  );
-  
-  // Convert IV and ciphertext to bytes
-  const ivBytes = new Uint8Array(
-    encrypted.iv.match(/.{1,2}/g)!.map(b => parseInt(b, 16))
-  );
-  const ciphertextBytes = new Uint8Array(
-    encrypted.ciphertext.match(/.{1,2}/g)!.map(b => parseInt(b, 16))
-  );
-  
-  // XOR decryption
-  const plaintextBytes = new Uint8Array(ciphertextBytes.length);
-  for (let i = 0; i < ciphertextBytes.length; i++) {
-    plaintextBytes[i] = ciphertextBytes[i] ^ keyBytes[i % keyBytes.length] ^ ivBytes[i % ivBytes.length];
-  }
-  
-  // Convert back to string
-  const decoder = new TextDecoder();
-  return decoder.decode(plaintextBytes);
-}
+const STORAGE_VERSION = 2; // Version 2: AES-GCM + proper KDF
 
 /**
  * Secure wallet storage manager
  */
 export class WalletStorage {
   /**
-   * Save a wallet with password encryption
+   * Save a wallet with password encryption using AES-256-GCM
+   * 
+   * @param name - Wallet name
+   * @param keyPair - Ed25519 key pair
+   * @param password - User password (min 8 chars recommended)
+   * @param kdfType - Key derivation function ('pbkdf2' or 'argon2id')
+   * @returns Wallet address (Base58-encoded public key)
    */
   static async save(
     name: string,
     keyPair: KeyPair,
-    password: string
+    password: string,
+    kdfType: KDFType = 'pbkdf2'
   ): Promise<string> {
+    // Validate password strength
+    if (password.length < 8) {
+      throw new Error('Password must be at least 8 characters');
+    }
+
     const address = publicKeyToBase58(keyPair.publicKey);
 
     // Create wallet data to encrypt
     const walletData = JSON.stringify({
       secretKey: secretKeyToHex(keyPair.secretKey),
+      address,
     });
 
-    // Encrypt
-    const encrypted = await encryptData(walletData, password);
+    // Encrypt with AES-256-GCM
+    const encrypted = await encryptWithPassword(walletData, password, kdfType);
 
     // Create stored wallet
     const stored: StoredWallet = {
@@ -145,8 +83,10 @@ export class WalletStorage {
         address,
         createdAt: Date.now(),
         network: 'mainnet',
+        kdfType,
       },
       encrypted,
+      version: STORAGE_VERSION,
     };
 
     // Save to SecureStore
@@ -161,6 +101,11 @@ export class WalletStorage {
 
   /**
    * Load a wallet by name and password
+   * 
+   * @param name - Wallet name
+   * @param password - User password
+   * @returns Decrypted key pair
+   * @throws Error if wallet not found or password incorrect
    */
   static async load(name: string, password: string): Promise<KeyPair> {
     const key = `${WALLET_PREFIX}${name}`;
@@ -170,11 +115,28 @@ export class WalletStorage {
       throw new Error(`Wallet "${name}" not found`);
     }
 
-    const stored: StoredWallet = JSON.parse(storedJson);
+    let stored: StoredWallet;
+    try {
+      stored = JSON.parse(storedJson);
+    } catch (e) {
+      throw new Error('Invalid wallet data format');
+    }
 
-    // Decrypt
-    const decryptedJson = await decryptData(stored.encrypted, password);
-    const walletData = JSON.parse(decryptedJson);
+    // Decrypt with password
+    let decryptedJson: string;
+    try {
+      decryptedJson = await decryptWithPassword(stored.encrypted, password);
+    } catch (e) {
+      // Decryption failed - wrong password or corrupted data
+      throw new Error('Invalid password or corrupted wallet data');
+    }
+
+    let walletData: { secretKey: string; address: string };
+    try {
+      walletData = JSON.parse(decryptedJson);
+    } catch (e) {
+      throw new Error('Invalid wallet data format');
+    }
 
     // Import key pair
     return keyPairFromHex(walletData.secretKey);
@@ -215,8 +177,12 @@ export class WalletStorage {
     const storedJson = await SecureStore.getItemAsync(key);
     if (!storedJson) return null;
 
-    const stored: StoredWallet = JSON.parse(storedJson);
-    return stored.metadata;
+    try {
+      const stored: StoredWallet = JSON.parse(storedJson);
+      return stored.metadata;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -241,8 +207,16 @@ export class WalletStorage {
 
   /**
    * Export wallet as encrypted backup string
+   * Requires re-authentication with password for security
+   * 
+   * @param name - Wallet name
+   * @param password - User password for re-authentication
+   * @returns Encrypted wallet backup JSON
    */
   static async export(name: string, password: string): Promise<string> {
+    // First verify password by attempting to load
+    await this.load(name, password);
+    
     const key = `${WALLET_PREFIX}${name}`;
     const storedJson = await SecureStore.getItemAsync(key);
 
@@ -255,9 +229,23 @@ export class WalletStorage {
 
   /**
    * Import wallet from encrypted backup
+   * 
+   * @param backupJson - Encrypted wallet backup JSON
+   * @returns Wallet name
    */
   static async import(backupJson: string): Promise<string> {
-    const stored: StoredWallet = JSON.parse(backupJson);
+    let stored: StoredWallet;
+    try {
+      stored = JSON.parse(backupJson);
+    } catch (e) {
+      throw new Error('Invalid backup format');
+    }
+
+    // Validate structure
+    if (!stored.metadata || !stored.encrypted || !stored.version) {
+      throw new Error('Invalid backup structure');
+    }
+
     const key = `${WALLET_PREFIX}${stored.metadata.name}`;
 
     // Check if already exists
@@ -271,6 +259,70 @@ export class WalletStorage {
     await this.addToWalletList(stored.metadata.name);
 
     return stored.metadata.name;
+  }
+
+  /**
+   * Change wallet password
+   * Requires old password for verification
+   * 
+   * @param name - Wallet name
+   * @param oldPassword - Current password
+   * @param newPassword - New password
+   */
+  static async changePassword(
+    name: string,
+    oldPassword: string,
+    newPassword: string
+  ): Promise<void> {
+    if (newPassword.length < 8) {
+      throw new Error('New password must be at least 8 characters');
+    }
+
+    // Load wallet with old password
+    const keyPair = await this.load(name, oldPassword);
+    
+    // Get metadata
+    const metadata = await this.getMetadata(name);
+    if (!metadata) {
+      throw new Error('Wallet not found');
+    }
+
+    // Re-encrypt with new password
+    const walletData = JSON.stringify({
+      secretKey: secretKeyToHex(keyPair.secretKey),
+      address: metadata.address,
+    });
+
+    const kdfType = metadata.kdfType ?? 'pbkdf2';
+    const encrypted = await encryptWithPassword(walletData, newPassword, kdfType);
+
+    const stored: StoredWallet = {
+      metadata: {
+        ...metadata,
+        kdfType,
+      },
+      encrypted,
+      version: STORAGE_VERSION,
+    };
+
+    const key = `${WALLET_PREFIX}${name}`;
+    await SecureStore.setItemAsync(key, JSON.stringify(stored));
+  }
+
+  /**
+   * Verify wallet password without loading the key
+   * 
+   * @param name - Wallet name
+   * @param password - Password to verify
+   * @returns true if password is correct
+   */
+  static async verifyPassword(name: string, password: string): Promise<boolean> {
+    try {
+      await this.load(name, password);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -287,9 +339,13 @@ export class NonceStore {
     const key = `${this.KEY_PREFIX}${address}`;
     const existingJson = await SecureStore.getItemAsync(key);
     const nonces: number[] = existingJson ? JSON.parse(existingJson) : [];
-    
+
     if (!nonces.includes(nonce)) {
       nonces.push(nonce);
+      // Limit stored nonces to prevent unbounded growth
+      if (nonces.length > 1000) {
+        nonces.shift(); // Remove oldest
+      }
       await SecureStore.setItemAsync(key, JSON.stringify(nonces));
     }
   }
@@ -301,7 +357,7 @@ export class NonceStore {
     const key = `${this.KEY_PREFIX}${address}`;
     const existingJson = await SecureStore.getItemAsync(key);
     if (!existingJson) return false;
-    
+
     const nonces: number[] = JSON.parse(existingJson);
     return nonces.includes(nonce);
   }
@@ -313,10 +369,10 @@ export class NonceStore {
     const key = `${this.KEY_PREFIX}${address}`;
     const existingJson = await SecureStore.getItemAsync(key);
     if (!existingJson) return 0;
-    
+
     const nonces: number[] = JSON.parse(existingJson);
     if (nonces.length === 0) return 0;
-    
+
     return Math.max(...nonces) + 1;
   }
 

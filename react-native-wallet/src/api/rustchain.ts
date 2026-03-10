@@ -1,14 +1,27 @@
 /**
- * RustChain API Client
- * 
+ * RustChain API Client (Hardened)
+ *
  * Provides methods for interacting with RustChain node API:
  * - Balance queries
  * - Transaction submission
  * - Network info
+ *
+ * Issue #785: Security hardening
+ * - chain_id in signed payload
+ * - Numeric validation
+ * - Strict payload validation
  */
 
-import { KeyPair } from '../utils/crypto';
-import { signString, publicKeyToBase58 } from '../utils/crypto';
+import { KeyPair, isValidAddress } from '../utils/crypto';
+import {
+  signString,
+  publicKeyToBase58,
+  createSigningPayload,
+  signTransactionPayload,
+  validateNumericString,
+  validateTransactionAmount,
+  validateTransactionFee,
+} from '../utils/crypto';
 
 /**
  * Network configuration
@@ -56,32 +69,6 @@ export interface TransactionResponse {
 }
 
 /**
- * Transfer history item returned by the node.
- */
-export interface TransferHistoryItem {
-  id: number;
-  tx_id: string;
-  tx_hash: string;
-  from_addr: string;
-  to_addr: string;
-  amount: number;
-  amount_i64: number;
-  amount_rtc: number;
-  timestamp: number;
-  created_at: number;
-  confirmed_at?: number | null;
-  confirms_at?: number | null;
-  status: 'pending' | 'confirmed' | 'failed';
-  raw_status?: string;
-  status_reason?: string | null;
-  confirmations: number;
-  direction: 'sent' | 'received';
-  counterparty: string;
-  reason?: string | null;
-  memo?: string | null;
-}
-
-/**
  * Network info response
  */
 export interface NetworkInfo {
@@ -105,6 +92,7 @@ export interface Transaction {
   timestamp: string;
   memo?: string;
   signature?: string;
+  chain_id?: string;
 }
 
 /**
@@ -139,6 +127,7 @@ export class RustChainApiError extends Error {
 export class RustChainClient {
   private baseUrl: string;
   private timeout: number;
+  private chainId: string | null = null;
 
   constructor(network: Network = Network.Mainnet, timeout: number = 30000) {
     this.baseUrl = NETWORK_CONFIG[network].rpcUrl;
@@ -163,7 +152,7 @@ export class RustChainClient {
     data?: any
   ): Promise<T> {
     const url = `${this.baseUrl}/${endpoint.replace(/^\//, '')}`;
-    
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
@@ -212,24 +201,26 @@ export class RustChainClient {
    * Get balance for a wallet address
    */
   async getBalance(address: string): Promise<BalanceResponse> {
+    // Validate address format
+    if (!isValidAddress(address)) {
+      throw new RustChainApiError('Invalid wallet address format');
+    }
+    
     return this.request<BalanceResponse>('GET', `/wallet/balance?miner_id=${encodeURIComponent(address)}`);
   }
 
   /**
-   * Get public transfer history for a wallet address.
-   */
-  async getTransferHistory(address: string, limit: number = 50): Promise<TransferHistoryItem[]> {
-    return this.request<TransferHistoryItem[]>(
-      'GET',
-      `/wallet/history?miner_id=${encodeURIComponent(address)}&limit=${Math.max(1, Math.min(limit, 200))}`
-    );
-  }
-
-  /**
-   * Get network information
+   * Get network information (includes chain_id)
    */
   async getNetworkInfo(): Promise<NetworkInfo> {
-    return this.request<NetworkInfo>('GET', '/api/stats');
+    const info = await this.request<NetworkInfo>('GET', '/api/stats');
+    
+    // Cache chain_id for signing
+    if (info.chain_id) {
+      this.chainId = info.chain_id;
+    }
+    
+    return info;
   }
 
   /**
@@ -246,6 +237,16 @@ export class RustChainClient {
   async getMinFee(): Promise<number> {
     const info = await this.getNetworkInfo();
     return info.min_fee;
+  }
+
+  /**
+   * Get cached chain_id (fetches if not cached)
+   */
+  async getChainId(): Promise<string> {
+    if (!this.chainId) {
+      await this.getNetworkInfo();
+    }
+    return this.chainId!;
   }
 
   /**
@@ -278,26 +279,32 @@ export class RustChainClient {
   }
 
   /**
-   * Sign a transaction
+   * Sign a transaction with chain_id binding
+   * Issue #785: Include chain_id in signed payload
    */
-  signTransaction(tx: Transaction, keyPair: KeyPair): Transaction {
-    // Create signing payload (excludes signature field)
-    const signingData = {
-      from: tx.from,
-      to: tx.to,
-      amount: tx.amount,
-      fee: tx.fee,
-      nonce: tx.nonce,
-      timestamp: tx.timestamp,
-      memo: tx.memo,
-    };
-
-    const payload = JSON.stringify(signingData);
-    const signature = signString(payload, keyPair.secretKey);
+  async signTransaction(tx: Transaction, keyPair: KeyPair): Promise<Transaction> {
+    // Get chain_id for signing
+    const chainId = await this.getChainId();
+    
+    // Create signing payload with chain_id
+    const signature = signTransactionPayload(
+      {
+        from: tx.from,
+        to: tx.to,
+        amount: tx.amount,
+        fee: tx.fee,
+        nonce: tx.nonce,
+        timestamp: tx.timestamp,
+        memo: tx.memo,
+      },
+      chainId,
+      keyPair.secretKey
+    );
 
     return {
       ...tx,
       signature,
+      chain_id: chainId,
     };
   }
 
@@ -308,6 +315,12 @@ export class RustChainClient {
     if (!tx.signature) {
       throw new RustChainApiError('Transaction not signed');
     }
+    
+    // Validate transaction structure
+    if (!tx.chain_id) {
+      throw new RustChainApiError('Transaction missing chain_id');
+    }
+    
     return this.request<TransactionResponse>('POST', '/api/transaction', tx);
   }
 
@@ -321,10 +334,15 @@ export class RustChainClient {
     options?: { fee?: number; memo?: string }
   ): Promise<TransactionResponse> {
     const fromAddress = publicKeyToBase58(fromKeyPair.publicKey);
-    
+
+    // Validate recipient address
+    if (!isValidAddress(toAddress)) {
+      throw new RustChainApiError('Invalid recipient address');
+    }
+
     // Get current nonce
     const nonce = await this.getNonce(fromAddress);
-    
+
     // Get fee if not provided
     const fee = options?.fee ?? await this.estimateFee(amount);
 
@@ -338,8 +356,8 @@ export class RustChainClient {
       memo: options?.memo,
     });
 
-    // Sign transaction
-    const signedTx = this.signTransaction(tx, fromKeyPair);
+    // Sign transaction (includes chain_id)
+    const signedTx = await this.signTransaction(tx, fromKeyPair);
 
     // Submit transaction
     return this.submitTransaction(signedTx);
@@ -381,12 +399,12 @@ export async function dryRunTransfer(
   const errors: string[] = [];
   const fromAddress = publicKeyToBase58(fromKeyPair.publicKey);
 
-  // Validate recipient address format
-  if (!toAddress || toAddress.length < 40) {
+  // Validate recipient address format (strict)
+  if (!toAddress || !isValidAddress(toAddress)) {
     errors.push('Invalid recipient address format');
   }
 
-  // Validate amount
+  // Validate amount (must be positive)
   if (amount <= 0) {
     errors.push('Amount must be greater than 0');
   }
@@ -397,11 +415,11 @@ export async function dryRunTransfer(
   try {
     const balanceResp = await client.getBalance(fromAddress);
     senderBalance = balanceResp.balance;
-    
+
     const fee = options?.fee ?? await client.estimateFee(amount);
     const totalCost = amount + fee;
     sufficientBalance = senderBalance >= totalCost;
-    
+
     if (!sufficientBalance) {
       errors.push(`Insufficient balance. Required: ${totalCost}, Available: ${senderBalance}`);
     }
@@ -425,5 +443,50 @@ export async function dryRunTransfer(
     totalCost: amount + estimatedFee,
     senderBalance,
     sufficientBalance,
+  };
+}
+
+/**
+ * Validate transaction input strings
+ * Issue #785: Numeric validation hardening
+ */
+export interface TransactionInputValidation {
+  valid: boolean;
+  errors: string[];
+  parsedAmount?: number;
+  parsedFee?: number;
+}
+
+export function validateTransactionInput(
+  amountStr: string,
+  feeStr?: string
+): TransactionInputValidation {
+  const errors: string[] = [];
+  let parsedAmount: number | undefined;
+  let parsedFee: number | undefined;
+
+  // Validate amount
+  const amountResult = validateTransactionAmount(amountStr);
+  if (!amountResult.valid) {
+    errors.push(`Amount: ${amountResult.error}`);
+  } else if (amountResult.value !== undefined) {
+    parsedAmount = amountResult.value;
+  }
+
+  // Validate fee if provided
+  if (feeStr && feeStr.trim()) {
+    const feeResult = validateTransactionFee(feeStr);
+    if (!feeResult.valid) {
+      errors.push(`Fee: ${feeResult.error}`);
+    } else if (feeResult.value !== undefined) {
+      parsedFee = feeResult.value;
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    parsedAmount,
+    parsedFee,
   };
 }

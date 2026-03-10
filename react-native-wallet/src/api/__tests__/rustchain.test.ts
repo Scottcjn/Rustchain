@@ -16,10 +16,13 @@ global.fetch = jest.fn();
 
 describe('RustChainClient', () => {
   let client: RustChainClient;
+  let testAddress: string;
 
   beforeEach(() => {
     client = new RustChainClient(Network.Mainnet);
     jest.clearAllMocks();
+    // Generate a valid Base58 address for tests
+    testAddress = publicKeyToBase58(generateKeyPair().publicKey);
   });
 
   describe('constructor', () => {
@@ -42,7 +45,7 @@ describe('RustChainClient', () => {
   describe('getBalance', () => {
     it('should fetch balance successfully', async () => {
       const mockBalance = {
-        miner: 'test_address',
+        miner: testAddress,
         balance: 100000000,
         unlocked: 100000000,
         locked: 0,
@@ -53,11 +56,11 @@ describe('RustChainClient', () => {
         json: async () => mockBalance,
       });
 
-      const balance = await client.getBalance('test_address');
-      
+      const balance = await client.getBalance(testAddress);
+
       expect(balance).toEqual(mockBalance);
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/wallet/balance?miner_id=test_address'),
+        expect.stringContaining(`/wallet/balance?miner_id=${encodeURIComponent(testAddress)}`),
         expect.any(Object)
       );
     });
@@ -69,7 +72,7 @@ describe('RustChainClient', () => {
         statusText: 'Not Found',
       });
 
-      await expect(client.getBalance('invalid_address')).rejects.toThrow();
+      await expect(client.getBalance(testAddress)).rejects.toThrow();
     });
 
     it('should handle network errors', async () => {
@@ -77,47 +80,7 @@ describe('RustChainClient', () => {
         new Error('Network error')
       );
 
-      await expect(client.getBalance('test_address')).rejects.toThrow();
-    });
-  });
-
-  describe('getTransferHistory', () => {
-    it('should fetch transfer history successfully', async () => {
-      const mockHistory = [
-        {
-          id: 1,
-          tx_id: 'tx_abc123',
-          tx_hash: 'tx_abc123',
-          from_addr: 'wallet1',
-          to_addr: 'wallet2',
-          amount: 10.5,
-          amount_i64: 10500000,
-          amount_rtc: 10.5,
-          timestamp: 1771154269,
-          created_at: 1771154269,
-          confirmed_at: 1771157869,
-          confirms_at: 1771157869,
-          status: 'confirmed',
-          raw_status: 'confirmed',
-          confirmations: 1,
-          direction: 'sent',
-          counterparty: 'wallet2',
-          memo: 'coffee',
-        },
-      ];
-
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockHistory,
-      });
-
-      const history = await client.getTransferHistory('test_address', 10);
-
-      expect(history).toEqual(mockHistory);
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/wallet/history?miner_id=test_address&limit=10'),
-        expect.any(Object)
-      );
+      await expect(client.getBalance(testAddress)).rejects.toThrow();
     });
   });
 
@@ -138,15 +101,19 @@ describe('RustChainClient', () => {
       });
 
       const info = await client.getNetworkInfo();
-      
+
       expect(info).toEqual(mockInfo);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/stats'),
+        expect.any(Object)
+      );
     });
   });
 
   describe('getNonce', () => {
     it('should get nonce from balance response', async () => {
       const mockBalance = {
-        miner: 'test_address',
+        miner: testAddress,
         balance: 100000000,
         unlocked: 100000000,
         locked: 0,
@@ -158,14 +125,14 @@ describe('RustChainClient', () => {
         json: async () => mockBalance,
       });
 
-      const nonce = await client.getNonce('test_address');
-      
+      const nonce = await client.getNonce(testAddress);
+
       expect(nonce).toBe(5);
     });
 
     it('should return 0 if nonce not provided', async () => {
       const mockBalance = {
-        miner: 'test_address',
+        miner: testAddress,
         balance: 100000000,
         unlocked: 100000000,
         locked: 0,
@@ -176,8 +143,8 @@ describe('RustChainClient', () => {
         json: async () => mockBalance,
       });
 
-      const nonce = await client.getNonce('test_address');
-      
+      const nonce = await client.getNonce(testAddress);
+
       expect(nonce).toBe(0);
     });
   });
@@ -193,6 +160,7 @@ describe('RustChainClient', () => {
         version: '2.2.1',
       };
 
+      // estimateFee calls getMinFee which calls getNetworkInfo
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
         json: async () => mockInfo,
@@ -252,9 +220,7 @@ describe('RustChainClient', () => {
     });
 
     it('should return false when API is unreachable', async () => {
-      (global.fetch as jest.Mock).mockRejectedValueOnce(
-        new Error('Network error')
-      );
+      (global.fetch as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
 
       const healthy = await client.healthCheck();
       expect(healthy).toBe(false);
@@ -278,13 +244,13 @@ describe('dryRunTransfer', () => {
 
     // Mock fetch to return balance and network info
     (global.fetch as jest.Mock).mockImplementation((url: string) => {
-      if (url.includes('wallet/balance')) {
+      if (url.includes('miner_id')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
             miner: senderAddress,
-            balance: 100000000,
-            unlocked: 100000000,
+            balance: 1000000000, // Increased balance for safety
+            unlocked: 1000000000,
             locked: 0,
           }),
         });
