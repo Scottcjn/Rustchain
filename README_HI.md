@@ -24,7 +24,8 @@
 
 [वेबसाइट](https://rustchain.org) • [लाइव एक्सप्लोरर](https://rustchain.org/explorer) • [wRTC स्वैप](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC क्विकस्टार्ट](docs/wrtc.md) • [wRTC ट्यूटोरियल](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia संदर्भ](https://grokipedia.com/search?q=RustChain) • [व्हाइटपेपर](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [क्विक स्टार्ट](#-quick-start) • [यह कैसे काम करता है](#-how-proof-of-antiquity-works)
 
-## ⚡ क्विक स्टार्ट
+<div align="left">
+  ## ⚡ क्विक स्टार्ट
 
 ### वन-लाइन इंस्टॉल (अनुशंसित)
 
@@ -94,6 +95,8 @@ launchctl list | grep rustchain
 
 यदि समस्या बनी रहती है, तो error output और OS विवरण के साथ नया issue या bounty comment पोस्ट करें।
 ```
+</div>
+
 </div>
 
 ---
