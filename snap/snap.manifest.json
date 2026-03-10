@@ -7,7 +7,7 @@
     "url": "https://github.com/Scottcjn/rustchain-bounties.git"
   },
   "source": {
-    "shasum": "6276edbe687f5c4e66d995b96906220a87734fbd94a764c5d1cf572d40fd6c0b",
+    "shasum": "d74edc641ed673ac21f496cc656c52114f1bdaac66eca4ea13de10e3da8e9bd0",
     "location": {
       "npm": {
         "filePath": "dist/bundle.js",

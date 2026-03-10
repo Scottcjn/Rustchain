@@ -9,10 +9,11 @@ Snaps are an open system that allows developers to extend the functionality of M
 ## Features
 
 - **RustChain Accounts**: Create and manage RTC addresses within MetaMask
-- **Transaction Signing**: Sign and send RTC transactions
-- **Message Signing**: Sign messages for dApp authentication
+- **Transaction Signing**: Sign and send RTC transactions with user confirmation
+- **Message Signing**: Sign messages for dApp authentication with approval dialog
 - **Balance Queries**: Check RTC balance directly in MetaMask
 - **dApp Compatibility**: EIP-1193 compatible interface
+- **User Confirmation**: All sensitive operations require explicit user approval
 
 ## Installation
 
@@ -40,7 +41,7 @@ npm install
 npm run build
 ```
 
-4. Load in MetaMask:
+4. Load in MetaMask Flask:
    - Open MetaMask Flask (required for Snaps)
    - Go to Settings → Experimental → Snaps
    - Use the Snap debugger to load from `dist/bundle.js`
@@ -99,6 +100,7 @@ const signature = await window.ethereum.request({
 | `rustchain_sendTransaction` | Send RTC | `[{ from, to, value, memo }]` | `{ txHash, status }` |
 | `rustchain_signMessage` | Sign message | `[{ address, message }]` | `{ signature, signedMessage }` |
 | `rustchain_signTransaction` | Sign transaction | `[tx]` | `string` (signature) |
+| `rustchain_getTransactionHistory` | Get tx history | `[address]` | `Transaction[]` |
 | `eth_requestAccounts` | Request access (EIP-1193) | - | `string[]` |
 | `eth_accounts` | Get accounts (EIP-1193) | - | `string[]` |
 | `eth_chainId` | Get chain ID | - | `string` |
@@ -109,18 +111,19 @@ const signature = await window.ethereum.request({
 
 ```
 snap/
-├── snap.manifest.json     # Snap manifest
+├── snap.manifest.json     # Snap manifest with permissions
 ├── package.json           # npm package config
 ├── src/
-│   └── index.js          # Main snap logic
+│   └── index.js          # Main snap logic with RPC handlers
 ├── images/
 │   └── icon.svg          # Snap icon
 ├── scripts/
-│   └── build.js          # Build script
+│   └── build.js          # Build script (bundles + checksums)
 ├── dist/
 │   └── bundle.js         # Built snap (generated)
 └── tests/
-    └── snap.test.js      # Unit tests
+    ├── snap.test.js      # Unit tests
+    └── snap-integration.test.js  # Integration tests
 ```
 
 ## Configuration
@@ -162,6 +165,19 @@ This creates `dist/bundle.js` and updates the manifest with the SHA-256 checksum
 npm test
 ```
 
+### Expected Output
+
+```
+==================================================
+SNAP INTEGRATION TEST SUMMARY
+==================================================
+Total: 16
+✅ Passed: 16
+❌ Failed: 0
+==================================================
+🎉 ALL SNAP TESTS PASSED!
+```
+
 ### Watching for Changes
 
 ```bash
@@ -174,6 +190,59 @@ npm run watch
 npm run serve
 ```
 
+## Testing
+
+### Run All Tests
+
+```bash
+cd snap
+npm test
+# or
+node --test tests/*.test.js
+```
+
+### Test Coverage
+
+- **Account Management**: Create, list, retrieve accounts
+- **Balance Query**: Network fetch, error handling
+- **Send Transaction**: Validation, confirmation, submission
+- **Sign Message**: User approval, signature generation
+- **EIP-1193 Compatibility**: eth_* method handlers
+- **Error Handling**: Unknown methods, user rejection, network errors
+
+### Verification Commands
+
+```bash
+# 1. Run tests
+node --test tests/*.test.js
+
+# 2. Build snap
+npm run build
+
+# 3. Verify manifest
+cat snap.manifest.json | python3 -m json.tool
+
+# 4. Check bundle exists
+ls -la dist/bundle.js
+
+# 5. Verify shasum matches manifest
+sha256sum dist/bundle.js
+```
+
+### End-to-End Verification
+
+```bash
+# 1. Build the snap
+npm run build
+
+# 2. Load in MetaMask Flask debugger
+# 3. Create account via rustchain_createAccount
+# 4. Verify address ends with "RTC"
+# 5. Send transaction - verify confirmation dialog appears
+# 6. Sign message - verify approval dialog appears
+# 7. Test eth_* methods for dApp compatibility
+```
+
 ## Security Considerations
 
 **MVP Implementation Notes:**
@@ -184,7 +253,7 @@ npm run serve
    - Secure key storage using Snap's state management
 
 2. **Transaction Signing**: MVP returns transaction hash. Production should:
-   - Implement proper cryptographic signatures
+   - Implement proper cryptographic signatures (Ed25519)
    - Add transaction simulation
    - Include gas/fee estimation
 
@@ -192,6 +261,11 @@ npm run serve
    - Implement proper RPC client
    - Add retry logic and timeouts
    - Support multiple network endpoints
+
+4. **User Confirmation**: All sensitive operations show confirmation dialogs:
+   - Transaction send: Shows recipient, amount, memo
+   - Message signing: Shows message content
+   - Account access: Shows dApp connection request
 
 ## Troubleshooting
 
@@ -210,11 +284,17 @@ npm run serve
 - Check browser console for errors
 - Verify snap permissions in MetaMask
 
+### Dialog not appearing
+- Ensure snap has required permissions
+- Check MetaMask notification settings
+- Verify snap is installed and enabled
+
 ## Publishing to npm
 
 1. Update version in `package.json` and `snap.manifest.json`
 2. Build the snap: `npm run build`
-3. Publish: `npm publish`
+3. Verify manifest shasum matches bundle
+4. Publish: `npm publish`
 
 ## License
 
@@ -229,3 +309,8 @@ MIT - See LICENSE file
 ## Contributing
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
+
+## Related
+
+- [Wallet Extension](../extension/README.md) - Browser extension alternative
+- [RustChain Node](../node/) - Backend node implementation

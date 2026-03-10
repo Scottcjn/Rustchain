@@ -10,6 +10,7 @@ Official browser extension for managing RTC tokens and interacting with RustChai
 - **dApp Integration**: Injected provider for seamless dApp interaction
 - **Transaction History**: View your transaction activity
 - **Secure Storage**: Encrypted key storage in browser
+- **MetaMask Snap Fallback**: Integrated path to use MetaMask Snap when available
 
 ## Installation
 
@@ -102,17 +103,19 @@ extension/
 ├── icons/                 # Extension icons
 ├── src/
 │   ├── background/        # Service worker
-│   │   └── background.js  # Wallet state, transactions
+│   │   └── background.js  # Wallet state, transactions, Snap fallback
 │   ├── content/           # Content scripts
 │   │   ├── content.js     # Provider injection
 │   │   └── injected.js    # window.rustchain API
 │   ├── popup/             # Popup UI
 │   │   ├── popup.html
-│   │   ├── popup.js
+│   │   ├── popup.js       # UI logic with Snap detection
 │   │   └── popup.css
 │   └── utils/             # Utility functions
+│       └── validation.js  # Address/transaction validation
 └── tests/
-    └── extension.test.js  # Unit tests
+    ├── extension.test.js  # Unit tests
+    └── send-sign-flow.test.js  # End-to-end flow tests
 ```
 
 ## API Reference
@@ -155,6 +158,58 @@ interface RustChainProvider {
 }
 ```
 
+## Testing
+
+### Run All Tests
+
+```bash
+cd extension
+node --test tests/*.test.js
+```
+
+### Expected Output
+
+```
+==================================================
+TEST SUMMARY
+==================================================
+Total: 30
+✅ Passed: 30
+❌ Failed: 0
+==================================================
+🎉 ALL TESTS PASSED!
+```
+
+### Test Coverage
+
+- **Address Validation**: Format, suffix, length checks
+- **Transaction Validation**: Required fields, balance, recipient
+- **Message Validation**: String type, empty check, length limit
+- **Send Flow**: Transaction creation, signing, submission
+- **Sign Flow**: Message hashing, signature generation
+- **Snap Integration**: Detection, send via Snap, sign via Snap
+- **Fallback Behavior**: Extension-first, Snap-first modes
+
+## MetaMask Snap Integration
+
+The extension includes integrated fallback to MetaMask Snap:
+
+1. **Snap Detection**: Automatically detects if MetaMask Snap is available
+2. **Fallback Modes**:
+   - `extension-first` (default): Use extension, fallback to Snap
+   - `snap-first`: Try Snap first, fallback to extension
+3. **Unified API**: Same methods work regardless of path
+
+### Snap Fallback Flow
+
+```
+User Action → Check Snap Available?
+              ├─ Yes → Try Snap
+              │        ├─ Success → Return result
+              │        └─ Fail → Fallback to Extension
+              └─ No → Use Extension
+```
+
 ## Security
 
 - Private keys are encrypted before storage
@@ -167,14 +222,6 @@ interface RustChainProvider {
 - Add hardware wallet support
 - Implement secure key derivation (BIP39/BIP44)
 - Add transaction simulation and warnings
-
-## Testing
-
-Run unit tests:
-
-```bash
-node --test tests/*.test.js
-```
 
 ## Development
 
@@ -207,6 +254,39 @@ python3 generate_icons.py
 - Refresh the page after loading extension
 - Check console for injection errors
 
+### Snap not detected
+- Ensure MetaMask Flask is installed
+- Verify RustChain Snap is installed in MetaMask
+- Check browser console for detection logs
+
+## Verification Commands
+
+### Quick Verification
+
+```bash
+# 1. Run tests
+cd extension
+node --test tests/*.test.js
+
+# 2. Verify manifest
+cat manifest.json | python3 -m json.tool
+
+# 3. Check file structure
+find src -type f -name "*.js" | sort
+```
+
+### End-to-End Verification
+
+```bash
+# 1. Load extension in Chrome
+# 2. Create wallet via "+ New" button
+# 3. Verify address ends with "RTC"
+# 4. Click "Send" and verify validation works
+# 5. Click "Sign" and verify message signing
+# 6. Install MetaMask Flask + RustChain Snap
+# 7. Verify Snap detection in console
+```
+
 ## License
 
 MIT - See LICENSE file
@@ -214,3 +294,8 @@ MIT - See LICENSE file
 ## Contributing
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
+
+## Related
+
+- [MetaMask Snap](../snap/README.md) - MetaMask integration
+- [RustChain Documentation](https://rustchain.org)
