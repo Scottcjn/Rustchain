@@ -2,19 +2,24 @@
 
 ## Summary
 
-This report demonstrates a black-box bypass of the deployed RIP-201 fleet immune system:
+This report documented a black-box bypass of the deployed RIP-201 fleet immune system:
 
-1. The server trusts client-supplied `X-Forwarded-For` as the miner source IP.
+1. The server trusted client-supplied forwarding headers as the miner source IP.
 2. The fleet scorer treats missing optional fingerprint dimensions as "no evidence" instead of suspicious absence.
 3. Timing correlation can be avoided by spacing attestations outside the 30-second window.
 
 With those three behaviors combined, a coordinated 5-miner fleet on shared infrastructure can remain at `fleet_score = 0.0` for consecutive epochs while keeping full reward weight.
 
+Status on current `main`:
+- `X-Forwarded-For` is ignored for attestation accounting.
+- `X-Real-IP` is only honored when `REMOTE_ADDR` belongs to `RC_TRUSTED_PROXY_IPS`.
+- Direct peers are accounted by their actual socket peer IP.
+
 ## Technique
 
 ### 1. Spoof IP clustering
 
-`client_ip_from_request()` prefers the left-most `X-Forwarded-For` value over `REMOTE_ADDR` without validating that the request actually came from a trusted reverse proxy. A client can therefore choose the IP written into:
+Historically, `client_ip_from_request()` accepted forwarded header values without validating that the request actually came from a trusted reverse proxy. A client could therefore choose the IP written into:
 
 - `miner_attest_recent.source_ip`
 - `ip_rate_limit.client_ip`
@@ -64,7 +69,7 @@ python -m pytest tests/test_rip201_fleet_bypass.py -v
 
 ## Recommended Fixes
 
-1. Only trust `X-Forwarded-For` when `REMOTE_ADDR` belongs to an allowlisted reverse proxy.
+1. Only trust forwarded client-IP headers when `REMOTE_ADDR` belongs to an allowlisted reverse proxy.
 2. Record the actual peer IP separately from forwarded headers and use the trusted peer IP for fleet detection.
 3. Treat missing fingerprint dimensions as suspicious for modern miners instead of neutral.
 4. Require a minimum fingerprint feature set for fleet scoring, not just attestation acceptance.

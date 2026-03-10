@@ -222,6 +222,91 @@ def test_client_ip_from_request_ignores_spoofed_x_forwarded_for(attest_client):
     assert row == ("10.0.0.9",)
 
 
+def test_client_ip_from_request_ignores_spoofed_x_real_ip_from_untrusted_peer(attest_client):
+    client, db_path = attest_client
+    payload = {
+        "miner": "spoof-demo-2",
+        "device": {
+            "device_family": "x86",
+            "device_arch": "default",
+            "arch": "default",
+            "cores": 8,
+            "cpu": "Intel Xeon",
+            "serial_number": "SERIAL-002",
+        },
+        "signals": {
+            "hostname": "shared-box-b",
+            "macs": ["AA:BB:CC:DD:EE:02"],
+        },
+        "report": {
+            "nonce": "nonce-002",
+            "commitment": "commitment-002",
+        },
+        "fingerprint": _minimal_valid_fingerprint(0.06),
+    }
+
+    response = client.post(
+        "/attest/submit",
+        json=payload,
+        headers={"X-Real-IP": "198.51.100.88"},
+        environ_base={"REMOTE_ADDR": "203.0.113.9"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["ok"] is True
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT source_ip FROM miner_attest_recent WHERE miner = ?",
+            (payload["miner"],),
+        ).fetchone()
+
+    assert row == ("203.0.113.9",)
+
+
+def test_client_ip_from_request_accepts_x_real_ip_from_trusted_proxy(attest_client, monkeypatch):
+    client, db_path = attest_client
+    monkeypatch.setenv("RC_TRUSTED_PROXY_IPS", "127.0.0.1/32,::1/128")
+    payload = {
+        "miner": "proxy-demo-1",
+        "device": {
+            "device_family": "x86",
+            "device_arch": "default",
+            "arch": "default",
+            "cores": 8,
+            "cpu": "Intel Xeon",
+            "serial_number": "SERIAL-003",
+        },
+        "signals": {
+            "hostname": "proxied-box-a",
+            "macs": ["AA:BB:CC:DD:EE:03"],
+        },
+        "report": {
+            "nonce": "nonce-003",
+            "commitment": "commitment-003",
+        },
+        "fingerprint": _minimal_valid_fingerprint(0.07),
+    }
+
+    response = client.post(
+        "/attest/submit",
+        json=payload,
+        headers={"X-Real-IP": "198.51.100.99"},
+        environ_base={"REMOTE_ADDR": "127.0.0.1"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["ok"] is True
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT source_ip FROM miner_attest_recent WHERE miner = ?",
+            (payload["miner"],),
+        ).fetchone()
+
+    assert row == ("198.51.100.99",)
+
+
 def test_same_subnet_and_shared_fingerprint_get_flagged():
     db = sqlite3.connect(":memory:")
     fleet_mod.ensure_schema(db)

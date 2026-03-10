@@ -187,11 +187,12 @@ def _attest_is_valid_positive_int(value, max_value=4096):
 
 
 def client_ip_from_request(req) -> str:
-    """Return trusted client IP from reverse proxy (X-Real-IP) or remote address."""
-    client_ip = req.headers.get("X-Real-IP") or req.remote_addr
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()
-    return client_ip
+    """Return trusted client IP, honoring proxy headers only for allowlisted peers."""
+    remote_addr = _normalize_client_ip(getattr(req, "remote_addr", ""))
+    forwarded_ip = _normalize_client_ip(req.headers.get("X-Real-IP", ""))
+    if forwarded_ip and _is_trusted_proxy(remote_addr):
+        return forwarded_ip
+    return remote_addr
 
 
 def _attest_positive_int(value, default=1):
@@ -336,12 +337,55 @@ def _start_timer():
     g._ts = time.time()
     g.request_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex
 
+def _normalize_client_ip(raw_value) -> str:
+    """Normalize a peer/header IP string down to the first address token."""
+    if raw_value is None:
+        return ""
+    if not isinstance(raw_value, str):
+        raw_value = str(raw_value)
+    value = raw_value.strip()
+    if not value:
+        return ""
+    if "," in value:
+        value = value.split(",")[0].strip()
+    return value
+
+
+def _trusted_proxy_networks():
+    """Return trusted reverse proxy networks from RC_TRUSTED_PROXY_IPS."""
+    raw = os.environ.get("RC_TRUSTED_PROXY_IPS", "127.0.0.1/32,::1/128")
+    networks = []
+    for token in raw.split(","):
+        entry = token.strip()
+        if not entry:
+            continue
+        try:
+            if "/" in entry:
+                networks.append(ipaddress.ip_network(entry, strict=False))
+            else:
+                parsed_ip = ipaddress.ip_address(entry)
+                suffix = "/32" if parsed_ip.version == 4 else "/128"
+                networks.append(ipaddress.ip_network(f"{entry}{suffix}", strict=False))
+        except ValueError:
+            continue
+    return networks
+
+
+def _is_trusted_proxy(remote_addr: str) -> bool:
+    """Whether the direct peer is an allowlisted reverse proxy."""
+    remote_ip = _normalize_client_ip(remote_addr)
+    if not remote_ip:
+        return False
+    try:
+        parsed_ip = ipaddress.ip_address(remote_ip)
+    except ValueError:
+        return False
+    return any(parsed_ip in network for network in _trusted_proxy_networks())
+
+
 def get_client_ip():
-    """Trust reverse-proxy X-Real-IP, not client X-Forwarded-For."""
-    client_ip = request.headers.get("X-Real-IP") or request.remote_addr
-    if client_ip and "," in client_ip:
-        client_ip = client_ip.split(",")[0].strip()
-    return client_ip
+    """Trusted client IP for rate limits and accounting surfaces."""
+    return client_ip_from_request(request)
 
 @app.after_request
 def _after(resp):

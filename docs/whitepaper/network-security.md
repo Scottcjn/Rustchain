@@ -31,6 +31,14 @@ Conceptually:
 
 RustChain enforces this separation using a combination of validation, rate limiting, and explicit admin-key checks.
 
+### Reverse Proxy Trust
+
+RustChain only honors `X-Real-IP` when the direct peer address (`REMOTE_ADDR`) is
+an allowlisted reverse proxy. Configure trusted proxy IPs or CIDRs through
+`RC_TRUSTED_PROXY_IPS` (defaults to loopback-only: `127.0.0.1/32,::1/128`).
+Direct clients are bucketed and audited by their actual peer IP, not by
+forwarded headers they supply themselves.
+
 ### State Storage
 
 The node stores state in SQLite tables, which typically include:
@@ -127,10 +135,11 @@ RustChain benefits from keeping state in transparent tables and emitting logs, b
 - Log DB insert failures for audit tables (do not `except: pass` silently).
 - Track rate-limit triggers and suspicious fingerprint failures.
 - Keep sensitive values (keys, full identifiers) out of unauthenticated error responses.
+- Keep `RC_TRUSTED_PROXY_IPS` aligned with the actual nginx/load balancer peers;
+  otherwise forwarded client-IP headers are ignored by design.
 
 ### Recommendations (Low-Risk Improvements)
 
 - Add explicit pruning strategies for high-write tables.
 - Keep security-sensitive changes small and testable; prefer separate PRs for cosmetic changes.
 - Publish a stable endpoint reference and keep explorer/museum consumers aligned with live endpoints.
-
