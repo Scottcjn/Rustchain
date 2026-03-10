@@ -1136,6 +1136,16 @@ def _fingerprint_checks_map(fingerprint: dict) -> dict:
 
 
 def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
+    """
+    Extract specific check data from a hardware fingerprint by check name.
+    
+    Args:
+        fingerprint: Hardware fingerprint dict containing checks and device info.
+        check_name: Name of the specific check to extract (e.g., 'simd_identity').
+    
+    Returns:
+        dict: The 'data' section of the specified check, or empty dict if not found.
+    """
     item = _fingerprint_checks_map(fingerprint).get(check_name, {})
     if isinstance(item, dict):
         data = item.get("data", {})
