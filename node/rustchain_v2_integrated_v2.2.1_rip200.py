@@ -1120,6 +1120,15 @@ ARM_CPU_BRANDS = {"arm", "aarch64", "cortex", "neoverse", "apple m1", "apple m2"
 
 
 def _fingerprint_checks_map(fingerprint: dict) -> dict:
+    """
+    Extract the checks dictionary from a hardware fingerprint payload.
+    
+    Args:
+        fingerprint: Hardware fingerprint dict containing device and check data.
+    
+    Returns:
+        dict: The 'checks' section of the fingerprint, or empty dict if invalid.
+    """
     if not isinstance(fingerprint, dict):
         return {}
     checks = fingerprint.get("checks", {})
@@ -1127,6 +1136,16 @@ def _fingerprint_checks_map(fingerprint: dict) -> dict:
 
 
 def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
+    """
+    Extract specific check data from a hardware fingerprint by check name.
+    
+    Args:
+        fingerprint: Hardware fingerprint dict containing checks and device info.
+        check_name: Name of the specific check to extract (e.g., 'simd_identity').
+    
+    Returns:
+        dict: The 'data' section of the specified check, or empty dict if not found.
+    """
     item = _fingerprint_checks_map(fingerprint).get(check_name, {})
     if isinstance(item, dict):
         data = item.get("data", {})
@@ -1135,12 +1154,30 @@ def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
 
 
 def _claimed_family_and_arch(device: dict) -> tuple:
+    """
+    Extract the claimed device family and architecture from a device dict.
+    
+    Args:
+        device: Device information dict with family/arch fields.
+    
+    Returns:
+        tuple: (family, arch) strings. Defaults to ('x86', 'default') if not provided.
+    """
     family = str(device.get("device_family") or device.get("family") or "x86")
     arch = str(device.get("device_arch") or device.get("arch") or "default")
     return family, arch
 
 
 def _cpu_brand_string(device: dict) -> str:
+    """
+    Build a lowercase CPU brand string from available device fields.
+    
+    Args:
+        device: Device information dict with cpu/model/brand fields.
+    
+    Returns:
+        str: Concatenated brand string in lowercase, or empty string if no fields.
+    """
     return " ".join(
         str(device.get(key) or "").strip()
         for key in ("cpu", "device_model", "model", "brand")
