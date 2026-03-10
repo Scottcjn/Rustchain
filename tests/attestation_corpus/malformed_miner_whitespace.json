@@ -1,0 +1,15 @@
+{
+  "miner": "whitespace-miner",
+  "device": {
+    "model": "Test CPU",
+    "arch": "x86_64",
+    "cores": 8
+  },
+  "signals": {
+    "macs": ["aa:bb:cc:dd:ee:09"],
+    "hostname": "whitespace-host"
+  },
+  "report": {
+    "commitment": "whitespace-commitment"
+  }
+}
