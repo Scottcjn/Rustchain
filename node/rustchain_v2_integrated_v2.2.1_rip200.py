@@ -4844,8 +4844,19 @@ def api_rewards_epoch(epoch: int):
 def api_wallet_balance():
     """Get balance for a specific miner"""
     miner_id = request.args.get("miner_id", "").strip()
+    address = request.args.get("address", "").strip()
+
+    if miner_id and address and miner_id != address:
+        return jsonify({
+            "ok": False,
+            "error": "miner_id and address must match when both are provided",
+        }), 400
+
     if not miner_id:
-        return jsonify({"ok": False, "error": "miner_id required"}), 400
+        miner_id = address
+
+    if not miner_id:
+        return jsonify({"ok": False, "error": "miner_id or address required"}), 400
 
     with sqlite3.connect(DB_PATH) as db:
         row = db.execute("SELECT amount_i64 FROM balances WHERE miner_id=?", (miner_id,)).fetchone()

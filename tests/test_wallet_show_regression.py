@@ -10,7 +10,7 @@ import sys
 import os
 
 # Add tools to path for importing cli module
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tools'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'tools', 'cli'))
 from rustchain_cli import fetch_api, get_node_url
 
 
@@ -50,7 +50,6 @@ class TestWalletBalanceEndpoint:
     def test_wallet_show_handles_network_error_gracefully(self, mock_urlopen):
         """Test that wallet show handles network errors without crashing."""
         import urllib.error
-        from tools.rustchain_cli import cmd_wallet
         
         # Simulate network timeout
         mock_urlopen.side_effect = urllib.error.URLError("timeout")
@@ -59,7 +58,6 @@ class TestWalletBalanceEndpoint:
         # This is the behavior we want to preserve
         try:
             # Test the balance fetch logic directly
-            from tools.rustchain_cli import fetch_api
             result = fetch_api("/wallet/balance?miner_id=test")
         except Exception as e:
             # Expected to fail with network error

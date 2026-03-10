@@ -125,6 +125,9 @@ curl -sk https://rustchain.org/api/miners | jq .
 
 Check RTC balance for a miner.
 
+Canonical query parameter is `miner_id`. The endpoint also accepts `address`
+as a compatibility alias for older callers.
+
 **Request:**
 ```bash
 curl -sk "https://rustchain.org/wallet/balance?miner_id=eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC" | jq .

@@ -192,6 +192,7 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=scott"
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `miner_id` | string | Yes | Wallet identifier |
+| `address` | string | No | Backward-compatible alias for `miner_id` |
 
 **Response**:
 ```json
