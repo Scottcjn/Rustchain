@@ -1120,6 +1120,15 @@ ARM_CPU_BRANDS = {"arm", "aarch64", "cortex", "neoverse", "apple m1", "apple m2"
 
 
 def _fingerprint_checks_map(fingerprint: dict) -> dict:
+    """
+    Extract the checks dictionary from a hardware fingerprint payload.
+    
+    Args:
+        fingerprint: Hardware fingerprint dict containing device and check data.
+    
+    Returns:
+        dict: The 'checks' section of the fingerprint, or empty dict if invalid.
+    """
     if not isinstance(fingerprint, dict):
         return {}
     checks = fingerprint.get("checks", {})
