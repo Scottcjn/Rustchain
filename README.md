@@ -22,6 +22,10 @@
 
 [Website](https://rustchain.org) • [Manifesto](https://rustchain.org/manifesto.html) • [Boudreaux Principles](docs/BOUDREAUX_COMPUTING_PRINCIPLES.md) • [Live Explorer](https://rustchain.org/explorer) • [Swap wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Quickstart](docs/wrtc.md) • [wRTC Tutorial](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia Ref](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [Quick Start](#-quick-start) • [How It Works](#-how-proof-of-antiquity-works)
 
+
+> 🌐 **Languages**
+>
+> 🇬🇧 [English](README.md) | 🇯🇵 [日本語](README_JA.md) | 🇮🇳 [हिन्दी](README_HI.md)
 </div>
 
 ---
