@@ -72,7 +72,7 @@ RustChain’s design explicitly targets common centralization drivers:
 - Gas fees do not provide an advantage to sophisticated MEV operators.
 - VM-scale strategies are economically discouraged by the fingerprint gate and binding logic.
 
-Residual centralization risks still exist (e.g., shared NAT environments, homogenous hardware fleets), and the system is expected to evolve as adversaries adapt.
+Residual centralization risks still exist (e.g., shared NAT environments, homogeneous hardware fleets), and the system is expected to evolve as adversaries adapt.
 
 ## Open Questions / Future Work
 
