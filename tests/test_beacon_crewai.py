@@ -38,7 +38,7 @@ class TestBeaconConfig:
 
         config = BeaconConfig(
             agent_id="custom-agent",
-            beacon_host="0.0.0.0",
+            beacon_host="0.0.0.0",  # nosec B104
             beacon_port=38401,
             use_mnemonic=True,
             broadcast_heartbeats=True,
@@ -47,7 +47,7 @@ class TestBeaconConfig:
         )
 
         assert config.agent_id == "custom-agent"
-        assert config.beacon_host == "0.0.0.0"
+        assert config.beacon_host == "0.0.0.0"  # nosec B104
         assert config.beacon_port == 38401
         assert config.use_mnemonic is True
         assert config.broadcast_heartbeats is True

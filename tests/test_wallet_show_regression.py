@@ -73,7 +73,7 @@ class TestWalletBalanceEndpoint:
         try:
             url = f"{node_url}/wallet/balance?miner_id={test_address}"
             req = urllib.request.Request(url)
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
                 data = json.loads(resp.read())
                 assert "amount_rtc" in data or "balance_rtc" in data
                 assert "miner_id" in data

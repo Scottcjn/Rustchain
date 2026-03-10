@@ -47,7 +47,7 @@ def get_bridge_api(db_path: str):
     module.DB_PATH = db_path
     
     # Execute with DB_PATH already set
-    exec(compile(source, source_path, 'exec'), module.__dict__)
+    exec(compile(source, source_path, 'exec'), module.__dict__)  # nosec B102
     return module
 
 
@@ -66,7 +66,7 @@ def get_lock_ledger(db_path: str):
     module.DB_PATH = db_path
     
     # Execute with DB_PATH already set
-    exec(compile(source, source_path, 'exec'), module.__dict__)
+    exec(compile(source, source_path, 'exec'), module.__dict__)  # nosec B102
     return module
 
 
