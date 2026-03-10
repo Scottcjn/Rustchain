@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Miner Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .miner-input {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .miner-input input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        
+        .miner-input button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        .miner-input button:hover {
+            background: #5a6fd6;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .stat-card h3 {
+            color: #666;
+            font-size: 14px;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+        
+        .stat-card .value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .history-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .history-section h2 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .history-table th,
+        .history-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .history-table th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        
+        .status-success {
+            color: #10b981;
+        }
+        
+        .status-pending {
+            color: #f59e0b;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⛏️ RustChain Miner Dashboard</h1>
+            <p>View your mining stats, rewards, and activity</p>
+        </div>
+        
+        <div class="miner-input">
+            <input type="text" id="minerId" placeholder="Enter your Miner ID (or use ?miner=ID in URL)">
+            <button onclick="loadMinerData()">Load Dashboard</button>
+        </div>
+        
+        <div id="dashboard" style="display: none;">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Current Balance</h3>
+                    <div class="value" id="balance">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Rewards</h3>
+                    <div class="value" id="totalRewards">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Attestations</h3>
+                    <div class="value" id="attestations">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Participation Rate</h3>
+                    <div class="value" id="participation">-</div>
+                </div>
+            </div>
+            
+            <div class="history-section">
+                <h2>Recent Reward History</h2>
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Epoch</th>
+                            <th>Amount (RTC)</th>
+                            <th>Time</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rewardHistory">
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="history-section">
+                <h2>Recent Activity</h2>
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Details</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activityHistory">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div id="loading" class="loading" style="display: none;">
+            Loading miner data...
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'https://latanda.online/api';
+        
+        // Load miner ID from URL parameter
+        window.onload = function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const minerId = urlParams.get('miner');
+            if (minerId) {
+                document.getElementById('minerId').value = minerId;
+                loadMinerData();
+            }
+        };
+        
+        async function loadMinerData() {
+            const minerId = document.getElementById('minerId').value.trim();
+            if (!minerId) {
+                alert('Please enter a Miner ID');
+                return;
+            }
+            
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('dashboard').style.display = 'none';
+            
+            try {
+                // Fetch miner data from API
+                const response = await fetch(`${API_BASE}/miner/${minerId}/stats`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Update stats
+                document.getElementById('balance').textContent = data.balance + ' RTC';
+                document.getElementById('totalRewards').textContent = data.total_rewards + ' RTC';
+                document.getElementById('attestations').textContent = data.attestations || 0;
+                document.getElementById('participation').textContent = (data.participation_rate || 0) + '%';
+                
+                // Update reward history
+                const rewardTable = document.getElementById('rewardHistory');
+                rewardTable.innerHTML = '';
+                if (data.rewards && data.rewards.length > 0) {
+                    data.rewards.forEach(reward => {
+                        const row = rewardTable.insertRow();
+                        row.innerHTML = `
+                            <td>${reward.epoch}</td>
+                            <td>${reward.amount}</td>
+                            <td>${new Date(reward.timestamp).toLocaleString()}</td>
+                            <td class="status-success">✓ Confirmed</td>
+                        `;
+                    });
+                } else {
+                    rewardTable.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #999;">No rewards yet</td></tr>';
+                }
+                
+                // Update activity history
+                const activityTable = document.getElementById('activityHistory');
+                activityTable.innerHTML = '';
+                if (data.activity && data.activity.length > 0) {
+                    data.activity.forEach(activity => {
+                        const row = activityTable.insertRow();
+                        row.innerHTML = `
+                            <td>${activity.type}</td>
+                            <td>${activity.details}</td>
+                            <td>${new Date(activity.timestamp).toLocaleString()}</td>
+                        `;
+                    });
+                } else {
+                    activityTable.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #999;">No recent activity</td></tr>';
+                }
+                
+                document.getElementById('dashboard').style.display = 'block';
+            } catch (error) {
+                alert('Error loading miner data: ' + error.message);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
