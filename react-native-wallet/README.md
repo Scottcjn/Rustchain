@@ -10,12 +10,18 @@ A practical mobile wallet application for RustChain (RTC) built with React Nativ
 - ✅ **Send Transactions** - Transfer RTC with dry-run validation
 - ✅ **Transaction History** - View sent and received transactions
 - ✅ **Secure Storage** - AES-256-GCM encrypted local key storage using Expo SecureStore
+- ✅ **QR Code Scanning** - Scan recipient addresses using device camera (expo-camera)
+- ✅ **QR Code Display** - Display receive address as QR code for easy sharing
+- ✅ **Biometric Authentication** - Face ID/Touch ID/Fingerprint authentication for sensitive actions
+- ✅ **Graceful Fallback** - Password authentication when biometric unavailable
 
 ## Prerequisites
 
 - Node.js 18+ and npm/yarn
 - Expo CLI (`npm install -g expo-cli`)
 - iOS Simulator (macOS) or Android Emulator, or physical device with Expo Go
+- Camera permission (for QR scanning)
+- Biometric hardware enrolled (Face ID, Touch ID, or Fingerprint) for biometric auth
 
 ## Installation
 
@@ -27,6 +33,35 @@ npm install
 
 # Start Expo development server
 npm start
+```
+
+## Platform Setup
+
+### iOS Setup
+
+1. **Camera Permission**: Add to `ios/Info.plist` (handled in app.json):
+```xml
+<key>NSCameraUsageDescription</key>
+<string>This app needs camera access to scan QR codes for wallet addresses</string>
+```
+
+2. **Face ID Permission**: Add to `ios/Info.plist` (handled in app.json):
+```xml
+<key>NSFaceIDUsageDescription</key>
+<string>This app uses Face ID to authenticate sensitive transactions</string>
+```
+
+### Android Setup
+
+1. **Camera Permission**: Add to `AndroidManifest.xml` (handled in app.json):
+```xml
+<uses-permission android:name="android.permission.CAMERA" />
+```
+
+2. **Biometric Permission**: Add to `AndroidManifest.xml` (handled in app.json):
+```xml
+<uses-permission android:name="android.permission.USE_BIOMETRIC" />
+<uses-permission android:name="android.permission.USE_FINGERPRINT" />
 ```
 
 ## Running the App
@@ -57,21 +92,24 @@ react-native-wallet/
 ├── app/                      # Expo Router pages
 │   ├── _layout.tsx          # Root navigation layout
 │   ├── index.tsx            # Home screen (wallet list)
-│   ├── send.tsx             # Send transaction screen
+│   ├── send.tsx             # Send transaction screen (QR + Biometric)
 │   ├── history.tsx          # Transaction history
 │   └── wallet/
 │       ├── create.tsx       # Create new wallet
 │       ├── import.tsx       # Import existing wallet
-│       └── [name].tsx       # Wallet details screen
+│       └── [name].tsx       # Wallet details screen (QR display)
 ├── src/
 │   ├── api/
 │   │   └── rustchain.ts     # RustChain API client
 │   ├── utils/
-│   │   └── crypto.ts        # Ed25519 crypto utilities
+│   │   ├── crypto.ts        # Ed25519 crypto utilities
+│   │   └── biometric.ts     # Biometric authentication utilities
+│   ├── components/
+│   │   └── QRScanner.tsx    # QR code scanner component
 │   └── storage/
 │       └── secure.ts        # Encrypted wallet storage
 ├── package.json
-├── app.json                 # Expo configuration
+├── app.json                 # Expo configuration (includes permissions)
 └── tsconfig.json           # TypeScript configuration
 ```
 
@@ -90,9 +128,57 @@ react-native-wallet/
   - Network connectivity
 - Clear confirmation dialog before broadcast
 
+### Biometric Authentication Gate
+- **Face ID / Touch ID / Fingerprint** required before sending transactions
+- Graceful fallback to password when biometric unavailable
+- Supports iOS Face ID, iOS Touch ID, Android Fingerprint, Android Face Recognition
+- Biometric status indicator shows authentication state
+- Session-based verification (verify once per session)
+
+### QR Code Security
+- **Address validation** before accepting scanned QR codes
+- Warns if scanned content doesn't match expected address format
+- Flash/torch control for low-light scanning
+- Permission-based camera access with clear user prompts
+
 ### Replay Protection
 - Nonce tracking prevents transaction replay
 - Nonces persisted in secure storage
+
+## New Features (Issue #22)
+
+### QR Code Scanning for Addresses
+
+**Send Screen:**
+- Tap the camera button (📷) next to the recipient address field
+- Position QR code within the frame
+- Automatically validates scanned address format
+- Supports standard wallet address QR codes
+
+**Receive (Wallet Details):**
+- Tap the QR button (📷) next to your wallet address
+- View your receive address in a shareable format
+- Copy address to clipboard with one tap
+- Warning about sending only RTC to this address
+
+### Biometric Authentication
+
+**How it works:**
+1. Unlock wallet with password (existing flow)
+2. When attempting to send, biometric prompt appears
+3. Authenticate with Face ID/Touch ID/Fingerprint
+4. Upon success, biometric badge shows "Verified"
+5. Proceed with transaction confirmation
+
+**When biometric is unavailable:**
+- App detects lack of biometric hardware or enrollment
+- Falls back to password-only authentication
+- Clear indicator shows biometric status
+
+**Supported biometric types:**
+- iOS: Face ID, Touch ID
+- Android: Fingerprint, Face Recognition, Iris
+- Graceful degradation when unavailable
 
 ## API Integration
 

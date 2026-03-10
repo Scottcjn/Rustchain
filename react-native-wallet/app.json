@@ -17,14 +17,23 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "org.rustchain.wallet"
+      "bundleIdentifier": "org.rustchain.wallet",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app needs camera access to scan QR codes for wallet addresses",
+        "NSFaceIDUsageDescription": "This app uses Face ID to authenticate sensitive transactions"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1a1a2e"
       },
-      "package": "org.rustchain.wallet"
+      "package": "org.rustchain.wallet",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "web": {
       "bundler": "metro",

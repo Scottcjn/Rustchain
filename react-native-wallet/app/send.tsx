@@ -1,7 +1,8 @@
 /**
  * Send Transaction Screen
- * 
+ *
  * Allows users to send RTC with dry-run validation
+ * Features QR code scanning and biometric authentication
  */
 
 import React, { useState, useEffect } from 'react';
@@ -25,6 +26,12 @@ import {
   DryRunResult,
 } from '../src/api/rustchain';
 import { keyPairFromHex } from '../src/utils/crypto';
+import { QRScanner } from '../src/components/QRScanner';
+import {
+  authenticateWithBiometricsOrFallback,
+  isBiometricAvailable,
+  getBiometricTypeName,
+} from '../src/utils/biometric';
 
 export default function SendScreen() {
   const { walletName, password } = useLocalSearchParams<{
@@ -42,6 +49,14 @@ export default function SendScreen() {
   const [dryRunLoading, setDryRunLoading] = useState(false);
   const [dryRunEnabled, setDryRunEnabled] = useState(true);
   const [keyPair, setKeyPair] = useState<any>(null);
+  
+  // QR Scanner state
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  
+  // Biometric authentication state
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricVerified, setBiometricVerified] = useState(false);
+  const [biometricLoading, setBiometricLoading] = useState(false);
 
   const client = new RustChainClient(Network.Mainnet);
 
@@ -52,6 +67,10 @@ export default function SendScreen() {
         const decodedPassword = decodeURIComponent(password);
         const kp = await WalletStorage.load(walletName, decodedPassword);
         setKeyPair(kp);
+        
+        // Check biometric availability
+        const bioAvailable = await isBiometricAvailable();
+        setBiometricAvailable(bioAvailable);
       } catch (error) {
         Alert.alert('Error', 'Failed to load wallet. Please unlock again.');
         router.back();
@@ -95,6 +114,52 @@ export default function SendScreen() {
   };
 
   const handleSend = async () => {
+    if (!keyPair) {
+      Alert.alert('Error', 'Wallet not loaded');
+      return;
+    }
+
+    if (!recipient || !amount) {
+      Alert.alert('Error', 'Please fill in recipient and amount');
+      return;
+    }
+
+    // Biometric authentication gate for sensitive action
+    if (biometricAvailable && !biometricVerified) {
+      setBiometricLoading(true);
+      try {
+        const result = await authenticateWithBiometricsOrFallback(
+          'Authenticate to send transaction'
+        );
+        
+        if (result.success) {
+          setBiometricVerified(true);
+          // Continue to send after successful biometric auth
+          proceedWithSend();
+        } else if (!result.available) {
+          // Biometric not available, proceed with password (already authenticated via password to load wallet)
+          proceedWithSend();
+        } else {
+          // Biometric failed/cancelled
+          Alert.alert(
+            'Authentication Required',
+            result.error || 'Please authenticate to send',
+            [{ text: 'OK' }]
+          );
+        }
+      } catch (error: any) {
+        Alert.alert('Error', error.message || 'Authentication failed');
+      } finally {
+        setBiometricLoading(false);
+      }
+      return;
+    }
+
+    // Already verified or biometric not available
+    proceedWithSend();
+  };
+
+  const proceedWithSend = async () => {
     if (!keyPair) {
       Alert.alert('Error', 'Wallet not loaded');
       return;
@@ -172,16 +237,26 @@ export default function SendScreen() {
 
       <View style={styles.section}>
         <Text style={styles.label}>Recipient Address</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="RTC wallet address"
-          placeholderTextColor="#666"
-          value={recipient}
-          onChangeText={setRecipient}
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!loading}
-        />
+        <View style={styles.inputRow}>
+          <TextInput
+            style={[styles.input, styles.inputFlex]}
+            placeholder="RTC wallet address"
+            placeholderTextColor="#666"
+            value={recipient}
+            onChangeText={setRecipient}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!loading}
+          />
+          <TouchableOpacity
+            style={styles.qrButton}
+            onPress={() => setShowQRScanner(true)}
+            disabled={loading}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.qrButtonText}>📷</Text>
+          </TouchableOpacity>
+        </View>
         {recipient && (
           <Text style={styles.addressPreview}>{formatAddress(recipient)}</Text>
         )}
@@ -300,6 +375,24 @@ export default function SendScreen() {
         </View>
       )}
 
+      {biometricAvailable && (
+        <View style={styles.biometricStatus}>
+          {biometricVerified ? (
+            <View style={[styles.biometricBadge, styles.biometricVerified]}>
+              <Text style={styles.biometricBadgeIcon}>✓</Text>
+              <Text style={styles.biometricBadgeText}>Biometric Verified</Text>
+            </View>
+          ) : (
+            <View style={[styles.biometricBadge, styles.biometricPending]}>
+              <Text style={styles.biometricBadgeIcon}>🔒</Text>
+              <Text style={styles.biometricBadgeText}>
+                Biometric required for send
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
       <View style={styles.warningBox}>
         <Text style={styles.warningTitle}>⚠️ Important</Text>
         <Text style={styles.warningText}>
@@ -328,6 +421,18 @@ export default function SendScreen() {
           <Text style={styles.sendButtonText}>Send Transaction</Text>
         )}
       </TouchableOpacity>
+
+      {/* QR Code Scanner Modal */}
+      <QRScanner
+        visible={showQRScanner}
+        onScan={(data) => {
+          setRecipient(data);
+          setShowQRScanner(false);
+        }}
+        onClose={() => setShowQRScanner(false)}
+        title="Scan Recipient Address"
+        description="Position the QR code within the frame to scan the wallet address"
+      />
     </ScrollView>
   );
 }
@@ -373,6 +478,25 @@ const styles = StyleSheet.create({
     padding: 12,
     color: '#fff',
     fontSize: 16,
+  },
+  inputFlex: {
+    flex: 1,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+  },
+  qrButton: {
+    backgroundColor: '#00d4ff',
+    borderRadius: 8,
+    padding: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 50,
+  },
+  qrButtonText: {
+    fontSize: 20,
   },
   memoInput: {
     height: 80,
@@ -493,5 +617,34 @@ const styles = StyleSheet.create({
     color: '#1a1a2e',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  biometricStatus: {
+    marginBottom: 20,
+  },
+  biometricBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 10,
+    gap: 8,
+  },
+  biometricVerified: {
+    backgroundColor: '#1a3d2e',
+    borderWidth: 1,
+    borderColor: '#00ff88',
+  },
+  biometricPending: {
+    backgroundColor: '#3d2e1a',
+    borderWidth: 1,
+    borderColor: '#ffaa00',
+  },
+  biometricBadgeIcon: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  biometricBadgeText: {
+    fontSize: 14,
+    color: '#fff',
   },
 });
