@@ -15,6 +15,7 @@ let autoRotate = true;
 let autoRotateSpeed = 0.001; // radians per frame (~0.06°)
 let lerpTarget = null;
 let lerpAlpha = 0;
+let ambientLight, dirLight; // Day/night cycle lights
 
 export function getScene() { return scene; }
 export function getCamera() { return camera; }
@@ -60,13 +61,16 @@ export function initScene(canvas) {
   raycaster = new THREE.Raycaster();
   mouse = new THREE.Vector2();
 
-  // Lights
-  const ambient = new THREE.AmbientLight(0x112211, 0.4);
-  scene.add(ambient);
+  // Lights - stored for day/night cycle
+  ambientLight = new THREE.AmbientLight(0x112211, 0.4);
+  scene.add(ambientLight);
 
-  const dirLight = new THREE.DirectionalLight(0x33ff33, 0.15);
+  dirLight = new THREE.DirectionalLight(0x33ff33, 0.15);
   dirLight.position.set(50, 200, 100);
   scene.add(dirLight);
+
+  // Initialize day/night cycle
+  updateDayNightCycle();
 
   // Ground grid
   const gridHelper = new THREE.GridHelper(500, 60, 0x0a1a0a, 0x060e06);
@@ -89,7 +93,62 @@ export function initScene(canvas) {
   return { scene, camera, renderer, controls };
 }
 
-function onResize() {
+// --- Day/Night Cycle ---
+// Animate lighting based on real UTC time
+export function updateDayNightCycle() {
+  if (!ambientLight || !dirLight) return;
+
+  const now = new Date();
+  const utcHours = now.getUTCHours();
+  const utcMinutes = now.getUTCMinutes();
+  const totalHours = utcHours + utcMinutes / 60;
+
+  // Calculate sun position (0 = midnight, 12 = noon)
+  const sunAngle = ((totalHours - 6) / 24) * Math.PI * 2;
+  const sunY = Math.sin(sunAngle);
+  const sunZ = Math.cos(sunAngle);
+
+  // Update directional light position
+  dirLight.position.set(100 * sunZ, 200 * sunY + 100, 100 * Math.abs(sunZ));
+
+  // Light intensity based on time of day
+  const daylight = Math.max(0, sunY);
+  const nightlight = 1 - daylight;
+
+  // Ambient: brighter in day, dimmer at night
+  ambientLight.intensity = 0.2 + daylight * 0.4;
+
+  // Directional: stronger in day, very weak at night
+  dirLight.intensity = 0.02 + daylight * 0.18;
+
+  // Color temperature: warm at sunrise/sunset, greenish-white at noon, blue at night
+  let r, g, b;
+  if (sunY < 0) {
+    // Night - deep blue
+    r = 0.05; g = 0.1; b = 0.2;
+  } else if (sunY < 0.3) {
+    // Sunrise/sunset - warm orange
+    const t = sunY / 0.3;
+    r = 0.3 + t * 0.2;
+    g = 0.2 + t * 0.3;
+    b = 0.1 + t * 0.1;
+  } else {
+    // Day - greenish white
+    const t = (sunY - 0.3) / 0.7;
+    r = 0.2 + t * 0.2;
+    g = 0.4 + t * 0.1;
+    b = 0.2;
+  }
+
+  const dayColor = new THREE.Color(r, g, b);
+  dirLight.color = dayColor;
+  ambientLight.color = new THREE.Color(r * 0.6, g * 0.6, b * 0.6);
+
+  // Background and fog - slightly brighter in day
+  const bgBrightness = 0.02 + daylight * 0.02;
+  scene.background = new THREE.Color(0.02 + bgBrightness, 0.05 + bgBrightness, 0.02 + bgBrightness);
+  scene.fog.color = scene.background;
+}
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -161,11 +220,18 @@ export function resetCamera() {
 }
 
 // --- Animation loop ---
+let lastDayNightUpdate = 0;
 export function startLoop() {
   function animate() {
     requestAnimationFrame(animate);
     const dt = clock.getDelta();
     const elapsed = clock.getElapsedTime();
+
+    // Update day/night cycle every 60 seconds
+    if (elapsed - lastDayNightUpdate > 60) {
+      updateDayNightCycle();
+      lastDayNightUpdate = elapsed;
+    }
 
     // Camera lerp
     if (lerpTarget) {
