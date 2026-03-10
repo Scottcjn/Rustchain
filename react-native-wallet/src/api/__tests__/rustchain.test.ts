@@ -81,6 +81,46 @@ describe('RustChainClient', () => {
     });
   });
 
+  describe('getTransferHistory', () => {
+    it('should fetch transfer history successfully', async () => {
+      const mockHistory = [
+        {
+          id: 1,
+          tx_id: 'tx_abc123',
+          tx_hash: 'tx_abc123',
+          from_addr: 'wallet1',
+          to_addr: 'wallet2',
+          amount: 10.5,
+          amount_i64: 10500000,
+          amount_rtc: 10.5,
+          timestamp: 1771154269,
+          created_at: 1771154269,
+          confirmed_at: 1771157869,
+          confirms_at: 1771157869,
+          status: 'confirmed',
+          raw_status: 'confirmed',
+          confirmations: 1,
+          direction: 'sent',
+          counterparty: 'wallet2',
+          memo: 'coffee',
+        },
+      ];
+
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockHistory,
+      });
+
+      const history = await client.getTransferHistory('test_address', 10);
+
+      expect(history).toEqual(mockHistory);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wallet/history?miner_id=test_address&limit=10'),
+        expect.any(Object)
+      );
+    });
+  });
+
   describe('getNetworkInfo', () => {
     it('should fetch network info successfully', async () => {
       const mockInfo = {

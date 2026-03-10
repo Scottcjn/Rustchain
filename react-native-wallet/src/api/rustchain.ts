@@ -56,6 +56,32 @@ export interface TransactionResponse {
 }
 
 /**
+ * Transfer history item returned by the node.
+ */
+export interface TransferHistoryItem {
+  id: number;
+  tx_id: string;
+  tx_hash: string;
+  from_addr: string;
+  to_addr: string;
+  amount: number;
+  amount_i64: number;
+  amount_rtc: number;
+  timestamp: number;
+  created_at: number;
+  confirmed_at?: number | null;
+  confirms_at?: number | null;
+  status: 'pending' | 'confirmed' | 'failed';
+  raw_status?: string;
+  status_reason?: string | null;
+  confirmations: number;
+  direction: 'sent' | 'received';
+  counterparty: string;
+  reason?: string | null;
+  memo?: string | null;
+}
+
+/**
  * Network info response
  */
 export interface NetworkInfo {
@@ -187,6 +213,16 @@ export class RustChainClient {
    */
   async getBalance(address: string): Promise<BalanceResponse> {
     return this.request<BalanceResponse>('GET', `/wallet/balance?miner_id=${encodeURIComponent(address)}`);
+  }
+
+  /**
+   * Get public transfer history for a wallet address.
+   */
+  async getTransferHistory(address: string, limit: number = 50): Promise<TransferHistoryItem[]> {
+    return this.request<TransferHistoryItem[]>(
+      'GET',
+      `/wallet/history?miner_id=${encodeURIComponent(address)}&limit=${Math.max(1, Math.min(limit, 200))}`
+    );
   }
 
   /**

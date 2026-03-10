@@ -202,6 +202,106 @@ class TestPublicApiDisclosure(unittest.TestCase):
             },
         )
 
+    def test_wallet_history_public_formats_pending_confirmed_and_failed_rows(self):
+        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
+            mock_conn = mock_connect.return_value.__enter__.return_value
+            mock_conn.execute.return_value.fetchall.return_value = [
+                (
+                    12,
+                    1700001000,
+                    "alice",
+                    "bob",
+                    2500000,
+                    "signed_transfer:coffee",
+                    "pending",
+                    1700001000,
+                    1700087400,
+                    None,
+                    "tx_pending",
+                    None,
+                ),
+                (
+                    11,
+                    1700000000,
+                    "carol",
+                    "alice",
+                    1250000,
+                    "signed_transfer:thanks",
+                    "confirmed",
+                    1700000000,
+                    1700086400,
+                    1700086500,
+                    "tx_confirmed",
+                    None,
+                ),
+                (
+                    10,
+                    1699999000,
+                    "alice",
+                    "mallory",
+                    500000,
+                    "manual_review",
+                    "voided",
+                    1699999000,
+                    1700085400,
+                    None,
+                    "tx_failed",
+                    "admin_void",
+                ),
+            ]
+
+            resp = self.client.get("/wallet/history?miner_id=alice&limit=3")
+            self.assertEqual(resp.status_code, 200)
+            body = resp.get_json()
+
+            self.assertEqual(len(body), 3)
+            self.assertEqual(body[0]["tx_id"], "tx_pending")
+            self.assertEqual(body[0]["direction"], "sent")
+            self.assertEqual(body[0]["counterparty"], "bob")
+            self.assertEqual(body[0]["memo"], "coffee")
+            self.assertEqual(body[0]["status"], "pending")
+            self.assertEqual(body[0]["amount_i64"], 2500000)
+
+            self.assertEqual(body[1]["direction"], "received")
+            self.assertEqual(body[1]["counterparty"], "carol")
+            self.assertEqual(body[1]["status"], "confirmed")
+            self.assertEqual(body[1]["confirmations"], 1)
+            self.assertEqual(body[1]["memo"], "thanks")
+
+            self.assertEqual(body[2]["status"], "failed")
+            self.assertEqual(body[2]["raw_status"], "voided")
+            self.assertEqual(body[2]["status_reason"], "admin_void")
+
+    def test_wallet_history_public_accepts_address_alias(self):
+        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
+            mock_conn = mock_connect.return_value.__enter__.return_value
+            mock_conn.execute.return_value.fetchall.return_value = []
+
+            resp = self.client.get("/wallet/history?address=alice")
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.get_json(), [])
+
+    def test_wallet_history_requires_identifier(self):
+        resp = self.client.get("/wallet/history")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json(), {"ok": False, "error": "miner_id or address required"})
+
+    def test_wallet_history_rejects_conflicting_alias_values(self):
+        resp = self.client.get("/wallet/history?miner_id=alice&address=bob")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(
+            resp.get_json(),
+            {
+                "ok": False,
+                "error": "miner_id and address must match when both are provided",
+            },
+        )
+
+    def test_wallet_history_rejects_invalid_limit(self):
+        resp = self.client.get("/wallet/history?miner_id=alice&limit=abc")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json(), {"ok": False, "error": "limit must be an integer"})
+
 
 if __name__ == "__main__":
     unittest.main()

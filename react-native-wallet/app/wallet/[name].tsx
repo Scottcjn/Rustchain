@@ -264,7 +264,10 @@ export default function WalletDetailsScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionButton}
-            onPress={() => router.push('/history')}
+            onPress={() => router.push({
+              pathname: '/history',
+              params: { walletName, address },
+            })}
             activeOpacity={0.7}
           >
             <Text style={styles.actionButtonText}>History</Text>

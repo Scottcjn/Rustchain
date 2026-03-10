@@ -214,6 +214,46 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=scott"
 
 ---
 
+#### GET /wallet/history
+
+Read recent transfer history for a wallet. This endpoint is public but always
+scoped to a single wallet and only returns entries where that wallet is either
+the sender or recipient.
+
+```bash
+curl -sk "https://rustchain.org/wallet/history?miner_id=scott&limit=10"
+```
+
+**Parameters**:
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `miner_id` | string | Yes | Wallet identifier |
+| `address` | string | No | Backward-compatible alias for `miner_id` |
+| `limit` | integer | No | Max records to return, clamped to `1..200` |
+
+**Response**:
+```json
+[
+  {
+    "tx_id": "6df5d4d25b6deef8f0b2e0fa726cecf1",
+    "from_addr": "scott",
+    "to_addr": "friend",
+    "amount": 1.25,
+    "timestamp": 1771187406,
+    "status": "pending",
+    "direction": "sent",
+    "counterparty": "friend"
+  }
+]
+```
+
+**Notes**:
+- `status` is normalized to `pending`, `confirmed`, or `failed`
+- `memo` is extracted from signed-transfer reasons when present
+- `confirmed_at` and `confirms_at` are included when available
+
+---
+
 ### Attestation
 
 #### POST /attest/submit

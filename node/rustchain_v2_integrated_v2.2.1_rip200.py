@@ -4912,6 +4912,104 @@ def api_wallet_balance():
         "amount_rtc": amt / UNIT
     })
 
+
+@app.route('/wallet/history', methods=['GET'])
+def api_wallet_history():
+    """Get public transfer history for a specific wallet."""
+    miner_id = request.args.get("miner_id", "").strip()
+    address = request.args.get("address", "").strip()
+
+    if miner_id and address and miner_id != address:
+        return jsonify({
+            "ok": False,
+            "error": "miner_id and address must match when both are provided",
+        }), 400
+
+    if not miner_id:
+        miner_id = address
+
+    if not miner_id:
+        return jsonify({"ok": False, "error": "miner_id or address required"}), 400
+
+    limit_raw = request.args.get("limit", "50").strip()
+    try:
+        limit = int(limit_raw or "50")
+    except ValueError:
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+
+    limit = max(1, min(limit, 200))
+
+    with sqlite3.connect(DB_PATH) as db:
+        rows = db.execute(
+            """
+            SELECT id, ts, from_miner, to_miner, amount_i64, reason, status,
+                   created_at, confirms_at, confirmed_at, tx_hash, voided_reason
+            FROM pending_ledger
+            WHERE from_miner = ? OR to_miner = ?
+            ORDER BY COALESCE(created_at, ts) DESC, id DESC
+            LIMIT ?
+            """,
+            (miner_id, miner_id, limit),
+        ).fetchall()
+
+    items = []
+    for row in rows:
+        (
+            pending_id,
+            ts,
+            from_miner,
+            to_miner,
+            amount_i64,
+            reason,
+            raw_status,
+            created_at,
+            confirms_at,
+            confirmed_at,
+            tx_hash,
+            voided_reason,
+        ) = row
+
+        direction = "sent" if from_miner == miner_id else "received"
+        counterparty = to_miner if direction == "sent" else from_miner
+
+        public_status = "confirmed"
+        if raw_status == "pending":
+            public_status = "pending"
+        elif raw_status != "confirmed":
+            public_status = "failed"
+
+        memo = None
+        if isinstance(reason, str) and reason.startswith("signed_transfer:"):
+            memo = reason.split(":", 1)[1] or None
+
+        tx_id = tx_hash or f"pending_{pending_id}"
+        created_ts = int(created_at or ts or 0)
+
+        items.append({
+            "id": int(pending_id),
+            "tx_id": tx_id,
+            "tx_hash": tx_id,
+            "from_addr": from_miner,
+            "to_addr": to_miner,
+            "amount": int(amount_i64) / UNIT,
+            "amount_i64": int(amount_i64),
+            "amount_rtc": int(amount_i64) / UNIT,
+            "timestamp": created_ts,
+            "created_at": created_ts,
+            "confirmed_at": int(confirmed_at) if confirmed_at else None,
+            "confirms_at": int(confirms_at) if confirms_at else None,
+            "status": public_status,
+            "raw_status": raw_status,
+            "status_reason": voided_reason,
+            "confirmations": 1 if raw_status == "confirmed" else 0,
+            "direction": direction,
+            "counterparty": counterparty,
+            "reason": reason,
+            "memo": memo,
+        })
+
+    return jsonify(items)
+
 # =============================================================================
 # 2-PHASE COMMIT PENDING LEDGER SYSTEM
 # Added 2026-02-03 - Security fix for transfer logging

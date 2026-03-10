@@ -148,6 +148,53 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=eafc6f14eab6d5c5362fe651
 | `amount_rtc` | float | Balance in RTC (human readable) |
 | `amount_i64` | integer | Balance in micro-RTC (6 decimals) |
 
+### `GET /wallet/history`
+
+Read recent transfer history for a wallet. This is a public, wallet-scoped view
+over the pending transfer ledger and includes pending, confirmed, and voided
+transfers.
+
+Canonical query parameter is `miner_id`. The endpoint also accepts `address`
+as a compatibility alias for older callers.
+
+**Request:**
+```bash
+curl -sk "https://rustchain.org/wallet/history?miner_id=eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC&limit=10" | jq .
+```
+
+**Response:**
+```json
+[
+  {
+    "tx_id": "6df5d4d25b6deef8f0b2e0fa726cecf1",
+    "from_addr": "aliceRTC",
+    "to_addr": "bobRTC",
+    "amount": 1.25,
+    "amount_i64": 1250000,
+    "amount_rtc": 1.25,
+    "timestamp": 1772848800,
+    "status": "pending",
+    "direction": "sent",
+    "counterparty": "bobRTC"
+  }
+]
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tx_id` | string | Transaction hash, or a stable pending fallback ID |
+| `from_addr` | string | Sender wallet address |
+| `to_addr` | string | Recipient wallet address |
+| `amount` | float | Amount transferred in RTC |
+| `amount_i64` | integer | Amount in micro-RTC |
+| `timestamp` | integer | Transfer creation timestamp |
+| `status` | string | `pending`, `confirmed`, or `failed` |
+| `direction` | string | `sent` or `received`, relative to the requested wallet |
+| `counterparty` | string | The other wallet in the transfer |
+| `memo` | string | Signed-transfer memo when present |
+| `confirmed_at` | integer | Confirmation timestamp when confirmed |
+| `confirms_at` | integer | Scheduled confirmation time for pending transfers |
+
 ### `POST /wallet/transfer/signed`
 
 Transfer RTC to another wallet. Requires Ed25519 signature.

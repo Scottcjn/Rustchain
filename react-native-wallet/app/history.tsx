@@ -1,8 +1,7 @@
 /**
  * Transaction History Screen
- * 
- * Displays transaction history for the wallet
- * Note: This is a placeholder as the RustChain API may not have a dedicated history endpoint
+ *
+ * Displays transfer history for the active wallet using the RustChain node API.
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -15,65 +14,62 @@ import {
   RefreshControl,
   TouchableOpacity,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
+import {
+  RustChainClient,
+  Network,
+  type TransferHistoryItem,
+} from '../src/api/rustchain';
+import { WalletStorage } from '../src/storage/secure';
 
-interface Transaction {
-  id: string;
-  hash: string;
-  from: string;
-  to: string;
-  amount: number;
-  fee: number;
-  timestamp: string;
-  status: 'pending' | 'confirmed' | 'failed';
-  confirmations: number;
-  memo?: string;
-  type: 'sent' | 'received';
-}
-
-// Mock transaction data for demonstration
-// In production, this would come from the RustChain API
-const generateMockTransactions = (): Transaction[] => {
-  const transactions: Transaction[] = [];
-  const now = Date.now();
-
-  for (let i = 0; i < 10; i++) {
-    const isSent = Math.random() > 0.5;
-    transactions.push({
-      id: `tx-${i}`,
-      hash: `0x${Array(64)
-        .fill(0)
-        .map(() => Math.floor(Math.random() * 16).toString(16))
-        .join('')}`,
-      from: isSent ? 'Your Wallet' : 'External Wallet',
-      to: isSent ? 'External Wallet' : 'Your Wallet',
-      amount: Math.floor(Math.random() * 1000000000),
-      fee: Math.floor(Math.random() * 1000000),
-      timestamp: new Date(now - i * 86400000).toISOString(),
-      status: i === 0 ? 'pending' : 'confirmed',
-      confirmations: i === 0 ? 0 : Math.floor(Math.random() * 100) + 1,
-      memo: isSent ? 'Test transaction' : undefined,
-      type: isSent ? 'sent' : 'received',
-    });
-  }
-
-  return transactions;
-};
+const HISTORY_LIMIT = 50;
+const client = new RustChainClient(Network.Mainnet);
 
 export default function HistoryScreen() {
-  const router = useRouter();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const { walletName, address } = useLocalSearchParams<{
+    walletName?: string;
+    address?: string;
+  }>();
+
+  const [walletAddress, setWalletAddress] = useState('');
+  const [transactions, setTransactions] = useState<TransferHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'sent' | 'received'>('all');
+  const [errorMessage, setErrorMessage] = useState('');
 
   const loadTransactions = useCallback(async () => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setTransactions(generateMockTransactions());
-    setLoading(false);
-    setRefreshing(false);
-  }, []);
+    try {
+      setErrorMessage('');
+
+      let resolvedAddress = typeof address === 'string' ? address : address?.[0] || '';
+      const resolvedWalletName =
+        typeof walletName === 'string' ? walletName : walletName?.[0] || '';
+
+      if (!resolvedAddress && resolvedWalletName) {
+        const metadata = await WalletStorage.getMetadata(resolvedWalletName);
+        resolvedAddress = metadata?.address || '';
+      }
+
+      setWalletAddress(resolvedAddress);
+
+      if (!resolvedAddress) {
+        setTransactions([]);
+        setErrorMessage('Open history from a wallet to load transactions.');
+        return;
+      }
+
+      const history = await client.getTransferHistory(resolvedAddress, HISTORY_LIMIT);
+      setTransactions(history);
+    } catch (error) {
+      console.error('Failed to load wallet history:', error);
+      setTransactions([]);
+      setErrorMessage('Failed to load transaction history from the RustChain network.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [address, walletName]);
 
   useEffect(() => {
     loadTransactions();
@@ -86,21 +82,24 @@ export default function HistoryScreen() {
 
   const filteredTransactions = transactions.filter((tx) => {
     if (filter === 'all') return true;
-    return tx.type === filter;
+    return tx.direction === filter;
   });
 
   const formatAmount = (amount: number): string => {
-    return (amount / 100000000).toFixed(8);
+    const fixed = amount.toFixed(6);
+    return fixed.replace(/\.?0+$/, '') || '0';
   };
 
-  const formatDate = (timestamp: string): string => {
-    const date = new Date(timestamp);
+  const formatDate = (timestamp?: number | null): string => {
+    if (!timestamp) return 'Unknown';
+    const date = new Date(timestamp * 1000);
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
   };
 
-  const formatAddress = (address: string): string => {
-    if (address === 'Your Wallet') return address;
-    return `${address.slice(0, 15)}...${address.slice(-8)}`;
+  const formatAddress = (value: string): string => {
+    if (!value) return 'Unknown';
+    if (value.length <= 24) return value;
+    return `${value.slice(0, 12)}...${value.slice(-8)}`;
   };
 
   const getStatusColor = (status: string): string => {
@@ -116,46 +115,55 @@ export default function HistoryScreen() {
     }
   };
 
-  const renderTransactionItem = ({ item }: { item: Transaction }) => (
+  const renderConfirmations = (item: TransferHistoryItem): string => {
+    if (item.status === 'confirmed') {
+      return 'Confirmed';
+    }
+    if (item.status === 'pending') {
+      return item.confirms_at
+        ? `Expected ${formatDate(item.confirms_at)}`
+        : 'Awaiting confirmation';
+    }
+    return item.status_reason || 'Transfer voided';
+  };
+
+  const renderTransactionItem = ({ item }: { item: TransferHistoryItem }) => (
     <TouchableOpacity
       style={styles.transactionCard}
       activeOpacity={0.7}
-      onPress={() => {
-        // Could navigate to transaction details
-      }}
     >
       <View style={styles.transactionHeader}>
         <View style={styles.transactionType}>
           <View
             style={[
               styles.typeIcon,
-              item.type === 'sent' ? styles.sentIcon : styles.receivedIcon,
+              item.direction === 'sent' ? styles.sentIcon : styles.receivedIcon,
             ]}
           >
             <Text style={styles.typeIconText}>
-              {item.type === 'sent' ? '↑' : '↓'}
+              {item.direction === 'sent' ? '↑' : '↓'}
             </Text>
           </View>
           <Text style={styles.typeText}>
-            {item.type === 'sent' ? 'Sent' : 'Received'}
+            {item.direction === 'sent' ? 'Sent' : 'Received'}
           </Text>
         </View>
         <Text
           style={[
             styles.amountText,
-            item.type === 'sent' ? styles.sentAmount : styles.receivedAmount,
+            item.direction === 'sent' ? styles.sentAmount : styles.receivedAmount,
           ]}
         >
-          {item.type === 'sent' ? '-' : '+'}
-          {formatAmount(item.amount)} RTC
+          {item.direction === 'sent' ? '-' : '+'}
+          {formatAmount(item.amount_rtc)} RTC
         </Text>
       </View>
 
       <View style={styles.transactionDetails}>
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>To/From:</Text>
+          <Text style={styles.detailLabel}>Counterparty:</Text>
           <Text style={styles.detailValue} selectable>
-            {item.type === 'sent' ? item.to : item.from}
+            {formatAddress(item.counterparty)}
           </Text>
         </View>
         <View style={styles.detailRow}>
@@ -163,9 +171,9 @@ export default function HistoryScreen() {
           <Text style={styles.detailValue}>{formatDate(item.timestamp)}</Text>
         </View>
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Fee:</Text>
-          <Text style={styles.detailValue}>
-            {formatAmount(item.fee)} RTC
+          <Text style={styles.detailLabel}>Tx:</Text>
+          <Text style={styles.detailValue} selectable>
+            {formatAddress(item.tx_hash)}
           </Text>
         </View>
         {item.memo && (
@@ -183,7 +191,7 @@ export default function HistoryScreen() {
           {item.status.toUpperCase()}
         </Text>
         <Text style={styles.confirmationsText}>
-          {item.confirmations} confirmations
+          {renderConfirmations(item)}
         </Text>
       </View>
     </TouchableOpacity>
@@ -193,9 +201,9 @@ export default function HistoryScreen() {
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyTitle}>No Transactions</Text>
       <Text style={styles.emptyText}>
-        {filter === 'all'
-          ? 'Your transaction history will appear here'
-          : `No ${filter} transactions found`}
+        {errorMessage || (filter === 'all'
+          ? 'Your transfer history will appear here'
+          : `No ${filter} transactions found`)}
       </Text>
     </View>
   );
@@ -259,7 +267,7 @@ export default function HistoryScreen() {
       <FlatList
         data={filteredTransactions}
         renderItem={renderTransactionItem}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.tx_id}
         contentContainerStyle={
           filteredTransactions.length === 0 ? styles.emptyList : styles.list
         }
@@ -275,8 +283,9 @@ export default function HistoryScreen() {
 
       <View style={styles.infoBox}>
         <Text style={styles.infoText}>
-          ℹ️ Transaction history is loaded from the RustChain network.
-          Pull down to refresh.
+          {walletAddress
+            ? `Showing up to ${HISTORY_LIMIT} transfers for ${formatAddress(walletAddress)}. Pull down to refresh.`
+            : 'Open history from a wallet screen to load live transfers.'}
         </Text>
       </View>
     </View>
@@ -386,14 +395,17 @@ const styles = StyleSheet.create({
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 12,
   },
   detailLabel: {
     fontSize: 12,
     color: '#666',
   },
   detailValue: {
+    flex: 1,
     fontSize: 12,
     color: '#ccc',
+    textAlign: 'right',
     fontFamily: 'monospace',
   },
   transactionFooter: {
@@ -409,8 +421,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   confirmationsText: {
+    flex: 1,
     fontSize: 12,
     color: '#666',
+    textAlign: 'right',
+    marginLeft: 12,
   },
   emptyContainer: {
     flex: 1,
