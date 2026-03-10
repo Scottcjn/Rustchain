@@ -1154,6 +1154,15 @@ def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
 
 
 def _claimed_family_and_arch(device: dict) -> tuple:
+    """
+    Extract the claimed device family and architecture from a device dict.
+    
+    Args:
+        device: Device information dict with family/arch fields.
+    
+    Returns:
+        tuple: (family, arch) strings. Defaults to ('x86', 'default') if not provided.
+    """
     family = str(device.get("device_family") or device.get("family") or "x86")
     arch = str(device.get("device_arch") or device.get("arch") or "default")
     return family, arch
