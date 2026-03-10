@@ -1,0 +1,52 @@
+{
+  "name": "Basic Determinism Scenario",
+  "description": "Standard scenario with 5 miners of varying antiquity scores",
+  "seed": 42,
+  "epochs": 3,
+  "miners": [
+    {
+      "id": "vintage-miner-1",
+      "public_key": "pk_vintage1_00000000000000000000000000000000",
+      "stake": 5000,
+      "cpu_model": "Intel 8086",
+      "release_year": 1978,
+      "uptime_days": 3650
+    },
+    {
+      "id": "classic-miner-2",
+      "public_key": "pk_classic2_0000000000000000000000000000000",
+      "stake": 3000,
+      "cpu_model": "Intel 386",
+      "release_year": 1985,
+      "uptime_days": 2500
+    },
+    {
+      "id": "modern-miner-3",
+      "public_key": "pk_modern3_00000000000000000000000000000000",
+      "stake": 2000,
+      "cpu_model": "Intel Pentium",
+      "release_year": 1993,
+      "uptime_days": 1800
+    },
+    {
+      "id": "recent-miner-4",
+      "public_key": "pk_recent4_00000000000000000000000000000000",
+      "stake": 1500,
+      "cpu_model": "AMD Athlon",
+      "release_year": 1999,
+      "uptime_days": 1000
+    },
+    {
+      "id": "new-miner-5",
+      "public_key": "pk_new5_000000000000000000000000000000000",
+      "stake": 1000,
+      "cpu_model": "Intel Core 2",
+      "release_year": 2006,
+      "uptime_days": 500
+    }
+  ],
+  "expected_behavior": {
+    "vintage_miner_advantage": "Higher antiquity score should produce more blocks",
+    "determinism": "Same seed must produce identical state hashes across runs"
+  }
+}
