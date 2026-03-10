@@ -1169,6 +1169,15 @@ def _claimed_family_and_arch(device: dict) -> tuple:
 
 
 def _cpu_brand_string(device: dict) -> str:
+    """
+    Build a lowercase CPU brand string from available device fields.
+    
+    Args:
+        device: Device information dict with cpu/model/brand fields.
+    
+    Returns:
+        str: Concatenated brand string in lowercase, or empty string if no fields.
+    """
     return " ".join(
         str(device.get(key) or "").strip()
         for key in ("cpu", "device_model", "model", "brand")
