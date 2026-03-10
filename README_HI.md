@@ -24,6 +24,72 @@
 
 [वेबसाइट](https://rustchain.org) • [लाइव एक्सप्लोरर](https://rustchain.org/explorer) • [wRTC स्वैप](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC क्विकस्टार्ट](docs/wrtc.md) • [wRTC ट्यूटोरियल](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia संदर्भ](https://grokipedia.com/search?q=RustChain) • [व्हाइटपेपर](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [क्विक स्टार्ट](#-quick-start) • [यह कैसे काम करता है](#-how-proof-of-antiquity-works)
 
+## ⚡ क्विक स्टार्ट
+
+### वन-लाइन इंस्टॉल (अनुशंसित)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
+इंस्टॉलर निम्न कार्य करता है:
+
+✅ आपके प्लेटफॉर्म को स्वतः पहचानता है (Linux/macOS, x86_64/ARM/PowerPC)
+
+✅ एक अलग Python virtual environment बनाता है (सिस्टम को प्रभावित नहीं करता)
+
+✅ आपके हार्डवेयर के लिए सही miner डाउनलोड करता है
+
+✅ सिस्टम बूट पर ऑटो-स्टार्ट सेट करता है (systemd/launchd)
+
+✅ आसान uninstall विकल्प प्रदान करता है
+
+विकल्पों के साथ इंस्टॉलेशन
+
+विशिष्ट वॉलेट के साथ इंस्टॉल करें:
+
+विकल्पों के साथ इंस्टॉलेशन
+
+विशिष्ट वॉलेट के साथ इंस्टॉल करें:
+
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet my-miner-wallet
+
+अनइंस्टॉल करने के लिए:
+
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --uninstall
+समर्थित प्लेटफॉर्म
+
+✅ Ubuntu 20.04+, Debian 11+, Fedora 38+ (x86_64, ppc64le)
+
+✅ macOS 12+ (Intel, Apple Silicon, PowerPC)
+
+✅ IBM POWER8 सिस्टम
+
+ट्रबलशूटिंग
+
+यदि इंस्टॉलर permission error के साथ फेल हो जाए:
+~/.local पर लिखने की अनुमति वाले अकाउंट से दोबारा चलाएँ और system Python के global site-packages के अंदर चलाने से बचें।
+
+Python version error (SyntaxError / ModuleNotFoundError):
+Python 3.10+ इंस्टॉल करें और python3 उसी interpreter को इंगित करे।
+
+python3 --version
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
+
+curl में HTTPS certificate error:
+यह non-browser environments में हो सकता है। पहले कनेक्टिविटी जांचें:
+
+curl -I https://rustchain.org
+
+Miner तुरंत बंद हो जाता है:
+सुनिश्चित करें कि वॉलेट मौजूद है और service चल रही है:
+
+systemctl --user status rustchain-miner
+
+या
+
+launchctl list | grep rustchain
+
+यदि समस्या बनी रहती है, तो error output और OS विवरण के साथ नया issue या bounty comment पोस्ट करें।
+
 </div>
 
 ---
