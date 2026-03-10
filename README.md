@@ -18,7 +18,9 @@
 
 **The first blockchain that rewards vintage hardware for being old, not fast.**
 
-*Your PowerPC G4 earns more than a modern Threadripper. That's the point.*
+*Named after a 486 with rusty serial ports that still boots. That's the whole point.*
+
+*Your PowerPC G4 earns more than a modern Threadripper.*
 
 [Website](https://rustchain.org) • [Manifesto](https://rustchain.org/manifesto.html) • [Boudreaux Principles](docs/BOUDREAUX_COMPUTING_PRINCIPLES.md) • [Live Explorer](https://rustchain.org/explorer) • [Swap wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Quickstart](docs/wrtc.md) • [wRTC Tutorial](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia Ref](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [Quick Start](#-quick-start) • [How It Works](#-how-proof-of-antiquity-works)
 
@@ -28,17 +30,14 @@
 
 ## Q1 2026 Traction
 
-> *All data from [live GitHub API pull](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) compared against [GitClear](https://www.gitclear.com/research_studies/git_commit_count_percentiles_annual_days_active_from_largest_data_set) (878K dev-years), [LinearB](https://linearb.io/resources/software-engineering-benchmarks-report) (8.1M PRs), and [Electric Capital](https://www.developerreport.com) benchmarks.*
+> *Data from [live GitHub API pull](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) compared against [GitClear](https://www.gitclear.com/research_studies/git_commit_count_percentiles_annual_days_active_from_largest_data_set) (878K dev-years) and [LinearB](https://linearb.io/resources/software-engineering-benchmarks-report) (8.1M PRs) benchmarks.*
 
-| Metric (90 days) | Elyan Labs | Industry Median | Sei Protocol ($85M) |
-|-------------------|-----------|----------------|---------------------|
-| Commits | **1,882** | 105-168 | 297 |
-| Repos shipped | **97** | 1-3 | 0 new |
-| GitHub stars | **1,334** | 5-30 | 2,837 (lifetime) |
-| Developer interactions | **150+** | 0-2 | 78 (lifetime) |
-| Commits/dev/month | **627** | 56 | 7.6 |
-| External contributions | **32 PRs** | 0-2 | 0 |
-| Funding | **$0** | $0 | $85,000,000 |
+| Metric (90 days) | Elyan Labs | Industry Median |
+|-------------------|-----------|----------------|
+| Commits | **1,882** | 105-168 |
+| Repos shipped | **97** | 1-3 |
+| External contributions | **32 PRs** | 0-2 |
+| Funding | **$0** | $0 |
 
 **[Full traction report with methodology and sources →](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md)**
 
@@ -132,6 +131,10 @@ clawrtc wallet coinbase link 0xYourBaseAddress
 | Race to the bottom | Rewards digital preservation |
 
 **Core Principle**: Authentic vintage hardware that has survived decades deserves recognition. RustChain flips mining upside-down.
+
+### Why "RustChain"?
+
+The name comes from a literal 486 laptop with oxidized serial ports that still boots to DOS and mines RTC. "Rust" here means iron oxide on 30-year-old silicon — not the programming language (though we do have [Rust components](https://github.com/Scottcjn/clawrtc-rs) too). The whole thesis is that corroding vintage hardware still has computational value and dignity. If your machine has rusty ports and still computes, it belongs here.
 
 ## ⚡ Quick Start
 
@@ -472,8 +475,6 @@ Read the draft spec:
 | [ppc-compilers](https://github.com/Scottcjn/ppc-compilers) | Modern compilers for vintage Macs |
 
 ## 📝 Articles
-
-- [I Built More in 90 Days With $0 Than an $85M-Funded Team](https://dev.to/scottcjn/i-built-more-in-90-days-with-0-than-an-85m-funded-team-of-13-engineers-3oi0) - Dev.to
 - [Proof of Antiquity: A Blockchain That Rewards Vintage Hardware](https://dev.to/scottcjn/proof-of-antiquity-a-blockchain-that-rewards-vintage-hardware-4ii3) - Dev.to
 - [I Run LLMs on a 768GB IBM POWER8 Server](https://dev.to/scottcjn/i-run-llms-on-a-768gb-ibm-power8-server-and-its-faster-than-you-think-1o) - Dev.to
 
@@ -572,8 +573,8 @@ Expected: all 6 hardware fingerprint checks execute on native ARM64 without arch
 
 <div align="center">
 
-**[Elyan Labs](https://github.com/Scottcjn)** · 1,882 commits · 97 repos · 1,334 stars · $0 raised
+**[Elyan Labs](https://github.com/Scottcjn)** · Built with $0 VC and a room full of pawn shop hardware
 
-[⭐ Star Rustchain](https://github.com/Scottcjn/Rustchain) · [📊 Q1 2026 Traction Report](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) · [Follow @Scottcjn](https://github.com/Scottcjn)
+[⭐ Star Rustchain](https://github.com/Scottcjn/Rustchain) · [📊 Traction Report](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) · [Follow @Scottcjn](https://github.com/Scottcjn)
 
 </div>
