@@ -31,70 +31,127 @@
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
+```
+
 इंस्टॉलर निम्न कार्य करता है:
-```
 
-✅ आपके प्लेटफॉर्म को स्वतः पहचानता है (Linux/macOS, x86_64/ARM/PowerPC)
+* ✅ प्लेटफ़ॉर्म को स्वतः पहचानता है (Linux/macOS, x86_64/ARM/PowerPC)
+* ✅ अलग Python virtual environment बनाता है (सिस्टम को प्रभावित नहीं करता)
+* ✅ आपके हार्डवेयर के लिए सही miner डाउनलोड करता है
+* ✅ सिस्टम बूट पर ऑटो-स्टार्ट सेट करता है (systemd/launchd)
+* ✅ आसान uninstall विकल्प प्रदान करता है
 
-✅ एक अलग Python virtual environment बनाता है (सिस्टम को प्रभावित नहीं करता)
+### विकल्पों के साथ इंस्टॉलेशन
 
-✅ आपके हार्डवेयर के लिए सही miner डाउनलोड करता है
+**विशिष्ट वॉलेट के साथ इंस्टॉल करें:**
 
-✅ सिस्टम बूट पर ऑटो-स्टार्ट सेट करता है (systemd/launchd)
-
-✅ आसान uninstall विकल्प प्रदान करता है
-
-विकल्पों के साथ इंस्टॉलेशन
-
-विशिष्ट वॉलेट के साथ इंस्टॉल करें:
-
-विकल्पों के साथ इंस्टॉलेशन
-
-विशिष्ट वॉलेट के साथ इंस्टॉल करें:
-
+```bash
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet my-miner-wallet
-
-अनइंस्टॉल करने के लिए:
-
-
-```bash curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --uninstall
-समर्थित प्लेटफॉर्म
 ```
 
-✅ Ubuntu 20.04+, Debian 11+, Fedora 38+ (x86_64, ppc64le)
+**अनइंस्टॉल करें:**
 
-✅ macOS 12+ (Intel, Apple Silicon, PowerPC)
+```bash
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --uninstall
+```
 
-✅ IBM POWER8 सिस्टम
+### समर्थित प्लेटफ़ॉर्म
 
-ट्रबलशूटिंग
+* ✅ Ubuntu 20.04+, Debian 11+, Fedora 38+ (x86_64, ppc64le)
+* ✅ macOS 12+ (Intel, Apple Silicon, PowerPC)
+* ✅ IBM POWER8 सिस्टम
 
-यदि इंस्टॉलर permission error के साथ फेल हो जाए:
-```bash 
-~/.local पर लिखने की अनुमति वाले अकाउंट से दोबारा चलाएँ और system Python के global site-packages के अंदर चलाने से बचें।
+### ट्रबलशूटिंग
 
-Python version error (SyntaxError / ModuleNotFoundError):
-Python 3.10+ इंस्टॉल करें और python3 उसी interpreter को इंगित करे।
+* **यदि इंस्टॉलर permission error के साथ फेल हो जाए:**
+  `~/.local` पर लिखने की अनुमति वाले अकाउंट से दोबारा चलाएँ और system Python के global site-packages के अंदर चलाने से बचें।
 
+* **Python version error (`SyntaxError` / `ModuleNotFoundError`):**
+  Python 3.10+ इंस्टॉल करें और `python3` उसी interpreter को इंगित करे।
+
+```bash
 python3 --version
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
+```
 
-curl में HTTPS certificate error:
-यह non-browser environments में हो सकता है। पहले कनेक्टिविटी जांचें:
+* **`curl` में HTTPS certificate error:**
+  यह non-browser environments में हो सकता है। पहले कनेक्टिविटी जांचें:
 
+```bash
 curl -I https://rustchain.org
+```
 
-Miner तुरंत बंद हो जाता है:
-सुनिश्चित करें कि वॉलेट मौजूद है और service चल रही है:
+* **Miner तुरंत बंद हो जाता है:**
+  सुनिश्चित करें कि वॉलेट मौजूद है और service चल रही है:
 
+```bash
 systemctl --user status rustchain-miner
+```
 
 या
 
+```bash
 launchctl list | grep rustchain
+```
 
 यदि समस्या बनी रहती है, तो error output और OS विवरण के साथ नया issue या bounty comment पोस्ट करें।
+
+### इंस्टॉलेशन के बाद
+
+**वॉलेट बैलेंस जांचें:**
+
+```bash
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
 ```
+
+**सक्रिय miners की सूची देखें:**
+
+```bash
+curl -sk https://rustchain.org/api/miners
+```
+
+**नोड की स्थिति जांचें:**
+
+```bash
+curl -sk https://rustchain.org/health
+```
+
+**वर्तमान epoch प्राप्त करें:**
+
+```bash
+curl -sk https://rustchain.org/epoch
+```
+
+### Miner सेवा प्रबंधन
+
+*Linux (systemd):*
+
+```bash
+systemctl --user status rustchain-miner
+systemctl --user stop rustchain-miner
+systemctl --user start rustchain-miner
+journalctl --user -u rustchain-miner -f
+```
+
+*macOS (launchd):*
+
+```bash
+launchctl list | grep rustchain
+launchctl stop com.rustchain.miner
+launchctl start com.rustchain.miner
+tail -f ~/.rustchain/miner.log
+```
+
+### मैनुअल इंस्टॉलेशन
+
+```bash
+git clone https://github.com/Scottcjn/Rustchain.git
+cd Rustchain
+bash install-miner.sh --wallet YOUR_WALLET_NAME
+# सिस्टम बदले बिना preview देखने के लिए
+bash install-miner.sh --dry-run --wallet YOUR_WALLET_NAME
+```
+
 </div>
 
 </div>
