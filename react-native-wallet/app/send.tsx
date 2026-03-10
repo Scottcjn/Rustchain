@@ -1,8 +1,14 @@
 /**
- * Send Transaction Screen
+ * Send Transaction Screen (Hardened)
  *
  * Allows users to send RTC with dry-run validation
  * Features QR code scanning and biometric authentication
+ *
+ * Issue #785: Security hardening
+ * - Password NOT passed via router params
+ * - Secure re-authentication for export
+ * - Numeric validation hardening
+ * - chain_id in signed payload
  */
 
 import React, { useState, useEffect } from 'react';
@@ -16,6 +22,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Switch,
+  Modal,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { WalletStorage } from '../src/storage/secure';
@@ -24,8 +31,9 @@ import {
   Network,
   dryRunTransfer,
   DryRunResult,
+  validateTransactionInput,
 } from '../src/api/rustchain';
-import { keyPairFromHex } from '../src/utils/crypto';
+import { KeyPair, isValidAddress } from '../src/utils/crypto';
 import { QRScanner } from '../src/components/QRScanner';
 import {
   authenticateWithBiometricsOrFallback,
@@ -34,9 +42,9 @@ import {
 } from '../src/utils/biometric';
 
 export default function SendScreen() {
-  const { walletName, password } = useLocalSearchParams<{
+  // Issue #785: Only get walletName from params, NOT password
+  const { walletName } = useLocalSearchParams<{
     walletName: string;
-    password: string;
   }>();
   const router = useRouter();
 
@@ -48,36 +56,49 @@ export default function SendScreen() {
   const [dryRunResult, setDryRunResult] = useState<DryRunResult | null>(null);
   const [dryRunLoading, setDryRunLoading] = useState(false);
   const [dryRunEnabled, setDryRunEnabled] = useState(true);
-  const [keyPair, setKeyPair] = useState<any>(null);
-  
+  const [keyPair, setKeyPair] = useState<KeyPair | null>(null);
+  const [walletAddress, setWalletAddress] = useState<string>('');
+
   // QR Scanner state
   const [showQRScanner, setShowQRScanner] = useState(false);
-  
+
   // Biometric authentication state
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricVerified, setBiometricVerified] = useState(false);
   const [biometricLoading, setBiometricLoading] = useState(false);
 
+  // Password input modal for re-authentication
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+
   const client = new RustChainClient(Network.Mainnet);
 
   useEffect(() => {
-    // Load wallet keypair on mount
-    const loadKeyPair = async () => {
-      try {
-        const decodedPassword = decodeURIComponent(password);
-        const kp = await WalletStorage.load(walletName, decodedPassword);
-        setKeyPair(kp);
-        
-        // Check biometric availability
-        const bioAvailable = await isBiometricAvailable();
-        setBiometricAvailable(bioAvailable);
-      } catch (error) {
-        Alert.alert('Error', 'Failed to load wallet. Please unlock again.');
-        router.back();
-      }
+    // Check biometric availability on mount
+    const checkBiometric = async () => {
+      const bioAvailable = await isBiometricAvailable();
+      setBiometricAvailable(bioAvailable);
     };
-    loadKeyPair();
+    checkBiometric();
   }, []);
+
+  // Issue #785: Load wallet only when user initiates send, not on mount
+  // This prevents keeping sensitive data in memory unnecessarily
+  const loadWalletKeyPair = async (password: string): Promise<boolean> => {
+    try {
+      const kp = await WalletStorage.load(walletName, password);
+      const metadata = await WalletStorage.getMetadata(walletName);
+      if (metadata) {
+        setKeyPair(kp);
+        setWalletAddress(metadata.address);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      Alert.alert('Error', 'Failed to load wallet. Please check your password.');
+      return false;
+    }
+  };
 
   const handleDryRun = async () => {
     if (!keyPair || !recipient || !amount) {
@@ -85,8 +106,15 @@ export default function SendScreen() {
       return;
     }
 
-    const amountNum = parseFloat(amount) * 100000000; // Convert to satoshis
-    const feeNum = fee ? parseFloat(fee) * 100000000 : undefined;
+    // Validate input with hardened numeric validation
+    const validation = validateTransactionInput(amount, fee || undefined);
+    if (!validation.valid) {
+      Alert.alert('Validation Error', validation.errors.join('\n'));
+      return;
+    }
+
+    const amountNum = (validation.parsedAmount || 0) * 100000000; // Convert to satoshis
+    const feeNum = validation.parsedFee ? validation.parsedFee * 100000000 : undefined;
 
     setDryRunLoading(true);
     try {
@@ -114,31 +142,49 @@ export default function SendScreen() {
   };
 
   const handleSend = async () => {
-    if (!keyPair) {
-      Alert.alert('Error', 'Wallet not loaded');
-      return;
-    }
-
     if (!recipient || !amount) {
       Alert.alert('Error', 'Please fill in recipient and amount');
       return;
     }
 
-    // Biometric authentication gate for sensitive action
-    if (biometricAvailable && !biometricVerified) {
+    // Validate recipient address
+    if (!isValidAddress(recipient)) {
+      Alert.alert('Error', 'Invalid recipient address format');
+      return;
+    }
+
+    // Validate amount
+    const amountValidation = validateTransactionAmount(amount);
+    if (!amountValidation.valid) {
+      Alert.alert('Error', `Invalid amount: ${amountValidation.error}`);
+      return;
+    }
+
+    // Issue #785: Require re-authentication before sending
+    // If biometric is available and verified, proceed
+    // Otherwise, show password input modal
+    if (biometricAvailable && biometricVerified) {
+      // Already verified, proceed with send
+      proceedWithSend();
+      return;
+    }
+
+    if (biometricAvailable) {
+      // Try biometric first
       setBiometricLoading(true);
       try {
         const result = await authenticateWithBiometricsOrFallback(
           'Authenticate to send transaction'
         );
-        
+
         if (result.success) {
           setBiometricVerified(true);
-          // Continue to send after successful biometric auth
           proceedWithSend();
-        } else if (!result.available) {
-          // Biometric not available, proceed with password (already authenticated via password to load wallet)
-          proceedWithSend();
+          return;
+        }
+
+        if (!result.available) {
+          // Fall through to password
         } else {
           // Biometric failed/cancelled
           Alert.alert(
@@ -146,27 +192,43 @@ export default function SendScreen() {
             result.error || 'Please authenticate to send',
             [{ text: 'OK' }]
           );
+          return;
         }
       } catch (error: any) {
         Alert.alert('Error', error.message || 'Authentication failed');
+        setBiometricLoading(false);
+        return;
       } finally {
         setBiometricLoading(false);
       }
+    }
+
+    // Show password input modal for re-authentication
+    setShowPasswordModal(true);
+  };
+
+  const handlePasswordSubmit = async () => {
+    if (!passwordInput) {
+      Alert.alert('Error', 'Please enter your password');
       return;
     }
 
-    // Already verified or biometric not available
-    proceedWithSend();
+    setLoading(true);
+    setShowPasswordModal(false);
+
+    const loaded = await loadWalletKeyPair(passwordInput);
+    setPasswordInput('');
+    setLoading(false);
+
+    if (loaded) {
+      proceedWithSend();
+    }
   };
 
   const proceedWithSend = async () => {
     if (!keyPair) {
-      Alert.alert('Error', 'Wallet not loaded');
-      return;
-    }
-
-    if (!recipient || !amount) {
-      Alert.alert('Error', 'Please fill in recipient and amount');
+      // Try to load wallet (should have been loaded already)
+      setShowPasswordModal(true);
       return;
     }
 
@@ -201,7 +263,11 @@ export default function SendScreen() {
                 [
                   {
                     text: 'OK',
-                    onPress: () => router.back(),
+                    onPress: () => {
+                      // Clear sensitive data from memory
+                      setKeyPair(null);
+                      router.back();
+                    },
                   },
                 ]
               );
@@ -386,7 +452,7 @@ export default function SendScreen() {
             <View style={[styles.biometricBadge, styles.biometricPending]}>
               <Text style={styles.biometricBadgeIcon}>🔒</Text>
               <Text style={styles.biometricBadgeText}>
-                Biometric required for send
+                Authentication required to send
               </Text>
             </View>
           )}
@@ -403,6 +469,9 @@ export default function SendScreen() {
         </Text>
         <Text style={styles.warningText}>
           • Ensure you have sufficient balance for amount + fee
+        </Text>
+        <Text style={styles.warningText}>
+          • Your signature is bound to the chain_id to prevent replay attacks
         </Text>
       </View>
 
@@ -432,7 +501,47 @@ export default function SendScreen() {
         onClose={() => setShowQRScanner(false)}
         title="Scan Recipient Address"
         description="Position the QR code within the frame to scan the wallet address"
+        strictValidation={true}
       />
+
+      {/* Password Re-authentication Modal */}
+      <Modal visible={showPasswordModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.passwordModal}>
+            <Text style={styles.passwordModalTitle}>Re-authenticate Required</Text>
+            <Text style={styles.passwordModalDescription}>
+              For security, please enter your password to confirm this transaction
+            </Text>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="Enter password"
+              placeholderTextColor="#666"
+              value={passwordInput}
+              onChangeText={setPasswordInput}
+              secureTextEntry
+              autoFocus
+              onSubmitEditing={handlePasswordSubmit}
+            />
+            <View style={styles.passwordModalButtons}>
+              <TouchableOpacity
+                style={[styles.passwordModalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowPasswordModal(false);
+                  setPasswordInput('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.passwordModalButton, styles.confirmButton]}
+                onPress={handlePasswordSubmit}
+              >
+                <Text style={styles.confirmButtonText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -646,5 +755,68 @@ const styles = StyleSheet.create({
   biometricBadgeText: {
     fontSize: 14,
     color: '#fff',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  passwordModal: {
+    backgroundColor: '#16213e',
+    padding: 25,
+    borderRadius: 15,
+    width: '85%',
+    borderWidth: 1,
+    borderColor: '#00d4ff',
+  },
+  passwordModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  passwordModalDescription: {
+    fontSize: 14,
+    color: '#888',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  passwordInput: {
+    backgroundColor: '#0f3460',
+    borderRadius: 8,
+    padding: 12,
+    color: '#fff',
+    fontSize: 16,
+    marginBottom: 15,
+  },
+  passwordModalButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  passwordModalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#0f3460',
+    borderWidth: 1,
+    borderColor: '#666',
+  },
+  cancelButtonText: {
+    color: '#888',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  confirmButton: {
+    backgroundColor: '#00d4ff',
+  },
+  confirmButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
