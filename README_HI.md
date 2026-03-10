@@ -31,6 +31,7 @@
 ```bash
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 इंस्टॉलर निम्न कार्य करता है:
+```
 
 ✅ आपके प्लेटफॉर्म को स्वतः पहचानता है (Linux/macOS, x86_64/ARM/PowerPC)
 
@@ -54,8 +55,10 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 अनइंस्टॉल करने के लिए:
 
-curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --uninstall
+
+```bash curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --uninstall
 समर्थित प्लेटफॉर्म
+```
 
 ✅ Ubuntu 20.04+, Debian 11+, Fedora 38+ (x86_64, ppc64le)
 
@@ -66,6 +69,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 ट्रबलशूटिंग
 
 यदि इंस्टॉलर permission error के साथ फेल हो जाए:
+```bash 
 ~/.local पर लिखने की अनुमति वाले अकाउंट से दोबारा चलाएँ और system Python के global site-packages के अंदर चलाने से बचें।
 
 Python version error (SyntaxError / ModuleNotFoundError):
@@ -89,7 +93,7 @@ systemctl --user status rustchain-miner
 launchctl list | grep rustchain
 
 यदि समस्या बनी रहती है, तो error output और OS विवरण के साथ नया issue या bounty comment पोस्ट करें।
-
+```
 </div>
 
 ---
