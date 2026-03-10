@@ -26,8 +26,8 @@
 
 > 🌐 **Languages**
 >
-> [English](README.md) | [日本語](README_JA.md) | [हिन्दी](README_HI.md) | [Deutsch](README_DE.md) | [Español](README_ES.md) | [中文](README_ZH.md)
-</div>
+> [English](README.md) | [日本語](README_JA.md) | [हिन्दी](README_HI.md) | [Deutsch](README_DE.md) | [Español](README_ES.md) | [中文](README_ZH.md) >
+</div> 
 
 ---
 
