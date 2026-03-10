@@ -38,6 +38,13 @@ class RustChainSyncManager:
         self._schema_cache: Dict[str, Dict[str, Any]] = {}
 
     def _get_connection(self):
+        """
+        Create and return a new SQLite database connection.
+        
+        Returns:
+            sqlite3.Connection: Connection with row_factory set to sqlite3.Row
+                               for column-name access to result rows.
+        """
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
