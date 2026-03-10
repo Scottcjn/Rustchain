@@ -1,0 +1,22 @@
+{
+  "name": "Stress Test Scenario",
+  "description": "High-load scenario with many miners and epochs",
+  "seed": 99999,
+  "epochs": 10,
+  "miners": [
+    {"id": "m0", "public_key": "pk_m0_0000000000000000000000000000000000", "stake": 1000, "cpu_model": "CPU-0", "release_year": 1980, "uptime_days": 365},
+    {"id": "m1", "public_key": "pk_m1_0000000000000000000000000000000000", "stake": 1100, "cpu_model": "CPU-1", "release_year": 1981, "uptime_days": 400},
+    {"id": "m2", "public_key": "pk_m2_0000000000000000000000000000000000", "stake": 1200, "cpu_model": "CPU-2", "release_year": 1982, "uptime_days": 450},
+    {"id": "m3", "public_key": "pk_m3_0000000000000000000000000000000000", "stake": 1300, "cpu_model": "CPU-3", "release_year": 1983, "uptime_days": 500},
+    {"id": "m4", "public_key": "pk_m4_0000000000000000000000000000000000", "stake": 1400, "cpu_model": "CPU-4", "release_year": 1984, "uptime_days": 550},
+    {"id": "m5", "public_key": "pk_m5_0000000000000000000000000000000000", "stake": 1500, "cpu_model": "CPU-5", "release_year": 1985, "uptime_days": 600},
+    {"id": "m6", "public_key": "pk_m6_0000000000000000000000000000000000", "stake": 1600, "cpu_model": "CPU-6", "release_year": 1986, "uptime_days": 650},
+    {"id": "m7", "public_key": "pk_m7_0000000000000000000000000000000000", "stake": 1700, "cpu_model": "CPU-7", "release_year": 1987, "uptime_days": 700},
+    {"id": "m8", "public_key": "pk_m8_0000000000000000000000000000000000", "stake": 1800, "cpu_model": "CPU-8", "release_year": 1988, "uptime_days": 750},
+    {"id": "m9", "public_key": "pk_m9_0000000000000000000000000000000000", "stake": 1900, "cpu_model": "CPU-9", "release_year": 1989, "uptime_days": 800}
+  ],
+  "expected_behavior": {
+    "load_test": "Should handle 1440 slots (10 epochs) efficiently",
+    "fair_distribution": "Block production should be weighted by antiquity"
+  }
+}
