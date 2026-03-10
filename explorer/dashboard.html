@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="RustChain Block Explorer - Real-time blockchain dashboard">
+    <meta name="theme-color" content="#8b5cf6">
+    <title>RustChain Explorer - Real-time Dashboard</title>
+    
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="static/css/explorer.css">
+    <link rel="stylesheet" href="static/css/dashboard.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦀</text></svg>">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <a href="/" class="logo">
+                    <span class="logo-icon">🦀</span>
+                    <span>RustChain Explorer</span>
+                </a>
+                <div class="header-actions">
+                    <span id="connection-status" class="connection-status">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Connecting...</span>
+                    </span>
+                    <button id="theme-toggle" class="btn btn-icon" title="Toggle theme">
+                        🌙
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Dashboard -->
+    <main class="dashboard-main">
+        <div class="container">
+            <!-- Network Overview Cards -->
+            <div class="overview-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-content">
+                        <div class="stat-label">Network Status</div>
+                        <div id="network-status" class="stat-value">--</div>
+                    </div>
+                    <div id="network-indicator" class="stat-indicator"></div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon">⛏️</div>
+                    <div class="stat-content">
+                        <div class="stat-label">Active Miners</div>
+                        <div id="active-miners" class="stat-value">--</div>
+                    </div>
+                    <div id="miners-chart" class="stat-sparkline"></div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon">🕐</div>
+                    <div class="stat-content">
+                        <div class="stat-label">Current Epoch</div>
+                        <div id="current-epoch" class="stat-value">--</div>
+                    </div>
+                    <div id="epoch-progress" class="stat-progress"></div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon">💰</div>
+                    <div class="stat-content">
+                        <div class="stat-label">Epoch Pot</div>
+                        <div id="epoch-pot" class="stat-value">--</div>
+                    </div>
+                    <div class="stat-subvalue">RTC</div>
+                </div>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>📈 Blocks per Hour</h3>
+                        <span class="chart-badge live">LIVE</span>
+                    </div>
+                    <div id="blocks-chart" class="chart-container"></div>
+                </div>
+                
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>💸 Transactions</h3>
+                        <span class="chart-badge live">LIVE</span>
+                    </div>
+                    <div id="transactions-chart" class="chart-container"></div>
+                </div>
+            </div>
+
+            <!-- Hardware Distribution -->
+            <div class="chart-card full-width">
+                <div class="chart-header">
+                    <h3>⚙️ Hardware Distribution</h3>
+                    <span class="chart-badge">Real-time</span>
+                </div>
+                <div class="hardware-grid">
+                    <div id="hardware-chart" class="hardware-chart"></div>
+                    <div id="hardware-legend" class="hardware-legend"></div>
+                </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="activity-grid">
+                <!-- Recent Blocks -->
+                <div class="activity-card">
+                    <div class="activity-header">
+                        <h3>📦 Recent Blocks</h3>
+                        <a href="/explorer" class="view-all">View All →</a>
+                    </div>
+                    <div class="activity-list" id="recent-blocks">
+                        <div class="loading-state">
+                            <div class="spinner"></div>
+                            <span>Loading blocks...</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Recent Transactions -->
+                <div class="activity-card">
+                    <div class="activity-header">
+                        <h3>💸 Recent Transactions</h3>
+                        <a href="/explorer" class="view-all">View All →</a>
+                    </div>
+                    <div class="activity-list" id="recent-transactions">
+                        <div class="loading-state">
+                            <div class="spinner"></div>
+                            <span>Loading transactions...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Top Miners -->
+            <div class="chart-card full-width">
+                <div class="chart-header">
+                    <h3>🏆 Top Miners by Score</h3>
+                    <span class="chart-badge">Updated Live</span>
+                </div>
+                <div class="table-container">
+                    <table class="miners-table">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Miner ID</th>
+                                <th>Architecture</th>
+                                <th>Score</th>
+                                <th>Multiplier</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="top-miners">
+                            <tr>
+                                <td colspan="6" class="loading-cell">
+                                    <div class="spinner"></div>
+                                    <span>Loading miners...</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Server Metrics -->
+            <div class="metrics-section">
+                <h3>🔧 Dashboard Metrics</h3>
+                <div class="metrics-grid">
+                    <div class="metric-item">
+                        <span class="metric-label">Connection</span>
+                        <span id="metric-connection" class="metric-value">--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Updates Received</span>
+                        <span id="metric-updates" class="metric-value">0</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Last Update</span>
+                        <span id="metric-last-update" class="metric-value">--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Uptime</span>
+                        <span id="metric-uptime" class="metric-value">--</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>RustChain Explorer v2.0.0 | Real-time Dashboard | Proof of Antiquity</p>
+            <p class="text-muted">WebSocket: <span id="ws-status">Disconnected</span></p>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="static/js/charts.js"></script>
+    <script src="static/js/dashboard.js"></script>
+</body>
+</html>
