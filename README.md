@@ -22,7 +22,7 @@
 
 *Your PowerPC G4 earns more than a modern Threadripper.*
 
-[Website](https://rustchain.org) • [Manifesto](https://rustchain.org/manifesto.html) • [Boudreaux Principles](docs/BOUDREAUX_COMPUTING_PRINCIPLES.md) • [Live Explorer](https://rustchain.org/explorer) • [Swap wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Quickstart](docs/wrtc.md) • [wRTC Tutorial](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia Ref](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [Quick Start](#-quick-start) • [How It Works](#-how-proof-of-antiquity-works)
+[Website](https://rustchain.org) • [Manifesto](https://rustchain.org/manifesto.html) • [Boudreaux Principles](docs/BOUDREAUX_COMPUTING_PRINCIPLES.md) • [Live Explorer](https://rustchain.org/explorer) • [Swap wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Quickstart](docs/wrtc.md) • [wRTC Tutorial](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia Ref](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [Quickstart](#-quickstart) • [How It Works](#-how-proof-of-antiquity-works)
 
 ---
 
@@ -141,7 +141,7 @@ clawrtc wallet coinbase link 0xYourBaseAddress
 
 The name comes from a literal 486 laptop with oxidized serial ports that still boots to DOS and mines RTC. "Rust" here means iron oxide on 30-year-old silicon — not the programming language (though we do have [Rust components](https://github.com/Scottcjn/clawrtc-rs) too). The whole thesis is that corroding vintage hardware still has computational value and dignity. If your machine has rusty ports and still computes, it belongs here.
 
-## ⚡ Quick Start
+## ⚡ Quickstart
 
 ### One-Line Install (Recommended)
 ```bash
