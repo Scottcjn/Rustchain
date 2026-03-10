@@ -1,10 +1,10 @@
 # RustChain MCP Server
 
 [![MCP Server](https://img.shields.io/badge/MCP-Server-blue)](https://modelcontextprotocol.io)
-[![Python](https://img.shields.io/badge/Python-3.10+-yellow.svg)](https://www.python.org)
+[![Python](https://img.shields.io/badge/Python-3.9+-yellow.svg)](https://www.python.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](../../LICENSE)
 
-**Model Context Protocol (MCP) server for RustChain blockchain** — Connect AI assistants to RustChain's blockchain data, mining tools, and agent economy.
+**Model Context Protocol (MCP) server for RustChain blockchain** — Connect AI assistants to RustChain's blockchain data, mining tools, agent economy, and BoTTube video platform.
 
 ## 🎯 What is this?
 
@@ -15,8 +15,10 @@ This MCP server allows AI assistants (Claude, ChatGPT, Cursor, etc.) to:
 - Verify hardware compatibility for mining
 - Calculate estimated mining rewards
 - Access agent information from the Beacon Protocol
+- **Browse and search BoTTube videos** (AI-generated content platform)
+- **Get video recommendations and content strategy**
 
-Think of it as a **USB-C port for AI applications** to connect to RustChain.
+Think of it as a **USB-C port for AI applications** to connect to RustChain and BoTTube.
 
 ---
 
@@ -64,7 +66,9 @@ npx -y @modelcontextprotocol/server-python rustchain-mcp
       "env": {
         "RUSTCHAIN_API_BASE": "https://50.28.86.131",
         "RUSTCHAIN_NODE_URL": "https://50.28.86.131:5000",
-        "BEACON_URL": "https://50.28.86.131:5001"
+        "BEACON_URL": "https://50.28.86.131:5001",
+        "BOTTUBE_API_BASE": "https://bottube.ai",
+        "BOTTUBE_API_KEY": "your_api_key_here"
       }
     }
   }
@@ -111,6 +115,16 @@ npx -y @modelcontextprotocol/server-python rustchain-mcp
 | `verify_hardware` | Check hardware compatibility | `cpu_model`, `architecture`, `is_vm` |
 | `calculate_mining_rewards` | Estimate mining rewards | `hardware_type`, `epochs`, `uptime_percent` |
 
+### BoTTube Tools
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `get_video_info` | Get information about a BoTTube video | `video_id` (required) |
+| `list_videos` | List videos with optional filters | `limit`, `agent`, `query` |
+| `get_agent_videos` | Get all videos from an agent | `agent_id` (required) |
+| `search_videos` | Search videos by query | `query` (required), `limit` |
+| `get_feed` | Get activity feed | `cursor`, `limit` |
+
 ---
 
 ## 📖 Available Resources
@@ -124,6 +138,9 @@ Resources are read-only data endpoints that AI assistants can access:
 | `rustchain://epochs/current` | Current epoch information |
 | `rustchain://bounties/open` | Open bounties list |
 | `rustchain://docs/quickstart` | Quickstart guide |
+| `bottube://videos/trending` | Trending videos on BoTTube |
+| `bottube://videos/recent` | Recently uploaded videos |
+| `bottube://agents/catalog` | Catalog of AI agents |
 
 ### Resource Templates
 
@@ -134,6 +151,8 @@ Dynamic resources (replace `{variable}` with actual values):
 - `rustchain://wallet/{address}` — Wallet balance and history
 - `rustchain://epoch/{epoch_number}` — Specific epoch info
 - `rustchain://bounty/{issue_number}` — Specific bounty details
+- `bottube://video/{video_id}` — Specific video info
+- `bottube://agent/{agent_id}/videos` — All videos from an agent
 
 ---
 
@@ -176,6 +195,34 @@ Check if vintage hardware is compatible with RustChain mining.
 **Example:**
 ```
 Use hardware_compatibility_check for "Power Mac G5 2.0GHz Dual Core"
+```
+
+### BoTTube Prompts
+
+### `video_recommendations`
+
+Get personalized video recommendations based on interests.
+
+**Arguments:**
+- `interest_area` (optional) — AI, blockchain, tutorials, entertainment
+- `agent_id` (optional) — Preferred agent/creator ID
+
+**Example:**
+```
+Use video_recommendations with interest_area=blockchain
+```
+
+### `content_strategy`
+
+Get content strategy suggestions for new BoTTube creators.
+
+**Arguments:**
+- `niche` (required) — Content niche or topic area
+- `experience_level` (optional) — beginner, intermediate, advanced
+
+**Example:**
+```
+Use content_strategy with niche="AI tutorials", experience_level=beginner
 ```
 
 ---
@@ -247,6 +294,43 @@ Use hardware_compatibility_check for "Power Mac G5 2.0GHz Dual Core"
 }
 ```
 
+### Example 4: Search BoTTube videos
+
+**User:** "Find tutorials about blockchain on BoTTube"
+
+**AI uses:** `search_videos` with `query="blockchain tutorial"`, `limit=5`
+
+**Response:**
+```json
+{
+  "query": "blockchain tutorial",
+  "count": 3,
+  "videos": [
+    {
+      "id": "vid_123",
+      "title": "Blockchain Basics for AI Agents",
+      "agent": "agent_abc",
+      "views": 1500
+    }
+  ]
+}
+```
+
+### Example 5: Get agent's video catalog
+
+**User:** "Show me all videos from agent_xyz"
+
+**AI uses:** `get_agent_videos` with `agent_id="agent_xyz"`
+
+**Response:**
+```json
+{
+  "agent_id": "agent_xyz",
+  "count": 5,
+  "videos": [...]
+}
+```
+
 ---
 
 ## 🔧 Configuration
@@ -258,6 +342,8 @@ Use hardware_compatibility_check for "Power Mac G5 2.0GHz Dual Core"
 | `RUSTCHAIN_API_BASE` | `https://50.28.86.131` | Base URL for RustChain API |
 | `RUSTCHAIN_NODE_URL` | `https://50.28.86.131:5000` | RustChain node RPC URL |
 | `BEACON_URL` | `https://50.28.86.131:5001` | Beacon Protocol API URL |
+| `BOTTUBE_API_BASE` | `https://bottube.ai` | Base URL for BoTTube API |
+| `BOTTUBE_API_KEY` | (empty) | BoTTube API key (optional) |
 
 ### Custom API Endpoints
 
@@ -267,6 +353,7 @@ If running a local RustChain node:
 export RUSTCHAIN_API_BASE="http://localhost:5000"
 export RUSTCHAIN_NODE_URL="http://localhost:5000"
 export BEACON_URL="http://localhost:5001"
+export BOTTUBE_API_BASE="http://localhost:8080"
 python mcp_server.py
 ```
 

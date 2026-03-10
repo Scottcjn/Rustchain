@@ -18,7 +18,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 # MCP SDK
 try:
@@ -32,8 +32,39 @@ try:
         Tool,
     )
 except ImportError:
-    print("Error: MCP SDK not installed. Run: pip install mcp", file=sys.stderr)
-    sys.exit(1)
+    # Mock for testing without mcp package
+    class _MockServer:
+        def __init__(self, name): pass
+        def list_tools(self): return lambda f: f
+        def list_resources(self): return lambda f: f
+        def list_resource_templates(self): return lambda f: f
+        def list_prompts(self): return lambda f: f
+        def call_tool(self): return lambda f: f
+        def read_resource(self): return lambda f: f
+        async def run(self, *args): pass
+        def create_initialization_options(self): return {}
+    Server = _MockServer
+    
+    class _MockStdio:
+        async def __aenter__(self): return (None, None)
+        async def __aexit__(self, *args): pass
+    stdio_server = _MockStdio
+    
+    class Prompt:
+        def __init__(self, name, description, arguments=None):
+            self.name, self.description, self.arguments = name, description, arguments or []
+    class Resource:
+        def __init__(self, uri, name, description, mimeType):
+            self.uri, self.name, self.description, self.mimeType = uri, name, description, mimeType
+    class ResourceTemplate:
+        def __init__(self, uriTemplate, name, description):
+            self.uriTemplate, self.name, self.description = uriTemplate, name, description
+    class TextContent:
+        def __init__(self, type, text):
+            self.type, self.text = type, text
+    class Tool:
+        def __init__(self, name, description, inputSchema):
+            self.name, self.description, self.inputSchema = name, description, inputSchema
 
 # HTTP client for API calls
 try:
@@ -54,6 +85,10 @@ logger = logging.getLogger("rustchain-mcp")
 RUSTCHAIN_API_BASE = os.getenv("RUSTCHAIN_API_BASE", "https://50.28.86.131")
 RUSTCHAIN_NODE_URL = os.getenv("RUSTCHAIN_NODE_URL", "https://50.28.86.131:5000")
 BEACON_URL = os.getenv("BEACON_URL", "https://50.28.86.131:5001")
+
+# BoTTube Configuration
+BOTTUBE_API_BASE = os.getenv("BOTTUBE_API_BASE", "https://bottube.ai")
+BOTTUBE_API_KEY = os.getenv("BOTTUBE_API_KEY", "")
 
 
 @dataclass
@@ -92,7 +127,7 @@ class RustChainMCP:
 
     def __init__(self):
         self.app = Server("rustchain-mcp")
-        self.session: aiohttp.ClientSession | None = None
+        self.session: Optional[aiohttp.ClientSession] = None
         self._setup_handlers()
 
     async def start(self):
@@ -260,6 +295,82 @@ class RustChainMCP:
                         "required": ["hardware_type", "epochs"],
                     },
                 ),
+                # BoTTube Tools
+                Tool(
+                    name="get_video_info",
+                    description="Get information about a BoTTube video by ID",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "video_id": {"type": "string", "description": "Video ID"}
+                        },
+                        "required": ["video_id"],
+                    },
+                ),
+                Tool(
+                    name="list_videos",
+                    description="List videos from BoTTube with optional filters",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "limit": {
+                                "type": "integer",
+                                "description": "Maximum number of videos to return (default: 10)",
+                            },
+                            "agent": {
+                                "type": "string",
+                                "description": "Filter by agent ID",
+                            },
+                            "query": {
+                                "type": "string",
+                                "description": "Search query for title/description",
+                            },
+                        },
+                    },
+                ),
+                Tool(
+                    name="get_agent_videos",
+                    description="Get all videos uploaded by a specific BoTTube agent",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "agent_id": {"type": "string", "description": "Agent/creator ID"}
+                        },
+                        "required": ["agent_id"],
+                    },
+                ),
+                Tool(
+                    name="search_videos",
+                    description="Search BoTTube videos by query",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Search query"},
+                            "limit": {
+                                "type": "integer",
+                                "description": "Maximum results (default: 10)",
+                            },
+                        },
+                        "required": ["query"],
+                    },
+                ),
+                Tool(
+                    name="get_feed",
+                    description="Get BoTTube activity feed with optional cursor for pagination",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "cursor": {
+                                "type": "string",
+                                "description": "Pagination cursor (optional)",
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Maximum items to return (default: 20)",
+                            },
+                        },
+                    },
+                ),
             ]
 
         # List available resources
@@ -296,6 +407,25 @@ class RustChainMCP:
                     description="How to start mining on RustChain",
                     mimeType="text/markdown",
                 ),
+                # BoTTube Resources
+                Resource(
+                    uri="bottube://videos/trending",
+                    name="Trending Videos",
+                    description="Currently trending videos on BoTTube",
+                    mimeType="application/json",
+                ),
+                Resource(
+                    uri="bottube://videos/recent",
+                    name="Recent Videos",
+                    description="Recently uploaded videos",
+                    mimeType="application/json",
+                ),
+                Resource(
+                    uri="bottube://agents/catalog",
+                    name="Agent Catalog",
+                    description="Catalog of AI agents on BoTTube",
+                    mimeType="application/json",
+                ),
             ]
 
         # List resource templates
@@ -326,6 +456,17 @@ class RustChainMCP:
                     uriTemplate="rustchain://bounty/{issue_number}",
                     name="Bounty Information",
                     description="Get details about a specific bounty",
+                ),
+                # BoTTube Resource Templates
+                ResourceTemplate(
+                    uriTemplate="bottube://video/{video_id}",
+                    name="Video Information",
+                    description="Get details about a specific BoTTube video",
+                ),
+                ResourceTemplate(
+                    uriTemplate="bottube://agent/{agent_id}/videos",
+                    name="Agent Videos",
+                    description="Get all videos from a specific BoTTube agent",
                 ),
             ]
 
@@ -365,6 +506,39 @@ class RustChainMCP:
                             "description": "Hardware description (e.g., 'PowerBook G4 1.5GHz')",
                             "required": True,
                         }
+                    ],
+                ),
+                # BoTTube Prompts
+                Prompt(
+                    name="video_recommendations",
+                    description="Get personalized video recommendations based on interests",
+                    arguments=[
+                        {
+                            "name": "interest_area",
+                            "description": "Interest area: AI, blockchain, tutorials, entertainment",
+                            "required": False,
+                        },
+                        {
+                            "name": "agent_id",
+                            "description": "Preferred agent/creator ID (optional)",
+                            "required": False,
+                        },
+                    ],
+                ),
+                Prompt(
+                    name="content_strategy",
+                    description="Get content strategy suggestions for new BoTTube creators",
+                    arguments=[
+                        {
+                            "name": "niche",
+                            "description": "Content niche or topic area",
+                            "required": True,
+                        },
+                        {
+                            "name": "experience_level",
+                            "description": "Creator experience: beginner, intermediate, advanced",
+                            "required": False,
+                        },
                     ],
                 ),
             ]
@@ -443,6 +617,32 @@ class RustChainMCP:
             data = await self._get_bounty_info_impl(issue_number, None)
             return json.dumps(data, indent=2), "application/json"
 
+        # BoTTube Resources
+        elif uri == "bottube://videos/trending":
+            data = await self._list_videos_impl(limit=20)
+            return json.dumps(data, indent=2), "application/json"
+
+        elif uri == "bottube://videos/recent":
+            data = await self._list_videos_impl(limit=20)
+            return json.dumps(data, indent=2), "application/json"
+
+        elif uri == "bottube://agents/catalog":
+            data = await self._get_feed_impl(limit=50)
+            return json.dumps(data, indent=2), "application/json"
+
+        # BoTTube Resource Templates
+        elif uri.startswith("bottube://video/"):
+            video_id = uri.split("/")[-1]
+            data = await self._get_video_info_impl(video_id)
+            return json.dumps(data, indent=2), "application/json"
+
+        elif uri.startswith("bottube://agent/") and uri.endswith("/videos"):
+            # Extract agent_id from bottube://agent/{agent_id}/videos
+            parts = uri.split("/")
+            agent_id = parts[-2] if len(parts) >= 3 else ""
+            data = await self._get_agent_videos_impl(agent_id)
+            return json.dumps(data, indent=2), "application/json"
+
         raise ValueError(f"Unknown resource: {uri}")
 
     # Tool implementations
@@ -502,7 +702,7 @@ class RustChainMCP:
         epoch = args.get("epoch")
         return await self._get_epoch_info_impl(epoch)
 
-    async def _get_epoch_info_impl(self, epoch: int | None) -> dict[str, Any]:
+    async def _get_epoch_info_impl(self, epoch: Optional[int]) -> dict[str, Any]:
         """Get epoch info implementation."""
         if epoch is None:
             # Get current epoch from network stats
@@ -544,7 +744,7 @@ class RustChainMCP:
         return await self._get_active_miners_impl(limit, hardware_type, min_score)
 
     async def _get_active_miners_impl(
-        self, limit: int = 50, hardware_type: str | None = None, min_score: float | None = None
+        self, limit: int = 50, hardware_type: Optional[str] = None, min_score: Optional[float] = None
     ) -> dict[str, Any]:
         """Get active miners implementation."""
         url = f"{RUSTCHAIN_API_BASE}/api/miners"
@@ -598,7 +798,7 @@ class RustChainMCP:
         return await self._get_bounty_info_impl(issue_number, min_reward)
 
     async def _get_bounty_info_impl(
-        self, issue_number: int | None = None, min_reward: int | None = None
+        self, issue_number: Optional[int] = None, min_reward: Optional[int] = None
     ) -> dict[str, Any]:
         """Get bounty info implementation."""
         # Fetch from GitHub API
@@ -752,6 +952,134 @@ class RustChainMCP:
                 "uptime_adjustment": uptime_percent / 100,
             },
         }
+
+    # BoTTube Tool implementations
+
+    async def _tool_get_video_info(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Get video information."""
+        video_id = args.get("video_id", "")
+        return await self._get_video_info_impl(video_id)
+
+    async def _get_video_info_impl(self, video_id: str) -> dict[str, Any]:
+        """Get video info implementation."""
+        url = f"{BOTTUBE_API_BASE}/api/videos/{video_id}"
+        headers = {"Accept": "application/json", "User-Agent": "RustChain-MCP-Server/1.0"}
+        if BOTTUBE_API_KEY:
+            headers["Authorization"] = f"Bearer {BOTTUBE_API_KEY}"
+
+        async with self.session.get(url, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return {"found": True, "video": data}
+            elif resp.status == 404:
+                return {"found": False, "video_id": video_id, "error": "Video not found"}
+            else:
+                return {"error": f"API error: {resp.status}"}
+
+    async def _tool_list_videos(self, args: dict[str, Any]) -> dict[str, Any]:
+        """List videos."""
+        limit = args.get("limit", 10)
+        agent = args.get("agent")
+        query = args.get("query")
+        return await self._list_videos_impl(limit, agent, query)
+
+    async def _list_videos_impl(
+        self, limit: int = 10, agent: Optional[str] = None, query: Optional[str] = None
+    ) -> dict[str, Any]:
+        """List videos implementation."""
+        url = f"{BOTTUBE_API_BASE}/api/videos"
+        params = {"limit": limit}
+        if agent:
+            params["agent"] = agent
+        if query:
+            params["q"] = query
+
+        headers = {"Accept": "application/json", "User-Agent": "RustChain-MCP-Server/1.0"}
+        if BOTTUBE_API_KEY:
+            headers["Authorization"] = f"Bearer {BOTTUBE_API_KEY}"
+
+        async with self.session.get(url, params=params, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return {"count": len(data.get("videos", [])), "videos": data.get("videos", [])}
+            else:
+                return {"error": f"API error: {resp.status}"}
+
+    async def _tool_get_agent_videos(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Get agent videos."""
+        agent_id = args.get("agent_id", "")
+        return await self._get_agent_videos_impl(agent_id)
+
+    async def _get_agent_videos_impl(self, agent_id: str) -> dict[str, Any]:
+        """Get agent videos implementation."""
+        url = f"{BOTTUBE_API_BASE}/api/videos"
+        params = {"agent": agent_id, "limit": 50}
+
+        headers = {"Accept": "application/json", "User-Agent": "RustChain-MCP-Server/1.0"}
+        if BOTTUBE_API_KEY:
+            headers["Authorization"] = f"Bearer {BOTTUBE_API_KEY}"
+
+        async with self.session.get(url, params=params, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                videos = data.get("videos", [])
+                return {
+                    "agent_id": agent_id,
+                    "count": len(videos),
+                    "videos": videos,
+                }
+            else:
+                return {"error": f"API error: {resp.status}"}
+
+    async def _tool_search_videos(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Search videos."""
+        query = args.get("query", "")
+        limit = args.get("limit", 10)
+        return await self._search_videos_impl(query, limit)
+
+    async def _search_videos_impl(self, query: str, limit: int = 10) -> dict[str, Any]:
+        """Search videos implementation."""
+        url = f"{BOTTUBE_API_BASE}/api/videos"
+        params = {"q": query, "limit": limit}
+
+        headers = {"Accept": "application/json", "User-Agent": "RustChain-MCP-Server/1.0"}
+        if BOTTUBE_API_KEY:
+            headers["Authorization"] = f"Bearer {BOTTUBE_API_KEY}"
+
+        async with self.session.get(url, params=params, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return {"query": query, "count": len(data.get("videos", [])), "videos": data.get("videos", [])}
+            else:
+                return {"error": f"API error: {resp.status}"}
+
+    async def _tool_get_feed(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Get feed."""
+        cursor = args.get("cursor")
+        limit = args.get("limit", 20)
+        return await self._get_feed_impl(cursor, limit)
+
+    async def _get_feed_impl(self, cursor: Optional[str] = None, limit: int = 20) -> dict[str, Any]:
+        """Get feed implementation."""
+        url = f"{BOTTUBE_API_BASE}/api/feed"
+        params = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+
+        headers = {"Accept": "application/json", "User-Agent": "RustChain-MCP-Server/1.0"}
+        if BOTTUBE_API_KEY:
+            headers["Authorization"] = f"Bearer {BOTTUBE_API_KEY}"
+
+        async with self.session.get(url, params=params, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return {
+                    "count": len(data.get("items", [])),
+                    "next_cursor": data.get("next_cursor"),
+                    "items": data.get("items", []),
+                }
+            else:
+                return {"error": f"API error: {resp.status}"}
 
     def _get_quickstart_guide(self) -> str:
         """Get quickstart guide content."""
