@@ -1,9 +1,31 @@
+"""OS detection utilities for identifying legacy operating systems."""
+
 import platform
 import subprocess
 import json
 from datetime import datetime
 
 def detect_legacy_os_badges():
+    """Detects legacy operating systems and awards NFT badges based on the OS environment.
+    
+    This function scans the system for indicators of legacy operating systems
+    (DOS, MacOS, BeOS, Windows 3.x, Windows 95) by checking for characteristic
+    files and directories. When legacy OS indicators are found, it generates
+    NFT badge data representing the detected system.
+    
+    Returns:
+        dict: A dictionary containing a "badges" key with a list of NFT badge
+              dictionaries. Each badge contains:
+              - nft_id: Unique badge identifier
+              - title: Human-readable badge title
+              - class: Badge category (e.g., "OS Relic")
+              - description: Description of the badge
+              - emotional_resonance: Emotional context for the badge
+              - symbol: Emoji symbol representing the badge
+              - visual_anchor: Visual description
+              - rarity: Badge rarity level
+              - soulbound: Whether the badge is soulbound
+    """
     detected_os = platform.system()
     badges = []
 
@@ -76,4 +98,4 @@ if __name__ == "__main__":
     output = detect_legacy_os_badges()
     with open("relic_rewards.json", "w") as f:
         json.dump(output, f, indent=4)
-    print(f"Legacy OS badges awarded: {[b['title'] for b in output['badges']]}")
+    print(f"Legacy OS badges awarded: {[b[title] for b in output[badges]]}")
