@@ -1,0 +1,60 @@
+# RustChain Python Miner Dockerfile
+# Note: Docker miners earn reduced rewards due to anti-VM detection
+# For full rewards, run the miner directly on physical hardware
+
+FROM python:3.11-slim
+
+LABEL maintainer="RustChain Community"
+LABEL description="RustChain Proof-of-Antiquity Miner"
+LABEL version="1.0.0"
+
+# Build argument for miner type
+ARG MINER_TYPE=linux
+ARG MINER_ARCH=x86_64
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1 \
+    WALLET_NAME="" \
+    NODE_URL="https://rustchain.org" \
+    BLOCK_TIME=600 \
+    MINER_TYPE=${MINER_TYPE}
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    curl \
+    dmidecode \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy miner files
+COPY miners/ ./miners/
+COPY wallet/ ./wallet/
+
+# Copy color logs helper
+COPY miners/color_logs.py ./
+
+# Create a non-root user (security best practice)
+RUN useradd -m -u 1000 rustchain && \
+    chown -R rustchain:rustchain /app
+
+USER rustchain
+
+# Health check
+HEALTHCHECK --interval=5m --timeout=30s --start-period=1m --retries=3 \
+    CMD curl -f ${NODE_URL}/health || exit 1
+
+# Entry point script
+COPY docker-miner-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+# Default: run Linux miner
+CMD ["python3", "-u", "miners/linux/rustchain_linux_miner.py"]
