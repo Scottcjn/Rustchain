@@ -1,0 +1,152 @@
+﻿{
+  "info": {
+    "name": "RustChain API",
+    "description": "Postman collection for RustChain public APIs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://rustchain.org" },
+    { "key": "miner_id", "value": "YOUR_WALLET" },
+    { "key": "proposal_id", "value": "1" },
+    { "key": "agent", "value": "agent_id" },
+    { "key": "nonce", "value": "1700000000" },
+    { "key": "public_key", "value": "<ed25519_pubkey_hex>" },
+    { "key": "signature", "value": "<ed25519_signature_hex>" }
+  ],
+  "item": [
+    {
+      "name": "Network",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health"
+          }
+        },
+        {
+          "name": "Epoch",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/epoch"
+          }
+        },
+        {
+          "name": "Miners",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/miners"
+          }
+        },
+        {
+          "name": "Wallet Balance",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/wallet/balance?miner_id={{miner_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["wallet", "balance"],
+              "query": [
+                { "key": "miner_id", "value": "{{miner_id}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Explorer (web)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/explorer"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Governance",
+      "item": [
+        {
+          "name": "List Proposals",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/governance/proposals"
+          }
+        },
+        {
+          "name": "Proposal Detail",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/governance/proposal/{{proposal_id}}"
+          }
+        },
+        {
+          "name": "Create Proposal",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet\": \"RTC...\",\n  \"title\": \"Enable parameter X\",\n  \"description\": \"Rationale and implementation details\"\n}"
+            },
+            "url": "{{base_url}}/governance/propose"
+          }
+        },
+        {
+          "name": "Submit Vote",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"proposal_id\": {{proposal_id}},\n  \"wallet\": \"RTC...\",\n  \"vote\": \"yes\",\n  \"nonce\": \"{{nonce}}\",\n  \"public_key\": \"{{public_key}}\",\n  \"signature\": \"{{signature}}\"\n}"
+            },
+            "url": "{{base_url}}/governance/vote"
+          }
+        },
+        {
+          "name": "Governance UI (web)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/governance/ui"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Premium (x402)",
+      "item": [
+        {
+          "name": "Premium Videos",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/premium/videos"
+          }
+        },
+        {
+          "name": "Premium Analytics",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/premium/analytics/{{agent}}"
+          }
+        },
+        {
+          "name": "Premium Reputation",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/premium/reputation"
+          }
+        },
+        {
+          "name": "Swap Info",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/wallet/swap-info"
+          }
+        }
+      ]
+    }
+  ]
+}
