@@ -130,9 +130,26 @@ impl Drop for KeyPair {
     }
 }
 
-/// Derive a keypair from a mnemonic phrase (BIP39-style derivation)
-/// Note: This is a simplified implementation. For production use,
-/// consider using a full BIP39/BIP32 implementation.
+/// Derive a keypair from a mnemonic phrase using PBKDF2-HMAC-SHA512.
+///
+/// # Derivation Process
+/// 1. **Seed generation**: PBKDF2 with 2048 iterations produces 64-byte seed
+/// 2. **Path derivation**: HMAC-SHA512 applies the derivation path
+/// 3. **Key extraction**: First 32 bytes of HMAC output become the secret key
+/// 4. **Uniformity hash**: SHA512 ensures uniform key distribution
+///
+/// # Security Notes
+/// - This is a **simplified** derivation (not full BIP32/BIP39 compliant)
+/// - Production use should employ established libraries (bip32, bip39 crates)
+/// - Optional passphrase support via salt: `format!("mnemonic{}", passphrase)`
+///
+/// # Arguments
+/// * `mnemonic` - Space-separated mnemonic phrase (typically 12-24 words)
+/// * `derivation_path` - Path string (e.g., "m/44'/0'/0'/0'/0'")
+///
+/// # Returns
+/// * `Ok(KeyPair)` - Derived keypair
+/// * `Err(WalletError::KeyDerivation)` - Invalid key length during derivation
 pub fn derive_from_mnemonic(mnemonic: &str, derivation_path: &str) -> Result<KeyPair> {
     use hmac::{Hmac, Mac};
     use sha2::{Sha512, Digest};
@@ -160,12 +177,12 @@ pub fn derive_from_mnemonic(mnemonic: &str, derivation_path: &str) -> Result<Key
     // Use first 32 bytes as secret key
     let mut secret_bytes = [0u8; 32];
     secret_bytes.copy_from_slice(&derived[..32]);
-    
+
     // Hash to ensure uniform distribution
     let hash_output = Sha512::digest(&secret_bytes);
     let mut key_bytes = [0u8; 32];
     key_bytes.copy_from_slice(&hash_output[..32]);
-    
+
     KeyPair::from_bytes(&key_bytes)
 }
 

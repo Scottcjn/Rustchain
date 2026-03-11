@@ -443,7 +443,38 @@ impl GovernanceEngine {
         Ok(proposal.sophia_evaluation.as_ref().unwrap())
     }
 
-    /// Cast a vote on a proposal
+    /// Cast a vote on a proposal with token-weighted and reputation-adjusted power.
+    ///
+    /// # Voting Power Calculation
+    /// ```text
+    /// base_weight = token_balance * (1 + reputation_score/100 * 0.2)
+    /// total_weight = base_weight + delegated_votes
+    /// ```
+    /// The reputation bonus provides up to 20% additional voting power for
+    /// highly-reputed participants (score=100 → 20% bonus).
+    ///
+    /// # Validation Checks
+    /// 1. Proposal exists and is in `Voting` status
+    /// 2. Voting period has not expired
+    /// 3. Voter has not already voted (no vote changes)
+    ///
+    /// # Delegation Integration
+    /// Includes delegated voting power from other wallets (RIP-0006).
+    /// Delegated votes are added to the voter's total weight.
+    ///
+    /// # Arguments
+    /// * `proposal_id` - Proposal identifier (e.g., "RCP-0001")
+    /// * `voter` - Wallet address casting the vote
+    /// * `support` - `true` for yes, `false` for no
+    /// * `token_balance` - Voter's RTC token balance
+    ///
+    /// # Returns
+    /// * `Ok(&Vote)` - Reference to the recorded vote
+    /// * `Err(GovernanceError)` - Validation failure
+    ///
+    /// # Side Effects
+    /// - Updates voter's reputation (participation count +1)
+    /// - Adds vote to proposal's vote list
     pub fn vote(
         &mut self,
         proposal_id: &str,
@@ -502,7 +533,28 @@ impl GovernanceEngine {
         Ok(proposal.votes.last().unwrap())
     }
 
-    /// Finalize a proposal after voting period ends
+    /// Finalize a proposal after the voting period ends.
+    ///
+    /// # Finalization Logic
+    /// 1. **Time check**: Only processes if voting period has ended
+    /// 2. **Quorum check**: Requires ≥33% participation (QUORUM_PERCENTAGE)
+    /// 3. **Approval check**: Requires >50% yes votes of participating votes
+    ///
+    /// # Outcomes
+    /// - **Quorum failure** → `Rejected`
+    /// - **Quorum met + >50% yes** → `Passed` (updates Sophia alignment)
+    /// - **Quorum met + ≤50% yes** → `Rejected`
+    ///
+    /// # Sophia Alignment Update
+    /// When a proposal passes, voters who voted with Sophia's endorsement
+    /// receive positive alignment score updates (see `update_sophia_alignment`).
+    ///
+    /// # Arguments
+    /// * `proposal_id` - Proposal identifier to finalize
+    ///
+    /// # Returns
+    /// * `Ok(ProposalStatus)` - New proposal status
+    /// * `Err(GovernanceError::ProposalNotFound)` - Invalid proposal ID
     pub fn finalize_proposal(&mut self, proposal_id: &str) -> Result<ProposalStatus, GovernanceError> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -635,7 +687,29 @@ impl GovernanceEngine {
         rep.record_participation(activity_type);
     }
 
-    /// Update Sophia alignment for voters after proposal finishes
+    /// Update Sophia alignment scores for voters after a proposal passes.
+    ///
+    /// # Alignment Mechanism
+    /// Tracks how often each voter agrees with Sophia AI's evaluation:
+    /// - **Voted with Sophia** (endorsed proposal → voted yes): +0.1 alignment
+    /// - **Voted against Sophia**: -0.1 alignment
+    /// - **Neutral analysis**: No alignment change (Sophia didn't take a position)
+    ///
+    /// # Alignment Bounds
+    /// Scores are clamped to [0.0, 1.0] range. Higher alignment indicates
+    /// consistent agreement with Sophia's risk/feasibility assessments.
+    ///
+    /// # Governance Impact
+    /// Alignment scores contribute to overall reputation, which affects
+    /// future voting power (see `vote()` reputation bonus calculation).
+    ///
+    /// # Arguments
+    /// * `proposal_id` - Passed proposal to analyze voter alignment
+    ///
+    /// # No-Op Conditions
+    /// - Proposal not found
+    /// - No Sophia evaluation exists
+    /// - Sophia decision was `Analyze` (neutral)
     fn update_sophia_alignment(&mut self, proposal_id: &str) {
         let proposal = match self.proposals.get(proposal_id) {
             Some(p) => p.clone(),
