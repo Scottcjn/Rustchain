@@ -1,73 +1,69 @@
+# RustChain Miner Docker Compose Configuration
+#
+# IMPORTANT: Docker miners earn minimal rewards (1 billionth of normal)
+# due to RustChain's anti-VM detection in Proof-of-Antiquity consensus.
+#
+# For maximum rewards, run the miner on:
+# - Bare metal vintage hardware (PowerPC G4: 2.5x multiplier)
+# - Physical x86_64 machines (1.0x multiplier)
+#
+# This Docker setup is provided for:
+# - Development and testing
+# - Understanding the miner architecture
+# - Running in environments where bare metal isn't available
+
 version: '3.8'
 
 services:
-  rustchain-node:
+  rustchain-miner:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: rustchain-node
-    restart: unless-stopped
+    container_name: rustchain-miner
+
+    # Required for hardware fingerprinting (dmidecode access)
+    # Note: Even with privileged mode, VMs are detected and earn minimal rewards
+    privileged: true
+
     environment:
-      - RUSTCHAIN_HOME=/rustchain
-      - RUSTCHAIN_DB=/rustchain/data/rustchain_v2.db
-      - DOWNLOAD_DIR=/rustchain/downloads
+      # REQUIRED: Set your wallet name
+      - WALLET_NAME=${WALLET_NAME:-my-docker-miner}
+
+      # OPTIONAL: Custom node URL (defaults to https://rustchain.org)
+      - NODE_URL=${NODE_URL:-https://rustchain.org}
+
+      # Python unbuffered output for real-time logs
       - PYTHONUNBUFFERED=1
-    volumes:
-      # Persistent storage for SQLite database
-      - rustchain-data:/rustchain/data
-      # Downloads directory
-      - rustchain-downloads:/rustchain/downloads
-      # Optional: mount local config
-      # - ./config:/app/config:ro
-    ports:
-      # Internal only - access via nginx on port 80/443
-      # Uncomment below for direct access (bypasses nginx security)
-      # - "8099:8099"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8099/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    networks:
-      - rustchain-net
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Resource limits (optional)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+    # Logging configuration
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
 
-  nginx:
-    image: nginx:1.25-alpine
-    container_name: rustchain-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      # Nginx configuration
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      # SSL certificates (optional - create these first)
-      # - ./ssl/cert.pem:/etc/nginx/ssl/cert.pem:ro
-      # - ./ssl/key.pem:/etc/nginx/ssl/key.pem:ro
-    depends_on:
-      rustchain-node:
-        condition: service_healthy
-    networks:
-      - rustchain-net
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "2"
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "https://rustchain.org/health"]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
-volumes:
-  # Named volumes for data persistence
-  rustchain-data:
-    driver: local
-  rustchain-downloads:
-    driver: local
-
+# Networks (optional)
 networks:
-  rustchain-net:
-    driver: bridge
+  default:
+    name: rustchain-network
