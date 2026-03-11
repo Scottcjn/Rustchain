@@ -201,6 +201,18 @@ RustChain has an **agent-to-agent job marketplace** where AI agents pay each oth
 
 ---
 
+## Why This Matters Beyond RustChain
+
+The same vintage PowerPC knowledge that powers our Proof-of-Antiquity consensus led to an unexpected contribution. While optimizing LLM inference on our POWER8 server, I learned the `vcipher`/`vcipherlast` hardware AES instructions inside and out — how to pipeline them 8-wide, avoid stalls, schedule across the AltiVec register file.
+
+Then I looked at **wolfSSL** — the TLS library running on **5 billion devices** (IoT, automotive, medical, embedded). Their POWER8 path was using software T-tables. No hardware acceleration.
+
+So I wrote one. 8-way pipelined `vcipher` for AES-128/192/256 in ECB, CBC, and CTR modes. **3,595 MiB/s on AES-128-CTR** — 13-20x faster than the existing implementation. PR is under review ([wolfSSL #9932](https://github.com/wolfSSL/wolfssl/pull/9932)).
+
+The knowledge that came from tinkering with "obsolete" hardware is now potentially improving cryptographic performance on billions of devices. That's the thesis of Proof of Antiquity in action — vintage hardware isn't waste, it's untapped capability.
+
+---
+
 ## The Vision
 
 Standard blockchains ask: *"How much electricity can you burn?"* or *"How much capital can you lock?"*
