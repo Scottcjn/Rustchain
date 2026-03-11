@@ -11,11 +11,13 @@ services:
     container_name: rustchain-miner
     restart: unless-stopped
     
-    # Environment variables (configure these!)
+    # Environment variables (configure these via .env.miner)
+    env_file:
+      - .env.miner
     environment:
-      - WALLET_NAME=${WALLET_NAME:-}
+      - WALLET_NAME=${WALLET_NAME}
       - NODE_URL=${NODE_URL:-https://rustchain.org}
-      - BLOCK_TIME=600
+      - BLOCK_TIME=${BLOCK_TIME:-600}
       - PYTHONUNBUFFERED=1
     
     # Volume for persistent data
@@ -61,3 +63,5 @@ volumes:
 #
 # Note: Docker miners receive reduced rewards due to anti-VM detection.
 # For maximum rewards, run the miner directly on physical hardware.
+# 0. Create .env.miner (from template) and set WALLET_NAME
+#    cp .env.miner.example .env.miner
