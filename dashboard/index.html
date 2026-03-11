@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #eee;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 30px; color: #00d4ff; }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+            transition: transform 0.3s;
+        }
+        .stat-card:hover { transform: translateY(-5px); }
+        .stat-value { font-size: 2.5em; font-weight: bold; color: #00d4ff; }
+        .stat-label { color: #aaa; margin-top: 10px; }
+        
+        .info-section {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+        }
+        .info-section h2 { margin-bottom: 15px; color: #00d4ff; }
+        
+        .progress-bar {
+            background: #333;
+            border-radius: 10px;
+            height: 20px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            background: linear-gradient(90deg, #00d4ff, #00ff88);
+            height: 100%;
+            transition: width 0.5s;
+        }
+        
+        .refresh-btn {
+            background: #00d4ff;
+            color: #1a1a2e;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            margin: 20px 0;
+        }
+        .refresh-btn:hover { background: #00ff88; }
+        
+        .last-update { color: #666; font-size: 0.9em; text-align: center; }
+        
+        @media (max-width: 768px) {
+            .stat-value { font-size: 1.8em; }
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⛓️ RustChain Dashboard</h1>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="epoch">--</div>
+                <div class="stat-label">Current Epoch</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="blockHeight">--</div>
+                <div class="stat-label">Block Height</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="miners">--</div>
+                <div class="stat-label">Active Miners</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="supply">--</div>
+                <div class="stat-label">Total Supply (RTC)</div>
+            </div>
+        </div>
+        
+        <div class="info-section">
+            <h2>Network Status</h2>
+            <div id="networkInfo">
+                <p><strong>Transactions:</strong> <span id="txCount">--</span></p>
+                <p><strong>Block Time:</strong> <span id="blockTime">--</span>s</p>
+                <p><strong>Difficulty:</strong> <span id="difficulty">--</span></p>
+            </div>
+        </div>
+        
+        <div class="info-section">
+            <h2>Epoch Progress</h2>
+            <div class="progress-bar">
+                <div class="progress-fill" id="epochProgress" style="width: 0%"></div>
+            </div>
+            <p style="margin-top: 10px"><span id="epochPercent">0</span>% complete</p>
+        </div>
+        
+        <button class="refresh-btn" onclick="fetchStats()">🔄 Refresh</button>
+        <p class="last-update">Last updated: <span id="lastUpdate">--</span></p>
+    </div>
+    
+    <script>
+        const API_URL = "https://api.rustchain.io";
+        
+        async function fetchStats() {
+            try {
+                // In production, use real API
+                // const response = await fetch(`${API_URL}/stats`);
+                // const data = await response.json();
+                
+                // Demo data
+                const data = {
+                    epoch: 127,
+                    blockHeight: 45892,
+                    miners: 234,
+                    supply: 12500000,
+                    txCount: 89234,
+                    blockTime: 2.3,
+                    difficulty: 1234567
+                };
+                
+                document.getElementById("epoch").textContent = data.epoch.toLocaleString();
+                document.getElementById("blockHeight").textContent = data.blockHeight.toLocaleString();
+                document.getElementById("miners").textContent = data.miners.toLocaleString();
+                document.getElementById("supply").textContent = data.supply.toLocaleString();
+                document.getElementById("txCount").textContent = data.txCount.toLocaleString();
+                document.getElementById("blockTime").textContent = data.blockTime;
+                document.getElementById("difficulty").textContent = data.difficulty.toLocaleString();
+                
+                const progress = Math.random() * 100;
+                document.getElementById("epochProgress").style.width = progress + "%";
+                document.getElementById("epochPercent").textContent = Math.round(progress);
+                
+                document.getElementById("lastUpdate").textContent = new Date().toLocaleString();
+            } catch (error) {
+                console.error("Failed to fetch stats:", error);
+            }
+        }
+        
+        // Initial fetch
+        fetchStats();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(fetchStats, 30000);
+    </script>
+</body>
+</html>
+
+<!-- Bounty wallet: RTC27a4b8256b4d3c63737b27e96b181223cc8774ae -->
