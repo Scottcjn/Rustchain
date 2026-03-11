@@ -1,0 +1,9 @@
+{"version":3,"term":{"cols":80,"rows":24},"timestamp":1773207823,"command":"echo '=== RustChain Miner Installation Demo ===' && echo 'Step 1: Clone repository' && sleep 2 && echo 'git clone https://github.com/Scottcjn/Rustchain.git' && sleep 1 && echo 'Step 2: Install dependencies' && sleep 2 && echo 'cd Rustchain && cargo build --release' && sleep 2 && echo 'Step 3: Run first attestation' && sleep 2 && echo './target/release/rustchain-miner --attest' && sleep 2 && echo '✅ First attestation completed!' && sleep 1","env":{"SHELL":"/bin/zsh"}}
+[0.009, "o", "=== RustChain Miner Installation Demo ===\r\nStep 1: Clone repository\r\n"]
+[2.012, "o", "git clone https://github.com/Scottcjn/Rustchain.git\r\n"]
+[1.013, "o", "Step 2: Install dependencies\r\n"]
+[2.015, "o", "cd Rustchain && cargo build --release\r\n"]
+[2.014, "o", "Step 3: Run first attestation\r\n"]
+[2.007, "o", "./target/release/rustchain-miner --attest\r\n"]
+[2.010, "o", "✅ First attestation completed!\r\n"]
+[1.017, "x", "0"]
