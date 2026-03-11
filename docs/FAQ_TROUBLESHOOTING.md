@@ -81,6 +81,17 @@ Use `-k` as shown in official docs:
 curl -sk https://rustchain.org/api/miners | jq .
 ```
 
+### `clawrtc wallet show` says "could not reach network"
+
+The public node is healthy if this succeeds:
+
+```bash
+curl -sk https://rustchain.org/health | jq .
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME" | jq .
+```
+
+If those commands work but your local helper still says `could not reach network`, you are likely using an older `clawrtc` wallet helper that still points at the retired `bulbous-bouffant.metalseed.net` host. Current docs use `https://rustchain.org`, and current `clawrtc` releases also do not ship a generic `wallet show` subcommand.
+
 ### Bridge/swap confusion (RTC vs wRTC)
 
 - Bridge URL: <https://bottube.ai/bridge>

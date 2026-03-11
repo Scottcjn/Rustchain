@@ -180,6 +180,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
   python3 --version
   curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
   ```
+- **`clawrtc wallet show` says `could not reach network`**: verify the live node directly with `curl -sk https://rustchain.org/health` and `curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"`. Older helper builds may still reference the retired `bulbous-bouffant.metalseed.net` host, and current `clawrtc` releases do not expose a generic `wallet show` subcommand.
 - **HTTPS certificate errors in `curl`**: this can happen with non-browser client environments; check connectivity first with `curl -I https://rustchain.org` before wallet checks.
 - **Miner exits immediately**: verify wallet exists and service is running (`systemctl --user status rustchain-miner` or `launchctl list | grep rustchain`)
 
