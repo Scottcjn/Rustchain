@@ -11,8 +11,10 @@ import {
   generateKeyPair,
   keyPairFromHex,
   keyPairFromBase58,
+  keyPairFromSeed,
   publicKeyToHex,
   publicKeyToBase58,
+  publicKeyToRtcAddress,
   secretKeyToHex,
   signMessage,
   verifySignature,
@@ -29,15 +31,16 @@ import {
 } from '../crypto';
 
 describe('Crypto Utilities (Hardened)', () => {
+  const rtcA = `RTC${'a'.repeat(40)}`;
+  const rtcB = `RTC${'b'.repeat(40)}`;
+
   describe('createSigningPayload', () => {
     it('should create payload with chain_id', () => {
       const txData = {
-        from: 'RTC1234567890abcdefghijklmnopqrstuvwxyz',
-        to: 'RTC0987654321zyxwvutsrqponmlkjihgfe',
+        from: rtcA,
+        to: rtcB,
         amount: 100,
-        fee: 1,
         nonce: 1,
-        timestamp: '2024-01-01T00:00:00Z',
         memo: 'Test',
       };
       const chainId = 'rustchain-mainnet';
@@ -52,12 +55,10 @@ describe('Crypto Utilities (Hardened)', () => {
 
     it('should include all required fields', () => {
       const txData = {
-        from: 'RTC123',
-        to: 'RTC456',
+        from: rtcA,
+        to: rtcB,
         amount: 100,
-        fee: 1,
         nonce: 1,
-        timestamp: '2024-01-01T00:00:00Z',
       };
       const chainId = 'test-chain';
 
@@ -66,9 +67,7 @@ describe('Crypto Utilities (Hardened)', () => {
       expect(payload).toHaveProperty('from');
       expect(payload).toHaveProperty('to');
       expect(payload).toHaveProperty('amount');
-      expect(payload).toHaveProperty('fee');
       expect(payload).toHaveProperty('nonce');
-      expect(payload).toHaveProperty('timestamp');
       expect(payload).toHaveProperty('chain_id');
     });
   });
@@ -77,12 +76,10 @@ describe('Crypto Utilities (Hardened)', () => {
     it('should sign and verify transaction with chain_id', () => {
       const keyPair = generateKeyPair();
       const txData = {
-        from: publicKeyToBase58(keyPair.publicKey),
-        to: publicKeyToBase58(generateKeyPair().publicKey),
+        from: rtcA,
+        to: rtcB,
         amount: 100,
-        fee: 1,
         nonce: 1,
-        timestamp: '2024-01-01T00:00:00Z',
       };
       const chainId = 'rustchain-mainnet';
 
@@ -95,12 +92,10 @@ describe('Crypto Utilities (Hardened)', () => {
     it('should fail verification with wrong chain_id', () => {
       const keyPair = generateKeyPair();
       const txData = {
-        from: publicKeyToBase58(keyPair.publicKey),
-        to: publicKeyToBase58(generateKeyPair().publicKey),
+        from: rtcA,
+        to: rtcB,
         amount: 100,
-        fee: 1,
         nonce: 1,
-        timestamp: '2024-01-01T00:00:00Z',
       };
       const chainId = 'rustchain-mainnet';
       const wrongChainId = 'rustchain-testnet';
@@ -114,12 +109,10 @@ describe('Crypto Utilities (Hardened)', () => {
     it('should fail verification with tampered data', () => {
       const keyPair = generateKeyPair();
       const txData = {
-        from: publicKeyToBase58(keyPair.publicKey),
-        to: publicKeyToBase58(generateKeyPair().publicKey),
+        from: rtcA,
+        to: rtcB,
         amount: 100,
-        fee: 1,
         nonce: 1,
-        timestamp: '2024-01-01T00:00:00Z',
       };
       const chainId = 'rustchain-mainnet';
 
@@ -136,12 +129,10 @@ describe('Crypto Utilities (Hardened)', () => {
       const keyPair1 = generateKeyPair();
       const keyPair2 = generateKeyPair();
       const txData = {
-        from: publicKeyToBase58(keyPair1.publicKey),
-        to: publicKeyToBase58(keyPair2.publicKey),
+        from: rtcA,
+        to: rtcB,
         amount: 100,
-        fee: 1,
         nonce: 1,
-        timestamp: '2024-01-01T00:00:00Z',
       };
       const chainId = 'rustchain-mainnet';
 
@@ -246,10 +237,10 @@ describe('Crypto Utilities (Hardened)', () => {
       expect(validateTransactionAmount('100')).toEqual(
         expect.objectContaining({ valid: true })
       );
-      expect(validateTransactionAmount('0.00000001')).toEqual(
+      expect(validateTransactionAmount('0.000001')).toEqual(
         expect.objectContaining({ valid: true })
       );
-      expect(validateTransactionAmount('123.45678901')).toEqual(
+      expect(validateTransactionAmount('123.456789')).toEqual(
         expect.objectContaining({ valid: true })
       );
     });
@@ -266,10 +257,8 @@ describe('Crypto Utilities (Hardened)', () => {
       );
     });
 
-    it('should reject more than 8 decimal places', () => {
-      // 1.23456789 has exactly 8 decimal places, which is valid
-      // 1.234567890 has 9 decimal places, which should be rejected
-      expect(validateTransactionAmount('1.234567890')).toEqual(
+    it('should reject more than 6 decimal places', () => {
+      expect(validateTransactionAmount('1.2345678')).toEqual(
         expect.objectContaining({ valid: false })
       );
     });
@@ -299,15 +288,12 @@ describe('Crypto Utilities (Hardened)', () => {
   });
 
   describe('isValidAddress', () => {
-    it('should validate correct Base58 addresses', () => {
-      const keyPair = generateKeyPair();
-      const address = publicKeyToBase58(keyPair.publicKey);
-      
-      expect(isValidAddress(address)).toBe(true);
+    it('should validate RTC addresses', () => {
+      expect(isValidAddress(rtcA)).toBe(true);
     });
 
-    it('should reject addresses with invalid Base58 characters', () => {
-      expect(isValidAddress('RTC0OIl1234567890')).toBe(false); // Contains 0, O, I, l
+    it('should reject addresses with invalid hex payload', () => {
+      expect(isValidAddress(`RTC${'z'.repeat(40)}`)).toBe(false);
     });
 
     it('should reject too-short addresses', () => {
@@ -320,7 +306,7 @@ describe('Crypto Utilities (Hardened)', () => {
       expect(isValidAddress(undefined as any)).toBe(false);
     });
 
-    it('should reject non-Base58 decodable strings', () => {
+    it('should reject non-RTC strings', () => {
       expect(isValidAddress('not-a-valid-address!!!')).toBe(false);
     });
   });
@@ -352,7 +338,7 @@ describe('Crypto Utilities (Hardened)', () => {
     });
 
     it('should reject invalid hex length', () => {
-      expect(() => keyPairFromHex('abc123')).toThrow('128 hex characters');
+      expect(() => keyPairFromHex('abc123')).toThrow('64 or 128 hex characters');
     });
 
     it('should reject invalid hex characters', () => {
@@ -367,6 +353,21 @@ describe('Crypto Utilities (Hardened)', () => {
 
     it('should reject wrong length', () => {
       expect(() => keyPairFromBase58('short')).toThrow();
+    });
+  });
+
+  describe('keyPairFromSeed and RTC address derivation', () => {
+    it('should derive the same public key from a 32-byte seed', () => {
+      const seed = new Uint8Array(32).fill(7);
+      const pair = keyPairFromSeed(seed);
+      expect(pair.publicKey.length).toBe(32);
+      expect(pair.secretKey.length).toBe(64);
+    });
+
+    it('should derive an RTC address from a public key', async () => {
+      const keyPair = generateKeyPair();
+      const address = await publicKeyToRtcAddress(keyPair.publicKey);
+      expect(address).toMatch(/^RTC[0-9a-f]{40}$/);
     });
   });
 });

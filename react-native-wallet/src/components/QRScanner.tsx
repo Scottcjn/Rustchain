@@ -21,7 +21,14 @@ import {
   Platform,
 } from 'react-native';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
-import { isValidAddress } from '../../src/utils/crypto';
+import {
+  isValidAddress,
+  isValidChainId,
+  parseRtcAmountToMicrounits,
+} from '../utils/crypto';
+
+const MAX_QR_PAYLOAD_LENGTH = 2048;
+const MAX_MEMO_LENGTH = 280;
 
 /**
  * QR Payload types
@@ -72,15 +79,35 @@ export function parseQRPayload(data: string): QRPayload {
     };
   }
 
+  if (trimmedData.length > MAX_QR_PAYLOAD_LENGTH) {
+    return {
+      type: 'unknown',
+      data: trimmedData.slice(0, MAX_QR_PAYLOAD_LENGTH),
+      raw: data,
+      validated: false,
+      warnings: ['Payload is too large'],
+    };
+  }
+
+  if (/[\u0000-\u001F\u007F]/.test(trimmedData)) {
+    return {
+      type: 'unknown',
+      data: trimmedData,
+      raw: data,
+      validated: false,
+      warnings: ['Payload contains unsupported control characters'],
+    };
+  }
+
   // Check for URI scheme (rustchain:, rtc:, etc.)
-  const uriMatch = trimmedData.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):\/\/?(.*)$/);
+  const uriMatch = trimmedData.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):(\/\/)?(.*)$/);
   
   if (uriMatch) {
     const scheme = uriMatch[1].toLowerCase();
-    const rest = uriMatch[2];
+    const rest = uriMatch[3];
 
     // Validate scheme
-    const validSchemes = ['rustchain', 'rtc', 'bitcoin', 'ethereum'];
+    const validSchemes = ['rustchain', 'rtc'];
     if (!validSchemes.includes(scheme)) {
       warnings.push(`Unknown URI scheme: ${scheme}`);
     }
@@ -89,13 +116,14 @@ export function parseQRPayload(data: string): QRPayload {
     try {
       const paymentRequest = parsePaymentRequest(scheme, rest);
       if (paymentRequest) {
+        const validation = validatePaymentRequest(paymentRequest);
         // Only return payment_request if there's an amount, otherwise just address
         return {
           type: paymentRequest.amount !== undefined ? 'payment_request' : 'address',
           data: JSON.stringify(paymentRequest),
           raw: data,
-          validated: isValidAddress(paymentRequest.address),
-          warnings,
+          validated: validation.valid,
+          warnings: warnings.concat(validation.errors),
         };
       }
     } catch (e) {
@@ -119,15 +147,20 @@ export function parseQRPayload(data: string): QRPayload {
   if (trimmedData.startsWith('{') && trimmedData.endsWith('}')) {
     try {
       const json = JSON.parse(trimmedData);
-      
-      // Validate JSON structure
-      if (json.address && isValidAddress(json.address)) {
+      if (json && typeof json === 'object' && json.address) {
+        const request: PaymentRequest = {
+          address: String(json.address),
+          amount: typeof json.amount === 'number' ? json.amount : undefined,
+          memo: typeof json.memo === 'string' ? json.memo : typeof json.label === 'string' ? json.label : undefined,
+          chain_id: typeof json.chain_id === 'string' ? json.chain_id : undefined,
+        };
+        const validation = validatePaymentRequest(request);
         return {
-          type: json.amount ? 'payment_request' : 'address',
-          data: JSON.stringify(json),
+          type: request.amount !== undefined ? 'payment_request' : 'address',
+          data: JSON.stringify(request),
           raw: data,
-          validated: true,
-          warnings,
+          validated: validation.valid,
+          warnings: warnings.concat(validation.errors),
         };
       }
       
@@ -198,17 +231,19 @@ function parsePaymentRequest(scheme: string, uri: string): PaymentRequest | null
     // Parse amount
     const amountStr = params.get('amount');
     if (amountStr) {
-      const amount = parseFloat(amountStr);
-      if (!isNaN(amount) && amount > 0) {
-        result.amount = amount;
+      const amountValidation = parseRtcAmountToMicrounits(amountStr);
+      if (amountValidation.valid && amountValidation.value !== undefined) {
+        result.amount = amountValidation.value;
       }
     }
 
     // Parse memo/label
-    result.memo = params.get('memo') || params.get('label') || undefined;
+    const memo = params.get('memo') || params.get('label') || undefined;
+    result.memo = memo ? memo.slice(0, MAX_MEMO_LENGTH) : undefined;
 
     // Parse chain_id
-    result.chain_id = params.get('chain_id') || undefined;
+    const chainId = params.get('chain_id') || undefined;
+    result.chain_id = chainId && isValidChainId(chainId) ? chainId : undefined;
   }
 
   return result;
@@ -233,9 +268,20 @@ export function validatePaymentRequest(request: PaymentRequest): {
     if (request.amount <= 0) {
       errors.push('Amount must be greater than 0');
     }
+    if (!Number.isFinite(request.amount)) {
+      errors.push('Amount must be finite');
+    }
     if (request.amount > Number.MAX_SAFE_INTEGER) {
       errors.push('Amount too large');
     }
+  }
+
+  if (request.memo && request.memo.length > MAX_MEMO_LENGTH) {
+    errors.push('Memo is too long');
+  }
+
+  if (request.chain_id && !isValidChainId(request.chain_id)) {
+    errors.push('Invalid chain_id');
   }
 
   return { valid: errors.length === 0, errors };

@@ -12,15 +12,17 @@
  * - Strict payload validation
  */
 
-import { KeyPair, isValidAddress } from '../utils/crypto';
+import { NonceStore } from '../storage/secure';
 import {
-  signString,
-  publicKeyToBase58,
-  createSigningPayload,
+  KeyPair,
+  isValidAddress,
+  isValidChainId,
+  publicKeyToHex,
+  publicKeyToRtcAddress,
   signTransactionPayload,
-  validateNumericString,
   validateTransactionAmount,
   validateTransactionFee,
+  MICRO_RTC_PER_RTC,
 } from '../utils/crypto';
 
 /**
@@ -95,6 +97,8 @@ export function getDefaultNetwork(): Network {
  */
 export interface BalanceResponse {
   miner: string;
+  amount_i64: number;
+  amount_rtc: number;
   balance: number;
   unlocked: number;
   locked: number;
@@ -107,8 +111,32 @@ export interface BalanceResponse {
 export interface TransactionResponse {
   tx_hash: string;
   status: string;
-  block_height?: number;
+  verified?: boolean;
+  confirms_at?: number;
+  message?: string;
+}
+
+export interface TransferHistoryItem {
+  id: number;
+  tx_id: string;
+  tx_hash: string;
+  from_addr: string;
+  to_addr: string;
+  amount: number;
+  amount_i64: number;
+  amount_rtc: number;
+  timestamp: number;
+  created_at: number;
+  confirmed_at?: number | null;
+  confirms_at?: number | null;
+  status: 'pending' | 'confirmed' | 'failed';
+  raw_status?: string;
+  status_reason?: string | null;
   confirmations?: number;
+  direction: 'sent' | 'received';
+  counterparty: string;
+  reason?: string;
+  memo?: string | null;
 }
 
 /**
@@ -130,12 +158,11 @@ export interface Transaction {
   from: string;
   to: string;
   amount: number;
-  fee: number;
   nonce: number;
-  timestamp: string;
   memo?: string;
   signature?: string;
   chain_id?: string;
+  public_key?: string;
 }
 
 /**
@@ -145,7 +172,6 @@ export interface TransactionOptions {
   from: string;
   to: string;
   amount: number;
-  fee?: number;
   nonce: number;
   memo?: string;
 }
@@ -175,6 +201,37 @@ export class RustChainClient {
   constructor(network: Network = getDefaultNetwork(), timeout: number = 30000) {
     this.baseUrl = getNetworkConfig(network).rpcUrl;
     this.timeout = timeout;
+  }
+
+  private normalizeBalanceResponse(raw: any, address: string): BalanceResponse {
+    const amount_i64 = Number.isSafeInteger(raw?.amount_i64)
+      ? raw.amount_i64
+      : Number.isSafeInteger(raw?.balance)
+        ? raw.balance
+        : 0;
+    const amount_rtc = typeof raw?.amount_rtc === 'number'
+      ? raw.amount_rtc
+      : amount_i64 / MICRO_RTC_PER_RTC;
+
+    return {
+      miner: String(raw?.miner ?? raw?.miner_id ?? address),
+      amount_i64,
+      amount_rtc,
+      balance: amount_i64,
+      unlocked: Number.isSafeInteger(raw?.unlocked) ? raw.unlocked : amount_i64,
+      locked: Number.isSafeInteger(raw?.locked) ? raw.locked : 0,
+      nonce: Number.isSafeInteger(raw?.nonce) ? raw.nonce : undefined,
+    };
+  }
+
+  private normalizeTransactionResponse(raw: any): TransactionResponse {
+    return {
+      tx_hash: String(raw?.tx_hash ?? ''),
+      status: String(raw?.status ?? raw?.phase ?? (raw?.ok ? 'pending' : 'unknown')),
+      verified: raw?.verified === true,
+      confirms_at: Number.isSafeInteger(raw?.confirms_at) ? raw.confirms_at : undefined,
+      message: typeof raw?.message === 'string' ? raw.message : undefined,
+    };
   }
 
   /**
@@ -249,7 +306,19 @@ export class RustChainClient {
       throw new RustChainApiError('Invalid wallet address format');
     }
     
-    return this.request<BalanceResponse>('GET', `/wallet/balance?miner_id=${encodeURIComponent(address)}`);
+    const result = await this.request<any>('GET', `/wallet/balance?address=${encodeURIComponent(address)}`);
+    return this.normalizeBalanceResponse(result, address);
+  }
+
+  async getTransferHistory(address: string, limit: number = 50): Promise<TransferHistoryItem[]> {
+    if (!isValidAddress(address)) {
+      throw new RustChainApiError('Invalid wallet address format');
+    }
+    const safeLimit = Math.max(1, Math.min(Math.trunc(limit || 50), 200));
+    return this.request<TransferHistoryItem[]>(
+      'GET',
+      `/wallet/history?address=${encodeURIComponent(address)}&limit=${safeLimit}`
+    );
   }
 
   /**
@@ -270,8 +339,7 @@ export class RustChainClient {
    * Get current nonce for an address
    */
   async getNonce(address: string): Promise<number> {
-    const balance = await this.getBalance(address);
-    return balance.nonce ?? 0;
+    return NonceStore.getNextNonce(address);
   }
 
   /**
@@ -296,14 +364,7 @@ export class RustChainClient {
    * Estimate fee for a transaction
    */
   async estimateFee(amount: number, priority: 'low' | 'normal' | 'high' | 'instant' = 'normal'): Promise<number> {
-    const minFee = await this.getMinFee();
-    const multipliers = {
-      low: 1,
-      normal: 2,
-      high: 5,
-      instant: 10,
-    };
-    return minFee * multipliers[priority];
+    return 0;
   }
 
   /**
@@ -314,9 +375,7 @@ export class RustChainClient {
       from: options.from,
       to: options.to,
       amount: options.amount,
-      fee: options.fee ?? 0,
       nonce: options.nonce,
-      timestamp: new Date().toISOString(),
       memo: options.memo,
     };
   }
@@ -328,6 +387,9 @@ export class RustChainClient {
   async signTransaction(tx: Transaction, keyPair: KeyPair): Promise<Transaction> {
     // Get chain_id for signing
     const chainId = await this.getChainId();
+    if (!isValidChainId(chainId)) {
+      throw new RustChainApiError('Invalid chain_id returned by network');
+    }
     
     // Create signing payload with chain_id
     const signature = signTransactionPayload(
@@ -335,9 +397,7 @@ export class RustChainClient {
         from: tx.from,
         to: tx.to,
         amount: tx.amount,
-        fee: tx.fee,
         nonce: tx.nonce,
-        timestamp: tx.timestamp,
         memo: tx.memo,
       },
       chainId,
@@ -348,6 +408,7 @@ export class RustChainClient {
       ...tx,
       signature,
       chain_id: chainId,
+      public_key: publicKeyToHex(keyPair.publicKey),
     };
   }
 
@@ -358,13 +419,35 @@ export class RustChainClient {
     if (!tx.signature) {
       throw new RustChainApiError('Transaction not signed');
     }
-    
-    // Validate transaction structure
-    if (!tx.chain_id) {
-      throw new RustChainApiError('Transaction missing chain_id');
+    if (!tx.public_key || !/^[0-9a-fA-F]{64}$/.test(tx.public_key)) {
+      throw new RustChainApiError('Transaction missing public key');
     }
-    
-    return this.request<TransactionResponse>('POST', '/api/transaction', tx);
+    if (!Number.isSafeInteger(tx.nonce) || tx.nonce <= 0) {
+      throw new RustChainApiError('Transaction nonce must be a safe positive integer');
+    }
+    if (typeof tx.amount !== 'number' || !Number.isFinite(tx.amount) || tx.amount <= 0) {
+      throw new RustChainApiError('Transaction amount must be a positive finite RTC value');
+    }
+
+    const payload: Record<string, unknown> = {
+      from_address: tx.from,
+      to_address: tx.to,
+      amount_rtc: tx.amount,
+      nonce: tx.nonce,
+      memo: tx.memo ?? '',
+      public_key: tx.public_key,
+      signature: tx.signature,
+    };
+
+    if (tx.chain_id) {
+      if (!isValidChainId(tx.chain_id)) {
+        throw new RustChainApiError('Transaction has invalid chain_id');
+      }
+      payload.chain_id = tx.chain_id;
+    }
+
+    const result = await this.request<any>('POST', '/wallet/transfer/signed', payload);
+    return this.normalizeTransactionResponse(result);
   }
 
   /**
@@ -374,27 +457,27 @@ export class RustChainClient {
     fromKeyPair: KeyPair,
     toAddress: string,
     amount: number,
-    options?: { fee?: number; memo?: string }
+    options?: { memo?: string }
   ): Promise<TransactionResponse> {
-    const fromAddress = publicKeyToBase58(fromKeyPair.publicKey);
+    const fromAddress = await publicKeyToRtcAddress(fromKeyPair.publicKey);
 
     // Validate recipient address
     if (!isValidAddress(toAddress)) {
       throw new RustChainApiError('Invalid recipient address');
     }
 
-    // Get current nonce
-    const nonce = await this.getNonce(fromAddress);
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      throw new RustChainApiError('Amount must be a positive safe integer in micro-RTC');
+    }
 
-    // Get fee if not provided
-    const fee = options?.fee ?? await this.estimateFee(amount);
+    // Reserve a unique local nonce immediately so rapid sends cannot reuse it.
+    const nonce = await NonceStore.reserveNextNonce(fromAddress);
 
     // Build transaction
     const tx = this.buildTransaction({
       from: fromAddress,
       to: toAddress,
-      amount,
-      fee,
+      amount: amount / MICRO_RTC_PER_RTC,
       nonce,
       memo: options?.memo,
     });
@@ -434,22 +517,23 @@ export interface DryRunResult {
 
 export async function dryRunTransfer(
   client: RustChainClient,
-  fromKeyPair: KeyPair,
+  fromKeyPairOrAddress: KeyPair | string,
   toAddress: string,
   amount: number,
-  options?: { fee?: number; memo?: string }
+  options?: { memo?: string }
 ): Promise<DryRunResult> {
   const errors: string[] = [];
-  const fromAddress = publicKeyToBase58(fromKeyPair.publicKey);
+  const fromAddress = typeof fromKeyPairOrAddress === 'string'
+    ? fromKeyPairOrAddress
+    : await publicKeyToRtcAddress(fromKeyPairOrAddress.publicKey);
 
   // Validate recipient address format (strict)
   if (!toAddress || !isValidAddress(toAddress)) {
     errors.push('Invalid recipient address format');
   }
 
-  // Validate amount (must be positive)
-  if (amount <= 0) {
-    errors.push('Amount must be greater than 0');
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    errors.push('Amount must be a positive safe integer in micro-RTC');
   }
 
   // Get sender balance
@@ -459,7 +543,7 @@ export async function dryRunTransfer(
     const balanceResp = await client.getBalance(fromAddress);
     senderBalance = balanceResp.balance;
 
-    const fee = options?.fee ?? await client.estimateFee(amount);
+    const fee = 0;
     const totalCost = amount + fee;
     sufficientBalance = senderBalance >= totalCost;
 
@@ -472,12 +556,6 @@ export async function dryRunTransfer(
 
   // Get estimated fee
   let estimatedFee = 0;
-  try {
-    estimatedFee = options?.fee ?? await client.estimateFee(amount);
-  } catch {
-    estimatedFee = 0;
-    errors.push('Failed to estimate fee');
-  }
 
   return {
     valid: errors.length === 0,

@@ -5977,10 +5977,18 @@ def wallet_transfer_signed():
     from_address = pre.details["from_address"]
     to_address = pre.details["to_address"]
     nonce_int = pre.details["nonce"]
+    chain_id = pre.details.get("chain_id")
     signature = str(data.get("signature", "")).strip()
     public_key = str(data.get("public_key", "")).strip()
     memo = str(data.get("memo", ""))
     amount_rtc = pre.details["amount_rtc"]
+
+    if chain_id and chain_id != CHAIN_ID:
+        return jsonify({
+            "error": "chain_id does not match active network",
+            "expected_chain_id": CHAIN_ID,
+            "got_chain_id": chain_id,
+        }), 400
 
     # Verify public key matches from_address
     # Support bcn_ beacon addresses: resolve pubkey from Beacon Atlas
@@ -6019,6 +6027,8 @@ def wallet_transfer_signed():
         "memo": memo,
         "nonce": nonce
     }
+    if chain_id:
+        tx_data["chain_id"] = chain_id
     message = json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode()
     
     # Verify Ed25519 signature
@@ -6101,6 +6111,7 @@ def wallet_transfer_signed():
             "from_address": from_address,
             "to_address": to_address,
             "amount_rtc": amount_rtc,
+            "chain_id": chain_id or CHAIN_ID,
             "confirms_at": confirms_at,
             "confirms_in_hours": CONFIRMATION_DELAY_SECONDS / 3600,
             "message": f"Transfer pending. Will confirm in {CONFIRMATION_DELAY_SECONDS // 3600} hours unless voided."

@@ -215,17 +215,16 @@ The app connects to the RustChain mainnet API:
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/wallet/balance?miner_id={address}` | GET | Get wallet balance |
+| `/wallet/balance?address={address}` | GET | Get wallet balance |
 | `/api/stats` | GET | Get network info |
-| `/api/transaction` | POST | Submit transaction |
+| `/wallet/transfer/signed` | POST | Submit signed transfer |
 
 ### Balance Response
 ```json
 {
-  "miner": "RTC_ADDRESS",
-  "balance": 100000000,
-  "unlocked": 100000000,
-  "locked": 0
+  "miner_id": "RTC_ADDRESS",
+  "amount_i64": 1000000,
+  "amount_rtc": 1.0
 }
 ```
 

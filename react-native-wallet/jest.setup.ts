@@ -9,7 +9,7 @@ jest.mock('expo-crypto', () => {
   const nodeCrypto = require('crypto');
   
   return {
-    getRandomValues: (array) => {
+    getRandomValues: (array: Uint8Array) => {
       // Use Node.js crypto for random values
       const randomBytes = nodeCrypto.randomBytes(array.length);
       for (let i = 0; i < array.length; i++) {
@@ -17,11 +17,16 @@ jest.mock('expo-crypto', () => {
       }
       return array;
     },
-    digestStringAsync: async (algorithm, data) => {
+    digestStringAsync: async (algorithm: string, data: string) => {
       // Use Node.js crypto for hashing
       const hash = nodeCrypto.createHash('sha256');
       hash.update(data, 'hex');
       return hash.digest('hex');
+    },
+    digest: async (algorithm: string, data: BufferSource) => {
+      const hash = nodeCrypto.createHash('sha256');
+      hash.update(Buffer.from(data as any));
+      return hash.digest();
     },
     CryptoDigestAlgorithm: {
       SHA256: 'SHA256',
@@ -29,6 +34,10 @@ jest.mock('expo-crypto', () => {
     },
   };
 });
+
+if (!(global as any).crypto?.subtle) {
+  (global as any).crypto = require('crypto').webcrypto;
+}
 
 // Mock expo-secure-store
 jest.mock('expo-secure-store', () => ({

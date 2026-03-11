@@ -31,14 +31,17 @@ import {
   Network,
   dryRunTransfer,
   DryRunResult,
-  validateTransactionInput,
 } from '../src/api/rustchain';
-import { KeyPair, isValidAddress } from '../src/utils/crypto';
+import {
+  KeyPair,
+  isValidAddress,
+  parseRtcAmountToMicrounits,
+  MICRO_RTC_PER_RTC,
+} from '../src/utils/crypto';
 import { QRScanner } from '../src/components/QRScanner';
 import {
   authenticateWithBiometricsOrFallback,
   isBiometricAvailable,
-  getBiometricTypeName,
 } from '../src/utils/biometric';
 
 export default function SendScreen() {
@@ -74,56 +77,103 @@ export default function SendScreen() {
   const client = new RustChainClient(Network.Mainnet);
 
   useEffect(() => {
-    // Check biometric availability on mount
-    const checkBiometric = async () => {
+    const initializeScreen = async () => {
       const bioAvailable = await isBiometricAvailable();
       setBiometricAvailable(bioAvailable);
+      const metadata = await WalletStorage.getMetadata(walletName);
+      if (metadata) {
+        setWalletAddress(metadata.address);
+      }
     };
-    checkBiometric();
-  }, []);
+    initializeScreen();
+  }, [walletName]);
+
+  useEffect(() => {
+    if (biometricVerified) {
+      setBiometricVerified(false);
+    }
+  }, [recipient, amount, memo, fee]);
 
   // Issue #785: Load wallet only when user initiates send, not on mount
   // This prevents keeping sensitive data in memory unnecessarily
-  const loadWalletKeyPair = async (password: string): Promise<boolean> => {
+  const loadWalletKeyPair = async (password: string): Promise<KeyPair | null> => {
     try {
       const kp = await WalletStorage.load(walletName, password);
       const metadata = await WalletStorage.getMetadata(walletName);
       if (metadata) {
         setKeyPair(kp);
         setWalletAddress(metadata.address);
-        return true;
+        return kp;
       }
-      return false;
+      return null;
     } catch (error) {
       Alert.alert('Error', 'Failed to load wallet. Please check your password.');
-      return false;
+      return null;
     }
   };
 
-  const handleDryRun = async () => {
-    if (!keyPair || !recipient || !amount) {
+  const getValidatedDraft = (): {
+    recipient: string;
+    amountMicros: number;
+    amountRtc: number;
+    memo?: string;
+  } | null => {
+    const recipientValue = recipient.trim();
+    if (!recipientValue || !amount.trim()) {
       Alert.alert('Error', 'Please fill in recipient and amount');
+      return null;
+    }
+
+    if (!isValidAddress(recipientValue)) {
+      Alert.alert('Error', 'Invalid recipient address format');
+      return null;
+    }
+
+    const amountValidation = parseRtcAmountToMicrounits(amount);
+    if (!amountValidation.valid || amountValidation.units === undefined || amountValidation.value === undefined) {
+      Alert.alert('Error', `Invalid amount: ${amountValidation.error}`);
+      return null;
+    }
+
+    if (fee.trim()) {
+      const feeValidation = parseRtcAmountToMicrounits(fee, { allowZero: true });
+      if (!feeValidation.valid || feeValidation.units === undefined) {
+        Alert.alert('Error', `Invalid fee: ${feeValidation.error}`);
+        return null;
+      }
+      if (feeValidation.units !== 0) {
+        Alert.alert('Unsupported', 'RustChain signed transfers currently use no fee. Leave the fee field empty or 0.');
+        return null;
+      }
+    }
+
+    return {
+      recipient: recipientValue,
+      amountMicros: amountValidation.units,
+      amountRtc: amountValidation.value,
+      memo: memo.trim() || undefined,
+    };
+  };
+
+  const handleDryRun = async () => {
+    const draft = getValidatedDraft();
+    if (!draft) {
       return;
     }
 
-    // Validate input with hardened numeric validation
-    const validation = validateTransactionInput(amount, fee || undefined);
-    if (!validation.valid) {
-      Alert.alert('Validation Error', validation.errors.join('\n'));
+    if (!walletAddress) {
+      Alert.alert('Error', 'Could not determine the sender wallet address');
       return;
     }
-
-    const amountNum = (validation.parsedAmount || 0) * 100000000; // Convert to satoshis
-    const feeNum = validation.parsedFee ? validation.parsedFee * 100000000 : undefined;
 
     setDryRunLoading(true);
     try {
       const result = await dryRunTransfer(
         client,
-        keyPair,
-        recipient,
-        amountNum,
-        feeNum ? { fee: feeNum, memo: memo || undefined } : { memo: memo || undefined }
+        walletAddress,
+        draft.recipient,
+        draft.amountMicros,
+        { memo: draft.memo }
       );
       setDryRunResult(result);
 
@@ -142,34 +192,12 @@ export default function SendScreen() {
   };
 
   const handleSend = async () => {
-    if (!recipient || !amount) {
-      Alert.alert('Error', 'Please fill in recipient and amount');
+    const draft = getValidatedDraft();
+    if (!draft) {
       return;
     }
 
-    // Validate recipient address
-    if (!isValidAddress(recipient)) {
-      Alert.alert('Error', 'Invalid recipient address format');
-      return;
-    }
-
-    // Validate amount
-    const amountValidation = validateTransactionAmount(amount);
-    if (!amountValidation.valid) {
-      Alert.alert('Error', `Invalid amount: ${amountValidation.error}`);
-      return;
-    }
-
-    // Issue #785: Require re-authentication before sending
-    // If biometric is available and verified, proceed
-    // Otherwise, show password input modal
-    if (biometricAvailable && biometricVerified) {
-      // Already verified, proceed with send
-      proceedWithSend();
-      return;
-    }
-
-    if (biometricAvailable) {
+    if (biometricAvailable && !biometricVerified) {
       // Try biometric first
       setBiometricLoading(true);
       try {
@@ -179,13 +207,15 @@ export default function SendScreen() {
 
         if (result.success) {
           setBiometricVerified(true);
-          proceedWithSend();
+          if (keyPair) {
+            proceedWithSend(keyPair, draft);
+          } else {
+            setShowPasswordModal(true);
+          }
           return;
         }
 
-        if (!result.available) {
-          // Fall through to password
-        } else {
+        if (result.available) {
           // Biometric failed/cancelled
           Alert.alert(
             'Authentication Required',
@@ -203,7 +233,11 @@ export default function SendScreen() {
       }
     }
 
-    // Show password input modal for re-authentication
+    if (keyPair) {
+      proceedWithSend(keyPair, draft);
+      return;
+    }
+
     setShowPasswordModal(true);
   };
 
@@ -213,32 +247,32 @@ export default function SendScreen() {
       return;
     }
 
-    setLoading(true);
-    setShowPasswordModal(false);
-
-    const loaded = await loadWalletKeyPair(passwordInput);
-    setPasswordInput('');
-    setLoading(false);
-
-    if (loaded) {
-      proceedWithSend();
-    }
-  };
-
-  const proceedWithSend = async () => {
-    if (!keyPair) {
-      // Try to load wallet (should have been loaded already)
-      setShowPasswordModal(true);
+    const draft = getValidatedDraft();
+    if (!draft) {
+      setShowPasswordModal(false);
+      setPasswordInput('');
       return;
     }
 
-    // Final confirmation
-    const amountNum = parseFloat(amount) * 100000000;
-    const feeNum = fee ? parseFloat(fee) * 100000000 : await client.estimateFee(amountNum);
+    setLoading(true);
+    setShowPasswordModal(false);
 
+    const loadedKeyPair = await loadWalletKeyPair(passwordInput);
+    setPasswordInput('');
+    setLoading(false);
+
+    if (loadedKeyPair) {
+      proceedWithSend(loadedKeyPair, draft);
+    }
+  };
+
+  const proceedWithSend = async (
+    activeKeyPair: KeyPair,
+    draft: { recipient: string; amountMicros: number; amountRtc: number; memo?: string }
+  ) => {
     Alert.alert(
       'Confirm Transaction',
-      `Send ${amount} RTC to:\n${recipient.slice(0, 20)}...\n\nFee: ${(feeNum / 100000000).toFixed(8)} RTC\nMemo: ${memo || 'None'}`,
+      `Send ${draft.amountRtc.toFixed(6)} RTC to:\n${draft.recipient.slice(0, 20)}...\n\nFee: 0.000000 RTC\nMemo: ${draft.memo || 'None'}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -248,24 +282,24 @@ export default function SendScreen() {
             setLoading(true);
             try {
               const result = await client.transfer(
-                keyPair,
-                recipient,
-                amountNum,
+                activeKeyPair,
+                draft.recipient,
+                draft.amountMicros,
                 {
-                  fee: feeNum,
-                  memo: memo || undefined,
+                  memo: draft.memo,
                 }
               );
 
               Alert.alert(
                 'Transaction Submitted!',
-                `Transaction Hash:\n${result.tx_hash}`,
+                `Transaction Hash:\n${result.tx_hash}\n\nStatus: ${result.status}`,
                 [
                   {
                     text: 'OK',
                     onPress: () => {
                       // Clear sensitive data from memory
                       setKeyPair(null);
+                      setBiometricVerified(false);
                       router.back();
                     },
                   },
@@ -341,7 +375,7 @@ export default function SendScreen() {
         />
         {amount && (
           <Text style={styles.amountPreview}>
-            ≈ ${(parseFloat(amount) * 0.1).toFixed(4)} USD
+            ≈ ${((parseRtcAmountToMicrounits(amount).value ?? 0) * 0.1).toFixed(4)} USD
           </Text>
         )}
       </View>
@@ -350,7 +384,7 @@ export default function SendScreen() {
         <Text style={styles.label}>Fee (RTC) - Optional</Text>
         <TextInput
           style={styles.input}
-          placeholder="Auto-calculated if empty"
+          placeholder="0.000000"
           placeholderTextColor="#666"
           value={fee}
           onChangeText={setFee}
@@ -358,7 +392,7 @@ export default function SendScreen() {
           editable={!loading}
         />
         <Text style={styles.hint}>
-          Leave empty for automatic fee estimation
+          Signed transfers currently use no fee. Leave this empty or 0.
         </Text>
       </View>
 
@@ -426,13 +460,13 @@ export default function SendScreen() {
               {dryRunResult.valid && (
                 <>
                   <Text style={styles.dryRunDetail}>
-                    Estimated Fee: {(dryRunResult.estimatedFee / 100000000).toFixed(8)} RTC
+                    Estimated Fee: {(dryRunResult.estimatedFee / MICRO_RTC_PER_RTC).toFixed(6)} RTC
                   </Text>
                   <Text style={styles.dryRunDetail}>
-                    Total Cost: {(dryRunResult.totalCost / 100000000).toFixed(8)} RTC
+                    Total Cost: {(dryRunResult.totalCost / MICRO_RTC_PER_RTC).toFixed(6)} RTC
                   </Text>
                   <Text style={styles.dryRunDetail}>
-                    Your Balance: {(dryRunResult.senderBalance ?? 0 / 100000000).toFixed(8)} RTC
+                    Your Balance: {((dryRunResult.senderBalance ?? 0) / MICRO_RTC_PER_RTC).toFixed(6)} RTC
                   </Text>
                 </>
               )}
@@ -468,7 +502,7 @@ export default function SendScreen() {
           • Transactions cannot be reversed once confirmed
         </Text>
         <Text style={styles.warningText}>
-          • Ensure you have sufficient balance for amount + fee
+          • Ensure you have sufficient balance for the transfer amount
         </Text>
         <Text style={styles.warningText}>
           • Your signature is bound to the chain_id to prevent replay attacks

@@ -23,8 +23,6 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { WalletStorage } from '../../src/storage/secure';
 import { RustChainClient, Network } from '../../src/api/rustchain';
-import { publicKeyToBase58 } from '../../src/utils/crypto';
-import * as Crypto from 'expo-crypto';
 
 export default function WalletDetailsScreen() {
   const { name } = useLocalSearchParams<{ name: string }>();
@@ -124,7 +122,7 @@ export default function WalletDetailsScreen() {
     }
     router.push({
       pathname: '/send',
-      params: { walletName, password: encodeURIComponent(password) },
+      params: { walletName },
     });
   };
 
@@ -134,8 +132,7 @@ export default function WalletDetailsScreen() {
   };
 
   const formatBalance = (bal: number): string => {
-    // RTC typically uses 8 decimal places
-    return (bal / 100000000).toFixed(8);
+    return (bal / 1000000).toFixed(6);
   };
 
   if (loading) {
@@ -168,7 +165,7 @@ export default function WalletDetailsScreen() {
         </Text>
         {balance !== null && (
           <Text style={styles.balanceUsd}>
-            ≈ ${(balance / 100000000 * 0.1).toFixed(4)} USD
+            ≈ ${(balance / 1000000 * 0.1).toFixed(4)} USD
           </Text>
         )}
       </View>

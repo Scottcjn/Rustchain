@@ -183,15 +183,15 @@ The wallet interacts with these RustChain API endpoints:
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/wallet/balance?miner_id={address}` | GET | Get wallet balance |
+| `/wallet/balance?address={address}` | GET | Get wallet balance |
 | `/api/stats` | GET | Get network info and fees |
-| `/api/transaction` | POST | Submit signed transaction |
+| `/wallet/transfer/signed` | POST | Submit signed transaction |
 
 ### Testing API Directly
 
 ```bash
 # Check balance
-curl "https://rustchain.org/wallet/balance?miner_id=YOUR_ADDRESS"
+curl "https://rustchain.org/wallet/balance?address=YOUR_ADDRESS"
 
 # Check network status
 curl "https://rustchain.org/api/stats"

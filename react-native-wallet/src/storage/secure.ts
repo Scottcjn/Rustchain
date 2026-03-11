@@ -13,7 +13,15 @@
  */
 
 import * as SecureStore from 'expo-secure-store';
-import { KeyPair, secretKeyToHex, keyPairFromHex, publicKeyToBase58 } from '../utils/crypto';
+import {
+  KeyPair,
+  secretKeyToHex,
+  keyPairFromHex,
+  publicKeyHexToRtcAddress,
+  publicKeyToHex,
+  publicKeyToRtcAddress,
+  isValidAddress,
+} from '../utils/crypto';
 import { encryptWithPassword, decryptWithPassword, EncryptedData } from '../utils/aes-gcm';
 import { KDFType } from '../utils/kdf';
 
@@ -23,6 +31,7 @@ import { KDFType } from '../utils/kdf';
 export interface WalletMetadata {
   name: string;
   address: string;
+  publicKeyHex?: string;
   createdAt: number;
   network?: string;
   kdfType?: KDFType;
@@ -65,7 +74,8 @@ export class WalletStorage {
       throw new Error('Password must be at least 8 characters');
     }
 
-    const address = publicKeyToBase58(keyPair.publicKey);
+    const address = await publicKeyToRtcAddress(keyPair.publicKey);
+    const publicKeyHex = publicKeyToHex(keyPair.publicKey);
 
     // Create wallet data to encrypt
     const walletData = JSON.stringify({
@@ -81,6 +91,7 @@ export class WalletStorage {
       metadata: {
         name,
         address,
+        publicKeyHex,
         createdAt: Date.now(),
         network: 'mainnet',
         kdfType,
@@ -179,6 +190,11 @@ export class WalletStorage {
 
     try {
       const stored: StoredWallet = JSON.parse(storedJson);
+      if (!isValidAddress(stored.metadata.address) && stored.metadata.publicKeyHex) {
+        const normalizedAddress = await publicKeyHexToRtcAddress(stored.metadata.publicKeyHex);
+        stored.metadata.address = normalizedAddress;
+        await SecureStore.setItemAsync(key, JSON.stringify(stored));
+      }
       return stored.metadata;
     } catch {
       return null;
@@ -299,6 +315,7 @@ export class WalletStorage {
     const stored: StoredWallet = {
       metadata: {
         ...metadata,
+        publicKeyHex: metadata.publicKeyHex ?? publicKeyToHex(keyPair.publicKey),
         kdfType,
       },
       encrypted,
@@ -331,23 +348,39 @@ export class WalletStorage {
  */
 export class NonceStore {
   private static KEY_PREFIX = 'nonce:';
+  private static queue: Promise<void> = Promise.resolve();
+
+  private static async withLock<T>(fn: () => Promise<T>): Promise<T> {
+    const previous = this.queue;
+    let release!: () => void;
+    this.queue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
 
   /**
    * Mark a nonce as used
    */
   static async markUsed(address: string, nonce: number): Promise<void> {
-    const key = `${this.KEY_PREFIX}${address}`;
-    const existingJson = await SecureStore.getItemAsync(key);
-    const nonces: number[] = existingJson ? JSON.parse(existingJson) : [];
+    await this.withLock(async () => {
+      const key = `${this.KEY_PREFIX}${address}`;
+      const existingJson = await SecureStore.getItemAsync(key);
+      const nonces: number[] = existingJson ? JSON.parse(existingJson) : [];
 
-    if (!nonces.includes(nonce)) {
-      nonces.push(nonce);
-      // Limit stored nonces to prevent unbounded growth
-      if (nonces.length > 1000) {
-        nonces.shift(); // Remove oldest
+      if (!nonces.includes(nonce)) {
+        nonces.push(nonce);
+        if (nonces.length > 1000) {
+          nonces.shift();
+        }
+        await SecureStore.setItemAsync(key, JSON.stringify(nonces));
       }
-      await SecureStore.setItemAsync(key, JSON.stringify(nonces));
-    }
+    });
   }
 
   /**
@@ -368,12 +401,12 @@ export class NonceStore {
   static async getNextNonce(address: string): Promise<number> {
     const key = `${this.KEY_PREFIX}${address}`;
     const existingJson = await SecureStore.getItemAsync(key);
-    if (!existingJson) return 0;
+    if (!existingJson) return Date.now();
 
     const nonces: number[] = JSON.parse(existingJson);
-    if (nonces.length === 0) return 0;
+    if (nonces.length === 0) return Date.now();
 
-    return Math.max(...nonces) + 1;
+    return Math.max(Date.now(), Math.max(...nonces) + 1);
   }
 
   /**
@@ -381,5 +414,32 @@ export class NonceStore {
    */
   static async validateNonce(address: string, nonce: number): Promise<boolean> {
     return !(await this.isUsed(address, nonce));
+  }
+
+  /**
+   * Reserve the next local nonce immediately so rapid sends cannot reuse it.
+   * RustChain signed transfers only require a unique positive nonce.
+   */
+  static async reserveNextNonce(address: string, suggestedNonce: number = Date.now()): Promise<number> {
+    return this.withLock(async () => {
+      const key = `${this.KEY_PREFIX}${address}`;
+      const existingJson = await SecureStore.getItemAsync(key);
+      const nonces: number[] = existingJson ? JSON.parse(existingJson) : [];
+
+      let candidate = Math.max(
+        Math.trunc(suggestedNonce),
+        nonces.length ? Math.max(...nonces) + 1 : 1,
+      );
+      while (nonces.includes(candidate)) {
+        candidate += 1;
+      }
+
+      nonces.push(candidate);
+      if (nonces.length > 1000) {
+        nonces.shift();
+      }
+      await SecureStore.setItemAsync(key, JSON.stringify(nonces));
+      return candidate;
+    });
   }
 }

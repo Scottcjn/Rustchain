@@ -16,14 +16,14 @@ import {
   ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { keyPairFromHex, keyPairFromBase58, publicKeyToBase58 } from '../../src/utils/crypto';
+import { keyPairFromHex, keyPairFromBase58, publicKeyToRtcAddress } from '../../src/utils/crypto';
 import { WalletStorage } from '../../src/storage/secure';
 
 type ImportMethod = 'privateKey' | 'base58';
 
 const IMPORT_METHODS: { value: ImportMethod; label: string }[] = [
-  { value: 'privateKey', label: 'Hex-encoded Private Key (64 chars)' },
-  { value: 'base58', label: 'Base58-encoded Private Key' },
+  { value: 'privateKey', label: 'Hex seed/private key (64 or 128 chars)' },
+  { value: 'base58', label: 'Base58 seed/private key (32 or 64 bytes)' },
 ];
 
 export default function ImportWalletScreen() {
@@ -36,15 +36,15 @@ export default function ImportWalletScreen() {
   const [loading, setLoading] = useState(false);
   const [importedAddress, setImportedAddress] = useState<string | null>(null);
 
-  const handleValidateKey = () => {
+  const handleValidateKey = async () => {
     try {
       let keyPair;
       
       if (importMethod === 'privateKey') {
         // Validate hex format
         const cleanKey = privateKey.trim().replace(/^0x/, '');
-        if (!/^[0-9a-fA-F]{64}$/.test(cleanKey)) {
-          Alert.alert('Error', 'Invalid private key format. Expected 64 hex characters.');
+        if (!/^[0-9a-fA-F]{64}$/.test(cleanKey) && !/^[0-9a-fA-F]{128}$/.test(cleanKey)) {
+          Alert.alert('Error', 'Invalid private key format. Expected 64 or 128 hex characters.');
           return;
         }
         keyPair = keyPairFromHex(cleanKey);
@@ -53,7 +53,7 @@ export default function ImportWalletScreen() {
         keyPair = keyPairFromBase58(privateKey.trim());
       }
 
-      const address = publicKeyToBase58(keyPair.publicKey);
+      const address = await publicKeyToRtcAddress(keyPair.publicKey);
       setImportedAddress(address);
       Alert.alert('Success', `Valid key! Address: ${address.slice(0, 20)}...`);
     } catch (error) {
@@ -167,15 +167,15 @@ export default function ImportWalletScreen() {
         <Text style={styles.label}>Step 2: Enter Private Key</Text>
         <Text style={styles.description}>
           {importMethod === 'privateKey'
-            ? 'Enter your 64-character hex-encoded private key'
-            : 'Enter your Base58-encoded private key'}
+            ? 'Enter your 32-byte seed (64 hex chars) or 64-byte private key (128 hex chars)'
+            : 'Enter your Base58-encoded 32-byte seed or 64-byte private key'}
         </Text>
 
         <TextInput
           style={[styles.input, styles.keyInput]}
           placeholder={
             importMethod === 'privateKey'
-              ? 'e.g., a1b2c3d4e5f6... (64 hex chars)'
+              ? 'e.g., a1b2c3d4e5f6... (64 or 128 hex chars)'
               : 'e.g., 5KQwrPbwdL6PhXujxW...'
           }
           placeholderTextColor="#666"

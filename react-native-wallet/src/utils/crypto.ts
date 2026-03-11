@@ -10,6 +10,7 @@
  * - Strict type checking
  */
 
+import * as Crypto from 'expo-crypto';
 import nacl from 'tweetnacl';
 import naclUtil from 'tweetnacl-util';
 import base58 from 'bs58';
@@ -21,6 +22,9 @@ export interface KeyPair {
   publicKey: Uint8Array;
   secretKey: Uint8Array;
 }
+
+export const MICRO_RTC_PER_RTC = 1_000_000;
+export const RTC_DECIMALS = 6;
 
 /**
  * Generate a new Ed25519 key pair
@@ -37,6 +41,9 @@ export function generateKeyPair(): KeyPair {
  * Create key pair from secret key bytes
  */
 export function keyPairFromSecretKey(secretKey: Uint8Array): KeyPair {
+  if (secretKey.length !== 64) {
+    throw new Error('Invalid secret key length: expected 64 bytes');
+  }
   const pair = nacl.sign.keyPair.fromSecretKey(secretKey);
   return {
     publicKey: pair.publicKey,
@@ -45,21 +52,42 @@ export function keyPairFromSecretKey(secretKey: Uint8Array): KeyPair {
 }
 
 /**
- * Create key pair from hex-encoded secret key
- * Validates hex format strictly
- * Note: Ed25519 secret key is 64 bytes (128 hex chars) - includes seed + public key
+ * Create key pair from a 32-byte Ed25519 seed
+ */
+export function keyPairFromSeed(seed: Uint8Array): KeyPair {
+  if (seed.length !== 32) {
+    throw new Error('Invalid seed length: expected 32 bytes');
+  }
+  const pair = nacl.sign.keyPair.fromSeed(seed);
+  return {
+    publicKey: pair.publicKey,
+    secretKey: pair.secretKey,
+  };
+}
+
+/**
+ * Create key pair from hex-encoded seed or secret key.
+ * Accepts:
+ * - 64 hex chars (32-byte seed)
+ * - 128 hex chars (64-byte secret key)
  */
 export function keyPairFromHex(hex: string): KeyPair {
-  // Strict hex validation - Ed25519 secret key is 64 bytes = 128 hex chars
   const cleanHex = hex.trim().replace(/^0x/, '');
-  if (!/^[0-9a-fA-F]{128}$/.test(cleanHex)) {
-    throw new Error('Invalid secret key: must be 128 hex characters (64 bytes)');
+  if (!/^[0-9a-fA-F]+$/.test(cleanHex)) {
+    throw new Error('Invalid secret key: must be hex-encoded');
   }
-  
-  const secretKey = new Uint8Array(
+
+  if (cleanHex.length !== 64 && cleanHex.length !== 128) {
+    throw new Error('Invalid secret key: must be 64 or 128 hex characters');
+  }
+
+  const bytes = new Uint8Array(
     cleanHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
   );
-  return keyPairFromSecretKey(secretKey);
+
+  return bytes.length === 32
+    ? keyPairFromSeed(bytes)
+    : keyPairFromSecretKey(bytes);
 }
 
 /**
@@ -72,10 +100,12 @@ export function keyPairFromBase58(base58Str: string): KeyPair {
   }
   
   const secretKey = base58.decode(base58Str);
-  if (secretKey.length !== 64) {
+  if (secretKey.length !== 32 && secretKey.length !== 64) {
     throw new Error('Invalid secret key length');
   }
-  return keyPairFromSecretKey(secretKey);
+  return secretKey.length === 32
+    ? keyPairFromSeed(secretKey)
+    : keyPairFromSecretKey(secretKey);
 }
 
 /**
@@ -92,6 +122,49 @@ export function publicKeyToHex(publicKey: Uint8Array): string {
  */
 export function publicKeyToBase58(publicKey: Uint8Array): string {
   return base58.encode(publicKey);
+}
+
+async function sha256Bytes(data: Uint8Array): Promise<Uint8Array> {
+  if (typeof (Crypto as any).digest === 'function') {
+    const digest = await (Crypto as any).digest(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      data
+    );
+    return new Uint8Array(digest);
+  }
+
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const digest = await crypto.subtle.digest('SHA-256', data);
+    return new Uint8Array(digest);
+  }
+
+  throw new Error('No secure SHA-256 implementation available');
+}
+
+/**
+ * Derive the live RustChain RTC address from an Ed25519 public key.
+ * Format: RTC + sha256(pubkey_bytes)[:40]
+ */
+export async function publicKeyToRtcAddress(publicKey: Uint8Array): Promise<string> {
+  const digest = await sha256Bytes(publicKey);
+  const digestHex = Array.from(digest)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+  return `RTC${digestHex.slice(0, 40)}`;
+}
+
+/**
+ * Derive the live RustChain RTC address from a hex-encoded public key.
+ */
+export async function publicKeyHexToRtcAddress(publicKeyHex: string): Promise<string> {
+  const cleanHex = publicKeyHex.trim().replace(/^0x/, '');
+  if (!/^[0-9a-fA-F]{64}$/.test(cleanHex)) {
+    throw new Error('Invalid public key: must be 64 hex characters');
+  }
+  const publicKey = new Uint8Array(
+    cleanHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
+  );
+  return publicKeyToRtcAddress(publicKey);
 }
 
 /**
@@ -164,11 +237,9 @@ export interface SigningPayload {
   from: string;
   to: string;
   amount: number;
-  fee: number;
   nonce: number;
-  timestamp: string;
   memo?: string;
-  chain_id: string;
+  chain_id?: string;
 }
 
 /**
@@ -180,18 +251,30 @@ export interface SigningPayload {
  */
 export function createSigningPayload(
   txData: Omit<SigningPayload, 'chain_id'>,
-  chainId: string
+  chainId?: string
 ): SigningPayload {
-  return {
+  const payload: SigningPayload = {
     from: txData.from,
     to: txData.to,
     amount: txData.amount,
-    fee: txData.fee,
     nonce: txData.nonce,
-    timestamp: txData.timestamp,
     memo: txData.memo,
-    chain_id: chainId,
   };
+  if (chainId) {
+    payload.chain_id = chainId;
+  }
+  return payload;
+}
+
+function canonicalizeSigningPayload(payload: SigningPayload): string {
+  const canonical: Record<string, string | number> = {};
+  for (const key of Object.keys(payload).sort()) {
+    const value = payload[key as keyof SigningPayload];
+    if (value !== undefined) {
+      canonical[key] = value;
+    }
+  }
+  return JSON.stringify(canonical);
 }
 
 /**
@@ -204,11 +287,11 @@ export function createSigningPayload(
  */
 export function signTransactionPayload(
   payload: Omit<SigningPayload, 'chain_id'>,
-  chainId: string,
+  chainId: string | undefined,
   secretKey: Uint8Array
 ): string {
   const signingData = createSigningPayload(payload, chainId);
-  const payloadString = JSON.stringify(signingData);
+  const payloadString = canonicalizeSigningPayload(signingData);
   return signString(payloadString, secretKey);
 }
 
@@ -223,12 +306,12 @@ export function signTransactionPayload(
  */
 export function verifyTransactionPayload(
   payload: Omit<SigningPayload, 'chain_id'>,
-  chainId: string,
+  chainId: string | undefined,
   signature: string,
   publicKey: Uint8Array
 ): boolean {
   const signingData = createSigningPayload(payload, chainId);
-  const payloadString = JSON.stringify(signingData);
+  const payloadString = canonicalizeSigningPayload(signingData);
   return verifySignatureHex(payloadString, signature, publicKey);
 }
 
@@ -342,7 +425,7 @@ export function validateTransactionAmount(amount: string): NumericValidationResu
     min: 0,
     allowZero: false,
     allowNegative: false,
-    maxDecimals: 8, // Standard crypto precision
+    maxDecimals: RTC_DECIMALS,
   });
 }
 
@@ -357,8 +440,47 @@ export function validateTransactionFee(fee: string): NumericValidationResult {
     min: 0,
     allowZero: true,
     allowNegative: false,
-    maxDecimals: 8,
+    maxDecimals: RTC_DECIMALS,
   });
+}
+
+export interface MicrounitValidationResult extends NumericValidationResult {
+  units?: number;
+}
+
+/**
+ * Parse an RTC amount string into exact micro-RTC units.
+ */
+export function parseRtcAmountToMicrounits(
+  value: string,
+  options: { allowZero?: boolean } = {}
+): MicrounitValidationResult {
+  const validation = validateNumericString(value, {
+    min: 0,
+    allowZero: options.allowZero ?? false,
+    allowNegative: false,
+    maxDecimals: RTC_DECIMALS,
+  });
+
+  if (!validation.valid) {
+    return validation;
+  }
+
+  const trimmed = value.trim();
+  const [wholePart, fractionalPart = ''] = trimmed.split('.');
+  const paddedFraction = (fractionalPart + '0'.repeat(RTC_DECIMALS)).slice(0, RTC_DECIMALS);
+  const wholeUnits = Number(wholePart) * MICRO_RTC_PER_RTC;
+  const fractionalUnits = Number(paddedFraction || '0');
+  const units = wholeUnits + fractionalUnits;
+
+  if (!Number.isSafeInteger(units)) {
+    return { valid: false, error: 'Amount exceeds safe integer range' };
+  }
+
+  return {
+    ...validation,
+    units,
+  };
 }
 
 /**
@@ -372,47 +494,28 @@ export async function deriveKeyPairFromMnemonic(
   // Simple derivation using SHA-256 hash of mnemonic + path
   const encoder = new TextEncoder();
   const data = encoder.encode(`${mnemonic}:${derivationPath}`);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = new Uint8Array(hashBuffer);
+  const hashArray = await sha256Bytes(data);
 
   // Use first 32 bytes as seed for key pair
   const seed = hashArray.slice(0, 32);
-
-  // Hash again to ensure uniform distribution
-  const seedHashBuffer = await crypto.subtle.digest('SHA-256', seed);
-  const seedHashArray = new Uint8Array(seedHashBuffer);
-
-  return keyPairFromSecretKey(seedHashArray);
+  return keyPairFromSeed(seed);
 }
 
 /**
  * Validate wallet address format
  * 
  * @param address - Wallet address to validate
- * @returns true if valid Base58 address
+ * @returns true if valid RTC address
  */
 export function isValidAddress(address: string): boolean {
   if (!address || typeof address !== 'string') {
     return false;
   }
-  
-  // Check minimum length (Base58 encoded 32-byte public key is ~43-44 chars)
-  if (address.length < 40) {
-    return false;
-  }
-  
-  // Check Base58 format (no 0, O, I, l)
-  if (!/^[1-9A-HJ-NP-Za-km-z]+$/.test(address)) {
-    return false;
-  }
-  
-  try {
-    const decoded = base58.decode(address);
-    // Valid Ed25519 public key is 32 bytes
-    return decoded.length === 32;
-  } catch {
-    return false;
-  }
+  return /^RTC[0-9a-fA-F]{40}$/.test(address.trim());
+}
+
+export function isValidChainId(chainId: string): boolean {
+  return /^[A-Za-z0-9._-]{1,64}$/.test(chainId);
 }
 
 /**

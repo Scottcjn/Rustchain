@@ -138,86 +138,15 @@ async function webCryptoAesGcmDecrypt(
   }
 }
 
-/**
- * Fallback AES-GCM encryption using hash-based construction
- * Note: This is NOT secure for production use, only for environments without Web Crypto
- */
-async function fallbackAesGcmEncrypt(
-  plaintext: Uint8Array,
-  key: Uint8Array,
-  iv: Uint8Array
-): Promise<{ ciphertext: Uint8Array; authTag: Uint8Array }> {
-  // For React Native without Web Crypto, use a hash-based construction
-  // This is NOT secure for production - use Web Crypto or native modules
-  const combined = new Uint8Array(plaintext.length + key.length + iv.length);
-  combined.set(plaintext);
-  combined.set(key, plaintext.length);
-  combined.set(iv, plaintext.length + key.length);
-
-  const hashHex = await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    bytesToHex(combined)
+function requireSecureAesRuntime(): never {
+  throw new Error(
+    'AES-GCM requires a secure crypto runtime. This build no longer falls back to hash/XOR storage.'
   );
-
-  const hashBytes = hexToBytes(hashHex);
-  const ciphertext = new Uint8Array(plaintext.length);
-  
-  // XOR plaintext with hash
-  for (let i = 0; i < plaintext.length; i++) {
-    ciphertext[i] = plaintext[i] ^ hashBytes[i % hashBytes.length];
-  }
-
-  // Auth tag is first 16 bytes of hash
-  const authTag = hashBytes.slice(0, GCM_TAG_SIZE);
-
-  return { ciphertext, authTag };
-}
-
-/**
- * Fallback AES-GCM decryption
- */
-async function fallbackAesGcmDecrypt(
-  ciphertext: Uint8Array,
-  key: Uint8Array,
-  iv: Uint8Array,
-  authTag: Uint8Array
-): Promise<Uint8Array> {
-  // Recreate the combined data
-  const combined = new Uint8Array(ciphertext.length + key.length + iv.length);
-  combined.set(ciphertext);
-  combined.set(key, ciphertext.length);
-  combined.set(iv, ciphertext.length + key.length);
-
-  const hashHex = await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    bytesToHex(combined)
-  );
-
-  const hashBytes = hexToBytes(hashHex);
-  
-  // Verify auth tag
-  const expectedAuthTag = hashBytes.slice(0, GCM_TAG_SIZE);
-  let valid = authTag.length === expectedAuthTag.length;
-  for (let i = 0; i < authTag.length && valid; i++) {
-    if (authTag[i] !== expectedAuthTag[i]) valid = false;
-  }
-
-  if (!valid) {
-    throw new Error('Authentication failed: invalid auth tag');
-  }
-
-  // XOR ciphertext with hash
-  const plaintext = new Uint8Array(ciphertext.length);
-  for (let i = 0; i < ciphertext.length; i++) {
-    plaintext[i] = ciphertext[i] ^ hashBytes[i % hashBytes.length];
-  }
-
-  return plaintext;
 }
 
 /**
  * AES-GCM encryption
- * Uses Web Crypto API when available, falls back to hash-based construction
+ * Uses Web Crypto API when available. Refuses insecure fallback modes.
  *
  * @param plaintext - Data to encrypt
  * @param key - 256-bit encryption key
@@ -241,14 +170,13 @@ export async function aesGcmEncrypt(
 
   if (hasWebCrypto()) {
     return webCryptoAesGcmEncrypt(plaintext, key, iv);
-  } else {
-    return fallbackAesGcmEncrypt(plaintext, key, iv);
   }
+  return requireSecureAesRuntime();
 }
 
 /**
  * AES-GCM decryption
- * Uses Web Crypto API when available, falls back to hash-based construction
+ * Uses Web Crypto API when available. Refuses insecure fallback modes.
  *
  * @param ciphertext - Encrypted data
  * @param key - 256-bit encryption key
@@ -279,9 +207,8 @@ export async function aesGcmDecrypt(
 
   if (hasWebCrypto()) {
     return webCryptoAesGcmDecrypt(ciphertext, key, iv, authTag);
-  } else {
-    return fallbackAesGcmDecrypt(ciphertext, key, iv, authTag);
   }
+  return requireSecureAesRuntime();
 }
 
 /**
