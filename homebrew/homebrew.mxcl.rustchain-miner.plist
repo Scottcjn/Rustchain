@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>homebrew.mxcl.rustchain-miner</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>OPT_PREFIX/opt/rustchain-miner/bin/rustchain-miner</string>
+        <string>--wallet</string>
+        <string>YOUR_WALLET_ID</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>$HOME</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$HOME/Library/Logs/homebrew.mxcl.rustchain-miner.log</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/Library/Logs/homebrew.mxcl.rustchain-miner.err</string>
+    <key>Nice</key>
+    <integer>10</integer>
+</dict>
+</plist>
