@@ -1,0 +1,22 @@
+# Load test results (generated during test runs)
+results/
+*.html
+*-results.json
+locust-report*.html
+locust-results*.json
+# Generated k6 result files (but keep config files)
+k6-*.json
+!k6-config.json
+!k6-scenarios.json
+
+# Environment files (may contain sensitive data)
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# OS files
+.DS_Store
+Thumbs.db

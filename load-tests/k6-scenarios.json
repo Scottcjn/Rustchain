@@ -1,0 +1,118 @@
+{
+  "description": "Pre-configured k6 scenarios for different testing needs",
+  "scenarios": {
+    "quick-smoke": {
+      "description": "Quick 30-second smoke test for CI/CD",
+      "config": {
+        "executor": "constant-vus",
+        "vus": 2,
+        "duration": "30s",
+        "thresholds": {
+          "http_req_duration": ["p(95)<1000"],
+          "http_req_failed": ["rate<0.01"]
+        }
+      },
+      "command": "k6 run --config k6-scenarios.json --scenario quick-smoke k6-load-test.js"
+    },
+    "api-baseline": {
+      "description": "Baseline performance test - 5 minutes at moderate load",
+      "config": {
+        "executor": "constant-vus",
+        "vus": 10,
+        "duration": "5m",
+        "thresholds": {
+          "http_req_duration": ["p(50)<300", "p(95)<1500", "p(99)<3000"],
+          "http_req_failed": ["rate<0.02"]
+        }
+      },
+      "command": "k6 run --config k6-scenarios.json --scenario api-baseline k6-load-test.js"
+    },
+    "load-ramp": {
+      "description": "Gradual load increase test - 10 minutes",
+      "config": {
+        "executor": "ramping-vus",
+        "startVUs": 0,
+        "stages": [
+          { "duration": "2m", "target": 5 },
+          { "duration": "3m", "target": 20 },
+          { "duration": "3m", "target": 50 },
+          { "duration": "2m", "target": 0 }
+        ],
+        "thresholds": {
+          "http_req_duration": ["p(95)<2000"],
+          "http_req_failed": ["rate<0.05"]
+        }
+      },
+      "command": "k6 run --config k6-scenarios.json --scenario load-ramp k6-load-test.js"
+    },
+    "stress-peak": {
+      "description": "Stress test with peak load - 5 minutes",
+      "config": {
+        "executor": "ramping-vus",
+        "startVUs": 0,
+        "stages": [
+          { "duration": "1m", "target": 50 },
+          { "duration": "2m", "target": 100 },
+          { "duration": "1m", "target": 50 },
+          { "duration": "1m", "target": 0 }
+        ],
+        "thresholds": {
+          "http_req_duration": ["p(95)<5000"],
+          "http_req_failed": ["rate<0.10"]
+        }
+      },
+      "command": "k6 run --config k6-scenarios.json --scenario stress-peak k6-load-test.js"
+    },
+    "soak-test": {
+      "description": "Soak/endurance test - 30 minutes at steady load",
+      "config": {
+        "executor": "constant-vus",
+        "vus": 25,
+        "duration": "30m",
+        "thresholds": {
+          "http_req_duration": ["p(95)<2500"],
+          "http_req_failed": ["rate<0.03"]
+        }
+      },
+      "command": "k6 run --config k6-scenarios.json --scenario soak-test k6-load-test.js"
+    },
+    "spike-test": {
+      "description": "Spike test - sudden load increase",
+      "config": {
+        "executor": "ramping-vus",
+        "startVUs": 5,
+        "stages": [
+          { "duration": "1m", "target": 5 },
+          { "duration": "30s", "target": 75 },
+          { "duration": "1m", "target": 75 },
+          { "duration": "30s", "target": 5 },
+          { "duration": "2m", "target": 5 }
+        ],
+        "thresholds": {
+          "http_req_duration": ["p(95)<4000"],
+          "http_req_failed": ["rate<0.15"]
+        }
+      },
+      "command": "k6 run --config k6-scenarios.json --scenario spike-test k6-load-test.js"
+    },
+    "endpoint-health": {
+      "description": "Health-focused test on critical endpoints only",
+      "config": {
+        "executor": "constant-vus",
+        "vus": 5,
+        "duration": "2m",
+        "tags": { "endpoint_focus": "health" },
+        "thresholds": {
+          "health_check_pass": ["rate>0.99"],
+          "http_req_failed": ["rate<0.01"]
+        }
+      },
+      "command": "k6 run --config k6-scenarios.json --scenario endpoint-health k6-load-test.js"
+    }
+  },
+  "options": {
+    "insecureSkipTLSVerify": true,
+    "noConnectionReuse": false,
+    "userAgent": "k6-rustchain-load-test/1.0"
+  }
+}
