@@ -28,7 +28,7 @@
     "@metamask/snaps-sdk": "^3.0.0"
   },
   "devDependencies": {
-    "@metamask/snaps-cli": "^4.0.0",
+    "@metamask/snaps-cli": "^8.4.1",
     "eslint": "^8.0.0"
   },
   "engines": {
