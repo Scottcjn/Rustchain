@@ -22,7 +22,7 @@
     "@nomicfoundation/hardhat-network-helpers": "^1.0.10",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.8",
-    "@nomicfoundation/ignition-core": "^0.15.4",
+    "@nomicfoundation/ignition-core": "^3.0.9",
     "@openzeppelin/contracts": "^5.0.2",
     "@typechain/ethers-v6": "^0.5.1",
     "@typechain/hardhat": "^9.1.0",
