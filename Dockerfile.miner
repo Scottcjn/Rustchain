@@ -13,11 +13,13 @@ ARG MINER_TYPE=linux
 ARG MINER_ARCH=x86_64
 
 # Environment variables
+# ENV WALLET_NAME and NODE_URL are read at runtime by docker-miner-entrypoint.sh
 ENV PYTHONUNBUFFERED=1 \
     WALLET_NAME="" \
     NODE_URL="https://rustchain.org" \
     BLOCK_TIME=600 \
-    MINER_TYPE=${MINER_TYPE}
+    MINER_TYPE=${MINER_TYPE} \
+    MINER_ARCH=${MINER_ARCH}
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
