@@ -25,6 +25,9 @@ import {
 
 /**
  * Network configuration
+ * Environment variables can override default URLs via .env.local:
+ * - EXPO_PUBLIC_RUSTCHAIN_NODE_URL - Custom node URL
+ * - EXPO_PUBLIC_NETWORK - Default network (mainnet/testnet/devnet)
  */
 export enum Network {
   Mainnet = 'mainnet',
@@ -32,7 +35,8 @@ export enum Network {
   Devnet = 'devnet',
 }
 
-export const NETWORK_CONFIG: Record<Network, { rpcUrl: string; explorerUrl: string }> = {
+// Default network configuration
+const DEFAULT_NETWORK_CONFIG: Record<Network, { rpcUrl: string; explorerUrl: string }> = {
   [Network.Mainnet]: {
     rpcUrl: 'https://rustchain.org',
     explorerUrl: 'https://rustchain.org/explorer',
@@ -46,6 +50,45 @@ export const NETWORK_CONFIG: Record<Network, { rpcUrl: string; explorerUrl: stri
     explorerUrl: 'https://devnet-explorer.rustchain.org',
   },
 };
+
+/**
+ * Get network configuration with environment variable overrides
+ */
+export function getNetworkConfig(network: Network = Network.Mainnet) {
+  // Check for custom node URL from environment
+  const customUrl = process.env.EXPO_PUBLIC_RUSTCHAIN_NODE_URL;
+  
+  if (customUrl && network === Network.Mainnet) {
+    return {
+      rpcUrl: customUrl,
+      explorerUrl: DEFAULT_NETWORK_CONFIG[network].explorerUrl,
+    };
+  }
+  
+  return DEFAULT_NETWORK_CONFIG[network];
+}
+
+export const NETWORK_CONFIG: Record<Network, { rpcUrl: string; explorerUrl: string }> = {
+  [Network.Mainnet]: getNetworkConfig(Network.Mainnet),
+  [Network.Testnet]: getNetworkConfig(Network.Testnet),
+  [Network.Devnet]: getNetworkConfig(Network.Devnet),
+};
+
+/**
+ * Get the configured default network from environment
+ */
+export function getDefaultNetwork(): Network {
+  const envNetwork = process.env.EXPO_PUBLIC_NETWORK;
+  switch (envNetwork) {
+    case 'testnet':
+      return Network.Testnet;
+    case 'devnet':
+      return Network.Devnet;
+    case 'mainnet':
+    default:
+      return Network.Mainnet;
+  }
+}
 
 /**
  * Balance response from API
@@ -129,8 +172,8 @@ export class RustChainClient {
   private timeout: number;
   private chainId: string | null = null;
 
-  constructor(network: Network = Network.Mainnet, timeout: number = 30000) {
-    this.baseUrl = NETWORK_CONFIG[network].rpcUrl;
+  constructor(network: Network = getDefaultNetwork(), timeout: number = 30000) {
+    this.baseUrl = getNetworkConfig(network).rpcUrl;
     this.timeout = timeout;
   }
 
