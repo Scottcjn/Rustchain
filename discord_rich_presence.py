@@ -19,35 +19,40 @@ import os
 import sys
 import time
 import json
+from typing import Any, Dict, List, Optional
+
 import requests
 from datetime import datetime, timedelta
 from pypresence import Presence
 
 # RustChain API endpoint (self-signed cert requires verification=False)
-RUSTCHAIN_API = "https://rustchain.org"
+RUSTCHAIN_API: str = "https://rustchain.org"
 
 # Local state file for tracking earnings
-STATE_FILE = os.path.expanduser("~/.rustchain_discord_state.json")
+STATE_FILE: str = os.path.expanduser("~/.rustchain_discord_state.json")
 
 # Default update interval (seconds)
-UPDATE_INTERVAL = 60
+UPDATE_INTERVAL: int = 60
 
-def load_state():
+
+def load_state() -> Dict[str, Any]:
     """Load previous state from file."""
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, 'r') as f:
-                return json.load(f)
-        except:
+                return json.load(f)  # type: ignore[no-any-return]
+        except Exception:
             pass
     return {}
 
-def save_state(state):
+
+def save_state(state: Dict[str, Any]) -> None:
     """Save current state to file."""
     with open(STATE_FILE, 'w') as f:
         json.dump(state, f, indent=2)
 
-def get_miner_info(miner_id):
+
+def get_miner_info(miner_id: str) -> Optional[Dict[str, Any]]:
     """Get miner information from RustChain API."""
     try:
         response = requests.get(
@@ -57,12 +62,13 @@ def get_miner_info(miner_id):
             timeout=10
         )
         response.raise_for_status()
-        return response.json()
+        return response.json()  # type: ignore[no-any-return]
     except Exception as e:
         print(f"Error getting balance: {e}")
         return None
 
-def get_miners_list():
+
+def get_miners_list() -> List[Dict[str, Any]]:
     """Get list of all active miners."""
     try:
         response = requests.get(
@@ -71,12 +77,13 @@ def get_miners_list():
             timeout=10
         )
         response.raise_for_status()
-        return response.json()
+        return response.json()  # type: ignore[no-any-return]
     except Exception as e:
         print(f"Error getting miners list: {e}")
         return []
 
-def get_epoch_info():
+
+def get_epoch_info() -> Optional[Dict[str, Any]]:
     """Get current epoch information."""
     try:
         response = requests.get(
@@ -85,12 +92,13 @@ def get_epoch_info():
             timeout=10
         )
         response.raise_for_status()
-        return response.json()
+        return response.json()  # type: ignore[no-any-return]
     except Exception as e:
         print(f"Error getting epoch info: {e}")
         return None
 
-def get_node_health():
+
+def get_node_health() -> Optional[Dict[str, Any]]:
     """Get node health information."""
     try:
         response = requests.get(
@@ -99,12 +107,13 @@ def get_node_health():
             timeout=10
         )
         response.raise_for_status()
-        return response.json()
+        return response.json()  # type: ignore[no-any-return]
     except Exception as e:
         print(f"Error getting health: {e}")
         return None
 
-def calculate_rtc_earned_today(current_balance, state):
+
+def calculate_rtc_earned_today(current_balance: float, state: Dict[str, Any]) -> float:
     """Calculate RTC earned since last state update."""
     if not state:
         return 0.0
@@ -115,7 +124,8 @@ def calculate_rtc_earned_today(current_balance, state):
     # Don't show negative earnings (withdrawals)
     return max(0.0, earned)
 
-def calculate_miner_uptime(last_attest_timestamp, state):
+
+def calculate_miner_uptime(last_attest_timestamp: Optional[float], state: Dict[str, Any]) -> str:
     """Calculate miner uptime based on last attestation."""
     if not last_attest_timestamp:
         return "Unknown"
@@ -134,7 +144,8 @@ def calculate_miner_uptime(last_attest_timestamp, state):
     else:
         return "Offline"
 
-def get_hardware_display(hardware_type):
+
+def get_hardware_display(hardware_type: str) -> str:
     """Get a short display string for hardware type."""
     if "G4" in hardware_type:
         return "🍎 PowerPC G4"
@@ -149,14 +160,19 @@ def get_hardware_display(hardware_type):
     else:
         return "💻 " + hardware_type.split()[0]
 
-def format_presence_data(miner_data, balance_data, epoch_data):
+
+def format_presence_data(
+    miner_data: Dict[str, Any],
+    balance_data: Optional[Dict[str, Any]],
+    epoch_data: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
     """Format data for Discord Rich Presence."""
     hardware_type = miner_data.get('hardware_type', 'Unknown')
     antiquity_multiplier = miner_data.get('antiquity_multiplier', 1.0)
     last_attest = miner_data.get('last_attest', 0)
 
     # Current balance
-    balance = balance_data.get('amount_rtc', 0.0)
+    balance = balance_data.get('amount_rtc', 0.0) if balance_data else 0.0
 
     # Hardware icon and short name
     hw_display = get_hardware_display(hardware_type)
@@ -193,7 +209,7 @@ def format_presence_data(miner_data, balance_data, epoch_data):
         'uptime': uptime
     }
 
-def main():
+def main() -> None:
     """Main loop for Discord Rich Presence."""
     import argparse
 
@@ -203,8 +219,8 @@ def main():
     parser.add_argument('--interval', type=int, default=UPDATE_INTERVAL, help='Update interval in seconds')
     args = parser.parse_args()
 
-    miner_id = args.miner_id
-    client_id = args.client_id
+    miner_id: str = args.miner_id
+    client_id: Optional[str] = args.client_id
 
     print(f"🍎 RustChain Discord Rich Presence")
     print(f"Miner ID: {miner_id}")
@@ -221,7 +237,7 @@ def main():
         client_id = None
 
     # Initialize Discord Presence
-    rpc = None
+    rpc: Optional[Presence] = None
     if client_id:
         try:
             rpc = Presence(client_id)
@@ -233,14 +249,14 @@ def main():
             rpc = None
 
     # Load previous state
-    state = load_state()
+    state: Dict[str, Any] = load_state()
 
     # Main loop
     try:
         while True:
             # Get miner info from list to find hardware type
             miners_list = get_miners_list()
-            miner_data = None
+            miner_data: Optional[Dict[str, Any]] = None
             for m in miners_list:
                 if m.get('miner') == miner_id:
                     miner_data = m
@@ -309,7 +325,7 @@ def main():
                     # Try to reconnect
                     try:
                         rpc.connect()
-                    except:
+                    except Exception:
                         pass
 
             # Wait for next update
