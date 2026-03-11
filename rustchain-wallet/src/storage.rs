@@ -227,7 +227,25 @@ impl WalletStorage {
     }
 }
 
-/// Derive an AES-256 key from a password using PBKDF2
+/// Derive a 256-bit AES key from a password using PBKDF2-HMAC-SHA256.
+///
+/// # Key Derivation
+/// - **Algorithm**: PBKDF2 with HMAC-SHA256
+/// - **Iterations**: 100,000 (OWASP recommended minimum for SHA256)
+/// - **Output**: 32-byte key suitable for AES-256-GCM
+///
+/// # Security Rationale
+/// High iteration count provides brute-force resistance. Each iteration
+/// increases computational cost for attackers while remaining acceptable
+/// for legitimate users (~100ms on modern hardware).
+///
+/// # Arguments
+/// * `password` - User-provided password (UTF-8 bytes)
+/// * `salt` - Random 32-byte salt (prevents rainbow table attacks)
+///
+/// # Returns
+/// * `Ok([u8; 32])` - Derived encryption key
+/// * `Err(WalletError)` - Internal derivation error
 fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32]> {
     use pbkdf2::pbkdf2_hmac;
     use sha2::Sha256;
@@ -242,31 +260,59 @@ fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32]> {
     Ok(key)
 }
 
-/// Encrypt data using AES-256-GCM
+/// Encrypt plaintext using AES-256-GCM authenticated encryption.
+///
+/// # Algorithm
+/// AES-256 in GCM mode provides both confidentiality and integrity:
+/// - **Encryption**: AES-256 counter mode
+/// - **Authentication**: GHAS (Galois Hash) produces 128-bit auth tag
+///
+/// # Arguments
+/// * `key` - 32-byte AES-256 key
+/// * `nonce` - 12-byte nonce (must be unique per key)
+/// * `plaintext` - Data to encrypt
+///
+/// # Returns
+/// * `Ok(Vec<u8>)` - Ciphertext (includes appended auth tag)
+/// * `Err(WalletError::Encryption)` - Encryption failure
 fn encrypt_aes_gcm(key: &[u8; 32], nonce: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
     use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
-    
+
     let cipher = Aes256Gcm::new_from_slice(key)
         .map_err(|e| WalletError::Encryption(e.to_string()))?;
-    
+
     let nonce = Nonce::from_slice(nonce);
     let ciphertext = cipher.encrypt(nonce, plaintext)
         .map_err(|e| WalletError::Encryption(e.to_string()))?;
-    
+
     Ok(ciphertext)
 }
 
-/// Decrypt data using AES-256-GCM
+/// Decrypt ciphertext using AES-256-GCM with authentication verification.
+///
+/// # Security Properties
+/// - **Authenticated decryption**: Fails if auth tag doesn't match
+/// - **Constant-time**: Rejection doesn't leak plaintext information
+/// - **Tamper detection**: Any modification causes decryption failure
+///
+/// # Arguments
+/// * `key` - 32-byte AES-256 key
+/// * `nonce` - 12-byte nonce (same as used for encryption)
+/// * `ciphertext` - Encrypted data with appended auth tag
+///
+/// # Returns
+/// * `Ok(Vec<u8>)` - Decrypted plaintext
+/// * `Err(WalletError::Decryption)` - Invalid password or corrupted data
 fn decrypt_aes_gcm(key: &[u8; 32], nonce: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>> {
     use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
-    
+
     let cipher = Aes256Gcm::new_from_slice(key)
         .map_err(|e| WalletError::Decryption(e.to_string()))?;
-    
+
     let nonce = Nonce::from_slice(nonce);
     let plaintext = cipher.decrypt(nonce, ciphertext)
         .map_err(|_| WalletError::Decryption("Invalid password or corrupted data".to_string()))?;
-    
+
     Ok(plaintext)
 }
 

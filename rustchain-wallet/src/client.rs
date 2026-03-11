@@ -139,7 +139,33 @@ impl RustChainClient {
         }
     }
 
-    /// Make an RPC call
+    /// Make a JSON-RPC 2.0 call to the RustChain network.
+    ///
+    /// # Request Format
+    /// ```json
+    /// {
+    ///   "jsonrpc": "2.0",
+    ///   "method": "<method>",
+    ///   "params": <params>,
+    ///   "id": 1
+    /// }
+    /// ```
+    ///
+    /// # Response Handling
+    /// 1. **Network error**: HTTP failure → `WalletError::Network`
+    /// 2. **Status error**: Non-2xx response → `WalletError::Network`
+    /// 3. **Parse error**: Invalid JSON → `WalletError::Network`
+    /// 4. **RPC error**: `error` field present → `WalletError::Rpc`
+    /// 5. **Missing result**: No `result` field → `WalletError::Rpc`
+    ///
+    /// # Arguments
+    /// * `method` - RPC method name (e.g., "getBalance", "submitTransaction")
+    /// * `params` - Method parameters as JSON value
+    ///
+    /// # Returns
+    /// * `Ok(serde_json::Value)` - The `result` field from RPC response
+    /// * `Err(WalletError::Network)` - HTTP/transport failure
+    /// * `Err(WalletError::Rpc)` - RPC-level error or missing result
     async fn rpc_call(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
         let request = json!({
             "jsonrpc": "2.0",

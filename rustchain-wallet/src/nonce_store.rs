@@ -141,7 +141,31 @@ impl NonceStore {
         self.highest_nonce.clear();
     }
 
-    /// Merge another nonce store into this one
+    /// Merge another nonce store into this one (union of used nonces).
+    ///
+    /// # Merge Semantics
+    /// - **Used nonces**: Union of both stores (all used nonces preserved)
+    /// - **Highest nonce**: Takes maximum value per address
+    ///
+    /// # Use Cases
+    /// - **Wallet migration**: Combine nonce history from old/new storage
+    /// - **Multi-device sync**: Merge nonce tracking across devices
+    /// - **Backup restoration**: Merge restored data with current state
+    ///
+    /// # Arguments
+    /// * `other` - NonceStore to merge into self
+    ///
+    /// # Example
+    /// ```ignore
+    /// let mut store1 = NonceStore::new();
+    /// store1.mark_used("addr1", 0);
+    ///
+    /// let mut store2 = NonceStore::new();
+    /// store2.mark_used("addr1", 1);
+    ///
+    /// store1.merge(&store2);
+    /// // Now store1 has nonces 0 and 1 for addr1
+    /// ```
     pub fn merge(&mut self, other: &NonceStore) {
         for (address, nonces) in &other.used_nonces {
             let used = self.used_nonces
