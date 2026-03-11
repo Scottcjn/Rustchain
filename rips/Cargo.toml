@@ -45,7 +45,7 @@ name = "rustchain-miner"
 path = "src/bin/miner.rs"
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.8"
 
 [[bench]]
 name = "entropy_bench"
