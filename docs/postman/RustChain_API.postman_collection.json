@@ -1,0 +1,770 @@
+{
+  "info": {
+    "_postman_id": "rustchain-api-1617",
+    "name": "RustChain API - Complete Collection",
+    "description": "Complete Postman collection for RustChain Node API (Issue #1617)\n\nThis collection includes:\n- All public endpoints (health, epoch, miners, stats, fee pool, etc.)\n- All authenticated endpoints (attestation, transfers, withdrawals)\n- Pre-configured environment variables\n- Example responses for each endpoint\n- Request grouping by functionality\n\nBase URL: https://rustchain.org\nAPI Version: 2.2.1-rip200",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://rustchain.org",
+      "type": "string"
+    },
+    {
+      "key": "miner_id",
+      "value": "YOUR_MINER_ID",
+      "type": "string"
+    },
+    {
+      "key": "admin_key",
+      "value": "YOUR_ADMIN_KEY",
+      "type": "string"
+    },
+    {
+      "key": "wallet_address",
+      "value": "YOUR_WALLET_ADDRESS",
+      "type": "string"
+    },
+    {
+      "key": "recipient_address",
+      "value": "RECIPIENT_WALLET_ADDRESS",
+      "type": "string"
+    },
+    {
+      "key": "tx_payload",
+      "value": "BASE64_ENCODED_TX_PAYLOAD",
+      "type": "string"
+    },
+    {
+      "key": "signature",
+      "value": "BASE64_ED25519_SIGNATURE",
+      "type": "string"
+    },
+    {
+      "key": "attestation_proof",
+      "value": "ATTESTATION_PROOF_JSON",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "noauth"
+  },
+  "item": [
+    {
+      "name": "01_Health_Status",
+      "description": "Node health, readiness, and status endpoints",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Returns node health status, uptime, version, and database status."
+          },
+          "response": [
+            {
+              "name": "Health OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"ok\": true,\n  \"uptime_s\": 58480,\n  \"version\": \"2.2.1-rip200\",\n  \"backup_age_hours\": 13.65,\n  \"db_rw\": true,\n  \"tip_age_slots\": 0\n}",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{base_url}}/health"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Readiness Probe",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/ready",
+              "host": ["{{base_url}}"],
+              "path": ["ready"]
+            },
+            "description": "Indicates if the node is fully synced and ready to serve traffic."
+          },
+          "response": [
+            {
+              "name": "Ready",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"ready\": true\n}",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{base_url}}/ready"
+              }
+            },
+            {
+              "name": "Not Ready",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"ready\": false\n}",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{base_url}}/ready"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02_Epoch_Network",
+      "description": "Epoch information and network statistics",
+      "item": [
+        {
+          "name": "Current Epoch",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/epoch",
+              "host": ["{{base_url}}"],
+              "path": ["epoch"]
+            },
+            "description": "Returns current epoch, slot, enrolled miners, and epoch POT."
+          },
+          "response": [
+            {
+              "name": "Epoch Info",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"epoch\": 91,\n  \"slot\": 13227,\n  \"enrolled_miners\": 20,\n  \"blocks_per_epoch\": 144,\n  \"epoch_pot\": 1.5,\n  \"total_supply_rtc\": 8388608\n}",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{base_url}}/epoch"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Network Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/stats",
+              "host": ["{{base_url}}"],
+              "path": ["api", "stats"]
+            },
+            "description": "Returns overall network statistics including total blocks and transactions."
+          },
+          "response": [
+            {
+              "name": "Network Stats",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"total_blocks\": 150000,\n  \"total_transactions\": 1205000\n}",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{base_url}}/api/stats"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Active Miners",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/miners",
+              "host": ["{{base_url}}"],
+              "path": ["api", "miners"]
+            },
+            "description": "Returns list of active miners with attestation data."
+          },
+          "response": [
+            {
+              "name": "Miners List",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "[\n  {\n    \"miner_id\": \"eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC\",\n    \"attested\": true,\n    \"device_family\": \"PowerPC\",\n    \"device_arch\": \"G4\",\n    \"hardware_type\": \"PowerPC G4 (Vintage)\",\n    \"antiquity_multiplier\": 2.5,\n    \"entropy_score\": 0.0,\n    \"last_attest\": 1770112912\n  },\n  {\n    \"miner_id\": \"g5-selena-179\",\n    \"attested\": true,\n    \"device_family\": \"PowerPC\",\n    \"device_arch\": \"G5\",\n    \"hardware_type\": \"PowerPC G5 (Vintage)\",\n    \"antiquity_multiplier\": 2.0,\n    \"entropy_score\": 0.0,\n    \"last_attest\": 1770112865\n  }\n]",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{base_url}}/api/miners"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hall of Fame",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/hall_of_fame",
+              "host": ["{{base_url}}"],
+              "path": ["api", "hall_of_fame"]
+            },
+            "description": "Leaderboard for 5 categories of miners/participants."
+          },
+          "response": [
+            {
+              "name": "Hall of Fame",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"top_miners\": [\n    {\n      \"rank\": 1,\n      \"miner_id\": \"eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC\",\n      \"category\": \"vintage_computing\",\n      \"score\": 450.5,\n      \"blocks_mined\": 125\n    }\n  ],\n  \"categories\": [\n    \"vintage_computing\",\n    \"antiquity_champion\",\n    \"entropy_master\",\n    \"block_producer\",\n    \"community_contributor\"\n  ]\n}",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{base_url}}/api/hall_of_fame"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03_Fee_Pool",
+      "description": "RIP-301 Fee Pool statistics and management",
+      "item": [
+        {
+          "name": "Fee Pool Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/fee_pool",
+              "host": ["{{base_url}}"],
+              "path": ["api", "fee_pool"]
+            },
+            "description": "RIP-301 fee pool statistics (fees recycled to mining pool)."
+          },
+          "response": [
+            {
+              "name": "Fee Pool Info",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"description\": \"Fee Pool Statistics\",\n  \"destination\": \"founder_community\",\n  \"destination_balance_rtc\": 83246.13,\n  \"rip\": 301,\n  \"total_fee_events\": 0,\n  \"total_fees_collected_rtc\": 0,\n  \"withdrawal_fee_rtc\": 0.01\n}",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{base_url}}/api/fee_pool"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04_Wallet_Balance",
+      "description": "Wallet balance and lottery eligibility endpoints",
+      "item": [
+        {
+          "name": "Miner Balance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/balance?miner_id={{miner_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["balance"],
+              "query": [
+                {
+                  "key": "miner_id",
+                  "value": "{{miner_id}}",
+                  "description": "Miner ID or public key"
+                }
+              ]
+            },
+            "description": "Returns the RTC balance for a specific miner ID."
+          },
+          "response": [
+            {
+              "name": "Balance Response",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"balance\": 150.5,\n  \"miner_id\": \"eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC\",\n  \"amount_i64\": 150500000\n}",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{base_url}}/balance?miner_id={{miner_id}}"
+              }
+            },
+            {
+              "name": "Miner Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"error\": \"MINER_NOT_FOUND\",\n  \"message\": \"Unknown miner ID\"\n}",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{base_url}}/balance?miner_id={{miner_id}}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lottery Eligibility",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/lottery/eligibility?miner_id={{miner_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["lottery", "eligibility"],
+              "query": [
+                {
+                  "key": "miner_id",
+                  "value": "{{miner_id}}",
+                  "description": "Miner ID or public key"
+                }
+              ]
+            },
+            "description": "Checks if a miner is eligible for the current epoch block lottery."
+          },
+          "response": [
+            {
+              "name": "Eligible",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"eligible\": true,\n  \"reason\": \"attested_and_enrolled\",\n  \"rotation_size\": 20,\n  \"slot\": 13227,\n  \"epoch\": 91\n}",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{base_url}}/lottery/eligibility?miner_id={{miner_id}}"
+              }
+            },
+            {
+              "name": "Not Eligible",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"eligible\": false,\n  \"reason\": \"not_attested\",\n  \"rotation_size\": 20,\n  \"slot\": 13227\n}",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{base_url}}/lottery/eligibility?miner_id={{miner_id}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05_Explorer",
+      "description": "Block explorer and web interfaces",
+      "item": [
+        {
+          "name": "Block Explorer",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/explorer",
+              "host": ["{{base_url}}"],
+              "path": ["explorer"]
+            },
+            "description": "Returns the HTML page for the block explorer."
+          },
+          "response": [
+            {
+              "name": "Explorer HTML",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "html",
+              "body": "<!DOCTYPE html>\n<html>\n<head>\n  <title>RustChain Block Explorer</title>\n</head>\n<body>\n  <h1>RustChain Block Explorer</h1>\n  <div>Current Epoch: 91</div>\n  <div>Current Slot: 13227</div>\n</body>\n</html>",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{base_url}}/explorer"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06_Attestation",
+      "description": "Hardware attestation submission (requires admin key)",
+      "item": [
+        {
+          "name": "Submit Attestation",
+          "request": {
+            "auth": {
+              "type": "apikey",
+              "apikey": [
+                {
+                  "key": "key",
+                  "value": "X-Admin-Key",
+                  "type": "string"
+                },
+                {
+                  "key": "value",
+                  "value": "{{admin_key}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"miner_id\": \"{{miner_id}}\",\n  \"proof\": {\n    \"clock_skew\": {\n      \"mean_ppm\": 15.2,\n      \"std_ppm\": 3.1\n    },\n    \"cache_timing\": {\n      \"l1_latency_ns\": 4.2,\n      \"l2_latency_ns\": 12.5\n    },\n    \"simd_identity\": {\n      \"has_avx2\": false,\n      \"has_altivec\": true\n    },\n    \"thermal_entropy\": {\n      \"jitter_score\": 0.85\n    },\n    \"instruction_jitter\": {\n      \"fpu_jitter\": 0.023,\n      \"int_jitter\": 0.018\n    },\n    \"behavioral_heuristics\": {\n      \"vm_detected\": false,\n      \"hypervisor\": null,\n      \"cpu_vendor\": \"Freescale\"\n    }\n  },\n  \"signature\": \"{{signature}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/attest/submit",
+              "host": ["{{base_url}}"],
+              "path": ["attest", "submit"]
+            },
+            "description": "Submit a hardware attestation proof for epoch enrollment.\n\nRequires X-Admin-Key header for authentication."
+          },
+          "response": [
+            {
+              "name": "Attestation Accepted",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"enrolled\": true,\n  \"epoch\": 91,\n  \"multiplier\": 2.5,\n  \"next_settlement_slot\": 13248,\n  \"miner_id\": \"eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC\"\n}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Admin-Key",
+                    "value": "{{admin_key}}"
+                  }
+                ],
+                "url": "{{base_url}}/attest/submit"
+              }
+            },
+            {
+              "name": "Attestation Rejected",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"VM_DETECTED\",\n  \"check_failed\": \"behavioral_heuristics\",\n  \"detail\": \"Hypervisor signature detected in CPUID\"\n}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Admin-Key",
+                    "value": "{{admin_key}}"
+                  }
+                ],
+                "url": "{{base_url}}/attest/submit"
+              }
+            },
+            {
+              "name": "Unauthorized",
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"error\": \"INVALID_ADMIN_KEY\",\n  \"message\": \"Invalid or missing X-Admin-Key header\"\n}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{base_url}}/attest/submit"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07_Wallet_Transfers",
+      "description": "Wallet transfer operations (requires admin key)",
+      "item": [
+        {
+          "name": "Admin Transfer",
+          "request": {
+            "auth": {
+              "type": "apikey",
+              "apikey": [
+                {
+                  "key": "key",
+                  "value": "X-Admin-Key",
+                  "type": "string"
+                },
+                {
+                  "key": "value",
+                  "value": "{{admin_key}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to\": \"{{recipient_address}}\",\n  \"amount\": 10.5,\n  \"memo\": \"Admin transfer for bounty payment\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/wallet/transfer",
+              "host": ["{{base_url}}"],
+              "path": ["wallet", "transfer"]
+            },
+            "description": "Transfer funds directly as admin.\n\nRequires X-Admin-Key header for authentication."
+          },
+          "response": [
+            {
+              "name": "Transfer Success",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"tx_hash\": \"a1b2c3d4e5f6789012345678901234567890abcd\",\n  \"from\": \"founder_community\",\n  \"to\": \"{{recipient_address}}\",\n  \"amount\": 10.5,\n  \"new_balance\": 83235.63,\n  \"timestamp\": 1741708800\n}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Admin-Key",
+                    "value": "{{admin_key}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"to\": \"{{recipient_address}}\",\n  \"amount\": 10.5\n}"
+                },
+                "url": "{{base_url}}/wallet/transfer"
+              }
+            },
+            {
+              "name": "Insufficient Balance",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"error\": \"INSUFFICIENT_BALANCE\",\n  \"message\": \"Not enough RTC for transfer\",\n  \"required\": 1000.0,\n  \"available\": 500.0\n}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Admin-Key",
+                    "value": "{{admin_key}}"
+                  }
+                ],
+                "url": "{{base_url}}/wallet/transfer"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Signed Transfer",
+          "request": {
+            "auth": {
+              "type": "apikey",
+              "apikey": [
+                {
+                  "key": "key",
+                  "value": "X-Admin-Key",
+                  "type": "string"
+                },
+                {
+                  "key": "value",
+                  "value": "{{admin_key}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tx_payload\": \"{{tx_payload}}\",\n  \"signature\": \"{{signature}}\",\n  \"from\": \"{{wallet_address}}\",\n  \"to\": \"{{recipient_address}}\",\n  \"amount_i64\": 1000000,\n  \"nonce\": 12345\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/wallet/transfer/signed",
+              "host": ["{{base_url}}"],
+              "path": ["wallet", "transfer", "signed"]
+            },
+            "description": "Submit a signed transfer transaction using Ed25519.\n\nRequires X-Admin-Key header for authentication.\n\nThe tx_payload should be a base64-encoded JSON string containing:\n- from: sender address\n- to: recipient address\n- amount_i64: amount in micro-RTC\n- nonce: transaction nonce\n\nThe signature is the Ed25519 signature of the tx_payload."
+          },
+          "response": [
+            {
+              "name": "Signed Transfer Success",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"tx_hash\": \"abc123def456789012345678901234567890abcd\",\n  \"from\": \"{{wallet_address}}\",\n  \"to\": \"{{recipient_address}}\",\n  \"amount_rtc\": 1.0,\n  \"new_balance\": 149.5,\n  \"nonce\": 12346,\n  \"timestamp\": 1741708800\n}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Admin-Key",
+                    "value": "{{admin_key}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tx_payload\": \"{{tx_payload}}\",\n  \"signature\": \"{{signature}}\"\n}"
+                },
+                "url": "{{base_url}}/wallet/transfer/signed"
+              }
+            },
+            {
+              "name": "Invalid Signature",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"error\": \"INVALID_SIGNATURE\",\n  \"message\": \"Ed25519 signature verification failed\"\n}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Admin-Key",
+                    "value": "{{admin_key}}"
+                  }
+                ],
+                "url": "{{base_url}}/wallet/transfer/signed"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08_Withdrawals",
+      "description": "Withdrawal request operations (requires admin key)",
+      "item": [
+        {
+          "name": "Withdrawal Request",
+          "request": {
+            "auth": {
+              "type": "apikey",
+              "apikey": [
+                {
+                  "key": "key",
+                  "value": "X-Admin-Key",
+                  "type": "string"
+                },
+                {
+                  "key": "value",
+                  "value": "{{admin_key}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"miner_id\": \"{{miner_id}}\",\n  \"amount\": 50.0,\n  \"destination\": \"external_wallet_address\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/withdraw/request",
+              "host": ["{{base_url}}"],
+              "path": ["withdraw", "request"]
+            },
+            "description": "Request a withdrawal from the fee pool or miner balance.\n\nRequires X-Admin-Key header for authentication."
+          },
+          "response": [
+            {
+              "name": "Withdrawal Requested",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"withdrawal_id\": \"wd_1234567890\",\n  \"miner_id\": \"{{miner_id}}\",\n  \"amount\": 50.0,\n  \"status\": \"pending\",\n  \"estimated_processing_time\": \"24-48 hours\",\n  \"fee\": 0.01,\n  \"net_amount\": 49.99,\n  \"created_at\": 1741708800\n}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Admin-Key",
+                    "value": "{{admin_key}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"miner_id\": \"{{miner_id}}\",\n  \"amount\": 50.0\n}"
+                },
+                "url": "{{base_url}}/withdraw/request"
+              }
+            },
+            {
+              "name": "Insufficient Balance for Withdrawal",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"error\": \"INSUFFICIENT_BALANCE\",\n  \"message\": \"Miner balance insufficient for withdrawal\",\n  \"required\": 50.0,\n  \"available\": 25.0\n}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-Admin-Key",
+                    "value": "{{admin_key}}"
+                  }
+                ],
+                "url": "{{base_url}}/withdraw/request"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
