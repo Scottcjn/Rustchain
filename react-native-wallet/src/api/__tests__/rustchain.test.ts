@@ -5,14 +5,46 @@
 import {
   RustChainClient,
   Network,
-  NETWORK_CONFIG,
   dryRunTransfer,
+  getNetworkConfig,
+  getDefaultNetwork,
   type DryRunResult,
 } from '../rustchain';
 import { generateKeyPair, publicKeyToBase58 } from '../../utils/crypto';
 
 // Mock fetch for testing
 global.fetch = jest.fn();
+
+describe('Environment Configuration', () => {
+  // Note: Environment variables are evaluated at module load time,
+  // so these tests verify the default behavior and function logic
+  describe('getNetworkConfig', () => {
+    it('should return default mainnet config', () => {
+      const config = getNetworkConfig(Network.Mainnet);
+      expect(config.rpcUrl).toBe('https://rustchain.org');
+      expect(config.explorerUrl).toBe('https://rustchain.org/explorer');
+    });
+
+    it('should return correct testnet config', () => {
+      const config = getNetworkConfig(Network.Testnet);
+      expect(config.rpcUrl).toBe('https://testnet-rpc.rustchain.org');
+      expect(config.explorerUrl).toBe('https://testnet-explorer.rustchain.org');
+    });
+
+    it('should return correct devnet config', () => {
+      const config = getNetworkConfig(Network.Devnet);
+      expect(config.rpcUrl).toBe('https://devnet-rpc.rustchain.org');
+      expect(config.explorerUrl).toBe('https://devnet-explorer.rustchain.org');
+    });
+  });
+
+  describe('getDefaultNetwork', () => {
+    it('should return mainnet by default', () => {
+      // Default when no env is set
+      expect(getDefaultNetwork()).toBe(Network.Mainnet);
+    });
+  });
+});
 
 describe('RustChainClient', () => {
   let client: RustChainClient;

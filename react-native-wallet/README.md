@@ -23,6 +23,35 @@ A practical mobile wallet application for RustChain (RTC) built with React Nativ
 - Camera permission (for QR scanning)
 - Biometric hardware enrolled (Face ID, Touch ID, or Fingerprint) for biometric auth
 
+## Environment Configuration
+
+The app supports environment configuration via `.env.local` file. Copy `.env.example` to `.env.local` and customize:
+
+```bash
+cp .env.example .env.local
+```
+
+### Available Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `EXPO_PUBLIC_RUSTCHAIN_NODE_URL` | Custom RustChain node URL | `https://rustchain.org` |
+| `EXPO_PUBLIC_NETWORK` | Default network (mainnet/testnet/devnet) | `mainnet` |
+| `EXPO_PUBLIC_DEBUG` | Enable debug mode | `false` |
+
+### Example `.env.local`
+
+```env
+# Use custom test node
+EXPO_PUBLIC_RUSTCHAIN_NODE_URL=http://localhost:8545
+
+# Use testnet
+EXPO_PUBLIC_NETWORK=testnet
+
+# Enable debug logging
+EXPO_PUBLIC_DEBUG=true
+```
+
 ## Installation
 
 ```bash
