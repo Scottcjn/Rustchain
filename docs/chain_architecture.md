@@ -2,7 +2,7 @@
 
 ## Core Design
 
-RustChain is a memory-preservation blockchain utilizing entropy benchmarks, hardware age, and artifact rarity to validate and score block creation.
+RustChain is a memory-preservation blockchain that uses entropy benchmarks, hardware age, and artifact rarity to validate and score block creation.
 
 ### Consensus: Proof of Antiquity (PoA)
 
