@@ -1,0 +1,73 @@
+openapi: 3.0.0
+info:
+  title: RustChain API
+  description: RustChain Blockchain API Specification
+  version: 1.0.0
+  contact:
+    name: RustChain Team
+
+servers:
+  - url: https://api.rustchain.io/v1
+    description: Production
+  - url: http://localhost:8080/v1
+    description: Development
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  timestamp:
+                    type: string
+
+  /wallet/{address}/balance:
+    get:
+      summary: Get wallet balance
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Balance info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  address:
+                    type: string
+                  balance:
+                    type: number
+                  currency:
+                    type: string
+
+  /block/latest:
+    get:
+      summary: Get latest block
+      responses:
+        '200':
+          description: Block info
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+
+# Bounty wallet: RTC27a4b8256b4d3c63737b27e96b181223cc8774ae
