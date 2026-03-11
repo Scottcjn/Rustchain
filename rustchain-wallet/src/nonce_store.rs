@@ -326,4 +326,40 @@ mod tests {
         assert!(store.is_used("addr_2", 2));
         assert!(store.is_used("addr_2", 5));
     }
+
+    #[test]
+    fn test_get_highest_nonce() {
+        let mut store = NonceStore::new();
+        let address = "test_address";
+
+        // Initially no highest nonce
+        assert_eq!(store.get_highest_nonce(address), None);
+
+        // Mark some nonces
+        store.mark_used(address, 0);
+        assert_eq!(store.get_highest_nonce(address), Some(0));
+
+        store.mark_used(address, 5);
+        assert_eq!(store.get_highest_nonce(address), Some(5));
+
+        store.mark_used(address, 3); // Lower than 5, shouldn't change highest
+        assert_eq!(store.get_highest_nonce(address), Some(5));
+
+        store.mark_used(address, 10);
+        assert_eq!(store.get_highest_nonce(address), Some(10));
+    }
+
+    #[test]
+    fn test_get_highest_nonce_multiple_addresses() {
+        let mut store = NonceStore::new();
+
+        store.mark_used("addr_a", 0);
+        store.mark_used("addr_a", 5);
+        store.mark_used("addr_b", 3);
+        store.mark_used("addr_b", 7);
+
+        assert_eq!(store.get_highest_nonce("addr_a"), Some(5));
+        assert_eq!(store.get_highest_nonce("addr_b"), Some(7));
+        assert_eq!(store.get_highest_nonce("addr_c"), None);
+    }
 }
