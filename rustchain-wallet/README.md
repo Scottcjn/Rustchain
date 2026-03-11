@@ -4,6 +4,7 @@
 [![Documentation](https://docs.rs/rustchain-wallet/badge.svg)](https://docs.rs/rustchain-wallet)
 [![License](https://img.shields.io/crates/l/rustchain-wallet.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70+-blue.svg)](https://rust-lang.org)
+[![Rust CI](https://github.com/Scottcjn/Rustchain/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/rust-ci.yml)
 [![Build Status](https://github.com/Scottcjn/Rustchain/workflows/Rust/badge.svg)](https://github.com/Scottcjn/Rustchain/actions)
 
 A robust, production-ready native Rust wallet for RustChain with comprehensive CLI tools, secure key management, and transaction signing capabilities.
@@ -390,6 +391,46 @@ Licensed under either of:
 - MIT license ([LICENSE-MIT](../LICENSE-MIT))
 
 at your option.
+
+## CI/CD
+
+This project uses GitHub Actions for continuous integration and deployment. The [Rust CI workflow](.github/workflows/rust-ci.yml) runs on every push and pull request to `main` and `develop` branches.
+
+### Workflow Jobs
+
+| Job | Description |
+|-----|-------------|
+| **fmt** | Checks code formatting with `cargo fmt` |
+| **clippy** | Runs Clippy linter with all features |
+| **test** | Runs unit and integration tests on Ubuntu, macOS, and Windows |
+| **build** | Builds release binaries for all platforms |
+| **docs** | Generates and archives Rust documentation |
+| **security-audit** | Scans dependencies for known vulnerabilities |
+
+### Caching
+
+The workflow uses [`Swatinem/rust-cache@v2`](https://github.com/Swatinem/rust-cache) to cache:
+- Cargo registry and git dependencies
+- Compiled artifacts from previous runs
+- Build outputs to speed up subsequent runs
+
+Cache is automatically restored on cache hits and saved on successful builds.
+
+### Manual Triggers
+
+You can manually trigger the workflow from the Actions tab with options to:
+- Specify a particular package to build
+- Disable caching for clean builds
+
+### Badges
+
+Add the CI badge to your README:
+
+```markdown
+[![Rust CI](https://github.com/Scottcjn/Rustchain/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/rust-ci.yml)
+```
+
+---
 
 ## Acknowledgments
 
