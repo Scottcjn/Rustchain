@@ -1,15 +1,24 @@
-# RustChain Python SDK
+# RustChain SDK
 
-A comprehensive Python client library for interacting with the RustChain blockchain and Agent Economy.
+Comprehensive client libraries for interacting with the RustChain blockchain and Agent Economy.
 
 **Version:** 1.0.0
 
-**Features:**
+## Available SDKs
+
+| SDK | Language | Description |
+|-----|----------|-------------|
+| [Python SDK](python/) | Python 3.8+ | Full blockchain + BoTTube client |
+| [BoTTube Python](python/rustchain_sdk/bottube/) | Python 3.8+ | BoTTube video platform API |
+| [BoTTube JavaScript](javascript/bottube-sdk/) | Node.js 18+ / Browser | BoTTube video platform API |
+
+## Features
+
 - Core blockchain client for node interactions
 - **RIP-302 Agent Economy SDK** for AI agent participation
 - x402 payment protocol for machine-to-machine payments
 - Beacon Atlas reputation system integration
-- BoTTube video platform analytics
+- **BoTTube SDK** for video platform integration (Python + JavaScript)
 - Automated bounty system
 
 ## Installation
