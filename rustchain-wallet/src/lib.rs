@@ -173,10 +173,10 @@ mod tests {
     fn test_wallet_signing() {
         let wallet = Wallet::generate();
         let message = b"Hello, RustChain!";
-        
+
         let signature = wallet.sign(message).unwrap();
         assert_eq!(signature.len(), 64); // Ed25519 signature size
-        
+
         let valid = wallet.verify(message, &signature).unwrap();
         assert!(valid);
     }
@@ -185,8 +185,29 @@ mod tests {
     fn test_wallet_network() {
         let wallet = Wallet::generate();
         assert_eq!(wallet.network(), Network::Mainnet);
-        
+
         let wallet_testnet = Wallet::with_network(KeyPair::generate(), Network::Testnet);
         assert_eq!(wallet_testnet.network(), Network::Testnet);
+    }
+
+    #[test]
+    fn test_network_rpc_urls() {
+        assert_eq!(Network::Mainnet.rpc_url(), "https://rpc.rustchain.org");
+        assert_eq!(Network::Testnet.rpc_url(), "https://testnet-rpc.rustchain.org");
+        assert_eq!(Network::Devnet.rpc_url(), "https://devnet-rpc.rustchain.org");
+    }
+
+    #[test]
+    fn test_network_explorer_urls() {
+        assert_eq!(Network::Mainnet.explorer_url(), "https://explorer.rustchain.org");
+        assert_eq!(Network::Testnet.explorer_url(), "https://testnet-explorer.rustchain.org");
+        assert_eq!(Network::Devnet.explorer_url(), "https://devnet-explorer.rustchain.org");
+    }
+
+    #[test]
+    fn test_network_display() {
+        assert_eq!(format!("{}", Network::Mainnet), "mainnet");
+        assert_eq!(format!("{}", Network::Testnet), "testnet");
+        assert_eq!(format!("{}", Network::Devnet), "devnet");
     }
 }
