@@ -1,0 +1,120 @@
+# RustChain Testnet Faucet Configuration
+# Copy this file to faucet_config.yaml and customize for your deployment
+
+# Server settings
+server:
+  host: "0.0.0.0"
+  port: 8090
+  debug: false
+  base_path: "/faucet"
+
+# Rate limiting configuration
+rate_limit:
+  # Default: IP-based rate limiting
+  enabled: true
+  method: "ip"  # Options: "ip", "wallet", "hybrid"
+  
+  # Time window in seconds (default: 24 hours = 86400)
+  window_seconds: 86400
+  
+  # Maximum amount per window (in RTC)
+  max_amount: 0.5
+  
+  # Maximum requests per window (0 = unlimited requests, amount limit only)
+  max_requests: 1
+  
+  # Redis configuration (optional, for distributed rate limiting)
+  redis:
+    enabled: false
+    host: "localhost"
+    port: 6379
+    db: 0
+    password: null
+    key_prefix: "rustchain_faucet:"
+
+# Wallet validation settings
+validation:
+  # Require wallet address to start with prefix
+  required_prefix: "0x"
+  
+  # Minimum wallet length (including prefix)
+  min_length: 10
+  
+  # Maximum wallet length
+  max_length: 66
+  
+  # Require checksum validation (if applicable)
+  require_checksum: false
+  
+  # Blocklisted addresses (one per line)
+  blocklist: []
+  
+  # Allowlisted addresses (bypass rate limits) - use with caution
+  allowlist: []
+
+# Database settings
+database:
+  # SQLite database file path
+  path: "faucet.db"
+  
+  # Connection pool size (for production)
+  pool_size: 5
+  
+  # Enable query logging
+  echo: false
+
+# Token distribution settings
+distribution:
+  # Amount to dispense per request (in RTC)
+  amount: 0.5
+  
+  # Minimum balance threshold (stop dispensing if below)
+  min_balance: 10.0
+  
+  # Mock mode (no actual transfers, just recording)
+  mock_mode: true
+  
+  # Node RPC endpoint (for actual transfers)
+  node_rpc: null
+  
+  # Faucet wallet private key (for actual transfers)
+  wallet_key: null
+
+# Logging configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "faucet.log"
+  max_size_mb: 10
+  backup_count: 5
+
+# Security settings
+security:
+  # Enable CORS (set to specific origins in production)
+  cors_origins: ["*"]
+  
+  # Enable CSRF protection
+  csrf_enabled: false
+  
+  # Request timeout in seconds
+  request_timeout: 30
+  
+  # Maximum body size in bytes
+  max_body_size: 1048576
+
+# Monitoring and metrics
+monitoring:
+  # Enable Prometheus metrics endpoint
+  metrics_enabled: false
+  metrics_path: "/metrics"
+  
+  # Enable health check endpoint
+  health_enabled: true
+  health_path: "/health"
+  
+  # StatsD configuration (optional)
+  statsd:
+    enabled: false
+    host: "localhost"
+    port: 8125
+    prefix: "rustchain.faucet"
