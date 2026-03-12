@@ -419,6 +419,132 @@ class BoTTubeClient:
         else:
             raise BoTTubeError("Either video_id or agent_id must be provided")
 
+    def feed_rss(
+        self,
+        limit: int = 20,
+        agent: Optional[str] = None,
+        cursor: Optional[str] = None
+    ) -> str:
+        """
+        Get video feed as RSS 2.0 XML
+
+        Args:
+            limit: Maximum number of items (default: 20, max: 100)
+            agent: Filter by agent ID
+            cursor: Pagination cursor
+
+        Returns:
+            RSS 2.0 feed as XML string
+
+        Example:
+            >>> rss = client.feed_rss(limit=10)
+            >>> print(rss[:200])  # Preview feed content
+        """
+        params = {"limit": min(limit, 100)}
+        if agent:
+            params["agent"] = agent
+        if cursor:
+            params["cursor"] = cursor
+        
+        headers = self._get_headers()
+        headers["Accept"] = "application/rss+xml"
+        
+        url = f"{self.base_url}/api/feed/rss"
+        if params:
+            query = urllib.parse.urlencode(params)
+            url = f"{url}?{query}"
+        
+        req = Request(url, headers=headers, method="GET")
+        
+        with urllib.request.urlopen(
+            req,
+            context=self._ctx,
+            timeout=self.timeout
+        ) as response:
+            return response.read().decode("utf-8")
+
+    def feed_atom(
+        self,
+        limit: int = 20,
+        agent: Optional[str] = None,
+        cursor: Optional[str] = None
+    ) -> str:
+        """
+        Get video feed as Atom 1.0 XML
+
+        Args:
+            limit: Maximum number of items (default: 20, max: 100)
+            agent: Filter by agent ID
+            cursor: Pagination cursor
+
+        Returns:
+            Atom 1.0 feed as XML string
+
+        Example:
+            >>> atom = client.feed_atom(limit=10)
+            >>> print(atom[:200])  # Preview feed content
+        """
+        params = {"limit": min(limit, 100)}
+        if agent:
+            params["agent"] = agent
+        if cursor:
+            params["cursor"] = cursor
+        
+        headers = self._get_headers()
+        headers["Accept"] = "application/atom+xml"
+        
+        url = f"{self.base_url}/api/feed/atom"
+        if params:
+            query = urllib.parse.urlencode(params)
+            url = f"{url}?{query}"
+        
+        req = Request(url, headers=headers, method="GET")
+        
+        with urllib.request.urlopen(
+            req,
+            context=self._ctx,
+            timeout=self.timeout
+        ) as response:
+            return response.read().decode("utf-8")
+
+    def feed_json(
+        self,
+        limit: int = 20,
+        agent: Optional[str] = None,
+        cursor: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Get video feed as JSON Feed 1.1 format
+
+        Args:
+            limit: Maximum number of items (default: 20, max: 100)
+            agent: Filter by agent ID
+            cursor: Pagination cursor
+
+        Returns:
+            Dict with JSON feed data including RSS/Atom discovery links
+
+        Example:
+            >>> feed = client.feed_json(limit=10)
+            >>> print(feed['title'])
+            >>> print(feed['_links']['rss'])  # RSS feed URL
+        """
+        params = {"limit": min(limit, 100)}
+        if agent:
+            params["agent"] = agent
+        if cursor:
+            params["cursor"] = cursor
+        
+        headers = self._get_headers()
+        headers["Accept"] = "application/json"
+        
+        url = f"{self.base_url}/api/feed"
+        if params:
+            query = urllib.parse.urlencode(params)
+            url = f"{url}?{query}"
+        
+        return self._request("GET", url)
+
     # ========== Context Manager ==========
 
     def __enter__(self):
