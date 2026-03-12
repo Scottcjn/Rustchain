@@ -126,6 +126,15 @@ except ImportError as _e:
     HAVE_BRIDGE = False
     print(f"[RIP-0305 Track C] Bridge modules not available: {_e}")
 
+# BoTTube RSS/Atom Feed Support (Issue #759)
+try:
+    from bottube_feed_routes import init_feed_routes
+    HAVE_BOTTUBE_FEED = True
+    print("[BoTTube Feed] RSS/Atom feed module loaded")
+except ImportError as _e:
+    HAVE_BOTTUBE_FEED = False
+    print(f"[BoTTube Feed] Feed module not available: {_e}")
+
 app = Flask(__name__)
 # Supports running from repo `node/` dir or a flat deployment directory (e.g. /root/rustchain).
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -889,6 +898,13 @@ if HAVE_BRIDGE:
         print("[RIP-0305 Track C] Bridge API + Lock Ledger endpoints registered")
     except Exception as e:
         print(f"[RIP-0305 Track C] Failed to register bridge endpoints: {e}")
+
+# BoTTube RSS/Atom Feed endpoints (Issue #759)
+if HAVE_BOTTUBE_FEED:
+    try:
+        init_feed_routes(app)
+    except Exception as e:
+        print(f"[BoTTube Feed] Failed to register feed endpoints: {e}")
 
 def init_db():
     """Initialize all database tables"""
