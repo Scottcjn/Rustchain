@@ -30,7 +30,7 @@ Current `clawrtc` releases do **not** ship `wallet new`, `wallet show`, or `wall
 ### Check Balance
 
 ```bash
-curl -sk "https://50.28.86.131/wallet/balance?miner_id=YOUR_WALLET"
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 ```
 
 **Note:** Your RustChain wallet ID is a RustChain-specific `miner_id`. It is not an Ethereum or Solana address.
@@ -97,7 +97,7 @@ journalctl --user -u rustchain-miner -f
 ### Check Rewards
 
 ```bash
-curl -s "https://50.28.86.131/api/miners?wallet=YOUR_WALLET"
+curl -s "https://rustchain.org/api/miners?wallet=YOUR_WALLET"
 ```
 
 ---
@@ -118,8 +118,8 @@ Build apps on RustChain.
 | `/api/stats` | Chain statistics |
 | `/api/hall_of_fame` | Top miners |
 
-**Primary Node:** `https://50.28.86.131`  
-**Explorer:** `https://50.28.86.131/explorer`
+**Primary Node:** `https://rustchain.org`  
+**Explorer:** `https://rustchain.org/explorer`
 
 ### Python Example
 
@@ -128,7 +128,7 @@ import requests
 
 # Check balance
 r = requests.get(
-    "https://50.28.86.131/wallet/balance",
+    "https://rustchain.org/wallet/balance",
     params={"miner_id": "Ivan-houzhiwen"},
     verify=False  # Self-signed cert
 )
@@ -145,8 +145,8 @@ The nodes use self-signed certificates. Use `verify=False` in Python or `--insec
 ## Resources
 
 - **Bounties:** https://github.com/Scottcjn/rustchain-bounties
-- **Explorer:** https://50.28.86.131/explorer
-- **Health:** https://50.28.86.131/health
+- **Explorer:** https://rustchain.org/explorer
+- **Health:** https://rustchain.org/health
 - **Wallet Guide:** [docs/WALLET_USER_GUIDE.md](docs/WALLET_USER_GUIDE.md)
 - **Developer Quickstart:** [docs/DEVELOPER_QUICKSTART.md](docs/DEVELOPER_QUICKSTART.md)
 
