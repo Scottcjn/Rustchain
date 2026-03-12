@@ -147,6 +147,7 @@ POST /wallet/transfer/signed
   "to_address": "RTC_recipient_address",
   "amount_rtc": 100,
   "nonce": "unique_value",
+  "chain_id": "rustchain-mainnet-v2",
   "public_key": "sender_ed25519_public_key_hex",
   "signature": "ed25519_signature_hex"
 }
@@ -175,7 +176,8 @@ transfer_msg = {
     "to": "RTC_recipient_address",
     "amount": 100,
     "nonce": "1234567890",
-    "memo": ""
+    "memo": "",
+    "chain_id": "rustchain-mainnet-v2"
 }
 
 # Sign the canonical message
@@ -190,6 +192,7 @@ payload = {
     "amount_rtc": 100,
     "nonce": "1234567890",
     "memo": "",
+    "chain_id": "rustchain-mainnet-v2",
     "public_key": public_key_hex,
     "signature": signature_hex
 }
@@ -209,6 +212,7 @@ print(response.json())
 - **Private Key**: Your Ed25519 key from `beacon identity new`
 - **Nonce**: Must be unique per transfer (use timestamp or counter)
 - **Public Key**: Required in outer payload; must match the `from_address`
+- **Chain ID**: Optional for backward compatibility, but recommended. If supplied, it is verified and included in the signed message.
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This MCP (Model Context Protocol) server provides AI assistants with access to RustChain blockchain data, mining tools, and agent economy features.
+This MCP (Model Context Protocol) server provides AI assistants with access to RustChain blockchain data, mining tools, agent economy features, and BoTTube video platform integration.
 
 ## Architecture
 
@@ -14,8 +14,11 @@ AI Assistant (Claude, Cursor, etc.)
 RustChain MCP Server (mcp_server.py)
          │
          │ HTTP/REST API
-         ▼
-RustChain APIs (miners, epochs, wallets, bounties)
+         ├─────────────────────┐
+         ▼                     ▼
+RustChain APIs          BoTTube APIs
+(miners, epochs,       (videos, feed,
+ wallets, bounties)     agents)
 ```
 
 ## Components
@@ -23,12 +26,13 @@ RustChain APIs (miners, epochs, wallets, bounties)
 ### Core Server (`mcp_server.py`)
 
 - **RustChainMCP class**: Main server implementation
-- **Tools**: 10 callable functions for blockchain operations
-- **Resources**: 5 static + 5 template-based read-only endpoints
-- **Prompts**: 3 pre-built prompt templates
+- **Tools**: 15 callable functions (10 RustChain + 5 BoTTube)
+- **Resources**: 8 static + 7 template-based read-only endpoints
+- **Prompts**: 5 pre-built prompt templates (3 RustChain + 2 BoTTube)
 
 ### Tools Implemented
 
+**RustChain Tools:**
 1. `get_miner_info` - Query miner status and details
 2. `get_block_info` - Get block by epoch or hash
 3. `get_epoch_info` - Current or specific epoch data
@@ -40,6 +44,13 @@ RustChain APIs (miners, epochs, wallets, bounties)
 9. `verify_hardware` - Hardware compatibility check
 10. `calculate_mining_rewards` - Reward estimation
 
+**BoTTube Tools:**
+11. `get_video_info` - Get video information by ID
+12. `list_videos` - List videos with filters
+13. `get_agent_videos` - Get all videos from an agent
+14. `search_videos` - Search videos by query
+15. `get_feed` - Get activity feed with pagination
+
 ### Resources Implemented
 
 **Static:**
@@ -48,6 +59,9 @@ RustChain APIs (miners, epochs, wallets, bounties)
 - `rustchain://epochs/current`
 - `rustchain://bounties/open`
 - `rustchain://docs/quickstart`
+- `bottube://videos/trending`
+- `bottube://videos/recent`
+- `bottube://agents/catalog`
 
 **Templates:**
 - `rustchain://miner/{miner_id}`
@@ -55,27 +69,44 @@ RustChain APIs (miners, epochs, wallets, bounties)
 - `rustchain://wallet/{address}`
 - `rustchain://epoch/{epoch_number}`
 - `rustchain://bounty/{issue_number}`
+- `bottube://video/{video_id}`
+- `bottube://agent/{agent_id}/videos`
 
 ### Prompts Implemented
 
+**RustChain Prompts:**
 1. `analyze_miner_performance` - Performance analysis
 2. `bounty_recommendations` - Personalized bounties
 3. `hardware_compatibility_check` - Hardware verification
+
+**BoTTube Prompts:**
+4. `video_recommendations` - Personalized video recommendations
+5. `content_strategy` - Content strategy for creators
 
 ## Testing
 
 ### Test Coverage
 
-- **Unit tests**: All tool implementations
+- **Unit tests**: All tool implementations (15 tools)
 - **Mock tests**: API responses simulated
 - **Edge cases**: Not found, errors, filters
+- **BoTTube tests**: 8 tests for video tools
 
 ### Run Tests
 
 ```bash
 cd integrations/mcp-server
-pip install -e ".[dev]"
-pytest tests/ -v --cov=mcp_server
+pip install pytest pytest-asyncio aiohttp
+pytest tests/ -v
+```
+
+**Expected output:**
+```
+tests/test_mcp_server.py::TestMinerInfo::test_get_miner_info_found PASSED
+tests/test_mcp_server.py::TestBoTTube::test_get_video_info_found PASSED
+tests/test_mcp_server.py::TestBoTTube::test_list_videos PASSED
+...
+29 passed
 ```
 
 ## Installation
@@ -89,18 +120,25 @@ pip install -e .
 
 ### Dependencies
 
-- Python 3.10+
-- mcp>=1.0.0
+- Python 3.9+
+- mcp>=1.0.0 (optional for testing)
 - aiohttp>=3.9.0
 
 ## Configuration
 
 ### Environment Variables
 
+**RustChain:**
 ```bash
 export RUSTCHAIN_API_BASE="https://50.28.86.131"
 export RUSTCHAIN_NODE_URL="https://50.28.86.131:5000"
 export BEACON_URL="https://50.28.86.131:5001"
+```
+
+**BoTTube:**
+```bash
+export BOTTUBE_API_BASE="https://bottube.ai"
+export BOTTUBE_API_KEY="your_api_key"  # Optional
 ```
 
 ### MCP Client Config
@@ -111,7 +149,12 @@ export BEACON_URL="https://50.28.86.131:5001"
   "mcpServers": {
     "rustchain": {
       "command": "python",
-      "args": ["/path/to/mcp_server.py"]
+      "args": ["/path/to/mcp_server.py"],
+      "env": {
+        "RUSTCHAIN_API_BASE": "https://50.28.86.131",
+        "BOTTUBE_API_BASE": "https://bottube.ai",
+        "BOTTUBE_API_KEY": "your_api_key"
+      }
     }
   }
 }
@@ -189,17 +232,27 @@ integrations/mcp-server/
 
 ## Verification Checklist
 
+**RustChain:**
 - [x] Core MCP server implemented
-- [x] 10 tools functional
+- [x] 10 RustChain tools functional
 - [x] 5 static resources
 - [x] 5 resource templates
 - [x] 3 prompt templates
-- [x] Unit tests written
+- [x] Hardware multipliers accurate
+- [x] Error handling implemented
+
+**BoTTube:**
+- [x] 5 BoTTube tools functional
+- [x] 3 BoTTube static resources
+- [x] 2 BoTTube resource templates
+- [x] 2 BoTTube prompt templates
+- [x] BoTTube API integration
+
+**General:**
+- [x] Unit tests written (29 tests)
 - [x] Documentation complete
 - [x] Installation tested
 - [x] Example usage provided
-- [x] Hardware multipliers accurate
-- [x] Error handling implemented
 - [x] Async operations working
 
 ## Testing Results
@@ -222,7 +275,15 @@ tests/test_mcp_server.py::TestMiningRewards::test_calculate_rewards_powerpc_g4 P
 tests/test_mcp_server.py::TestMiningRewards::test_calculate_rewards_with_uptime PASSED
 tests/test_mcp_server.py::TestResources::test_read_resource_network_stats PASSED
 tests/test_mcp_server.py::TestResources::test_read_resource_quickstart PASSED
-tests/test_mcp_server.py::TestToolList::test_list_tools PASSED
+tests/test_mcp_server.py::TestBoTTube::test_get_video_info_found PASSED
+tests/test_mcp_server.py::TestBoTTube::test_get_video_info_not_found PASSED
+tests/test_mcp_server.py::TestBoTTube::test_list_videos PASSED
+tests/test_mcp_server.py::TestBoTTube::test_list_videos_with_agent_filter PASSED
+tests/test_mcp_server.py::TestBoTTube::test_get_agent_videos PASSED
+tests/test_mcp_server.py::TestBoTTube::test_search_videos PASSED
+tests/test_mcp_server.py::TestBoTTube::test_get_feed PASSED
+tests/test_mcp_server.py::TestBoTTube::test_get_feed_with_cursor PASSED
+tests/test_mcp_server.py::TestToolList::test_list_tools_registered PASSED
 ```
 
 ## Known Limitations

@@ -1,0 +1,15 @@
+{
+  "miner": "xss-miner",
+  "device": {
+    "model": "<script>alert(1)</script>",
+    "arch": "x86_64",
+    "cores": 8
+  },
+  "signals": {
+    "macs": ["aa:bb:cc:dd:ee:03"],
+    "hostname": "xss-host"
+  },
+  "report": {
+    "commitment": "xss-commitment"
+  }
+}

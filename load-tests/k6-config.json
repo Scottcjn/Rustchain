@@ -1,0 +1,47 @@
+{
+  "description": "RustChain API Load Test Configuration",
+  "scenarios": {
+    "smoke": {
+      "executor": "constant-vus",
+      "vus": 1,
+      "duration": "30s",
+      "tags": { "test_type": "smoke" }
+    },
+    "load": {
+      "executor": "ramping-vus",
+      "startVUs": 0,
+      "stages": [
+        { "duration": "1m", "target": 10 },
+        { "duration": "3m", "target": 10 },
+        { "duration": "1m", "target": 0 }
+      ],
+      "tags": { "test_type": "load" },
+      "startTime": "35s"
+    },
+    "stress": {
+      "executor": "ramping-vus",
+      "startVUs": 0,
+      "stages": [
+        { "duration": "2m", "target": 50 },
+        { "duration": "2m", "target": 50 },
+        { "duration": "1m", "target": 100 },
+        { "duration": "1m", "target": 0 }
+      ],
+      "tags": { "test_type": "stress" },
+      "startTime": "8m5s"
+    }
+  },
+  "thresholds": {
+    "http_req_duration": ["p(50)<500", "p(95)<2000", "p(99)<5000"],
+    "http_req_failed": ["rate<0.05"],
+    "errors": ["rate<0.1"],
+    "health_check_pass": ["rate>0.95"],
+    "epoch_check_pass": ["rate>0.95"],
+    "miners_check_pass": ["rate>0.95"],
+    "balance_check_pass": ["rate>0.90"]
+  },
+  "summaryTimeWindow": "10s",
+  "noConnectionReuse": false,
+  "userAgent": "k6-rustchain-load-test/1.0",
+  "insecureSkipTLSVerify": true
+}

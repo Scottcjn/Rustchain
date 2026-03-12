@@ -406,9 +406,9 @@ for bounty in bounties:
         )
 ```
 
-## Backwards Compatibility
+## Backward Compatibility
 
-RIP-302 is designed to be backwards compatible with:
+RIP-302 is designed to be backward compatible with:
 - Existing RustChain wallet system
 - Core blockchain transactions
 - Previous agent implementations

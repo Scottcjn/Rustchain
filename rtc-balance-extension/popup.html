@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RTC Balance</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>RTC Balance</h1>
+    </header>
+    
+    <main>
+      <div class="balance-card">
+        <div class="balance-label">Current Balance</div>
+        <div class="balance-value" id="balance">--</div>
+        <div class="balance-unit">RTC</div>
+      </div>
+      
+      <div class="info-section">
+        <div class="info-row">
+          <span class="info-label">Wallet/Miner ID:</span>
+          <span class="info-value" id="wallet-id">Not configured</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Endpoint:</span>
+          <span class="info-value" id="endpoint">Not configured</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Last Updated:</span>
+          <span class="info-value" id="last-updated">--</span>
+        </div>
+      </div>
+      
+      <div class="status-message" id="status"></div>
+    </main>
+    
+    <footer>
+      <button id="refresh-btn" class="btn btn-primary">Refresh</button>
+      <button id="settings-btn" class="btn btn-secondary">Settings</button>
+    </footer>
+  </div>
+  
+  <!-- Settings Modal -->
+  <div class="modal" id="settings-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Settings</h2>
+        <button class="close-btn" id="close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="wallet-id-input">Wallet/Miner ID</label>
+          <input type="text" id="wallet-id-input" placeholder="Enter your wallet or miner ID">
+        </div>
+        <div class="form-group">
+          <label for="endpoint-input">API Endpoint</label>
+          <input type="url" id="endpoint-input" placeholder="https://api.example.com/balance">
+        </div>
+        <div class="form-group">
+          <label for="refresh-interval">Auto-refresh (minutes)</label>
+          <input type="number" id="refresh-interval" min="1" max="60" value="5">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="save-settings" class="btn btn-primary">Save</button>
+        <button id="cancel-settings" class="btn btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

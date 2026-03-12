@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Require BCOS label for non-doc PRs
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const owner = context.repo.owner;
@@ -64,11 +64,11 @@ jobs:
     name: SPDX + SBOM Artifacts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -109,7 +109,7 @@ jobs:
           fi
 
       - name: Generate BCOS attestation
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');
@@ -152,7 +152,7 @@ jobs:
             fs.writeFileSync('artifacts/bcos-attestation.json', JSON.stringify(att, null, 2));
 
       - name: Upload BCOS artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bcos-artifacts
           path: artifacts/

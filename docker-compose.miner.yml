@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  rustchain-miner:
+    build:
+      context: .
+      dockerfile: Dockerfile.miner
+      args:
+        - MINER_TYPE=linux
+        - MINER_ARCH=x86_64
+    container_name: rustchain-miner
+    restart: unless-stopped
+    
+    # Environment variables (configure these via .env.miner)
+    env_file:
+      - .env.miner
+    environment:
+      - WALLET_NAME=${WALLET_NAME}
+      - NODE_URL=${NODE_URL:-https://rustchain.org}
+      - BLOCK_TIME=${BLOCK_TIME:-600}
+      - PYTHONUNBUFFERED=1
+    
+    # Volume for persistent data
+    volumes:
+      - miner-data:/app/data
+    
+    # Resource limits (optional)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 128M
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Network mode
+    network_mode: "bridge"
+
+volumes:
+  miner-data:
+    driver: local
+
+# Usage:
+# 1. Set your wallet name:
+#    export WALLET_NAME=RTC27a4b8256b4d3c63737b27e96b181223cc8774ae
+#
+# 2. Run the miner:
+#    docker-compose up -d
+#
+# 3. View logs:
+#    docker-compose logs -f rustchain-miner
+#
+# 4. Stop the miner:
+#    docker-compose down
+#
+# Note: Docker miners receive reduced rewards due to anti-VM detection.
+# For maximum rewards, run the miner directly on physical hardware.
+# 0. Create .env.miner (from template) and set WALLET_NAME
+#    cp .env.miner.example .env.miner

@@ -1,8 +1,14 @@
 /**
- * Send Transaction Screen
+ * Send Transaction Screen (Hardened)
  *
  * Allows users to send RTC with dry-run validation
  * Features QR code scanning and biometric authentication
+ *
+ * Issue #785: Security hardening
+ * - Password NOT passed via router params
+ * - Secure re-authentication for export
+ * - Numeric validation hardening
+ * - chain_id in signed payload
  */
 
 import React, { useState, useEffect } from 'react';
@@ -16,6 +22,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Switch,
+  Modal,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { WalletStorage } from '../src/storage/secure';
@@ -25,18 +32,22 @@ import {
   dryRunTransfer,
   DryRunResult,
 } from '../src/api/rustchain';
-import { keyPairFromHex } from '../src/utils/crypto';
+import {
+  KeyPair,
+  isValidAddress,
+  parseRtcAmountToMicrounits,
+  MICRO_RTC_PER_RTC,
+} from '../src/utils/crypto';
 import { QRScanner } from '../src/components/QRScanner';
 import {
   authenticateWithBiometricsOrFallback,
   isBiometricAvailable,
-  getBiometricTypeName,
 } from '../src/utils/biometric';
 
 export default function SendScreen() {
-  const { walletName, password } = useLocalSearchParams<{
+  // Issue #785: Only get walletName from params, NOT password
+  const { walletName } = useLocalSearchParams<{
     walletName: string;
-    password: string;
   }>();
   const router = useRouter();
 
@@ -48,54 +59,121 @@ export default function SendScreen() {
   const [dryRunResult, setDryRunResult] = useState<DryRunResult | null>(null);
   const [dryRunLoading, setDryRunLoading] = useState(false);
   const [dryRunEnabled, setDryRunEnabled] = useState(true);
-  const [keyPair, setKeyPair] = useState<any>(null);
-  
+  const [keyPair, setKeyPair] = useState<KeyPair | null>(null);
+  const [walletAddress, setWalletAddress] = useState<string>('');
+
   // QR Scanner state
   const [showQRScanner, setShowQRScanner] = useState(false);
-  
+
   // Biometric authentication state
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricVerified, setBiometricVerified] = useState(false);
   const [biometricLoading, setBiometricLoading] = useState(false);
 
+  // Password input modal for re-authentication
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+
   const client = new RustChainClient(Network.Mainnet);
 
   useEffect(() => {
-    // Load wallet keypair on mount
-    const loadKeyPair = async () => {
-      try {
-        const decodedPassword = decodeURIComponent(password);
-        const kp = await WalletStorage.load(walletName, decodedPassword);
-        setKeyPair(kp);
-        
-        // Check biometric availability
-        const bioAvailable = await isBiometricAvailable();
-        setBiometricAvailable(bioAvailable);
-      } catch (error) {
-        Alert.alert('Error', 'Failed to load wallet. Please unlock again.');
-        router.back();
+    const initializeScreen = async () => {
+      const bioAvailable = await isBiometricAvailable();
+      setBiometricAvailable(bioAvailable);
+      const metadata = await WalletStorage.getMetadata(walletName);
+      if (metadata) {
+        setWalletAddress(metadata.address);
       }
     };
-    loadKeyPair();
-  }, []);
+    initializeScreen();
+  }, [walletName]);
+
+  useEffect(() => {
+    if (biometricVerified) {
+      setBiometricVerified(false);
+    }
+  }, [recipient, amount, memo, fee]);
+
+  // Issue #785: Load wallet only when user initiates send, not on mount
+  // This prevents keeping sensitive data in memory unnecessarily
+  const loadWalletKeyPair = async (password: string): Promise<KeyPair | null> => {
+    try {
+      const kp = await WalletStorage.load(walletName, password);
+      const metadata = await WalletStorage.getMetadata(walletName);
+      if (metadata) {
+        setKeyPair(kp);
+        setWalletAddress(metadata.address);
+        return kp;
+      }
+      return null;
+    } catch (error) {
+      Alert.alert('Error', 'Failed to load wallet. Please check your password.');
+      return null;
+    }
+  };
+
+  const getValidatedDraft = (): {
+    recipient: string;
+    amountMicros: number;
+    amountRtc: number;
+    memo?: string;
+  } | null => {
+    const recipientValue = recipient.trim();
+    if (!recipientValue || !amount.trim()) {
+      Alert.alert('Error', 'Please fill in recipient and amount');
+      return null;
+    }
+
+    if (!isValidAddress(recipientValue)) {
+      Alert.alert('Error', 'Invalid recipient address format');
+      return null;
+    }
+
+    const amountValidation = parseRtcAmountToMicrounits(amount);
+    if (!amountValidation.valid || amountValidation.units === undefined || amountValidation.value === undefined) {
+      Alert.alert('Error', `Invalid amount: ${amountValidation.error}`);
+      return null;
+    }
+
+    if (fee.trim()) {
+      const feeValidation = parseRtcAmountToMicrounits(fee, { allowZero: true });
+      if (!feeValidation.valid || feeValidation.units === undefined) {
+        Alert.alert('Error', `Invalid fee: ${feeValidation.error}`);
+        return null;
+      }
+      if (feeValidation.units !== 0) {
+        Alert.alert('Unsupported', 'RustChain signed transfers currently use no fee. Leave the fee field empty or 0.');
+        return null;
+      }
+    }
+
+    return {
+      recipient: recipientValue,
+      amountMicros: amountValidation.units,
+      amountRtc: amountValidation.value,
+      memo: memo.trim() || undefined,
+    };
+  };
 
   const handleDryRun = async () => {
-    if (!keyPair || !recipient || !amount) {
-      Alert.alert('Error', 'Please fill in recipient and amount');
+    const draft = getValidatedDraft();
+    if (!draft) {
       return;
     }
 
-    const amountNum = parseFloat(amount) * 100000000; // Convert to satoshis
-    const feeNum = fee ? parseFloat(fee) * 100000000 : undefined;
+    if (!walletAddress) {
+      Alert.alert('Error', 'Could not determine the sender wallet address');
+      return;
+    }
 
     setDryRunLoading(true);
     try {
       const result = await dryRunTransfer(
         client,
-        keyPair,
-        recipient,
-        amountNum,
-        feeNum ? { fee: feeNum, memo: memo || undefined } : { memo: memo || undefined }
+        walletAddress,
+        draft.recipient,
+        draft.amountMicros,
+        { memo: draft.memo }
       );
       setDryRunResult(result);
 
@@ -114,69 +192,87 @@ export default function SendScreen() {
   };
 
   const handleSend = async () => {
-    if (!keyPair) {
-      Alert.alert('Error', 'Wallet not loaded');
+    const draft = getValidatedDraft();
+    if (!draft) {
       return;
     }
 
-    if (!recipient || !amount) {
-      Alert.alert('Error', 'Please fill in recipient and amount');
-      return;
-    }
-
-    // Biometric authentication gate for sensitive action
     if (biometricAvailable && !biometricVerified) {
+      // Try biometric first
       setBiometricLoading(true);
       try {
         const result = await authenticateWithBiometricsOrFallback(
           'Authenticate to send transaction'
         );
-        
+
         if (result.success) {
           setBiometricVerified(true);
-          // Continue to send after successful biometric auth
-          proceedWithSend();
-        } else if (!result.available) {
-          // Biometric not available, proceed with password (already authenticated via password to load wallet)
-          proceedWithSend();
-        } else {
+          if (keyPair) {
+            proceedWithSend(keyPair, draft);
+          } else {
+            setShowPasswordModal(true);
+          }
+          return;
+        }
+
+        if (result.available) {
           // Biometric failed/cancelled
           Alert.alert(
             'Authentication Required',
             result.error || 'Please authenticate to send',
             [{ text: 'OK' }]
           );
+          return;
         }
       } catch (error: any) {
         Alert.alert('Error', error.message || 'Authentication failed');
+        setBiometricLoading(false);
+        return;
       } finally {
         setBiometricLoading(false);
       }
+    }
+
+    if (keyPair) {
+      proceedWithSend(keyPair, draft);
       return;
     }
 
-    // Already verified or biometric not available
-    proceedWithSend();
+    setShowPasswordModal(true);
   };
 
-  const proceedWithSend = async () => {
-    if (!keyPair) {
-      Alert.alert('Error', 'Wallet not loaded');
+  const handlePasswordSubmit = async () => {
+    if (!passwordInput) {
+      Alert.alert('Error', 'Please enter your password');
       return;
     }
 
-    if (!recipient || !amount) {
-      Alert.alert('Error', 'Please fill in recipient and amount');
+    const draft = getValidatedDraft();
+    if (!draft) {
+      setShowPasswordModal(false);
+      setPasswordInput('');
       return;
     }
 
-    // Final confirmation
-    const amountNum = parseFloat(amount) * 100000000;
-    const feeNum = fee ? parseFloat(fee) * 100000000 : await client.estimateFee(amountNum);
+    setLoading(true);
+    setShowPasswordModal(false);
 
+    const loadedKeyPair = await loadWalletKeyPair(passwordInput);
+    setPasswordInput('');
+    setLoading(false);
+
+    if (loadedKeyPair) {
+      proceedWithSend(loadedKeyPair, draft);
+    }
+  };
+
+  const proceedWithSend = async (
+    activeKeyPair: KeyPair,
+    draft: { recipient: string; amountMicros: number; amountRtc: number; memo?: string }
+  ) => {
     Alert.alert(
       'Confirm Transaction',
-      `Send ${amount} RTC to:\n${recipient.slice(0, 20)}...\n\nFee: ${(feeNum / 100000000).toFixed(8)} RTC\nMemo: ${memo || 'None'}`,
+      `Send ${draft.amountRtc.toFixed(6)} RTC to:\n${draft.recipient.slice(0, 20)}...\n\nFee: 0.000000 RTC\nMemo: ${draft.memo || 'None'}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -186,22 +282,26 @@ export default function SendScreen() {
             setLoading(true);
             try {
               const result = await client.transfer(
-                keyPair,
-                recipient,
-                amountNum,
+                activeKeyPair,
+                draft.recipient,
+                draft.amountMicros,
                 {
-                  fee: feeNum,
-                  memo: memo || undefined,
+                  memo: draft.memo,
                 }
               );
 
               Alert.alert(
                 'Transaction Submitted!',
-                `Transaction Hash:\n${result.tx_hash}`,
+                `Transaction Hash:\n${result.tx_hash}\n\nStatus: ${result.status}`,
                 [
                   {
                     text: 'OK',
-                    onPress: () => router.back(),
+                    onPress: () => {
+                      // Clear sensitive data from memory
+                      setKeyPair(null);
+                      setBiometricVerified(false);
+                      router.back();
+                    },
                   },
                 ]
               );
@@ -275,7 +375,7 @@ export default function SendScreen() {
         />
         {amount && (
           <Text style={styles.amountPreview}>
-            ≈ ${(parseFloat(amount) * 0.1).toFixed(4)} USD
+            ≈ ${((parseRtcAmountToMicrounits(amount).value ?? 0) * 0.1).toFixed(4)} USD
           </Text>
         )}
       </View>
@@ -284,7 +384,7 @@ export default function SendScreen() {
         <Text style={styles.label}>Fee (RTC) - Optional</Text>
         <TextInput
           style={styles.input}
-          placeholder="Auto-calculated if empty"
+          placeholder="0.000000"
           placeholderTextColor="#666"
           value={fee}
           onChangeText={setFee}
@@ -292,7 +392,7 @@ export default function SendScreen() {
           editable={!loading}
         />
         <Text style={styles.hint}>
-          Leave empty for automatic fee estimation
+          Signed transfers currently use no fee. Leave this empty or 0.
         </Text>
       </View>
 
@@ -360,13 +460,13 @@ export default function SendScreen() {
               {dryRunResult.valid && (
                 <>
                   <Text style={styles.dryRunDetail}>
-                    Estimated Fee: {(dryRunResult.estimatedFee / 100000000).toFixed(8)} RTC
+                    Estimated Fee: {(dryRunResult.estimatedFee / MICRO_RTC_PER_RTC).toFixed(6)} RTC
                   </Text>
                   <Text style={styles.dryRunDetail}>
-                    Total Cost: {(dryRunResult.totalCost / 100000000).toFixed(8)} RTC
+                    Total Cost: {(dryRunResult.totalCost / MICRO_RTC_PER_RTC).toFixed(6)} RTC
                   </Text>
                   <Text style={styles.dryRunDetail}>
-                    Your Balance: {(dryRunResult.senderBalance ?? 0 / 100000000).toFixed(8)} RTC
+                    Your Balance: {((dryRunResult.senderBalance ?? 0) / MICRO_RTC_PER_RTC).toFixed(6)} RTC
                   </Text>
                 </>
               )}
@@ -386,7 +486,7 @@ export default function SendScreen() {
             <View style={[styles.biometricBadge, styles.biometricPending]}>
               <Text style={styles.biometricBadgeIcon}>🔒</Text>
               <Text style={styles.biometricBadgeText}>
-                Biometric required for send
+                Authentication required to send
               </Text>
             </View>
           )}
@@ -402,7 +502,10 @@ export default function SendScreen() {
           • Transactions cannot be reversed once confirmed
         </Text>
         <Text style={styles.warningText}>
-          • Ensure you have sufficient balance for amount + fee
+          • Ensure you have sufficient balance for the transfer amount
+        </Text>
+        <Text style={styles.warningText}>
+          • Your signature is bound to the chain_id to prevent replay attacks
         </Text>
       </View>
 
@@ -432,7 +535,47 @@ export default function SendScreen() {
         onClose={() => setShowQRScanner(false)}
         title="Scan Recipient Address"
         description="Position the QR code within the frame to scan the wallet address"
+        strictValidation={true}
       />
+
+      {/* Password Re-authentication Modal */}
+      <Modal visible={showPasswordModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.passwordModal}>
+            <Text style={styles.passwordModalTitle}>Re-authenticate Required</Text>
+            <Text style={styles.passwordModalDescription}>
+              For security, please enter your password to confirm this transaction
+            </Text>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="Enter password"
+              placeholderTextColor="#666"
+              value={passwordInput}
+              onChangeText={setPasswordInput}
+              secureTextEntry
+              autoFocus
+              onSubmitEditing={handlePasswordSubmit}
+            />
+            <View style={styles.passwordModalButtons}>
+              <TouchableOpacity
+                style={[styles.passwordModalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowPasswordModal(false);
+                  setPasswordInput('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.passwordModalButton, styles.confirmButton]}
+                onPress={handlePasswordSubmit}
+              >
+                <Text style={styles.confirmButtonText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -646,5 +789,68 @@ const styles = StyleSheet.create({
   biometricBadgeText: {
     fontSize: 14,
     color: '#fff',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  passwordModal: {
+    backgroundColor: '#16213e',
+    padding: 25,
+    borderRadius: 15,
+    width: '85%',
+    borderWidth: 1,
+    borderColor: '#00d4ff',
+  },
+  passwordModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  passwordModalDescription: {
+    fontSize: 14,
+    color: '#888',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  passwordInput: {
+    backgroundColor: '#0f3460',
+    borderRadius: 8,
+    padding: 12,
+    color: '#fff',
+    fontSize: 16,
+    marginBottom: 15,
+  },
+  passwordModalButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  passwordModalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#0f3460',
+    borderWidth: 1,
+    borderColor: '#666',
+  },
+  cancelButtonText: {
+    color: '#888',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  confirmButton: {
+    backgroundColor: '#00d4ff',
+  },
+  confirmButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

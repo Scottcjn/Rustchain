@@ -109,8 +109,37 @@ impl ProofOfAntiquity {
         }
     }
 
-    /// Submit a mining proof for the current block
-    pub fn submit_proof(&mut self, proof: MiningProof) -> Result<SubmitResult, ProofError> {
+/// Submit a mining proof for validation and inclusion in the current block.
+///
+/// # Validation Pipeline
+/// 1. **Block window check**: Proofs only accepted within 120-second block window
+/// 2. **Duplicate submission**: Prevents same wallet submitting multiple proofs
+/// 3. **Capacity check**: Maximum 100 miners per block (MAX_MINERS_PER_BLOCK)
+/// 4. **Hardware validation**: Verifies age/tier/multiplier consistency
+/// 5. **Anti-emulation**: Checks CPU characteristics against known signatures
+/// 6. **Hardware hash**: Detects duplicate hardware across different wallets
+/// 7. **Multiplier cap**: Caps at 3.5x (Ancient tier maximum)
+///
+/// # Anti-Emulation Strategy
+/// The `anti_emulation_hash` proves the miner is running on real hardware by
+/// verifying CPU-specific characteristics (cache sizes, instruction flags,
+/// timing measurements) against known silicon signatures.
+///
+/// # Arguments
+/// * `proof` - MiningProof containing wallet, hardware info, and anti-emulation hash
+///
+/// # Returns
+/// * `Ok(SubmitResult)` - Proof accepted with pending miner count and multiplier
+/// * `Err(ProofError)` - Validation failure reason
+///
+/// # Errors
+/// - `BlockWindowClosed` - 120-second block window expired
+/// - `DuplicateSubmission` - Wallet already submitted for this block
+/// - `BlockFull` - Maximum miners (100) reached
+/// - `HardwareAlreadyRegistered` - Same hardware registered to different wallet
+/// - `TierMismatch` - Hardware tier doesn't match declared age
+/// - `EmulationDetected` - Anti-emulation check failed
+pub fn submit_proof(&mut self, proof: MiningProof) -> Result<SubmitResult, ProofError> {
         // Check if block window is still open
         let elapsed = current_timestamp() - self.block_start_time;
         if elapsed >= 120 {
@@ -172,7 +201,29 @@ impl ProofOfAntiquity {
         })
     }
 
-    /// Process all pending proofs and create a new block
+    /// Process all pending proofs and create a new block with proportional rewards.
+    ///
+    /// # Reward Distribution Algorithm
+    /// Rewards are distributed proportionally to each miner's hardware multiplier:
+    /// ```text
+    /// miner_share = miner_multiplier / sum(all_multipliers)
+    /// miner_reward = BLOCK_REWARD * miner_share
+    /// ```
+    ///
+    /// # Block Construction
+    /// 1. Calculate total multipliers from all validated proofs
+    /// 2. Compute proportional reward for each miner
+    /// 3. Generate block hash from height, previous hash, reward total, timestamp
+    /// 4. Build Merkle root from miner entries for integrity verification
+    /// 5. Reset pending proofs for next block window
+    ///
+    /// # Arguments
+    /// * `previous_hash` - Hash of the previous block (32 bytes)
+    /// * `height` - New block height (sequential)
+    ///
+    /// # Returns
+    /// * `Some(Block)` - Constructed block with miner rewards
+    /// * `None` - No pending proofs (empty block window)
     pub fn process_block(&mut self, previous_hash: [u8; 32], height: u64) -> Option<Block> {
         if self.pending_proofs.is_empty() {
             self.reset_block();
@@ -273,6 +324,25 @@ impl ProofOfAntiquity {
         hasher.finalize().into()
     }
 
+    /// Calculate Merkle root from miner entries for block integrity verification.
+    ///
+    /// # Merkle Tree Construction
+    /// Uses iterative pairwise hashing (binary tree):
+    /// 1. Hash each miner entry: `hash(wallet, multiplier, reward)`
+    /// 2. Pair adjacent hashes, concatenate, and hash again
+    /// 3. If odd number of hashes, duplicate the last one
+    /// 4. Repeat until single root hash remains
+    ///
+    /// # Properties
+    /// - **Empty set**: Returns `[0u8; 32]` (null root)
+    /// - **Single miner**: Root equals the single entry's hash
+    /// - **Efficiency**: O(log n) proof verification for any miner
+    ///
+    /// # Arguments
+    /// * `miners` - Slice of BlockMiner entries
+    ///
+    /// # Returns
+    /// 32-byte Merkle root hash
     fn calculate_merkle_root(&self, miners: &[BlockMiner]) -> [u8; 32] {
         if miners.is_empty() {
             return [0u8; 32];
@@ -369,6 +439,34 @@ impl AntiEmulationVerifier {
         });
     }
 
+    /// Verify hardware characteristics against known CPU signatures.
+    ///
+    /// # Anti-Emulation Verification
+    /// This function detects emulated/virtual hardware by checking:
+    ///
+    /// 1. **Cache size validation**: Compares L1/L2 cache against expected
+    ///    ranges for the CPU family (emulators often report incorrect sizes)
+    ///
+    /// 2. **CPU flags verification**: Ensures expected instruction set flags
+    ///    are present (e.g., Altivec for PowerPC, FPU for x86)
+    ///
+    /// 3. **Instruction timing analysis**: If provided, verifies that
+    ///    instruction cycle counts fall within physical hardware bounds
+    ///    (emulators typically have uniform/suspicious timings)
+    ///
+    /// # Known CPU Signatures
+    /// - **Family 74**: PowerPC G4 (Altivec, 32-64KB L1, 256-2048KB L2)
+    /// - **Family 4**: Intel 486 (FPU, 8-16KB L1, 0-512KB L2)
+    /// - **Family 5**: Intel Pentium (FPU+VME, 16-32KB L1, 256-512KB L2)
+    /// - **Family 6**: Intel P6 family (FPU+VME+DE+PSE, 16-32KB L1, 256-2048KB L2)
+    ///
+    /// # Arguments
+    /// * `characteristics` - HardwareCharacteristics from miner's system
+    ///
+    /// # Returns
+    /// * `Ok(())` - Hardware appears genuine
+    /// * `Err(ProofError::SuspiciousHardware)` - Cache/flags mismatch
+    /// * `Err(ProofError::EmulationDetected)` - Timing analysis failed
     pub fn verify(&self, characteristics: &HardwareCharacteristics) -> Result<(), ProofError> {
         // Check if we have a signature for this CPU family
         if let Some(signature) = self.cpu_signatures.get(&characteristics.cpu_family) {

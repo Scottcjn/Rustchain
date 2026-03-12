@@ -49,7 +49,7 @@ Translate ONE section of README.md to a new language. Must be natural, not machi
 ## Your First Successful Contribution
 
 1. `git clone https://github.com/Scottcjn/Rustchain`
-2. `grep -rn "recieve\|occured\|seperate\|definately\|enviroment" docs/ README*.md`
+2. `grep -rn "receive\|occurred\|separate\|definitely\|environment" docs/ README*.md`
 3. Fix ONE typo you found
 4. Open a PR with title: `docs: fix typo in [filename]`
 5. Include your wallet ID in the PR description

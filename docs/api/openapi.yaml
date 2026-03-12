@@ -1,250 +1,707 @@
-openapi: 3.0.0
+openapi: 3.0.3
 info:
-  title: RustChain Node API
-  description: Public API documentation for the RustChain Node endpoints.
-  version: 1.0.0
+  title: RustChain REST API
+  description: |
+    Complete OpenAPI specification for the RustChain blockchain REST API.
+    
+    ## Overview
+    RustChain is a proof-of-work blockchain with CPU antiquity-based rewards.
+    This API provides access to network data, wallet operations, attestation,
+    governance, and bridge functionality.
+    
+    ## Base URLs
+    - **Production**: `https://rustchain.org`
+    - **Development**: `http://localhost:8099`
+    
+    ## Authentication
+    - **Public endpoints**: No authentication required
+    - **Admin endpoints**: Require `X-Admin-Key` header
+    - **Signed transfers**: Require Ed25519 signature in request body
+    
+    ## Rate Limits
+    | Endpoint Category | Limit |
+    |------------------|-------|
+    | Health/Ready | 60/min |
+    | Epoch/Miners | 30/min |
+    | Wallet Balance | 30/min |
+    | Attestation | 1/min per miner |
+    | Admin endpoints | 10/min |
+    
+    ## HTTPS Certificate
+    The node uses a self-signed certificate. Use `-k` flag with curl or
+    disable certificate verification in HTTP clients.
+  version: 2.2.1-rip200
+  contact:
+    name: RustChain Development
+    url: https://github.com/rustchain-bounties/rustchain-bounties
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
 servers:
   - url: https://rustchain.org
-    description: Public Live Node
+    description: Production node (public)
+  - url: http://localhost:8099
+    description: Local development node
+
+tags:
+  - name: Health & Status
+    description: Node health and readiness endpoints
+  - name: Epoch & Network
+    description: Epoch information and network statistics
+  - name: Miners
+    description: Miner enrollment and attestation data
+  - name: Wallet
+    description: Wallet balance and transfer operations
+  - name: Attestation
+    description: Hardware attestation and enrollment
+  - name: Governance
+    description: On-chain governance proposals and voting
+  - name: Bridge
+    description: Cross-chain bridge operations (RIP-0305)
+  - name: Premium
+    description: Premium endpoints (x402 payment protocol)
+  - name: Admin
+    description: Administrative endpoints requiring X-Admin-Key
+
 paths:
   /health:
     get:
+      tags:
+        - Health & Status
       summary: Node health check
-      description: Returns health status, uptime, and version.
+      description: |
+        Returns comprehensive health status including uptime, version,
+        database status, backup age, and sync state.
+      operationId: getHealth
       responses:
         '200':
-          description: OK
+          description: Node is healthy
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                  uptime_s:
-                    type: integer
-                  version:
-                    type: string
-                  backup_age_hours:
-                    type: number
-                  db_rw:
-                    type: boolean
-                  tip_age_slots:
-                    type: integer
+                $ref: '#/components/schemas/HealthResponse'
               example:
                 ok: true
-                uptime_s: 58480
                 version: "2.2.1-rip200"
-                backup_age_hours: 13.65
+                uptime_s: 43200
                 db_rw: true
+                backup_age_hours: 12.5
                 tip_age_slots: 0
+        '503':
+          description: Node is unhealthy or unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                ok: false
+                version: "2.2.1-rip200"
+                uptime_s: 43200
+                db_rw: false
+                backup_age_hours: 48.0
+                tip_age_slots: 150
 
   /ready:
     get:
+      tags:
+        - Health & Status
       summary: Readiness probe
-      description: Indicates if the node is fully synced and ready to serve traffic.
+      description: |
+        Kubernetes-style readiness probe. Returns `ready: true` when
+        the node is fully synced and ready to serve traffic.
+      operationId: getReady
       responses:
         '200':
-          description: OK
+          description: Node is ready
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  ready:
-                    type: boolean
+                $ref: '#/components/schemas/ReadinessResponse'
               example:
                 ready: true
+        '503':
+          description: Node is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+              example:
+                ready: false
 
   /epoch:
     get:
-      summary: Current epoch status
-      description: Returns current epoch, slot, and enrolled miners.
+      tags:
+        - Epoch & Network
+      summary: Current epoch information
+      description: |
+        Returns current epoch number, slot position, blocks per epoch,
+        reward pool, and enrolled miner count.
+      operationId: getEpoch
       responses:
         '200':
-          description: OK
+          description: Epoch information retrieved successfully
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  epoch:
-                    type: integer
-                  slot:
-                    type: integer
-                  enrolled_miners:
-                    type: integer
-                  blocks_per_epoch:
-                    type: integer
-                  epoch_pot:
-                    type: number
-                  total_supply_rtc:
-                    type: number
+                $ref: '#/components/schemas/EpochResponse'
               example:
-                epoch: 91
-                slot: 13227
-                enrolled_miners: 20
+                epoch: 75
+                slot: 10800
                 blocks_per_epoch: 144
                 epoch_pot: 1.5
-                total_supply_rtc: 8388608
+                enrolled_miners: 10
 
   /api/miners:
     get:
-      summary: Active miners
-      description: Returns list of active miners with attestation data.
+      tags:
+        - Miners
+      summary: List active miners
+      description: |
+        Returns all currently active/enrolled miners with their
+        hardware details, attestation status, and reward multipliers.
+      operationId: getMiners
       responses:
         '200':
-          description: OK
+          description: Miner list retrieved successfully
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  type: object
-                  properties:
-                    miner_id:
-                      type: string
-                    attested:
-                      type: boolean
+                  $ref: '#/components/schemas/MinerInfo'
               example:
-                - miner_id: "m_12345"
-                  attested: true
+                - miner: eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC
+                  device_arch: G4
+                  device_family: PowerPC
+                  hardware_type: PowerPC G4 (Vintage)
+                  antiquity_multiplier: 2.5
+                  entropy_score: 0.0
+                  last_attest: 1771187406
+                  first_attest: 1770000000
+                - miner: scott
+                  device_arch: x86_64
+                  device_family: Intel
+                  hardware_type: Modern x86_64
+                  antiquity_multiplier: 1.0
+                  entropy_score: 0.0
+                  last_attest: 1771187200
+                  first_attest: 1770000000
+
+  /api/nodes:
+    get:
+      tags:
+        - Epoch & Network
+      summary: List connected nodes
+      description: |
+        Returns all connected attestation nodes with their roles,
+        addresses, and last-seen timestamps.
+      operationId: getNodes
+      responses:
+        '200':
+          description: Node list retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NodeInfo'
+              example:
+                - node_id: primary
+                  address: 50.28.86.131
+                  role: attestation
+                  status: active
+                  last_seen: 1771187406
+                - node_id: ergo-anchor
+                  address: 50.28.86.153
+                  role: anchor
+                  status: active
+                  last_seen: 1771187400
 
   /api/stats:
     get:
+      tags:
+        - Epoch & Network
       summary: Network statistics
-      description: Returns overall network statistics.
+      description: |
+        Returns overall network statistics including total blocks,
+        transactions, and other metrics.
+      operationId: getStats
       responses:
         '200':
-          description: OK
+          description: Statistics retrieved successfully
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  total_blocks:
-                    type: integer
-                  total_transactions:
-                    type: integer
+                $ref: '#/components/schemas/NetworkStats'
               example:
                 total_blocks: 150000
                 total_transactions: 1205000
+                total_miners: 25
+                active_miners: 10
 
   /api/hall_of_fame:
     get:
+      tags:
+        - Miners
       summary: Hall of Fame leaderboard
-      description: Leaderboard for 5 categories of miners/participants.
+      description: |
+        Returns leaderboard across 5 categories of miners/participants.
+        Categories include top miners by various metrics.
+      operationId: getHallOfFame
       responses:
         '200':
-          description: OK
+          description: Hall of Fame retrieved successfully
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  top_miners:
-                    type: array
-                    items:
-                      type: object
+                $ref: '#/components/schemas/HallOfFameResponse'
               example:
-                top_miners: []
+                top_miners:
+                  - miner: scott
+                    category: longevity
+                    score: 1000
+                top_vintage:
+                  - miner: eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC
+                    category: vintage
+                    score: 2.5
 
   /api/fee_pool:
     get:
+      tags:
+        - Epoch & Network
       summary: Fee pool statistics
-      description: RIP-301 fee pool statistics (fees recycled to mining pool).
+      description: |
+        Returns RIP-301 fee pool statistics showing fees recycled
+        to the mining pool.
+      operationId: getFeePool
       responses:
         '200':
-          description: OK
+          description: Fee pool statistics retrieved successfully
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  description:
-                    type: string
-                  destination:
-                    type: string
-                  destination_balance_rtc:
-                    type: number
-                  rip:
-                    type: integer
-                  total_fee_events:
-                    type: integer
-                  total_fees_collected_rtc:
-                    type: number
-                  withdrawal_fee_rtc:
-                    type: number
+                $ref: '#/components/schemas/FeePoolResponse'
               example:
-                description: "Fee Pool Statistics"
-                destination: "founder_community"
+                description: Fee Pool Statistics
+                destination: founder_community
                 destination_balance_rtc: 83246.13
                 rip: 301
                 total_fee_events: 0
                 total_fees_collected_rtc: 0
                 withdrawal_fee_rtc: 0.01
 
-  /balance:
+  /api/settlement/{epoch}:
     get:
-      summary: Miner balance lookup
-      description: Returns the RTC balance for a specific miner ID.
+      tags:
+        - Epoch & Network
+      summary: Historical settlement data
+      description: |
+        Query historical settlement data for a specific epoch,
+        including rewards distributed to miners.
+      operationId: getSettlement
       parameters:
-        - name: miner_id
-          in: query
+        - name: epoch
+          in: path
           required: true
           schema:
-            type: string
-          description: Miner ID or public key
+            type: integer
+          description: Epoch number to query
       responses:
         '200':
-          description: OK
+          description: Settlement data retrieved successfully
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  balance:
-                    type: number
+                $ref: '#/components/schemas/SettlementResponse'
               example:
-                balance: 150.5
+                epoch: 75
+                timestamp: 1771200000
+                total_pot: 1.5
+                total_distributed: 1.5
+                miner_count: 5
+                settlement_hash: 8a3f2e1d9c7b6a5e4f3d2c1b0a9e8d7c
+                ergo_tx_id: abc123
+                rewards:
+                  scott: 0.487
+                  pffs1802: 0.390
+                  miner3: 0.195
+        '404':
+          description: Settlement not found for epoch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /wallet/balance:
+    get:
+      tags:
+        - Wallet
+      summary: Get wallet balance
+      description: |
+        Check RTC balance for a miner wallet. Accepts `miner_id` as
+        canonical parameter, with `address` as backward-compatible alias.
+      operationId: getWalletBalance
+      parameters:
+        - name: miner_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Wallet/miner identifier (canonical parameter)
+        - name: address
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Backward-compatible alias for miner_id
+      responses:
+        '200':
+          description: Balance retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+              example:
+                ok: true
+                miner_id: scott
+                amount_rtc: 42.5
+                amount_i64: 42500000
+        '404':
+          description: Wallet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                ok: false
+                error: WALLET_NOT_FOUND
+                miner_id: unknown
+
+  /wallet/history:
+    get:
+      tags:
+        - Wallet
+      summary: Get wallet transaction history
+      description: |
+        Read recent transfer history for a wallet. Returns entries where
+        the wallet is either sender or recipient. Public endpoint but
+        scoped to single wallet.
+      operationId: getWalletHistory
+      parameters:
+        - name: miner_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Wallet/miner identifier (canonical parameter)
+        - name: address
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Backward-compatible alias for miner_id
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 10
+          description: Max records to return (clamped to 1-200)
+      responses:
+        '200':
+          description: History retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TransactionRecord'
+              example:
+                - tx_id: 6df5d4d25b6deef8f0b2e0fa726cecf1
+                  from_addr: scott
+                  to_addr: friend
+                  amount: 1.25
+                  amount_i64: 1250000
+                  timestamp: 1771187406
+                  status: pending
+                  direction: sent
+                  counterparty: friend
+                  memo: Payment for services
+                  confirmed_at: null
+                  confirms_at: 1771191006
+
+  /wallet/transfer/signed:
+    post:
+      tags:
+        - Wallet
+      summary: Submit signed transfer
+      description: |
+        Transfer RTC between wallets using Ed25519 signature.
+        Does not require admin key - uses cryptographic signature instead.
+      operationId: submitSignedTransfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignedTransferRequest'
+            example:
+              from_address: senderRTC
+              to_address: recipientRTC
+              amount_rtc: 10.0
+              amount_i64: 10000000
+              nonce: 1771187406
+              signature: base64_ed25519_signature_here
+              public_key: hex_encoded_public_key
+              memo: Optional payment memo
+      responses:
+        '200':
+          description: Transfer submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+              example:
+                success: true
+                tx_hash: abc123def456
+                new_balance: 90.5
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: INVALID_SIGNATURE
+                detail: Ed25519 signature verification failed
+        '402':
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: INSUFFICIENT_BALANCE
+                available: 5.0
+                requested: 10.0
+
+  /wallet/transfer:
+    post:
+      tags:
+        - Admin
+      summary: Admin transfer
+      description: |
+        Transfer RTC between wallets (admin only).
+        Requires X-Admin-Key header.
+      operationId: adminTransfer
+      security:
+        - AdminKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminTransferRequest'
+            example:
+              from_miner: treasury
+              to_miner: scott
+              amount_rtc: 10.0
+              memo: Bounty payment #123
+      responses:
+        '200':
+          description: Transfer executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTransferResponse'
+              example:
+                ok: true
+                tx_id: tx_abc123
+                from_balance: 990.0
+                to_balance: 52.5
+        '401':
+          description: Unauthorized - invalid admin key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: UNAUTHORIZED
+                detail: Invalid or missing X-Admin-Key
+
+  /wallet/swap-info:
+    get:
+      tags:
+        - Wallet
+      summary: Get swap information
+      description: |
+        Get USDC/wRTC swap guidance including prices and contract addresses.
+      operationId: getSwapInfo
+      responses:
+        '200':
+          description: Swap info retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SwapInfoResponse'
+              example:
+                rtc_price_usd: 0.10
+                wrtc_solana_mint: 12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X
+                wrtc_base_contract: "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"
+                raydium_pool: 8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb
+                bridge_url: https://bottube.ai/bridge
+
+  /attest/submit:
+    post:
+      tags:
+        - Attestation
+      summary: Submit hardware attestation
+      description: |
+        Submit hardware attestation to enroll in current epoch.
+        Includes hardware fingerprint data for CPU antiquity verification.
+      operationId: submitAttestation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestationRequest'
+            example:
+              miner_id: scott
+              timestamp: 1771187406
+              device_info:
+                arch: PowerPC
+                family: G4
+              fingerprint:
+                clock_skew:
+                  drift_ppm: 24.3
+                  jitter_ns: 1247
+                cache_timing:
+                  l1_latency_ns: 5
+                  l2_latency_ns: 15
+                simd_identity:
+                  instruction_set: AltiVec
+                  pipeline_bias: 0.76
+                thermal_entropy:
+                  idle_temp_c: 42.1
+                  load_temp_c: 71.3
+                  variance: 3.8
+                instruction_jitter:
+                  mean_ns: 3200
+                  stddev_ns: 890
+                behavioral_heuristics:
+                  cpuid_clean: true
+                  no_hypervisor: true
+              signature: Ed25519_base64_signature
+      responses:
+        '200':
+          description: Attestation accepted, miner enrolled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationResponse'
+              example:
+                enrolled: true
+                epoch: 75
+                multiplier: 2.5
+                hw_hash: abc123def456
+                next_settlement: 1771200000
+        '400':
+          description: Attestation rejected
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/VMDetectedResponse'
+                  - $ref: '#/components/schemas/HardwareBoundResponse'
+              examples:
+                vm_detected:
+                  summary: VM detected
+                  value:
+                    error: VM_DETECTED
+                    failed_checks:
+                      - clock_skew
+                      - thermal_entropy
+                    penalty_multiplier: 2.5e-9
+                hardware_bound:
+                  summary: Hardware already bound
+                  value:
+                    error: HARDWARE_ALREADY_BOUND
+                    existing_miner: other_wallet
 
   /lottery/eligibility:
     get:
-      summary: Epoch eligibility check
-      description: Checks if a miner is eligible for the current epoch block lottery.
+      tags:
+        - Attestation
+      summary: Check epoch eligibility
+      description: |
+        Check if a miner is enrolled and eligible for the current
+        epoch block lottery.
+      operationId: checkEligibility
       parameters:
         - name: miner_id
           in: query
           required: true
           schema:
             type: string
-          description: Miner ID or public key
+          description: Miner wallet identifier
       responses:
         '200':
-          description: OK
+          description: Eligibility check completed
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  eligible:
-                    type: boolean
-                  reason:
-                    type: string
-                  rotation_size:
-                    type: integer
-                  slot:
-                    type: integer
+                $ref: '#/components/schemas/EligibilityResponse'
               example:
-                eligible: false
-                reason: "not_attested"
-                rotation_size: 20
-                slot: 13227
+                eligible: true
+                epoch: 75
+                multiplier: 2.5
+                last_attest: 1771187406
+                status: active
+
+  /rewards/settle:
+    post:
+      tags:
+        - Admin
+      summary: Trigger epoch settlement
+      description: |
+        Manually trigger epoch settlement (admin only).
+        Distributes rewards to enrolled miners.
+      operationId: triggerSettlement
+      security:
+        - AdminKeyAuth: []
+      responses:
+        '200':
+          description: Settlement triggered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettlementTriggerResponse'
+              example:
+                ok: true
+                epoch: 75
+                miners_rewarded: 5
+                total_distributed: 1.5
+                settlement_hash: 8a3f2e1d
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /explorer:
     get:
-      summary: Block explorer page
-      description: Returns the HTML page for the block explorer.
+      tags:
+        - Health & Status
+      summary: Block explorer UI
+      description: |
+        Web UI for browsing blocks and transactions.
+        Returns HTML page, not JSON.
+      operationId: getExplorer
       responses:
         '200':
           description: HTML page returned
@@ -252,12 +709,162 @@ paths:
             text/html:
               schema:
                 type: string
-              example: "<html>...</html>"
+              example: "<!DOCTYPE html><html>...</html>"
 
-  /attest/submit:
+  /governance/proposals:
+    get:
+      tags:
+        - Governance
+      summary: List proposals
+      description: |
+        List all governance proposals with their current status.
+      operationId: listProposals
+      responses:
+        '200':
+          description: Proposals retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProposalSummary'
+              example:
+                - proposal_id: 1
+                  title: Enable parameter X
+                  status: active
+                  votes_yes: 1000
+                  votes_no: 200
+                  ends_at: 1771200000
+
+  /governance/proposal/{proposal_id}:
+    get:
+      tags:
+        - Governance
+      summary: Get proposal details
+      description: |
+        Get detailed information about a specific proposal.
+      operationId: getProposal
+      parameters:
+        - name: proposal_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Proposal ID
+      responses:
+        '200':
+          description: Proposal details retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProposalDetail'
+              example:
+                proposal_id: 1
+                title: Enable parameter X
+                description: Rationale and implementation details
+                proposer: RTC_wallet_address
+                status: active
+                created_at: 1770000000
+                ends_at: 1771200000
+                votes_yes: 1000
+                votes_no: 200
+                quorum_required: 5000
+        '404':
+          description: Proposal not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /governance/propose:
     post:
-      summary: Submit hardware attestation
-      description: Submit an attestation proof. Requires X-Admin-Key.
+      tags:
+        - Governance
+      summary: Create proposal
+      description: |
+        Create a new governance proposal.
+      operationId: createProposal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProposalRequest'
+            example:
+              wallet: RTC_wallet_address
+              title: Enable parameter X
+              description: Rationale and implementation details
+      responses:
+        '200':
+          description: Proposal created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateProposalResponse'
+              example:
+                success: true
+                proposal_id: 2
+                created_at: 1771187406
+
+  /governance/vote:
+    post:
+      tags:
+        - Governance
+      summary: Submit vote
+      description: |
+        Submit a vote on a proposal. Requires Ed25519 signature.
+      operationId: submitVote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoteRequest'
+            example:
+              proposal_id: 1
+              wallet: RTC_wallet_address
+              vote: "yes"
+              nonce: "1700000000"
+              public_key: ed25519_pubkey_hex
+              signature: ed25519_signature_hex
+      responses:
+        '200':
+          description: Vote submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoteResponse'
+              example:
+                success: true
+                vote_id: 12345
+                proposal_id: 1
+
+  /governance/ui:
+    get:
+      tags:
+        - Governance
+      summary: Governance UI
+      description: |
+        Web UI for governance voting. Returns HTML page.
+      operationId: getGovernanceUI
+      responses:
+        '200':
+          description: HTML page returned
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /api/bridge/initiate:
+    post:
+      tags:
+        - Bridge
+      summary: Initiate bridge transfer
+      description: |
+        Create a new bridge transfer (deposit or withdraw) between
+        RustChain and external chains (Solana, Ergo, Base).
+        Requires admin authentication.
+      operationId: initiateBridge
       security:
         - AdminKeyAuth: []
       requestBody:
@@ -265,20 +872,173 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                miner_id:
-                  type: string
-                proof:
-                  type: string
+              $ref: '#/components/schemas/BridgeInitiateRequest'
+            example:
+              direction: deposit
+              source_chain: rustchain
+              dest_chain: solana
+              source_address: RTC_miner123
+              dest_address: "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq"
+              amount_rtc: 100.0
+              memo: Optional memo
       responses:
         '200':
-          description: Attestation accepted
+          description: Bridge transfer initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeInitiateResponse'
+              example:
+                ok: true
+                bridge_transfer_id: 12345
+                tx_hash: abc123def456
+                status: pending
+                lock_epoch: 85
+                unlock_at: 1709942400
+                estimated_completion: "2026-03-10T12:00:00Z"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                insufficient_balance:
+                  summary: Insufficient balance
+                  value:
+                    error: Insufficient available balance
+                    available_rtc: 50.0
+                    pending_debits_rtc: 20.0
+                    requested_rtc: 100.0
+                invalid_address:
+                  summary: Invalid address
+                  value:
+                    error: "Invalid solana address: length must be 32-44 characters"
 
-  /wallet/transfer/signed:
+  /api/bridge/status/{tx_hash}:
+    get:
+      tags:
+        - Bridge
+      summary: Get bridge status
+      description: |
+        Get status of a specific bridge transfer by transaction hash.
+      operationId: getBridgeStatus
+      parameters:
+        - name: tx_hash
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Transaction hash
+      responses:
+        '200':
+          description: Status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeStatusResponse'
+              example:
+                ok: true
+                transfer:
+                  id: 12345
+                  direction: deposit
+                  source_chain: rustchain
+                  dest_chain: solana
+                  source_address: RTC_miner123
+                  dest_address: "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq"
+                  amount_rtc: 100.0
+                  bridge_type: bottube
+                  external_tx_hash: 5xKjPqR
+                  external_confirmations: 8
+                  required_confirmations: 12
+                  status: confirming
+                  lock_epoch: 85
+                  created_at: 1709856000
+                  updated_at: 1709859600
+                  expires_at: 1710460800
+                  tx_hash: abc123def456
+        '404':
+          description: Transfer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/bridge/list:
+    get:
+      tags:
+        - Bridge
+      summary: List bridge transfers
+      description: |
+        List bridge transfers with optional filters.
+      operationId: listBridgeTransfers
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, locked, confirming, completed, failed, voided]
+          description: Filter by status
+        - name: source_address
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by source address
+        - name: dest_address
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by destination address
+        - name: direction
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [deposit, withdraw]
+          description: Filter by direction
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+          description: 'Max results (max: 500)'
+      responses:
+        '200':
+          description: Transfers retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BridgeListResponse'
+              example:
+                ok: true
+                count: 3
+                transfers:
+                  - id: 12345
+                    direction: deposit
+                    source_chain: rustchain
+                    dest_chain: solana
+                    source_address: RTC_miner123
+                    dest_address: "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq"
+                    amount_rtc: 100.0
+                    bridge_type: bottube
+                    status: confirming
+                    tx_hash: abc123def456
+
+  /api/bridge/void:
     post:
-      summary: Ed25519 signed transfer
-      description: Submit a signed transfer transaction. Requires X-Admin-Key.
+      tags:
+        - Bridge
+      summary: Void bridge transfer
+      description: |
+        Void a pending bridge transfer and release associated locks.
+        Requires admin authentication.
+      operationId: voidBridge
       security:
         - AdminKeyAuth: []
       requestBody:
@@ -286,20 +1046,150 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                tx_payload:
-                  type: string
-                signature:
-                  type: string
+              $ref: '#/components/schemas/VoidBridgeRequest'
+            example:
+              tx_hash: abc123def456
+              reason: user_request
+              voided_by: admin_john
       responses:
         '200':
-          description: Transfer accepted
+          description: Transfer voided successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoidBridgeResponse'
+              example:
+                ok: true
+                voided_id: 12345
+                tx_hash: abc123def456
+                source_address: RTC_miner123
+                dest_address: "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq"
+                amount_rtc: 100.0
+                voided_by: admin_john
+                reason: user_request
+                lock_released: true
 
-  /wallet/transfer:
+  /api/lock/miner/{miner_id}:
+    get:
+      tags:
+        - Bridge
+      summary: Get miner locks
+      description: |
+        Get lock ledger entries for a specific miner.
+      operationId: getMinerLocks
+      parameters:
+        - name: miner_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Miner identifier
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [locked, released, forfeited, summary]
+          description: Filter by status
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 100
+          description: Max results
+      responses:
+        '200':
+          description: Locks retrieved successfully
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/MinerLocksResponse'
+                  - $ref: '#/components/schemas/MinerLocksSummaryResponse'
+              examples:
+                list:
+                  summary: Lock list
+                  value:
+                    ok: true
+                    miner_id: RTC_miner123
+                    count: 2
+                    locks:
+                      - id: 789
+                        amount_rtc: 50.0
+                        lock_type: bridge_deposit
+                        status: locked
+                        locked_at: 1709856000
+                        unlock_at: 1709942400
+                        time_until_unlock: 86400
+                summary:
+                  summary: Lock summary
+                  value:
+                    miner_id: RTC_miner123
+                    total_locked_rtc: 150.0
+                    total_locked_count: 3
+                    breakdown:
+                      bridge_deposit:
+                        amount_rtc: 100.0
+                        count: 2
+                      bridge_withdraw:
+                        amount_rtc: 50.0
+                        count: 1
+                    next_unlock:
+                      unlock_at: 1709942400
+                      amount_rtc: 50.0
+                      seconds_until: 86400
+
+  /api/lock/pending-unlock:
+    get:
+      tags:
+        - Bridge
+      summary: Get pending unlocks
+      description: |
+        Get locks ready to be released (past unlock time).
+      operationId: getPendingUnlocks
+      parameters:
+        - name: before
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Unix timestamp filter
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 100
+          description: Max results
+      responses:
+        '200':
+          description: Pending unlocks retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingUnlocksResponse'
+              example:
+                ok: true
+                count: 5
+                locks:
+                  - id: 789
+                    miner_id: RTC_miner123
+                    amount_rtc: 50.0
+                    lock_type: bridge_deposit
+                    unlock_at: 1709856000
+                    expired_seconds: 3600
+
+  /api/lock/release:
     post:
-      summary: Admin transfer
-      description: Transfer funds directly as admin. Requires X-Admin-Key.
+      tags:
+        - Bridge
+      summary: Release lock
+      description: |
+        Manually release a lock. Requires admin authentication.
+      operationId: releaseLock
       security:
         - AdminKeyAuth: []
       requestBody:
@@ -307,20 +1197,34 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                to:
-                  type: string
-                amount:
-                  type: number
+              $ref: '#/components/schemas/ReleaseLockRequest'
+            example:
+              lock_id: 789
+              release_tx_hash: optional_tx_hash
       responses:
         '200':
-          description: Transfer executed
+          description: Lock released successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseLockResponse'
+              example:
+                ok: true
+                lock_id: 789
+                miner_id: RTC_miner123
+                amount_rtc: 50.0
+                released_by: admin
+                release_tx_hash: optional_tx_hash
+                released_at: 1709859600
 
-  /withdraw/request:
+  /api/lock/forfeit:
     post:
-      summary: Withdrawal request
-      description: Request a withdrawal. Requires X-Admin-Key.
+      tags:
+        - Bridge
+      summary: Forfeit lock
+      description: |
+        Forfeit a lock (penalty/slashing). Requires admin authentication.
+      operationId: forfeitLock
       security:
         - AdminKeyAuth: []
       requestBody:
@@ -328,15 +1232,117 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                miner_id:
-                  type: string
-                amount:
-                  type: number
+              $ref: '#/components/schemas/ForfeitLockRequest'
+            example:
+              lock_id: 789
+              reason: penalty
       responses:
         '200':
-          description: Withdrawal requested
+          description: Lock forfeited successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForfeitLockResponse'
+              example:
+                ok: true
+                lock_id: 789
+                miner_id: RTC_miner123
+                amount_rtc: 50.0
+                reason: penalty
+                forfeited_by: admin
+                forfeited_at: 1709859600
+                note: Forfeited assets are retained by protocol
+
+  /api/lock/auto-release:
+    post:
+      tags:
+        - Bridge
+      summary: Auto-release expired locks
+      description: |
+        Automatically release locks that have passed their unlock time.
+        Requires worker authentication.
+      operationId: autoReleaseLocks
+      security:
+        - WorkerKeyAuth: []
+      parameters:
+        - name: batch_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 100
+          description: Max locks to release per call
+      responses:
+        '200':
+          description: Auto-release completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutoReleaseResponse'
+              example:
+                released_count: 10
+                total_amount_rtc: 500.0
+                errors: []
+                processed_at: 1709859600
+
+  /api/premium/videos:
+    get:
+      tags:
+        - Premium
+      summary: Bulk video export
+      description: |
+        Bulk video export endpoint (BoTTube integration).
+        Supports x402 payment protocol (free during beta).
+      operationId: getPremiumVideos
+      responses:
+        '200':
+          description: Video data retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/premium/analytics/{agent}:
+    get:
+      tags:
+        - Premium
+      summary: Agent analytics
+      description: |
+        Deep analytics for a specific agent.
+        Supports x402 payment protocol (free during beta).
+      operationId: getPremiumAnalytics
+      parameters:
+        - name: agent
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Agent identifier
+      responses:
+        '200':
+          description: Analytics retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/premium/reputation:
+    get:
+      tags:
+        - Premium
+      summary: Premium reputation
+      description: |
+        Get premium reputation data.
+        Supports x402 payment protocol (free during beta).
+      operationId: getPremiumReputation
+      responses:
+        '200':
+          description: Reputation data retrieved
+          content:
+            application/json:
+              schema:
+                type: object
 
 components:
   securitySchemes:
@@ -344,3 +1350,1008 @@ components:
       type: apiKey
       in: header
       name: X-Admin-Key
+      description: Admin API key for privileged operations
+    WorkerKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Worker-Key
+      description: Worker API key for automated processes
+
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - ok
+        - version
+        - uptime_s
+        - db_rw
+        - backup_age_hours
+        - tip_age_slots
+      properties:
+        ok:
+          type: boolean
+          description: Node is healthy
+        version:
+          type: string
+          description: Node software version
+        uptime_s:
+          type: integer
+          description: Seconds since node start
+        db_rw:
+          type: boolean
+          description: Database is read/write
+        backup_age_hours:
+          type: number
+          format: float
+          description: Hours since last backup
+        tip_age_slots:
+          type: integer
+          description: Slots behind tip (0 = synced)
+
+    ReadinessResponse:
+      type: object
+      required:
+        - ready
+      properties:
+        ready:
+          type: boolean
+          description: Node is ready to serve traffic
+
+    EpochResponse:
+      type: object
+      required:
+        - epoch
+        - slot
+        - blocks_per_epoch
+        - epoch_pot
+        - enrolled_miners
+      properties:
+        epoch:
+          type: integer
+          description: Current epoch number
+        slot:
+          type: integer
+          description: Current slot within epoch
+        blocks_per_epoch:
+          type: integer
+          description: Slots per epoch (144)
+        epoch_pot:
+          type: number
+          format: float
+          description: RTC reward pool for epoch
+        enrolled_miners:
+          type: integer
+          description: Active miners this epoch
+        total_supply_rtc:
+          type: number
+          format: float
+          description: Total RTC supply (optional)
+
+    MinerInfo:
+      type: object
+      required:
+        - miner
+        - device_arch
+        - device_family
+        - hardware_type
+        - antiquity_multiplier
+        - last_attest
+      properties:
+        miner:
+          type: string
+          description: Miner wallet ID
+        device_arch:
+          type: string
+          description: CPU architecture (e.g., G4, x86_64)
+        device_family:
+          type: string
+          description: CPU family (e.g., PowerPC, Intel)
+        hardware_type:
+          type: string
+          description: Human-readable hardware description
+        antiquity_multiplier:
+          type: number
+          format: float
+          description: Reward multiplier (1.0-2.5x)
+        entropy_score:
+          type: number
+          format: float
+          default: 0.0
+          description: Hardware entropy score
+        last_attest:
+          type: integer
+          description: Unix timestamp of last attestation
+        first_attest:
+          type: integer
+          nullable: true
+          description: Unix timestamp of first attestation
+
+    NodeInfo:
+      type: object
+      required:
+        - node_id
+        - address
+        - role
+        - status
+        - last_seen
+      properties:
+        node_id:
+          type: string
+          description: Node identifier
+        address:
+          type: string
+          description: Node IP address
+        role:
+          type: string
+          enum: [attestation, anchor]
+          description: Node role
+        status:
+          type: string
+          enum: [active, inactive]
+          description: Node status
+        last_seen:
+          type: integer
+          description: Unix timestamp of last contact
+
+    NetworkStats:
+      type: object
+      properties:
+        total_blocks:
+          type: integer
+          description: Total blocks mined
+        total_transactions:
+          type: integer
+          description: Total transactions processed
+        total_miners:
+          type: integer
+          description: Total registered miners
+        active_miners:
+          type: integer
+          description: Currently active miners
+
+    HallOfFameResponse:
+      type: object
+      properties:
+        top_miners:
+          type: array
+          items:
+            type: object
+            properties:
+              miner:
+                type: string
+              category:
+                type: string
+              score:
+                type: integer
+        top_vintage:
+          type: array
+          items:
+            type: object
+            properties:
+              miner:
+                type: string
+              category:
+                type: string
+              score:
+                type: number
+
+    FeePoolResponse:
+      type: object
+      properties:
+        description:
+          type: string
+        destination:
+          type: string
+        destination_balance_rtc:
+          type: number
+          format: float
+        rip:
+          type: integer
+          description: RIP specification number
+        total_fee_events:
+          type: integer
+        total_fees_collected_rtc:
+          type: number
+          format: float
+        withdrawal_fee_rtc:
+          type: number
+          format: float
+
+    SettlementResponse:
+      type: object
+      properties:
+        epoch:
+          type: integer
+        timestamp:
+          type: integer
+        total_pot:
+          type: number
+          format: float
+        total_distributed:
+          type: number
+          format: float
+        miner_count:
+          type: integer
+        settlement_hash:
+          type: string
+        ergo_tx_id:
+          type: string
+          nullable: true
+        rewards:
+          type: object
+          additionalProperties:
+            type: number
+            format: float
+
+    BalanceResponse:
+      type: object
+      required:
+        - ok
+        - miner_id
+        - amount_rtc
+      properties:
+        ok:
+          type: boolean
+        miner_id:
+          type: string
+        amount_rtc:
+          type: number
+          format: float
+        amount_i64:
+          type: integer
+          description: Balance in micro-RTC (6 decimals)
+
+    TransactionRecord:
+      type: object
+      required:
+        - tx_id
+        - from_addr
+        - to_addr
+        - amount
+        - timestamp
+        - status
+        - direction
+        - counterparty
+      properties:
+        tx_id:
+          type: string
+          description: Transaction hash or pending ID
+        from_addr:
+          type: string
+          description: Sender wallet address
+        to_addr:
+          type: string
+          description: Recipient wallet address
+        amount:
+          type: number
+          format: float
+          description: Amount in RTC
+        amount_i64:
+          type: integer
+          description: Amount in micro-RTC
+        timestamp:
+          type: integer
+          description: Transfer creation timestamp
+        status:
+          type: string
+          enum: [pending, confirmed, failed]
+        direction:
+          type: string
+          enum: [sent, received]
+        counterparty:
+          type: string
+          description: Other wallet in transfer
+        memo:
+          type: string
+          nullable: true
+          description: Transfer memo
+        confirmed_at:
+          type: integer
+          nullable: true
+          description: Confirmation timestamp
+        confirms_at:
+          type: integer
+          nullable: true
+          description: Scheduled confirmation time
+
+    SignedTransferRequest:
+      type: object
+      required:
+        - from_address
+        - to_address
+        - amount_rtc
+        - nonce
+        - signature
+      properties:
+        from_address:
+          type: string
+        to_address:
+          type: string
+        amount_rtc:
+          type: number
+          format: float
+        amount_i64:
+          type: integer
+        nonce:
+          type: integer
+        signature:
+          type: string
+          description: Base64-encoded Ed25519 signature
+        public_key:
+          type: string
+          description: Hex-encoded public key
+        memo:
+          type: string
+          nullable: true
+
+    TransferResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        tx_hash:
+          type: string
+        new_balance:
+          type: number
+          format: float
+
+    AdminTransferRequest:
+      type: object
+      required:
+        - from_miner
+        - to_miner
+        - amount_rtc
+      properties:
+        from_miner:
+          type: string
+        to_miner:
+          type: string
+        amount_rtc:
+          type: number
+          format: float
+        memo:
+          type: string
+          nullable: true
+
+    AdminTransferResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        tx_id:
+          type: string
+        from_balance:
+          type: number
+          format: float
+        to_balance:
+          type: number
+          format: float
+
+    SwapInfoResponse:
+      type: object
+      properties:
+        rtc_price_usd:
+          type: number
+          format: float
+        wrtc_solana_mint:
+          type: string
+        wrtc_base_contract:
+          type: string
+        raydium_pool:
+          type: string
+        bridge_url:
+          type: string
+
+    AttestationRequest:
+      type: object
+      required:
+        - miner_id
+        - timestamp
+        - device_info
+        - fingerprint
+        - signature
+      properties:
+        miner_id:
+          type: string
+        timestamp:
+          type: integer
+        device_info:
+          type: object
+          properties:
+            arch:
+              type: string
+            family:
+              type: string
+        fingerprint:
+          $ref: '#/components/schemas/HardwareFingerprint'
+        signature:
+          type: string
+          description: Base64-encoded Ed25519 signature
+
+    HardwareFingerprint:
+      type: object
+      properties:
+        clock_skew:
+          type: object
+          properties:
+            drift_ppm:
+              type: number
+              format: float
+            jitter_ns:
+              type: integer
+        cache_timing:
+          type: object
+          properties:
+            l1_latency_ns:
+              type: integer
+            l2_latency_ns:
+              type: integer
+        simd_identity:
+          type: object
+          properties:
+            instruction_set:
+              type: string
+            pipeline_bias:
+              type: number
+              format: float
+        thermal_entropy:
+          type: object
+          properties:
+            idle_temp_c:
+              type: number
+              format: float
+            load_temp_c:
+              type: number
+              format: float
+            variance:
+              type: number
+              format: float
+        instruction_jitter:
+          type: object
+          properties:
+            mean_ns:
+              type: integer
+            stddev_ns:
+              type: integer
+        behavioral_heuristics:
+          type: object
+          properties:
+            cpuid_clean:
+              type: boolean
+            no_hypervisor:
+              type: boolean
+
+    AttestationResponse:
+      type: object
+      properties:
+        enrolled:
+          type: boolean
+        epoch:
+          type: integer
+        multiplier:
+          type: number
+          format: float
+        hw_hash:
+          type: string
+        next_settlement:
+          type: integer
+
+    VMDetectedResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          enum: [VM_DETECTED]
+        failed_checks:
+          type: array
+          items:
+            type: string
+        penalty_multiplier:
+          type: number
+          format: float
+
+    HardwareBoundResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          enum: [HARDWARE_ALREADY_BOUND]
+        existing_miner:
+          type: string
+
+    EligibilityResponse:
+      type: object
+      properties:
+        eligible:
+          type: boolean
+        epoch:
+          type: integer
+        multiplier:
+          type: number
+          format: float
+        last_attest:
+          type: integer
+        status:
+          type: string
+          enum: [active, inactive, not_attested]
+
+    SettlementTriggerResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        epoch:
+          type: integer
+        miners_rewarded:
+          type: integer
+        total_distributed:
+          type: number
+          format: float
+        settlement_hash:
+          type: string
+
+    ProposalSummary:
+      type: object
+      properties:
+        proposal_id:
+          type: integer
+        title:
+          type: string
+        status:
+          type: string
+          enum: [active, passed, rejected, expired]
+        votes_yes:
+          type: integer
+        votes_no:
+          type: integer
+        ends_at:
+          type: integer
+
+    ProposalDetail:
+      type: object
+      properties:
+        proposal_id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        proposer:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: integer
+        ends_at:
+          type: integer
+        votes_yes:
+          type: integer
+        votes_no:
+          type: integer
+        quorum_required:
+          type: integer
+
+    CreateProposalRequest:
+      type: object
+      required:
+        - wallet
+        - title
+        - description
+      properties:
+        wallet:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+
+    CreateProposalResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        proposal_id:
+          type: integer
+        created_at:
+          type: integer
+
+    VoteRequest:
+      type: object
+      required:
+        - proposal_id
+        - wallet
+        - vote
+        - nonce
+        - public_key
+        - signature
+      properties:
+        proposal_id:
+          type: integer
+        wallet:
+          type: string
+        vote:
+          type: string
+          enum: ["yes", "no", "abstain"]
+        nonce:
+          type: string
+        public_key:
+          type: string
+        signature:
+          type: string
+
+    VoteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        vote_id:
+          type: integer
+        proposal_id:
+          type: integer
+
+    BridgeInitiateRequest:
+      type: object
+      required:
+        - direction
+        - source_chain
+        - dest_chain
+        - source_address
+        - dest_address
+        - amount_rtc
+      properties:
+        direction:
+          type: string
+          enum: [deposit, withdraw]
+        source_chain:
+          type: string
+          enum: [rustchain, solana, ergo, base]
+        dest_chain:
+          type: string
+          enum: [rustchain, solana, ergo, base]
+        source_address:
+          type: string
+        dest_address:
+          type: string
+        amount_rtc:
+          type: number
+          format: float
+        memo:
+          type: string
+          maxLength: 256
+
+    BridgeInitiateResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        bridge_transfer_id:
+          type: integer
+        tx_hash:
+          type: string
+        status:
+          type: string
+          enum: [pending, locked, confirming, completed, failed, voided]
+        lock_epoch:
+          type: integer
+        unlock_at:
+          type: integer
+        estimated_completion:
+          type: string
+          format: date-time
+        direction:
+          type: string
+        source_chain:
+          type: string
+        dest_chain:
+          type: string
+        amount_rtc:
+          type: number
+          format: float
+
+    BridgeStatusResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        transfer:
+          type: object
+          properties:
+            id:
+              type: integer
+            direction:
+              type: string
+            source_chain:
+              type: string
+            dest_chain:
+              type: string
+            source_address:
+              type: string
+            dest_address:
+              type: string
+            amount_rtc:
+              type: number
+              format: float
+            bridge_type:
+              type: string
+            external_tx_hash:
+              type: string
+              nullable: true
+            external_confirmations:
+              type: integer
+            required_confirmations:
+              type: integer
+            status:
+              type: string
+            lock_epoch:
+              type: integer
+            created_at:
+              type: integer
+            updated_at:
+              type: integer
+            expires_at:
+              type: integer
+            tx_hash:
+              type: string
+            memo:
+              type: string
+              nullable: true
+
+    BridgeListResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        count:
+          type: integer
+        transfers:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              direction:
+                type: string
+              source_chain:
+                type: string
+              dest_chain:
+                type: string
+              source_address:
+                type: string
+              dest_address:
+                type: string
+              amount_rtc:
+                type: number
+                format: float
+              bridge_type:
+                type: string
+              status:
+                type: string
+              tx_hash:
+                type: string
+
+    VoidBridgeRequest:
+      type: object
+      required:
+        - tx_hash
+        - reason
+        - voided_by
+      properties:
+        tx_hash:
+          type: string
+        reason:
+          type: string
+          enum: [user_request, security_hold, failed_external, admin_void]
+        voided_by:
+          type: string
+
+    VoidBridgeResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        voided_id:
+          type: integer
+        tx_hash:
+          type: string
+        source_address:
+          type: string
+        dest_address:
+          type: string
+        amount_rtc:
+          type: number
+          format: float
+        voided_by:
+          type: string
+        reason:
+          type: string
+        lock_released:
+          type: boolean
+
+    MinerLocksResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        miner_id:
+          type: string
+        count:
+          type: integer
+        locks:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              amount_rtc:
+                type: number
+                format: float
+              lock_type:
+                type: string
+              status:
+                type: string
+              locked_at:
+                type: integer
+              unlock_at:
+                type: integer
+              time_until_unlock:
+                type: integer
+
+    MinerLocksSummaryResponse:
+      type: object
+      properties:
+        miner_id:
+          type: string
+        total_locked_rtc:
+          type: number
+          format: float
+        total_locked_count:
+          type: integer
+        breakdown:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              amount_rtc:
+                type: number
+                format: float
+              count:
+                type: integer
+        next_unlock:
+          type: object
+          properties:
+            unlock_at:
+              type: integer
+            amount_rtc:
+              type: number
+              format: float
+            seconds_until:
+              type: integer
+
+    PendingUnlocksResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        count:
+          type: integer
+        locks:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              miner_id:
+                type: string
+              amount_rtc:
+                type: number
+                format: float
+              lock_type:
+                type: string
+              unlock_at:
+                type: integer
+              expired_seconds:
+                type: integer
+
+    ReleaseLockRequest:
+      type: object
+      required:
+        - lock_id
+      properties:
+        lock_id:
+          type: integer
+        release_tx_hash:
+          type: string
+          nullable: true
+
+    ReleaseLockResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        lock_id:
+          type: integer
+        miner_id:
+          type: string
+        amount_rtc:
+          type: number
+          format: float
+        released_by:
+          type: string
+        release_tx_hash:
+          type: string
+          nullable: true
+        released_at:
+          type: integer
+
+    ForfeitLockRequest:
+      type: object
+      required:
+        - lock_id
+        - reason
+      properties:
+        lock_id:
+          type: integer
+        reason:
+          type: string
+          enum: [penalty, slashing, fraud]
+
+    ForfeitLockResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        lock_id:
+          type: integer
+        miner_id:
+          type: string
+        amount_rtc:
+          type: number
+          format: float
+        reason:
+          type: string
+        forfeited_by:
+          type: string
+        forfeited_at:
+          type: integer
+        note:
+          type: string
+
+    AutoReleaseResponse:
+      type: object
+      properties:
+        released_count:
+          type: integer
+        total_amount_rtc:
+          type: number
+          format: float
+        errors:
+          type: array
+          items:
+            type: string
+        processed_at:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+        detail:
+          type: string
+          nullable: true
+        miner_id:
+          type: string
+          nullable: true
+        available:
+          type: number
+          format: float
+          nullable: true
+        requested:
+          type: number
+          format: float
+          nullable: true

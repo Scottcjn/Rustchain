@@ -1,0 +1,181 @@
+# Dependabot Configuration for RustChain
+# Issue: #1613 - Dependency Management Automation
+# Docs: See DEPENDABOT.md for policy and usage guidelines
+
+version: 2
+registries: {}
+updates:
+  # Python ecosystem - root level
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    groups:
+      python-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      python-dev-dependencies:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Python ecosystem - tests
+  - package-ecosystem: "pip"
+    directory: "/tests"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+
+  # Python ecosystem - SDK
+  - package-ecosystem: "pip"
+    directory: "/sdk/python"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+
+  # Python ecosystem - integrations
+  - package-ecosystem: "pip"
+    directory: "/integrations/mcp-server"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 2
+
+  # Python ecosystem - rustchainnode
+  - package-ecosystem: "pip"
+    directory: "/rustchainnode"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 2
+
+  # Rust ecosystem - wallet
+  - package-ecosystem: "cargo"
+    directory: "/rustchain-wallet"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    groups:
+      rust-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      rust-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Rust ecosystem - RIPs
+  - package-ecosystem: "cargo"
+    directory: "/rips"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 2
+
+  # npm ecosystem - contracts
+  - package-ecosystem: "npm"
+    directory: "/contracts/erc20"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    groups:
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      npm-production:
+        applies-to: version-updates
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      npm-development:
+        applies-to: version-updates
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # npm ecosystem - onboard
+  - package-ecosystem: "npm"
+    directory: "/onboard"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 2
+
+  # npm ecosystem - react-native-wallet
+  - package-ecosystem: "npm"
+    directory: "/react-native-wallet"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 2
+
+  # npm ecosystem - snap
+  - package-ecosystem: "npm"
+    directory: "/snap"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 2
+
+  # npm ecosystem - solana
+  - package-ecosystem: "npm"
+    directory: "/solana"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 2
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"

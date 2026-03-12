@@ -463,4 +463,46 @@ mod tests {
         assert!(tx1.verify_complete(&keypair1, &nonce_store).unwrap());
         assert!(tx2.verify_complete(&keypair2, &nonce_store).unwrap());
     }
+
+    #[test]
+    fn test_transaction_verify_with_pubkey() {
+        let signer = KeyPair::generate();
+        let verifier = KeyPair::generate();
+
+        let mut tx = Transaction::new(
+            signer.public_key_base58(),
+            "recipient".to_string(),
+            1000,
+            100,
+            1,
+        );
+
+        // Sign with signer
+        tx.sign(&signer).unwrap();
+        assert!(tx.signature.is_some());
+
+        // Verify with signer's public key should succeed
+        let valid = tx.verify_with_pubkey(&signer).unwrap();
+        assert!(valid);
+
+        // Verify with different key should fail
+        let valid = tx.verify_with_pubkey(&verifier).unwrap();
+        assert!(!valid);
+    }
+
+    #[test]
+    fn test_transaction_verify_with_pubkey_unsigned() {
+        let keypair = KeyPair::generate();
+        let tx = Transaction::new(
+            keypair.public_key_base58(),
+            "recipient".to_string(),
+            1000,
+            100,
+            1,
+        );
+
+        // Verify unsigned transaction should fail
+        let result = tx.verify_with_pubkey(&keypair);
+        assert!(result.is_err());
+    }
 }

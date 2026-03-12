@@ -2,11 +2,24 @@
 
 ## Overview
 
-The RustChain wallet tools (`clawrtc wallet show`, GUI wallets) now include robust network error handling with:
+The RustChain wallet tools (`clawrtc wallet coinbase show`, GUI wallets) now include robust network error handling with:
 
 - **Error Classification**: Distinguishes between network unreachable, timeouts, and API errors
 - **Retry Strategy**: Exponential backoff for transient failures (3 retries, 1s→2s→4s delays)
 - **User Diagnostics**: Clear troubleshooting hints for each error type
+
+## Current Wallet Host
+
+Use `https://rustchain.org` for public wallet and health queries.
+
+If you see `Balance: (could not reach network)` from an older `clawrtc` helper build, verify the live node directly:
+
+```bash
+curl -sk https://rustchain.org/health | jq .
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME" | jq .
+```
+
+Older helper packages may still reference the retired `bulbous-bouffant.metalseed.net` host. Also note that current `clawrtc` releases do not expose a generic `clawrtc wallet show` command; the supported helper is `clawrtc wallet coinbase show`.
 
 ## Error Types
 
@@ -28,10 +41,10 @@ The RustChain wallet tools (`clawrtc wallet show`, GUI wallets) now include robu
 ping 8.8.8.8
 
 # 2. Test DNS resolution
-nslookup bulbous-bouffant.metalseed.net
+nslookup rustchain.org
 
 # 3. Test connectivity to node
-curl -I https://bulbous-bouffant.metalseed.net/health
+curl -skI https://rustchain.org/health
 
 # 4. Check firewall settings
 # Ensure outbound HTTPS (port 443) is allowed
@@ -50,7 +63,7 @@ curl -I https://bulbous-bouffant.metalseed.net/health
 **Troubleshooting:**
 ```bash
 # 1. Check node status
-curl -s https://bulbous-bouffant.metalseed.net/health | jq
+curl -sk https://rustchain.org/health | jq
 
 # 2. Wait and retry (node may be busy)
 
@@ -75,10 +88,10 @@ speedtest-cli  # or use your preferred speed test tool
 # Should be 0x + 40 hex characters for Base addresses
 
 # 2. Check if wallet exists
-curl -s "https://bulbous-bouffant.metalseed.net/wallet/balance?miner_id=YOUR_ADDRESS"
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_ADDRESS"
 
 # 3. Check node API status
-curl -s https://bulbous-bouffant.metalseed.net/api/stats | jq
+curl -sk https://rustchain.org/api/stats | jq
 ```
 
 ## Retry Strategy
@@ -114,7 +127,7 @@ clawrtc wallet coinbase show
 #              Error: Network unreachable: DNS resolution failed
 #
 #   ⚠ Network Issue Detected:
-#      DNS resolution failed for bulbous-bouffant.metalseed.net
+#      DNS resolution failed for rustchain.org
 #   Troubleshooting:
 #      1. Check your internet connection
 #      2. Verify DNS is working (try: ping ...)
@@ -145,7 +158,7 @@ if not is_reachable:
 
 # Fetch with retry logic
 data, error = _fetch_with_retry(
-    url="https://bulbous-bouffant.metalseed.net/wallet/balance?miner_id=0x...",
+    url="https://rustchain.org/wallet/balance?miner_id=0x...",
     max_retries=3,
     timeout=15
 )

@@ -1,0 +1,33 @@
+{
+  "miner": "fuzz-miner",
+  "device": {
+    "model": "Test CPU",
+    "arch": "x86_64",
+    "family": "x86_64",
+    "cores": 8,
+    "cpu_serial": "SERIAL-001",
+    "device_id": "550e8400-e29b-41d4-a716-446655440000",
+    "serial_number": "SERIAL-001"
+  },
+  "signals": {
+    "macs": ["aa:bb:cc:dd:ee:01"],
+    "hostname": "fuzz-host-001"
+  },
+  "report": {
+    "nonce": "nonce-001",
+    "commitment": "commitment-001"
+  },
+  "fingerprint": {
+    "all_passed": true,
+    "checks": {
+      "anti_emulation": {
+        "passed": true,
+        "data": {"vm_indicators": []}
+      },
+      "clock_drift": {
+        "passed": true,
+        "data": {"cv": 0.092, "samples": 1000}
+      }
+    }
+  }
+}

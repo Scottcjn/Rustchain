@@ -33,6 +33,7 @@ from coinbase_wallet import (
     cmd_coinbase,
     COINBASE_FILE,
     INSTALL_DIR,
+    NODE_URL,
 )
 
 
@@ -182,6 +183,10 @@ class TestCoinbaseWalletShow(unittest.TestCase):
         output = f.getvalue()
         # Should default to show and display wallet info
         self.assertIn("Coinbase Base Wallet", output)
+
+    def test_coinbase_wallet_uses_current_public_node(self):
+        """The helper should point at the current public RustChain host."""
+        self.assertEqual(NODE_URL, "https://rustchain.org")
 
 
 class TestWalletFilePermissions(unittest.TestCase):

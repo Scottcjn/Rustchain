@@ -1,0 +1,18 @@
+# Epoch Determinism Simulator
+
+Minimal Docker image for running the Epoch Determinism Simulator.
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy source files
+COPY src/ src/
+COPY fixtures/ fixtures/
+COPY tests/ tests/
+
+# Install dependencies (none required beyond stdlib)
+# RUN pip install -r requirements.txt
+
+# Default command
+CMD ["python3", "src/epoch_determinism_simulator.py", "--help"]
