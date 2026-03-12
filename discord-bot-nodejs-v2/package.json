@@ -1,0 +1,19 @@
+{
+  "name": "rustchain-discord-bot",
+  "version": "2.0.0",
+  "description": "Discord bot for RustChain blockchain with real API integration",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": ["rustchain", "discord", "bot", "rtc", "blockchain"],
+  "author": "songshanhua-eng",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.1",
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1"
+  }
+}
