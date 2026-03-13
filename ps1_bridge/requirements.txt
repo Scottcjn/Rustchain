@@ -1,0 +1,4 @@
+# RustChain PS1 Bridge - Python Dependencies
+
+pyserial>=3.5
+requests>=2.28.0
