@@ -218,7 +218,8 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=scott"
 
 Read recent transfer history for a wallet. This endpoint is public but always
 scoped to a single wallet and only returns entries where that wallet is either
-the sender or recipient.
+the sender or recipient. Returns an empty array for wallets with no history
+(non-existent wallets do not produce an error).
 
 ```bash
 curl -sk "https://rustchain.org/wallet/history?miner_id=scott&limit=10"
@@ -227,30 +228,129 @@ curl -sk "https://rustchain.org/wallet/history?miner_id=scott&limit=10"
 **Parameters**:
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `miner_id` | string | Yes | Wallet identifier |
-| `address` | string | No | Backward-compatible alias for `miner_id` |
-| `limit` | integer | No | Max records to return, clamped to `1..200` |
+| `miner_id` | string | Yes* | Wallet identifier (canonical parameter) |
+| `address` | string | Yes* | Backward-compatible alias for `miner_id` |
+| `limit` | integer | No | Max records to return, clamped to `1..200` (default: 50) |
+
+*Either `miner_id` or `address` is required. If both are provided, they must match.
 
 **Response**:
 ```json
 [
   {
     "tx_id": "6df5d4d25b6deef8f0b2e0fa726cecf1",
+    "tx_hash": "6df5d4d25b6deef8f0b2e0fa726cecf1",
     "from_addr": "scott",
     "to_addr": "friend",
     "amount": 1.25,
+    "amount_i64": 1250000,
+    "amount_rtc": 1.25,
     "timestamp": 1771187406,
+    "created_at": 1771187406,
+    "confirmed_at": 1771191006,
+    "confirms_at": 1771191006,
     "status": "pending",
+    "raw_status": "pending",
+    "status_reason": null,
+    "confirmations": 0,
     "direction": "sent",
-    "counterparty": "friend"
+    "counterparty": "friend",
+    "reason": "signed_transfer:payment",
+    "memo": "payment"
+  },
+  {
+    "tx_id": "pending_42",
+    "tx_hash": "pending_42",
+    "from_addr": "alice",
+    "to_addr": "scott",
+    "amount": 5.0,
+    "amount_i64": 5000000,
+    "amount_rtc": 5.0,
+    "timestamp": 1771180000,
+    "created_at": 1771180000,
+    "confirmed_at": null,
+    "confirms_at": 1771266400,
+    "status": "confirmed",
+    "raw_status": "confirmed",
+    "status_reason": null,
+    "confirmations": 1,
+    "direction": "received",
+    "counterparty": "alice",
+    "reason": null,
+    "memo": null
   }
 ]
 ```
 
+**Response Fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| `tx_id` | string | Transaction hash, or `pending_{id}` for pending transfers |
+| `tx_hash` | string | Same as `tx_id` (alias for compatibility) |
+| `from_addr` | string | Sender wallet address |
+| `to_addr` | string | Recipient wallet address |
+| `amount` | float | Amount transferred in RTC (human-readable) |
+| `amount_i64` | integer | Amount in micro-RTC (6 decimals) |
+| `amount_rtc` | float | Same as `amount` (alias for compatibility) |
+| `timestamp` | integer | Transfer creation Unix timestamp |
+| `created_at` | integer | Same as `timestamp` (alias for clarity) |
+| `confirmed_at` | integer\|null | Unix timestamp when confirmed (null if pending) |
+| `confirms_at` | integer\|null | Scheduled confirmation time for pending transfers |
+| `status` | string | Normalized status: `pending`, `confirmed`, or `failed` |
+| `raw_status` | string | Raw database status: `pending`, `confirmed`, `voided`, etc. |
+| `status_reason` | string\|null | Reason for failure/void (if applicable) |
+| `confirmations` | integer | Number of confirmations (1 if confirmed, 0 otherwise) |
+| `direction` | string | `sent` or `received`, relative to the queried wallet |
+| `counterparty` | string | The other wallet in the transfer |
+| `reason` | string\|null | Raw reason field from ledger |
+| `memo` | string\|null | Extracted memo from `signed_transfer:` reason prefix |
+
+**Status Normalization**:
+| Raw Status | Public Status | Description |
+|------------|---------------|-------------|
+| `pending` | `pending` | Awaiting 24-hour confirmation window |
+| `confirmed` | `confirmed` | Fully confirmed and settled |
+| `voided` | `failed` | Voided by admin or system |
+| Any other | `failed` | Any other non-confirmed state |
+
 **Notes**:
-- `status` is normalized to `pending`, `confirmed`, or `failed`
-- `memo` is extracted from signed-transfer reasons when present
-- `confirmed_at` and `confirms_at` are included when available
+- Transactions are ordered by `created_at DESC, id DESC` (newest first)
+- `memo` is extracted from `reason` field when it starts with `signed_transfer:`
+- Pending transfers use `pending_{id}` as `tx_id` until confirmed
+- Empty array `[]` is returned for wallets with no history (not an error)
+- Non-existent wallets return empty array (no WALLET_NOT_FOUND error)
+
+**Error Responses**:
+
+Missing identifier:
+```json
+{
+  "ok": false,
+  "error": "miner_id or address required"
+}
+```
+
+Conflicting identifiers:
+```json
+{
+  "ok": false,
+  "error": "miner_id and address must match when both are provided"
+}
+```
+
+Invalid limit:
+```json
+{
+  "ok": false,
+  "error": "limit must be an integer"
+}
+```
+
+**Pagination Behavior**:
+- Default limit: 50 records
+- Minimum limit: 1 (values < 1 are clamped)
+- Maximum limit: 200 (values > 200 are clamped)
+- Invalid limit values (non-integer) return 400 error
 
 ---
 

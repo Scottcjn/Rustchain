@@ -1615,7 +1615,10 @@ components:
       properties:
         tx_id:
           type: string
-          description: Transaction hash or pending ID
+          description: Transaction hash or pending ID (e.g., "pending_42")
+        tx_hash:
+          type: string
+          description: Same as tx_id (alias for compatibility)
         from_addr:
           type: string
           description: Sender wallet address
@@ -1625,34 +1628,57 @@ components:
         amount:
           type: number
           format: float
-          description: Amount in RTC
+          description: Amount in RTC (human-readable)
         amount_i64:
           type: integer
-          description: Amount in micro-RTC
+          description: Amount in micro-RTC (6 decimals)
+        amount_rtc:
+          type: number
+          format: float
+          description: Same as amount (alias for compatibility)
         timestamp:
           type: integer
-          description: Transfer creation timestamp
-        status:
-          type: string
-          enum: [pending, confirmed, failed]
-        direction:
-          type: string
-          enum: [sent, received]
-        counterparty:
-          type: string
-          description: Other wallet in transfer
-        memo:
-          type: string
-          nullable: true
-          description: Transfer memo
+          description: Transfer creation Unix timestamp
+        created_at:
+          type: integer
+          description: Same as timestamp (alias for clarity)
         confirmed_at:
           type: integer
           nullable: true
-          description: Confirmation timestamp
+          description: Confirmation Unix timestamp (null if pending)
         confirms_at:
           type: integer
           nullable: true
-          description: Scheduled confirmation time
+          description: Scheduled confirmation time for pending transfers
+        status:
+          type: string
+          enum: [pending, confirmed, failed]
+          description: Normalized public status
+        raw_status:
+          type: string
+          description: Raw database status (pending, confirmed, voided, etc.)
+        status_reason:
+          type: string
+          nullable: true
+          description: Reason for failure/void (if applicable)
+        confirmations:
+          type: integer
+          description: Number of confirmations (1 if confirmed, 0 otherwise)
+        direction:
+          type: string
+          enum: [sent, received]
+          description: Direction relative to queried wallet
+        counterparty:
+          type: string
+          description: Other wallet in the transfer
+        reason:
+          type: string
+          nullable: true
+          description: Raw reason field from ledger
+        memo:
+          type: string
+          nullable: true
+          description: Extracted memo from signed_transfer: prefix
 
     SignedTransferRequest:
       type: object
