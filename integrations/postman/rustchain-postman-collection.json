@@ -1,0 +1,509 @@
+{
+  "info": {
+    "name": "RustChain API - Complete Collection",
+    "description": "RustChain Proof-of-Antiquity Blockchain - Complete API endpoints with examples",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://rustchain.org",
+      "type": "string"
+    },
+    {
+      "key": "wallet_id",
+      "value": "YOUR_WALLET_NAME",
+      "type": "string"
+    },
+    {
+      "key": "wallet_address",
+      "value": "RTC1A2B3C4D5E6F7G8H9",
+      "type": "string"
+    },
+    {
+      "key": "private_key",
+      "value": "YOUR_PRIVATE_KEY_HEX",
+      "type": "string"
+    },
+    {
+      "key": "public_key",
+      "value": "YOUR_PUBLIC_KEY_HEX",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Network",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Check node health and status"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"status\": \"healthy\",\n  \"node\": \"Node 1\",\n  \"uptime\": \"99.9%\",\n  \"version\": \"1.0.0\",\n  \"network\": \"mainnet\",\n  \"peers\": 42,\n  \"synced\": true\n}"
+            }
+          ]
+        },
+        {
+          "name": "Current Epoch",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/epoch",
+              "host": ["{{base_url}}"],
+              "path": ["epoch"]
+            },
+            "description": "Get current epoch information"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"epoch\": 12345,\n  \"slot\": 3,\n  \"blocks_per_epoch\": 10,\n  \"current_block\": 123453,\n  \"time_remaining_seconds\": 1800,\n  \"next_epoch_at\": \"2026-03-13T14:00:00Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "List Active Miners",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/miners",
+              "host": ["{{base_url}}"],
+              "path": ["api", "miners"]
+            },
+            "description": "List all active miners on the network"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"miners\": [\n    {\n      \"miner_id\": \"miner-001\",\n      \"wallet\": \"RTC1A2B3C4D5E6F7G8H9\",\n      \"architecture\": \"PowerPC G4\",\n      \"architecture_era\": \"1999-2005\",\n      \"multiplier\": 2.5,\n      \"last_attest\": \"2026-03-13T11:00:00Z\",\n      \"last_block\": 123450,\n      \"total_blocks\": 156,\n      \"total_earned\": 18.72,\n      \"status\": \"active\"\n    }\n  ],\n  \"total_active\": 1,\n  \"total_network_hashrate\": \"1.25 H/s\",\n  \"last_updated\": \"2026-03-13T11:10:00Z\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Wallet",
+      "item": [
+        {
+          "name": "Check Wallet Balance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/wallet/balance?miner_id={{wallet_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["wallet", "balance"],
+              "query": [
+                {
+                  "key": "miner_id",
+                  "value": "{{wallet_id}}"
+                }
+              ]
+            },
+            "description": "Check RTC balance for a wallet"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"miner_id\": \"my-wallet\",\n  \"wallet_address\": \"RTC1A2B3C4D5E6F7G8H9\",\n  \"balance\": 150.50,\n  \"currency\": \"RTC\",\n  \"usd_value\": 15.05,\n  \"last_updated\": \"2026-03-13T11:10:00Z\",\n  \"pending_rewards\": 0.12,\n  \"total_earned\": 200.00\n}"
+            },
+            {
+              "name": "Wallet Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"error\": \"wallet_not_found\",\n  \"message\": \"Wallet 'my-wallet' not found on the network\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Swap Info (x402)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/wallet/swap-info",
+              "host": ["{{base_url}}"],
+              "path": ["wallet", "swap-info"]
+            },
+            "description": "Get USDC/wRTC swap information (x402 Premium API)"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"solana\": {\n    \"token_mint\": \"12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X\",\n    \"raydium_pool\": \"8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb\",\n    \"current_price_usd\": 0.098,\n    \"liquidity_usd\": 125000,\n    \"24h_volume_usd\": 8500\n  },\n  \"base\": {\n    \"token_address\": \"0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6\",\n    \"current_price_usd\": 0.099,\n    \"liquidity_usd\": 85000\n  },\n  \"bridge_info\": {\n    \"solana_bridge\": \"https://bottube.ai/bridge\",\n    \"base_bridge\": \"https://bottube.ai/bridge/base\"\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Miner",
+      "item": [
+        {
+          "name": "Enroll Miner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"miner_id\": \"my-miner-001\",\n  \"wallet\": \"{{wallet_address}}\",\n  \"architecture\": \"PowerPC G4\",\n  \"attestation\": \"<hardware_attestation_hex>\",\n  \"public_key\": \"{{public_key}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/miner/enroll",
+              "host": ["{{base_url}}"],
+              "path": ["api", "miner", "enroll"]
+            },
+            "description": "Register a new miner on the network"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"miner_id\": \"my-miner-001\",\n  \"status\": \"pending\",\n  \"message\": \"Miner enrolled successfully. Awaiting first attestation.\",\n  \"multiplier\": 2.5,\n  \"next_attestation_due\": \"2026-03-13T12:00:00Z\"\n}"
+            },
+            {
+              "name": "Invalid Attestation",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"error\": \"invalid_attestation\",\n  \"message\": \"Hardware attestation verification failed\",\n  \"details\": \"Attestation signature does not match public key\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Submit Attestation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"miner_id\": \"my-miner-001\",\n  \"epoch\": 12345,\n  \"slot\": 3,\n  \"pow_solution\": \"<pow_solution_hex>\",\n  \"timestamp\": 1710331200,\n  \"signature\": \"<ed25519_signature_hex>\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/miner/attest",
+              "host": ["{{base_url}}"],
+              "path": ["api", "miner", "attest"]
+            },
+            "description": "Submit mining attestation for current epoch/slot"
+          },
+          "response": [
+            {
+              "name": "Block Found",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"block_found\": true,\n  \"block_number\": 123454,\n  \"reward\": 0.12,\n  \"multiplier_applied\": 2.5,\n  \"base_reward\": 0.048,\n  \"message\": \"Block found! Reward: 0.12 RTC\"\n}"
+            },
+            {
+              "name": "No Block",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"block_found\": false,\n  \"message\": \"Attestation accepted. No block found this slot.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Miner Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/miner/:miner_id/stats",
+              "host": ["{{base_url}}"],
+              "path": ["api", "miner", ":miner_id", "stats"],
+              "variable": [
+                {
+                  "key": "miner_id",
+                  "value": "my-miner-001",
+                  "description": "Miner ID"
+                }
+              ]
+            },
+            "description": "Get detailed statistics for a specific miner"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"miner_id\": \"my-miner-001\",\n  \"wallet\": \"RTC1A2B3C4D5E6F7G8H9\",\n  \"status\": \"active\",\n  \"architecture\": \"PowerPC G4\",\n  \"multiplier\": 2.5,\n  \"enrolled_at\": \"2026-01-15T08:00:00Z\",\n  \"last_attest\": \"2026-03-13T11:00:00Z\",\n  \"statistics\": {\n    \"total_blocks\": 156,\n    \"total_earned\": 18.72,\n    \"average_blocks_per_epoch\": 2.3,\n    \"uptime_percentage\": 98.5,\n    \"best_epoch\": 12200,\n    \"best_epoch_blocks\": 5\n  },\n  \"recent_activity\": [\n    {\n      \"epoch\": 12345,\n      \"slot\": 3,\n      \"block_found\": true,\n      \"reward\": 0.12,\n      \"timestamp\": \"2026-03-13T11:00:00Z\"\n    }\n  ]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Governance",
+      "item": [
+        {
+          "name": "List Proposals",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/governance/proposals",
+              "host": ["{{base_url}}"],
+              "path": ["governance", "proposals"]
+            },
+            "description": "List all governance proposals"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"proposals\": [\n    {\n      \"id\": \"RCP-0001\",\n      \"title\": \"Enable parameter X\",\n      \"description\": \"Rationale and implementation details\",\n      \"proposal_type\": \"ParameterChange\",\n      \"proposer\": \"RTC1A2B3C4D5E6F7G8H9\",\n      \"created_at\": \"2026-03-06T00:00:00Z\",\n      \"status\": \"voting\",\n      \"voting_starts_at\": \"2026-03-07T00:00:00Z\",\n      \"voting_ends_at\": \"2026-03-14T00:00:00Z\",\n      \"yes_weight\": 15000,\n      \"no_weight\": 5000,\n      \"total_weight\": 20000,\n      \"approval_percentage\": 75.0,\n      \"quorum_met\": true,\n      \"sophia_evaluation\": {\n        \"decision\": \"endorse\",\n        \"rationale\": \"This proposal benefits network efficiency\",\n        \"feasibility_score\": 0.9,\n        \"risk_level\": \"low\"\n      }\n    }\n  ],\n  \"total\": 1,\n  \"active\": 1\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Proposal Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/governance/proposal/:id",
+              "host": ["{{base_url}}"],
+              "path": ["governance", "proposal", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "RCP-0001",
+                  "description": "Proposal ID (e.g., RCP-0001)"
+                }
+              ]
+            },
+            "description": "Get details of a specific proposal"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"id\": \"RCP-0001\",\n  \"title\": \"Enable parameter X\",\n  \"description\": \"Detailed rationale and implementation details\",\n  \"proposal_type\": \"ParameterChange\",\n  \"proposer\": \"RTC1A2B3C4D5E6F7G8H9\",\n  \"created_at\": \"2026-03-06T00:00:00Z\",\n  \"status\": \"voting\",\n  \"voting\": {\n    \"voting_starts_at\": \"2026-03-07T00:00:00Z\",\n    \"voting_ends_at\": \"2026-03-14T00:00:00Z\",\n    \"yes_weight\": 15000,\n    \"no_weight\": 5000,\n    \"total_weight\": 20000,\n    \"approval_percentage\": 75.0,\n    \"quorum_met\": true\n  },\n  \"sophia_evaluation\": {\n    \"decision\": \"endorse\",\n    \"rationale\": \"This proposal benefits network efficiency\",\n    \"feasibility_score\": 0.9,\n    \"risk_level\": \"low\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create Proposal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet\": \"{{wallet_address}}\",\n  \"title\": \"Enable parameter X\",\n  \"description\": \"Detailed rationale and implementation details for enabling parameter X in the protocol\",\n  \"proposal_type\": \"ParameterChange\",\n  \"contract_hash\": \"0xabc123...\",\n  \"requires_multi_sig\": false,\n  \"timelock_blocks\": 3\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/governance/propose",
+              "host": ["{{base_url}}"],
+              "path": ["governance", "propose"]
+            },
+            "description": "Create a new governance proposal (requires >10 RTC)"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"proposal_id\": \"RCP-0003\",\n  \"status\": \"submitted\",\n  \"message\": \"Proposal created successfully. Awaiting Sophia review.\",\n  \"estimated_review_time\": \"24-48 hours\"\n}"
+            },
+            {
+              "name": "Insufficient Balance",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"error\": \"insufficient_balance\",\n  \"message\": \"Wallet must hold at least 10 RTC to create a proposal\",\n  \"current_balance\": 5.5,\n  \"required_balance\": 10\n}"
+            }
+          ]
+        },
+        {
+          "name": "Submit Vote",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"proposal_id\": \"RCP-0001\",\n  \"wallet\": \"{{wallet_address}}\",\n  \"vote\": \"yes\",\n  \"nonce\": \"1700000000\",\n  \"public_key\": \"{{public_key}}\",\n  \"signature\": \"<ed25519_signature_hex>\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/governance/vote",
+              "host": ["{{base_url}}"],
+              "path": ["governance", "vote"]
+            },
+            "description": "Submit a signed vote on a proposal"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"vote_recorded\": true,\n  \"vote_weight\": 1200,\n  \"base_weight\": 1000,\n  \"reputation_bonus\": 200,\n  \"delegated_weight\": 0,\n  \"message\": \"Vote recorded successfully\",\n  \"current_standings\": {\n    \"yes_weight\": 16200,\n    \"no_weight\": 5000,\n    \"approval_percentage\": 76.4\n  }\n}"
+            },
+            {
+              "name": "Invalid Signature",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"error\": \"invalid_signature\",\n  \"message\": \"Signature verification failed\",\n  \"details\": \"Signature does not match public key\"\n}"
+            },
+            {
+              "name": "Already Voted",
+              "status": "Conflict",
+              "code": 409,
+              "body": "{\n  \"error\": \"already_voted\",\n  \"message\": \"You have already voted on this proposal\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Delegate Voting Power",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from_wallet\": \"{{wallet_address}}\",\n  \"to_wallet\": \"RTC9H8G7F6E5D4C3B2A1\",\n  \"weight\": 0.5,\n  \"duration_days\": 30\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/governance/delegate",
+              "host": ["{{base_url}}"],
+              "path": ["governance", "delegate"]
+            },
+            "description": "Delegate voting power to another wallet (RIP-0006)"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"delegation_id\": \"DEL-0001\",\n  \"from_wallet\": \"RTC1A2B3C4D5E6F7G8H9\",\n  \"to_wallet\": \"RTC9H8G7F6E5D4C3B2A1\",\n  \"weight\": 0.5,\n  \"created_at\": \"2026-03-13T12:00:00Z\",\n  \"expires_at\": \"2026-04-12T12:00:00Z\",\n  \"message\": \"Voting power delegated successfully\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Premium API (x402)",
+      "item": [
+        {
+          "name": "Bulk Video Export",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/premium/videos",
+              "host": ["{{base_url}}"],
+              "path": ["api", "premium", "videos"]
+            },
+            "description": "Bulk video export (BoTTube) - requires x402 payment"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"videos\": [\n    {\n      \"video_id\": \"vid_001\",\n      \"title\": \"Sample Video\",\n      \"url\": \"https://...\",\n      \"metadata\": {},\n      \"analytics\": {}\n    }\n  ],\n  \"total\": 100,\n  \"export_format\": \"json\",\n  \"generated_at\": \"2026-03-13T12:00:00Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Agent Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/premium/analytics/:agent",
+              "host": ["{{base_url}}"],
+              "path": ["api", "premium", "analytics", ":agent"],
+              "variable": [
+                {
+                  "key": "agent",
+                  "value": "my-agent",
+                  "description": "Agent name"
+                }
+              ]
+            },
+            "description": "Deep agent analytics (BoTTube) - requires x402 payment"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"agent_name\": \"my-agent\",\n  \"period\": \"last_30_days\",\n  \"metrics\": {\n    \"total_tasks\": 150,\n    \"success_rate\": 0.95,\n    \"average_completion_time\": 45.2,\n    \"token_usage\": 125000,\n    \"cost_usd\": 12.50\n  },\n  \"trends\": [],\n  \"recommendations\": []\n}"
+            }
+          ]
+        },
+        {
+          "name": "Reputation Export",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/premium/reputation",
+              "host": ["{{base_url}}"],
+              "path": ["api", "premium", "reputation"]
+            },
+            "description": "Full reputation export (Beacon Atlas) - requires x402 payment"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"wallet\": \"RTC1A2B3C4D5E6F7G8H9\",\n  \"reputation_score\": 75.5,\n  \"participation_count\": 42,\n  \"correct_predictions\": 35,\n  \"uptime_contribution\": 0.98,\n  \"sophia_alignment\": 0.85,\n  \"history\": [],\n  \"badges\": [\"Early Adopter\", \"Active Voter\", \"Sophia Ally\"]\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
