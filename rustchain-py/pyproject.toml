@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rustchain-py"
+version = "1.0.0"
+description = "Official Python SDK for RustChain blockchain"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "RustChain Team", email = "support@rustchain.org"}
+]
+keywords = ["rustchain", "blockchain", "rtc", "cryptocurrency", "sdk"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "requests>=2.28.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://rustchain.org"
+Documentation = "https://github.com/Scottcjn/bounty-concierge"
+Repository = "https://github.com/Scottcjn/rustchain-py"
+Issues = "https://github.com/Scottcjn/rustchain-py/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rustchain*"]
