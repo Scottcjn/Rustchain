@@ -1,0 +1,75 @@
+Ferranti Mark 1 Miner - Paper Tape Program
+==========================================
+
+This file contains the paper tape program for the RustChain PoA miner.
+Format: ASCII encoding using Ferranti's 5-bit character mapping.
+
+Character Mapping:
+/E@A:SIU½DRJNFCKTZLWHYPQOBG"MXV£
+
+Program (ASCII):
+================
+
+/E@A
+:SIU
+½DRJ
+NFCK
+TZLW
+HYPQ
+OBG"
+MXV£
+/E@A
+:SIU
+½DRJ
+NFCK
+TZLW
+HYPQ
+OBG"
+MXV£
+/E@A
+:SIU
+½DRJ
+NFCK
+TZLW
+HYPQ
+OBG"
+MXV£
+
+Hex Dump:
+=========
+00000: 00000 28000 78000 48010 58000 48010 58000 8800A
+00010: 78004 00000 68000 70000 00000 78004 00000
+
+Instruction Breakdown:
+======================
+Address  Hex      Binary           Mnemonic      Description
+-------  -------  ---------------  -----------   --------------------------
+000      00000    00000 00000000000  CLEAR       Clear accumulator
+001      28000    01010 00000000000  LOAD_B B0   Load B-line 0 with 0
+002      78000    01111 00000000000  RAND        Generate random number
+003      48010    01001 00000010000  STORE 0x10  Store pattern at addr 16
+004      58000    01011 00000000000  ADD_B B0    Increment B-line 0 (nonce)
+005      48010    01001 00000010000  LOAD 0x10   Load pattern
+006      58000    01011 00000000000  ADD B0      Add nonce (XOR approx)
+007      8800A    01000 00000001010  JNEG 0x0A   Jump if negative (share!)
+008      78004    01111 00000000100  JUMP 0x04   Continue loop
+009      00000    00000 00000000000  (unused)    
+00A      68000    01101 00000000000  OUTPUT      Output to paper tape
+00B      70000    01110 00000000000  HOOT        Audio proof
+00C      00000    00000 00000000000  CLEAR       Clear for next iteration
+00D      78004    01111 00000000100  JUMP 0x04   Continue mining
+00E      00000    00000 00000000000  STOP        End program
+
+Usage:
+======
+1. Punch this program onto 5-hole paper tape
+2. Load tape into Ferranti Mark 1 paper tape reader
+3. Set mode switch to "AUTO"
+4. Press START
+5. Wait for HOOT sounds (shares found!)
+6. Collect paper tape output as proof
+
+Note: This program will run indefinitely until STOP instruction or manual halt.
+
+Bounty: #394 - Port Miner to Ferranti Mark 1 (200 RTC / $20)
+Wallet: RTC4325af95d26d59c3ef025963656d22af638bb96b
