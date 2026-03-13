@@ -19,13 +19,16 @@ Author: noxventures_rtc
 Wallet: noxventures_rtc
 """
 
+from __future__ import annotations
+
 import time
 import threading
 import json
 import ssl
 import os
 import urllib.request
-from flask import Blueprint
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from flask import Blueprint, Flask, Response, jsonify
 
 try:
     from flask_socketio import SocketIO, emit, disconnect, join_room, leave_room
@@ -52,26 +55,26 @@ CTX = ssl._create_unverified_context()
 class EventBus:
     """Thread-safe event bus that tracks state and emits diffs."""
 
-    def __init__(self):
-        self._lock         = threading.Lock()
-        self._handlers     = []          # (handler_fn, filter_set)
-        self._last_epoch   = None
-        self._last_slot    = None
-        self._last_miners  = {}          # wallet -> last_attest_ts
-        self._last_txns    = set()       # seen transfer IDs
+    def __init__(self) -> None:
+        self._lock: threading.Lock = threading.Lock()
+        self._handlers: List[Tuple[Callable[[Dict[str, Any]], None], Optional[Set[str]]]] = []
+        self._last_epoch: Optional[int] = None
+        self._last_slot: Optional[int] = None
+        self._last_miners: Dict[str, Tuple[Optional[float], str, float]] = {}
+        self._last_txns: Set[str] = set()
 
-    def subscribe(self, handler, event_types=None):
+    def subscribe(self, handler: Callable[[Dict[str, Any]], None], event_types: Optional[Set[str]] = None) -> Callable[[Dict[str, Any]], None]:
         """Register a callback for events. event_types=None means all."""
         with self._lock:
             self._handlers.append((handler, event_types))
         return handler
 
-    def unsubscribe(self, handler):
+    def unsubscribe(self, handler: Callable[[Dict[str, Any]], None]) -> None:
         with self._lock:
             self._handlers = [(h, f) for h, f in self._handlers if h != handler]
 
-    def emit(self, event_type: str, data: dict):
-        event = {"type": event_type, "data": data, "ts": time.time()}
+    def emit(self, event_type: str, data: Dict[str, Any]) -> None:
+        event: Dict[str, Any] = {"type": event_type, "data": data, "ts": time.time()}
         with self._lock:
             handlers = list(self._handlers)
         for handler, filt in handlers:
@@ -81,10 +84,11 @@ class EventBus:
                 except Exception:
                     pass
 
-    def process_health(self, health: dict):
-        pass  # Could emit node_status events here
+    def process_health(self, health: Dict[str, Any]) -> None:
+        """Process node health data (placeholder)."""
+        pass
 
-    def process_epoch(self, epoch_data: dict):
+    def process_epoch(self, epoch_data: Dict[str, Any]) -> None:
         epoch = epoch_data.get("epoch")
         slot  = epoch_data.get("slot", epoch_data.get("epoch_slot"))
 
@@ -115,13 +119,14 @@ class EventBus:
             with self._lock:
                 self._last_epoch = epoch
 
-    def process_miners(self, miners: list):
-        new_attests = {}
+    def process_miners(self, miners: List[Dict[str, Any]]) -> None:
+        """Process miner data and emit attestation events."""
+        new_attests: Dict[str, Tuple[Optional[float], str, float]] = {}
         for m in miners:
-            wallet = m.get("wallet_name", m.get("wallet", ""))
-            ts     = m.get("last_attestation_time", m.get("last_attest", 0))
-            arch   = m.get("hardware_type", m.get("arch", "unknown"))
-            mult   = m.get("multiplier", m.get("rtc_multiplier", 1.0))
+            wallet: str = m.get("wallet_name", m.get("wallet", ""))
+            ts: Optional[float] = m.get("last_attestation_time", m.get("last_attest", 0))
+            arch: str = m.get("hardware_type", m.get("arch", "unknown"))
+            mult: float = m.get("multiplier", m.get("rtc_multiplier", 1.0))
             if wallet:
                 new_attests[wallet] = (ts, arch, mult)
 
@@ -145,7 +150,8 @@ class EventBus:
 # ─── Poller ─────────────────────────────────────────────────────────────────── #
 bus = EventBus()
 
-def _fetch(path):
+def _fetch(path: str) -> Optional[Dict[str, Any]]:
+    """Fetch data from node API endpoint."""
     url = f"{NODE_URL.rstrip('/')}{path}"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "rustchain-ws/1.0"})
@@ -155,7 +161,8 @@ def _fetch(path):
         return None
 
 
-def _poll_loop():
+def _poll_loop() -> None:
+    """Background polling loop for node data."""
     while True:
         try:
             epoch_data = _fetch("/epoch")
@@ -164,7 +171,7 @@ def _poll_loop():
 
             miners_data = _fetch("/api/miners")
             if miners_data:
-                miners = miners_data if isinstance(miners_data, list) else miners_data.get("miners", [])
+                miners: List[Dict[str, Any]] = miners_data if isinstance(miners_data, list) else miners_data.get("miners", [])
                 bus.process_miners(miners)
 
         except Exception:
@@ -173,7 +180,7 @@ def _poll_loop():
         time.sleep(POLL_INTERVAL)
 
 
-def start_event_poller():
+def start_event_poller() -> None:
     """Start background polling thread. Call once at app startup."""
     t = threading.Thread(target=_poll_loop, daemon=True)
     t.start()
@@ -187,15 +194,14 @@ if HAVE_SOCKETIO:
                         ping_timeout=HEARTBEAT_S, ping_interval=HEARTBEAT_S,
                         max_http_buffer_size=1024 * 64)
 
-    # Track subscriptions per session
-    _subscriptions = {}  # sid -> set of event types (None = all)
+    # Track subscriptions per session: sid -> handler function
+    _subscriptions: Dict[str, Callable[[Dict[str, Any]], None]] = {}
 
     @socketio.on("connect", namespace="/ws/feed")
-    def on_connect():
-        sid = socketio.server.get_environ(None, namespace="/ws/feed")
-        _subscriptions[sid] = None  # subscribe to all by default
+    def on_connect() -> None:
+        sid: str = socketio.server.get_environ(None, namespace="/ws/feed")  # type: ignore
         # Register bus handler for this client
-        def handler(event):
+        def handler(event: Dict[str, Any]) -> None:
             try:
                 socketio.emit("event", event, namespace="/ws/feed", to=sid)
             except Exception:
@@ -205,24 +211,24 @@ if HAVE_SOCKETIO:
         emit("connected", {"status": "ok", "node": NODE_URL, "heartbeat_s": HEARTBEAT_S})
 
     @socketio.on("disconnect", namespace="/ws/feed")
-    def on_disconnect():
-        sid = socketio.server.get_environ(None, namespace="/ws/feed")
+    def on_disconnect() -> None:
+        sid: str = socketio.server.get_environ(None, namespace="/ws/feed")  # type: ignore
         handler = _subscriptions.pop(sid, None)
         if handler and callable(handler):
             bus.unsubscribe(handler)
 
     @socketio.on("subscribe", namespace="/ws/feed")
-    def on_subscribe(data):
+    def on_subscribe(data: Union[Dict[str, Any], None]) -> None:
         """Client can filter by event type: {'types': ['attestation', 'new_block']}"""
-        types = data.get("types") if isinstance(data, dict) else None
-        sid = socketio.server.get_environ(None, namespace="/ws/feed")
+        types: Optional[List[str]] = data.get("types") if isinstance(data, dict) else None
+        sid: str = socketio.server.get_environ(None, namespace="/ws/feed")  # type: ignore
         old_handler = _subscriptions.pop(sid, None)
         if old_handler and callable(old_handler):
             bus.unsubscribe(old_handler)
 
-        filt = set(types) if types else None
+        filt: Optional[Set[str]] = set(types) if types else None
 
-        def handler(event):
+        def handler(event: Dict[str, Any]) -> None:
             try:
                 socketio.emit("event", event, namespace="/ws/feed", to=sid)
             except Exception:
@@ -233,12 +239,11 @@ if HAVE_SOCKETIO:
         emit("subscribed", {"types": list(filt) if filt else "all"})
 
     @socketio.on("ping", namespace="/ws/feed")
-    def on_ping():
+    def on_ping() -> None:
         emit("pong", {"ts": time.time()})
 
     @ws_bp.route("/ws/feed/status")
-    def ws_status():
-        from flask import jsonify
+    def ws_status() -> Response:
         return jsonify({
             "connected_clients": len(_subscriptions),
             "node_url": NODE_URL,
@@ -250,16 +255,15 @@ if HAVE_SOCKETIO:
 # ─── Standalone mode ─────────────────────────────────────────────────────────── #
 if __name__ == "__main__":
     import argparse
-    from flask import Flask
 
     parser = argparse.ArgumentParser(description="RustChain WebSocket Real-Time Feed")
     parser.add_argument("--port", type=int, default=5001)
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--node", default=NODE_URL)
     parser.add_argument("--interval", type=int, default=POLL_INTERVAL)
-    args = parser.parse_args()
+    args: argparse.Namespace = parser.parse_args()
 
-    NODE_URL      = args.node
+    NODE_URL = args.node
     POLL_INTERVAL = args.interval
 
     app = Flask(__name__)
@@ -290,7 +294,7 @@ if __name__ == "__main__":
         print("Starting demo event bus (no WebSocket)...")
         start_event_poller()
 
-        def demo_handler(event):
+        def demo_handler(event: Dict[str, Any]) -> None:
             print(f"[EVENT] {event['type']}: {json.dumps(event['data'])[:80]}")
 
         bus.subscribe(demo_handler)
