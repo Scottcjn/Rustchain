@@ -9,15 +9,22 @@ Technique:
 3. Submit only the minimum valid fingerprint checks, and vary clock_drift so
    the similarity engine never has two comparable matching dimensions.
 """
+from __future__ import annotations
 
 import argparse
 import importlib.util
 import json
 import sqlite3
 from pathlib import Path
+from typing import Any, Dict, List, ModuleType
 
 
-def load_fleet_module():
+def load_fleet_module() -> ModuleType:
+    """Load fleet immune system module for PoC.
+    
+    Returns:
+        Loaded fleet module
+    """
     module_path = (
         Path(__file__).resolve().parent.parent
         / "rips"
@@ -26,12 +33,22 @@ def load_fleet_module():
         / "fleet_immune_system.py"
     )
     spec = importlib.util.spec_from_file_location("fleet_immune_system_poc", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load module from {module_path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def minimal_valid_fingerprint(cv):
+def minimal_valid_fingerprint(cv: float) -> Dict[str, Any]:
+    """Create minimal valid fingerprint for bypass testing.
+    
+    Args:
+        cv: Clock drift coefficient value
+        
+    Returns:
+        Minimal fingerprint dictionary
+    """
     return {
         "checks": {
             "anti_emulation": {
@@ -51,7 +68,12 @@ def minimal_valid_fingerprint(cv):
     }
 
 
-def shared_fleet_fingerprint():
+def shared_fleet_fingerprint() -> Dict[str, Any]:
+    """Create shared fleet fingerprint for baseline epoch.
+    
+    Returns:
+        Shared fingerprint dictionary
+    """
     return {
         "checks": {
             "anti_emulation": {
@@ -83,7 +105,17 @@ def shared_fleet_fingerprint():
     }
 
 
-def build_report(fleet_mod, miners, epochs):
+def build_report(fleet_mod: ModuleType, miners: List[str], epochs: int) -> Dict[str, Any]:
+    """Build RIP-201 fleet detection bypass report.
+    
+    Args:
+        fleet_mod: Fleet immune system module
+        miners: List of miner identifiers
+        epochs: Number of epochs to simulate
+        
+    Returns:
+        Dictionary containing bypass simulation results
+    """
     db = sqlite3.connect(":memory:")
     fleet_mod.ensure_schema(db)
     baseline_epoch = 100
@@ -98,8 +130,8 @@ def build_report(fleet_mod, miners, epochs):
             fingerprint=shared_fleet_fingerprint(),
         )
 
-    baseline_scores = fleet_mod.compute_fleet_scores(db, baseline_epoch)
-    bypass_epochs = []
+    baseline_scores: Dict[str, float] = fleet_mod.compute_fleet_scores(db, baseline_epoch)
+    bypass_epochs: List[Dict[str, Any]] = []
 
     for epoch in range(epochs):
         epoch_number = 200 + epoch
@@ -113,7 +145,7 @@ def build_report(fleet_mod, miners, epochs):
                 fingerprint=minimal_valid_fingerprint(0.05 + index * 0.01),
             )
 
-        scores = fleet_mod.compute_fleet_scores(db, epoch_number)
+        scores: Dict[str, float] = fleet_mod.compute_fleet_scores(db, epoch_number)
         bypass_epochs.append(
             {
                 "epoch": epoch_number,
@@ -136,15 +168,16 @@ def build_report(fleet_mod, miners, epochs):
     }
 
 
-def main():
+def main() -> None:
+    """Main entry point for RIP-201 fleet detection bypass PoC."""
     parser = argparse.ArgumentParser(description="RIP-201 fleet detection bypass PoC")
     parser.add_argument("--miners", type=int, default=5, help="Number of miners to simulate")
     parser.add_argument("--epochs", type=int, default=3, help="Number of consecutive epochs")
     args = parser.parse_args()
 
     fleet_mod = load_fleet_module()
-    miners = [f"miner-{index}" for index in range(args.miners)]
-    report = build_report(fleet_mod, miners, args.epochs)
+    miners: List[str] = [f"miner-{index}" for index in range(args.miners)]
+    report: Dict[str, Any] = build_report(fleet_mod, miners, args.epochs)
     print(json.dumps(report, indent=2, sort_keys=True))
 
 

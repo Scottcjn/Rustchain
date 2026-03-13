@@ -2,28 +2,50 @@
 """
 rustchain-ae — Command-line interface for the RustChain Agent Economy (RIP-302)
 """
-import sys
-import json
-import argparse
-import urllib.request
-import urllib.error
+from __future__ import annotations
 
-BASE_URL = "https://50.28.86.131"
-VERIFY_SSL = False
+import argparse
+import json
+import ssl
+import sys
+import urllib.error
+import urllib.request
+from typing import Any, Dict
+
+BASE_URL: str = "https://50.28.86.131"
+VERIFY_SSL: bool = False
 
 # Disable SSL verification
-import ssl
-SSL_CTX = ssl.create_default_context()
+SSL_CTX: ssl.SSLContext = ssl.create_default_context()
 SSL_CTX.check_hostname = False
 SSL_CTX.verify_mode = ssl.CERT_NONE
 
-def api_get(path):
+
+def api_get(path: str) -> Any:
+    """Make GET request to Agent Economy API.
+    
+    Args:
+        path: API endpoint path
+        
+    Returns:
+        Parsed JSON response
+    """
     url = f"{BASE_URL}{path}"
     req = urllib.request.Request(url)
     with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as resp:
         return json.loads(resp.read().decode())
 
-def api_post(path, data):
+
+def api_post(path: str, data: Dict[str, Any]) -> Any:
+    """Make POST request to Agent Economy API.
+    
+    Args:
+        path: API endpoint path
+        data: JSON payload to send
+        
+    Returns:
+        Parsed JSON response
+    """
     url = f"{BASE_URL}{path}"
     body = json.dumps(data).encode()
     req = urllib.request.Request(url, data=body, method='POST',
@@ -34,9 +56,14 @@ def api_post(path, data):
     except urllib.error.HTTPError as e:
         return json.loads(e.read().decode())
 
-def cmd_list(args):
-    """List open jobs in the Agent Economy marketplace"""
-    status = args.status if hasattr(args, 'status') and args.status else 'open'
+
+def cmd_list(args: argparse.Namespace) -> None:
+    """List open jobs in the Agent Economy marketplace.
+    
+    Args:
+        args: Parsed command-line arguments
+    """
+    status: str = args.status if hasattr(args, 'status') and args.status else 'open'
     try:
         jobs = api_get(f"/agent/jobs?status={status}")
         if not jobs:
@@ -47,36 +74,56 @@ def cmd_list(args):
         print(f"\n{'ID':<20} {'Reward':>8}  {'Title'}")
         print("-" * 70)
         for job in jobs[:20]:
-            jid = job.get('id', '?')[:18]
+            jid = str(job.get('id', '?'))[:18]
             reward = f"{job.get('reward_rtc', '?')} RTC"
-            title = job.get('title', '?')[:40]
+            title = str(job.get('title', '?'))[:40]
             print(f"{jid:<20} {reward:>8}  {title}")
         print(f"\n{len(jobs)} job(s) found.")
     except Exception as e:
         print(f"Error: {e}")
 
-def cmd_show(args):
-    """Show details of a specific job"""
+
+def cmd_show(args: argparse.Namespace) -> None:
+    """Show details of a specific job.
+    
+    Args:
+        args: Parsed command-line arguments
+    """
     try:
         job = api_get(f"/agent/jobs/{args.job_id}")
         print(json.dumps(job, indent=2))
     except Exception as e:
         print(f"Error: {e}")
 
-def cmd_claim(args):
-    """Claim a job"""
+
+def cmd_claim(args: argparse.Namespace) -> None:
+    """Claim a job.
+    
+    Args:
+        args: Parsed command-line arguments
+    """
     payload = {"agent_id": args.wallet, "proposal": args.proposal}
     result = api_post(f"/agent/jobs/{args.job_id}/claim", payload)
     print(json.dumps(result, indent=2))
 
-def cmd_deliver(args):
-    """Deliver work for a claimed job"""
+
+def cmd_deliver(args: argparse.Namespace) -> None:
+    """Deliver work for a claimed job.
+    
+    Args:
+        args: Parsed command-line arguments
+    """
     payload = {"deliverable_url": args.url, "result_summary": args.summary}
     result = api_post(f"/agent/jobs/{args.job_id}/deliver", payload)
     print(json.dumps(result, indent=2))
 
-def cmd_post(args):
-    """Post a new job to the marketplace"""
+
+def cmd_post(args: argparse.Namespace) -> None:
+    """Post a new job to the marketplace.
+    
+    Args:
+        args: Parsed command-line arguments
+    """
     payload = {
         "title": args.title,
         "description": args.description,
@@ -88,23 +135,35 @@ def cmd_post(args):
     result = api_post("/agent/jobs", payload)
     print(json.dumps(result, indent=2))
 
-def cmd_reputation(args):
-    """Check reputation for a wallet"""
+
+def cmd_reputation(args: argparse.Namespace) -> None:
+    """Check reputation for a wallet.
+    
+    Args:
+        args: Parsed command-line arguments
+    """
     try:
         rep = api_get(f"/agent/reputation/{args.wallet}")
         print(json.dumps(rep, indent=2))
     except Exception as e:
         print(f"Error: {e}")
 
-def cmd_stats(args):
-    """Show Agent Economy marketplace statistics"""
+
+def cmd_stats(args: argparse.Namespace) -> None:
+    """Show Agent Economy marketplace statistics.
+    
+    Args:
+        args: Parsed command-line arguments
+    """
     try:
         stats = api_get("/agent/stats")
         print(json.dumps(stats, indent=2))
     except Exception as e:
         print(f"Error: {e}")
 
-def main():
+
+def main() -> None:
+    """Main entry point for rustchain-ae CLI."""
     parser = argparse.ArgumentParser(
         prog='rustchain-ae',
         description='RustChain Agent Economy CLI (RIP-302)'
@@ -160,6 +219,7 @@ def main():
         parser.print_help()
         sys.exit(1)
     args.func(args)
+
 
 if __name__ == '__main__':
     main()

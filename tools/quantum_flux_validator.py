@@ -21,6 +21,7 @@ Example:
     ✅ Quantum Flux detected.
     📄 Badge written to relics/badge_quantum_flux_validator.json
 """
+from __future__ import annotations
 
 import random
 import time
@@ -117,5 +118,10 @@ def award_quantum_flux_badge(output_dir: str = "relics") -> Optional[Dict[str, A
         return None
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Main entry point for quantum flux validator."""
     award_quantum_flux_badge()
+
+
+if __name__ == "__main__":
+    main()

@@ -19,6 +19,7 @@ Usage:
 Output:
     Creates relic_rewards.json with detected badges in current directory.
 """
+from __future__ import annotations
 
 import platform
 import subprocess
@@ -116,6 +117,7 @@ def detect_legacy_os_badges() -> Dict[str, List[Dict[str, Any]]]:
 
     return {"badges": badges}
 
+
 def main() -> None:
     """
     Main entry point for OS detector script.
@@ -128,7 +130,7 @@ def main() -> None:
     output: Dict[str, List[Dict[str, Any]]] = detect_legacy_os_badges()
     
     # Save badge data to JSON file
-    with open("relic_rewards.json", "w") as f:
+    with open("relic_rewards.json", "w", encoding="utf-8") as f:
         json.dump(output, f, indent=4)
     
     # Print summary
