@@ -6,6 +6,7 @@
 
 | Document | Description |
 |----------|-------------|
+| **[Developer Tutorial](./RUSTCHAIN_DEVELOPER_TUTORIAL.md)** | 🆕 Comprehensive guide: setup, mining, transactions, examples |
 | [Protocol Specification](./PROTOCOL.md) | Full RIP-200 consensus protocol |
 | [Mechanism Spec + Falsification Matrix](./MECHANISM_SPEC_AND_FALSIFICATION_MATRIX.md) | One-page claim-to-test map with break conditions |
 | [API Reference](./API.md) | All endpoints with curl examples |
