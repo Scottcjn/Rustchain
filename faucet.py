@@ -13,20 +13,21 @@ import sqlite3
 import time
 import os
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, render_template_string
+from typing import Any, Optional, Tuple
+from flask import Flask, request, jsonify, render_template_string, Response
 
-app = Flask(__name__)
-DATABASE = 'faucet.db'
+app: Flask = Flask(__name__)
+DATABASE: str = 'faucet.db'
 
 # Rate limiting settings (per 24 hours)
-MAX_DRIP_AMOUNT = 0.5  # RTC
-RATE_LIMIT_HOURS = 24
+MAX_DRIP_AMOUNT: float = 0.5  # RTC
+RATE_LIMIT_HOURS: int = 24
 
 
-def init_db():
+def init_db() -> None:
     """Initialize the SQLite database."""
-    conn = sqlite3.connect(DATABASE)
-    c = conn.cursor()
+    conn: sqlite3.Connection = sqlite3.connect(DATABASE)
+    c: sqlite3.Cursor = conn.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS drip_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,60 +41,61 @@ def init_db():
     conn.close()
 
 
-def get_client_ip():
+def get_client_ip() -> str:
     """Get client IP address from request."""
-    if request.headers.get('X-Forwarded-For'):
-        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
+    x_forwarded_for: Optional[str] = request.headers.get('X-Forwarded-For')
+    if x_forwarded_for:
+        return x_forwarded_for.split(',')[0].strip()
     return request.remote_addr or '127.0.0.1'
 
 
-def get_last_drip_time(ip_address):
+def get_last_drip_time(ip_address: str) -> Optional[str]:
     """Get the last time this IP requested a drip."""
-    conn = sqlite3.connect(DATABASE)
-    c = conn.cursor()
+    conn: sqlite3.Connection = sqlite3.connect(DATABASE)
+    c: sqlite3.Cursor = conn.cursor()
     c.execute('''
         SELECT timestamp FROM drip_requests
         WHERE ip_address = ?
         ORDER BY timestamp DESC
         LIMIT 1
     ''', (ip_address,))
-    result = c.fetchone()
+    result: Optional[Tuple[str, ...]] = c.fetchone()
     conn.close()
     return result[0] if result else None
 
 
-def can_drip(ip_address):
+def can_drip(ip_address: str) -> bool:
     """Check if the IP can request a drip (rate limiting)."""
-    last_time = get_last_drip_time(ip_address)
+    last_time: Optional[str] = get_last_drip_time(ip_address)
     if not last_time:
         return True
     
-    last_drip = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
-    now = datetime.now(last_drip.tzinfo)
-    hours_since = (now - last_drip).total_seconds() / 3600
+    last_drip: datetime = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
+    now: datetime = datetime.now(last_drip.tzinfo)
+    hours_since: float = (now - last_drip).total_seconds() / 3600
     
     return hours_since >= RATE_LIMIT_HOURS
 
 
-def get_next_available(ip_address):
+def get_next_available(ip_address: str) -> Optional[str]:
     """Get the next available time for this IP."""
-    last_time = get_last_drip_time(ip_address)
+    last_time: Optional[str] = get_last_drip_time(ip_address)
     if not last_time:
         return None
     
-    last_drip = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
-    next_available = last_drip + timedelta(hours=RATE_LIMIT_HOURS)
-    now = datetime.now(last_drip.tzinfo)
+    last_drip: datetime = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
+    next_available: datetime = last_drip + timedelta(hours=RATE_LIMIT_HOURS)
+    now: datetime = datetime.now(last_drip.tzinfo)
     
     if next_available > now:
         return next_available.isoformat()
     return None
 
 
-def record_drip(wallet, ip_address, amount):
+def record_drip(wallet: str, ip_address: str, amount: float) -> None:
     """Record a drip request to the database."""
-    conn = sqlite3.connect(DATABASE)
-    c = conn.cursor()
+    conn: sqlite3.Connection = sqlite3.connect(DATABASE)
+    c: sqlite3.Cursor = conn.cursor()
     c.execute('''
         INSERT INTO drip_requests (wallet, ip_address, amount)
         VALUES (?, ?, ?)
@@ -103,7 +105,7 @@ def record_drip(wallet, ip_address, amount):
 
 
 # HTML Template
-HTML_TEMPLATE = """
+HTML_TEMPLATE: str = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -255,19 +257,19 @@ HTML_TEMPLATE = """
 
 
 @app.route('/')
-def index():
+def index() -> Response:
     """Serve the faucet homepage."""
     return render_template_string(HTML_TEMPLATE, rate_limit=MAX_DRIP_AMOUNT, hours=RATE_LIMIT_HOURS)
 
 
 @app.route('/faucet')
-def faucet_page():
+def faucet_page() -> Response:
     """Serve the faucet page (alias for index)."""
     return render_template_string(HTML_TEMPLATE, rate_limit=MAX_DRIP_AMOUNT, hours=RATE_LIMIT_HOURS)
 
 
 @app.route('/faucet/drip', methods=['POST'])
-def drip():
+def drip() -> Tuple[Response, int]:
     """
     Handle drip requests.
     
@@ -277,22 +279,22 @@ def drip():
     Response:
         {"ok": true, "amount": 0.5, "next_available": "2026-03-08T12:00:00Z"}
     """
-    data = request.get_json()
+    data: Optional[Any] = request.get_json()
     
     if not data or 'wallet' not in data:
         return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
     
-    wallet = data['wallet'].strip()
+    wallet: str = data['wallet'].strip()
     
     # Basic wallet validation (should start with 0x and be reasonably long)
     if not wallet.startswith('0x') or len(wallet) < 10:
         return jsonify({'ok': False, 'error': 'Invalid wallet address'}), 400
     
-    ip = get_client_ip()
+    ip: str = get_client_ip()
     
     # Check rate limit
     if not can_drip(ip):
-        next_available = get_next_available(ip)
+        next_available: Optional[str] = get_next_available(ip)
         return jsonify({
             'ok': False,
             'error': 'Rate limit exceeded',
@@ -301,7 +303,7 @@ def drip():
     
     # Record the drip (in production, this would actually transfer tokens)
     # For now, we simulate the drip
-    amount = MAX_DRIP_AMOUNT
+    amount: float = MAX_DRIP_AMOUNT
     record_drip(wallet, ip, amount)
     
     return jsonify({
