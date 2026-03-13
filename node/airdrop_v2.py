@@ -87,6 +87,14 @@ class EligibilityTier(Enum):
     MINER = ("miner", 100 * 1_000_000, "Active attestation")
 
     def __init__(self, tier_id: str, reward_uwrtc: int, description: str):
+        """
+        Initialize eligibility tier with reward amount.
+        
+        Args:
+            tier_id: Unique identifier for the tier
+            reward_uwrtc: Reward amount in micro-wRTC (6 decimals)
+            description: Human-readable tier description
+        """
         self.tier_id = tier_id
         self.reward_uwrtc = reward_uwrtc  # In micro-wRTC (6 decimals)
         self.description = description
@@ -112,6 +120,12 @@ class EligibilityResult:
     chain: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert eligibility result to dictionary.
+        
+        Returns:
+            Dict[str, Any]: Dictionary with all fields plus computed reward_wrtc
+        """
         result = asdict(self)
         result["reward_wrtc"] = self.reward_uwrtc / 1_000_000
         return result
@@ -132,6 +146,12 @@ class ClaimRecord:
     status: str = "pending"  # pending, completed, failed
 
     def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert claim record to dictionary.
+        
+        Returns:
+            Dict[str, Any]: Dictionary with all fields plus computed amount_wrtc and timestamp_iso
+        """
         result = asdict(self)
         result["amount_wrtc"] = self.amount_uwrtc / 1_000_000
         result["timestamp_iso"] = datetime.fromtimestamp(
@@ -156,6 +176,12 @@ class BridgeLock:
     dest_tx: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert bridge lock record to dictionary.
+        
+        Returns:
+            Dict[str, Any]: Dictionary with all fields plus computed amount_wrtc and timestamp_iso
+        """
         result = asdict(self)
         result["amount_wrtc"] = self.amount_uwrtc / 1_000_000
         result["timestamp_iso"] = datetime.fromtimestamp(
@@ -239,6 +265,15 @@ class AirdropV2:
     """Cross-chain airdrop infrastructure."""
 
     def __init__(self, db_path: str = ":memory:"):
+        """
+        Initialize AirdropV2 infrastructure.
+        
+        Args:
+            db_path: SQLite database path (default: in-memory database)
+            
+        Side effects:
+            Creates database tables if they don't exist
+        """
         self.db_path = db_path
         self._conn: Optional[sqlite3.Connection] = None
         self._init_db()
@@ -304,17 +339,34 @@ class AirdropV2:
         skip_antisybil: bool = False,
     ) -> EligibilityResult:
         """
-        Check airdrop eligibility for a user.
+        Check if a user is eligible for the RustChain airdrop.
+
+        Performs comprehensive eligibility verification including:
+        - Anti-Sybil checks (GitHub account age, wallet balance)
+        - Duplicate claim prevention
+        - Tier determination based on GitHub activity
+        - Allocation availability check
 
         Args:
-            github_username: GitHub username
-            wallet_address: Wallet address (Solana or Base)
-            chain: Chain name ('solana' or 'base')
+            github_username: GitHub username to verify
+            wallet_address: Wallet address (Solana or Base format)
+            chain: Target chain name ('solana' or 'base')
             github_token: Optional GitHub API token for higher rate limits
-            skip_antisybil: Skip anti-Sybil checks (testing only)
+            skip_antisybil: Skip anti-Sybil checks (testing only, default: False)
 
         Returns:
-            EligibilityResult with tier and reward info
+            EligibilityResult containing:
+            - eligible: Boolean indicating eligibility status
+            - tier: Eligibility tier if qualified (stargazer/contributor/builder/etc.)
+            - reward_uwrtc: Reward amount in micro-wRTC
+            - reason: Explanation of eligibility decision
+            - checks: Dictionary of individual check results
+
+        Side effects:
+            May cache Sybil check results for 1 hour to reduce API calls
+
+        Note:
+            Anti-Sybil checks are critical for mainnet usage. Only skip in test environments.
         """
         chain_lower = chain.lower()
         if chain_lower not in ["solana", "base"]:
@@ -392,10 +444,34 @@ class AirdropV2:
         self, username: str, token: Optional[str] = None
     ) -> Tuple[bool, str]:
         """
-        Check GitHub account meets anti-Sybil requirements.
+        Verify GitHub account meets anti-Sybil requirements.
+
+        Checks performed:
+        - Account existence (404 check)
+        - Account age (must be > MIN_GITHUB_AGE_DAYS, typically 30 days)
+        - Starred repos count (for tier determination)
+        - API rate limit handling
+
+        Args:
+            username: GitHub username to verify
+            token: Optional GitHub API token for higher rate limits (default: None)
 
         Returns:
-            (is_valid, reason)
+            Tuple[bool, str]: 
+            - is_valid: True if account passes all checks
+            - reason: Description of check result or failure reason
+
+        Side effects:
+            Caches check results in sybil_cache table for 1 hour
+
+        Errors handled:
+            - 404: User not found
+            - API errors: Returns False with error message
+            - Network errors: Logs warning and returns False
+
+        Note:
+            Uses GitHub API v3. Rate limited to 60 requests/hour without token,
+            5000 requests/hour with authenticated token.
         """
         try:
             import requests
@@ -466,10 +542,27 @@ class AirdropV2:
         self, address: str, chain: str
     ) -> Tuple[bool, str]:
         """
-        Check wallet meets anti-Sybil requirements.
+        Verify wallet meets anti-Sybil requirements for specified chain.
+
+        Routes to chain-specific wallet validation:
+        - Solana: Checks SOL balance (minimum 0.1 SOL)
+        - Base: Checks ETH balance (minimum 0.01 ETH)
+
+        Args:
+            address: Wallet address to verify (format depends on chain)
+            chain: Chain name ('solana' or 'base')
 
         Returns:
-            (is_valid, reason)
+            Tuple[bool, str]:
+            - is_valid: True if wallet passes balance check
+            - reason: Balance information or failure reason
+
+        Side effects:
+            Caches wallet balance check in sybil_cache table for 1 hour
+
+        Note:
+            Wallet age check is not implemented (requires historical data).
+            Balance checks use public RPC endpoints which may be rate-limited.
         """
         try:
             if chain == "solana":
@@ -584,10 +677,32 @@ class AirdropV2:
         self, github_username: str, token: Optional[str] = None
     ) -> Optional[EligibilityTier]:
         """
-        Determine airdrop tier based on GitHub activity.
+        Determine airdrop eligibility tier based on GitHub contribution history.
+
+        Tier hierarchy (highest to lowest):
+        - CORE: 5+ merged PRs (200 wRTC reward)
+        - BUILDER: 3+ merged PRs (100 wRTC reward)
+        - CONTRIBUTOR: 1+ merged PRs (50 wRTC reward)
+        - STARGAZER: 10+ repos starred (25 wRTC reward)
+
+        Uses GitHub Search API to count merged PRs and starred repos.
+        Returns the highest eligible tier.
+
+        Args:
+            github_username: GitHub username to evaluate
+            token: Optional GitHub API token for higher rate limits (default: None)
 
         Returns:
-            EligibilityTier or None if not eligible
+            EligibilityTier if user qualifies for any tier, None otherwise
+
+        API calls:
+            - GET /users/{username}: Get user profile
+            - GET /search/commits: Count merged PRs (author + merged:true)
+            - GET /users/{username}/starred: Count starred repos
+
+        Note:
+            Tier determination is additive - users qualify for their highest tier only.
+            SECURITY and MINER tiers require additional verification outside this function.
         """
         try:
             import requests
@@ -660,7 +775,29 @@ class AirdropV2:
     def _has_claimed(
         self, github_username: str, wallet_address: str, chain: str
     ) -> bool:
-        """Check if user already claimed airdrop."""
+        """
+        Check if user has already claimed airdrop for this wallet/GitHub pair.
+
+        Prevents duplicate claims by checking the airdrop_claims table for
+        existing claims with status 'pending' or 'completed'.
+
+        Args:
+            github_username: GitHub username to check
+            wallet_address: Wallet address to check
+            chain: Chain name ('solana' or 'base')
+
+        Returns:
+            bool: True if claim already exists, False otherwise
+
+        Database query:
+            SELECT 1 FROM airdrop_claims
+            WHERE github_username = ? AND wallet_address = ? AND chain = ?
+            AND status IN ('pending', 'completed')
+
+        Note:
+            Users can claim once per unique (github_username, wallet_address, chain) triplet.
+            Failed claims do not block new claims.
+        """
         conn = self._get_conn()
         cursor = conn.cursor()
         cursor.execute(
@@ -742,18 +879,42 @@ class AirdropV2:
         skip_antisybil: bool = False,
     ) -> Tuple[bool, str, Optional[ClaimRecord]]:
         """
-        Process airdrop claim.
+        Process an airdrop claim and create a claim record.
+
+        Claim processing flow:
+        1. Verify eligibility (unless skip_antisybil is True)
+        2. Validate tier matches eligibility result
+        3. Check remaining allocation for the chain
+        4. Generate unique claim ID
+        5. Create and store claim record in database
+        6. Update chain allocation (increment claimed_uwrtc)
 
         Args:
-            github_username: GitHub username
-            wallet_address: Wallet address
-            chain: Chain name
-            tier: Eligibility tier
-            github_token: Optional GitHub API token
-            skip_antisybil: Skip anti-Sybil checks (testing only)
+            github_username: GitHub username of claimant
+            wallet_address: Wallet address to receive airdrop
+            chain: Target chain ('solana' or 'base')
+            tier: Claimed eligibility tier (stargazer/contributor/builder/etc.)
+            github_token: Optional GitHub API token for eligibility verification
+            skip_antisybil: Skip anti-Sybil checks (testing only, default: False)
 
         Returns:
-            (success, message, claim_record)
+            Tuple[bool, str, Optional[ClaimRecord]]:
+            - success: True if claim created successfully
+            - message: Success message or error description
+            - claim_record: ClaimRecord object if successful, None otherwise
+
+        Side effects:
+            - Inserts record into airdrop_claims table
+            - Updates airdrop_allocation table (increments claimed_uwrtc)
+            - Logs claim creation to application logger
+
+        Errors handled:
+            - IntegrityError: Duplicate claim (same github/wallet/chain)
+            - General exceptions: Rolled back and logged
+
+        Note:
+            Claim starts in 'pending' status. Call finalize_claim() with
+            transaction signature to mark as 'completed' after on-chain transfer.
         """
         chain_lower = chain.lower()
 
@@ -866,14 +1027,28 @@ class AirdropV2:
         self, claim_id: str, tx_signature: str
     ) -> Tuple[bool, str]:
         """
-        Mark claim as completed with transaction signature.
+        Mark an airdrop claim as completed after on-chain token transfer.
+
+        Updates the claim record from 'pending' to 'completed' status and
+        stores the blockchain transaction signature for audit trail.
 
         Args:
-            claim_id: Claim ID
-            tx_signature: Blockchain transaction signature
+            claim_id: Unique claim identifier (from claim_airdrop response)
+            tx_signature: Blockchain transaction signature/hash proving token transfer
 
         Returns:
-            (success, message)
+            Tuple[bool, str]:
+            - success: True if claim was finalized
+            - message: Confirmation message or error reason
+
+        Database update:
+            UPDATE airdrop_claims
+            SET status = 'completed', tx_signature = ?
+            WHERE claim_id = ? AND status = 'pending'
+
+        Note:
+            Only claims in 'pending' status can be finalized.
+            Idempotent: calling twice returns False on second attempt.
         """
         conn = self._get_conn()
         cursor = conn.cursor()
@@ -909,17 +1084,42 @@ class AirdropV2:
         amount_uwrtc: int,
     ) -> Tuple[bool, str, Optional[BridgeLock]]:
         """
-        Create a bridge lock.
+        Create a cross-chain bridge lock for wRTC token transfer.
+
+        Bridge lock mechanism enables secure cross-chain transfers:
+        1. User locks tokens on source chain
+        2. Lock record created with 'pending' status
+        3. After source tx confirmed: status -> 'locked'
+        4. After destination tx completed: status -> 'released'
+
+        Supported chains: solana, base, rustchain
 
         Args:
-            from_address: Source wallet address
-            to_address: Destination wallet address
-            from_chain: Source chain
-            to_chain: Destination chain
-            amount_uwrtc: Amount in micro-wRTC
+            from_address: Source wallet address (on from_chain)
+            to_address: Destination wallet address (on to_chain)
+            from_chain: Source chain name ('solana', 'base', or 'rustchain')
+            to_chain: Destination chain name ('solana', 'base', or 'rustchain')
+            amount_uwrtc: Amount to transfer in micro-wRTC (6 decimals)
 
         Returns:
-            (success, message, lock_record)
+            Tuple[bool, str, Optional[BridgeLock]]:
+            - success: True if lock created successfully
+            - message: Success message or error description
+            - lock_record: BridgeLock object if successful, None otherwise
+
+        Validation:
+            - Chains must be different (no same-chain locks)
+            - Chains must be in supported list
+            - Amount must be positive
+
+        Side effects:
+            - Inserts record into bridge_locks table
+            - Logs lock creation to application logger
+
+        Note:
+            This function only creates the lock record. Actual token locking
+            must be performed on-chain separately. Call confirm_bridge_lock()
+            after source chain transaction is confirmed.
         """
         # Validate chains
         if from_chain not in ["solana", "base", "rustchain"]:
@@ -992,14 +1192,32 @@ class AirdropV2:
         self, lock_id: str, source_tx: str
     ) -> Tuple[bool, str]:
         """
-        Confirm bridge lock with source transaction.
+        Confirm a bridge lock after source chain transaction is verified.
+
+        Updates lock status from 'pending' to 'locked' and records the
+        source chain transaction signature. This is step 2 of the 3-step
+        bridge process:
+        1. create_bridge_lock() -> status: 'pending'
+        2. confirm_bridge_lock() -> status: 'locked' ← this function
+        3. release_bridge_lock() -> status: 'released'
 
         Args:
-            lock_id: Lock ID
-            source_tx: Source chain transaction signature
+            lock_id: Unique lock identifier (from create_bridge_lock response)
+            source_tx: Source chain transaction signature/hash
 
         Returns:
-            (success, message)
+            Tuple[bool, str]:
+            - success: True if lock was confirmed
+            - message: Confirmation message or error reason
+
+        Database update:
+            UPDATE bridge_locks
+            SET status = 'locked', source_tx = ?
+            WHERE lock_id = ? AND status = 'pending'
+
+        Note:
+            Only locks in 'pending' status can be confirmed.
+            Should be called after verifying source_tx on the source chain.
         """
         conn = self._get_conn()
         cursor = conn.cursor()
@@ -1025,14 +1243,34 @@ class AirdropV2:
         self, lock_id: str, dest_tx: str
     ) -> Tuple[bool, str]:
         """
-        Release bridge lock with destination transaction.
+        Release a bridge lock after destination chain transfer is completed.
+
+        Final step of the bridge process. Updates lock status from 'locked'
+        to 'released' and records the destination chain transaction signature.
+        
+        Bridge process completion:
+        1. create_bridge_lock() -> status: 'pending'
+        2. confirm_bridge_lock() -> status: 'locked'
+        3. release_bridge_lock() -> status: 'released' ← this function
 
         Args:
-            lock_id: Lock ID
-            dest_tx: Destination chain transaction signature
+            lock_id: Unique lock identifier (from create_bridge_lock response)
+            dest_tx: Destination chain transaction signature/hash
 
         Returns:
-            (success, message)
+            Tuple[bool, str]:
+            - success: True if lock was released
+            - message: Release confirmation or error reason
+
+        Database update:
+            UPDATE bridge_locks
+            SET status = 'released', dest_tx = ?
+            WHERE lock_id = ? AND status = 'locked'
+
+        Note:
+            Only locks in 'locked' status can be released.
+            Should be called after verifying dest_tx on the destination chain.
+            Once released, the bridge transfer is complete.
         """
         conn = self._get_conn()
         cursor = conn.cursor()
@@ -1087,7 +1325,29 @@ class AirdropV2:
     def get_claims_by_github(
         self, github_username: str
     ) -> List[ClaimRecord]:
-        """Get all claims for a GitHub user."""
+        """
+        Retrieve all airdrop claims associated with a GitHub username.
+
+        Queries the airdrop_claims table for all claims (regardless of status)
+        made by the specified GitHub user. Useful for:
+        - User claim history lookup
+        - Duplicate claim detection
+        - Analytics and reporting
+
+        Args:
+            github_username: GitHub username to search for (case-sensitive)
+
+        Returns:
+            List[ClaimRecord]: List of all claims for the user.
+            Empty list if no claims found.
+
+        Database query:
+            SELECT * FROM airdrop_claims WHERE github_username = ?
+
+        Note:
+            Returns claims across all chains (solana, base).
+            Includes claims in all statuses (pending, completed, failed).
+        """
         conn = self._get_conn()
         cursor = conn.cursor()
         cursor.execute(

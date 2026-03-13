@@ -10,7 +10,9 @@ import time
 import json
 import threading
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
+
+from flask import Flask, jsonify, request
 
 # ============================================================================
 # PEER DISCOVERY & MANAGEMENT
@@ -20,6 +22,14 @@ class PeerManager:
     """Manages peer nodes and their status"""
 
     def __init__(self, db_path: str, local_host: str, local_port: int = 8088):
+        """
+        Initialize peer manager.
+        
+        Args:
+            db_path: Path to SQLite database for peer tracking
+            local_host: Local node hostname or IP
+            local_port: Local node port number
+        """
         self.db_path = db_path
         self.local_host = local_host
         self.local_port = local_port
@@ -30,7 +40,7 @@ class PeerManager:
         # Initialize peer database
         self._init_peer_db()
 
-    def _init_peer_db(self):
+    def _init_peer_db(self) -> None:
         """Create peer tracking table"""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
@@ -93,7 +103,7 @@ class PeerManager:
 
                 return [row[0] for row in rows]
 
-    def update_peer_status(self, peer_url: str, block_height: int = None):
+    def update_peer_status(self, peer_url: str, block_height: Optional[int] = None) -> None:
         """Update peer last seen timestamp"""
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
@@ -111,7 +121,7 @@ class PeerManager:
                     """, (int(time.time()), peer_url))
                 conn.commit()
 
-    def mark_peer_inactive(self, peer_url: str):
+    def mark_peer_inactive(self, peer_url: str) -> None:
         """Mark peer as inactive"""
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
@@ -131,6 +141,13 @@ class BlockSync:
     """Synchronizes blocks between nodes"""
 
     def __init__(self, db_path: str, peer_manager: PeerManager):
+        """
+        Initialize block synchronizer.
+        
+        Args:
+            db_path: Path to SQLite database for block storage
+            peer_manager: PeerManager instance for peer discovery
+        """
         self.db_path = db_path
         self.peer_manager = peer_manager
         self.sync_interval = 30  # seconds
@@ -161,7 +178,7 @@ class BlockSync:
             print(f"[P2P] Failed to fetch blocks from {peer_url}: {e}")
             return []
 
-    def sync_from_peers(self):
+    def sync_from_peers(self) -> None:
         """Synchronize blocks from all active peers"""
         local_height = self.get_local_block_height()
         peers = self.peer_manager.get_active_peers()
@@ -203,7 +220,7 @@ class BlockSync:
                 print(f"[P2P] Error syncing from {peer_url}: {e}")
                 self.peer_manager.mark_peer_inactive(peer_url)
 
-    def _apply_blocks(self, blocks: List[Dict]):
+    def _apply_blocks(self, blocks: List[Dict[str, Any]]) -> None:
         """Apply received blocks to local chain"""
         # This would integrate with the main RustChain block validation
         # For now, just log that we received them
@@ -211,11 +228,16 @@ class BlockSync:
             print(f"[P2P] Received block {block.get('height')} from peer")
             # TODO: Validate and add block to local chain
 
-    def start_sync_loop(self):
+    def start_sync_loop(self) -> None:
         """Start background sync loop"""
         self.running = True
 
         def sync_worker():
+            """
+            Background worker for continuous block synchronization.
+            
+            Runs in a daemon thread, periodically syncing from peers.
+            """
             while self.running:
                 try:
                     self.sync_from_peers()
@@ -228,7 +250,7 @@ class BlockSync:
         thread.start()
         print(f"[P2P] Block sync started (interval: {self.sync_interval}s)")
 
-    def stop_sync_loop(self):
+    def stop_sync_loop(self) -> None:
         """Stop background sync"""
         self.running = False
 
@@ -241,9 +263,15 @@ class TransactionGossip:
     """Gossips transactions to peer nodes"""
 
     def __init__(self, peer_manager: PeerManager):
+        """
+        Initialize transaction gossip protocol.
+        
+        Args:
+            peer_manager: PeerManager instance for peer discovery
+        """
         self.peer_manager = peer_manager
 
-    def broadcast_transaction(self, tx_data: Dict):
+    def broadcast_transaction(self, tx_data: Dict[str, Any]) -> None:
         """Broadcast transaction to all active peers"""
         peers = self.peer_manager.get_active_peers()
 
@@ -272,6 +300,12 @@ class HealthChecker:
     """Checks peer health via periodic pings"""
 
     def __init__(self, peer_manager: PeerManager):
+        """
+        Initialize health checker.
+        
+        Args:
+            peer_manager: PeerManager instance for peer discovery
+        """
         self.peer_manager = peer_manager
         self.ping_interval = 60  # seconds
         self.running = False
@@ -284,11 +318,16 @@ class HealthChecker:
         except:
             return False
 
-    def start_health_checks(self):
+    def start_health_checks(self) -> None:
         """Start background health check loop"""
         self.running = True
 
         def health_worker():
+            """
+            Background worker for periodic peer health checks.
+            
+            Runs in a daemon thread, pinging all active peers.
+            """
             while self.running:
                 peers = self.peer_manager.get_active_peers()
 
@@ -306,7 +345,7 @@ class HealthChecker:
         thread.start()
         print(f"[P2P] Health checks started (interval: {self.ping_interval}s)")
 
-    def stop_health_checks(self):
+    def stop_health_checks(self) -> None:
         """Stop background health checks"""
         self.running = False
 
@@ -315,7 +354,7 @@ class HealthChecker:
 # FLASK INTEGRATION
 # ============================================================================
 
-def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
+def add_p2p_endpoints(app: Flask, peer_manager: PeerManager, block_sync: BlockSync, tx_gossip: TransactionGossip) -> None:
     """Add P2P endpoints to Flask app"""
 
     @app.route('/p2p/announce', methods=['POST'])
@@ -367,6 +406,14 @@ class RustChainP2P:
     """Main P2P coordination class"""
 
     def __init__(self, db_path: str, local_host: str, bootstrap_peers: List[str] = None):
+        """
+        Initialize RustChain P2P synchronization system.
+        
+        Args:
+            db_path: Path to SQLite database for peer/block storage
+            local_host: Local node hostname or IP
+            bootstrap_peers: Optional list of initial peer URLs to connect to
+        """
         self.peer_manager = PeerManager(db_path, local_host)
         self.block_sync = BlockSync(db_path, self.peer_manager)
         self.tx_gossip = TransactionGossip(self.peer_manager)
@@ -377,7 +424,7 @@ class RustChainP2P:
             for peer_url in bootstrap_peers:
                 self.peer_manager.add_peer(peer_url)
 
-    def start(self):
+    def start(self) -> None:
         """Start all P2P services"""
         print("[P2P] Starting RustChain P2P synchronization...")
 
@@ -386,7 +433,7 @@ class RustChainP2P:
 
         print("[P2P] P2P services started successfully")
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop all P2P services"""
         print("[P2P] Stopping P2P services...")
 
@@ -395,7 +442,7 @@ class RustChainP2P:
 
         print("[P2P] P2P services stopped")
 
-    def announce_to_peers(self, local_url: str):
+    def announce_to_peers(self, local_url: str) -> None:
         """Announce ourselves to all known peers"""
         peers = self.peer_manager.get_active_peers()
 

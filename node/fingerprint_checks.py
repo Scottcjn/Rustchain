@@ -22,7 +22,7 @@ import platform
 import statistics
 import subprocess
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 # Import ROM fingerprint database if available
 try:
@@ -37,8 +37,23 @@ try:
 except ImportError:
     ROM_DB_AVAILABLE = False
 
-def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict]:
-    """Check 1: Clock-Skew & Oscillator Drift"""
+def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict[str, Any]]:
+    """Check 1: Clock-Skew & Oscillator Drift
+    
+    Measures timing variations in cryptographic operations to detect
+    synthetic/emulated environments.
+    
+    Args:
+        samples: Number of timing samples to collect (default: 200)
+        
+    Returns:
+        Tuple of (is_valid, data_dict) where data_dict contains:
+        - mean_ns: Average operation time in nanoseconds
+        - stdev_ns: Standard deviation of timing
+        - cv: Coefficient of variation
+        - drift_stdev: Standard deviation of drift between consecutive samples
+        - fail_reason: Reason for failure if invalid
+    """
     intervals = []
     reference_ops = 5000
 
@@ -77,13 +92,34 @@ def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict]:
     return valid, data
 
 
-def check_cache_timing(iterations: int = 100) -> Tuple[bool, Dict]:
-    """Check 2: Cache Timing Fingerprint (L1/L2/L3 Latency)"""
+def check_cache_timing(iterations: int = 100) -> Tuple[bool, Dict[str, Any]]:
+    """Check 2: Cache Timing Fingerprint (L1/L2/L3 Latency)
+    
+    Measures memory access latencies at different buffer sizes to
+    identify cache hierarchy characteristics.
+    
+    Args:
+        iterations: Number of measurement iterations (default: 100)
+        
+    Returns:
+        Tuple of (is_valid, data_dict) containing cache timing metrics
+        and pass/fail status based on expected cache latency patterns
+    """
     l1_size = 8 * 1024
     l2_size = 128 * 1024
     l3_size = 4 * 1024 * 1024
 
     def measure_access_time(buffer_size: int, accesses: int = 1000) -> float:
+        """
+        Measure average memory access time for a buffer.
+        
+        Args:
+            buffer_size: Size of buffer in bytes
+            accesses: Number of access operations to average
+            
+        Returns:
+            float: Average access time in nanoseconds
+        """
         buf = bytearray(buffer_size)
         for i in range(0, buffer_size, 64):
             buf[i] = i % 256
@@ -123,8 +159,20 @@ def check_cache_timing(iterations: int = 100) -> Tuple[bool, Dict]:
     return valid, data
 
 
-def check_simd_identity() -> Tuple[bool, Dict]:
-    """Check 3: SIMD Unit Identity (SSE/AVX/AltiVec/NEON)"""
+def check_simd_identity() -> Tuple[bool, Dict[str, Any]]:
+    """Check 3: SIMD Unit Identity (SSE/AVX/AltiVec/NEON)
+    
+    Detects CPU architecture and SIMD instruction set availability
+    to verify hardware authenticity.
+    
+    Returns:
+        Tuple of (is_valid, data_dict) containing:
+        - arch: CPU architecture string
+        - simd_flags_count: Number of detected SIMD flags
+        - has_sse/avx/altivec/neon: Boolean flags for each SIMD type
+        - sample_flags: First 10 detected CPU flags
+        - fail_reason: Reason for failure if no SIMD detected
+    """
     flags = []
     arch = platform.machine().lower()
 
@@ -173,8 +221,18 @@ def check_simd_identity() -> Tuple[bool, Dict]:
     return valid, data
 
 
-def check_thermal_drift(samples: int = 50) -> Tuple[bool, Dict]:
-    """Check 4: Thermal Drift Entropy"""
+def check_thermal_drift(samples: int = 50) -> Tuple[bool, Dict[str, Any]]:
+    """Check 4: Thermal Drift Entropy
+    
+    Measures timing variations between cold and hot CPU states to
+    detect thermal throttling behavior characteristic of real hardware.
+    
+    Args:
+        samples: Number of timing samples for each state (default: 50)
+        
+    Returns:
+        Tuple of (is_valid, data_dict) containing thermal drift metrics
+    """
     cold_times = []
     for i in range(samples):
         start = time.perf_counter_ns()
@@ -215,9 +273,28 @@ def check_thermal_drift(samples: int = 50) -> Tuple[bool, Dict]:
     return valid, data
 
 
-def check_instruction_jitter(samples: int = 100) -> Tuple[bool, Dict]:
-    """Check 5: Instruction Path Jitter"""
+def check_instruction_jitter(samples: int = 100) -> Tuple[bool, Dict[str, Any]]:
+    """Check 5: Instruction Path Jitter
+    
+    Measures timing variations across different instruction types
+    (integer, floating-point, branches) to detect CPU microarchitecture behavior.
+    
+    Args:
+        samples: Number of timing samples per instruction type (default: 100)
+        
+    Returns:
+        Tuple of (is_valid, data_dict) containing instruction timing metrics
+    """
     def measure_int_ops(count: int = 10000) -> float:
+        """
+        Measure integer operation timing.
+        
+        Args:
+            count: Number of integer operations to perform
+            
+        Returns:
+            float: Total time in nanoseconds
+        """
         start = time.perf_counter_ns()
         x = 1
         for i in range(count):
@@ -225,6 +302,15 @@ def check_instruction_jitter(samples: int = 100) -> Tuple[bool, Dict]:
         return time.perf_counter_ns() - start
 
     def measure_fp_ops(count: int = 10000) -> float:
+        """
+        Measure floating-point operation timing.
+        
+        Args:
+            count: Number of FP operations to perform
+            
+        Returns:
+            float: Total time in nanoseconds
+        """
         start = time.perf_counter_ns()
         x = 1.5
         for i in range(count):
@@ -232,6 +318,15 @@ def check_instruction_jitter(samples: int = 100) -> Tuple[bool, Dict]:
         return time.perf_counter_ns() - start
 
     def measure_branch_ops(count: int = 10000) -> float:
+        """
+        Measure branch prediction timing.
+        
+        Args:
+            count: Number of branch operations to perform
+            
+        Returns:
+            float: Total time in nanoseconds
+        """
         start = time.perf_counter_ns()
         x = 0
         for i in range(count):
@@ -271,6 +366,15 @@ def check_instruction_jitter(samples: int = 100) -> Tuple[bool, Dict]:
 
 
 def _read_text_file(path: str, max_bytes: int = 1024 * 64) -> Optional[str]:
+    """Read text file with size limit.
+    
+    Args:
+        path: File path to read
+        max_bytes: Maximum bytes to read (default: 64KB)
+        
+    Returns:
+        File contents as string, or None if read fails
+    """
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             return f.read(max_bytes)
@@ -279,6 +383,15 @@ def _read_text_file(path: str, max_bytes: int = 1024 * 64) -> Optional[str]:
 
 
 def _run_cmd(args: List[str], timeout_s: int = 5) -> Optional[str]:
+    """Execute shell command and capture stdout.
+    
+    Args:
+        args: Command arguments as list
+        timeout_s: Timeout in seconds (default: 5)
+        
+    Returns:
+        Command stdout (stripped), or None if execution fails
+    """
     try:
         result = subprocess.run(args, capture_output=True, text=True, timeout=timeout_s)
         if result.returncode != 0:
@@ -289,6 +402,14 @@ def _run_cmd(args: List[str], timeout_s: int = 5) -> Optional[str]:
 
 
 def _parse_linux_cpuinfo(cpuinfo_text: str) -> Dict[str, str]:
+    """Parse /proc/cpuinfo content into key-value pairs.
+    
+    Args:
+        cpuinfo_text: Raw contents of /proc/cpuinfo
+        
+    Returns:
+        Dictionary mapping normalized keys to values
+    """
     out: Dict[str, str] = {}
 
     # Common keys across x86, ARM, PPC Linux.
@@ -317,9 +438,16 @@ def _parse_linux_cpuinfo(cpuinfo_text: str) -> Dict[str, str]:
     return out
 
 
-def _estimate_release_year(cpu_model: str) -> Tuple[Optional[int], Dict]:
-    """
+def _estimate_release_year(cpu_model: str) -> Tuple[Optional[int], Dict[str, Any]]:
+    """Estimate CPU release year from model string.
+    
     Best-effort mapping. Keep it conservative: only return a year when we're confident.
+    
+    Args:
+        cpu_model: CPU model name/string (e.g., "Intel Core i7-4770", "Apple M1")
+        
+    Returns:
+        Tuple of (estimated_year, details_dict) where year may be None if unknown
     """
     import re
 
@@ -409,11 +537,21 @@ def _estimate_release_year(cpu_model: str) -> Tuple[Optional[int], Dict]:
     return None, details
 
 
-def check_device_age_oracle() -> Tuple[bool, Dict]:
-    """
-    Check 6: Device-Age Oracle Fields (Historicity Attestation)
-
-    Collect CPU + firmware age signals and flag obvious spoofing attempts (new CPU pretending to be old).
+def check_device_age_oracle() -> Tuple[bool, Dict[str, Any]]:
+    """Check 6: Device-Age Oracle Fields (Historicity Attestation)
+    
+    Collect CPU + firmware age signals and flag obvious spoofing attempts
+    (new CPU pretending to be old).
+    
+    Returns:
+        Tuple of (is_valid, data_dict) containing:
+        - arch: CPU architecture
+        - cpu_model: Detected CPU model name
+        - estimated_release_year: Estimated CPU release year
+        - bios_date/version: BIOS information if available
+        - mismatch_reasons: List of detected spoofing indicators
+        - confidence: Confidence score (0.0-1.0)
+        - fail_reason: Reason for failure if spoofing detected
     """
     arch = platform.machine().lower()
 
@@ -491,17 +629,20 @@ def check_device_age_oracle() -> Tuple[bool, Dict]:
     return True, data
 
 
-def check_anti_emulation() -> Tuple[bool, Dict]:
+def check_anti_emulation() -> Tuple[bool, Dict[str, Any]]:
     """Check 6: Anti-Emulation Behavioral Checks
-
+    
     Detects traditional hypervisors AND cloud provider VMs:
     - VMware, VirtualBox, KVM, QEMU, Xen, Hyper-V, Parallels
     - AWS EC2 (Nitro/Xen), GCP, Azure, DigitalOcean
     - Linode, Vultr, Hetzner, Oracle Cloud, OVH
     - Cloud metadata endpoints (169.254.169.254)
-
+    
     Updated 2026-02-21: Added cloud provider detection after
     discovering AWS t3.medium instances attempting to mine.
+    
+    Returns:
+        Tuple of (is_valid, data_dict) containing emulation detection results
     """
     vm_indicators = []
 
@@ -640,13 +781,20 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
 
 
 
-def check_rom_fingerprint() -> Tuple[bool, Dict]:
-    """
-    Check 8: ROM Fingerprint (for retro platforms)
-
+def check_rom_fingerprint() -> Tuple[bool, Dict[str, Any]]:
+    """Check 8: ROM Fingerprint (for retro platforms)
+    
     Detects if running with a known emulator ROM dump.
     Real vintage hardware should have unique/variant ROMs.
     Emulators all use the same pirated ROM packs.
+    
+    Returns:
+        Tuple of (is_valid, data_dict) containing:
+        - skipped: True if ROM DB not available or modern hardware
+        - rom_hashes: Detected ROM hashes
+        - emulator_detected: True if known emulator ROM found
+        - detection_details: List of detected ROM details
+        - fail_reason: Reason for failure if emulator detected
     """
     if not ROM_DB_AVAILABLE:
         # Skip for modern hardware or if DB not available
@@ -725,38 +873,32 @@ def check_rom_fingerprint() -> Tuple[bool, Dict]:
 
 
 def check_pico_bridge_attestation(
-    fingerprint_data: Optional[Dict] = None,
+    fingerprint_data: Optional[Dict[str, Any]] = None,
     bridge_type: Optional[str] = None,
-) -> Tuple[bool, Dict]:
-    """
-    Check: Pico Serial Bridge Attestation (RIP-304)
-
+) -> Tuple[bool, Dict[str, Any]]:
+    """Check: Pico Serial Bridge Attestation (RIP-304)
+    
     Validates attestation data from retro console mining via Pico bridge.
     This check replaces standard timing checks for console miners.
-
-    Expected fingerprint_data structure for pico_serial bridge:
-    {
-        "bridge_type": "pico_serial",
-        "checks": {
-            "ctrl_port_timing": {"data": {"cv": 0.005, "samples": 500}},
-            "rom_execution_timing": {"data": {"hash_time_us": 847000}},
-            "bus_jitter": {"data": {"jitter_stdev_ns": 1250}},
-            "anti_emulation": {"data": {"emulator_indicators": []}}
-        }
-    }
-
+    
     Validation criteria:
     - Controller port timing CV > 0.0001 (anti-emulation threshold)
     - ROM execution timing within expected range for claimed console
     - Bus jitter present (real hardware characteristic)
     - No emulator indicators
-
+    
     Args:
         fingerprint_data: Full fingerprint dict from attestation
         bridge_type: Explicit bridge type override
-
+        
     Returns:
-        (passed, data) tuple with validation results
+        Tuple of (is_valid, data_dict) containing:
+        - skipped: True if not a Pico bridge
+        - bridge_type: Detected or provided bridge type
+        - timing_passed: True if controller port timing passed
+        - rom_timing_passed: True if ROM execution timing valid
+        - jitter_passed: True if bus jitter detected
+        - emulator_passed: True if no emulator indicators
     """
     # Determine bridge type
     detected_bridge = None
@@ -856,8 +998,17 @@ def check_pico_bridge_attestation(
     return all_passed, data
 
 
-def validate_all_checks(include_rom_check: bool = True) -> Tuple[bool, Dict]:
-    """Run all core fingerprint checks (and optional ROM check)."""
+def validate_all_checks(include_rom_check: bool = True) -> Tuple[bool, Dict[str, Any]]:
+    """Run all core fingerprint checks (and optional ROM check).
+    
+    Args:
+        include_rom_check: Whether to include ROM fingerprint check (default: True)
+        
+    Returns:
+        Tuple of (all_passed, results_dict) containing:
+        - Individual check results with pass/fail status and data
+        - Overall pass/fail status
+    """
     results = {}
     all_passed = True
 

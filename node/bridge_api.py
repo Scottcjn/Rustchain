@@ -34,10 +34,13 @@ except ImportError:
     # Fallback for standalone testing
     DB_PATH = os.environ.get("RC_DB_PATH", "rustchain.db")
     def current_slot() -> int:
+        """Get current time slot (10-minute intervals)."""
         return int(time.time()) // 600
     def slot_to_epoch(slot: int) -> int:
+        """Convert slot number to epoch number (144 slots per epoch)."""
         return slot // 144
     def validate_miner_id_format(miner_id: str) -> Tuple[bool, str]:
+        """Validate miner ID format (must be 3+ chars, start with 'RTC')."""
         if not miner_id or len(miner_id) < 3:
             return False, "Miner ID must be at least 3 characters"
         if not miner_id.startswith("RTC"):
@@ -339,9 +342,25 @@ def create_bridge_transfer(
     admin_initiated: bool = False
 ) -> Tuple[bool, Dict[str, Any]]:
     """
-    Create a new bridge transfer entry.
+    Create a new bridge transfer entry in the database.
     
-    Returns: (success, result_dict)
+    For deposits, checks miner balance and creates a corresponding lock ledger entry.
+    Generates a unique transaction hash and calculates unlock time based on direction.
+    
+    Args:
+        db_conn: SQLite database connection
+        request: BridgeTransferRequest with validated transfer parameters
+        admin_initiated: If True, bypasses balance check (default: False)
+        
+    Returns:
+        Tuple[bool, Dict[str, Any]]:
+            - Success: (True, {"ok": True, "bridge_transfer_id": int, "tx_hash": str, ...})
+            - Failure: (False, {"error": str, ...})
+            
+    Side effects:
+        - Inserts record into bridge_transfers table
+        - For deposits: inserts record into lock_ledger table
+        - Commits transaction on success, rolls back on error
     """
     cursor = db_conn.cursor()
     now = int(time.time())
@@ -465,7 +484,20 @@ def get_bridge_transfer_by_hash(
     db_conn: sqlite3.Connection,
     tx_hash: str
 ) -> Optional[Dict[str, Any]]:
-    """Get bridge transfer details by transaction hash."""
+    """
+    Retrieve bridge transfer details by transaction hash.
+    
+    Args:
+        db_conn: SQLite database connection
+        tx_hash: Unique transaction hash (32-character hex string)
+        
+    Returns:
+        Optional[Dict[str, Any]]: Transfer details dictionary or None if not found
+        
+    Note:
+        Returns comprehensive transfer data including status, amounts, chains,
+        and timestamps. Does not include lock ledger information.
+    """
     cursor = db_conn.cursor()
     
     row = cursor.execute("""
@@ -520,7 +552,24 @@ def list_bridge_transfers(
     direction: Optional[str] = None,
     limit: int = 100
 ) -> list:
-    """List bridge transfers with optional filters."""
+    """
+    List bridge transfers with optional filtering.
+    
+    Args:
+        db_conn: SQLite database connection
+        status_filter: Optional status to filter by (pending, locked, confirming, completed, failed, voided)
+        source_address: Optional source wallet address filter
+        dest_address: Optional destination wallet address filter
+        direction: Optional direction filter (deposit or withdraw)
+        limit: Maximum number of results (capped at 500, default: 100)
+        
+    Returns:
+        list: List of transfer dictionaries, ordered by ID descending (newest first)
+        
+    Note:
+        Returns a subset of transfer fields for efficiency. Use get_bridge_transfer_by_hash
+        for complete transfer details.
+    """
     cursor = db_conn.cursor()
     
     # Build query with filters
@@ -723,13 +772,23 @@ def update_external_confirmation(
 # Flask Routes (to be integrated into main node)
 # =============================================================================
 
-def register_bridge_routes(app: any) -> None:
+def register_bridge_routes(app: "flask.Flask") -> None:
     """Register bridge API routes with Flask app."""
     from flask import request, jsonify
     
     @app.route('/api/bridge/initiate', methods=['POST'])
     def initiate_bridge():
-        """Initiate a new bridge transfer."""
+        """Initiate a new bridge transfer.
+        
+        Validates request payload, address formats, and miner balance (unless admin-initiated).
+        Creates bridge transfer entry and lock ledger record for deposits.
+        
+        Headers:
+            X-Admin-Key: Optional admin key to bypass balance check
+        
+        Returns:
+            JSON response with bridge_transfer_id, tx_hash, and status on success
+        """
         data = request.get_json(silent=True)
         
         # Validate request
@@ -775,7 +834,14 @@ def register_bridge_routes(app: any) -> None:
     @app.route('/api/bridge/status/<tx_hash>', methods=['GET'])
     @app.route('/api/bridge/status', methods=['GET'])
     def get_bridge_status(tx_hash: Optional[str] = None):
-        """Get bridge transfer status by tx_hash or id."""
+        """Get bridge transfer status by tx_hash or id.
+        
+        Args:
+            tx_hash: Transaction hash from URL path, or from query param (id/tx_hash)
+        
+        Returns:
+            JSON response with full transfer details, or 404 if not found
+        """
         if not tx_hash:
             tx_hash = request.args.get("id") or request.args.get("tx_hash")
         
@@ -797,7 +863,18 @@ def register_bridge_routes(app: any) -> None:
     
     @app.route('/api/bridge/list', methods=['GET'])
     def list_bridges():
-        """List bridge transfers with filters."""
+        """List bridge transfers with optional filters.
+        
+        Query params:
+            status: Filter by status (pending, locked, confirming, completed, failed, voided)
+            source_address: Filter by source wallet address
+            dest_address: Filter by destination wallet address
+            direction: Filter by direction (deposit or withdraw)
+            limit: Max results (default 100, max 500)
+        
+        Returns:
+            JSON response with count and list of transfers (newest first)
+        """
         status = request.args.get("status")
         source = request.args.get("source_address")
         dest = request.args.get("dest_address")
@@ -825,7 +902,17 @@ def register_bridge_routes(app: any) -> None:
     
     @app.route('/api/bridge/void', methods=['POST'])
     def void_bridge():
-        """Admin: Void a bridge transfer."""
+        """Admin: Void a bridge transfer and release associated lock.
+        
+        Requires valid admin key in X-Admin-Key header.
+        Only voids transfers in pending, locked, or confirming status.
+        
+        Headers:
+            X-Admin-Key: Admin authentication key (required)
+        
+        Returns:
+            JSON response confirming void status and lock release
+        """
         admin_key = request.headers.get("X-Admin-Key", "")
         if admin_key != os.environ.get("RC_ADMIN_KEY", ""):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
@@ -853,7 +940,17 @@ def register_bridge_routes(app: any) -> None:
     
     @app.route('/api/bridge/update-external', methods=['POST'])
     def update_external():
-        """Update external confirmation data (for bridge service callbacks)."""
+        """Update external confirmation data (for bridge service callbacks).
+        
+        Updates bridge transfer with external transaction hash and confirmation count.
+        Automatically transitions status to 'completed' when confirmations reach threshold.
+        
+        Headers:
+            X-API-Key: Optional API key for callback authentication
+        
+        Returns:
+            JSON response with updated status and confirmation counts
+        """
         # Optional: require API key for callbacks
         api_key = request.headers.get("X-API-Key", "")
         expected_key = os.environ.get("RC_BRIDGE_API_KEY", "")

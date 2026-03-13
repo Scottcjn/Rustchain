@@ -47,12 +47,24 @@ class P2PAuthManager:
     """
 
     def __init__(self, rotation_interval: int = 24*60*60):
+        """
+        Initialize P2P authentication manager with key rotation.
+        
+        Args:
+            rotation_interval: Key rotation interval in seconds (default: 24 hours)
+        """
         self._current_key = os.environ.get("RC_P2P_KEY", secrets.token_hex(32))
         self._previous_key = None
         self.rotation_interval = rotation_interval
         self._start_key_rotation()
 
-    def _start_key_rotation(self):
+    def _start_key_rotation(self) -> None:
+        """
+        Start background thread for automatic key rotation.
+        
+        Spawns a daemon thread that rotates keys at the configured interval.
+        Keys rotate in the background without blocking main operations.
+        """
         def rotate_keys():
             while True:
                 time.sleep(self.rotation_interval)
@@ -61,8 +73,13 @@ class P2PAuthManager:
         rotation_thread = threading.Thread(target=rotate_keys, daemon=True)
         rotation_thread.start()
 
-    def _rotate_keys(self):
-        """Rotate API keys periodically"""
+    def _rotate_keys(self) -> None:
+        """
+        Rotate API keys: move current to previous, generate new current key.
+        
+        Called automatically by background thread at rotation_interval.
+        Logs rotation timestamp for audit trail.
+        """
         self._previous_key = self._current_key
         self._current_key = os.environ.get("RC_P2P_KEY", secrets.token_hex(32))
         logging.info(f"P2P keys rotated at {datetime.now()}")
@@ -95,7 +112,7 @@ class P2PAuthManager:
 
         return False
 
-    def generate_signature(self, message: str) -> tuple:
+    def generate_signature(self, message: str) -> tuple[str, str]:
         """Generate signature for outgoing messages"""
         timestamp = str(int(time.time()))
         message_bytes = f"{message}{timestamp}".encode()
@@ -126,6 +143,16 @@ class RateLimiter:
     """
 
     def __init__(self):
+        """
+        Initialize rate limiter with default endpoint limits.
+        
+        Sets up request tracking dictionary and threading lock.
+        Default limits (requests per minute):
+        - /p2p/blocks: 10
+        - /p2p/transactions: 100
+        - /p2p/ping: 60
+        - default: 50
+        """
         self.requests = {}  # {peer_url: [(timestamp, endpoint), ...]}
         self.lock = threading.Lock()
 
@@ -183,7 +210,7 @@ class BlockValidator:
     - Merkle root validation
     """
 
-    def validate_block(self, block_data: Dict) -> tuple:
+    def validate_block(self, block_data: Dict[str, Any]) -> tuple[bool, str]:
         """
         Validate block before accepting
         Returns: (is_valid, error_message)
@@ -215,7 +242,7 @@ class BlockValidator:
         except Exception as e:
             return False, f"Validation error: {str(e)}"
 
-    def _validate_block_hash(self, block_data: Dict) -> bool:
+    def _validate_block_hash(self, block_data: Dict[str, Any]) -> bool:
         """Verify block hash is correctly computed"""
         # Reconstruct hash from block data
         block_string = json.dumps({
@@ -229,7 +256,7 @@ class BlockValidator:
         computed_hash = hashlib.sha256(block_string.encode()).hexdigest()
         return computed_hash == block_data.get('hash')
 
-    def _validate_transaction(self, tx: Dict) -> bool:
+    def _validate_transaction(self, tx: Dict[str, Any]) -> bool:
         """Validate transaction structure"""
         required_tx_fields = ['tx_hash', 'sender', 'recipient', 'amount_nano']
         return all(field in tx for field in required_tx_fields)
@@ -249,13 +276,19 @@ class SybilProtection:
     """
 
     def __init__(self, max_peers: int = 50):
+        """
+        Initialize Sybil protection with peer limits and reputation tracking.
+        
+        Args:
+            max_peers: Maximum number of concurrent peer connections (default: 50)
+        """
         self.max_peers = max_peers
         self.peer_reputation = {}  # {peer_url: score}
         self.banned_peers = set()
         self.whitelist = set()
         self.lock = threading.Lock()
 
-    def can_add_peer(self, peer_url: str) -> tuple:
+    def can_add_peer(self, peer_url: str) -> tuple[bool, str]:
         """Check if peer can be added"""
         with self.lock:
             # Check if banned
@@ -273,7 +306,7 @@ class SybilProtection:
 
             return True, "Peer allowed"
 
-    def update_reputation(self, peer_url: str, delta: int):
+    def update_reputation(self, peer_url: str, delta: int) -> None:
         """Update peer reputation score"""
         with self.lock:
             if peer_url not in self.peer_reputation:
@@ -286,7 +319,7 @@ class SybilProtection:
                 self.banned_peers.add(peer_url)
                 logging.warning(f"Peer {peer_url} auto-banned (low reputation)")
 
-    def add_to_whitelist(self, peer_url: str):
+    def add_to_whitelist(self, peer_url: str) -> None:
         """Add trusted peer to whitelist"""
         self.whitelist.add(peer_url)
 
@@ -301,6 +334,14 @@ class SecurePeerManager:
     """
 
     def __init__(self, db_path: str, local_host: str, local_port: int = 8088):
+        """
+        Initialize secure peer manager with all security components.
+        
+        Args:
+            db_path: Path to SQLite database for peer storage
+            local_host: Local host address for P2P communication
+            local_port: Local port for P2P communication (default: 8088)
+        """
         self.db_path = db_path
         self.local_host = local_host
         self.local_port = local_port
@@ -317,7 +358,7 @@ class SecurePeerManager:
         # Initialize peer database
         self._init_peer_db()
 
-    def _init_peer_db(self):
+    def _init_peer_db(self) -> None:
         """Create peer tracking table with reputation"""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
@@ -335,7 +376,7 @@ class SecurePeerManager:
             """)
             conn.commit()
 
-    def add_peer(self, peer_url: str) -> tuple:
+    def add_peer(self, peer_url: str) -> tuple[bool, str]:
         """Add peer with Sybil protection"""
         # Check Sybil protection
         can_add, reason = self.sybil_protection.can_add_peer(peer_url)
@@ -370,7 +411,7 @@ class SecurePeerManager:
             """)
             return [row[0] for row in cursor.fetchall()]
 
-    def get_network_stats(self):
+    def get_network_stats(self) -> Dict[str, Any]:
         """Get P2P network statistics"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("""
@@ -403,19 +444,26 @@ class SecureBlockSync:
     """
 
     def __init__(self, peer_manager: SecurePeerManager, db_path: str):
+        """
+        Initialize secure block synchronizer.
+        
+        Args:
+            peer_manager: SecurePeerManager instance for peer communication
+            db_path: Path to SQLite database for block storage
+        """
         self.peer_manager = peer_manager
         self.db_path = db_path
         self.sync_interval = 30  # seconds
         self.running = False
 
-    def start(self):
+    def start(self) -> None:
         """Start background sync thread"""
         self.running = True
         sync_thread = threading.Thread(target=self._sync_loop, daemon=True)
         sync_thread.start()
         logging.info("Secure block sync started")
 
-    def _sync_loop(self):
+    def _sync_loop(self) -> None:
         """Main sync loop"""
         while self.running:
             try:
@@ -425,7 +473,7 @@ class SecureBlockSync:
 
             time.sleep(self.sync_interval)
 
-    def sync_from_peers(self):
+    def sync_from_peers(self) -> None:
         """Fetch and validate blocks from peers"""
         peers = self.peer_manager.get_active_peers()
 
@@ -469,12 +517,12 @@ class SecureBlockSync:
                 logging.error(f"Failed to sync from {peer_url}: {e}")
                 self.peer_manager.sybil_protection.update_reputation(peer_url, -5)
 
-    def _apply_block(self, block_data: Dict):
+    def _apply_block(self, block_data: Dict[str, Any]) -> None:
         """Apply validated block to local chain"""
         # Implementation depends on your blockchain schema
         logging.info(f"Applied block {block_data.get('block_index')} from peer")
 
-    def get_blocks_for_sync(self, start_height, limit=100):
+    def get_blocks_for_sync(self, start_height: int, limit: int = 100) -> List[Dict[str, Any]]:
         """Get RustChain headers formatted as validator-compatible block records."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("""
@@ -527,7 +575,19 @@ class SecureBlockSync:
 def create_p2p_auth_middleware(auth_manager: P2PAuthManager):
     """Create Flask middleware for P2P authentication"""
 
-    def require_peer_auth(f: Callable) -> Callable:
+    def require_peer_auth(f: Callable[..., Any]) -> Callable[..., Any]:
+        """
+        Decorator to require P2P authentication for endpoint access.
+        
+        Args:
+            f: Flask route function to wrap
+            
+        Returns:
+            Wrapped function that validates X-Peer-Signature and X-Peer-Timestamp headers
+            
+        Skips authentication for trusted peers in TRUSTED_PEER_IPS.
+        Returns 401 if authentication headers are missing or invalid.
+        """
         @wraps(f)
         def decorated(*args, **kwargs):
             # Skip auth for trusted peers
