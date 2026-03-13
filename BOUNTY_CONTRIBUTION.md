@@ -1,9 +1,9 @@
 # Bounty Contribution
 
-This addresses issue #932: Fix issue #930: [Bounty #432] Game Boy Color Miner Implementation
+This addresses issue #940: Fix issue #933: Add IBM PC/XT DOS Miner (Bounty #422)
 
 ## Description
-Resolves #930
+Resolves #933
 
 Payment address: 0x4F666e7b4F63637223625FD4e9Ace6055fD6a847
 
