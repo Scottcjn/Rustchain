@@ -117,7 +117,21 @@ class PaymentProcessor:
         >>> processor.process_payment(payment_id)
     """
     
-    def __init__(self, client):
+    def __init__(self, client: "AgentEconomyClient") -> None:
+        """
+        Initialize PaymentProcessor with an agent economy client.
+        
+        Args:
+            client: AgentEconomyClient instance for API communication.
+                   Used for x402 payment processing and intent management.
+        """
+        """
+        Initialize PaymentProcessor with an agent economy client.
+        
+        Args:
+            client: AgentEconomyClient instance for API communication.
+                   Used for x402 payment processing and intent management.
+        """
         self.client = client
         self._pending_intents: Dict[str, PaymentIntent] = {}
 

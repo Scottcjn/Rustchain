@@ -33,6 +33,19 @@ class RustChainClient:
         verify_ssl: bool = True,
         timeout: int = 30,
     ):
+        """
+        Initialize RustChain client with connection configuration.
+        
+        Sets up HTTP session with connection pooling for efficient API calls.
+        
+        Args:
+            base_url: Base URL of the RustChain node API endpoint.
+                     Example: "https://rustchain.org" or "http://localhost:8080"
+            verify_ssl: Enable SSL certificate verification. Set to False for
+                       development with self-signed certificates.
+            timeout: Request timeout in seconds. Prevents hanging on slow responses.
+                    Increase for slow networks or large data transfers.
+        """
         self.base_url = base_url.rstrip("/")
         self.verify_ssl = verify_ssl
         self.timeout = timeout
@@ -407,6 +420,11 @@ class RustChainClient:
         """Context manager entry"""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self, 
+        exc_type: Optional[type], 
+        exc_val: Optional[Exception], 
+        exc_tb: Optional[Any]
+    ) -> None:
         """Context manager exit"""
         self.close()

@@ -4,10 +4,13 @@ Bounty System Client
 Manages bounty discovery, claims, and automated payments.
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
+
+if TYPE_CHECKING:
+    from rustchain.agent_economy.client import AgentEconomyClient
 
 
 class BountyStatus(Enum):
@@ -167,7 +170,14 @@ class BountyClient:
         >>> my_submissions = bounties.get_my_submissions()
     """
     
-    def __init__(self, client):
+    def __init__(self, client: "AgentEconomyClient") -> None:
+        """
+        Initialize BountyClient with an agent economy client.
+        
+        Args:
+            client: AgentEconomyClient instance for API communication.
+                   Used for bounty operations and automated payments.
+        """
         self.client = client
 
     def list(

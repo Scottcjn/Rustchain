@@ -6,8 +6,11 @@ import asyncio
 import ssl
 import urllib.request
 import json
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from urllib.error import URLError, HTTPError
+
+if TYPE_CHECKING:
+    import aiohttp
 
 
 class RustChainError(Exception):
@@ -47,7 +50,7 @@ class RustChainClient:
         timeout: int = 30,
         retry_count: int = 3,
         retry_delay: float = 1.0
-    ):
+    ) -> None:
         """
         Initialize RustChain Client
         
@@ -71,7 +74,12 @@ class RustChainClient:
         else:
             self._ctx = None
     
-    def _request(self, method: str, endpoint: str, data: Optional[Dict] = None) -> Dict:
+    def _request(
+        self, 
+        method: str, 
+        endpoint: str, 
+        data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Make HTTP request with retry logic"""
         import time
         
@@ -111,11 +119,15 @@ class RustChainClient:
         
         raise APIError("Max retries exceeded")
     
-    def _get(self, endpoint: str) -> Dict:
+    def _get(self, endpoint: str) -> Dict[str, Any]:
         """GET request"""
         return self._request("GET", endpoint)
     
-    def _post(self, endpoint: str, data: Dict) -> Dict:
+    def _post(
+        self, 
+        endpoint: str, 
+        data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """POST request"""
         return self._request("POST", endpoint, data)
     
@@ -271,8 +283,8 @@ class RustChainClient:
         self, 
         method: str, 
         endpoint: str, 
-        data: Optional[Dict] = None
-    ) -> Dict:
+        data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Async HTTP request"""
         import aiohttp
         
@@ -294,7 +306,7 @@ class RustChainClient:
 # Convenience function for quick usage
 def create_client(
     base_url: str = "https://50.28.86.131",
-    **kwargs
+    **kwargs: Any
 ) -> RustChainClient:
     """
     Create a RustChain client with default settings

@@ -145,7 +145,14 @@ class ReputationClient:
         >>> leaderboard = client.get_leaderboard(limit=10)
     """
     
-    def __init__(self, client):
+    def __init__(self, client: "AgentEconomyClient") -> None:
+        """
+        Initialize ReputationClient with an agent economy client.
+        
+        Args:
+            client: AgentEconomyClient instance for API communication.
+                   Used for reputation scoring and attestation management.
+        """
         self.client = client
 
     def get_score(self, agent_id: Optional[str] = None) -> ReputationScore:
@@ -160,7 +167,7 @@ class ReputationClient:
         """
         aid = agent_id or self.client.config.agent_id
         if not aid:
-            raise ValueError("agent_id must be provided")
+            raise ValidationError("agent_id must be provided")
         
         result = self.client._request("GET", f"/api/agent/reputation/{aid}")
         
@@ -198,10 +205,10 @@ class ReputationClient:
         """
         from_agent = self.client.config.agent_id
         if not from_agent:
-            raise ValueError("client must have agent_id configured")
+            raise ValidationError("client must have agent_id configured")
         
         if not 1 <= rating <= 5:
-            raise ValueError("rating must be between 1 and 5")
+            raise ValidationError("rating must be between 1 and 5")
         
         payload = {
             "from_agent": from_agent,
@@ -327,7 +334,7 @@ class ReputationClient:
         """
         aid = agent_id or self.client.config.agent_id
         if not aid:
-            raise ValueError("agent_id must be provided")
+            raise ValidationError("agent_id must be provided")
         
         return self.client._request("GET", f"/api/agent/reputation/{aid}/proof")
 
@@ -335,7 +342,7 @@ class ReputationClient:
         self,
         transaction_id: str,
         reason: str,
-        evidence: Optional[List[str]] = None,
+        evidence: Optional[List[Any]] = None,
     ) -> Dict[str, Any]:
         """
         File a dispute for a transaction.
@@ -372,7 +379,7 @@ class ReputationClient:
         """
         aid = agent_id or self.client.config.agent_id
         if not aid:
-            raise ValueError("agent_id must be provided")
+            raise ValidationError("agent_id must be provided")
         
         result = self.client._request("GET", f"/api/agent/reputation/{aid}/badges")
         return result.get("badges", [])

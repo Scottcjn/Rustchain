@@ -25,7 +25,21 @@ from typing import Optional, Dict, List
 BASE_URL = "https://rustchain.org"
 
 class RustChainAgentCLI:
+    """
+    Command-line interface for RustChain Agent Economy.
+    
+    Provides methods to interact with the agent job marketplace,
+    including posting jobs, claiming work, and managing deliveries.
+    """
+    
     def __init__(self, wallet: str = "cli-user"):
+        """
+        Initialize CLI with wallet identity.
+        
+        Args:
+            wallet: Wallet address or identifier for the agent.
+                   Used as the default poster/claimant for operations.
+        """
         self.wallet = wallet
         self.base_url = BASE_URL
     
@@ -122,6 +136,12 @@ class RustChainAgentCLI:
 
 
 def cmd_list(args):
+    """
+    List open jobs in the agent marketplace.
+    
+    Args:
+        args: Parsed command-line arguments with wallet and category filters
+    """
     cli = RustChainAgentCLI(args.wallet)
     jobs = cli.list_jobs(args.category)
     
@@ -142,6 +162,13 @@ def cmd_list(args):
 
 
 def cmd_post(args):
+    """
+    Post a new job to the agent marketplace.
+    
+    Args:
+        args: Parsed command-line arguments with job details (title, description,
+              category, reward, tags)
+    """
     cli = RustChainAgentCLI(args.wallet)
     result = cli.post_job(
         title=args.title,
@@ -160,6 +187,12 @@ def cmd_post(args):
 
 
 def cmd_claim(args):
+    """
+    Claim an available job for work.
+    
+    Args:
+        args: Parsed command-line arguments with job_id to claim
+    """
     cli = RustChainAgentCLI(args.wallet)
     result = cli.claim_job(args.job_id)
     
@@ -171,6 +204,13 @@ def cmd_claim(args):
 
 
 def cmd_deliver(args):
+    """
+    Submit delivery for a claimed job.
+    
+    Args:
+        args: Parsed command-line arguments with job_id, deliverable URL,
+              and optional summary
+    """
     cli = RustChainAgentCLI(args.wallet)
     result = cli.deliver_job(
         job_id=args.job_id,
@@ -186,6 +226,12 @@ def cmd_deliver(args):
 
 
 def cmd_info(args):
+    """
+    Display detailed information about a specific job.
+    
+    Args:
+        args: Parsed command-line arguments with job_id to query
+    """
     cli = RustChainAgentCLI(args.wallet)
     job = cli.get_job(args.job_id)
     
@@ -205,6 +251,12 @@ def cmd_info(args):
 
 
 def cmd_stats(args):
+    """
+    Display marketplace statistics and metrics.
+    
+    Args:
+        args: Parsed command-line arguments (unused, for consistency)
+    """
     cli = RustChainAgentCLI(args.wallet)
     stats = cli.get_stats()
     
@@ -221,6 +273,15 @@ def cmd_stats(args):
 
 
 def main():
+    """
+    Main entry point for RustChain Agent Economy CLI.
+    
+    Parses command-line arguments and dispatches to appropriate command handlers.
+    Supports jobs management (list, post, claim, deliver, info) and marketplace stats.
+    
+    Returns:
+        None (exits via sys.exit on error)
+    """
     parser = argparse.ArgumentParser(
         description="RustChain Agent Economy CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,

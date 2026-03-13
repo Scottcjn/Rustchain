@@ -155,7 +155,14 @@ class AnalyticsClient:
         >>> video_metrics = analytics.get_video_metrics("video_123")
     """
     
-    def __init__(self, client):
+    def __init__(self, client: "AgentEconomyClient") -> None:
+        """
+        Initialize AnalyticsClient with an agent economy client.
+        
+        Args:
+            client: AgentEconomyClient instance for API communication.
+                   Used to fetch earnings, activity, and video metrics.
+        """
         self.client = client
 
     def get_earnings(
@@ -175,7 +182,7 @@ class AnalyticsClient:
         """
         aid = agent_id or self.client.config.agent_id
         if not aid:
-            raise ValueError("agent_id must be provided")
+            raise ValidationError("agent_id must be provided")
         
         result = self.client._request(
             "GET",
@@ -211,7 +218,7 @@ class AnalyticsClient:
         """
         aid = agent_id or self.client.config.agent_id
         if not aid:
-            raise ValueError("agent_id must be provided")
+            raise ValidationError("agent_id must be provided")
         
         result = self.client._request(
             "GET",
@@ -248,7 +255,7 @@ class AnalyticsClient:
         """
         aid = agent_id or self.client.config.agent_id
         if not aid:
-            raise ValueError("agent_id must be provided")
+            raise ValidationError("agent_id must be provided")
         
         result = self.client._request(
             "GET",
@@ -284,7 +291,7 @@ class AnalyticsClient:
         """
         aid = agent_id or self.client.config.agent_id
         if not aid:
-            raise ValueError("agent_id must be provided")
+            raise ValidationError("agent_id must be provided")
         
         result = self.client._request(
             "GET",
@@ -348,7 +355,7 @@ class AnalyticsClient:
         """
         aid = agent_id or self.client.config.agent_id
         if not aid:
-            raise ValueError("agent_id must be provided")
+            raise ValidationError("agent_id must be provided")
         
         return self.client._request(
             "GET",
@@ -375,7 +382,7 @@ class AnalyticsClient:
         """
         aid = agent_id or self.client.config.agent_id
         if not aid:
-            raise ValueError("agent_id must be provided")
+            raise ValidationError("agent_id must be provided")
         
         return self.client._request(
             "POST",
@@ -398,6 +405,6 @@ class AnalyticsClient:
         """
         aid = agent_id or self.client.config.agent_id
         if not aid:
-            raise ValueError("agent_id must be provided")
+            raise ValidationError("agent_id must be provided")
         
         return self.client._request("GET", f"/api/agent/analytics/{aid}/realtime")

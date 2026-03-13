@@ -1,14 +1,66 @@
 #!/usr/bin/env python3
 """
 RustChain CLI - Command-line interface for RustChain
+=====================================================
+
+A command-line tool for interacting with the RustChain blockchain.
+Provides quick access to node status, miner information, wallet balances,
+and lottery eligibility checks.
+
+Installation:
+    pip install rustchain-sdk
+
+Usage:
+    # Check node health
+    rustchain health
+    
+    # List active miners
+    rustchain miners --limit 20
+    
+    # Show current epoch info
+    rustchain epoch
+    
+    # Check wallet balance
+    rustchain balance my-wallet-id
+    
+    # Check lottery eligibility
+    rustchain eligibility my-wallet-id
+    
+    # Use custom node URL
+    rustchain --url https://custom-node:8080 balance my-wallet
+
+Commands:
+    health       - Check node status, version, and uptime
+    miners       - List active miners with hardware details
+    epoch        - Display current epoch number, slot, and PoT
+    balance      - Query RTC balance for a wallet
+    eligibility  - Check lottery eligibility for a miner
+
+Exit Codes:
+    0 - Success
+    1 - Error (connection failed, invalid parameters, etc.)
 """
 
 import argparse
 import sys
+from typing import NoReturn
 from rustchain_sdk import RustChainClient
 
 
-def main():
+def main() -> None:
+    """
+    Main entry point for RustChain CLI.
+    
+    Provides command-line interface for common RustChain operations:
+    - health: Check node status and uptime
+    - miners: List active miners with hardware info
+    - epoch: Display current epoch information
+    - balance: Query wallet balance
+    - eligibility: Check lottery eligibility
+    
+    Parses arguments and executes appropriate command, handling errors gracefully.
+    Output is formatted for human readability in the terminal.
+    """
     parser = argparse.ArgumentParser(
         description="RustChain CLI - Manage RTC tokens from command line"
     )

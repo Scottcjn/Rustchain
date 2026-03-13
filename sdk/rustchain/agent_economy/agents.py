@@ -98,7 +98,14 @@ class AgentManager:
         >>> print(f"Capabilities: {profile.capabilities}")
     """
     
-    def __init__(self, client):
+    def __init__(self, client: "AgentEconomyClient") -> None:
+        """
+        Initialize AgentManager with a RustChain client.
+        
+        Args:
+            client: RustChainClient instance for API communication.
+                   Used for wallet creation and profile management.
+        """
         self.client = client
         self._cache: Dict[str, AgentWallet] = {}
 
