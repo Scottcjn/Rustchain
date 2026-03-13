@@ -4968,7 +4968,11 @@ def api_wallet_balance():
 
 @app.route('/wallet/history', methods=['GET'])
 def api_wallet_history():
-    """Get public transfer history for a specific wallet."""
+    """Get unified transaction history for a wallet (transfers + mining rewards).
+
+    Merges pending_ledger (transfers) and epoch_rewards (mining) into a single
+    time-sorted response.  Fixes #775 and #886.
+    """
     miner_id = request.args.get("miner_id", "").strip()
     address = request.args.get("address", "").strip()
 
@@ -4985,83 +4989,128 @@ def api_wallet_history():
         return jsonify({"ok": False, "error": "miner_id or address required"}), 400
 
     limit_raw = request.args.get("limit", "50").strip()
+    offset_raw = request.args.get("offset", "0").strip()
     try:
         limit = int(limit_raw or "50")
+        offset = int(offset_raw or "0")
     except ValueError:
-        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+        return jsonify({"ok": False, "error": "limit and offset must be integers"}), 400
 
-    limit = max(1, min(limit, 200))
+    limit = max(1, min(limit, 500))
+    offset = max(0, offset)
+
+    items = []
 
     with sqlite3.connect(DB_PATH) as db:
-        rows = db.execute(
+        # --- Transfers from pending_ledger ---
+        transfer_rows = db.execute(
             """
             SELECT id, ts, from_miner, to_miner, amount_i64, reason, status,
                    created_at, confirms_at, confirmed_at, tx_hash, voided_reason
             FROM pending_ledger
             WHERE from_miner = ? OR to_miner = ?
-            ORDER BY COALESCE(created_at, ts) DESC, id DESC
-            LIMIT ?
             """,
-            (miner_id, miner_id, limit),
+            (miner_id, miner_id),
         ).fetchall()
 
-    items = []
-    for row in rows:
-        (
-            pending_id,
-            ts,
-            from_miner,
-            to_miner,
-            amount_i64,
-            reason,
-            raw_status,
-            created_at,
-            confirms_at,
-            confirmed_at,
-            tx_hash,
-            voided_reason,
-        ) = row
+        for row in transfer_rows:
+            (
+                pending_id, ts, from_miner, to_miner, amount_i64, reason,
+                raw_status, created_at, confirms_at, confirmed_at, tx_hash,
+                voided_reason,
+            ) = row
 
-        direction = "sent" if from_miner == miner_id else "received"
-        counterparty = to_miner if direction == "sent" else from_miner
+            direction = "sent" if from_miner == miner_id else "received"
+            counterparty = to_miner if direction == "sent" else from_miner
 
-        public_status = "confirmed"
-        if raw_status == "pending":
-            public_status = "pending"
-        elif raw_status != "confirmed":
-            public_status = "failed"
+            if raw_status == "pending":
+                public_status = "pending"
+            elif raw_status == "confirmed":
+                public_status = "confirmed"
+            else:
+                public_status = "failed"
 
-        memo = None
-        if isinstance(reason, str) and reason.startswith("signed_transfer:"):
-            memo = reason.split(":", 1)[1] or None
+            memo = None
+            if isinstance(reason, str) and reason.startswith("signed_transfer:"):
+                memo = reason.split(":", 1)[1] or None
 
-        tx_id = tx_hash or f"pending_{pending_id}"
-        created_ts = int(created_at or ts or 0)
+            tx_id = tx_hash or f"pending_{pending_id}"
+            created_ts = int(created_at or ts or 0)
 
-        items.append({
-            "id": int(pending_id),
-            "tx_id": tx_id,
-            "tx_hash": tx_id,
-            "from_addr": from_miner,
-            "to_addr": to_miner,
-            "amount": int(amount_i64) / UNIT,
-            "amount_i64": int(amount_i64),
-            "amount_rtc": int(amount_i64) / UNIT,
-            "timestamp": created_ts,
-            "created_at": created_ts,
-            "confirmed_at": int(confirmed_at) if confirmed_at else None,
-            "confirms_at": int(confirms_at) if confirms_at else None,
-            "status": public_status,
-            "raw_status": raw_status,
-            "status_reason": voided_reason,
-            "confirmations": 1 if raw_status == "confirmed" else 0,
-            "direction": direction,
-            "counterparty": counterparty,
-            "reason": reason,
-            "memo": memo,
-        })
+            if direction == "sent":
+                tx_type = "transfer_out"
+            else:
+                tx_type = "transfer_in"
 
-    return jsonify(items)
+            items.append({
+                "type": tx_type,
+                "id": int(pending_id),
+                "tx_id": tx_id,
+                "tx_hash": tx_id,
+                "from_addr": from_miner,
+                "to_addr": to_miner,
+                "amount": int(amount_i64) / UNIT,
+                "amount_i64": int(amount_i64),
+                "amount_rtc": int(amount_i64) / UNIT,
+                "timestamp": created_ts,
+                "created_at": created_ts,
+                "confirmed_at": int(confirmed_at) if confirmed_at else None,
+                "confirms_at": int(confirms_at) if confirms_at else None,
+                "status": public_status,
+                "raw_status": raw_status,
+                "status_reason": voided_reason,
+                "confirmations": 1 if raw_status == "confirmed" else 0,
+                "direction": direction,
+                "counterparty": counterparty,
+                "reason": reason,
+                "memo": memo,
+            })
+
+        # --- Mining rewards from epoch_rewards ---
+        reward_rows = db.execute(
+            "SELECT epoch, miner_id, share_i64 FROM epoch_rewards WHERE miner_id = ?",
+            (miner_id,),
+        ).fetchall()
+
+        for epoch, mid, share_i64 in reward_rows:
+            items.append({
+                "type": "reward",
+                "id": None,
+                "tx_id": f"reward_epoch_{epoch}",
+                "tx_hash": f"reward_epoch_{epoch}",
+                "from_addr": "network",
+                "to_addr": mid,
+                "amount": int(share_i64) / UNIT,
+                "amount_i64": int(share_i64),
+                "amount_rtc": int(share_i64) / UNIT,
+                "timestamp": int(epoch),
+                "created_at": int(epoch),
+                "confirmed_at": int(epoch),
+                "confirms_at": None,
+                "status": "confirmed",
+                "raw_status": "confirmed",
+                "status_reason": None,
+                "confirmations": 1,
+                "direction": "received",
+                "counterparty": "network",
+                "reason": f"mining_reward_epoch_{epoch}",
+                "memo": None,
+                "epoch": int(epoch),
+            })
+
+    # Sort all items by timestamp descending, then apply pagination
+    items.sort(key=lambda x: (x["timestamp"] or 0, x["id"] or 0), reverse=True)
+    total = len(items)
+    items = items[offset:offset + limit]
+
+    return jsonify({
+        "ok": True,
+        "miner_id": miner_id,
+        "transactions": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    })
 
 # =============================================================================
 # 2-PHASE COMMIT PENDING LEDGER SYSTEM
