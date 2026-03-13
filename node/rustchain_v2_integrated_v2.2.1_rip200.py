@@ -4968,7 +4968,22 @@ def api_wallet_balance():
 
 @app.route('/wallet/history', methods=['GET'])
 def api_wallet_history():
-    """Get public transfer history for a specific wallet."""
+    """Get public transfer history for a specific wallet.
+    
+    Query params:
+    - miner_id: wallet/miner ID to query
+    - address: alias for miner_id
+    - limit: max records to return (default 50, max 200)
+    - offset: number of records to skip (for pagination)
+    
+    Response:
+    {
+        "ok": true,
+        "miner_id": "...",
+        "transactions": [...],
+        "total": 42
+    }
+    """
     miner_id = request.args.get("miner_id", "").strip()
     address = request.args.get("address", "").strip()
 
@@ -4984,15 +4999,30 @@ def api_wallet_history():
     if not miner_id:
         return jsonify({"ok": False, "error": "miner_id or address required"}), 400
 
+    # Parse limit
     limit_raw = request.args.get("limit", "50").strip()
     try:
         limit = int(limit_raw or "50")
     except ValueError:
         return jsonify({"ok": False, "error": "limit must be an integer"}), 400
-
     limit = max(1, min(limit, 200))
 
+    # Parse offset
+    offset_raw = request.args.get("offset", "0").strip()
+    try:
+        offset = int(offset_raw or "0")
+    except ValueError:
+        return jsonify({"ok": False, "error": "offset must be an integer"}), 400
+    offset = max(0, offset)
+
     with sqlite3.connect(DB_PATH) as db:
+        # Get total count
+        total = db.execute(
+            "SELECT COUNT(*) FROM pending_ledger WHERE from_miner = ? OR to_miner = ?",
+            (miner_id, miner_id),
+        ).fetchone()[0]
+
+        # Get paginated transactions
         rows = db.execute(
             """
             SELECT id, ts, from_miner, to_miner, amount_i64, reason, status,
@@ -5000,9 +5030,9 @@ def api_wallet_history():
             FROM pending_ledger
             WHERE from_miner = ? OR to_miner = ?
             ORDER BY COALESCE(created_at, ts) DESC, id DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
             """,
-            (miner_id, miner_id, limit),
+            (miner_id, miner_id, limit, offset),
         ).fetchall()
 
     items = []
@@ -5061,7 +5091,12 @@ def api_wallet_history():
             "memo": memo,
         })
 
-    return jsonify(items)
+    return jsonify({
+        "ok": True,
+        "miner_id": miner_id,
+        "transactions": items,
+        "total": total
+    })
 
 # =============================================================================
 # 2-PHASE COMMIT PENDING LEDGER SYSTEM
