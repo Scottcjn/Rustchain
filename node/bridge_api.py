@@ -113,7 +113,27 @@ VALID_BRIDGE_TYPES = {"bottube", "internal", "custom"}
 
 
 def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
-    """Validate bridge transfer request payload."""
+    """Validate bridge transfer request payload.
+    
+    Performs comprehensive validation of all required and optional fields for
+    bridge transfer requests. Checks field presence, data types, value ranges,
+    and format constraints.
+    
+    Validation rules:
+    - All required fields must be present
+    - Direction must be 'deposit' or 'withdraw'
+    - Chains must be in valid set and different from each other
+    - Addresses must be non-empty and at least 10 characters
+    - Amount must be positive and above minimum threshold
+    - Bridge type must be one of the supported types
+    - Memo (if provided) must be <= 256 characters
+    
+    Args:
+        data: Request payload dictionary containing bridge transfer parameters
+        
+    Returns:
+        ValidationResult: Ok=True with validated details, or Ok=False with error message
+    """
     if not data:
         return ValidationResult(ok=False, error="Request body is required")
     
@@ -185,7 +205,23 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
 
 
 def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
-    """Validate address format for specific chain."""
+    """Validate address format for specific chain.
+    
+    Performs chain-specific address validation based on known formats:
+    - RustChain: RTC-prefixed, min 10 chars
+    - Solana: Base58 encoded, 32-44 chars
+    - Ergo: Starts with '9' or '3', min 30 chars
+    - Base/Ethereum: 0x-prefixed, exactly 42 chars
+    
+    Args:
+        chain: Blockchain name (rustchain, solana, ergo, base, ethereum)
+        address: Wallet address string to validate
+        
+    Returns:
+        Tuple[bool, str]: (is_valid, error_message)
+        - If valid: (True, "")
+        - If invalid: (False, "description of validation failure")
+    """
     if not address:
         return False, "Address is required"
     
@@ -229,15 +265,49 @@ def generate_bridge_tx_hash(
     dest_address: str,
     amount_i64: int
 ) -> str:
-    """Generate unique transaction hash for bridge transfer."""
+    """Generate unique transaction hash for bridge transfer.
+    
+    Creates a deterministic yet unique hash by combining:
+    - Transfer parameters (direction, chains, addresses, amount)
+    - Timestamp for uniqueness
+    - Random bytes for additional entropy
+    
+    The hash is truncated to 32 characters (128 bits) for storage efficiency
+    while maintaining sufficient uniqueness for bridge transfer identification.
+    
+    Args:
+        direction: Transfer direction ('deposit' or 'withdraw')
+        source_chain: Source blockchain name
+        dest_chain: Destination blockchain name
+        source_address: Sender wallet address
+        dest_address: Recipient wallet address
+        amount_i64: Transfer amount in micro-units (i64 integer)
+        
+    Returns:
+        str: 32-character hexadecimal hash string
+    """
     data = f"{direction}:{source_chain}:{dest_chain}:{source_address}:{dest_address}:{amount_i64}:{time.time()}:{os.urandom(8).hex()}"
     return hashlib.sha256(data.encode()).hexdigest()[:32]
 
 
 def check_miner_balance(db_conn: sqlite3.Connection, miner_id: str, amount_i64: int) -> Tuple[bool, int, int]:
     """
-    Check if miner has sufficient available balance.
-    Returns: (has_balance, available_balance, pending_debits)
+    Check if miner has sufficient available balance for bridge transfer.
+    
+    Calculates available balance by subtracting pending bridge debits from
+    total balance. This prevents double-spending when miners have multiple
+    pending bridge transfers.
+    
+    Args:
+        db_conn: SQLite database connection
+        miner_id: Miner identifier (RTC address)
+        amount_i64: Required amount in micro-units (for validation)
+        
+    Returns:
+        Tuple[bool, int, int]:
+        - has_balance: True if available >= amount_i64
+        - available_balance: Total balance minus pending debits
+        - pending_debits: Sum of pending bridge transfer amounts
     """
     cursor = db_conn.cursor()
     
@@ -653,7 +723,7 @@ def update_external_confirmation(
 # Flask Routes (to be integrated into main node)
 # =============================================================================
 
-def register_bridge_routes(app):
+def register_bridge_routes(app: any) -> None:
     """Register bridge API routes with Flask app."""
     from flask import request, jsonify
     
@@ -819,7 +889,7 @@ def register_bridge_routes(app):
 # Database Initialization
 # =============================================================================
 
-def init_bridge_schema(cursor):
+def init_bridge_schema(cursor: sqlite3.Cursor) -> None:
     """Initialize bridge_transfers table schema.
     
     Args:

@@ -137,7 +137,7 @@ DASHBOARD_DIR = os.path.join(REPO_ROOT, "tools", "miner_dashboard")
 EXPLORER_DIR = os.path.join(REPO_ROOT, "tools", "explorer")
 
 
-def _attest_mapping(value):
+def _attest_mapping(value: any) -> dict:
     """Return a dict-like payload section or an empty mapping."""
     return value if isinstance(value, dict) else {}
 
@@ -145,7 +145,7 @@ def _attest_mapping(value):
 _ATTEST_MINER_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
-def _attest_text(value):
+def _attest_text(value: any) -> str | None:
     """Accept only non-empty text values from untrusted attestation input."""
     if isinstance(value, str):
         value = value.strip()
@@ -154,7 +154,7 @@ def _attest_text(value):
     return None
 
 
-def _attest_valid_miner(value):
+def _attest_valid_miner(value: any) -> str | None:
     """Accept only bounded miner identifiers with a conservative character set."""
     text = _attest_text(value)
     if text and _ATTEST_MINER_RE.fullmatch(text):
@@ -162,7 +162,7 @@ def _attest_valid_miner(value):
     return None
 
 
-def _attest_field_error(code, message, status=400):
+def _attest_field_error(code: str, message: str, status: int = 400) -> tuple:
     """Build a consistent error payload for malformed attestation inputs."""
     return jsonify({
         "ok": False,
@@ -172,7 +172,7 @@ def _attest_field_error(code, message, status=400):
     }), status
 
 
-def _attest_is_valid_positive_int(value, max_value=4096):
+def _attest_is_valid_positive_int(value: any, max_value: int = 4096) -> bool:
     """Validate positive integer-like input without silently coercing hostile shapes."""
     if isinstance(value, bool):
         return False
@@ -186,8 +186,15 @@ def _attest_is_valid_positive_int(value, max_value=4096):
     return 1 <= coerced <= max_value
 
 
-def client_ip_from_request(req) -> str:
-    """Return trusted client IP, honoring proxy headers only for allowlisted peers."""
+def client_ip_from_request(req: "flask.Request") -> str:
+    """Return trusted client IP, honoring proxy headers only for allowlisted peers.
+    
+    Args:
+        req: Flask request object
+        
+    Returns:
+        str: Client IP address (trusted or direct)
+    """
     remote_addr = _normalize_client_ip(getattr(req, "remote_addr", ""))
     forwarded_ip = _normalize_client_ip(req.headers.get("X-Real-IP", ""))
     if forwarded_ip and _is_trusted_proxy(remote_addr):
@@ -195,7 +202,7 @@ def client_ip_from_request(req) -> str:
     return remote_addr
 
 
-def _attest_positive_int(value, default=1):
+def _attest_positive_int(value: any, default: int = 1) -> int:
     """Coerce untrusted integer-like values to a safe positive integer."""
     try:
         coerced = int(value)
@@ -204,7 +211,7 @@ def _attest_positive_int(value, default=1):
     return coerced if coerced > 0 else default
 
 
-def _attest_string_list(value):
+def _attest_string_list(value: any) -> list[str]:
     """Coerce a list-like field into a list of non-empty strings."""
     if not isinstance(value, list):
         return []
@@ -216,7 +223,7 @@ def _attest_string_list(value):
     return items
 
 
-def _validate_attestation_payload_shape(data):
+def _validate_attestation_payload_shape(data: dict) -> tuple | None:
     """Reject malformed attestation payload shapes before normalization."""
     for field_name, code in (
         ("device", "INVALID_DEVICE"),
@@ -274,7 +281,7 @@ def _validate_attestation_payload_shape(data):
     return None
 
 
-def _normalize_attestation_device(device):
+def _normalize_attestation_device(device: any) -> dict:
     """Shallow-normalize device metadata so malformed JSON shapes fail closed."""
     raw = _attest_mapping(device)
     normalized = {"cores": _attest_positive_int(raw.get("cores"), default=1)}
@@ -295,7 +302,7 @@ def _normalize_attestation_device(device):
     return normalized
 
 
-def _normalize_attestation_signals(signals):
+def _normalize_attestation_signals(signals: any) -> dict:
     """Shallow-normalize signal metadata used by attestation validation."""
     raw = _attest_mapping(signals)
     normalized = {"macs": _attest_string_list(raw.get("macs"))}
@@ -306,7 +313,7 @@ def _normalize_attestation_signals(signals):
     return normalized
 
 
-def _normalize_attestation_report(report):
+def _normalize_attestation_report(report: any) -> dict:
     """Normalize report metadata used by challenge/ticket handling."""
     raw = _attest_mapping(report)
     normalized = {}
@@ -333,11 +340,11 @@ except Exception as e:
     print(f"[WARN] rustchain_x402 not loaded: {e}")
 
 @app.before_request
-def _start_timer():
+def _start_timer() -> None:
     g._ts = time.time()
     g.request_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex
 
-def _normalize_client_ip(raw_value) -> str:
+def _normalize_client_ip(raw_value: str | int | None) -> str:
     """Normalize a peer/header IP string down to the first address token."""
     if raw_value is None:
         return ""
@@ -351,7 +358,7 @@ def _normalize_client_ip(raw_value) -> str:
     return value
 
 
-def _trusted_proxy_networks():
+def _trusted_proxy_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
     """Return trusted reverse proxy networks from RC_TRUSTED_PROXY_IPS."""
     raw = os.environ.get("RC_TRUSTED_PROXY_IPS", "127.0.0.1/32,::1/128")
     networks = []
@@ -383,12 +390,20 @@ def _is_trusted_proxy(remote_addr: str) -> bool:
     return any(parsed_ip in network for network in _trusted_proxy_networks())
 
 
-def get_client_ip():
+def get_client_ip() -> str:
     """Trusted client IP for rate limits and accounting surfaces."""
     return client_ip_from_request(request)
 
 @app.after_request
-def _after(resp):
+def _after(resp: "flask.Response") -> "flask.Response":
+    """After-request hook for logging and headers.
+    
+    Args:
+        resp: Flask response object
+        
+    Returns:
+        Response object with added headers
+    """
     try:
         dur = time.time() - getattr(g, "_ts", time.time())
         rec = {
@@ -413,7 +428,12 @@ def _after(resp):
 # ============================================================================
 
 @app.route("/light")
-def light_client_entry():
+def light_client_entry() -> "flask.Response":
+    """Light client entry point.
+    
+    Returns:
+        Response: HTML file response with no-cache headers
+    """
     # Avoid caching during bounty iteration.
     resp = send_from_directory(LIGHTCLIENT_DIR, "index.html")
     resp.headers["Cache-Control"] = "no-store"
@@ -421,7 +441,18 @@ def light_client_entry():
 
 
 @app.route("/light-client/<path:subpath>")
-def light_client_static(subpath: str):
+def light_client_static(subpath: str) -> "flask.Response":
+    """Serve light client static files.
+    
+    Args:
+        subpath: Relative path to static file
+        
+    Returns:
+        Response: File response with appropriate cache headers
+        
+    Raises:
+        404: If path traversal attempt detected
+    """
     # Minimal path traversal protection; send_from_directory already protects,
     # but keep behavior explicit.
     if ".." in subpath or subpath.startswith(("/", "\\")):
@@ -890,7 +921,7 @@ if HAVE_BRIDGE:
     except Exception as e:
         print(f"[RIP-0305 Track C] Failed to register bridge endpoints: {e}")
 
-def init_db():
+def init_db() -> None:
     """Initialize all database tables"""
     with sqlite3.connect(DB_PATH) as c:
         # Core tables
@@ -1237,7 +1268,7 @@ def _mac_hash(mac: str) -> str:
     digest = hmac.new(salt, norm.encode(), hashlib.sha256).hexdigest()
     return digest[:12]
 
-def record_macs(miner: str, macs: list):
+def record_macs(miner: str, macs: list) -> None:
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as conn:
         for mac in (macs or []):
@@ -1251,7 +1282,7 @@ def record_macs(miner: str, macs: list):
         conn.commit()
 
 
-def calculate_rust_score_inline(mfg_year, arch, attestations, machine_id):
+def calculate_rust_score_inline(mfg_year: any, arch: str, attestations: int, machine_id: int) -> float:
     """Calculate rust score for a machine."""
     score = 0
     if mfg_year:
@@ -1267,7 +1298,7 @@ def calculate_rust_score_inline(mfg_year, arch, attestations, machine_id):
             break
     return round(score, 2)
 
-def auto_induct_to_hall(miner: str, device: dict):
+def auto_induct_to_hall(miner: str, device: dict) -> None:
     """Automatically induct machine into Hall of Rust after successful attestation."""
     hw_serial = device.get("cpu_serial", device.get("hardware_id", "unknown"))
     model = device.get("device_model", device.get("model", "Unknown"))
@@ -1322,7 +1353,7 @@ def auto_induct_to_hall(miner: str, device: dict):
     except Exception as e:
         print(f"[HALL] Auto-induct error: {e}")
 
-def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False, source_ip: str = None, signals: dict = None, fingerprint: dict = None):
+def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False, source_ip: Optional[str] = None, signals: Optional[dict] = None, fingerprint: Optional[dict] = None) -> None:
     now = int(time.time())
     verified_device = derive_verified_device(device or {}, fingerprint if isinstance(fingerprint, dict) else {}, fingerprint_passed)
     with sqlite3.connect(DB_PATH) as conn:
@@ -1353,7 +1384,7 @@ TEMPORAL_DRIFT_BANDS = {
 }
 
 
-def ensure_fingerprint_history_table(conn):
+def ensure_fingerprint_history_table(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS miner_fingerprint_history (
@@ -1367,7 +1398,7 @@ def ensure_fingerprint_history_table(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_mfh_miner_ts ON miner_fingerprint_history(miner, ts DESC)")
 
 
-def extract_temporal_profile(fingerprint: dict) -> dict:
+def extract_temporal_profile(fingerprint: dict | None) -> dict:
     checks = (fingerprint or {}).get("checks", {}) if isinstance(fingerprint, dict) else {}
 
     def _check_data(name):
@@ -1390,7 +1421,7 @@ def extract_temporal_profile(fingerprint: dict) -> dict:
     }
 
 
-def append_fingerprint_snapshot(conn, miner: str, fingerprint: dict, now: int) -> list:
+def append_fingerprint_snapshot(conn: sqlite3.Connection, miner: str, fingerprint: dict, now: int) -> list:
     ensure_fingerprint_history_table(conn)
     profile = extract_temporal_profile(fingerprint)
     conn.execute(
@@ -1422,7 +1453,7 @@ def append_fingerprint_snapshot(conn, miner: str, fingerprint: dict, now: int) -
     return seq
 
 
-def fetch_miner_fingerprint_sequence(conn, miner: str) -> list:
+def fetch_miner_fingerprint_sequence(conn: sqlite3.Connection, miner: str) -> list:
     ensure_fingerprint_history_table(conn)
     rows = conn.execute(
         "SELECT ts, profile_json FROM miner_fingerprint_history WHERE miner = ? ORDER BY ts ASC, id ASC",
@@ -1437,7 +1468,7 @@ def fetch_miner_fingerprint_sequence(conn, miner: str) -> list:
     return out
 
 
-def validate_temporal_consistency(sequence: list, current_profile: dict = None) -> dict:
+def validate_temporal_consistency(sequence: list, current_profile: dict | None = None) -> dict:
     samples = list(sequence or [])
     if current_profile is not None:
         samples.append({"ts": int(time.time()), "profile": current_profile})
@@ -1750,7 +1781,7 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
 ATTEST_IP_LIMIT = 15      # Max unique miners per IP per hour
 ATTEST_IP_WINDOW = 3600  # 1 hour window
 
-def check_ip_rate_limit(client_ip, miner_id):
+def check_ip_rate_limit(client_ip: str, miner_id: str) -> Tuple[bool, Optional[dict]]:
     """Rate limit attestations per source IP using SQLite (shared across workers)."""
     now = int(time.time())
     cutoff = now - ATTEST_IP_WINDOW
@@ -1892,30 +1923,30 @@ def verify_sr25519_signature(message: bytes, signature: bytes, pubkey: bytes) ->
         logging.warning(f"Signature verification failed: {e}")
         return False
 
-def hex_to_bytes(h):
+def hex_to_bytes(h: str) -> bytes:
     """Convert hex string to bytes"""
     return binascii.unhexlify(h.encode("ascii") if isinstance(h, str) else h)
 
-def bytes_to_hex(b):
+def bytes_to_hex(b: bytes) -> str:
     """Convert bytes to hex string"""
     return binascii.hexlify(b).decode("ascii")
 
-def canonical_header_bytes(header_obj):
+def canonical_header_bytes(header_obj: dict) -> bytes:
     """Deterministic canonicalization of header for signing.
     IMPORTANT: This must match client-side preimage rules."""
     s = json.dumps(header_obj, sort_keys=True, separators=(",",":")).encode("utf-8")
     # Sign/verify over BLAKE2b-256(header_json)
     return blake2b(s, digest_size=32).digest()
 
-def slot_to_epoch(slot):
+def slot_to_epoch(slot: int) -> int:
     """Convert slot number to epoch"""
     return int(slot) // max(EPOCH_SLOTS, 1)
 
-def current_slot():
+def current_slot() -> int:
     """Get current slot number"""
     return (int(time.time()) - GENESIS_TIMESTAMP) // BLOCK_TIME
 
-def finalize_epoch(epoch, per_block_rtc):
+def finalize_epoch(epoch: int, per_block_rtc: int) -> bool:
     """Finalize epoch and distribute rewards with security hardening"""
     from decimal import Decimal, ROUND_DOWN
 
@@ -2012,12 +2043,12 @@ def finalize_epoch(epoch, per_block_rtc):
 # ============= OPENAPI AND EXPLORER ENDPOINTS =============
 
 @app.route('/openapi.json', methods=['GET'])
-def openapi_spec():
+def openapi_spec() -> any:
     """Return OpenAPI 3.0.3 specification"""
     return jsonify(OPENAPI)
 
 @app.route('/explorer', methods=['GET'])
-def explorer():
+def explorer() -> any:
     """Real-time block explorer dashboard (Tier 1 + Tier 2 views).
     Serves from tools/explorer/index.html if available, otherwise falls back to inline HTML."""
     explorer_file = os.path.join(EXPLORER_DIR, "index.html")
@@ -2029,7 +2060,7 @@ def explorer():
 # ============= MUSEUM STATIC UI (2D/3D) =============
 
 @app.route("/museum", methods=["GET"])
-def museum_2d():
+def museum_2d() -> any:
     """2D hardware museum UI (static files served from repo)."""
     from flask import send_from_directory as _send_from_directory
 
@@ -2037,7 +2068,7 @@ def museum_2d():
 
 
 @app.route("/museum/3d", methods=["GET"])
-def museum_3d():
+def museum_3d() -> any:
     """3D hardware museum UI (served as static file)."""
     from flask import send_from_directory as _send_from_directory
 
@@ -2045,7 +2076,7 @@ def museum_3d():
 
 
 @app.route("/museum/assets/<path:filename>", methods=["GET"])
-def museum_assets(filename: str):
+def museum_assets(filename: str) -> any:
     """Static assets for museum UI."""
     from flask import send_from_directory as _send_from_directory
 
@@ -2053,7 +2084,7 @@ def museum_assets(filename: str):
 
 
 @app.route("/hall-of-fame/machine.html", methods=["GET"])
-def hall_of_fame_machine_page():
+def hall_of_fame_machine_page() -> any:
     """Hall of Fame machine detail page."""
     from flask import send_from_directory as _send_from_directory
 
@@ -2061,7 +2092,7 @@ def hall_of_fame_machine_page():
 
 
 @app.route("/dashboard", methods=["GET"])
-def miner_dashboard_page():
+def miner_dashboard_page() -> any:
     """Personal miner dashboard single-page UI."""
     from flask import send_from_directory as _send_from_directory
     return _send_from_directory(DASHBOARD_DIR, "index.html")
@@ -2069,7 +2100,7 @@ def miner_dashboard_page():
 # ============= ATTESTATION ENDPOINTS =============
 
 @app.route('/attest/challenge', methods=['POST'])
-def get_challenge():
+def get_challenge() -> any:
     """Issue challenge for hardware attestation"""
     nonce = secrets.token_hex(32)
     expires = int(time.time()) + 300  # 5 minutes
@@ -2118,7 +2149,7 @@ def _compute_hardware_id(device: dict, signals: dict = None, source_ip: str = No
     
     return hw_id
 
-def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, source_ip: str = None):
+def _check_hardware_binding(miner_id: str, device: dict, signals: Optional[dict] = None, source_ip: Optional[str] = None) -> Tuple[bool, Optional[str], Optional[any]]:
     """Check if hardware is already bound to a different wallet. One machine = One wallet."""
     hardware_id = _compute_hardware_id(device, signals, source_ip=source_ip)
     
@@ -2158,7 +2189,7 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
 
 
 @app.route('/attest/submit', methods=['POST'])
-def submit_attestation():
+def submit_attestation() -> any:
     """Submit hardware attestation with fingerprint validation"""
     try:
         return _submit_attestation_impl()
@@ -2176,7 +2207,7 @@ def submit_attestation():
         }), 500
 
 
-def _submit_attestation_impl():
+def _submit_attestation_impl() -> any:
     """Internal implementation of attest/submit with proper error handling"""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -2413,7 +2444,7 @@ def _submit_attestation_impl():
 # ============= EPOCH ENDPOINTS =============
 
 @app.route('/epoch', methods=['GET'])
-def get_epoch():
+def get_epoch() -> int:
     """Get current epoch info"""
     slot = current_slot()
     epoch = slot_to_epoch(slot)
@@ -2435,7 +2466,7 @@ def get_epoch():
     })
 
 @app.route('/epoch/enroll', methods=['POST'])
-def enroll_epoch():
+def enroll_epoch() -> any:
     """Enroll in current epoch"""
     data = request.get_json()
 
@@ -2556,7 +2587,7 @@ def vrf_is_selected(miner_pk: str, slot: int) -> bool:
     return False
 
 @app.route('/lottery/eligibility', methods=['GET'])
-def lottery_eligibility():
+def lottery_eligibility() -> any:
     """RIP-200: Round-robin eligibility check"""
     miner_id = request.args.get('miner_id')
     if not miner_id:
@@ -2574,7 +2605,7 @@ def lottery_eligibility():
     return jsonify(result)
 
 @app.route('/miner/headerkey', methods=['POST'])
-def miner_set_header_key():
+def miner_set_header_key() -> any:
     """Admin-set or update the header-signing ed25519 public key for a miner.
     Body: {"miner_id":"...","pubkey_hex":"<64 hex chars>"}
     """
@@ -2595,7 +2626,7 @@ def miner_set_header_key():
     return jsonify({"ok":True,"miner_id":miner_id,"pubkey_hex":pubkey_hex})
 
 @app.route('/headers/ingest_signed', methods=['POST'])
-def ingest_signed_header():
+def ingest_signed_header() -> any:
     """Ingest signed block header from v2 miners.
 
     Body (testnet & prod both accepted):
@@ -2718,7 +2749,7 @@ def ingest_signed_header():
 # =============== CHAIN TIP & OUI ENFORCEMENT =================
 
 @app.route('/headers/tip', methods=['GET'])
-def headers_tip():
+def headers_tip() -> any:
     """Get current chain tip from headers table"""
     with sqlite3.connect(DB_PATH) as db:
         row = db.execute("SELECT slot, miner_id, signature_hex, ts FROM headers ORDER BY slot DESC LIMIT 1").fetchone()
@@ -2728,7 +2759,7 @@ def headers_tip():
     tip_age = max(0, int(time.time()) - int(ts))
     return jsonify({"slot": int(slot), "miner": miner, "tip_age": tip_age, "signature_prefix": sighex[:20]})
 
-def kv_get(key, default=None):
+def kv_get(key: str, default: any = None) -> any:
     """Get value from settings KV table"""
     try:
         with sqlite3.connect(DB_PATH) as db:
@@ -2738,7 +2769,7 @@ def kv_get(key, default=None):
     except Exception:
         return default
 
-def kv_set(key, val):
+def kv_set(key: str, val: str | int | float | bool | None) -> None:
     """Set value in settings KV table"""
     with sqlite3.connect(DB_PATH) as db:
         db.execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, val TEXT NOT NULL)")
@@ -2747,14 +2778,15 @@ def kv_set(key, val):
             db.execute("INSERT INTO settings(key,val) VALUES(?,?)", (key, str(val)))
         db.commit()
 
-def is_admin(req):
+
+def is_admin(req: "flask.Request") -> bool:
     """Check if request has valid admin API key"""
     need = os.environ.get("RC_ADMIN_KEY", "")
     got = req.headers.get("X-Admin-Key", "") or req.headers.get("X-API-Key", "")
     return need and got and (need == got)
 
 
-def ensure_wallet_review_tables(conn):
+def ensure_wallet_review_tables(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS wallet_review_holds(
@@ -2773,7 +2805,7 @@ def ensure_wallet_review_tables(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_wallet_review_status ON wallet_review_holds(status, created_at DESC)")
 
 
-def _wallet_review_ui_authorized(req):
+def _wallet_review_ui_authorized(req: "flask.Request") -> bool:
     """Allow the HTML admin review page to use either header auth or an explicit form/query key."""
     if is_admin(req):
         return True
@@ -2782,7 +2814,7 @@ def _wallet_review_ui_authorized(req):
     return bool(need and got and hmac.compare_digest(need, got))
 
 
-def get_wallet_review_counts():
+def get_wallet_review_counts() -> dict[str, int]:
     """Return grouped wallet review counts for the operator summary surface."""
     with sqlite3.connect(DB_PATH) as conn:
         ensure_wallet_review_tables(conn)
@@ -2798,7 +2830,7 @@ def get_wallet_review_counts():
     return counts
 
 
-def get_wallet_review_entry(conn, wallet: str):
+def get_wallet_review_entry(conn: sqlite3.Connection, wallet: str) -> dict | sqlite3.Row | None:
     ensure_wallet_review_tables(conn)
     conn.row_factory = sqlite3.Row
     row = conn.execute(
@@ -2830,7 +2862,15 @@ def get_wallet_review_entry(conn, wallet: str):
     return None
 
 
-def wallet_review_gate_response(wallet: str):
+def wallet_review_gate_response(wallet: str) -> Optional[Tuple]:
+    """Generate wallet review gate response
+    
+    Args:
+        wallet: Wallet address to check
+        
+    Returns:
+        Optional[Tuple]: JSON response with status code, or None if no review entry
+    """
     with sqlite3.connect(DB_PATH) as conn:
         entry = get_wallet_review_entry(conn, wallet)
     if not entry:
@@ -2855,7 +2895,7 @@ def wallet_review_gate_response(wallet: str):
     return jsonify(payload), 403
 
 @app.route('/admin/oui_deny/enforce', methods=['POST'])
-def admin_oui_enforce():
+def admin_oui_enforce() -> tuple:
     """Toggle OUI enforcement (admin only)"""
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
@@ -2866,7 +2906,7 @@ def admin_oui_enforce():
 
 
 @app.route('/admin/wallet-review-holds', methods=['GET'])
-def admin_wallet_review_holds():
+def admin_wallet_review_holds() -> tuple:
     """List wallet review holds and escalations."""
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
@@ -2904,7 +2944,7 @@ def admin_wallet_review_holds():
 
 
 @app.route('/admin/wallet-review-holds', methods=['POST'])
-def admin_create_wallet_review_hold():
+def admin_create_wallet_review_hold() -> tuple:
     """Create a wallet review hold instead of hard-blocking by default."""
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
@@ -2933,7 +2973,7 @@ def admin_create_wallet_review_hold():
 
 
 @app.route('/admin/wallet-review-holds/<int:hold_id>/resolve', methods=['POST'])
-def admin_resolve_wallet_review_hold(hold_id: int):
+def admin_resolve_wallet_review_hold(hold_id: int) -> tuple:
     """Resolve a wallet review hold with explicit release/escalation actions."""
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
@@ -2981,7 +3021,7 @@ def admin_resolve_wallet_review_hold(hold_id: int):
 
 
 @app.route('/admin/ui', methods=['GET'])
-def admin_operator_ui():
+def admin_operator_ui() -> tuple | str:
     """Minimal operator landing page for the admin surfaces in this single-file node."""
     if not _wallet_review_ui_authorized(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
@@ -3044,7 +3084,7 @@ def admin_operator_ui():
 
 
 @app.route('/admin/wallet-review-holds/ui', methods=['GET', 'POST'])
-def admin_wallet_review_holds_ui():
+def admin_wallet_review_holds_ui() -> tuple | str:
     """Small operator UI for wallet review holds without changing the JSON admin API surface."""
     if not _wallet_review_ui_authorized(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
@@ -3252,16 +3292,17 @@ def admin_wallet_review_holds_ui():
     )
 
 @app.route('/ops/oui/enforce', methods=['GET'])
-def ops_oui_enforce():
+def ops_oui_enforce() -> tuple:
     """Get current OUI enforcement status"""
     val = int(kv_get("oui_enforce", 0) or 0)
     return jsonify({"enforce": val})
+
 
 # ============= V1 API COMPATIBILITY (REJECTION) =============
 
 @app.route('/api/mine', methods=['POST'])
 @app.route('/compat/v1/api/mine', methods=['POST'])
-def reject_v1_mine():
+def reject_v1_mine() -> tuple:
     """Explicitly reject v1 mining API with clear error
 
     Returns 410 Gone to prevent silent failures from v1 miners.
@@ -3278,10 +3319,11 @@ def reject_v1_mine():
         }
     }), 410  # 410 Gone
 
+
 # ============= WITHDRAWAL ENDPOINTS =============
 
 @app.route('/withdraw/register', methods=['POST'])
-def register_withdrawal_key():
+def register_withdrawal_key() -> tuple:
     # SECURITY: Registering withdrawal keys allows fund extraction; require admin key.
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
     if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
@@ -3336,7 +3378,7 @@ def register_withdrawal_key():
     })
 
 @app.route('/withdraw/request', methods=['POST'])
-def request_withdrawal():
+def request_withdrawal() -> tuple:
     """Request RTC withdrawal"""
     withdrawal_requests.inc()
 
@@ -3473,7 +3515,7 @@ def request_withdrawal():
 
 
 @app.route("/api/fee_pool", methods=["GET"])
-def api_fee_pool():
+def api_fee_pool() -> tuple:
     """RIP-301: Fee pool statistics and recent fee events."""
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
@@ -3524,8 +3566,15 @@ def api_fee_pool():
 
 
 @app.route('/withdraw/status/<withdrawal_id>', methods=['GET'])
-def withdrawal_status(withdrawal_id):
-    """Get withdrawal status"""
+def withdrawal_status(withdrawal_id: str) -> Tuple:
+    """Get withdrawal status
+    
+    Args:
+        withdrawal_id: Unique withdrawal identifier
+        
+    Returns:
+        Tuple: JSON response with withdrawal details or 404 error
+    """
     with sqlite3.connect(DB_PATH) as c:
         row = c.execute("""
             SELECT miner_pk, amount, fee, destination, status,
@@ -3550,8 +3599,15 @@ def withdrawal_status(withdrawal_id):
         })
 
 @app.route('/withdraw/history/<miner_pk>', methods=['GET'])
-def withdrawal_history(miner_pk):
-    """Get withdrawal history for miner"""
+def withdrawal_history(miner_pk: str) -> Tuple:
+    """Get withdrawal history for miner
+    
+    Args:
+        miner_pk: Miner public key
+        
+    Returns:
+        Tuple: JSON response with withdrawal history or 401 error
+    """
     # SECURITY FIX 2026-02-15: Require admin key - exposes withdrawal history
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
     if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
@@ -3603,8 +3659,15 @@ if len(ADMIN_KEY) < 32:
     print("FATAL: RC_ADMIN_KEY must be at least 32 characters for security", file=sys.stderr)
     sys.exit(1)
 
-def admin_required(f):
-    """Decorator for admin-only endpoints"""
+def admin_required(f: "Callable") -> "Callable":
+    """Decorator for admin-only endpoints
+    
+    Args:
+        f: Flask route function to decorate
+        
+    Returns:
+        Callable: Wrapped function with admin key validation
+    """
     from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -3614,14 +3677,26 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated
 
-def _db():
-    """Get database connection with row factory"""
+
+def _db() -> sqlite3.Connection:
+    """Get database connection with row factory
+    
+    Returns:
+        sqlite3.Connection: Database connection with Row factory enabled
+    """
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
-def _canon_members(members):
-    """Canonical member list sorting"""
+def _canon_members(members: list) -> list:
+    """Canonical member list sorting
+    
+    Args:
+        members: List of member dictionaries with signer_id and pubkey_hex
+        
+    Returns:
+        list: Sorted list of members with normalized types
+    """
     return [{"signer_id":int(m["signer_id"]), "pubkey_hex":str(m["pubkey_hex"])}
             for m in sorted(members, key=lambda x:int(x["signer_id"]))]
 
@@ -3672,7 +3747,7 @@ def gov_rotate_stage():
     })
 
 @app.route('/gov/rotate/message/<int:epoch>', methods=['GET'])
-def gov_rotate_message(epoch:int):
+def gov_rotate_message(epoch: int) -> tuple:
     """Get canonical rotation message for signing"""
     with _db() as db:
         p = db.execute("""SELECT threshold, members_json
@@ -3683,8 +3758,9 @@ def gov_rotate_message(epoch:int):
         msg = _rotation_message(epoch, int(p["threshold"]), p["members_json"]).decode()
         return jsonify({"ok": True, "epoch_effective": epoch, "message": msg})
 
+
 @app.route('/gov/rotate/approve', methods=['POST'])
-def gov_rotate_approve():
+def gov_rotate_approve() -> tuple:
     """Submit governance rotation approval signature"""
     b = request.get_json() or {}
     if not b:
