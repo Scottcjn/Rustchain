@@ -1,0 +1,15 @@
+{
+  "name": "Seed Sensitivity Test",
+  "description": "Verifies that different seeds produce different but deterministic results",
+  "seeds": [1, 42, 100, 999, 12345],
+  "epochs": 2,
+  "miners": [
+    {"id": "miner-a", "public_key": "pk_a_00000000000000000000000000000000000", "stake": 2000, "cpu_model": "TestCPU-A", "release_year": 1990, "uptime_days": 1000},
+    {"id": "miner-b", "public_key": "pk_b_00000000000000000000000000000000000", "stake": 2000, "cpu_model": "TestCPU-B", "release_year": 1990, "uptime_days": 1000},
+    {"id": "miner-c", "public_key": "pk_c_00000000000000000000000000000000000", "stake": 2000, "cpu_model": "TestCPU-C", "release_year": 1990, "uptime_days": 1000}
+  ],
+  "expected_behavior": {
+    "seed_sensitivity": "Each seed must produce unique state hash",
+    "reproducibility": "Same seed must always produce same hash"
+  }
+}

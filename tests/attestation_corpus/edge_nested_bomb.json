@@ -1,0 +1,15 @@
+{
+  "miner": "nested-bomb-miner",
+  "device": {
+    "model": {"x": {"x": {"x": {"x": {"x": {"x": {"x": {"x": {"x": {"x": {}}}}}}}}}}},
+    "arch": "x86_64",
+    "cores": 8
+  },
+  "signals": {
+    "macs": ["aa:bb:cc:dd:ee:06"],
+    "hostname": "nested-host"
+  },
+  "report": {
+    "commitment": "nested-commitment"
+  }
+}

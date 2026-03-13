@@ -126,6 +126,15 @@ except ImportError as _e:
     HAVE_BRIDGE = False
     print(f"[RIP-0305 Track C] Bridge modules not available: {_e}")
 
+# BoTTube RSS/Atom Feed Support (Issue #759)
+try:
+    from bottube_feed_routes import init_feed_routes
+    HAVE_BOTTUBE_FEED = True
+    print("[BoTTube Feed] RSS/Atom feed module loaded")
+except ImportError as _e:
+    HAVE_BOTTUBE_FEED = False
+    print(f"[BoTTube Feed] Feed module not available: {_e}")
+
 app = Flask(__name__)
 # Supports running from repo `node/` dir or a flat deployment directory (e.g. /root/rustchain).
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -890,6 +899,13 @@ if HAVE_BRIDGE:
     except Exception as e:
         print(f"[RIP-0305 Track C] Failed to register bridge endpoints: {e}")
 
+# BoTTube RSS/Atom Feed endpoints (Issue #759)
+if HAVE_BOTTUBE_FEED:
+    try:
+        init_feed_routes(app)
+    except Exception as e:
+        print(f"[BoTTube Feed] Failed to register feed endpoints: {e}")
+
 def init_db():
     """Initialize all database tables"""
     with sqlite3.connect(DB_PATH) as c:
@@ -1120,6 +1136,15 @@ ARM_CPU_BRANDS = {"arm", "aarch64", "cortex", "neoverse", "apple m1", "apple m2"
 
 
 def _fingerprint_checks_map(fingerprint: dict) -> dict:
+    """
+    Extract the checks dictionary from a hardware fingerprint payload.
+
+    Args:
+        fingerprint: Hardware fingerprint dict containing device and check data.
+
+    Returns:
+        dict: The 'checks' section of the fingerprint, or empty dict if invalid.
+    """
     if not isinstance(fingerprint, dict):
         return {}
     checks = fingerprint.get("checks", {})
@@ -1127,6 +1152,16 @@ def _fingerprint_checks_map(fingerprint: dict) -> dict:
 
 
 def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
+    """
+    Extract specific check data from a hardware fingerprint by check name.
+
+    Args:
+        fingerprint: Hardware fingerprint dict containing checks and device info.
+        check_name: Name of the specific check to extract (e.g., 'simd_identity').
+
+    Returns:
+        dict: The 'data' section of the specified check, or empty dict if not found.
+    """
     item = _fingerprint_checks_map(fingerprint).get(check_name, {})
     if isinstance(item, dict):
         data = item.get("data", {})
@@ -1135,12 +1170,30 @@ def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
 
 
 def _claimed_family_and_arch(device: dict) -> tuple:
+    """
+    Extract the claimed device family and architecture from a device dict.
+    
+    Args:
+        device: Device information dict with family/arch fields.
+    
+    Returns:
+        tuple: (family, arch) strings. Defaults to ('x86', 'default') if not provided.
+    """
     family = str(device.get("device_family") or device.get("family") or "x86")
     arch = str(device.get("device_arch") or device.get("arch") or "default")
     return family, arch
 
 
 def _cpu_brand_string(device: dict) -> str:
+    """
+    Build a lowercase CPU brand string from available device fields.
+    
+    Args:
+        device: Device information dict with cpu/model/brand fields.
+    
+    Returns:
+        str: Concatenated brand string in lowercase, or empty string if no fields.
+    """
     return " ".join(
         str(device.get(key) or "").strip()
         for key in ("cpu", "device_model", "model", "brand")
@@ -5940,10 +5993,18 @@ def wallet_transfer_signed():
     from_address = pre.details["from_address"]
     to_address = pre.details["to_address"]
     nonce_int = pre.details["nonce"]
+    chain_id = pre.details.get("chain_id")
     signature = str(data.get("signature", "")).strip()
     public_key = str(data.get("public_key", "")).strip()
     memo = str(data.get("memo", ""))
     amount_rtc = pre.details["amount_rtc"]
+
+    if chain_id and chain_id != CHAIN_ID:
+        return jsonify({
+            "error": "chain_id does not match active network",
+            "expected_chain_id": CHAIN_ID,
+            "got_chain_id": chain_id,
+        }), 400
 
     # Verify public key matches from_address
     # Support bcn_ beacon addresses: resolve pubkey from Beacon Atlas
@@ -5982,6 +6043,8 @@ def wallet_transfer_signed():
         "memo": memo,
         "nonce": nonce
     }
+    if chain_id:
+        tx_data["chain_id"] = chain_id
     message = json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode()
     
     # Verify Ed25519 signature
@@ -6064,6 +6127,7 @@ def wallet_transfer_signed():
             "from_address": from_address,
             "to_address": to_address,
             "amount_rtc": amount_rtc,
+            "chain_id": chain_id or CHAIN_ID,
             "confirms_at": confirms_at,
             "confirms_in_hours": CONFIRMATION_DELAY_SECONDS / 3600,
             "message": f"Transfer pending. Will confirm in {CONFIRMATION_DELAY_SECONDS // 3600} hours unless voided."

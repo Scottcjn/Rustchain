@@ -141,7 +141,31 @@ impl NonceStore {
         self.highest_nonce.clear();
     }
 
-    /// Merge another nonce store into this one
+    /// Merge another nonce store into this one (union of used nonces).
+    ///
+    /// # Merge Semantics
+    /// - **Used nonces**: Union of both stores (all used nonces preserved)
+    /// - **Highest nonce**: Takes maximum value per address
+    ///
+    /// # Use Cases
+    /// - **Wallet migration**: Combine nonce history from old/new storage
+    /// - **Multi-device sync**: Merge nonce tracking across devices
+    /// - **Backup restoration**: Merge restored data with current state
+    ///
+    /// # Arguments
+    /// * `other` - NonceStore to merge into self
+    ///
+    /// # Example
+    /// ```ignore
+    /// let mut store1 = NonceStore::new();
+    /// store1.mark_used("addr1", 0);
+    ///
+    /// let mut store2 = NonceStore::new();
+    /// store2.mark_used("addr1", 1);
+    ///
+    /// store1.merge(&store2);
+    /// // Now store1 has nonces 0 and 1 for addr1
+    /// ```
     pub fn merge(&mut self, other: &NonceStore) {
         for (address, nonces) in &other.used_nonces {
             let used = self.used_nonces
@@ -301,5 +325,41 @@ mod tests {
         assert!(store.is_used("addr_1", 4));
         assert!(store.is_used("addr_2", 2));
         assert!(store.is_used("addr_2", 5));
+    }
+
+    #[test]
+    fn test_get_highest_nonce() {
+        let mut store = NonceStore::new();
+        let address = "test_address";
+
+        // Initially no highest nonce
+        assert_eq!(store.get_highest_nonce(address), None);
+
+        // Mark some nonces
+        store.mark_used(address, 0);
+        assert_eq!(store.get_highest_nonce(address), Some(0));
+
+        store.mark_used(address, 5);
+        assert_eq!(store.get_highest_nonce(address), Some(5));
+
+        store.mark_used(address, 3); // Lower than 5, shouldn't change highest
+        assert_eq!(store.get_highest_nonce(address), Some(5));
+
+        store.mark_used(address, 10);
+        assert_eq!(store.get_highest_nonce(address), Some(10));
+    }
+
+    #[test]
+    fn test_get_highest_nonce_multiple_addresses() {
+        let mut store = NonceStore::new();
+
+        store.mark_used("addr_a", 0);
+        store.mark_used("addr_a", 5);
+        store.mark_used("addr_b", 3);
+        store.mark_used("addr_b", 7);
+
+        assert_eq!(store.get_highest_nonce("addr_a"), Some(5));
+        assert_eq!(store.get_highest_nonce("addr_b"), Some(7));
+        assert_eq!(store.get_highest_nonce("addr_c"), None);
     }
 }

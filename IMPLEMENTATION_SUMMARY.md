@@ -143,7 +143,7 @@ cat < /dev/ttyACM0
 
 - Existing miners unaffected
 - Console miners use new code paths but same API
-- Backwards compatible with legacy miners
+- Backward compatible with legacy miners
 
 ## Security Model
 

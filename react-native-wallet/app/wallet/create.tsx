@@ -16,7 +16,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { generateKeyPair, publicKeyToBase58, publicKeyToHex } from '../../src/utils/crypto';
+import { generateKeyPair, KeyPair, publicKeyToHex, publicKeyToRtcAddress } from '../../src/utils/crypto';
 import { WalletStorage } from '../../src/storage/secure';
 
 export default function CreateWalletScreen() {
@@ -25,17 +25,19 @@ export default function CreateWalletScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [generatedKeyPair, setGeneratedKeyPair] = useState<KeyPair | null>(null);
   const [generatedWallet, setGeneratedWallet] = useState<{
     address: string;
     publicKey: string;
   } | null>(null);
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     try {
       const keyPair = generateKeyPair();
-      const address = publicKeyToBase58(keyPair.publicKey);
+      const address = await publicKeyToRtcAddress(keyPair.publicKey);
       const publicKey = publicKeyToHex(keyPair.publicKey);
 
+      setGeneratedKeyPair(keyPair);
       setGeneratedWallet({ address, publicKey });
     } catch (error) {
       Alert.alert('Error', 'Failed to generate wallet');
@@ -64,7 +66,7 @@ export default function CreateWalletScreen() {
       return;
     }
 
-    if (!generatedWallet) {
+    if (!generatedWallet || !generatedKeyPair) {
       Alert.alert('Error', 'Please generate a wallet first');
       return;
     }
@@ -72,11 +74,8 @@ export default function CreateWalletScreen() {
     setLoading(true);
 
     try {
-      // Generate key pair again (in production, store the generated one)
-      const keyPair = generateKeyPair();
-
       // Save encrypted wallet
-      await WalletStorage.save(walletName.trim(), keyPair, password);
+      await WalletStorage.save(walletName.trim(), generatedKeyPair, password);
 
       Alert.alert(
         'Wallet Created!',
@@ -97,8 +96,9 @@ export default function CreateWalletScreen() {
   };
 
   const handleRegenerate = () => {
+    setGeneratedKeyPair(null);
     setGeneratedWallet(null);
-    handleGenerate();
+    void handleGenerate();
   };
 
   return (

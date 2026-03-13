@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Mining Calculator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: #e4e4e4;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            color: #f39c12;
+            font-size: 2.5em;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #95a5a6;
+            margin-bottom: 40px;
+        }
+        
+        .calculator-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #f39c12;
+        }
+        
+        select, input {
+            width: 100%;
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            font-size: 16px;
+        }
+        
+        select:focus, input:focus {
+            outline: none;
+            border-color: #f39c12;
+        }
+        
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(243, 156, 18, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .results {
+            display: none;
+            margin-top: 30px;
+        }
+        
+        .results.show {
+            display: block;
+        }
+        
+        .results h2 {
+            color: #f39c12;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        .earnings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .earning-card {
+            background: rgba(243, 156, 18, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            border: 1px solid rgba(243, 156, 18, 0.3);
+        }
+        
+        .earning-card .label {
+            color: #95a5a6;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        
+        .earning-card .value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #f39c12;
+        }
+        
+        .earning-card .usd {
+            color: #2ecc71;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        
+        .info-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        
+        .info-section h3 {
+            color: #f39c12;
+            margin-bottom: 15px;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        
+        .info-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px;
+            border-radius: 8px;
+        }
+        
+        .info-item .label {
+            font-size: 12px;
+            color: #95a5a6;
+        }
+        
+        .info-item .value {
+            font-weight: 600;
+            color: #fff;
+        }
+        
+        .hardware-multipliers {
+            margin-top: 30px;
+        }
+        
+        .hardware-multipliers h3 {
+            color: #f39c12;
+            margin-bottom: 15px;
+        }
+        
+        .multiplier-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .multiplier-table th,
+        .multiplier-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .multiplier-table th {
+            background: rgba(243, 156, 18, 0.2);
+            color: #f39c12;
+            font-weight: 600;
+        }
+        
+        .multiplier-table tr:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #95a5a6;
+        }
+        
+        .spinner {
+            border: 3px solid rgba(243, 156, 18, 0.3);
+            border-top-color: #f39c12;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .error {
+            background: rgba(231, 76, 60, 0.2);
+            border: 1px solid rgba(231, 76, 60, 0.5);
+            color: #e74c3c;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        
+        .sensitivity-table {
+            margin-top: 30px;
+        }
+        
+        .sensitivity-table h3 {
+            color: #f39c12;
+            margin-bottom: 15px;
+        }
+        
+        .note {
+            font-size: 12px;
+            color: #95a5a6;
+            margin-top: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⛏️ RustChain Mining Calculator</h1>
+        <p class="subtitle">Estimate your RTC rewards based on hardware antiquity</p>
+        
+        <div class="calculator-card">
+            <div class="form-group">
+                <label for="hardware">Select Your Hardware</label>
+                <select id="hardware">
+                    <option value="">-- Choose Hardware --</option>
+                    <option value="2.5">PowerPC G4 (2.5x) - PowerBook G4, Power Mac G4</option>
+                    <option value="2.0">PowerPC G5 (2.0x) - Power Mac G5, Xserve G5</option>
+                    <option value="2.0">IBM POWER8 (2.0x) - IBM POWER8 S824</option>
+                    <option value="1.8">PowerPC G3 (1.8x) - iBook G3, Power Mac G3</option>
+                    <option value="1.15">Apple Silicon (1.15x) - Mac Mini M2, MacBook M1</option>
+                    <option value="1.0">Modern x86 (1.0x) - Any modern PC/laptop</option>
+                    <option value="1.5">Pentium 4 (1.5x)</option>
+                    <option value="1.3">Core 2 Duo (1.3x)</option>
+                    <option value="0.1">VM/Emulated (~0x) - Not recommended</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="networkMiners">Network Status</label>
+                <select id="networkMiners">
+                    <option value="auto">🔄 Auto-fetch from network</option>
+                    <option value="12">12 miners (example)</option>
+                    <option value="50">50 miners</option>
+                    <option value="100">100 miners</option>
+                    <option value="500">500 miners</option>
+                    <option value="1000">1000 miners</option>
+                </select>
+            </div>
+            
+            <button onclick="calculate()">Calculate Earnings</button>
+            
+            <div id="loading" class="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Fetching network data...</p>
+            </div>
+            
+            <div id="error" class="error" style="display: none;"></div>
+            
+            <div id="results" class="results">
+                <h2>📊 Your Estimated Earnings</h2>
+                
+                <div class="earnings-grid">
+                    <div class="earning-card">
+                        <div class="label">Per Epoch (10 min)</div>
+                        <div class="value" id="perEpoch">0 RTC</div>
+                        <div class="usd" id="perEpochUsd">$0.00</div>
+                    </div>
+                    <div class="earning-card">
+                        <div class="label">Per Hour</div>
+                        <div class="value" id="perHour">0 RTC</div>
+                        <div class="usd" id="perHourUsd">$0.00</div>
+                    </div>
+                    <div class="earning-card">
+                        <div class="label">Per Day</div>
+                        <div class="value" id="perDay">0 RTC</div>
+                        <div class="usd" id="perDayUsd">$0.00</div>
+                    </div>
+                    <div class="earning-card">
+                        <div class="label">Per Week</div>
+                        <div class="value" id="perWeek">0 RTC</div>
+                        <div class="usd" id="perWeekUsd">$0.00</div>
+                    </div>
+                    <div class="earning-card">
+                        <div class="label">Per Month</div>
+                        <div class="value" id="perMonth">0 RTC</div>
+                        <div class="usd" id="perMonthUsd">$0.00</div>
+                    </div>
+                </div>
+                
+                <div class="info-section">
+                    <h3>ℹ️ Network Info</h3>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <div class="label">Your Multiplier</div>
+                            <div class="value" id="yourMultiplier">0x</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="label">Total Network Weight</div>
+                            <div class="value" id="totalWeight">0</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="label">Active Miners</div>
+                            <div class="value" id="activeMiners">0</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="label">RTC per Epoch</div>
+                            <div class="value" id="rtcPerEpoch">1.5 RTC</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="label">Your Share</div>
+                            <div class="value" id="yourShare">0%</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="label">USD Rate</div>
+                            <div class="value" id="usdRate">$0.10/RTC</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="sensitivity-table">
+                    <h3>📈 Earnings vs Network Size</h3>
+                    <table class="multiplier-table">
+                        <thead>
+                            <tr>
+                                <th>Network Size</th>
+                                <th>Daily RTC</th>
+                                <th>Monthly RTC</th>
+                                <th>Monthly USD</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sensitivityBody">
+                        </tbody>
+                    </table>
+                </div>
+                
+                <p class="note">
+                    Note: Estimates based on current network conditions. Actual earnings vary based on network participation and epoch rewards.
+                    RTC reference rate: $0.10/RTC
+                </p>
+            </div>
+        </div>
+        
+        <div class="calculator-card hardware-multipliers">
+            <h3>🏛️ Hardware Multipliers</h3>
+            <table class="multiplier-table">
+                <thead>
+                    <tr>
+                        <th>Hardware Type</th>
+                        <th>Multiplier</th>
+                        <th>Examples</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>PowerPC G4</td>
+                        <td>2.5x</td>
+                        <td>PowerBook G4, Power Mac G4</td>
+                    </tr>
+                    <tr>
+                        <td>PowerPC G5</td>
+                        <td>2.0x</td>
+                        <td>Power Mac G5, Xserve G5</td>
+                    </tr>
+                    <tr>
+                        <td>IBM POWER8</td>
+                        <td>2.0x</td>
+                        <td>IBM POWER8 S824</td>
+                    </tr>
+                    <tr>
+                        <td>PowerPC G3</td>
+                        <td>1.8x</td>
+                        <td>iBook G3, Power Mac G3</td>
+                    </tr>
+                    <tr>
+                        <td>Pentium 4</td>
+                        <td>1.5x</td>
+                        <td>Intel Pentium 4 systems</td>
+                    </tr>
+                    <tr>
+                        <td>Core 2 Duo</td>
+                        <td>1.3x</td>
+                        <td>Intel Core 2 Duo systems</td>
+                    </tr>
+                    <tr>
+                        <td>Apple Silicon</td>
+                        <td>1.15x</td>
+                        <td>Mac Mini M2, MacBook M1</td>
+                    </tr>
+                    <tr>
+                        <td>Modern x86</td>
+                        <td>1.0x</td>
+                        <td>Any modern PC/laptop</td>
+                    </tr>
+                    <tr>
+                        <td>VM/Emulated</td>
+                        <td>~0x</td>
+                        <td>Virtual machines (discouraged)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const RTC_PER_EPOCH = 1.5;
+        const EPOCHS_PER_HOUR = 6;
+        const EPOCHS_PER_DAY = 144;
+        const EPOCHS_PER_WEEK = 1008;
+        const EPOCHS_PER_MONTH = 4320;
+        const USD_RATE = 0.10;
+        
+        // Default network composition (used when API unavailable)
+        const DEFAULT_NETWORK = [
+            { multiplier: 2.5, count: 2 },  // G4
+            { multiplier: 2.0, count: 2 },  // G5
+            { multiplier: 2.0, count: 1 },  // POWER8
+            { multiplier: 1.8, count: 1 },  // G3
+            { multiplier: 1.5, count: 1 },  // Pentium 4
+            { multiplier: 1.3, count: 1 },  // Core 2 Duo
+            { multiplier: 1.15, count: 2 }, // Apple Silicon
+            { multiplier: 1.0, count: 2 }   // Modern x86
+        ];
+        
+        async function fetchNetworkData() {
+            try {
+                const response = await fetch('https://50.28.86.131/api/miners', {
+                    mode: 'cors',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Network request failed');
+                }
+                
+                const miners = await response.json();
+                return miners;
+            } catch (error) {
+                console.log('Using default network data:', error);
+                return null;
+            }
+        }
+        
+        function calculateTotalWeight(miners, userMultiplier) {
+            if (!miners || miners.length === 0) {
+                // Use default network composition
+                let total = 0;
+                DEFAULT_NETWORK.forEach(item => {
+                    total += item.multiplier * item.count;
+                });
+                return total;
+            }
+            
+            // Sum all miner multipliers
+            let total = 0;
+            miners.forEach(miner => {
+                total += miner.multiplier || 1.0;
+            });
+            
+            return total;
+        }
+        
+        function calculate() {
+            const hardwareSelect = document.getElementById('hardware');
+            const networkSelect = document.getElementById('networkMiners');
+            const resultsDiv = document.getElementById('results');
+            const loadingDiv = document.getElementById('loading');
+            const errorDiv = document.getElementById('error');
+            
+            const userMultiplier = parseFloat(hardwareSelect.value);
+            
+            if (!userMultiplier) {
+                showError('Please select your hardware type');
+                return;
+            }
+            
+            hideError();
+            resultsDiv.classList.remove('show');
+            loadingDiv.style.display = 'block';
+            
+            const networkMode = networkSelect.value;
+            
+            if (networkMode === 'auto') {
+                // Fetch from API
+                fetchNetworkData().then(miners => {
+                    loadingDiv.style.display = 'none';
+                    
+                    let totalWeight;
+                    let activeMiners;
+                    
+                    if (miners && miners.length > 0) {
+                        totalWeight = calculateTotalWeight(miners, userMultiplier);
+                        activeMiners = miners.length;
+                    } else {
+                        // Use default
+                        totalWeight = calculateTotalWeight(null, userMultiplier);
+                        activeMiners = DEFAULT_NETWORK.reduce((sum, item) => sum + item.count, 0);
+                    }
+                    
+                    performCalculations(userMultiplier, totalWeight, activeMiners);
+                }).catch(err => {
+                    loadingDiv.style.display = 'none';
+                    // Use default on error
+                    const totalWeight = calculateTotalWeight(null, userMultiplier);
+                    const activeMiners = DEFAULT_NETWORK.reduce((sum, item) => sum + item.count, 0);
+                    performCalculations(userMultiplier, totalWeight, activeMiners);
+                });
+            } else {
+                // Use preset miner count
+                loadingDiv.style.display = 'none';
+                const presetMiners = parseInt(networkMode);
+                
+                // Estimate total weight based on preset count and average multiplier
+                const avgMultiplier = 1.5; // Conservative average
+                const totalWeight = presetMiners * avgMultiplier + userMultiplier;
+                
+                performCalculations(userMultiplier, totalWeight, presetMiners + 1);
+            }
+        }
+        
+        function performCalculations(userMultiplier, totalWeight, activeMiners) {
+            const yourShare = userMultiplier / totalWeight;
+            const perEpoch = yourShare * RTC_PER_EPOCH;
+            const perHour = perEpoch * EPOCHS_PER_HOUR;
+            const perDay = perEpoch * EPOCHS_PER_DAY;
+            const perWeek = perEpoch * EPOCHS_PER_WEEK;
+            const perMonth = perEpoch * EPOCHS_PER_MONTH;
+            
+            // Update results
+            document.getElementById('perEpoch').textContent = perEpoch.toFixed(4) + ' RTC';
+            document.getElementById('perEpochUsd').textContent = '$' + (perEpoch * USD_RATE).toFixed(4);
+            
+            document.getElementById('perHour').textContent = perHour.toFixed(2) + ' RTC';
+            document.getElementById('perHourUsd').textContent = '$' + (perHour * USD_RATE).toFixed(2);
+            
+            document.getElementById('perDay').textContent = perDay.toFixed(2) + ' RTC';
+            document.getElementById('perDayUsd').textContent = '$' + (perDay * USD_RATE).toFixed(2);
+            
+            document.getElementById('perWeek').textContent = perWeek.toFixed(2) + ' RTC';
+            document.getElementById('perWeekUsd').textContent = '$' + (perWeek * USD_RATE).toFixed(2);
+            
+            document.getElementById('perMonth').textContent = perMonth.toFixed(2) + ' RTC';
+            document.getElementById('perMonthUsd').textContent = '$' + (perMonth * USD_RATE).toFixed(2);
+            
+            document.getElementById('yourMultiplier').textContent = userMultiplier + 'x';
+            document.getElementById('totalWeight').textContent = totalWeight.toFixed(2);
+            document.getElementById('activeMiners').textContent = activeMiners;
+            document.getElementById('rtcPerEpoch').textContent = RTC_PER_EPOCH + ' RTC';
+            document.getElementById('yourShare').textContent = (yourShare * 100).toFixed(4) + '%';
+            document.getElementById('usdRate').textContent = '$' + USD_RATE + '/RTC';
+            
+            // Generate sensitivity table
+            generateSensitivityTable(userMultiplier);
+            
+            document.getElementById('results').classList.add('show');
+        }
+        
+        function generateSensitivityTable(userMultiplier) {
+            const tbody = document.getElementById('sensitivityBody');
+            tbody.innerHTML = '';
+            
+            const networkSizes = [10, 50, 100, 200, 500, 1000];
+            const avgMultiplier = 1.5;
+            
+            networkSizes.forEach(size => {
+                const totalWeight = (size * avgMultiplier) + userMultiplier;
+                const yourShare = userMultiplier / totalWeight;
+                const perDay = yourShare * RTC_PER_EPOCH * EPOCHS_PER_DAY;
+                const perMonth = perDay * 30;
+                
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${size} miners</td>
+                    <td>${perDay.toFixed(2)} RTC</td>
+                    <td>${perMonth.toFixed(2)} RTC</td>
+                    <td>$${(perMonth * USD_RATE).toFixed(2)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+        
+        function hideError() {
+            document.getElementById('error').style.display = 'none';
+        }
+    </script>
+</body>
+</html>

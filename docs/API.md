@@ -204,20 +204,27 @@ Transfer RTC to another wallet. Requires Ed25519 signature.
 curl -sk -X POST https://rustchain.org/wallet/transfer/signed \
   -H "Content-Type: application/json" \
   -d '{
-    "from": "sender_miner_id",
-    "to": "recipient_miner_id",
-    "amount_i64": 1000000,
+    "from_address": "RTCaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "to_address": "RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "amount_rtc": 1.5,
     "nonce": 12345,
-    "signature": "base64_ed25519_signature"
+    "memo": "",
+    "public_key": "ed25519_public_key_hex",
+    "signature": "ed25519_signature_hex",
+    "chain_id": "rustchain-mainnet-v2"
   }'
 ```
 
 **Response (Success):**
 ```json
 {
-  "success": true,
+  "ok": true,
+  "verified": true,
+  "phase": "pending",
   "tx_hash": "abc123...",
-  "new_balance": 117357193
+  "amount_rtc": 1.5,
+  "chain_id": "rustchain-mainnet-v2",
+  "confirms_in_hours": 24
 }
 ```
 

@@ -1,0 +1,30 @@
+{
+  "total_iterations": 50,
+  "total_crashes": 0,
+  "total_interesting": 1,
+  "status_codes": {
+    "403": 50
+  },
+  "mutator_stats": {
+    "missing_field": 4,
+    "xss_attempt": 2,
+    "wrong_type": 4,
+    "float_edge": 2,
+    "empty_payload": 4,
+    "unicode_inject": 5,
+    "unknown_field": 3,
+    "array_overflow": 4,
+    "nested_bomb": 1,
+    "sql_injection": 3,
+    "null_miner": 5,
+    "unicode_miner": 2,
+    "not_json": 6,
+    "huge_miner": 1,
+    "size_extremes": 4
+  },
+  "duration_seconds": 3.380722761154175,
+  "unique_coverage": 1,
+  "coverage_hashes": [
+    "07c330cac377dd3a"
+  ]
+}

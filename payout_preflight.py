@@ -5,6 +5,7 @@ from __future__ import annotations
 # `from payout_preflight import ...` works, while tests can still import it.
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
@@ -108,6 +109,10 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
     if nonce_int <= 0:
         return PreflightResult(ok=False, error="nonce_must_be_gt_zero", details={})
 
+    chain_id = str(data.get("chain_id", "")).strip()
+    if chain_id and not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", chain_id):
+        return PreflightResult(ok=False, error="invalid_chain_id_format", details={})
+
     return PreflightResult(
         ok=True,
         error="",
@@ -117,6 +122,6 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
             "amount_rtc": amount_rtc,
             "amount_i64": amount_i64,
             "nonce": nonce_int,
+            "chain_id": chain_id or None,
         },
     )
-

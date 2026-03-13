@@ -11,6 +11,12 @@ import pytest
 
 sys.path.insert(0, ".")
 
+# Mock mcp module if not available (for Python 3.9 testing)
+try:
+    import mcp
+except ImportError:
+    import mcp_mock as mcp  # type: ignore
+
 from mcp_server import RustChainMCP
 
 
@@ -458,6 +464,184 @@ class TestQuickstartGuide:
         assert "Modern x86" in content
 
 
+class TestBoTTube:
+    """Tests for BoTTube integration tools."""
+
+    @pytest.mark.asyncio
+    async def test_get_video_info_found(self, mcp_server):
+        """Test getting video info when video exists."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(
+            return_value={
+                "id": "video_123",
+                "title": "AI Tutorial",
+                "agent": "agent_abc",
+                "views": 1500,
+            }
+        )
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
+        mcp_server.session = mock_session
+
+        result = await mcp_server._tool_get_video_info({"video_id": "video_123"})
+
+        assert result["found"] is True
+        assert result["video"]["id"] == "video_123"
+        assert result["video"]["title"] == "AI Tutorial"
+
+    @pytest.mark.asyncio
+    async def test_get_video_info_not_found(self, mcp_server):
+        """Test getting video info when video doesn't exist."""
+        mock_response = AsyncMock()
+        mock_response.status = 404
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
+        mcp_server.session = mock_session
+
+        result = await mcp_server._tool_get_video_info({"video_id": "nonexistent"})
+
+        assert result["found"] is False
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_list_videos(self, mcp_server):
+        """Test listing videos."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(
+            return_value={
+                "videos": [
+                    {"id": "v1", "title": "Video 1"},
+                    {"id": "v2", "title": "Video 2"},
+                    {"id": "v3", "title": "Video 3"},
+                ]
+            }
+        )
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
+        mcp_server.session = mock_session
+
+        result = await mcp_server._tool_list_videos({"limit": 10})
+
+        assert result["count"] == 3
+        assert len(result["videos"]) == 3
+
+    @pytest.mark.asyncio
+    async def test_list_videos_with_agent_filter(self, mcp_server):
+        """Test listing videos with agent filter."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(
+            return_value={
+                "videos": [
+                    {"id": "v1", "title": "Video 1", "agent": "agent_xyz"},
+                ]
+            }
+        )
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
+        mcp_server.session = mock_session
+
+        result = await mcp_server._tool_list_videos({"limit": 10, "agent": "agent_xyz"})
+
+        assert result["count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_get_agent_videos(self, mcp_server):
+        """Test getting agent's videos."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(
+            return_value={
+                "videos": [
+                    {"id": "v1", "title": "Agent Video 1"},
+                    {"id": "v2", "title": "Agent Video 2"},
+                ]
+            }
+        )
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
+        mcp_server.session = mock_session
+
+        result = await mcp_server._tool_get_agent_videos({"agent_id": "agent_xyz"})
+
+        assert result["agent_id"] == "agent_xyz"
+        assert result["count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_search_videos(self, mcp_server):
+        """Test searching videos."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(
+            return_value={
+                "videos": [
+                    {"id": "v1", "title": "RustChain Tutorial"},
+                    {"id": "v2", "title": "Blockchain Basics"},
+                ]
+            }
+        )
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
+        mcp_server.session = mock_session
+
+        result = await mcp_server._tool_search_videos({"query": "blockchain", "limit": 10})
+
+        assert result["query"] == "blockchain"
+        assert result["count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_get_feed(self, mcp_server):
+        """Test getting feed."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(
+            return_value={
+                "items": [
+                    {"type": "upload", "video_id": "v1"},
+                    {"type": "like", "video_id": "v2"},
+                ],
+                "next_cursor": "cursor_abc",
+            }
+        )
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
+        mcp_server.session = mock_session
+
+        result = await mcp_server._tool_get_feed({"limit": 20})
+
+        assert result["count"] == 2
+        assert result["next_cursor"] == "cursor_abc"
+
+    @pytest.mark.asyncio
+    async def test_get_feed_with_cursor(self, mcp_server):
+        """Test getting feed with pagination cursor."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(
+            return_value={
+                "items": [{"type": "comment", "video_id": "v3"}],
+                "next_cursor": "cursor_xyz",
+            }
+        )
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
+        mcp_server.session = mock_session
+
+        result = await mcp_server._tool_get_feed({"cursor": "cursor_abc", "limit": 20})
+
+        assert result["count"] == 1
+
+
 class TestToolList:
     """Tests for tool listing."""
 
@@ -468,6 +652,7 @@ class TestToolList:
         # We verify by checking the handler methods exist on the server
 
         expected_tools = [
+            # RustChain tools
             "get_miner_info",
             "get_block_info",
             "get_epoch_info",
@@ -478,6 +663,12 @@ class TestToolList:
             "get_agent_info",
             "verify_hardware",
             "calculate_mining_rewards",
+            # BoTTube tools
+            "get_video_info",
+            "list_videos",
+            "get_agent_videos",
+            "search_videos",
+            "get_feed",
         ]
 
         # Check that all tool handler methods exist

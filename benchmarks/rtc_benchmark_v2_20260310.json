@@ -1,0 +1,49 @@
+{
+  "system": {
+    "cpu": "AMD Ryzen 7 8845HS w/ Radeon 780M Graphics",
+    "cores": 8,
+    "threads": 16,
+    "ram_gb": 29.902851104736328,
+    "gpu": "NVIDIA GeForce RTX 4070 Laptop GPU",
+    "gpu_vram_used_mb": 3409.0,
+    "gpu_vram_total_mb": 8188.0,
+    "gpu_processes": [
+      {
+        "pid": "2912835",
+        "name": "/home/scott/llama.cpp/build-cuda/bin/llama-server",
+        "mem_mb": "3388"
+      }
+    ]
+  },
+  "phases": {
+    "baseline": {
+      "mean": 10.148,
+      "max": 15.5,
+      "min": 8.1
+    },
+    "cpu_burn": {
+      "mean": 14.744000000000002,
+      "max": 19.7,
+      "min": 11.6
+    },
+    "burn_plus_miner_system": {
+      "mean": 14.816666666666668,
+      "max": 19.2,
+      "min": 12.8
+    },
+    "miner_process": {
+      "mean": 0.0,
+      "max": 0.0,
+      "min": 0.0,
+      "samples": 12,
+      "per_core": 0.0
+    },
+    "miner_only": {
+      "mean": 0.0,
+      "max": 0.0,
+      "min": 0.0,
+      "samples": 25,
+      "per_core": 0.0
+    }
+  }
+}

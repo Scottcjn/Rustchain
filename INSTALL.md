@@ -348,7 +348,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 3. The miner runs as your user (not root)
 4. Services are user-level (systemd --user, ~/Library/LaunchAgents)
 5. All logs are stored in your home directory
-6. **SSL Certificate:** The RustChain node (50.28.86.131) may use a self-signed SSL certificate. The `-k` flag in curl commands bypasses certificate verification. This is a known limitation of the current infrastructure. In production, you should verify the node's identity through other means (community consensus, explorer verification, etc.).
+6. **SSL Certificate:** The RustChain node (rustchain.org) may use a self-signed SSL certificate. The `-k` flag in curl commands bypasses certificate verification. This is a known limitation of the current infrastructure. In production, you should verify the node's identity through other means (community consensus, explorer verification, etc.).
 
 To view the certificate SHA-256 fingerprint:
 

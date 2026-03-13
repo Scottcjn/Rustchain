@@ -1,21 +1,15 @@
 {
-  "miner": [
-    "not",
-    "a",
-    "string"
-  ],
+  "miner": ["not", "a", "string"],
   "device": {
-    "device_family": "PowerPC",
-    "device_arch": "power8",
-    "cores": 4
+    "model": "Test CPU",
+    "arch": "x86_64",
+    "cores": 8
   },
   "signals": {
-    "hostname": "miner-array-host",
-    "macs": [
-      "AA:BB:CC:DD:EE:33"
-    ]
+    "macs": ["aa:bb:cc:dd:ee:08"],
+    "hostname": "array-host"
   },
   "report": {
-    "commitment": "miner-array-commitment"
+    "commitment": "array-commitment"
   }
 }

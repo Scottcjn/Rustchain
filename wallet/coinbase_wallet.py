@@ -18,7 +18,10 @@ BOLD = "\033[1m"
 DIM = "\033[2m"
 NC = "\033[0m"
 
-NODE_URL = "https://bulbous-bouffant.metalseed.net"
+# Current public RustChain host. Older helper builds referenced a retired
+# metalseed hostname, which can surface as a false "could not reach network"
+# error even when the public node is healthy.
+NODE_URL = "https://rustchain.org"
 
 SWAP_INFO = {
     "wrtc_contract": "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6",
@@ -212,7 +215,7 @@ def coinbase_swap_info(args):
     5. Bridge wRTC to native RTC at https://bottube.ai/bridge
 
   {DIM}Or use the RustChain API:{NC}
-    curl -s https://bulbous-bouffant.metalseed.net/wallet/swap-info
+    curl -s {NODE_URL}/wallet/swap-info
 """)
 
 

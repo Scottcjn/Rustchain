@@ -1,0 +1,28 @@
+# Example: Run simulation in Docker
+version: '3.8'
+
+services:
+  simulator:
+    build:
+      context: ..
+      dockerfile: src/Dockerfile.simulator
+    volumes:
+      - ../evidence:/app/evidence
+    command: >
+      python3 src/epoch_determinism_simulator.py
+      --seed 42
+      --epochs 5
+      --nodes 3
+      --output evidence/results.json
+      --verbose
+
+  replay-verifier:
+    build:
+      context: ..
+      dockerfile: src/Dockerfile.simulator
+    volumes:
+      - ../evidence:/app/evidence
+    command: >
+      bash -c "
+      python3 src/cross_node_replay.py --record --seed 42 --epochs 3 --output evidence/replay.json &&
+      python3 src/cross_node_replay.py --verify evidence/replay.json --verbose"

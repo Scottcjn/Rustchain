@@ -65,7 +65,21 @@ impl Box {
         box_data
     }
 
-    /// Calculate box ID (hash of contents)
+    /// Calculate unique box ID as SHA256 hash of box contents.
+    ///
+    /// # Hash Components
+    /// The box ID is computed from:
+    /// - `value` (8 bytes, little-endian)
+    /// - `ergo_tree` (spending condition bytes)
+    /// - `creation_height` (8 bytes, little-endian)
+    /// - Each token's `token_id` and `amount`
+    ///
+    /// # Uniqueness Guarantee
+    /// Any change to box contents produces a different ID, ensuring
+    /// UTXO integrity and preventing double-spending.
+    ///
+    /// # Returns
+    /// 32-byte box identifier
     fn calculate_id(&self) -> BoxId {
         let mut hasher = Sha256::new();
         hasher.update(&self.value.to_le_bytes());
@@ -141,7 +155,23 @@ impl UtxoSet {
             .push(box_id);
     }
 
-    /// Remove a box (spend it)
+    /// Remove a box from the UTXO set (spend it).
+    ///
+    /// # Operation
+    /// 1. Remove box from main `boxes` map by ID
+    /// 2. Remove box ID from all address indexes (cleanup)
+    ///
+    /// # Arguments
+    /// * `box_id` - Unique identifier of box to spend
+    ///
+    /// # Returns
+    /// * `Some(Box)` - The spent box (if it existed)
+    /// * `None` - Box not found in UTXO set
+    ///
+    /// # Note
+    /// The address index cleanup iterates all addresses, which is O(n).
+    /// For high-throughput applications, consider maintaining a reverse
+    /// index (box_id → address) for O(1) removal.
     pub fn spend_box(&mut self, box_id: &BoxId) -> Option<Box> {
         if let Some(b) = self.boxes.remove(box_id) {
             // Remove from address index too
@@ -514,7 +544,30 @@ impl ErgoCompatible for crate::core_types::BlockMiner {
     }
 }
 
-/// Convert RustChain block to Ergo-compatible format
+/// Convert a RustChain block to Ergo-compatible format.
+///
+/// # Conversion Process
+/// 1. **Header extraction**: Creates BlockHeader with block metadata
+/// 2. **Miner conversion**: Each BlockMiner becomes an ErgoTransaction
+/// 3. **UTXO creation**: Miner rewards encoded as Ergo-style boxes
+///
+/// # Output Structure
+/// - `BlockHeader`: Contains height, hash, parent hash, timestamp, total antiquity
+/// - `Vec<ErgoTransaction>`: One transaction per miner (reward distribution)
+///
+/// # Field Mappings
+/// | RustChain | Ergo-Compatible |
+/// |-----------|-----------------|
+/// | `Block.hash` | `BlockHeader.id` |
+/// | `Block.previous_hash` | `BlockHeader.parent_id` |
+/// | `Block.miners` | `Vec<ErgoTransaction>` |
+/// | `miner.reward` | `Box.value` (nanoRTC) |
+///
+/// # Arguments
+/// * `block` - Reference to RustChain Block
+///
+/// # Returns
+/// Tuple of (BlockHeader, Vec<ErgoTransaction>)
 pub fn rustchain_block_to_ergo(block: &Block) -> (BlockHeader, Vec<ErgoTransaction>) {
     let header = BlockHeader {
         height: block.height,
