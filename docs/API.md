@@ -152,7 +152,7 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=eafc6f14eab6d5c5362fe651
 
 Read recent transfer history for a wallet. This is a public, wallet-scoped view
 over the pending transfer ledger and includes pending, confirmed, and voided
-transfers.
+transfers. Returns an empty array for wallets with no history.
 
 Canonical query parameter is `miner_id`. The endpoint also accepts `address`
 as a compatibility alias for older callers.
@@ -162,22 +162,96 @@ as a compatibility alias for older callers.
 curl -sk "https://rustchain.org/wallet/history?miner_id=eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC&limit=10" | jq .
 ```
 
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `miner_id` | string | Yes* | Wallet identifier (canonical) |
+| `address` | string | Yes* | Backward-compatible alias for `miner_id` |
+| `limit` | integer | No | Max records (1-200, default: 50) |
+
+*Either `miner_id` or `address` is required.
+
 **Response:**
 ```json
 [
   {
     "tx_id": "6df5d4d25b6deef8f0b2e0fa726cecf1",
+    "tx_hash": "6df5d4d25b6deef8f0b2e0fa726cecf1",
     "from_addr": "aliceRTC",
     "to_addr": "bobRTC",
     "amount": 1.25,
     "amount_i64": 1250000,
     "amount_rtc": 1.25,
     "timestamp": 1772848800,
+    "created_at": 1772848800,
+    "confirmed_at": null,
+    "confirms_at": 1772935200,
     "status": "pending",
+    "raw_status": "pending",
+    "status_reason": null,
+    "confirmations": 0,
     "direction": "sent",
-    "counterparty": "bobRTC"
+    "counterparty": "bobRTC",
+    "reason": "signed_transfer:payment",
+    "memo": "payment"
+  },
+  {
+    "tx_id": "abc123def456...",
+    "tx_hash": "abc123def456...",
+    "from_addr": "carolRTC",
+    "to_addr": "aliceRTC",
+    "amount": 5.0,
+    "amount_i64": 5000000,
+    "amount_rtc": 5.0,
+    "timestamp": 1772762400,
+    "created_at": 1772762400,
+    "confirmed_at": 1772848800,
+    "confirms_at": 1772848800,
+    "status": "confirmed",
+    "raw_status": "confirmed",
+    "status_reason": null,
+    "confirmations": 1,
+    "direction": "received",
+    "counterparty": "carolRTC",
+    "reason": null,
+    "memo": null
   }
 ]
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tx_id` | string | Transaction hash, or `pending_{id}` for pending |
+| `tx_hash` | string | Same as `tx_id` (alias) |
+| `from_addr` | string | Sender wallet address |
+| `to_addr` | string | Recipient wallet address |
+| `amount` | float | Amount in RTC (human-readable) |
+| `amount_i64` | integer | Amount in micro-RTC (6 decimals) |
+| `amount_rtc` | float | Same as `amount` (alias) |
+| `timestamp` | integer | Transfer creation Unix timestamp |
+| `created_at` | integer | Same as `timestamp` (alias) |
+| `confirmed_at` | integer\|null | Confirmation timestamp (null if pending) |
+| `confirms_at` | integer\|null | Scheduled confirmation time |
+| `status` | string | `pending`, `confirmed`, or `failed` |
+| `raw_status` | string | Raw DB status (`pending`, `confirmed`, `voided`) |
+| `status_reason` | string\|null | Reason for failure/void |
+| `confirmations` | integer | 1 if confirmed, 0 otherwise |
+| `direction` | string | `sent` or `received` (relative to queried wallet) |
+| `counterparty` | string | Other wallet in the transfer |
+| `reason` | string\|null | Raw reason field from ledger |
+| `memo` | string\|null | Extracted memo from `signed_transfer:` prefix |
+
+**Notes:**
+- Transactions ordered by `created_at DESC, id DESC` (newest first)
+- `memo` extracted from `reason` when it starts with `signed_transfer:`
+- Pending transfers use `pending_{id}` as `tx_id` until confirmed
+- Empty array `[]` returned for wallets with no history
+- Status normalized: `pending`→`pending`, `confirmed`→`confirmed`, others→`failed`
+
+**Pagination:**
+- Default limit: 50 records
+- Clamped to range 1-200
+- Invalid limit (non-integer) returns 400 error
 ```
 
 | Field | Type | Description |
