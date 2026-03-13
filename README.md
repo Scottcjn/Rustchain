@@ -143,6 +143,8 @@ The name comes from a literal 486 laptop with oxidized serial ports that still b
 
 ## ⚡ Quickstart
 
+> 🎬 **Visual Guide**: Watch the [Installation Walkthrough](docs/INSTALLATION_WALKTHROUGH.md) for step-by-step video recordings of the installation and first attestation process.
+
 ### One-Line Install (Recommended)
 ```bash
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash

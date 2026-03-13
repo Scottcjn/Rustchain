@@ -1,0 +1,102 @@
+# =============================================================================
+# RustChain Git Attributes
+# =============================================================================
+# File size and diff settings for media assets
+# =============================================================================
+
+# Asciinema recordings (text-based, keep in repo)
+*.cast text
+docs/asciinema/*.cast text
+
+# SVG files (text-based, good for version control)
+*.svg text
+docs/assets/*.svg text
+docs/media/*.svg text
+
+# GIF files (binary, track but don't diff)
+*.gif binary
+docs/asciinema/*.gif -diff
+docs/assets/*.gif -diff
+docs/media/*.gif -diff
+
+# PNG files (binary, track but don't diff)
+*.png binary
+docs/assets/*.png -diff
+docs/media/*.png -diff
+docs/*.png -diff
+
+# Large media files (warn on commit)
+*.mp4 binary
+*.mov binary
+*.avi binary
+*.mkv binary
+
+# PDF documentation (binary)
+*.pdf binary
+docs/*.pdf -diff
+docs/whitepaper/*.pdf -diff
+
+# Audio files (binary)
+*.wav binary
+*.mp3 binary
+*.ogg binary
+docs/media/*.wav -diff
+docs/media/*.mp3 -diff
+
+# Font files (binary)
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+
+# Archive files (typically should be in .gitignore)
+*.zip binary
+*.tar binary
+*.gz binary
+*.7z binary
+*.rar binary
+
+# =============================================================================
+# Line ending normalization
+# =============================================================================
+
+# Set default behavior to automatically normalize text files
+* text=auto
+
+# Explicitly declare source code files as text
+*.sh text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.jsx text eol=lf
+*.tsx text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.scss text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.xml text eol=lf
+*.ini text eol=lf
+*.env text eol=lf
+*.txt text eol=lf
+*.rst text eol=lf
+
+# Shell scripts should always use LF
+*.sh text eol=lf
+
+# Windows batch files should use CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# =============================================================================
+# Export settings (for git archive)
+# =============================================================================
+
+# Exclude development files from git archive
+.gitattributes export-ignore
+.gitignore export-ignore
+scripts/asciinema/ export-ignore
+docs/asciinema/*.cast export-ignore
