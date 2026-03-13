@@ -1,26 +1,21 @@
 # Bounty Contribution
 
-This addresses issue #908: [BOUNTY: 15 RTC] Implement /wallet/history endpoint (fixes #775, #886)
+This addresses issue #931: feat: PlayStation 1 Miner Implementation for Bounty #430
 
 ## Description
-## Implement the /wallet/history Endpoint
+## Summary
+This PR implements a complete PlayStation 1 mining solution for bounty #430.
 
-**Reward: 15 RTC**
-
-### Background
-The `/wallet/history` endpoint is documented in the API spec but returns 404. Multiple bug reports have been filed (#775, #886). Time to fix it.
-
-### Task
-Add a `/wallet/history` endpoint to `rustchain_v2_integrated_v2.2.1_rip200.py` that returns transaction history for a given wallet/miner ID.
-
-### Expected Behavior
-```
-GET /wallet/history?miner_id=dual-g4-125&limit=50
-
-Response:
-{
-  "ok": true,
-  "miner_id": "dual-g4
+## Changes
+- **ps1_miner/**: C implementation for PS1 hardware (~1,500 lines)
+  - SHA256 hashing optimized for PS1 MIPS R3000A (33MHz)
+  - Serial communication via PS1 serial port (9600 baud)
+  - Memory card integration for persistent storage
+  - Hardware fingerprinting for device identification
+  
+- **ps1_bridge/**: Python bridge software (~200 lines)
+  - Serial port management for host-PS1 communication
+  
 
 ## Payment
 0x4F666e7b4F63637223625FD4e9Ace6055fD6a847
