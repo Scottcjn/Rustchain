@@ -1,24 +1,42 @@
 # SPDX-License-Identifier: MIT
 # Author: @createkr (RayBot AI)
 # BCOS-Tier: L1
+from __future__ import annotations
+
 import hashlib
 import math
 import secrets
 import sqlite3
 import time
+from typing import Any, Dict, Optional, Tuple
 
-from flask import jsonify, request
+from flask import jsonify, request, Flask, Response
 
 
-def register_gpu_render_endpoints(app, db_path, admin_key):
+def register_gpu_render_endpoints(app: Flask, db_path: str, admin_key: str) -> None:
     """Registers decentralized GPU render payment and attestation endpoints."""
 
-    def get_db():
+    def get_db() -> sqlite3.Connection:
+        """
+        Create database connection with Row factory.
+        
+        Returns:
+            sqlite3.Connection: Database connection object
+        """
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
-    def _parse_positive_amount(value):
+    def _parse_positive_amount(value: Any) -> Optional[float]:
+        """
+        Parse and validate a positive numeric amount.
+        
+        Args:
+            value: Value to parse (string, int, or float)
+            
+        Returns:
+            Optional[float]: Parsed value if positive and finite, None otherwise
+        """
         try:
             parsed = float(value)
         except (TypeError, ValueError):
@@ -27,10 +45,19 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             return None
         return parsed
 
-    def _hash_job_secret(secret):
+    def _hash_job_secret(secret: Optional[str]) -> str:
+        """
+        Compute SHA-256 hash of job secret for secure storage.
+        
+        Args:
+            secret: Secret string to hash (can be None)
+            
+        Returns:
+            str: Hex-encoded SHA-256 hash
+        """
         return hashlib.sha256((secret or "").encode("utf-8")).hexdigest()
 
-    def _ensure_escrow_secret_column(db):
+    def _ensure_escrow_secret_column(db: sqlite3.Connection) -> None:
         """Best-effort migration for older DBs."""
         try:
             cols = {row[1] for row in db.execute("PRAGMA table_info(render_escrow)").fetchall()}
@@ -42,7 +69,16 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
 
     # 1. GPU Node Attestation (Extension)
     @app.route("/api/gpu/attest", methods=["POST"])
-    def gpu_attest():
+    def gpu_attest() -> Tuple[Response, int]:
+        """
+        Register GPU node attestation with hardware capabilities and pricing.
+        
+        Records GPU model, VRAM, CUDA version, benchmark scores, and pricing
+        for render, TTS, STT, and LLM services.
+        
+        Returns:
+            Tuple[Response, int]: Success message or error
+        """
         data = request.get_json(silent=True) or {}
         miner_id = data.get("miner_id")
         if not miner_id:
@@ -86,7 +122,16 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
 
     # 2. Escrow: Lock funds for a job
     @app.route("/api/gpu/escrow", methods=["POST"])
-    def gpu_escrow():
+    def gpu_escrow() -> Tuple[Response, int]:
+        """
+        Lock funds in escrow for a GPU render job.
+        
+        Creates escrow record with job details and returns escrow secret
+        for participant authentication during release/refund.
+        
+        Returns:
+            Tuple[Response, int]: Job ID, status, and escrow secret
+        """
         data = request.get_json(silent=True) or {}
         job_id = data.get("job_id") or f"job_{secrets.token_hex(8)}"
         job_type = data.get("job_type")  # render, tts, stt, llm
@@ -133,7 +178,16 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
 
     # 3. Release: Job finished successfully (payer authorizes provider payout)
     @app.route("/api/gpu/release", methods=["POST"])
-    def gpu_release():
+    def gpu_release() -> Tuple[Response, int]:
+        """
+        Release escrow funds to provider after successful job completion.
+        
+        Requires payer (from_wallet) authorization with escrow secret.
+        Atomically transfers funds and updates escrow status.
+        
+        Returns:
+            Tuple[Response, int]: Success confirmation or error
+        """
         data = request.get_json(silent=True) or {}
         job_id = data.get("job_id")
         actor_wallet = data.get("actor_wallet")
@@ -177,7 +231,16 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
 
     # 4. Refund: Job failed (provider authorizes refund to payer)
     @app.route("/api/gpu/refund", methods=["POST"])
-    def gpu_refund():
+    def gpu_refund() -> Tuple[Response, int]:
+        """
+        Refund escrow funds to payer after job failure.
+        
+        Requires provider (to_wallet) authorization with escrow secret.
+        Atomically refunds funds and updates escrow status.
+        
+        Returns:
+            Tuple[Response, int]: Success confirmation or error
+        """
         data = request.get_json(silent=True) or {}
         job_id = data.get("job_id")
         actor_wallet = data.get("actor_wallet")

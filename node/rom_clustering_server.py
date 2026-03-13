@@ -91,6 +91,12 @@ class ROMClusteringServer:
         init_rom_tables(db_path)
 
     def _get_conn(self):
+        """
+        Create database connection.
+        
+        Returns:
+            sqlite3.Connection: Database connection object
+        """
         return sqlite3.connect(self.db_path)
 
     def process_rom_report(

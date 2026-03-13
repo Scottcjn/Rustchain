@@ -90,7 +90,13 @@ class EpochInfo:
 class RustChainMCP:
     """RustChain MCP Server implementation."""
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """
+        Initialize RustChain MCP server with MCP SDK.
+        
+        Sets up the MCP server instance and registers all tool, resource,
+        and prompt handlers for AI assistant integration.
+        """
         self.app = Server("rustchain-mcp")
         self.session: aiohttp.ClientSession | None = None
         self._setup_handlers()
@@ -109,7 +115,7 @@ class RustChainMCP:
             await self.session.close()
         logger.info("RustChain MCP Server stopped")
 
-    def _setup_handlers(self):
+    def _setup_handlers(self) -> None:
         """Setup MCP request handlers."""
 
         # List available tools

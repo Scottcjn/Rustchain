@@ -8,7 +8,8 @@ import time
 import hashlib
 import sqlite3
 from datetime import datetime
-from flask import Blueprint, jsonify, request, g
+from typing import Any, Dict, List, Optional, Tuple
+from flask import Blueprint, jsonify, request, g, Response
 
 beacon_api = Blueprint('beacon_api', __name__)
 
@@ -28,7 +29,7 @@ contract_store = []
 chat_sessions = {}
 
 
-def get_db():
+def get_db() -> sqlite3.Connection:
     """Get database connection for current request context."""
     if 'db' not in g:
         g.db = sqlite3.connect(DB_PATH)
@@ -37,14 +38,14 @@ def get_db():
 
 
 @beacon_api.teardown_request
-def close_db(exception):
+def close_db(exception: Optional[Exception] = None) -> None:
     """Close database connection at end of request."""
     db = getattr(g, 'db', None)
     if db is not None:
         db.close()
 
 
-def init_beacon_tables(db_path=DB_PATH):
+def init_beacon_tables(db_path: str = DB_PATH) -> None:
     """Initialize Beacon Atlas database tables."""
     with sqlite3.connect(db_path) as conn:
         # Contracts table
@@ -124,7 +125,7 @@ def init_beacon_tables(db_path=DB_PATH):
 # ============================================================
 
 @beacon_api.route('/api/agents', methods=['GET'])
-def get_agents():
+def get_agents() -> Response:
     """Get all registered agents."""
     # In production, fetch from database
     # For now, return empty - frontend has hardcoded agents
@@ -132,7 +133,7 @@ def get_agents():
 
 
 @beacon_api.route('/api/agent/<agent_id>', methods=['GET'])
-def get_agent(agent_id):
+def get_agent(agent_id: str) -> Tuple[Response, int]:
     """Get single agent details."""
     return jsonify({'error': 'Agent not found'}), 404
 
@@ -142,7 +143,7 @@ def get_agent(agent_id):
 # ============================================================
 
 @beacon_api.route('/api/contracts', methods=['GET'])
-def get_contracts():
+def get_contracts() -> Response:
     """Get all active contracts."""
     try:
         db = get_db()
@@ -170,7 +171,7 @@ def get_contracts():
 
 
 @beacon_api.route('/api/contracts', methods=['POST'])
-def create_contract():
+def create_contract() -> Tuple[Response, int]:
     """Create a new contract between agents."""
     try:
         data = request.get_json()
@@ -215,7 +216,7 @@ def create_contract():
 
 
 @beacon_api.route('/api/contracts/<contract_id>', methods=['PUT'])
-def update_contract(contract_id):
+def update_contract(contract_id: str) -> Response:
     """Update contract state (accept, complete, breach)."""
     try:
         data = request.get_json()
@@ -249,7 +250,7 @@ def update_contract(contract_id):
 # ============================================================
 
 @beacon_api.route('/api/bounties', methods=['GET'])
-def get_bounties():
+def get_bounties() -> Response:
     """Get all active bounties (from cache or DB)."""
     try:
         db = get_db()
@@ -280,7 +281,7 @@ def get_bounties():
 
 
 @beacon_api.route('/api/bounties/sync', methods=['POST'])
-def sync_bounties():
+def sync_bounties() -> Response:
     """Sync bounties from GitHub API."""
     try:
         import urllib.request
@@ -383,7 +384,7 @@ def sync_bounties():
 
 
 @beacon_api.route('/api/bounties/<bounty_id>/claim', methods=['POST'])
-def claim_bounty(bounty_id):
+def claim_bounty(bounty_id: str) -> Response:
     """Claim a bounty for an agent."""
     try:
         data = request.get_json()
@@ -409,7 +410,7 @@ def claim_bounty(bounty_id):
 
 
 @beacon_api.route('/api/bounties/<bounty_id>/complete', methods=['POST'])
-def complete_bounty(bounty_id):
+def complete_bounty(bounty_id: str) -> Response:
     """Mark bounty as completed by an agent."""
     try:
         data = request.get_json()
@@ -453,7 +454,7 @@ def complete_bounty(bounty_id):
 # ============================================================
 
 @beacon_api.route('/api/reputation', methods=['GET'])
-def get_reputation():
+def get_reputation() -> Response:
     """Get all agent reputations."""
     try:
         db = get_db()
@@ -476,7 +477,7 @@ def get_reputation():
 
 
 @beacon_api.route('/api/reputation/<agent_id>', methods=['GET'])
-def get_agent_reputation(agent_id):
+def get_agent_reputation(agent_id: str) -> Response:
     """Get single agent reputation."""
     try:
         db = get_db()
@@ -502,7 +503,7 @@ def get_agent_reputation(agent_id):
 # ============================================================
 
 @beacon_api.route('/api/chat', methods=['POST'])
-def chat():
+def chat() -> Response:
     """Send message to an agent (mock response for demo)."""
     try:
         data = request.get_json()
@@ -552,7 +553,7 @@ def chat():
 # ============================================================
 
 @beacon_api.route('/relay/discover', methods=['GET'])
-def relay_discover():
+def relay_discover() -> Response:
     """Discover relay agents (for 3D visualization)."""
     # In production, query the relay registry
     # For demo, return empty array
@@ -564,7 +565,7 @@ def relay_discover():
 # ============================================================
 
 @beacon_api.route('/api/health', methods=['GET'])
-def health_check():
+def health_check() -> Response:
     """Health check endpoint."""
     return jsonify({
         'status': 'ok',

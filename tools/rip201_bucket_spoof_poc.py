@@ -8,6 +8,7 @@ Technique:
 3. Let the server enroll the miner with G4-era weight and classify it into the
    vintage_powerpc reward bucket.
 """
+from __future__ import annotations
 
 import argparse
 import importlib.util
@@ -15,9 +16,15 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
+from typing import Any, Dict, List, Tuple, Optional, ModuleType
 
 
-def load_fleet_module():
+def load_fleet_module() -> ModuleType:
+    """Load fleet immune system module for PoC.
+    
+    Returns:
+        Loaded fleet module
+    """
     module_path = (
         Path(__file__).resolve().parent.parent
         / "rips"
@@ -26,18 +33,29 @@ def load_fleet_module():
         / "fleet_immune_system.py"
     )
     spec = importlib.util.spec_from_file_location("fleet_immune_system_bucket_poc", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load module from {module_path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def build_report(modern_miners, total_reward_urtc):
+def build_report(modern_miners: int, total_reward_urtc: int) -> Dict[str, Any]:
+    """Build RIP-201 bucket spoofing report.
+    
+    Args:
+        modern_miners: Number of honest modern miners to simulate
+        total_reward_urtc: Total reward pot in micro-RTC
+        
+    Returns:
+        Dictionary containing attack simulation results
+    """
     fleet_mod = load_fleet_module()
     db = sqlite3.connect(":memory:")
     fleet_mod.ensure_schema(db)
 
-    miners = [("spoof-g4", "g4")] + [(f"modern-{index}", "modern") for index in range(modern_miners)]
-    rewards = fleet_mod.calculate_immune_rewards_equal_split(
+    miners: List[Tuple[str, str]] = [("spoof-g4", "g4")] + [(f"modern-{index}", "modern") for index in range(modern_miners)]
+    rewards: Dict[str, float] = fleet_mod.calculate_immune_rewards_equal_split(
         db=db,
         epoch=91,
         miners=miners,
@@ -45,9 +63,9 @@ def build_report(modern_miners, total_reward_urtc):
         total_reward_urtc=total_reward_urtc,
     )
 
-    honest_per_miner = rewards["modern-0"] if modern_miners else 0
-    spoof_reward = rewards["spoof-g4"]
-    multiplier = round(spoof_reward / honest_per_miner, 2) if honest_per_miner else None
+    honest_per_miner: float = rewards["modern-0"] if modern_miners else 0
+    spoof_reward: float = rewards["spoof-g4"]
+    multiplier: Optional[float] = round(spoof_reward / honest_per_miner, 2) if honest_per_miner else None
 
     return {
         "attack": "modern_x86_claims_g4_bucket",
@@ -70,7 +88,8 @@ def build_report(modern_miners, total_reward_urtc):
     }
 
 
-def main():
+def main() -> None:
+    """Main entry point for RIP-201 bucket spoofing PoC."""
     parser = argparse.ArgumentParser(description="RIP-201 bucket spoofing PoC")
     parser.add_argument("--modern-miners", type=int, default=10, help="Number of honest modern miners")
     parser.add_argument("--reward", type=int, default=1_100_000, help="Total reward pot in uRTC")

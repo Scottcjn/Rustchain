@@ -3,11 +3,14 @@
 RustChain Automatic Epoch Settlement Daemon
 Runs in background and automatically settles completed epochs
 """
+from __future__ import annotations
+
 import time
 import sqlite3
 import requests
 import sys
 from datetime import datetime
+from typing import Optional, List
 
 # Configuration
 NODE_URL = "http://localhost:8088"
@@ -15,8 +18,14 @@ DB_PATH = "/root/rustchain/rustchain_v2.db"
 CHECK_INTERVAL = 300  # Check every 5 minutes
 SLOTS_PER_EPOCH = 144
 
-def get_current_slot():
-    """Get current slot from node API"""
+
+def get_current_slot() -> Optional[int]:
+    """
+    Get current slot from node API
+    
+    Returns:
+        Current slot number, or None if API request fails
+    """
     try:
         resp = requests.get(f"{NODE_URL}/api/stats", timeout=10)
         if resp.status_code == 200:
@@ -28,8 +37,13 @@ def get_current_slot():
         print(f"Error getting current slot: {e}")
     return None
 
-def get_current_epoch_from_db():
-    """Get current epoch by checking max slot in headers table"""
+def get_current_epoch_from_db() -> Optional[int]:
+    """
+    Get current epoch by checking max slot in headers table
+    
+    Returns:
+        Current epoch number, or None if database query fails
+    """
     try:
         with sqlite3.connect(DB_PATH) as db:
             result = db.execute("SELECT MAX(slot) FROM headers").fetchone()
@@ -40,8 +54,13 @@ def get_current_epoch_from_db():
         print(f"Error querying database: {e}")
     return None
 
-def get_unsettled_epochs():
-    """Get list of epochs that should be settled but aren't"""
+def get_unsettled_epochs() -> List[int]:
+    """
+    Get list of epochs that should be settled but aren't
+    
+    Returns:
+        List of epoch numbers that need settlement
+    """
     try:
         with sqlite3.connect(DB_PATH) as db:
             # Get current epoch
@@ -84,8 +103,16 @@ def get_unsettled_epochs():
         print(f"Error finding unsettled epochs: {e}")
         return []
 
-def settle_epoch_via_api(epoch):
-    """Settle an epoch using the node API"""
+def settle_epoch_via_api(epoch: int) -> bool:
+    """
+    Settle an epoch using the node API
+    
+    Parameters:
+        epoch: Epoch number to settle
+    
+    Returns:
+        True if settlement succeeded, False otherwise
+    """
     try:
         resp = requests.post(
             f"{NODE_URL}/rewards/settle",
@@ -111,8 +138,13 @@ def settle_epoch_via_api(epoch):
 
     return False
 
-def auto_settle_loop():
-    """Main settlement loop"""
+def auto_settle_loop() -> None:
+    """
+    Main settlement loop
+    
+    Continuously checks for unsettled epochs and settles them.
+    Runs until interrupted (Ctrl+C).
+    """
     print("="*70)
     print("RustChain Automatic Epoch Settler")
     print("="*70)

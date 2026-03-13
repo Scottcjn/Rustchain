@@ -94,7 +94,7 @@ class BeaconAgent:
         role: str = "Beacon Agent",
         goal: str = "Maintain beacon connectivity and attest to work completion",
         backstory: str = "You are a trusted agent in the RustChain Beacon network.",
-    ):
+    ) -> None:
         self.config = config
         self.role = role
         self.goal = goal

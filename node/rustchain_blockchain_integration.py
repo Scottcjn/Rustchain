@@ -17,6 +17,13 @@ class BlockchainIntegration:
     
     def __init__(self, node_url: str = "https://rustchain.org:8085", 
                  db_path: str = "db/rustchain_miners.db"):
+        """
+        Initialize blockchain integration layer.
+        
+        Args:
+            node_url: RustChain node API URL (default: https://rustchain.org:8085)
+            db_path: Path to SQLite database for miner data (default: db/rustchain_miners.db)
+        """
         self.node_url = node_url
         self.db = RustChainDatabase(db_path)
         self.badge_generator = NFTBadgeGenerator()

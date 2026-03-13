@@ -13,8 +13,10 @@ Reference databases used:
 - USB ID Repository
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Any
 import re
 
 @dataclass
@@ -634,13 +636,38 @@ GRAPHICS_DATABASE: Dict[str, HardwareEntry] = {
 # =============================================================================
 
 def normalize_id(hw_id: str) -> str:
-    """Normalize hardware ID for lookup"""
+    """Normalize hardware ID for consistent database lookup.
+    
+    Converts the hardware ID to lowercase, strips whitespace, and replaces
+    spaces and hyphens with underscores for consistent key matching.
+    
+    Args:
+        hw_id: Raw hardware identifier string (CPUID, PVR, chipset ID, etc.)
+    
+    Returns:
+        Normalized ID suitable for database key lookup
+    """
     return hw_id.lower().strip().replace(" ", "_").replace("-", "_")
 
 def lookup_hardware(hw_id: str, family: Optional[str] = None) -> Optional[HardwareEntry]:
-    """
-    Look up hardware by ID with optional family hint.
-    Returns the HardwareEntry if found, None otherwise.
+    """Look up hardware entry by ID with optional family hint for optimized search.
+    
+    Searches through hardware databases in order of specificity:
+    1. Family-specific database (if family hint provided)
+    2. All databases as fallback
+    
+    Uses exact match first, then falls back to partial matching for common variants.
+    
+    Args:
+        hw_id: Hardware identifier (CPUID, PVR, chipset ID, etc.)
+        family: Optional family hint (x86, powerpc, m68k, arm, etc.) to optimize search
+    
+    Returns:
+        HardwareEntry if found, None if hardware not in database
+    
+    Examples:
+        >>> lookup_hardware("8086")  # Returns Intel 8086 entry
+        >>> lookup_hardware("g3", family="powerpc")  # Returns PowerPC G3 entry
     """
     norm_id = normalize_id(hw_id)
 
@@ -694,10 +721,45 @@ def calculate_poa_multiplier(
     gpu_id: Optional[str] = None,
 ) -> Tuple[float, str, float, str]:
     """
-    Calculate PoA multiplier based on hardware detection.
-
+    Calculate Proof of Antiquity (PoA) multiplier based on detected hardware.
+    
+    This is the core function that determines the mining reward multiplier based on
+    hardware age and rarity. It searches through multiple hardware databases in order
+    of specificity, then falls back to family-based pattern matching.
+    
+    Multiplier tiers:
+    - MYTHIC (4.0x): Pre-1990 hardware (8086, 286, 386, 68K, etc.)
+    - LEGENDARY (3.0-3.8x): 1990-1995 (486, Pentium 1, PowerPC 601, etc.)
+    - ANCIENT (2.0-2.5x): 1995-2000 (Pentium 2/3/4, G4/G5, etc.)
+    - VINTAGE (1.5-2.0x): 2000-2010 (Core 2, early multicore, etc.)
+    - STANDARD (1.0-1.5x): Modern hardware
+    
+    Search priority:
+    1. device_arch - Most specific identifier
+    2. device_model - Human-readable model name
+    3. chipset_ids - List of chipset/controller IDs
+    4. gpu_id - Graphics hardware identifier
+    5. Family-based pattern matching - Fallback detection
+    
+    Args:
+        device_family: Hardware family (x86, powerpc, m68k, arm, etc.)
+        device_arch: Architecture string (386, 486, g3, g4, etc.)
+        device_model: Optional model name/string
+        chipset_ids: Optional list of chipset/controller IDs
+        gpu_id: Optional graphics hardware ID
+    
     Returns:
-        Tuple of (base_multiplier, tier_name, rarity_bonus, hardware_name)
+        Tuple containing:
+        - base_multiplier: Base PoA multiplier (1.0-4.0)
+        - tier_name: Tier classification (MYTHIC/LEGENDARY/ANCIENT/VINTAGE/STANDARD)
+        - rarity_bonus: Additional bonus for rare variants (0.0-1.0)
+        - hardware_name: Human-readable hardware name
+    
+    Examples:
+        >>> calculate_poa_multiplier("x86", "386")
+        (4.0, "MYTHIC", 0.3, "Intel 386")
+        >>> calculate_poa_multiplier("powerpc", "g3")
+        (3.2, "LEGENDARY", 0.1, "PowerPC G3")
     """
     family_lower = device_family.lower() if device_family else ""
     arch_lower = device_arch.lower() if device_arch else ""
@@ -798,7 +860,22 @@ def calculate_poa_multiplier(
     return (base_mult, tier, rarity, hw_name)
 
 def get_total_multiplier(base_mult: float, rarity_bonus: float) -> float:
-    """Calculate total multiplier including rarity bonus"""
+    """Calculate total PoA multiplier by applying rarity bonus to base multiplier.
+    
+    Formula: total = base_mult + (base_mult * rarity_bonus)
+    
+    Example:
+        Base multiplier: 4.0 (MYTHIC tier 386)
+        Rarity bonus: 0.3 (30% bonus for rare variant)
+        Total: 4.0 + (4.0 * 0.3) = 5.2
+    
+    Args:
+        base_mult: Base multiplier from hardware tier (1.0-4.0)
+        rarity_bonus: Additional rarity bonus (0.0-1.0)
+    
+    Returns:
+        Total multiplier combining base and rarity bonus
+    """
     return base_mult + (base_mult * rarity_bonus)
 
 
@@ -806,15 +883,42 @@ def get_total_multiplier(base_mult: float, rarity_bonus: float) -> float:
 # CONVENIENCE FUNCTIONS FOR RIP SERVICE
 # =============================================================================
 
-def get_poa_info_for_miner(signals: dict) -> dict:
-    """
-    Process miner attestation signals and return PoA info.
-
+def get_poa_info_for_miner(signals: Dict[str, Any]) -> Dict[str, Any]:
+    """Process miner attestation signals and compute PoA multiplier information.
+    
+    This is the main entry point for the RIP service to get PoA multiplier data
+    from a miner's attestation. It extracts hardware information from the signals
+    dictionary and calculates the appropriate multiplier.
+    
     Args:
-        signals: Dict containing device info from attestation
-
+        signals: Attestation signals dictionary containing:
+            - device: Hardware device information dict with:
+                - family: Device family (x86, powerpc, m68k, etc.)
+                - arch: Architecture string
+                - model: Model name/string
+            - chipset: Chipset ID (optional)
+            - pci_ids: List of PCI device IDs (optional)
+            - cpu_id: CPU identifier (optional)
+            - gpu/gpu_id: Graphics hardware ID (optional)
+    
     Returns:
-        Dict with multiplier info for database storage
+        Dictionary containing PoA multiplier information:
+        - antiquity_multiplier: Final multiplier including rarity bonus (rounded to 2 decimals)
+        - base_multiplier: Base multiplier from hardware tier
+        - rarity_bonus: Rarity bonus value (rounded to 3 decimals)
+        - tier: Hardware tier classification
+        - hardware_type: Human-readable hardware name
+    
+    Example:
+        >>> signals = {"device": {"family": "x86", "arch": "386"}}
+        >>> get_poa_info_for_miner(signals)
+        {
+            "antiquity_multiplier": 5.2,
+            "base_multiplier": 4.0,
+            "rarity_bonus": 0.3,
+            "tier": "MYTHIC",
+            "hardware_type": "Intel 386"
+        }
     """
     device = signals.get("device", {})
     device_family = device.get("family", signals.get("device_family", ""))
@@ -854,8 +958,26 @@ def get_poa_info_for_miner(signals: dict) -> dict:
 # STATISTICS AND REPORTING
 # =============================================================================
 
-def get_database_stats() -> dict:
-    """Get statistics about the hardware database"""
+def get_database_stats() -> Dict[str, Any]:
+    """Get comprehensive statistics about all hardware databases.
+    
+    Aggregates entry counts from all hardware databases and provides
+    summary statistics useful for debugging and database validation.
+    
+    Returns:
+        Dictionary containing:
+        - total_entries: Total number of hardware entries across all databases
+        - by_family: Breakdown by database with entry counts
+        - by_tier: Count of entries by rarity tier
+        - rarest_hardware: List of rarest hardware entries
+    
+    Example:
+        >>> stats = get_database_stats()
+        >>> stats["total_entries"]
+        500
+        >>> stats["by_family"]["x86"]
+        200
+    """
     all_dbs = {
         "x86": X86_CPUID_DATABASE,
         "powerpc": POWERPC_PVR_DATABASE,

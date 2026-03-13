@@ -3,9 +3,12 @@
 RustChain v2 - RIP-0005 Epoch Pro-Rata Rewards
 Production Anti-Spoof System with Fair Distribution
 """
+from __future__ import annotations
+
 import os, time, json, secrets, hashlib, sqlite3
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from datetime import datetime
+from typing import Dict, List, Any, Optional, Tuple
 
 app = Flask(__name__)
 
@@ -20,8 +23,17 @@ LAST_EPOCH = None
 # Database setup
 DB_PATH = "./rustchain_v2.db"
 
-def init_db():
-    """Initialize database with epoch tables"""
+def init_db() -> None:
+    """
+    Initialize SQLite database with epoch and balance tables.
+    
+    Creates tables for:
+    - nonces: Replay attack prevention
+    - tickets: Silicon ticket commitments
+    - epoch_state: Epoch block counts and finalization status
+    - epoch_enroll: Miner enrollment per epoch with weights
+    - balances: Miner RTC balance tracking
+    """
     with sqlite3.connect(DB_PATH) as c:
         # Existing tables
         c.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
@@ -45,23 +57,58 @@ mining_pool = {}
 blacklisted = set()
 tickets_db = {}
 
-def slot_to_epoch(slot):
-    """Convert slot number to epoch"""
+def slot_to_epoch(slot: int) -> int:
+    """
+    Convert blockchain slot number to epoch number.
+    
+    Args:
+        slot: Slot number (each slot is 10 minutes)
+        
+    Returns:
+        int: Epoch number (144 slots = 1 epoch = 24 hours)
+    """
     return int(slot) // max(EPOCH_SLOTS, 1)
 
-def inc_epoch_block(epoch):
-    """Increment accepted blocks for epoch"""
+def inc_epoch_block(epoch: int) -> None:
+    """
+    Increment accepted block count for an epoch.
+    
+    Args:
+        epoch: Epoch number to increment block count for
+    """
     with sqlite3.connect(DB_PATH) as c:
         c.execute("INSERT OR IGNORE INTO epoch_state(epoch, accepted_blocks, finalized) VALUES (?,0,0)", (epoch,))
         c.execute("UPDATE epoch_state SET accepted_blocks = accepted_blocks + 1 WHERE epoch=?", (epoch,))
 
-def enroll_epoch(epoch, miner_pk, weight):
-    """Enroll miner in epoch with weight"""
+def enroll_epoch(epoch: int, miner_pk: str, weight: float) -> None:
+    """
+    Enroll a miner in an epoch with their hardware weight.
+    
+    Args:
+        epoch: Epoch number to enroll in
+        miner_pk: Miner's public key (identifier)
+        weight: Hardware weight multiplier (based on antiquity)
+    """
     with sqlite3.connect(DB_PATH) as c:
         c.execute("INSERT OR REPLACE INTO epoch_enroll(epoch, miner_pk, weight) VALUES (?,?,?)", (epoch, miner_pk, float(weight)))
 
-def finalize_epoch(epoch, per_block_rtc):
-    """Finalize epoch and distribute rewards"""
+def finalize_epoch(epoch: int, per_block_rtc: float) -> Dict[str, Any]:
+    """
+    Finalize an epoch and distribute pro-rata rewards to enrolled miners.
+    
+    Args:
+        epoch: Epoch number to finalize
+        per_block_rtc: RTC reward per block (default 1.5)
+        
+    Returns:
+        dict: {
+            "ok": bool,
+            "blocks": int (accepted blocks),
+            "total_reward": float (total RTC distributed),
+            "sum_w": float (total weight),
+            "payouts": list of (miner_pk, amount) tuples
+        }
+    """
     with sqlite3.connect(DB_PATH) as c:
         row = c.execute("SELECT finalized, accepted_blocks FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
         if not row:
@@ -86,14 +133,30 @@ def finalize_epoch(epoch, per_block_rtc):
         c.execute("UPDATE epoch_state SET finalized=1 WHERE epoch=?", (epoch,))
         return {"ok": True, "blocks": blocks, "total_reward": total_reward, "sum_w": sum_w, "payouts": payouts}
 
-def get_balance(miner_pk):
-    """Get miner balance"""
+def get_balance(miner_pk: str) -> float:
+    """
+    Get current RTC balance for a miner.
+    
+    Args:
+        miner_pk: Miner's public key
+        
+    Returns:
+        float: Balance in RTC (0.0 if miner not found)
+    """
     with sqlite3.connect(DB_PATH) as c:
         row = c.execute("SELECT balance_rtc FROM balances WHERE miner_pk=?", (miner_pk,)).fetchone()
         return float(row[0]) if row else 0.0
 
-def get_hardware_weight(device):
-    """Get hardware multiplier from device info"""
+def get_hardware_weight(device: Dict[str, str]) -> float:
+    """
+    Get hardware weight multiplier based on device architecture and model.
+    
+    Args:
+        device: Dict with 'family' and 'model' keys (e.g., {'family': 'PowerPC', 'model': 'G4'})
+        
+    Returns:
+        float: Hardware weight multiplier (G4=2.5, G5=2.0, default=1.0)
+    """
     family = device.get("family", "default")
     arch = device.get("arch", "default")
 
@@ -101,7 +164,7 @@ def get_hardware_weight(device):
         return HARDWARE_WEIGHTS[family].get(arch, HARDWARE_WEIGHTS[family].get("default", 1.0))
     return 1.0
 
-def consume_ticket(ticket_id):
+def consume_ticket(ticket_id: str) -> bool:
     """Consume a ticket (mark as used)"""
     if ticket_id in tickets_db:
         ticket = tickets_db[ticket_id]
@@ -111,7 +174,7 @@ def consume_ticket(ticket_id):
     return False
 
 @app.get("/api/stats")
-def api_stats():
+def api_stats() -> Tuple[Response, int]:
     """Network statistics endpoint"""
     current_slot = int(time.time() // BLOCK_TIME)
     current_epoch = slot_to_epoch(current_slot)
@@ -130,12 +193,12 @@ def api_stats():
     })
 
 @app.get("/api/last_hash")
-def api_last_hash():
+def api_last_hash() -> Tuple[Response, int]:
     """Get last block hash for VRF beacon"""
     return jsonify({"hash_b3": LAST_HASH_B3})
 
 @app.get("/epoch")
-def get_epoch():
+def get_epoch() -> Tuple[Response, int]:
     """Get current epoch information"""
     now_slot = int(time.time() // BLOCK_TIME)
     epoch = slot_to_epoch(now_slot)
@@ -165,7 +228,7 @@ def get_epoch():
     })
 
 @app.post("/epoch/enroll")
-def epoch_enroll():
+def epoch_enroll() -> Tuple[Response, int]:
     """Enroll miner in current epoch"""
     data = request.get_json(force=True) or {}
 
@@ -203,7 +266,7 @@ def epoch_enroll():
     })
 
 @app.get("/balance/<miner_pk>")
-def balance(miner_pk):
+def balance(miner_pk: str) -> Tuple[Response, int]:
     """Get miner balance"""
     bal = get_balance(miner_pk)
     return jsonify({
@@ -212,9 +275,9 @@ def balance(miner_pk):
     })
 
 @app.post("/api/register")
-def api_register():
+def api_register() -> Tuple[Response, int]:
     """Register node with hardware fingerprint"""
-    data = request.get_json(force=True)
+    data = request.get_json(force=True)  # type: ignore
 
     system_id = data.get("system_id")
     fingerprint = data.get("fingerprint", {})
@@ -241,9 +304,9 @@ def api_register():
     })
 
 @app.post("/attest/challenge")
-def attest_challenge():
+def attest_challenge() -> Tuple[Response, int]:
     """Get attestation challenge"""
-    nonce = secrets.token_hex(16)
+    nonce = secrets.token_hex(16)  # type: ignore
     return jsonify({
         "nonce": nonce,
         "window_s": 120,
@@ -251,9 +314,9 @@ def attest_challenge():
     })
 
 @app.post("/attest/submit")
-def attest_submit():
+def attest_submit() -> Tuple[Response, int]:
     """Submit Silicon Ticket attestation"""
-    data = request.get_json(force=True)
+    data = request.get_json(force=True)  # type: ignore
     report = data.get("report", {})
 
     # Basic validation
@@ -274,11 +337,11 @@ def attest_submit():
     return jsonify(ticket)
 
 @app.post("/api/submit_block")
-def api_submit_block():
+def api_submit_block() -> Tuple[Response, int]:
     """Submit block with VRF proof and Silicon Ticket"""
     global LAST_HASH_B3, LAST_EPOCH
 
-    data = request.get_json(force=True)
+    data = request.get_json(force=True)  # type: ignore
     header = data.get("header", {})
     ext = data.get("header_ext", {})
 
@@ -321,7 +384,7 @@ def api_submit_block():
     })
 
 @app.get("/health")
-def health():
+def health() -> Tuple[Response, int]:
     """Health check endpoint"""
     return jsonify({
         "ok": True,
@@ -330,7 +393,7 @@ def health():
         "epoch_system": "active"
     })
 
-def get_hardware_tier(fingerprint):
+def get_hardware_tier(fingerprint: Dict[str, Any]) -> str:
     """Determine hardware age tier"""
     platform = fingerprint.get("platform", {})
 

@@ -1,3 +1,33 @@
+#!/usr/bin/env python3
+"""
+Ed25519 Configuration - Signature Verification Settings
+========================================================
+
+RIP-201: Fleet Detection Immune System integration and Ed25519 signature
+verification configuration for RustChain.
+
+Features:
+    - Fleet immune system integration (optional)
+    - Testnet flags for inline public keys and mock signatures
+    - Production-safe defaults (all test features disabled)
+
+Security Notes:
+    - TESTNET_ALLOW_INLINE_PUBKEY: Disabled in production - inline pubkeys
+      bypass key registry validation
+    - TESTNET_ALLOW_MOCK_SIG: Disabled in production - mock signatures are
+      insecure and should only be used for testing
+
+Integration:
+    from ed25519_config import HAVE_FLEET_IMMUNE, TESTNET_ALLOW_INLINE_PUBKEY
+    
+    if HAVE_FLEET_IMMUNE:
+        # Fleet immune system is available
+        pass
+
+Author: Elyan Labs
+Date: 2026-03
+"""
+
 # RIP-201: Fleet Detection Immune System
 try:
     from fleet_immune_system import (

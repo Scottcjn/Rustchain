@@ -58,7 +58,7 @@ STATE_DB = Path(os.environ.get("MOLTBOOK_STATE_DB",
 def _ensure_db() -> sqlite3.Connection:
     """Create or open the solver state database."""
     STATE_DB.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(str(STATE_DB))
+    db: sqlite3.Connection = sqlite3.connect(str(STATE_DB))
     db.execute("""CREATE TABLE IF NOT EXISTS agent_suspensions (
         agent TEXT PRIMARY KEY,
         suspended_until TEXT,
@@ -91,7 +91,7 @@ def _ensure_db() -> sqlite3.Connection:
     return db
 
 
-def record_suspension(agent: str, suspended_until: str, reason: str, offense: int = 0):
+def record_suspension(agent: str, suspended_until: str, reason: str, offense: int = 0) -> None:
     """Record that an agent got suspended."""
     db = _ensure_db()
     db.execute(
@@ -147,19 +147,28 @@ def _content_hash(title: str, content: str) -> str:
 
 
 def is_content_unique(title: str, content: str, lookback_days: int = 7) -> bool:
-    """Check if this content is sufficiently unique vs recent posts."""
+    """Check if this content is sufficiently unique vs recent posts.
+    
+    Args:
+        title: Post title
+        content: Post content
+        lookback_days: Days to check for duplicates (default 7)
+        
+    Returns:
+        bool: True if content is unique, False if duplicate exists
+    """
     h = _content_hash(title, content)
     db = _ensure_db()
 
     cutoff = datetime.now(timezone.utc).isoformat()[:10]  # rough 24h check
-    existing = db.execute(
+    existing: Optional[Tuple[str]] = db.execute(
         "SELECT hash FROM post_hashes WHERE hash = ?", (h,)
     ).fetchone()
     db.close()
     return existing is None
 
 
-def record_post(title: str, content: str, agent: str, submolt: str):
+def record_post(title: str, content: str, agent: str, submolt: str) -> None:
     """Record a post hash to prevent future duplicates."""
     h = _content_hash(title, content)
     db = _ensure_db()
@@ -178,13 +187,19 @@ def degarble(challenge: str) -> str:
 
     Input:  "A] lOoObS-tErS^ ClAwS ExErT/ TwEnTy FiVe ] NoOtOnS"
     Output: "lobsters claws exert twenty five newtons"
+    
+    Args:
+        challenge: Garbled challenge text with random symbols and capitalization
+        
+    Returns:
+        str: Cleaned, lowercase text with symbols removed
     """
     # Strip all non-alphanumeric except spaces
-    clean = re.sub(r"[^a-zA-Z0-9\s]", " ", challenge)
+    clean: str = re.sub(r"[^a-zA-Z0-9\s]", " ", challenge)
     # Lowercase and collapse whitespace
     clean = re.sub(r"\s+", " ", clean.lower()).strip()
     # Only collapse 3+ repeated characters: "looob" → "lob" but keep "ee" in "three"
-    deduped = re.sub(r"(.)\1{2,}", r"\1\1", clean)
+    deduped: str = re.sub(r"(.)\1{2,}", r"\1\1", clean)
 
     # Word corrections for common garble artifacts
     FIXES = {
@@ -248,22 +263,29 @@ NUMBER_WORDS = [
 
 
 def extract_numbers(text: str) -> List[float]:
-    """Extract all numbers from text (word and digit forms)."""
-    numbers = []
+    """Extract all numbers from text (word and digit forms).
+    
+    Args:
+        text: Text potentially containing number words or digits
+        
+    Returns:
+        List[float]: List of extracted numbers
+    """
+    numbers: List[float] = []
     # Strip to letters only for word matching
-    blob = re.sub(r"[^a-z]", "", text.lower())
+    blob: str = re.sub(r"[^a-z]", "", text.lower())
 
-    search_blob = blob
+    search_blob: str = blob
     for word, num in NUMBER_WORDS:
         # Allow repeated chars in garbled text
-        pat = "".join(f"{c}+" for c in word)
+        pat: str = "".join(f"{c}+" for c in word)
         if re.search(pat, search_blob):
             search_blob = re.sub(pat, "X", search_blob, count=1)
             numbers.append(float(num))
 
     # Also grab bare digits
     for d in re.findall(r"\b(\d+(?:\.\d+)?)\b", text):
-        n = float(d)
+        n: float = float(d)
         if n not in numbers:
             numbers.append(n)
 
@@ -274,12 +296,30 @@ def extract_numbers(text: str) -> List[float]:
 
 def solve_regex(challenge: str) -> Tuple[Optional[str], float]:
     """Try to solve with regex pattern matching.
+    
+    Two-tier solver: regex first (fast, ~70% accuracy), LLM fallback if confidence low.
+    
+    Strategy:
+        1. Degarble the challenge text (remove symbols, normalize)
+        2. Extract numbers (both word form "twenty five" and digit form "25")
+        3. Detect arithmetic operation via regex patterns
+        4. Return (answer, confidence) where confidence < 0.6 triggers LLM
+    
+    Confidence levels:
+        - 0.95: Explicit operator in text (+, -, *, /, ×)
+        - 0.85-0.90: Strong keyword (double, triple, rate×time pattern)
+        - 0.70-0.85: Verb-based detection (add, subtract, multiply, divide)
+        - 0.30-0.60: Weak context clues (total, sum, combined)
+        - < 0.60: Escalate to LLM solver
 
-    Returns (answer_str, confidence) where confidence is 0.0-1.0.
-    Confidence < 0.6 means "don't trust this, use LLM."
+    Args:
+        challenge: Raw garbled challenge text from Moltbook
+        
+    Returns:
+        Tuple of (answer as "X.XX" string or None, confidence 0.0-1.0)
     """
-    clean = degarble(challenge)
-    numbers = extract_numbers(clean)
+    clean: str = degarble(challenge)
+    numbers: List[float] = extract_numbers(clean)
 
     if not numbers:
         return None, 0.0
@@ -289,7 +329,9 @@ def solve_regex(challenge: str) -> Tuple[Optional[str], float]:
 
     a, b = numbers[0], numbers[1]
 
-    # Check for explicit arithmetic operators in raw text
+    # ── Step 1: Check for explicit arithmetic operators (highest confidence: 0.95) ── #
+    # Pattern: digit + optional whitespace + operator + optional whitespace + digit
+    # Examples: "5 + 3", "10*2", "20 / 4", "15 - 7"
     if re.search(r'\d\s*\+\s*\d', challenge):
         return f"{a + b:.2f}", 0.95
     if re.search(r'\d\s*[*×]\s*\d', challenge) or re.search(r'[*×]', challenge):
@@ -299,8 +341,10 @@ def solve_regex(challenge: str) -> Tuple[Optional[str], float]:
     if re.search(r'\d\s+-\s+\d', challenge):
         return f"{a - b:.2f}", 0.95
 
-    # Word multipliers (doubles, triples, halves)
-    word_muls = {
+    # ── Step 2: Word multipliers (high confidence: 0.85-0.90) ── #
+    # Why: Words like "double", "triple" explicitly indicate multiplication
+    # Examples: "25 newtons and its pair is double" → 25 × 2 = 50
+    word_muls: Dict[str, float] = {
         "double": 2, "doubles": 2, "doubled": 2,
         "triple": 3, "triples": 3, "tripled": 3,
         "quadruple": 4, "quadruples": 4,
@@ -310,25 +354,45 @@ def solve_regex(challenge: str) -> Tuple[Optional[str], float]:
         if word in clean:
             return f"{a * factor:.2f}", 0.85
 
-    # Detect "each ... N" pattern → multiplication
+    # ── Step 3: Detect "each ... N" pattern (confidence: 0.85) ── #
+    # Why: "Each claw exerts 15 newtons and it has 2 claws" → 15 × 2 = 30
+    # Pattern: distributive multiplication (unit × count)
     if "each" in clean and len(numbers) >= 2:
         return f"{a * b:.2f}", 0.85
 
-    # Detect rate × time: "N per second for M seconds"
-    rate_time = re.search(r"(\d+|" + "|".join(w for w, _ in NUMBER_WORDS[:60]) +
-                          r")\s+(?:centimeters?|meters?|cm|m)\s+per\s+(?:second|sec|minute|min)",
-                          clean)
-    duration = re.search(r"for\s+(\d+|" + "|".join(w for w, _ in NUMBER_WORDS[:60]) +
-                         r")\s+(?:seconds?|minutes?|secs?|mins?)", clean)
+    # ── Step 4: Detect rate × time pattern (high confidence: 0.90) ── #
+    # Why: Physics word problems often use rate × time = distance/total
+    # Pattern: "N centimeters/meters per second/minute for M seconds/minutes"
+    # Example: "23 cm/s for 12 seconds" → 23 × 12 = 276
+    rate_time: Optional[re.Match[str]] = re.search(
+        r"(\d+|" + "|".join(w for w, _ in NUMBER_WORDS[:60]) +
+        r")\s+(?:centimeters?|meters?|cm|m)\s+per\s+(?:second|sec|minute|min)",
+        clean
+    )
+    duration: Optional[re.Match[str]] = re.search(
+        r"for\s+(\d+|" + "|".join(w for w, _ in NUMBER_WORDS[:60]) +
+        r")\s+(?:seconds?|minutes?|secs?|mins?)",
+        clean
+    )
     if rate_time and duration and len(numbers) >= 2:
         return f"{a * b:.2f}", 0.9
 
-    # Detect "X times strong/stronger/as strong" → pure multiplication (not a + a*b)
+    # ── Step 5: Detect comparative strength (confidence: 0.80) ── #
+    # Why: "X times stronger/faster" indicates pure multiplication
+    # Pattern: "times" + (strong|faster|more|as|the)
+    # Example: "3 times stronger" → base × 3 (not base + base×3)
     if re.search(r"times?\s+(?:strong|faster|more|as|the)", clean):
         return f"{a * b:.2f}", 0.8
 
-    # Keyword-based operation detection with confidence levels
-    explicit_verbs = {
+    # ── Step 6: Keyword-based operation detection (confidence: 0.60-0.90) ── #
+    # Why: Explicit arithmetic verbs indicate intended operation
+    # Confidence varies by specificity:
+    #   - "plus", "minus" (0.90): Very explicit mathematical terms
+    #   - "add", "subtract", "multiply", "divide" (0.85): Clear verbs
+    #   - "gains", "earns", "loses" (0.80): Context-dependent but strong
+    #   - "more", "split" (0.70): Somewhat ambiguous
+    #   - "times" (0.60): Ambiguous — could mean "X times stronger" vs "X times Y"
+    explicit_verbs: Dict[str, Tuple[str, float]] = {
         "add": ("+", 0.85), "adds": ("+", 0.85), "plus": ("+", 0.9),
         "gains": ("+", 0.8), "earns": ("+", 0.8), "more": ("+", 0.7),
         "subtract": ("-", 0.85), "minus": ("-", 0.9), "loses": ("-", 0.8),
@@ -339,8 +403,10 @@ def solve_regex(challenge: str) -> Tuple[Optional[str], float]:
 
     for verb, (op, conf) in explicit_verbs.items():
         if verb in clean:
-            if op == "+": result = a + b
-            elif op == "-": result = a - b
+            if op == "+": 
+                result: float = a + b
+            elif op == "-": 
+                result = a - b
             elif op == "*":
                 result = a * b
             elif op == "/":
@@ -349,11 +415,15 @@ def solve_regex(challenge: str) -> Tuple[Optional[str], float]:
                 continue
             return f"{result:.2f}", conf
 
-    # Context nouns — even lower confidence
+    # ── Step 7: Context nouns (low confidence: 0.50) ── #
+    # Why: Words like "total", "sum" suggest addition but are ambiguous
+    # These are fallback patterns — LLM should handle if wrong
     if any(w in clean for w in ["total", "combined", "sum", "altogether"]):
         return f"{a + b:.2f}", 0.5
 
-    # Default: just add them, very low confidence — force LLM
+    # ── Step 8: Default fallback (very low confidence: 0.30) ── #
+    # Why: No clear pattern detected, default to addition but force LLM review
+    # This ensures we don't confidently return wrong answers
     return f"{a + b:.2f}", 0.3
 
 

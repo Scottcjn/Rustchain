@@ -17,7 +17,7 @@ import time
 import threading
 import logging
 import json
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 
 from rustchain_crypto import (
@@ -192,6 +192,15 @@ class BlockProducer:
         signer: Optional[Ed25519Signer] = None,
         wallet_address: Optional[str] = None
     ):
+        """
+        Initialize block producer with transaction pool and signer.
+        
+        Args:
+            db_path: Path to SQLite database for block storage
+            tx_pool: TransactionPool instance for pending transactions
+            signer: Optional Ed25519Signer for block signing
+            wallet_address: Optional wallet address for block rewards
+        """
         self.db_path = db_path
         self.tx_pool = tx_pool
         self.signer = signer
@@ -490,6 +499,12 @@ class BlockValidator:
     """
 
     def __init__(self, db_path: str):
+        """
+        Initialize block validator.
+        
+        Args:
+            db_path: Path to SQLite database for block validation queries
+        """
         self.db_path = db_path
 
     def validate_block(
@@ -551,7 +566,7 @@ class BlockValidator:
 # API ROUTES
 # =============================================================================
 
-def create_block_api_routes(app, producer: BlockProducer, validator: BlockValidator):
+def create_block_api_routes(app: Any, producer: BlockProducer, validator: BlockValidator) -> None:
     """Create Flask routes for block API"""
     from flask import request, jsonify
 

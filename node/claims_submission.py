@@ -46,9 +46,35 @@ try:
 except ImportError:
     # Fallback if running standalone
     def check_claim_eligibility(*args, **kwargs):
+        """
+        Stub: Check miner eligibility for reward claim.
+        
+        Fallback when claims_eligibility module is not available.
+        In production, imports the real function from claims_eligibility.
+        
+        Returns:
+            dict: {"eligible": False, "reason": "module_not_loaded"}
+        """
         return {"eligible": False, "reason": "module_not_loaded"}
     
     def validate_miner_id_format(miner_id: str) -> bool:
+        """
+        Stub: Validate miner ID format.
+        
+        Fallback when claims_eligibility module is not available.
+        In production, imports the real function from claims_eligibility.
+        
+        Valid miner IDs:
+        - Non-empty string
+        - Max 128 characters
+        - Alphanumeric, hyphens, underscores only
+        
+        Args:
+            miner_id: Miner ID string to validate
+            
+        Returns:
+            bool: True if valid format, False otherwise
+        """
         if not miner_id or not isinstance(miner_id, str):
             return False
         if len(miner_id) > 128:

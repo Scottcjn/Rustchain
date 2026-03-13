@@ -79,14 +79,34 @@ class ConsensusMessage:
     proposal: Optional[Dict] = None  # Actual data (only in PRE-PREPARE)
 
     def to_dict(self) -> Dict:
+        """
+        Convert message to dictionary.
+        
+        Returns:
+            Dict: Message as dictionary
+        """
         return asdict(self)
 
     @staticmethod
     def from_dict(data: Dict) -> 'ConsensusMessage':
+        """
+        Create message from dictionary.
+        
+        Args:
+            data: Dictionary with message fields
+            
+        Returns:
+            ConsensusMessage: New message instance
+        """
         return ConsensusMessage(**data)
 
     def compute_digest(self) -> str:
-        """Compute digest of the proposal"""
+        """
+        Compute SHA-256 digest of the proposal.
+        
+        Returns:
+            str: Hex-encoded digest
+        """
         if self.proposal:
             return hashlib.sha256(json.dumps(self.proposal, sort_keys=True).encode()).hexdigest()
         return self.digest
@@ -103,6 +123,15 @@ class EpochProposal:
     merkle_root: str            # Merkle root of miner data
 
     def compute_digest(self) -> str:
+        """
+        Compute SHA256 digest of epoch reward distribution for signing.
+        
+        Returns:
+            SHA256 hex digest of serialized epoch data (sorted keys)
+            
+        Digest includes: epoch, miners, total_reward, distribution, proposer, merkle_root.
+        Used for BFT consensus signature verification.
+        """
         data = {
             'epoch': self.epoch,
             'miners': self.miners,
@@ -139,6 +168,14 @@ class BFTConsensus:
     """
 
     def __init__(self, node_id: str, db_path: str, secret_key: str):
+        """
+        Initialize BFT consensus engine.
+        
+        Args:
+            node_id: Unique identifier for this consensus node
+            db_path: Path to SQLite database for consensus log
+            secret_key: HMAC secret key for message authentication
+        """
         self.node_id = node_id
         self.db_path = db_path
         self.secret_key = secret_key
@@ -841,7 +878,7 @@ class BFTConsensus:
 # FLASK ROUTES FOR BFT
 # ============================================================================
 
-def create_bft_routes(app, bft: BFTConsensus):
+def create_bft_routes(app: "flask.Flask", bft: BFTConsensus) -> None:
     """Add BFT consensus routes to Flask app"""
     from flask import request, jsonify
 

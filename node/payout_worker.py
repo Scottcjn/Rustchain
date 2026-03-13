@@ -22,9 +22,14 @@ MAX_RETRIES = 3
 MOCK_MODE = True  # Set False for real blockchain integration
 
 class PayoutWorker:
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize the PayoutWorker with database path and stats tracking.
+        
+        Sets up the worker with default configuration for processing
+        pending withdrawals from the queue.
+        """
         self.db_path = DB_PATH
-        self.stats = {
+        self.stats: Dict[str, float | int] = {
             'processed': 0,
             'failed': 0,
             'total_rtc': 0.0
@@ -151,7 +156,7 @@ class PayoutWorker:
 
         return processed
 
-    def run_forever(self):
+    def run_forever(self) -> None:
         """Main worker loop"""
         logger.info("RustChain Payout Worker started")
         logger.info(f"Database: {self.db_path}")
@@ -181,7 +186,7 @@ class PayoutWorker:
                 logger.error(f"Worker error: {e}")
                 time.sleep(POLL_INTERVAL * 2)  # Back off on error
 
-    def cleanup_old_withdrawals(self):
+    def cleanup_old_withdrawals(self) -> None:
         """Archive old completed withdrawals"""
         cutoff = int(time.time()) - (7 * 24 * 3600)  # 7 days ago
 
@@ -220,7 +225,7 @@ class PayoutWorker:
 
                 logger.info(f"Archived {count} old withdrawals to {archive_file}")
 
-    def get_stats(self) -> Dict:
+    def get_stats(self) -> Dict[str, int | float]:
         """Get worker statistics"""
         with sqlite3.connect(self.db_path) as conn:
             pending = conn.execute(
@@ -249,7 +254,7 @@ class PayoutWorker:
             'session_total_rtc': self.stats['total_rtc']
         }
 
-def main():
+def main() -> int:
     """Main entry point"""
     worker = PayoutWorker()
 

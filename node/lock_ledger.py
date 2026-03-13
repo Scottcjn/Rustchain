@@ -39,8 +39,23 @@ except ImportError:
     DB_PATH = os.environ.get("RC_DB_PATH", "rustchain.db")
     UNIT = 1000000  # Micro-units per RTC
     def current_slot() -> int:
+        """
+        Get current time slot (10-minute intervals).
+        
+        Returns:
+            int: Current slot number
+        """
         return int(time.time()) // 600
     def slot_to_epoch(slot: int) -> int:
+        """
+        Convert slot number to epoch number.
+        
+        Args:
+            slot: Slot number to convert
+            
+        Returns:
+            int: Epoch number (144 slots per epoch)
+        """
         return slot // 144
 
 
@@ -85,14 +100,32 @@ class LockEntry:
     
     @property
     def amount_rtc(self) -> float:
+        """
+        Convert locked amount from micro-units to RTC.
+        
+        Returns:
+            float: Amount in RTC (1 RTC = 1,000,000 micro-units)
+        """
         return self.amount_i64 / LOCK_UNIT
     
     @property
     def is_unlocked(self) -> bool:
+        """
+        Check if lock has been unlocked.
+        
+        Returns:
+            bool: True if unlocked_at is set, False otherwise
+        """
         return self.unlocked_at is not None
     
     @property
     def time_until_unlock(self) -> int:
+        """
+        Calculate seconds remaining until lock can be released.
+        
+        Returns:
+            int: Seconds until unlock (0 if already unlocked)
+        """
         if self.is_unlocked:
             return 0
         return max(0, self.unlock_at - int(time.time()))
@@ -597,12 +630,12 @@ def auto_release_expired_locks(
 # Flask Routes (to be integrated into main node)
 # =============================================================================
 
-def register_lock_ledger_routes(app):
+def register_lock_ledger_routes(app: "flask.Flask") -> None:
     """Register lock ledger API routes with Flask app."""
     from flask import request, jsonify
     
     @app.route('/api/lock/miner/<miner_id>', methods=['GET'])
-    def get_miner_locks(miner_id: str):
+    def get_miner_locks(miner_id: str) -> Tuple[Any, int]:
         """Get locks for a specific miner."""
         status = request.args.get("status")
         limit = int(request.args.get("limit", 100))
@@ -636,7 +669,7 @@ def register_lock_ledger_routes(app):
             conn.close()
     
     @app.route('/api/lock/<int:lock_id>', methods=['GET'])
-    def get_lock(lock_id: int):
+    def get_lock(lock_id: int) -> Tuple[Any, int]:
         """Get a specific lock by ID."""
         conn = sqlite3.connect(DB_PATH)
         try:
@@ -663,7 +696,7 @@ def register_lock_ledger_routes(app):
             conn.close()
     
     @app.route('/api/lock/pending-unlock', methods=['GET'])
-    def get_pending_unlocks():
+    def get_pending_unlocks() -> Tuple[Any, int]:
         """Get locks ready to be released."""
         before = request.args.get("before")
         limit = int(request.args.get("limit", 100))
@@ -693,7 +726,7 @@ def register_lock_ledger_routes(app):
             conn.close()
     
     @app.route('/api/lock/release', methods=['POST'])
-    def release_lock_endpoint():
+    def release_lock_endpoint() -> Tuple[Any, int]:
         """Admin: Release a lock."""
         admin_key = request.headers.get("X-Admin-Key", "")
         if admin_key != os.environ.get("RC_ADMIN_KEY", ""):
@@ -724,7 +757,7 @@ def register_lock_ledger_routes(app):
             conn.close()
     
     @app.route('/api/lock/forfeit', methods=['POST'])
-    def forfeit_lock_endpoint():
+    def forfeit_lock_endpoint() -> Tuple[Any, int]:
         """Admin: Forfeit a lock (penalty)."""
         admin_key = request.headers.get("X-Admin-Key", "")
         if admin_key != os.environ.get("RC_ADMIN_KEY", ""):
@@ -755,7 +788,7 @@ def register_lock_ledger_routes(app):
             conn.close()
     
     @app.route('/api/lock/auto-release', methods=['POST'])
-    def auto_release_endpoint():
+    def auto_release_endpoint() -> Tuple[Any, int]:
         """Worker: Auto-release expired locks."""
         # Optional: require worker key
         worker_key = request.headers.get("X-Worker-Key", "")
@@ -777,7 +810,7 @@ def register_lock_ledger_routes(app):
 # Database Initialization
 # =============================================================================
 
-def init_lock_ledger_schema(cursor_or_db_path=None):
+def init_lock_ledger_schema(cursor_or_db_path: sqlite3.Cursor | sqlite3.Connection | str | None = None) -> None:
     """Initialize lock_ledger table schema.
     
     Args:

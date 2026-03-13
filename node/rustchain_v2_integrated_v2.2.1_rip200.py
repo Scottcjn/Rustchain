@@ -6,7 +6,7 @@ Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math, re, statistics
 import ipaddress
 from urllib.parse import urlparse
-from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect
+from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect, Response
 from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, VALID_KINDS
 try:
     # Deployment compatibility: production may run this file as a single script.
@@ -37,7 +37,7 @@ except Exception as e:
     print(f"WARN: Rewards module not loaded: {e}")
     HAVE_REWARDS = False
 from datetime import datetime
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union, Any
 from hashlib import blake2b
 
 # RIP-201: Fleet Detection Immune System
@@ -70,20 +70,31 @@ except ImportError:
     PROMETHEUS_AVAILABLE = False
     # Mock classes if prometheus not available
     class Counter:
+        """Mock Prometheus Counter metric when prometheus_client is not installed."""
         def __init__(self, *args, **kwargs): pass
         def inc(self, *args, **kwargs): pass
         def labels(self, *args, **kwargs): return self
     class Gauge:
+        """Mock Prometheus Gauge metric when prometheus_client is not installed."""
         def __init__(self, *args, **kwargs): pass
         def set(self, *args, **kwargs): pass
         def inc(self, *args, **kwargs): pass
         def dec(self, *args, **kwargs): pass
         def labels(self, *args, **kwargs): return self
     class Histogram:
+        """Mock Prometheus Histogram metric when prometheus_client is not installed."""
         def __init__(self, *args, **kwargs): pass
         def observe(self, *args, **kwargs): pass
         def labels(self, *args, **kwargs): return self
-    def generate_latest(): return b"# Prometheus not available"
+    def generate_latest() -> bytes:
+        """
+        Mock Prometheus metrics endpoint when prometheus_client is not installed.
+        
+        Returns:
+            Comment string indicating Prometheus is unavailable
+        """
+        return b"# Prometheus not available"
+    """Mock Prometheus metrics endpoint when prometheus_client is not installed."""
     CONTENT_TYPE_LATEST = "text/plain"
 
 # Phase 1: Hardware Proof Validation (Logging Only)
@@ -137,7 +148,7 @@ DASHBOARD_DIR = os.path.join(REPO_ROOT, "tools", "miner_dashboard")
 EXPLORER_DIR = os.path.join(REPO_ROOT, "tools", "explorer")
 
 
-def _attest_mapping(value: any) -> dict:
+def _attest_mapping(value: dict | None) -> dict:
     """Return a dict-like payload section or an empty mapping."""
     return value if isinstance(value, dict) else {}
 
@@ -145,7 +156,7 @@ def _attest_mapping(value: any) -> dict:
 _ATTEST_MINER_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
-def _attest_text(value: any) -> str | None:
+def _attest_text(value: str | int | float | None) -> str | None:
     """Accept only non-empty text values from untrusted attestation input."""
     if isinstance(value, str):
         value = value.strip()
@@ -154,7 +165,7 @@ def _attest_text(value: any) -> str | None:
     return None
 
 
-def _attest_valid_miner(value: any) -> str | None:
+def _attest_valid_miner(value: str | int | float | None) -> str | None:
     """Accept only bounded miner identifiers with a conservative character set."""
     text = _attest_text(value)
     if text and _ATTEST_MINER_RE.fullmatch(text):
@@ -162,7 +173,7 @@ def _attest_valid_miner(value: any) -> str | None:
     return None
 
 
-def _attest_field_error(code: str, message: str, status: int = 400) -> tuple:
+def _attest_field_error(code: str, message: str, status: int = 400) -> Tuple[Response, int]:
     """Build a consistent error payload for malformed attestation inputs."""
     return jsonify({
         "ok": False,
@@ -172,7 +183,7 @@ def _attest_field_error(code: str, message: str, status: int = 400) -> tuple:
     }), status
 
 
-def _attest_is_valid_positive_int(value: any, max_value: int = 4096) -> bool:
+def _attest_is_valid_positive_int(value: str | int | float | bool | None, max_value: int = 4096) -> bool:
     """Validate positive integer-like input without silently coercing hostile shapes."""
     if isinstance(value, bool):
         return False
@@ -202,7 +213,7 @@ def client_ip_from_request(req: "flask.Request") -> str:
     return remote_addr
 
 
-def _attest_positive_int(value: any, default: int = 1) -> int:
+def _attest_positive_int(value: str | int | float | None, default: int = 1) -> int:
     """Coerce untrusted integer-like values to a safe positive integer."""
     try:
         coerced = int(value)
@@ -211,7 +222,7 @@ def _attest_positive_int(value: any, default: int = 1) -> int:
     return coerced if coerced > 0 else default
 
 
-def _attest_string_list(value: any) -> list[str]:
+def _attest_string_list(value: list | None) -> list[str]:
     """Coerce a list-like field into a list of non-empty strings."""
     if not isinstance(value, list):
         return []
@@ -223,7 +234,7 @@ def _attest_string_list(value: any) -> list[str]:
     return items
 
 
-def _validate_attestation_payload_shape(data: dict) -> tuple | None:
+def _validate_attestation_payload_shape(data: dict) -> Tuple[Response, int] | None:
     """Reject malformed attestation payload shapes before normalization."""
     for field_name, code in (
         ("device", "INVALID_DEVICE"),
@@ -281,7 +292,7 @@ def _validate_attestation_payload_shape(data: dict) -> tuple | None:
     return None
 
 
-def _normalize_attestation_device(device: any) -> dict:
+def _normalize_attestation_device(device: dict | None) -> dict:
     """Shallow-normalize device metadata so malformed JSON shapes fail closed."""
     raw = _attest_mapping(device)
     normalized = {"cores": _attest_positive_int(raw.get("cores"), default=1)}
@@ -302,7 +313,7 @@ def _normalize_attestation_device(device: any) -> dict:
     return normalized
 
 
-def _normalize_attestation_signals(signals: any) -> dict:
+def _normalize_attestation_signals(signals: dict | None) -> dict:
     """Shallow-normalize signal metadata used by attestation validation."""
     raw = _attest_mapping(signals)
     normalized = {"macs": _attest_string_list(raw.get("macs"))}
@@ -313,7 +324,7 @@ def _normalize_attestation_signals(signals: any) -> dict:
     return normalized
 
 
-def _normalize_attestation_report(report: any) -> dict:
+def _normalize_attestation_report(report: dict | None) -> dict:
     """Normalize report metadata used by challenge/ticket handling."""
     raw = _attest_mapping(report)
     normalized = {}
@@ -341,6 +352,11 @@ except Exception as e:
 
 @app.before_request
 def _start_timer() -> None:
+    """Before-request hook to start request timing and assign a request ID.
+    
+    Stores timestamp in flask.g for latency tracking and generates/extracts
+    a request ID for logging correlation.
+    """
     g._ts = time.time()
     g.request_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex
 
@@ -1151,6 +1167,14 @@ ARM_CPU_BRANDS = {"arm", "aarch64", "cortex", "neoverse", "apple m1", "apple m2"
 
 
 def _fingerprint_checks_map(fingerprint: dict) -> dict:
+    """Extract the 'checks' mapping from a fingerprint payload safely.
+    
+    Args:
+        fingerprint: Raw fingerprint dictionary from attestation.
+        
+    Returns:
+        Dictionary of check names to their data, or empty dict if invalid.
+    """
     if not isinstance(fingerprint, dict):
         return {}
     checks = fingerprint.get("checks", {})
@@ -1158,6 +1182,15 @@ def _fingerprint_checks_map(fingerprint: dict) -> dict:
 
 
 def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
+    """Extract data for a specific check from the fingerprint.
+    
+    Args:
+        fingerprint: Raw fingerprint dictionary from attestation.
+        check_name: Name of the check to extract (e.g., 'simd_identity').
+        
+    Returns:
+        Check data dictionary, or empty dict if not found.
+    """
     item = _fingerprint_checks_map(fingerprint).get(check_name, {})
     if isinstance(item, dict):
         data = item.get("data", {})
@@ -1166,12 +1199,28 @@ def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
 
 
 def _claimed_family_and_arch(device: dict) -> tuple:
+    """Extract CPU family and architecture from device metadata.
+    
+    Args:
+        device: Device metadata dictionary from attestation.
+        
+    Returns:
+        Tuple of (family, arch) strings. Defaults to ('x86', 'default').
+    """
     family = str(device.get("device_family") or device.get("family") or "x86")
     arch = str(device.get("device_arch") or device.get("arch") or "default")
     return family, arch
 
 
 def _cpu_brand_string(device: dict) -> str:
+    """Build a CPU brand/model string from available device metadata fields.
+    
+    Args:
+        device: Device metadata dictionary from attestation.
+        
+    Returns:
+        Lowercase concatenated brand string from cpu/device_model/model/brand fields.
+    """
     return " ".join(
         str(device.get(key) or "").strip()
         for key in ("cpu", "device_model", "model", "brand")
@@ -1180,10 +1229,27 @@ def _cpu_brand_string(device: dict) -> str:
 
 
 def _has_any_token(text: str, tokens: set) -> bool:
+    """Check if any of the given tokens appear in the text.
+    
+    Args:
+        text: Text to search.
+        tokens: Set of substring tokens to look for.
+        
+    Returns:
+        True if at least one token is found in text.
+    """
     return any(token in text for token in tokens)
 
 
 def _claims_powerpc(device: dict) -> bool:
+    """Determine if device claims to be PowerPC architecture.
+    
+    Args:
+        device: Device metadata dictionary from attestation.
+        
+    Returns:
+        True if device family or architecture indicates PowerPC.
+    """
     family, arch = _claimed_family_and_arch(device)
     family_lower = family.lower()
     arch_lower = arch.lower()
@@ -1191,6 +1257,14 @@ def _claims_powerpc(device: dict) -> bool:
 
 
 def _powerpc_cpu_brand_matches(device: dict) -> bool:
+    """Check if CPU brand string matches known PowerPC processors.
+    
+    Args:
+        device: Device metadata dictionary from attestation.
+        
+    Returns:
+        True if brand matches PowerPC and excludes x86/ARM brands.
+    """
     cpu_brand = _cpu_brand_string(device)
     if not cpu_brand:
         return False
@@ -1200,6 +1274,14 @@ def _powerpc_cpu_brand_matches(device: dict) -> bool:
 
 
 def _has_powerpc_simd_evidence(fingerprint: dict) -> bool:
+    """Check for PowerPC SIMD evidence (Altivec/VSX) without x86 SIMD.
+    
+    Args:
+        fingerprint: Fingerprint data from attestation.
+        
+    Returns:
+        True if PowerPC SIMD features present without x86 SSE/AVX.
+    """
     simd_data = _fingerprint_check_data(fingerprint, "simd_identity")
     x86_features = simd_data.get("x86_features", [])
     if not isinstance(x86_features, list):
@@ -1215,6 +1297,14 @@ def _has_powerpc_simd_evidence(fingerprint: dict) -> bool:
 
 
 def _has_powerpc_cache_profile(fingerprint: dict) -> bool:
+    """Check if cache timing profile indicates PowerPC architecture.
+    
+    Args:
+        fingerprint: Fingerprint data from attestation.
+        
+    Returns:
+        True if cache data architecture hint indicates PowerPC.
+    """
     cache_data = _fingerprint_check_data(fingerprint, "cache_timing")
     arch_hint = str(cache_data.get("arch") or cache_data.get("architecture") or "").lower()
     if "powerpc" in arch_hint or "ppc" in arch_hint:
@@ -1226,6 +1316,19 @@ def _has_powerpc_cache_profile(fingerprint: dict) -> bool:
 
 
 def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: bool) -> dict:
+    """Derive verified device family/arch from attestation and fingerprint data.
+    
+    Validates PowerPC claims against multiple evidence sources (brand, SIMD,
+    cache profile) and falls back to x86/ARM detection based on CPU features.
+    
+    Args:
+        device: Device metadata from attestation.
+        fingerprint: Fingerprint check data.
+        fingerprint_passed: Whether fingerprint validation succeeded.
+        
+    Returns:
+        Dictionary with verified device_family and device_arch.
+    """
     family, arch = _claimed_family_and_arch(device)
     if not _claims_powerpc(device):
         return {"device_family": family, "device_arch": arch}
@@ -1259,16 +1362,41 @@ def _epoch_salt_for_mac() -> bytes:
     return f"epoch:{epoch}|{PRIVACY_PEPPER}".encode()
 
 def _norm_mac(mac: str) -> str:
+    """Normalize MAC address to lowercase hex digits only.
+    
+    Args:
+        mac: Raw MAC address string (may contain separators).
+        
+    Returns:
+        Normalized MAC with only hex characters, lowercase.
+    """
     return ''.join(ch for ch in mac.lower() if ch in "0123456789abcdef")
 
 def _mac_hash(mac: str) -> str:
+    """Compute privacy-preserving hash of MAC address with epoch salt.
+    
+    Args:
+        mac: Raw MAC address string.
+        
+    Returns:
+        First 12 chars of HMAC-SHA256, or empty string if invalid.
+    """
     norm = _norm_mac(mac)
     if len(norm) < 12: return ""
     salt = _epoch_salt_for_mac()
     digest = hmac.new(salt, norm.encode(), hashlib.sha256).hexdigest()
     return digest[:12]
 
-def record_macs(miner: str, macs: list) -> None:
+def record_macs(miner: str, macs: list[str]) -> None:
+    """Record hashed MAC addresses for a miner with tracking metadata.
+    
+    Stores MAC hashes with first/last seen timestamps and occurrence count.
+    Uses upsert to update existing records.
+    
+    Args:
+        miner: Miner identifier.
+        macs: List of MAC address strings to record.
+    """
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as conn:
         for mac in (macs or []):
@@ -1282,7 +1410,7 @@ def record_macs(miner: str, macs: list) -> None:
         conn.commit()
 
 
-def calculate_rust_score_inline(mfg_year: any, arch: str, attestations: int, machine_id: int) -> float:
+def calculate_rust_score_inline(mfg_year: int | None, arch: str, attestations: int, machine_id: int) -> float:
     """Calculate rust score for a machine."""
     score = 0
     if mfg_year:
@@ -1354,6 +1482,19 @@ def auto_induct_to_hall(miner: str, device: dict) -> None:
         print(f"[HALL] Auto-induct error: {e}")
 
 def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False, source_ip: Optional[str] = None, signals: Optional[dict] = None, fingerprint: Optional[dict] = None) -> None:
+    """Record successful attestation with device verification and fingerprint history.
+    
+    Updates recent attestation record, appends fingerprint snapshot, records
+    fleet immune signals (if available), and triggers Hall of Rust auto-induction.
+    
+    Args:
+        miner: Miner identifier.
+        device: Device metadata from attestation.
+        fingerprint_passed: Whether fingerprint validation succeeded.
+        source_ip: Client IP address (optional).
+        signals: Fleet immune system signals (optional).
+        fingerprint: Full fingerprint data (optional).
+    """
     now = int(time.time())
     verified_device = derive_verified_device(device or {}, fingerprint if isinstance(fingerprint, dict) else {}, fingerprint_passed)
     with sqlite3.connect(DB_PATH) as conn:
@@ -1385,6 +1526,11 @@ TEMPORAL_DRIFT_BANDS = {
 
 
 def ensure_fingerprint_history_table(conn: sqlite3.Connection) -> None:
+    """Create miner_fingerprint_history table if it doesn't exist.
+    
+    Args:
+        conn: SQLite database connection.
+    """
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS miner_fingerprint_history (
@@ -1399,9 +1545,26 @@ def ensure_fingerprint_history_table(conn: sqlite3.Connection) -> None:
 
 
 def extract_temporal_profile(fingerprint: dict | None) -> dict:
+    """Extract temporal variance metrics from fingerprint check data.
+    
+    Args:
+        fingerprint: Fingerprint data from attestation (optional).
+        
+    Returns:
+        Dictionary with clock_drift_cv, thermal_variance, jitter_cv,
+        cache_hierarchy_ratio, and l2_l1_ratio metrics.
+    """
     checks = (fingerprint or {}).get("checks", {}) if isinstance(fingerprint, dict) else {}
 
     def _check_data(name):
+        """Extract data dictionary from a named fingerprint check.
+        
+        Args:
+            name: Check name (e.g., 'clock_drift', 'thermal_entropy').
+            
+        Returns:
+            Check data dictionary, or empty dict if not found.
+        """
         item = checks.get(name, {})
         if isinstance(item, dict):
             data = item.get("data", {})
@@ -1422,6 +1585,20 @@ def extract_temporal_profile(fingerprint: dict | None) -> dict:
 
 
 def append_fingerprint_snapshot(conn: sqlite3.Connection, miner: str, fingerprint: dict, now: int) -> list:
+    """Store fingerprint temporal profile and return miner's history sequence.
+    
+    Inserts new snapshot, prunes history to TEMPORAL_HISTORY_LIMIT, and
+    returns chronological sequence of profiles for temporal analysis.
+    
+    Args:
+        conn: SQLite database connection.
+        miner: Miner identifier.
+        fingerprint: Fingerprint data from attestation.
+        now: Unix timestamp for this snapshot.
+        
+    Returns:
+        List of {ts, profile} dictionaries in chronological order.
+    """
     ensure_fingerprint_history_table(conn)
     profile = extract_temporal_profile(fingerprint)
     conn.execute(
@@ -1454,6 +1631,15 @@ def append_fingerprint_snapshot(conn: sqlite3.Connection, miner: str, fingerprin
 
 
 def fetch_miner_fingerprint_sequence(conn: sqlite3.Connection, miner: str) -> list:
+    """Fetch chronological fingerprint history sequence for a miner.
+    
+    Args:
+        conn: SQLite database connection.
+        miner: Miner identifier.
+        
+    Returns:
+        List of {ts, profile} dictionaries in chronological order.
+    """
     ensure_fingerprint_history_table(conn)
     rows = conn.execute(
         "SELECT ts, profile_json FROM miner_fingerprint_history WHERE miner = ? ORDER BY ts ASC, id ASC",
@@ -1469,6 +1655,24 @@ def fetch_miner_fingerprint_sequence(conn: sqlite3.Connection, miner: str) -> li
 
 
 def validate_temporal_consistency(sequence: list, current_profile: dict | None = None) -> dict:
+    """Validate temporal consistency of fingerprint history to detect emulation.
+    
+    Analyzes variance in temporal metrics (clock drift, thermal, jitter, cache)
+    across historical samples. Flags frozen profiles (too consistent), noisy
+    profiles (too much variance), or out-of-band drift.
+    
+    Args:
+        sequence: Historical fingerprint sequence with timestamps and profiles.
+        current_profile: Current fingerprint profile to append (optional).
+        
+    Returns:
+        Dictionary with:
+            - score: Overall consistency score (0-1)
+            - review_flag: True if manual review needed
+            - reason: Explanation string
+            - flags: List of specific issues detected
+            - check_scores: Per-metric scores
+    """
     samples = list(sequence or [])
     if current_profile is not None:
         samples.append({"ts": int(time.time()), "profile": current_profile})
@@ -2759,7 +2963,7 @@ def headers_tip() -> any:
     tip_age = max(0, int(time.time()) - int(ts))
     return jsonify({"slot": int(slot), "miner": miner, "tip_age": tip_age, "signature_prefix": sighex[:20]})
 
-def kv_get(key: str, default: any = None) -> any:
+def kv_get(key: str, default: str | int | float | bool | None = None) -> str | int | float | bool | None:
     """Get value from settings KV table"""
     try:
         with sqlite3.connect(DB_PATH) as db:
@@ -2787,6 +2991,11 @@ def is_admin(req: "flask.Request") -> bool:
 
 
 def ensure_wallet_review_tables(conn: sqlite3.Connection) -> None:
+    """Create wallet_review_holds table and indexes if they don't exist.
+    
+    Args:
+        conn: SQLite database connection.
+    """
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS wallet_review_holds(
@@ -2831,6 +3040,15 @@ def get_wallet_review_counts() -> dict[str, int]:
 
 
 def get_wallet_review_entry(conn: sqlite3.Connection, wallet: str) -> dict | sqlite3.Row | None:
+    """Fetch the most recent wallet review entry for a given wallet.
+    
+    Args:
+        conn: SQLite database connection.
+        wallet: Wallet address to look up.
+        
+    Returns:
+        Row dict/Row object if found, None otherwise.
+    """
     ensure_wallet_review_tables(conn)
     conn.row_factory = sqlite3.Row
     row = conn.execute(
@@ -3324,11 +3542,18 @@ def reject_v1_mine() -> tuple:
 
 @app.route('/withdraw/register', methods=['POST'])
 def register_withdrawal_key() -> tuple:
+    """Register sr25519 public key for withdrawals.
+    
+    Requires admin authentication. Associates withdrawal key with miner
+    for future reward distributions.
+    
+    Returns:
+        Tuple of (response JSON, status code).
+    """
     # SECURITY: Registering withdrawal keys allows fund extraction; require admin key.
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
     if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
         return jsonify({"error": "Unauthorized - admin key required"}), 401
-    """Register sr25519 public key for withdrawals"""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid JSON body"}), 400
@@ -3671,6 +3896,11 @@ def admin_required(f: "Callable") -> "Callable":
     from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
+        """Validate admin API key before executing the wrapped function.
+        
+        Returns:
+            Original function result if authorized, or (error JSON, 401).
+        """
         key = request.headers.get("X-API-Key")
         if key != ADMIN_KEY:
             return jsonify({"ok": False, "reason": "admin_required"}), 401
@@ -3707,7 +3937,7 @@ def _rotation_message(epoch:int, threshold:int, members_json:str)->bytes:
 
 @app.route('/gov/rotate/stage', methods=['POST'])
 @admin_required
-def gov_rotate_stage():
+def gov_rotate_stage() -> tuple:
     """Stage governance rotation (admin only) - returns canonical message to sign"""
     b = request.get_json() or {}
     if not b:
@@ -3812,7 +4042,7 @@ def gov_rotate_approve() -> tuple:
         })
 
 @app.route('/gov/rotate/commit', methods=['POST'])
-def gov_rotate_commit():
+def gov_rotate_commit() -> tuple:
     """Commit governance rotation (requires threshold approvals)"""
     b = request.get_json() or {}
     if not b:
@@ -3851,7 +4081,15 @@ def gov_rotate_commit():
         })
 
 @app.route('/governance/propose', methods=['POST'])
-def governance_propose():
+def governance_propose() -> tuple:
+    """Submit a new governance proposal for community voting.
+    
+    Requires proposer wallet, title, and description. Creates proposal
+    record and returns proposal ID for tracking.
+    
+    Returns:
+        Tuple of (response JSON, status code).
+    """
     data = request.get_json(silent=True) or {}
     proposer_wallet = str(data.get('wallet', '')).strip()
     title = str(data.get('title', '')).strip()
@@ -3909,6 +4147,11 @@ def governance_propose():
 
 @app.route('/governance/proposals', methods=['GET'])
 def governance_proposals():
+    """List all governance proposals with voting status.
+    
+    Returns:
+        Tuple of (response JSON with proposals list, status code).
+    """
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
@@ -3945,6 +4188,14 @@ def governance_proposals():
 
 @app.route('/governance/proposal/<int:proposal_id>', methods=['GET'])
 def governance_proposal_detail(proposal_id: int):
+    """Get detailed information for a specific governance proposal.
+    
+    Args:
+        proposal_id: Proposal ID from URL path.
+        
+    Returns:
+        Tuple of (response JSON with proposal details, status code).
+    """
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
@@ -4001,6 +4252,14 @@ def governance_proposal_detail(proposal_id: int):
 
 @app.route('/governance/vote', methods=['POST'])
 def governance_vote():
+    """Submit a governance vote (yes/no) on a proposal.
+    
+    Requires signed message with proposal_id, wallet, vote, nonce, signature,
+    and public_key. Validates signature against wallet address.
+    
+    Returns:
+        Tuple of (response JSON, status code).
+    """
     data = request.get_json(silent=True) or {}
     proposal_id = int(data.get('proposal_id') or 0)
     wallet = str(data.get('wallet', '')).strip()
@@ -4109,6 +4368,11 @@ def governance_vote():
 
 @app.route('/governance/ui', methods=['GET'])
 def governance_ui_page():
+    """Serve the governance UI HTML page.
+    
+    Returns:
+        governance.html file from web directory.
+    """
     return send_file(os.path.join(REPO_ROOT, 'web', 'governance.html'))
 
 
@@ -4152,7 +4416,7 @@ def genesis_export():
 # ============= MONITORING ENDPOINTS =============
 
 @app.route('/balance/<miner_pk>', methods=['GET'])
-def get_balance(miner_pk):
+def get_balance(miner_pk: str) -> tuple:
     """Get miner balance - checks both miner_pk and miner_id columns"""
     with sqlite3.connect(DB_PATH) as c:
         # Try miner_pk first (old-style wallets), then miner_id (new-style)
@@ -4168,8 +4432,9 @@ def get_balance(miner_pk):
             "amount_i64": balance_i64
         })
 
+
 @app.route('/api/stats', methods=['GET'])
-def get_stats():
+def get_stats() -> tuple:
     """Get system statistics"""
     epoch = slot_to_epoch(current_slot())
 
@@ -4266,11 +4531,24 @@ def bounty_multiplier():
 def api_nodes():
     """Return list of all registered attestation nodes"""
     def _is_admin() -> bool:
+        """Check if request has valid admin key authentication.
+        
+        Returns:
+            True if admin key matches, False otherwise.
+        """
         need = os.environ.get("RC_ADMIN_KEY", "")
         got = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
         return bool(need and got and need == got)
 
     def _should_redact_url(u: str) -> bool:
+        """Determine if URL host should be redacted (private/internal IP).
+        
+        Args:
+            u: URL string to check.
+            
+        Returns:
+            True if URL points to private/internal network, False otherwise.
+        """
         try:
             host = (urlparse(u).hostname or "").strip()
             if not host:
@@ -4783,6 +5061,11 @@ def attest_debug():
 
 # ---------- Deep health checks ----------
 def _db_rw_ok():
+    """Check if database is readable and writable with quick_check.
+    
+    Returns:
+        True if database passes integrity check, False otherwise.
+    """
     try:
         with sqlite3.connect(DB_PATH, timeout=3) as c:
             c.execute("PRAGMA quick_check")
@@ -4791,6 +5074,14 @@ def _db_rw_ok():
         return False
 
 def _backup_age_hours():
+    """Calculate hours since last database backup.
+    
+    Checks node_exporter textfile metric first, then falls back to
+    scanning backup directory for latest file.
+    
+    Returns:
+        Float hours since last backup, or None if not found.
+    """
     # prefer node_exporter textfile metric if present; else look at latest file in backup dir
     metric = "/var/lib/node_exporter/textfile_collector/rustchain_backup.prom"
     try:
@@ -4894,6 +5185,14 @@ def ops_readiness():
 
 @app.route('/health', methods=['GET'])
 def api_health():
+    """Health check endpoint for monitoring and load balancers.
+    
+    Checks database read/write, backup age, and tip age.
+    Returns detailed checks for admin requests.
+    
+    Returns:
+        Tuple of (response JSON, status code 200 or 503).
+    """
     ok_db = _db_rw_ok()
     age_h = _backup_age_hours()
     tip_age = _tip_age_slots()
@@ -4909,6 +5208,13 @@ def api_health():
 
 @app.route('/ready', methods=['GET'])
 def api_ready():
+    """Readiness probe for Kubernetes/container orchestration.
+    
+    Checks if database is reachable and schema migrations are applied.
+    
+    Returns:
+        Tuple of (response JSON, status code 200 or 503).
+    """
     # "ready" means DB reachable and migrations applied (schema_version exists).
     try:
         with sqlite3.connect(DB_PATH, timeout=3) as c:
@@ -5493,11 +5799,17 @@ def check_integrity():
 # OLD FUNCTION DISABLED - Kept for reference
 @app.route('/wallet/transfer_OLD_DISABLED', methods=['POST'])
 def wallet_transfer_OLD():
+    """Transfer RTC between miner wallets (legacy, disabled).
+    
+    Requires admin key. Validates balances and performs atomic transfer.
+    
+    Returns:
+        Tuple of (response JSON, status code).
+    """
     # SECURITY FIX: Require admin key for internal transfers
     admin_key = request.headers.get("X-Admin-Key", "")
     if admin_key != os.environ.get("RC_ADMIN_KEY", ""):
         return jsonify({"error": "Unauthorized - admin key required", "hint": "Use /wallet/transfer/signed for user transfers"}), 401
-    """Transfer RTC between miner wallets"""
     data = request.get_json()
 
     # Extract client IP (handle nginx proxy)
@@ -5770,6 +6082,11 @@ def address_from_pubkey(public_key_hex: str) -> str:
     return f"RTC{pubkey_hash}"
 
 def _ensure_governance_tables(c: sqlite3.Cursor) -> None:
+    """Create governance tables (proposals, votes) if they don't exist.
+    
+    Args:
+        c: SQLite database cursor.
+    """
     c.execute("""
         CREATE TABLE IF NOT EXISTS governance_proposals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5804,6 +6121,15 @@ def _ensure_governance_tables(c: sqlite3.Cursor) -> None:
 
 
 def _get_active_miner_antiquity_multiplier(c: sqlite3.Cursor, wallet: str):
+    """Get governance voting multiplier for active miner based on hardware.
+    
+    Args:
+        c: SQLite database cursor.
+        wallet: Miner wallet address.
+        
+    Returns:
+        Tuple of (is_active: bool, multiplier: float, reason: str).
+    """
     row = c.execute(
         """
         SELECT ts_ok, device_family, device_arch
@@ -5829,6 +6155,18 @@ def _get_active_miner_antiquity_multiplier(c: sqlite3.Cursor, wallet: str):
 
 
 def _refresh_proposal_status(c: sqlite3.Cursor, proposal_row: sqlite3.Row):
+    """Update and return proposal status based on current time and votes.
+    
+    Transitions draft->active on first access, and active->passed/failed
+    when voting period ends.
+    
+    Args:
+        c: SQLite database cursor.
+        proposal_row: Proposal row from database.
+        
+    Returns:
+        Current status string ('draft', 'active', 'passed', or 'failed').
+    """
     now = int(time.time())
     status = (proposal_row["status"] or "draft").lower()
     ends_at = proposal_row["ends_at"]
@@ -6157,6 +6495,14 @@ BEACON_RATE_LIMIT  = 60
 
 @app.route("/beacon/submit", methods=["POST"])
 def beacon_submit():
+    """Submit a beacon envelope for anchoring (OpenClaw protocol).
+    
+    Validates agent_id, kind, nonce, signature, and pubkey. Enforces
+    rate limiting per agent. Stores envelope in beacon_envelopes table.
+    
+    Returns:
+        Tuple of (response JSON, status code).
+    """
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"ok": False, "error": "invalid_json"}), 400
@@ -6196,11 +6542,25 @@ def beacon_submit():
 
 @app.route("/beacon/digest", methods=["GET"])
 def beacon_digest():
+    """Compute and return Merkle digest of stored beacon envelopes.
+    
+    Returns:
+        JSON with digest, count, and latest_ts.
+    """
     d = compute_beacon_digest(DB_PATH)
     return jsonify({"ok": True, "digest": d["digest"], "count": d["count"], "latest_ts": d["latest_ts"]})
 
 @app.route("/beacon/envelopes", methods=["GET"])
 def beacon_envelopes_list():
+    """List stored beacon envelopes with pagination.
+    
+    Query params:
+        limit: Max results (default 50, max 50)
+        offset: Offset for pagination (default 0)
+        
+    Returns:
+        JSON with envelopes list and pagination metadata.
+    """
     try:
         limit = min(int(request.args.get("limit", 50)), 50)
         offset = max(int(request.args.get("offset", 0)), 0)
@@ -6262,6 +6622,11 @@ if __name__ == "__main__":
 
 @app.route("/download/test")
 def download_test():
+    """Serve test miner script for download.
+    
+    Returns:
+        test_miner_minimal.py file as attachment.
+    """
     return send_file("/root/rustchain/test_miner_minimal.py",
                     as_attachment=True,
                     download_name="test_miner_minimal.py",

@@ -8,7 +8,7 @@ import json
 import os
 import sqlite3
 import time
-from typing import Tuple, Dict, Optional
+from typing import Tuple, Dict, Optional, Any
 
 # Allow overrides for local dev / non-Linux environments.
 DB_PATH = os.environ.get('RUSTCHAIN_DB_PATH') or os.environ.get('DB_PATH') or '/root/rustchain/rustchain_v2.db'
@@ -16,8 +16,18 @@ ENTROPY_TOLERANCE = 0.30  # 30% tolerance for entropy drift
 MIN_COMPARABLE_FIELDS = 3  # require at least 3 non-zero entropy fields for quality
 CORE_ENTROPY_FIELDS = ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']
 
-def init_hardware_bindings_v2():
-    """Create the v2 bindings table with entropy profiles."""
+def init_hardware_bindings_v2() -> None:
+    """
+    Create the v2 bindings table with entropy profiles.
+    
+    Creates hardware_bindings_v2 table with columns for:
+    - serial_hash: SHA256 hash of serial+arch (primary key)
+    - serial_raw: Raw serial number (encrypted in production)
+    - bound_wallet: Wallet address bound to this hardware
+    - arch: CPU architecture
+    - entropy_profile: JSON-encoded entropy fingerprint
+    - attestation_count: Number of successful attestations
+    """
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS hardware_bindings_v2 (
@@ -43,8 +53,21 @@ def compute_serial_hash(serial: str, arch: str) -> str:
     data = f'{serial.strip().upper()}|{arch.lower()}'
     return hashlib.sha256(data.encode()).hexdigest()[:40]
 
-def extract_entropy_profile(fingerprint: dict) -> Dict:
-    """Extract comparable entropy values from fingerprint data."""
+def extract_entropy_profile(fingerprint: Dict[str, Any]) -> Dict[str, float]:
+    """
+    Extract comparable entropy values from fingerprint data.
+    
+    Args:
+        fingerprint: Hardware fingerprint dictionary with 'checks' and 'data' keys
+        
+    Returns:
+        dict: Entropy profile with keys:
+            - clock_cv: Clock drift coefficient of variation
+            - cache_l1: L1 cache latency
+            - cache_l2: L2 cache latency
+            - thermal_ratio: Thermal drift ratio
+            - jitter_cv: Instruction jitter coefficient of variation
+    """
     checks = fingerprint.get('checks', {})
     data = fingerprint.get('data', {})
     
@@ -64,10 +87,31 @@ def extract_entropy_profile(fingerprint: dict) -> Dict:
 
 
 def _count_nonzero_fields(profile: Dict) -> int:
+    """
+    Count number of non-zero entropy fields in profile.
+    
+    Args:
+        profile: Entropy profile dictionary
+        
+    Returns:
+        int: Count of fields with non-zero values
+    """
     return sum(1 for k in CORE_ENTROPY_FIELDS if float(profile.get(k, 0)) > 0)
 
 
 def _count_comparable_nonzero_fields(stored: Dict, current: Dict) -> int:
+    """
+    Count number of non-zero fields in both stored and current profiles.
+    
+    Used to determine if there's enough overlapping data for comparison.
+    
+    Args:
+        stored: Stored entropy profile dictionary
+        current: Current entropy profile dictionary
+        
+    Returns:
+        int: Count of fields non-zero in both profiles
+    """
     return sum(1 for k in CORE_ENTROPY_FIELDS if float(stored.get(k, 0)) > 0 and float(current.get(k, 0)) > 0)
 
 def compare_entropy_profiles(stored: Dict, current: Dict) -> Tuple[bool, float, str]:

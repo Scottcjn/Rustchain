@@ -10,6 +10,8 @@ tie-breakers rather than major multiplier influences.
 The real PoA multipliers come from CPUs - peripherals are just icing.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional
 

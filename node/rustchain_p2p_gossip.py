@@ -85,10 +85,12 @@ class GossipMessage:
     payload: Dict
 
     def to_dict(self) -> Dict:
+        """Convert message to dictionary for JSON serialization."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'GossipMessage':
+        """Create GossipMessage instance from dictionary."""
         return cls(**data)
 
     def compute_hash(self) -> str:
@@ -108,6 +110,7 @@ class LWWRegister:
     """
 
     def __init__(self):
+        """Initialize LWWRegister with empty data store."""
         self.data: Dict[str, Tuple[int, Dict]] = {}  # key -> (timestamp, value)
 
     def set(self, key: str, value: Dict, timestamp: int):
@@ -129,10 +132,12 @@ class LWWRegister:
             self.set(key, value, ts)
 
     def to_dict(self) -> Dict:
+        """Serialize LWWRegister state to dictionary."""
         return {k: {"ts": ts, "value": v} for k, (ts, v) in self.data.items()}
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'LWWRegister':
+        """Deserialize dictionary to LWWRegister instance."""
         reg = cls()
         for k, v in data.items():
             reg.data[k] = (v["ts"], v["value"])
@@ -146,6 +151,7 @@ class PNCounter:
     """
 
     def __init__(self):
+        """Initialize PNCounter with empty increment/decrement stores per miner and node."""
         # miner_id -> {node_id: total_amount}
         self.increments: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
         self.decrements: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
@@ -184,6 +190,7 @@ class PNCounter:
                 )
 
     def to_dict(self) -> Dict:
+        """Serialize PNCounter state to dictionary for network transmission."""
         return {
             "increments": {k: dict(v) for k, v in self.increments.items()},
             "decrements": {k: dict(v) for k, v in self.decrements.items()}
@@ -191,6 +198,7 @@ class PNCounter:
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'PNCounter':
+        """Deserialize dictionary to PNCounter instance."""
         counter = cls()
         for miner_id, nodes in data.get("increments", {}).items():
             for node_id, amount in nodes.items():
@@ -208,6 +216,7 @@ class GSet:
     """
 
     def __init__(self):
+        """Initialize GSet with empty items set and metadata store."""
         self.items: Set[int] = set()
         self.metadata: Dict[int, Dict] = {}  # epoch -> {settled_ts, merkle_root, ...}
 
@@ -218,6 +227,7 @@ class GSet:
             self.metadata[epoch] = metadata
 
     def contains(self, epoch: int) -> bool:
+        """Check if epoch is in the settled set."""
         return epoch in self.items
 
     def merge(self, other: 'GSet'):
@@ -228,6 +238,7 @@ class GSet:
                 self.metadata[epoch] = meta
 
     def to_dict(self) -> Dict:
+        """Serialize GSet state to dictionary with epochs list and metadata."""
         return {
             "epochs": list(self.items),
             "metadata": self.metadata
@@ -235,6 +246,7 @@ class GSet:
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'GSet':
+        """Deserialize dictionary to GSet instance."""
         gset = cls()
         gset.items = set(data.get("epochs", []))
         gset.metadata = data.get("metadata", {})
@@ -251,6 +263,13 @@ class GossipLayer:
     """
 
     def __init__(self, node_id: str, peers: Dict[str, str], db_path: str = DB_PATH):
+        """Initialize GossipLayer with node identity, peer list, and CRDT state.
+        
+        Args:
+            node_id: Unique identifier for this node
+            peers: Dictionary mapping peer IDs to URLs
+            db_path: Path to SQLite database for state persistence
+        """
         self.node_id = node_id
         self.peers = peers  # peer_id -> url
         self.db_path = db_path
@@ -579,6 +598,13 @@ class EpochConsensus:
     """
 
     def __init__(self, node_id: str, nodes: List[str], gossip: GossipLayer):
+        """Initialize EpochConsensus with node identity and gossip layer.
+        
+        Args:
+            node_id: Unique identifier for this node
+            nodes: List of all node IDs in the consensus group
+            gossip: GossipLayer instance for message propagation
+        """
         self.node_id = node_id
         self.nodes = sorted(nodes)
         self.gossip = gossip
@@ -590,6 +616,7 @@ class EpochConsensus:
         return self.nodes[epoch % len(self.nodes)]
 
     def is_leader(self, epoch: int) -> bool:
+        """Check if this node is the leader for the given epoch."""
         return self.get_leader(epoch) == self.node_id
 
     def propose_settlement(self, epoch: int, distribution: Dict[str, int]) -> Optional[Dict]:
@@ -661,6 +688,13 @@ class RustChainP2PNode:
     """
 
     def __init__(self, node_id: str, db_path: str, peers: Dict[str, str]):
+        """Initialize RustChainP2PNode with gossip and consensus components.
+        
+        Args:
+            node_id: Unique identifier for this node
+            db_path: Path to SQLite database
+            peers: Dictionary mapping peer node IDs to URLs
+        """
         self.node_id = node_id
         self.db_path = db_path
         self.peers = peers
@@ -743,7 +777,7 @@ class RustChainP2PNode:
 # FLASK ENDPOINTS REGISTRATION
 # =============================================================================
 
-def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
+def register_p2p_endpoints(app: "flask.Flask", p2p_node: RustChainP2PNode) -> None:
     """Register P2P synchronization endpoints on Flask app"""
 
     from flask import request, jsonify

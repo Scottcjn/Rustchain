@@ -25,7 +25,7 @@ import hmac
 import hashlib
 import secrets
 from datetime import datetime
-from typing import List, Dict, Optional, Callable
+from typing import List, Dict, Optional, Callable, Any
 from functools import wraps
 from flask import request, jsonify
 import logging
@@ -572,7 +572,7 @@ class SecureBlockSync:
 # FLASK SECURITY MIDDLEWARE
 # ============================================================================
 
-def create_p2p_auth_middleware(auth_manager: P2PAuthManager):
+def create_p2p_auth_middleware(auth_manager: P2PAuthManager) -> Callable:
     """Create Flask middleware for P2P authentication"""
 
     def require_peer_auth(f: Callable[..., Any]) -> Callable[..., Any]:
@@ -617,7 +617,7 @@ def create_p2p_auth_middleware(auth_manager: P2PAuthManager):
 # INITIALIZATION & DEPLOYMENT
 # ============================================================================
 
-def initialize_secure_p2p(db_path: str, local_host: str, local_port: int = 8088):
+def initialize_secure_p2p(db_path: str, local_host: str, local_port: int = 8088) -> Tuple[SecurePeerManager, SecureBlockSync, Callable]:
     """
     Initialize secure P2P system with all protections
 

@@ -8,6 +8,7 @@ Change values when ready to charge real USDC.
 
 import os
 import logging
+from typing import Any, Dict, Tuple
 
 log = logging.getLogger("x402")
 
@@ -52,18 +53,45 @@ SWAP_INFO = {
 }
 
 
-def is_free(price_str):
-    """Check if a price is $0 (free mode)."""
+def is_free(price_str: str) -> bool:
+    """Check if a price is $0 (free mode).
+    
+    Args:
+        price_str: Price string in USDC atomic units
+        
+    Returns:
+        bool: True if price is free ("0" or empty)
+    """
     return price_str == "0" or price_str == ""
 
 
-def has_cdp_credentials():
-    """Check if CDP API credentials are configured."""
+def has_cdp_credentials() -> bool:
+    """Check if CDP API credentials are configured.
+    
+    Returns:
+        bool: True if both CDP_API_KEY_NAME and CDP_API_KEY_PRIVATE_KEY are set
+    """
     return bool(CDP_API_KEY_NAME and CDP_API_KEY_PRIVATE_KEY)
 
 
-def create_agentkit_wallet():
-    """Create a Coinbase wallet via AgentKit. Returns (address, wallet_data) or raises."""
+def create_agentkit_wallet() -> Tuple[str, Dict[str, Any]]:
+    """
+    Create a Coinbase wallet via AgentKit.
+    
+    Returns:
+        Tuple[str, dict]: (wallet_address, wallet_info_dict)
+        
+    Raises:
+        Exception: If CDP credentials are missing or wallet creation fails
+        
+    Note:
+        Requires CDP_API_KEY_NAME and CDP_API_KEY_PRIVATE_KEY environment variables
+    """
+        Tuple[str, Dict[str, Any]]: (wallet_address, wallet_data_dict)
+        
+    Raises:
+        RuntimeError: If credentials not configured, coinbase-agentkit not installed, or wallet creation fails
+    """
     if not has_cdp_credentials():
         raise RuntimeError(
             "CDP credentials not configured. "

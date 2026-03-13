@@ -31,6 +31,16 @@ class RustChainSyncManager:
     ]
 
     def __init__(self, db_path: str, admin_key: str):
+        """
+        Initialize RustChain sync manager
+        
+        Parameters:
+            db_path: Path to SQLite database file
+            admin_key: Admin authentication key for sync operations
+        
+        Attributes:
+            _schema_cache: Cached table schemas to avoid repeated PRAGMA queries
+        """
         self.db_path = db_path
         self.admin_key = admin_key
         logging.basicConfig(level=logging.INFO)
@@ -38,11 +48,33 @@ class RustChainSyncManager:
         self._schema_cache: Dict[str, Dict[str, Any]] = {}
 
     def _get_connection(self):
+        """
+        Create a new database connection with Row factory
+        
+        Returns:
+            sqlite3.Connection: Connection with row_factory=sqlite3.Row for dict-like access
+        
+        Note:
+            Caller is responsible for closing the connection
+        """
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
     def _table_exists(self, conn: sqlite3.Connection, table_name: str) -> bool:
+        """
+        Check if a table exists in the database
+        
+        Parameters:
+            conn: Active SQLite connection
+            table_name: Name of table to check
+        
+        Returns:
+            bool: True if table exists, False otherwise
+        
+        Note:
+            Uses sqlite_master table to check existence (safe, no side effects)
+        """
         row = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
             (table_name,),
@@ -50,6 +82,21 @@ class RustChainSyncManager:
         return row is not None
 
     def _load_table_schema(self, table_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Load and cache table schema information
+        
+        Parameters:
+            table_name: Name of table to introspect
+        
+        Returns:
+            Dict with 'columns' (list of column names) and 'pk' (primary key column name)
+            None if table doesn't exist
+        
+        Note:
+            - Caches schema in _schema_cache to avoid repeated PRAGMA queries
+            - Only supports single-column primary keys for now
+            - Uses PRAGMA table_info for schema introspection
+        """
         if table_name in self._schema_cache:
             return self._schema_cache[table_name]
 
@@ -79,6 +126,16 @@ class RustChainSyncManager:
             conn.close()
 
     def get_available_sync_tables(self) -> List[str]:
+        """
+        Get list of tables available for synchronization
+        
+        Returns:
+            List of table names that exist and have a primary key
+        
+        Note:
+            - Only includes tables from BASE_SYNC_TABLES and OPTIONAL_SYNC_TABLES
+            - Excludes tables without primary keys (required for upsert logic)
+        """
         tables: List[str] = []
         for t in self.BASE_SYNC_TABLES + self.OPTIONAL_SYNC_TABLES:
             schema = self._load_table_schema(t)
@@ -88,6 +145,12 @@ class RustChainSyncManager:
 
     @property
     def SYNC_TABLES(self) -> List[str]:
+        """
+        Property alias for get_available_sync_tables()
+        
+        Returns:
+            List of available sync table names
+        """
         return self.get_available_sync_tables()
 
     def calculate_table_hash(self, table_name: str) -> str:
@@ -123,6 +186,18 @@ class RustChainSyncManager:
         return hashlib.sha256(combined.encode()).hexdigest()
 
     def _get_primary_key(self, table_name: str) -> Optional[str]:
+        """
+        Get primary key column for a table
+        
+        Parameters:
+            table_name: Name of table
+        
+        Returns:
+            Primary key column name, or None if table not found or has no PK
+        
+        Note:
+            Uses cached schema from _load_table_schema
+        """
         schema = self._load_table_schema(table_name)
         if not schema:
             return None
@@ -149,6 +224,19 @@ class RustChainSyncManager:
         return data
 
     def _balance_value_for_row(self, row: Dict[str, Any]) -> Optional[int]:
+        """
+        Extract balance value from a row in micro-units
+        
+        Parameters:
+            row: Database row as dictionary
+        
+        Returns:
+            Balance value as integer, or None if no balance column found
+        
+        Note:
+            Tries multiple column names in order of preference:
+            amount_i64, balance_i64, balance_urtc, amount_rtc
+        """
         for candidate in ("amount_i64", "balance_i64", "balance_urtc", "amount_rtc"):
             if candidate in row and row[candidate] is not None:
                 try:
@@ -158,7 +246,26 @@ class RustChainSyncManager:
         return None
 
     def apply_sync_payload(self, table_name: str, remote_data: List[Dict[str, Any]]):
-        """Merges remote data into local database with conflict resolution and schema hardening."""
+        """
+        Merge remote data into local database with conflict resolution and schema hardening
+        
+        Parameters:
+            table_name: Name of table to sync
+            remote_data: List of row dictionaries from remote node
+        
+        Returns:
+            bool: True if sync successful, False if table not allowed or error occurred
+        
+        Security:
+            - Only allows whitelisted tables (BASE_SYNC_TABLES + OPTIONAL_SYNC_TABLES)
+            - Filters remote columns to match local schema (prevents injection)
+            - Uses ON CONFLICT(pk) DO UPDATE for safe upserts
+            - Never uses REPLACE (avoids data loss)
+        
+        Note:
+            - Skips rows without primary key value
+            - Logs sync progress and errors
+        """
         if table_name not in self.SYNC_TABLES:
             return False
 
@@ -243,7 +350,19 @@ class RustChainSyncManager:
             conn.close()
 
     def get_sync_status(self) -> Dict[str, Any]:
-        """Returns metadata about the current state of synced tables."""
+        """
+        Get metadata about the current state of synced tables
+        
+        Returns:
+            Dictionary with:
+                - timestamp: Current Unix timestamp
+                - merkle_root: Master hash of all table data
+                - sync_tables: List of synced table names
+                - tables: Dict mapping table name to {hash, count, pk}
+        
+        Use Case:
+            Compare with remote nodes to detect data divergence
+        """
         tables = self.SYNC_TABLES
         status = {
             "timestamp": time.time(),
@@ -260,6 +379,15 @@ class RustChainSyncManager:
         return status
 
     def _get_count(self, table_name: str) -> int:
+        """
+        Get row count for a table
+        
+        Parameters:
+            table_name: Name of table to count
+        
+        Returns:
+            Number of rows in the table, or 0 if table not in sync list
+        """
         if table_name not in self.SYNC_TABLES:
             return 0
         conn = self._get_connection()

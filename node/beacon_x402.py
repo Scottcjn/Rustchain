@@ -12,8 +12,9 @@ import logging
 import os
 import sqlite3
 import time
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from flask import g, jsonify, request
+from flask import Flask, g, jsonify, request, Response
 from functools import wraps
 
 log = logging.getLogger("beacon.x402")
@@ -61,7 +62,7 @@ RELAY_MIGRATION_SQL = [
 ]
 
 
-def _run_migrations(db_path):
+def _run_migrations(db_path: str) -> None:
     """Run x402 migrations on the beacon database."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -88,7 +89,7 @@ def _run_migrations(db_path):
 # CORS helper (match beacon_chat.py pattern)
 # ---------------------------------------------------------------------------
 
-def _cors_json(data, status=200):
+def _cors_json(data: Any, status: int = 200) -> Tuple[Response | Any, int]:
     """Return JSON response with CORS headers (matching beacon_chat.py pattern)."""
     resp = jsonify(data) if not isinstance(data, str) else data
     if hasattr(resp, 'headers'):
@@ -102,7 +103,7 @@ def _cors_json(data, status=200):
 # x402 payment check
 # ---------------------------------------------------------------------------
 
-def _check_x402_payment(price_str, action_name):
+def _check_x402_payment(price_str: str, action_name: str) -> Tuple[bool, Optional[Any]]:
     """
     Check for x402 payment. Returns (passed, response_or_none).
     When price is "0", always passes.
@@ -146,7 +147,7 @@ def _check_x402_payment(price_str, action_name):
 # Route registration
 # ---------------------------------------------------------------------------
 
-def init_app(app, get_db_func):
+def init_app(app: Flask, get_db_func: Callable[[], sqlite3.Connection]) -> None:
     """Register x402 routes on the Beacon Atlas Flask app."""
 
     # Determine DB path from the app's existing config
@@ -166,7 +167,7 @@ def init_app(app, get_db_func):
     # ---------------------------------------------------------------
 
     @app.route("/api/agents/<agent_id>/wallet", methods=["POST", "OPTIONS"])
-    def set_agent_wallet(agent_id):
+    def set_agent_wallet(agent_id: str) -> Response | Any:
         """Set Coinbase wallet for a native beacon agent (admin only)."""
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
@@ -199,7 +200,7 @@ def init_app(app, get_db_func):
         })
 
     @app.route("/api/agents/<agent_id>/wallet", methods=["GET", "OPTIONS"])
-    def get_agent_wallet(agent_id):
+    def get_agent_wallet(agent_id: str) -> Response | Any:
         """Get a beacon agent's Coinbase wallet info."""
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
@@ -249,7 +250,7 @@ def init_app(app, get_db_func):
     # ---------------------------------------------------------------
 
     @app.route("/api/premium/reputation", methods=["GET", "OPTIONS"])
-    def premium_reputation():
+    def premium_reputation() -> Response | Any:
         """Full reputation export for all agents."""
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
@@ -277,7 +278,7 @@ def init_app(app, get_db_func):
         })
 
     @app.route("/api/premium/contracts/export", methods=["GET", "OPTIONS"])
-    def premium_contracts_export():
+    def premium_contracts_export() -> Response | Any:
         """Full contracts export with payment status."""
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
@@ -318,7 +319,7 @@ def init_app(app, get_db_func):
     # ---------------------------------------------------------------
 
     @app.route("/api/x402/payments", methods=["GET", "OPTIONS"])
-    def x402_beacon_payments():
+    def x402_beacon_payments() -> Response | Any:
         """View x402 payment history for beacon."""
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
@@ -341,7 +342,7 @@ def init_app(app, get_db_func):
     # ---------------------------------------------------------------
 
     @app.route("/api/x402/status", methods=["GET", "OPTIONS"])
-    def x402_beacon_status():
+    def x402_beacon_status() -> Response | Any:
         """Public endpoint showing x402 integration status for Beacon Atlas."""
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})

@@ -32,19 +32,91 @@ if str(HERE) not in sys.path:
 
 
 def _now_iso() -> str:
+    """
+    Get current UTC timestamp in ISO 8601 / RFC3339 format.
+
+    Returns:
+        str: Current UTC time in format 'YYYY-MM-DDTHH:MM:SSZ'
+            Example: '2026-03-13T14:30:00Z'
+
+    Note:
+        Uses time.gmtime() for UTC timezone consistency.
+        Format is stable and human-readable for JSON timestamps.
+    """
     # RFC3339-ish, stable and human-readable.
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def _read_json(path: Path) -> Dict[str, Any]:
+    """
+    Read and parse a JSON file.
+
+    Args:
+        path: Path to JSON file
+
+    Returns:
+        Dict[str, Any]: Parsed JSON content as dictionary
+
+    Raises:
+        FileNotFoundError: If file doesn't exist
+        json.JSONDecodeError: If file contains invalid JSON
+
+    Note:
+        Uses UTF-8 encoding for cross-platform compatibility.
+    """
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _write_json(path: Path, obj: Any) -> None:
+    """
+    Write an object to a JSON file with consistent formatting.
+
+    Args:
+        path: Destination file path
+        obj: Python object to serialize (dict, list, etc.)
+
+    Side effects:
+        Creates or overwrites the file at the specified path
+
+    Formatting:
+        - 2-space indentation for readability
+        - Sorted keys for deterministic output
+        - Trailing newline for POSIX compliance
+        - str() converter for non-serializable types
+
+    Note:
+        Uses UTF-8 encoding for cross-platform compatibility.
+    """
     path.write_text(json.dumps(obj, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
 
 
 def _get_nested(d: Dict[str, Any], dotted: str) -> Tuple[bool, Any]:
+    """
+    Retrieve a nested value from a dictionary using dotted notation.
+
+    Traverses a nested dictionary structure using a dot-separated key path.
+    Example: "simd_identity.data.has_sse" accesses d["simd_identity"]["data"]["has_sse"]
+
+    Args:
+        d: Dictionary to search
+        dotted: Dot-separated key path (e.g., "parent.child.key")
+
+    Returns:
+        Tuple[bool, Any]:
+        - bool: True if key path exists, False otherwise
+        - Any: Value at the key path if found, None if not found
+
+    Example:
+        >>> d = {"a": {"b": {"c": 42}}}
+        >>> _get_nested(d, "a.b.c")
+        (True, 42)
+        >>> _get_nested(d, "a.x.c")
+        (False, None)
+
+    Note:
+        Returns (False, None) if any intermediate value is not a dict
+        or if any key in the path doesn't exist.
+    """
     cur: Any = d
     for part in dotted.split("."):
         if not isinstance(cur, dict) or part not in cur:
@@ -63,12 +135,41 @@ class ProfileCheck:
 
 
 def list_profiles() -> List[str]:
+    """
+    List all available fingerprint reference profiles.
+
+    Scans the fingerprint_reference_profiles/ directory for JSON files
+    and returns their base names (without .json extension).
+
+    Returns:
+        List[str]: Sorted list of profile names (e.g., ["modern_x86", "server_grade"])
+            Empty list if profile directory doesn't exist or contains no JSON files
+
+    Side effects:
+        Reads filesystem to discover profile files
+
+    Note:
+        Profiles are used for comparing fingerprint results against known
+        hardware configurations for validation and testing.
+    """
     if not PROFILE_DIR.exists():
         return []
     return sorted([p.stem for p in PROFILE_DIR.glob("*.json") if p.is_file()])
 
 
 def load_profile(profile_name: str) -> Dict[str, Any]:
+    """
+    Load a hardware profile from JSON file.
+    
+    Args:
+        profile_name: Name of profile (without .json extension)
+        
+    Returns:
+        Profile dictionary with 'expects' and 'ranges' keys
+        
+    Raises:
+        FileNotFoundError: If profile file doesn't exist in PROFILE_DIR
+    """
     path = PROFILE_DIR / f"{profile_name}.json"
     if not path.exists():
         raise FileNotFoundError(f"unknown profile '{profile_name}' (expected {path})")
@@ -137,6 +238,23 @@ def compare_to_profile(results: Dict[str, Any], profile: Dict[str, Any]) -> Dict
 
 
 def _recommendations(results: Dict[str, Any]) -> List[str]:
+    """
+    Generate troubleshooting recommendations for failed fingerprint checks.
+    
+    Args:
+        results: Fingerprint check results dictionary
+        
+    Returns:
+        List of recommendation strings for each failed check
+        
+    Provides specific remediation steps for common failures:
+    - anti_emulation: VM detection issues
+    - clock_drift: Timing anomalies
+    - cache_timing: Cache hierarchy issues
+    - simd_identity: Missing SIMD features
+    - thermal_drift: No thermal variance
+    - instruction_jitter: No jitter variance
+    """
     recs: List[str] = []
     for key, item in results.items():
         passed = item.get("passed", False)
@@ -164,6 +282,17 @@ def _recommendations(results: Dict[str, Any]) -> List[str]:
 
 
 def run_checks(include_rom_check: bool) -> Tuple[bool, Dict[str, Any]]:
+    """
+    Execute all hardware fingerprint checks.
+    
+    Args:
+        include_rom_check: Whether to include ROM fingerprint check
+        
+    Returns:
+        Tuple of (all_passed, results_dict)
+        
+    Delegates to fingerprint_checks.validate_all_checks() for actual validation.
+    """
     # Import lazily so this runner stays lightweight.
     import fingerprint_checks  # type: ignore
 
@@ -171,6 +300,23 @@ def run_checks(include_rom_check: bool) -> Tuple[bool, Dict[str, Any]]:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    """
+    Command-line entry point for hardware fingerprint preflight checks.
+    
+    Args:
+        argv: Command-line arguments (defaults to sys.argv[1:])
+        
+    Returns:
+        Exit code: 0 for success, 1 for failure
+        
+    CLI Options:
+        --json-out: Write full results JSON to file path
+        --redact: Redact host/cwd identifiers in JSON output
+        --no-rom: Skip ROM check even if available
+        --list-profiles: List built-in reference profiles
+        --compare: Compare results to a built-in profile name
+        --quiet: Reduce console output
+    """
     ap = argparse.ArgumentParser(description="Run RustChain hardware fingerprint checks (preflight).")
     ap.add_argument("--json-out", help="Write full results JSON to this path.")
     ap.add_argument("--redact", action="store_true", help="Redact host/cwd identifiers in JSON output.")

@@ -25,7 +25,7 @@ import secrets
 import sys
 import time
 from pathlib import Path
-from typing import Tuple
+from typing import Any, Tuple
 
 import requests
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -169,7 +169,7 @@ def _sign_transfer(priv_hex: str, from_addr: str, to_addr: str, amount_rtc: floa
     }
 
 
-def cmd_create(args):
+def cmd_create(args: argparse.Namespace) -> int:
     if Mnemonic is None:
         print("Error: missing dependency 'mnemonic'. Install: python3 -m pip install mnemonic", file=sys.stderr)
         return 2
@@ -205,7 +205,7 @@ def cmd_create(args):
     return 0
 
 
-def cmd_import(args):
+def cmd_import(args: argparse.Namespace) -> int:
     if Mnemonic is None:
         print("Error: missing dependency 'mnemonic'. Install: python3 -m pip install mnemonic", file=sys.stderr)
         return 2
@@ -236,13 +236,13 @@ def cmd_import(args):
     return 0
 
 
-def cmd_export(args):
+def cmd_export(args: argparse.Namespace) -> int:
     ks = _load_keystore(args.wallet)
     print(json.dumps(ks, indent=2))
     return 0
 
 
-def _safe_json(r: "requests.Response") -> "tuple[dict | list | None, int]":
+def _safe_json(r: requests.Response) -> tuple[dict[str, Any] | list[Any] | None, int]:
     """Parse JSON from a response, returning (data, exit_code).
 
     Returns (None, 1) with a descriptive error printed to stderr when the
@@ -260,7 +260,7 @@ def _safe_json(r: "requests.Response") -> "tuple[dict | list | None, int]":
         return None, 1
 
 
-def cmd_balance(args):
+def cmd_balance(args: argparse.Namespace) -> int:
     url = f"{NODE_URL}/wallet/balance"
     r = requests.get(url, params={"miner_id": args.wallet_id}, timeout=12, verify=VERIFY_SSL)
     data, rc = _safe_json(r)
@@ -274,7 +274,7 @@ def cmd_balance(args):
     return rc
 
 
-def cmd_send(args):
+def cmd_send(args: argparse.Namespace) -> int:
     ks = _load_keystore(args.from_wallet)
     password = _read_password("Wallet password: ", "RUSTCHAIN_WALLET_PASSWORD")
     priv_hex = _decrypt_private_key(ks["crypto"], password)
@@ -290,7 +290,7 @@ def cmd_send(args):
     return rc
 
 
-def cmd_history(args):
+def cmd_history(args: argparse.Namespace) -> int:
     url = f"{NODE_URL}/wallet/ledger"
     r = requests.get(url, params={"miner_id": args.wallet_id}, timeout=12, verify=VERIFY_SSL)
     data, rc = _safe_json(r)
@@ -302,7 +302,7 @@ def cmd_history(args):
     return rc
 
 
-def cmd_miners(args):
+def cmd_miners(args: argparse.Namespace) -> int:
     r = requests.get(f"{NODE_URL}/api/miners", timeout=12, verify=VERIFY_SSL)
     data, rc = _safe_json(r)
     if data is not None:
@@ -310,7 +310,7 @@ def cmd_miners(args):
     return rc
 
 
-def cmd_epoch(args):
+def cmd_epoch(args: argparse.Namespace) -> int:
     r = requests.get(f"{NODE_URL}/epoch", timeout=12, verify=VERIFY_SSL)
     data, rc = _safe_json(r)
     if data is not None:
@@ -318,7 +318,7 @@ def cmd_epoch(args):
     return rc
 
 
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="rustchain-wallet", description="RustChain Wallet CLI")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -359,7 +359,7 @@ def build_parser():
     return p
 
 
-def main():
+def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     try:

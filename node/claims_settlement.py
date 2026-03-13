@@ -28,9 +28,27 @@ try:
     from claims_submission import update_claim_status, get_claim_status
 except ImportError:
     def update_claim_status(*args, **kwargs):
+        """
+        Stub: Update claim status in database.
+        
+        Fallback when claims_submission module is not available.
+        In production, imports the real function from claims_submission.
+        
+        Returns:
+            bool: False (stub always returns failure)
+        """
         return False
     
     def get_claim_status(*args, **kwargs):
+        """
+        Stub: Get claim status from database.
+        
+        Fallback when claims_submission module is not available.
+        In production, imports the real function from claims_submission.
+        
+        Returns:
+            None (stub always returns None)
+        """
         return None
 
 
@@ -96,6 +114,18 @@ def get_verifying_claims(
     Get claims stuck in 'verifying' status for too long
     
     These should be auto-approved or flagged for manual review.
+    
+    Parameters:
+        db_path: Path to SQLite database file
+        older_than_seconds: Minimum age in seconds to consider "stuck" (default: 300s/5min)
+    
+    Returns:
+        List of claim dictionaries with claim_id, miner_id, epoch, wallet_address, reward_urtc, submitted_at
+    
+    Note:
+        - Claims in 'verifying' status should be processed within 5 minutes
+        - Older claims may indicate processing failures or manual review needed
+        - Returns empty list if no stuck claims found
     """
     threshold = int(time.time()) - older_than_seconds
     

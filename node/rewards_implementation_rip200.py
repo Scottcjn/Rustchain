@@ -7,6 +7,7 @@ Replaces VRF lottery with 1 CPU = 1 vote deterministic consensus
 import sqlite3
 import time
 import os
+from typing import Any, Dict, List, Optional, Union
 try:
     from flask import request, jsonify
 except ImportError:
@@ -14,6 +15,17 @@ except ImportError:
     request = None
 
     def jsonify(obj):
+        """
+        Convert object to JSON response.
+        
+        Fallback when Flask is not available.
+        
+        Args:
+            obj: Object to convert to JSON
+            
+        Returns:
+            Same object (passthrough in non-Flask context)
+        """
         return obj
 
 # Import RIP-200 functions
@@ -59,11 +71,11 @@ PER_EPOCH_URTC = int(1.5 * UNIT)  # 1,500,000 uRTC
 BLOCK_TIME = 600
 GENESIS_TIMESTAMP = 1728000000  # Placeholder - will be set from server
 
-def current_slot():
+def current_slot() -> int:
     """Get current blockchain slot"""
     return (int(time.time()) - GENESIS_TIMESTAMP) // BLOCK_TIME
 
-def slot_to_epoch(slot):
+def slot_to_epoch(slot: int) -> int:
     """Convert slot to epoch (144 blocks per epoch)"""
     return slot // 144
 
@@ -188,7 +200,7 @@ def settle_epoch_rip200(db_path, epoch: int):
         if own_conn:
             db.close()
 
-def total_balances(db):
+def total_balances(db: Union[sqlite3.Connection, str]) -> Dict[str, Any]:
     """Get total balance across all miners"""
     try:
         row = db.execute("SELECT COALESCE(SUM(amount_i64),0) FROM balances").fetchone()
@@ -196,11 +208,19 @@ def total_balances(db):
     except Exception:
         return 0
 
-def register_rewards_rip200(app, DB_PATH):
+def register_rewards_rip200(app: Any, DB_PATH: str) -> None:
     """Register RIP-200 rewards endpoints"""
 
     @app.route('/rewards/settle', methods=['POST'])
-    def settle_rewards():
+    def settle_rewards() -> Dict[str, Any]:
+        """
+        Settle rewards for an epoch via API.
+        
+        If epoch not provided, auto-settles the previous epoch.
+        
+        Returns:
+            Dict[str, Any]: Settlement result with eligible miners and distributed rewards
+        """
         data = request.json or {}
         epoch = data.get('epoch')
 
@@ -214,7 +234,16 @@ def register_rewards_rip200(app, DB_PATH):
         return jsonify(result)
 
     @app.route('/wallet/balance', methods=['GET'])
-    def get_balance():
+    def get_balance() -> Dict[str, Any]:
+        """
+        Get wallet balance for a specific miner.
+        
+        Query params:
+            miner_id: Miner ID to query
+            
+        Returns:
+            Dict[str, Any]: Balance in both micro-units (i64) and RTC
+        """
         miner_id = request.args.get('miner_id')
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
@@ -233,7 +262,13 @@ def register_rewards_rip200(app, DB_PATH):
             })
 
     @app.route('/wallet/balances/all', methods=['GET'])
-    def get_all_balances():
+    def get_all_balances() -> Dict[str, Any]:
+        """
+        Get all wallet balances sorted by amount descending.
+        
+        Returns:
+            Dict[str, Any]: List of balances with totals
+        """
         with sqlite3.connect(DB_PATH) as db:
             rows = db.execute(
                 "SELECT miner_id, amount_i64 FROM balances WHERE amount_i64 > 0 ORDER BY amount_i64 DESC"
@@ -257,7 +292,7 @@ def register_rewards_rip200(app, DB_PATH):
             })
 
     @app.route('/lottery/eligibility', methods=['GET'])
-    def check_eligibility():
+    def check_eligibility() -> Dict[str, Any]:
         """RIP-200: Round-robin eligibility check"""
         miner_id = request.args.get('miner_id')
         if not miner_id:
@@ -270,7 +305,7 @@ def register_rewards_rip200(app, DB_PATH):
         return jsonify(result)
 
     @app.route('/consensus/round_robin_status', methods=['GET'])
-    def round_robin_status():
+    def round_robin_status() -> Dict[str, Any]:
         """Get current round-robin rotation status"""
         current = current_slot()
         current_ts = int(time.time())

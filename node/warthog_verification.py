@@ -38,7 +38,7 @@ MIN_PLAUSIBLE_HEIGHT = 1000
 MAX_PROOF_AGE = 900  # 15 minutes
 
 
-def init_warthog_tables(conn):
+def init_warthog_tables(conn: sqlite3.Connection) -> None:
     """
     Create Warthog dual-mining tables if they don't exist.
 
@@ -156,7 +156,7 @@ def verify_warthog_proof(proof, miner_id) -> Tuple[bool, float, str]:
     return False, WART_BONUS_NONE, f"unknown_proof_type_{proof_type}"
 
 
-def record_warthog_proof(conn, miner_id, epoch, proof, verified, bonus_tier, reason):
+def record_warthog_proof(conn: sqlite3.Connection, miner_id: str, epoch: int, proof: dict, verified: bool, bonus_tier: float, reason: str) -> None:
     """
     Write Warthog proof record to database.
 
@@ -198,7 +198,7 @@ def record_warthog_proof(conn, miner_id, epoch, proof, verified, bonus_tier, rea
         print(f"[WARTHOG] Error recording proof: {e}")
 
 
-def get_warthog_bonus(conn, miner_id):
+def get_warthog_bonus(conn: sqlite3.Connection, miner_id: str) -> float:
     """
     Get current Warthog bonus for a miner from latest attestation.
 

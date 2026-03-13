@@ -10,7 +10,8 @@ import time
 import psutil
 import os
 from datetime import datetime, timedelta
-from flask import Flask, send_from_directory, render_template_string, jsonify, request
+from typing import Any, Dict, Optional
+from flask import Flask, send_from_directory, render_template_string, jsonify, request, Response
 import requests
 
 app = Flask(__name__)
@@ -430,13 +431,24 @@ DASHBOARD_HTML = """
 """
 
 @app.route('/')
-def dashboard():
-    """Main dashboard page"""
+def dashboard() -> str:
+    """
+    Render main mining dashboard HTML page.
+    
+    Returns:
+        str: Rendered HTML dashboard with stats, wallet search, and download links
+    """
     return render_template_string(DASHBOARD_HTML)
 
+
 @app.route('/api/stats')
-def api_stats():
-    """Get current mining and system statistics"""
+def api_stats() -> Response:
+    """
+    Get current mining and system statistics via JSON API.
+    
+    Returns:
+        Response: JSON response with epoch info, network stats, system metrics
+    """
     try:
         # Get epoch info from node API
         epoch_resp = requests.get(f"{NODE_API}/epoch", timeout=5)
@@ -581,8 +593,16 @@ def api_stats():
         }), 500
 
 @app.route('/api/wallet/<wallet_address>')
-def api_wallet_lookup(wallet_address):
-    """Look up wallet balance and info"""
+def api_wallet_lookup(wallet_address: str) -> Response:
+    """
+    Look up miner info by wallet address.
+    
+    Args:
+        wallet_address: RustChain wallet address to search for
+        
+    Returns:
+        Response: JSON response with miner details or 404 if not found
+    """
     try:
         with sqlite3.connect(DB_PATH) as conn:
             # Get balance
@@ -663,8 +683,16 @@ def api_wallet_lookup(wallet_address):
         print(f"Error in wallet lookup: {e}")
         return jsonify({'error': str(e)}), 500
 
-def format_uptime(seconds):
-    """Format uptime in human-readable format"""
+def format_uptime(seconds: int) -> str:
+    """
+    Format uptime seconds into human-readable string.
+    
+    Args:
+        seconds: Uptime in seconds
+        
+    Returns:
+        str: Formatted uptime (e.g., "5d 3h 22m 15s")
+    """
     days = int(seconds // 86400)
     hours = int((seconds % 86400) // 3600)
     if days > 0:
@@ -678,7 +706,16 @@ def format_uptime(seconds):
 
 
 @app.route('/downloads/<path:filename>')
-def download_file(filename):
+def download_file(filename: str) -> "flask.Response":
+    """
+    Serve downloadable files from downloads directory.
+    
+    Args:
+        filename: Name of file to download
+        
+    Returns:
+        Response: File download response with attachment header
+    """
     from flask import send_from_directory
     return send_from_directory(DOWNLOAD_DIR, filename, as_attachment=True)
 

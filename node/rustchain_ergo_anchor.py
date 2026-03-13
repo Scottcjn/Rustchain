@@ -18,7 +18,7 @@ import hashlib
 import logging
 import threading
 import requests
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 
 from rustchain_crypto import blake2b256_hex, canonical_json, MerkleTree
@@ -109,6 +109,13 @@ class ErgoClient:
     """
 
     def __init__(self, node_url: str = ERGO_NODE_URL, api_key: str = ERGO_API_KEY):
+        """
+        Initialize Ergo node client.
+        
+        Args:
+            node_url: Ergo node API URL (default: ERGO_NODE_URL)
+            api_key: API key for authentication (default: ERGO_API_KEY)
+        """
         self.node_url = node_url.rstrip('/')
         self.api_key = api_key
         self.session = requests.Session()
@@ -278,6 +285,14 @@ class AnchorService:
         ergo_client: ErgoClient = None,
         interval_blocks: int = ANCHOR_INTERVAL_BLOCKS
     ):
+        """
+        Initialize anchor service.
+        
+        Args:
+            db_path: Path to SQLite database for anchor storage
+            ergo_client: Optional ErgoClient instance (creates default if None)
+            interval_blocks: Number of Ergo blocks between anchors (default: 144)
+        """
         self.db_path = db_path
         self.ergo = ergo_client or ErgoClient()
         self.interval_blocks = interval_blocks
@@ -480,7 +495,7 @@ class AnchorService:
 # API ROUTES
 # =============================================================================
 
-def create_anchor_api_routes(app, anchor_service: AnchorService):
+def create_anchor_api_routes(app: Any, anchor_service: AnchorService) -> None:
     """Create Flask routes for anchor API"""
     from flask import request, jsonify
 

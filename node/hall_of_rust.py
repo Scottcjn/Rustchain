@@ -5,11 +5,14 @@ Every machine that ever attests gets a permanent on-chain memorial.
 This is the emotional core of RustChain.
 """
 
-from flask import Blueprint, jsonify, request
+from __future__ import annotations
+
+from flask import Blueprint, jsonify, request, Flask
 import sqlite3
 import hashlib
 import time
 import json
+from typing import Dict, List, Any, Optional, Tuple
 
 hall_bp = Blueprint('hall_of_rust', __name__)
 
@@ -35,7 +38,7 @@ CAPACITOR_PLAGUE_MODELS = [
     'Dell GX280',
 ]
 
-def init_hall_tables(db_path):
+def init_hall_tables(db_path: str) -> None:
     """Create Hall of Rust tables if they don't exist."""
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
@@ -80,7 +83,7 @@ def init_hall_tables(db_path):
     conn.commit()
     conn.close()
 
-def calculate_rust_score(machine):
+def calculate_rust_score(machine: Dict[str, Any]) -> float:
     """Calculate the Rust Score for a machine - higher = rustier = better."""
     score = 0
     
@@ -120,7 +123,7 @@ def calculate_rust_score(machine):
     
     return round(score, 2)
 
-def estimate_manufacture_year(model, arch):
+def estimate_manufacture_year(model: str, arch: str) -> int:
     """Estimate manufacture year from model string."""
     year_hints = {
         'PowerMac1,': 1999, 'PowerMac3,1': 2000, 'PowerMac3,3': 2001,
@@ -144,7 +147,7 @@ def estimate_manufacture_year(model, arch):
 # ============== API ENDPOINTS ==============
 
 @hall_bp.route('/hall/induct', methods=['POST'])
-def induct_machine():
+def induct_machine() -> Tuple[Any, int]:
     """Automatically induct a machine into the Hall of Rust on first attestation."""
     data = request.json or {}
     
@@ -237,7 +240,7 @@ def induct_machine():
         return jsonify({'error': str(e)}), 500
 
 @hall_bp.route('/hall/machine/<fingerprint>', methods=['GET'])
-def get_machine(fingerprint):
+def get_machine(fingerprint: str) -> Tuple[Any, int]:
     """Get a machine's Hall of Rust entry."""
     try:
         from flask import current_app
@@ -258,7 +261,7 @@ def get_machine(fingerprint):
         return jsonify({'error': str(e)}), 500
 
 @hall_bp.route('/hall/leaderboard', methods=['GET'])
-def rust_leaderboard():
+def rust_leaderboard() -> Tuple[Any, int]:
     """Get the Rust Score leaderboard - rustiest machines on top."""
     try:
         from flask import current_app
@@ -297,7 +300,7 @@ def rust_leaderboard():
         return jsonify({'error': str(e)}), 500
 
 @hall_bp.route('/hall/eulogy/<fingerprint>', methods=['POST'])
-def set_eulogy(fingerprint):
+def set_eulogy(fingerprint: str) -> Tuple[Any, int]:
     """Set a eulogy/nickname for a machine. For when it finally dies."""
     data = request.json or {}
     
@@ -334,7 +337,7 @@ def set_eulogy(fingerprint):
         return jsonify({'error': str(e)}), 500
 
 @hall_bp.route('/hall/stats', methods=['GET'])
-def hall_stats():
+def hall_stats() -> Tuple[Any, int]:
     """Get overall Hall of Rust statistics."""
     try:
         from flask import current_app
@@ -373,7 +376,7 @@ def hall_stats():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-def get_rust_badge(score):
+def get_rust_badge(score: float) -> str:
     """Get a badge based on Rust Score."""
     if score >= 200:
         return "Oxidized Legend"
@@ -390,7 +393,7 @@ def get_rust_badge(score):
     else:
         return "Fresh Metal"
 
-def get_ascii_silhouette(device_arch, device_model=""):
+def get_ascii_silhouette(device_arch: Optional[str], device_model: str = "") -> str:
     """Return an ASCII silhouette for known machine families."""
     arch = str(device_arch or "").lower()
     model = str(device_model or "").lower()
@@ -429,7 +432,8 @@ def get_ascii_silhouette(device_arch, device_model=""):
         "  |_|___________|_|\n"
     )
 
-def _table_exists(cursor, table_name):
+def _table_exists(cursor: sqlite3.Cursor, table_name: str) -> bool:
+    """Check if a table exists in the database."""
     row = cursor.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
         (table_name,),
@@ -438,7 +442,7 @@ def _table_exists(cursor, table_name):
 
 
 @hall_bp.route('/api/hall_of_fame/machine', methods=['GET'])
-def api_hall_of_fame_machine():
+def api_hall_of_fame_machine() -> Tuple[Any, int]:
     """Machine profile endpoint for Hall of Fame detail page."""
     machine_id = (request.args.get('id') or '').strip()
     if not machine_id:
@@ -560,7 +564,7 @@ def api_hall_of_fame_machine():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-def register_hall_endpoints(app, db_path):
+def register_hall_endpoints(app: Flask, db_path: str) -> None:
     """Register Hall of Rust endpoints with Flask app."""
     app.config['DB_PATH'] = db_path
     init_hall_tables(db_path)
@@ -589,7 +593,7 @@ VINTAGE_FACTS = [
 ]
 
 @hall_bp.route('/hall/random_fact', methods=['GET'])
-def random_fact():
+def random_fact() -> Tuple[Any, int]:
     """Get a random fun fact about vintage hardware."""
     return jsonify({
         'fact': random.choice(VINTAGE_FACTS),
@@ -597,7 +601,7 @@ def random_fact():
     })
 
 @hall_bp.route('/hall/machine_of_the_day', methods=['GET'])
-def machine_of_the_day():
+def machine_of_the_day() -> Tuple[Any, int]:
     """Get a random machine from the hall to spotlight."""
     try:
         from flask import current_app
@@ -630,7 +634,7 @@ def machine_of_the_day():
         return jsonify({'error': str(e)}), 500
 
 @hall_bp.route('/hall/fleet_breakdown', methods=['GET'])
-def fleet_breakdown():
+def fleet_breakdown() -> Tuple[Any, int]:
     """Get breakdown of machine types in the fleet."""
     try:
         from flask import current_app
@@ -670,7 +674,7 @@ def fleet_breakdown():
         return jsonify({'error': str(e)}), 500
 
 @hall_bp.route('/hall/timeline', methods=['GET'])
-def hall_timeline():
+def hall_timeline() -> Tuple[Any, int]:
     """Get timeline of when machines joined the hall."""
     try:
         from flask import current_app

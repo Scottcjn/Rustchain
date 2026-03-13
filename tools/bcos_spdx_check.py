@@ -36,6 +36,10 @@ CODE_EXTS = {
     ".go",
 }
 
+# Regex pattern to match SPDX license identifiers in source files.
+# Matches the standard format: "SPDX-License-Identifier: <license-id>"
+# where <license-id> can contain letters, numbers, dots, hyphens, and plus signs.
+# Examples: MIT, Apache-2.0, BSD-3-Clause, GPL-3.0-or-later
 SPDX_RE = re.compile(r"SPDX-License-Identifier:\s*[A-Za-z0-9.\-+]+")
 
 
@@ -73,6 +77,16 @@ def _top_lines(path: Path, max_lines: int = 25) -> List[str]:
 
 
 def _has_spdx(lines: List[str]) -> bool:
+    """Check if a file has a valid SPDX header in the first ~20 lines.
+    
+    Algorithm:
+    1. Skip shebang line (#!) if present - common in shell/Python scripts
+    2. Examine only the first 20 lines after shebang removal
+    3. Search for SPDX-License-Identifier pattern anywhere in that snippet
+    
+    This allows flexibility in header placement while ensuring the license
+    is visible near the top of the file.
+    """
     if not lines:
         return False
     # Skip leading shebang on scripts.

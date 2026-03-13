@@ -6,16 +6,26 @@ Beacon envelopes (hello, heartbeat, want, bounty, mayday, accord, pushback)
 are stored in rustchain_v2.db and periodically committed to Ergo via the
 existing ergo_miner_anchor.py system.
 """
-import sqlite3, time, json
+from __future__ import annotations
+
+import sqlite3
+import time
+import json
 from hashlib import blake2b
+from typing import Any, Dict, List
 
 DB_PATH = "/root/rustchain/rustchain_v2.db"
 
 VALID_KINDS = {"hello", "heartbeat", "want", "bounty", "mayday", "accord", "pushback"}
 
 
-def init_beacon_table(db_path=DB_PATH):
-    """Create beacon_envelopes table if it doesn't exist."""
+def init_beacon_table(db_path: str = DB_PATH) -> None:
+    """
+    Create beacon_envelopes table if it doesn't exist.
+    
+    Parameters:
+        db_path: Path to SQLite database file
+    """
     with sqlite3.connect(db_path) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS beacon_envelopes (
@@ -41,16 +51,31 @@ def init_beacon_table(db_path=DB_PATH):
         conn.commit()
 
 
-def hash_envelope(envelope: dict) -> str:
-    """Compute blake2b hash of the full envelope JSON (canonical, sorted keys)."""
+def hash_envelope(envelope: Dict[str, Any]) -> str:
+    """
+    Compute blake2b hash of the full envelope JSON (canonical, sorted keys).
+    
+    Parameters:
+        envelope: Beacon envelope dictionary
+    
+    Returns:
+        Blake2b hash as hex string
+    """
     data = json.dumps(envelope, sort_keys=True, separators=(',', ':')).encode()
     return blake2b(data, digest_size=32).hexdigest()
 
 
-def store_envelope(envelope: dict, db_path=DB_PATH) -> dict:
+def store_envelope(envelope: Dict[str, Any], db_path: str = DB_PATH) -> Dict[str, Any]:
     """
-    Store a beacon envelope. Returns {"ok": True, "id": <row_id>} or error dict.
-    Expects envelope to have: agent_id, kind, nonce, sig, pubkey
+    Store a beacon envelope.
+    
+    Parameters:
+        envelope: Beacon envelope dictionary with agent_id, kind, nonce, sig, pubkey
+        db_path: Path to SQLite database file
+    
+    Returns:
+        Success: {"ok": True, "id": row_id, "payload_hash": hash}
+        Error: {"ok": False, "error": error_code}
     """
     agent_id = envelope.get("agent_id", "")
     kind = envelope.get("kind", "")
@@ -80,11 +105,16 @@ def store_envelope(envelope: dict, db_path=DB_PATH) -> dict:
         return {"ok": False, "error": "duplicate_nonce"}
 
 
-def compute_beacon_digest(db_path=DB_PATH) -> dict:
+def compute_beacon_digest(db_path: str = DB_PATH) -> Dict[str, Any]:
     """
     Compute a blake2b digest of all un-anchored beacon envelopes.
-    Returns {"digest": hex, "count": N, "ids": [...], "latest_ts": T}
-    or {"digest": None, "count": 0} if no pending envelopes.
+    
+    Parameters:
+        db_path: Path to SQLite database file
+    
+    Returns:
+        Dict with digest, count, ids, latest_ts
+        If no pending envelopes: {"digest": None, "count": 0, "ids": [], "latest_ts": 0}
     """
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(
@@ -111,8 +141,14 @@ def compute_beacon_digest(db_path=DB_PATH) -> dict:
     }
 
 
-def mark_anchored(envelope_ids: list, db_path=DB_PATH):
-    """Set anchored=1 for the given envelope IDs."""
+def mark_anchored(envelope_ids: List[int], db_path: str = DB_PATH) -> None:
+    """
+    Set anchored=1 for the given envelope IDs.
+    
+    Parameters:
+        envelope_ids: List of envelope IDs to mark as anchored
+        db_path: Path to SQLite database file
+    """
     if not envelope_ids:
         return
     with sqlite3.connect(db_path) as conn:
@@ -124,8 +160,18 @@ def mark_anchored(envelope_ids: list, db_path=DB_PATH):
         conn.commit()
 
 
-def get_recent_envelopes(limit=50, offset=0, db_path=DB_PATH) -> list:
-    """Return recent envelopes, newest first."""
+def get_recent_envelopes(limit: int = 50, offset: int = 0, db_path: str = DB_PATH) -> List[Dict[str, Any]]:
+    """
+    Return recent envelopes, newest first.
+    
+    Parameters:
+        limit: Maximum number of envelopes to return (default: 50)
+        offset: Pagination offset (default: 0)
+        db_path: Path to SQLite database file
+    
+    Returns:
+        List of envelope dictionaries
+    """
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(

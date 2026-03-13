@@ -69,6 +69,14 @@ class RustChainMigration:
         mainnet_db: str = MAINNET_DB_PATH,
         backup_dir: str = BACKUP_DIR
     ):
+        """
+        Initialize migration handler.
+        
+        Args:
+            testnet_db: Path to testnet database (default: TESTNET_DB_PATH)
+            mainnet_db: Path to mainnet database (default: MAINNET_DB_PATH)
+            backup_dir: Directory for database backups (default: BACKUP_DIR)
+        """
         self.testnet_db = testnet_db
         self.mainnet_db = mainnet_db
         self.backup_dir = backup_dir
@@ -585,7 +593,7 @@ class RustChainMigration:
 # CLI
 # =============================================================================
 
-def main():
+def main() -> None:
     """CLI entry point"""
     import argparse
 

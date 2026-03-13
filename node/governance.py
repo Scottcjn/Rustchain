@@ -28,8 +28,8 @@ import json
 import logging
 import sqlite3
 import time
-from typing import Optional
-from flask import Blueprint, request, jsonify
+from typing import Optional, Any, Dict, List, Tuple
+from flask import Blueprint, Request, Response, jsonify
 
 log = logging.getLogger("rip0002_governance")
 
@@ -91,8 +91,12 @@ CREATE TABLE IF NOT EXISTS governance_votes (
 """
 
 
-def init_governance_tables(db_path: str):
-    """Create governance tables if they don't exist."""
+def init_governance_tables(db_path: str) -> None:
+    """Create governance tables if they don't exist.
+    
+    Args:
+        db_path: Path to the SQLite database file
+    """
     with sqlite3.connect(db_path) as conn:
         conn.executescript(GOVERNANCE_SCHEMA)
         conn.commit()
@@ -104,7 +108,15 @@ def init_governance_tables(db_path: str):
 # ---------------------------------------------------------------------------
 
 def _get_miner_antiquity_weight(miner_id: str, db_path: str) -> float:
-    """Return the antiquity multiplier for a miner (default 1.0 if not found)."""
+    """Return the antiquity multiplier for a miner (default 1.0 if not found).
+    
+    Args:
+        miner_id: Wallet name/ID of the miner
+        db_path: Path to the SQLite database
+        
+    Returns:
+        float: Antiquity multiplier (>= 1.0), or 1.0 if not found
+    """
     try:
         with sqlite3.connect(db_path) as conn:
             row = conn.execute(
@@ -119,7 +131,15 @@ def _get_miner_antiquity_weight(miner_id: str, db_path: str) -> float:
 
 
 def _is_active_miner(miner_id: str, db_path: str) -> bool:
-    """Check if the miner has attested recently (within last 2 epochs ~24h)."""
+    """Check if the miner has attested recently (within last 2 epochs ~24h).
+    
+    Args:
+        miner_id: Wallet name/ID of the miner
+        db_path: Path to the SQLite database
+        
+    Returns:
+        bool: True if miner has at least one attestation in last 48 hours
+    """
     try:
         cutoff = int(time.time()) - 86400 * 2
         with sqlite3.connect(db_path) as conn:
@@ -134,7 +154,14 @@ def _is_active_miner(miner_id: str, db_path: str) -> bool:
 
 
 def _count_active_miners(db_path: str) -> int:
-    """Count miners who attested in the last 2 days (quorum denominator)."""
+    """Count miners who attested in the last 2 days (quorum denominator).
+    
+    Args:
+        db_path: Path to the SQLite database
+        
+    Returns:
+        int: Number of distinct miners with attestations in last 48 hours
+    """
     try:
         cutoff = int(time.time()) - 86400 * 2
         with sqlite3.connect(db_path) as conn:
@@ -149,12 +176,25 @@ def _count_active_miners(db_path: str) -> int:
 
 
 def _is_within_founder_veto_period() -> bool:
-    """Return True if still within the 2-year founder veto window."""
+    """Return True if still within the 2-year founder veto window.
+    
+    Returns:
+        bool: True if current time is within FOUNDER_VETO_DURATION of GENESIS_TIMESTAMP
+    """
     return (time.time() - GENESIS_TIMESTAMP) < FOUNDER_VETO_DURATION
 
 
-def _settle_expired_proposals(db_path: str):
-    """Settle any proposals whose voting window has closed."""
+def _settle_expired_proposals(db_path: str) -> None:
+    """Settle any proposals whose voting window has closed.
+    
+    Updates proposal status based on vote tallies and quorum requirements.
+    
+    Args:
+        db_path: Path to the SQLite database
+        
+    Returns:
+        None
+    """
     now = int(time.time())
     try:
         with sqlite3.connect(db_path) as conn:
@@ -184,8 +224,15 @@ def _settle_expired_proposals(db_path: str):
         log.error("Error settling expired proposals: %s", e)
 
 
-def _sophia_evaluate(proposal: dict) -> str:
-    """Generate a simple AI-style impact analysis for a proposal."""
+def _sophia_evaluate(proposal: Dict[str, Any]) -> str:
+    """Generate a simple AI-style impact analysis for a proposal.
+    
+    Args:
+        proposal: Dictionary containing proposal data (title, description, proposal_type, etc.)
+        
+    Returns:
+        str: Formatted analysis text with risk level and recommendations
+    """
     ptype = proposal.get("proposal_type", "unknown")
     title = proposal.get("title", "")
     desc = proposal.get("description", "")[:500]
@@ -218,11 +265,36 @@ def _sophia_evaluate(proposal: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def create_governance_blueprint(db_path: str) -> Blueprint:
+    """Create Flask blueprint for governance API endpoints.
+    
+    Args:
+        db_path: Path to the SQLite database
+        
+    Returns:
+        Flask Blueprint with all governance routes registered
+    """
     bp = Blueprint("governance", __name__)
 
     # -- POST /api/governance/propose ----------------------------------------
     @bp.route("/api/governance/propose", methods=["POST"])
-    def create_proposal():
+    def create_proposal() -> Tuple[Response, int]:
+        """
+        Create a new governance proposal.
+        
+        Requires active miner attestation. Validates proposal type, title,
+        description, and enforces anti-spam limits.
+        
+        Returns:
+            Tuple[Response, int]: JSON response with proposal_id and status
+        """
+        """Create a new governance proposal.
+        
+        Validates miner eligibility, proposal data, and enforces anti-spam limits.
+        Automatically generates Sophia AI evaluation for the proposal.
+        
+        Returns:
+            Tuple[Response, int]: JSON response with proposal_id and status, HTTP 201 on success
+        """
         _settle_expired_proposals(db_path)
         data = request.get_json(silent=True) or {}
 
@@ -297,7 +369,28 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
 
     # -- GET /api/governance/proposals ----------------------------------------
     @bp.route("/api/governance/proposals", methods=["GET"])
-    def list_proposals():
+    def list_proposals() -> Tuple[Response, int]:
+        """
+        List governance proposals with optional status filter.
+        
+        Query params:
+            status: Filter by proposal status (optional)
+            limit: Max results (default: 50, max: 200)
+            offset: Pagination offset (default: 0)
+        
+        Returns:
+            Tuple[Response, int]: JSON response with proposals list and count
+        """
+        """List all governance proposals with optional status filter.
+        
+        Query params:
+            status: Filter by proposal status (optional)
+            limit: Max results (default 50, max 200)
+            offset: Pagination offset (default 0)
+        
+        Returns:
+            Tuple[Response, int]: JSON response with proposals list and count
+        """
         _settle_expired_proposals(db_path)
         status_filter = request.args.get("status")
         limit = min(int(request.args.get("limit", 50)), 200)
@@ -327,7 +420,24 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
 
     # -- GET /api/governance/proposal/<n> ------------------------------------
     @bp.route("/api/governance/proposal/<int:proposal_id>", methods=["GET"])
-    def get_proposal(proposal_id: int):
+    def get_proposal(proposal_id: int) -> Tuple[Response, int]:
+        """
+        Get details of a specific proposal including votes.
+        
+        Args:
+            proposal_id: Proposal ID number
+            
+        Returns:
+            Tuple[Response, int]: JSON response with proposal details and votes
+        """
+        """Get detailed information about a specific proposal including all votes.
+        
+        Args:
+            proposal_id: The proposal ID to retrieve
+        
+        Returns:
+            Tuple[Response, int]: JSON response with proposal data and votes, or 404 if not found
+        """
         _settle_expired_proposals(db_path)
         try:
             with sqlite3.connect(db_path) as conn:
@@ -356,7 +466,24 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
 
     # -- POST /api/governance/vote -------------------------------------------
     @bp.route("/api/governance/vote", methods=["POST"])
-    def cast_vote():
+    def cast_vote() -> Tuple[Response, int]:
+        """
+        Cast a vote on a governance proposal.
+        
+        Requires active miner attestation. Vote weight is determined by
+        miner's antiquity multiplier. Each miner can vote once per proposal.
+        
+        Returns:
+            Tuple[Response, int]: JSON response with vote confirmation
+        """
+        """Cast or update a vote on a governance proposal.
+        
+        Validates miner eligibility (active attestation required) and proposal status.
+        Supports vote changes (upsert) and updates vote tallies in real-time.
+        
+        Returns:
+            Tuple[Response, int]: JSON response with vote confirmation and updated quorum status
+        """
         _settle_expired_proposals(db_path)
         data = request.get_json(silent=True) or {}
 
@@ -454,7 +581,15 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
 
     # -- GET /api/governance/results/<n> ------------------------------------
     @bp.route("/api/governance/results/<int:proposal_id>", methods=["GET"])
-    def get_results(proposal_id: int):
+    def get_results(proposal_id: int) -> Tuple[Response, int]:
+        """Get final voting results and statistics for a proposal.
+        
+        Args:
+            proposal_id: The proposal ID to get results for
+        
+        Returns:
+            Tuple[Response, int]: JSON response with vote tallies, quorum info, and participation metrics
+        """
         _settle_expired_proposals(db_path)
         try:
             with sqlite3.connect(db_path) as conn:
@@ -491,7 +626,18 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
 
     # -- POST /api/governance/veto/<n> (founder veto) -----------------------
     @bp.route("/api/governance/veto/<int:proposal_id>", methods=["POST"])
-    def founder_veto(proposal_id: int):
+    def founder_veto(proposal_id: int) -> Tuple[Response, int]:
+        """Exercise founder veto on a proposal (security-critical changes only).
+        
+        Only available within the first 2 years of RustChain genesis.
+        Requires valid admin_key from environment variable RUSTCHAIN_ADMIN_KEY.
+        
+        Args:
+            proposal_id: The proposal ID to veto
+        
+        Returns:
+            Tuple[Response, int]: JSON response confirming veto status, or 403 if veto period expired
+        """
         if not _is_within_founder_veto_period():
             return jsonify({"error": "Founder veto period has expired"}), 403
 
@@ -531,7 +677,12 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
 
     # -- GET /api/governance/stats ------------------------------------------
     @bp.route("/api/governance/stats", methods=["GET"])
-    def governance_stats():
+    def governance_stats() -> Tuple[Response, int]:
+        """Get overall governance statistics and system parameters.
+        
+        Returns:
+            Tuple[Response, int]: JSON response with proposal counts, total votes, active miners, and governance config
+        """
         _settle_expired_proposals(db_path)
         try:
             with sqlite3.connect(db_path) as conn:

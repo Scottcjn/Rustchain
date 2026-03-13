@@ -10,6 +10,9 @@ Usage:
 import os
 import sys
 import importlib.util
+from typing import Any, Optional
+
+from flask import Flask
 
 # Ensure the rustchain directory is in path
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +27,7 @@ rustchain_main = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rustchain_main)
 
 # Get the Flask app
-app = rustchain_main.app
+app: Flask = rustchain_main.app
 init_db = rustchain_main.init_db
 DB_PATH = rustchain_main.DB_PATH
 
@@ -32,7 +35,7 @@ DB_PATH = rustchain_main.DB_PATH
 init_db()
 
 # Initialize P2P if available
-p2p_node = None
+p2p_node: Optional[Any] = None
 try:
     from rustchain_p2p_init import init_p2p
     p2p_node = init_p2p(app, DB_PATH)
@@ -43,7 +46,7 @@ except Exception as e:
     print(f"[WSGI] P2P init failed: {e}")
 
 # Expose the app for gunicorn
-application = app
+application: Flask = app
 
 if __name__ == "__main__":
     # For direct execution (development)

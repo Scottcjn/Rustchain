@@ -100,6 +100,12 @@ class TransactionPool:
     """
 
     def __init__(self, db_path: str):
+        """
+        Initialize transaction pool with database connection.
+        
+        Args:
+            db_path: Path to SQLite database for transaction storage
+        """
         self.db_path = db_path
         self._lock = threading.Lock()
         self._ensure_schema()
@@ -514,7 +520,7 @@ class TransactionPool:
 # TRANSACTION API ENDPOINTS
 # =============================================================================
 
-def create_tx_api_routes(app, tx_pool: TransactionPool):
+def create_tx_api_routes(app: "flask.Flask", tx_pool: TransactionPool) -> None:
     """
     Create Flask routes for transaction API.
 

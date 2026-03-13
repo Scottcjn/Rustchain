@@ -30,6 +30,12 @@ class Bounty:
     labels: List[str] = field(default_factory=list)
     
     def to_dict(self) -> Dict:
+        """
+        Convert bounty to dictionary for JSON serialization.
+        
+        Returns:
+            Dictionary with all bounty fields
+        """
         return {
             "issue_number": self.issue_number,
             "title": self.title,
@@ -45,6 +51,15 @@ class Bounty:
     
     @classmethod
     def from_dict(cls, data: Dict) -> "Bounty":
+        """
+        Create Bounty instance from dictionary.
+        
+        Args:
+            data: Dictionary with bounty fields
+            
+        Returns:
+            New Bounty instance
+        """
         return cls(
             issue_number=data.get("issue_number", 0),
             title=data.get("title", ""),
@@ -69,7 +84,15 @@ class BountyTracker:
         github_token: str,
         repo: str = "Scottcjn/Rustchain",
         state_file: Optional[str] = None,
-    ):
+    ) -> None:
+        """
+        Initialize bounty tracker with GitHub API access.
+        
+        Args:
+            github_token: GitHub personal access token for API authentication
+            repo: GitHub repository in 'owner/repo' format
+            state_file: Path to JSON file for persisting bounty state
+        """
         self.github_token = github_token
         self.repo = repo
         self.state_file = state_file or "bounty_tracker_state.json"
@@ -82,7 +105,7 @@ class BountyTracker:
         })
         self._load_state()
     
-    def _load_state(self):
+    def _load_state(self) -> None:
         """Load state from file"""
         path = Path(self.state_file)
         if path.exists():
@@ -94,7 +117,7 @@ class BountyTracker:
             except (json.JSONDecodeError, KeyError):
                 pass
     
-    def _save_state(self):
+    def _save_state(self) -> None:
         """Save state to file"""
         path = Path(self.state_file)
         data = {
@@ -243,7 +266,7 @@ class BountyTracker:
         )
 
 
-def main():
+def main() -> int:
     """CLI entry point"""
     import argparse
     

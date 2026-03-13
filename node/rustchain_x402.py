@@ -11,8 +11,9 @@ import logging
 import os
 import sqlite3
 import time
+from typing import Any, Dict, Optional, Tuple
 
-from flask import jsonify, request
+from flask import Flask, jsonify, request, Response
 
 log = logging.getLogger("rustchain.x402")
 
@@ -38,7 +39,7 @@ except ImportError:
 COINBASE_MIGRATION = "ALTER TABLE balances ADD COLUMN coinbase_address TEXT DEFAULT NULL"
 
 
-def _run_migration(db_path):
+def _run_migration(db_path: str) -> None:
     """Add coinbase_address column to balances if missing."""
     conn = sqlite3.connect(db_path)
     cursor = conn.execute("PRAGMA table_info(balances)")
@@ -53,7 +54,7 @@ def _run_migration(db_path):
     conn.close()
 
 
-def init_app(app, db_path):
+def init_app(app: Flask, db_path: str) -> None:
     """Register x402 routes on the RustChain Flask app."""
 
     try:
@@ -62,12 +63,12 @@ def init_app(app, db_path):
         log.error(f"RustChain x402 migration failed: {e}")
 
     @app.route("/wallet/swap-info", methods=["GET"])
-    def wallet_swap_info():
+    def wallet_swap_info() -> Response:
         """Returns Aerodrome pool info for USDC→wRTC swap guidance."""
         return jsonify(SWAP_INFO)
 
     @app.route("/wallet/link-coinbase", methods=["PATCH", "POST"])
-    def wallet_link_coinbase():
+    def wallet_link_coinbase() -> Tuple[Response, int] | Response:
         """Link a Coinbase Base address to a miner_id. Requires admin key."""
         admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
         expected = os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64")

@@ -3,6 +3,7 @@
 import os
 import sys
 import time
+from typing import Any
 
 from rustchain_ergo_anchor import AnchorService, ErgoClient
 

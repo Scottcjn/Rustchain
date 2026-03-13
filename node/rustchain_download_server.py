@@ -6,6 +6,7 @@ Serves miners via HTTP on port 8090
 
 from flask import Flask, send_from_directory, render_template_string
 import os
+from typing import Any
 
 app = Flask(__name__)
 DOWNLOAD_DIR = "/root/rustchain/downloads"
@@ -196,11 +197,26 @@ HTML_TEMPLATE = """
 """
 
 @app.route('/')
-def index():
+def index() -> str:
+    """
+    Serve the download landing page.
+    
+    Returns:
+        Rendered HTML template with available downloads list
+    """
     return render_template_string(HTML_TEMPLATE)
 
 @app.route('/downloads/<path:filename>')
-def download_file(filename):
+def download_file(filename: str) -> Any:
+    """
+    Serve a file from the downloads directory.
+    
+    Args:
+        filename: Name of file to download
+        
+    Returns:
+        Flask response with file as attachment
+    """
     return send_from_directory(DOWNLOAD_DIR, filename, as_attachment=True)
 
 if __name__ == '__main__':

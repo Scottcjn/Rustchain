@@ -7,6 +7,7 @@ Serves miners via HTTP on port 8090
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import os
 import urllib.parse
+from typing import Any
 
 DOWNLOAD_DIR = "/root/rustchain/downloads"
 
@@ -172,7 +173,15 @@ HTML_PAGE = """<!DOCTYPE html>
 </html>"""
 
 class DownloadHandler(SimpleHTTPRequestHandler):
-    def do_GET(self):
+    """HTTP request handler for RustChain download page."""
+    
+    def do_GET(self) -> None:
+        """
+        Handle GET requests for download page and files.
+        
+        Serves HTML page at root path, files from DOWNLOAD_DIR for other paths.
+        Sets appropriate Content-Type and Content-Disposition headers.
+        """
         if self.path == '/' or self.path == '/index.html':
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
