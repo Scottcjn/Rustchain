@@ -1,21 +1,20 @@
 # Bounty Contribution
 
-This addresses issue #931: feat: PlayStation 1 Miner Implementation for Bounty #430
+This addresses issue #933: Add IBM PC/XT DOS Miner (Bounty #422)
 
 ## Description
 ## Summary
-This PR implements a complete PlayStation 1 mining solution for bounty #430.
+This PR implements a complete DOS-compatible miner for IBM PC/XT systems with 8088 CPU.
 
 ## Changes
-- **ps1_miner/**: C implementation for PS1 hardware (~1,500 lines)
-  - SHA256 hashing optimized for PS1 MIPS R3000A (33MHz)
-  - Serial communication via PS1 serial port (9600 baud)
-  - Memory card integration for persistent storage
-  - Hardware fingerprinting for device identification
-  
-- **ps1_bridge/**: Python bridge software (~200 lines)
-  - Serial port management for host-PS1 communication
-  
+- Added miners/dos-xt/ directory with full DOS miner implementation
+- Uses PIT timer for timing and DOS interrupts for hardware access
+- Implements Rustchain stratum protocol over packet driver (NE2000 compatible)
+- Includes build scripts and comprehensive documentation
+
+## Files Added
+- miners/dos-xt/main.c - Main entry point and miner loop
+- miners/dos-xt/hw_xt.c/h - IBM PC/XT hardwar
 
 ## Payment
 0x4F666e7b4F63637223625FD4e9Ace6055fD6a847
