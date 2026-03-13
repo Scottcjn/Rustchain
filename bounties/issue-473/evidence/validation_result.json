@@ -1,0 +1,13 @@
+{
+  "node_url": "https://rustchain.org",
+  "validation_time": "2026-03-13T09:24:04.456819Z",
+  "state_hash_match": true,
+  "reported_hash": "b2e6338365a58e98",
+  "computed_hash": "b2e6338365a58e98",
+  "epoch": 100,
+  "slot": 14478,
+  "miner_count": 16,
+  "status": "valid",
+  "error_message": null,
+  "response_time_ms": 4625.675916671753
+}
