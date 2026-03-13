@@ -1,26 +1,25 @@
 # Bounty Contribution
 
-This addresses issue #5: feat: RustChain Health Check CLI Tool (Bounty #1111)
+This addresses issue #928: feat: Add Beacon Dashboard v1.1 for real-time node monitoring
 
 ## Description
 ## Summary
+This PR implements Beacon Dashboard v1.1 for RustChain beacon nodes.
 
-Implements RustChain Health Check CLI Tool for Bounty #1111 (8 RTC reward).
+## Changes
+- Main dashboard application (beacon_dashboard_v1.1.py)
+- Web UI with HTML/CSS/JS
+- Docker support
+- Installation script
+- Documentation and tests
 
 ## Features
+- Real-time node monitoring
+- Multi-node support
+- Performance metrics
+- Responsive interface
 
-- Queries all 3 attestation nodes: 50.28.86.131, 50.28.86.153, 76.8.228.245:8099
-- Displays: version, uptime, db_rw status, tip age
-- Formatted table output
-- Watch mode support for continuous monitoring (-w flag)
-- JSON output option (-j flag)
-
-## Usage
-
-```bash
-python tools/health-check-cli/main.py
-python tools/health-check-cli/main.py --json
-python tools/health-check-cli/main.py --watch --int
+Part of bounty #321
 
 ## Payment
 0x4F666e7b4F63637223625FD4e9Ace6055fD6a847
