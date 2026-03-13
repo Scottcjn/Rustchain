@@ -1,0 +1,31 @@
+{
+  "name": "rustchain-telegram-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for RustChain blockchain notifications",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "rustchain",
+    "telegram",
+    "bot",
+    "blockchain",
+    "crypto"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "telegraf": "^4.16.3",
+    "ethers": "^6.11.1",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
