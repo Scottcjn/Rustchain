@@ -36,6 +36,8 @@ API 端点:
 钱包：noxventures_rtc
 """
 
+from __future__ import annotations
+
 import time
 import math
 import threading
@@ -44,7 +46,8 @@ import os
 import json
 import ssl
 import urllib.request
-from flask import Blueprint, jsonify, request
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from flask import Blueprint, jsonify, request, Response
 
 # ─── 配置参数 ─────────────────────────────────────────────────────────────────── #
 # 数据库路径：存储代理工作记录、矿工 attest 等链上数据
@@ -115,7 +118,7 @@ class ReputationEngine:
         result = engine.get("wallet_id")  # 获取声誉 (优先缓存)
     """
     
-    def __init__(self, db_path=DB_PATH, node_url=NODE_URL):
+    def __init__(self, db_path: str = DB_PATH, node_url: str = NODE_URL) -> None:
         """
         初始化声誉引擎
         
@@ -129,11 +132,11 @@ class ReputationEngine:
         """
         self.db_path  = db_path
         self.node_url = node_url
-        self._cache   = {}          # wallet -> (score_dict, timestamp)
+        self._cache: Dict[str, Tuple[Dict[str, Any], float]] = {}  # wallet -> (score_dict, timestamp)
         self._lock    = threading.Lock()
 
     # ── DB 助手 ──────────────────────────────────────────────────────────── #
-    def _query(self, sql: str, params: Tuple=()) -> List[Dict[str, Any]]:
+    def _query(self, sql: str, params: Tuple[Any, ...] = ()) -> List[Dict[str, Any]]:
         """
         执行只读 SQL 查询，返回字典列表
         
@@ -190,7 +193,7 @@ class ReputationEngine:
             return None
 
     # ── 声誉计算核心 ──────────────────────────────────────────────── #
-    def calculate(self, wallet: str) -> dict:
+    def calculate(self, wallet: str) -> Dict[str, Any]:
         """
         计算代理声誉分数 (核心方法)
         
@@ -403,7 +406,7 @@ class ReputationEngine:
         return result
 
     # ── 缓存层 ──────────────────────────────────────────────────────────── #
-    def get(self, wallet: str) -> dict:
+    def get(self, wallet: str) -> Dict[str, Any]:
         """
         获取代理声誉 (优先缓存)
         
@@ -434,7 +437,7 @@ class ReputationEngine:
             self._cache[wallet] = (result, time.time())  # 更新缓存
         return result
 
-    def invalidate(self, wallet: str = None):
+    def invalidate(self, wallet: Optional[str] = None) -> None:
         """
         使缓存失效
         
@@ -453,7 +456,7 @@ class ReputationEngine:
             else:
                 self._cache.clear()
 
-    def _refresh_loop(self):
+    def _refresh_loop(self) -> None:
         """
         后台缓存刷新循环 (守护线程)
         
@@ -480,7 +483,7 @@ class ReputationEngine:
                     if w in self._cache:
                         self._cache[w] = (self._cache[w][0], time.time())
 
-    def start_cache_refresh(self):
+    def start_cache_refresh(self) -> None:
         """
         启动后台缓存刷新线程
         

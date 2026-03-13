@@ -655,8 +655,26 @@ def calculate_antiquity_multiplier(
 # TEST/DEMO CODE
 # =============================================================================
 
-def demo_detection():
-    """Demo CPU detection with real-world examples"""
+def demo_detection() -> None:
+    """
+    Demo CPU detection with real-world examples
+    
+    Displays detection results for a variety of CPU types including:
+        - Vintage Intel (Pentium 4, Core 2, Sandy Bridge, Haswell)
+        - Modern Intel (Comet Lake, Alder Lake, Arrow Lake)
+        - Intel Xeon server CPUs
+        - AMD vintage (Athlon 64, Phenom, FX)
+        - AMD modern (Ryzen 5/9, Zen3/Zen4/Zen5)
+        - AMD server (EPYC Rome, Genoa)
+        - PowerPC (G4, G5)
+        - Apple Silicon (M1, M2, M3)
+    
+    Also demonstrates loyalty bonus calculation for modern CPUs with uptime.
+    
+    Note:
+        This function is for demonstration and testing purposes only.
+        Prints formatted output to stdout.
+    """
     test_cpus = [
         # Vintage Intel
         "Intel(R) Pentium(R) 4 CPU 3.00GHz",

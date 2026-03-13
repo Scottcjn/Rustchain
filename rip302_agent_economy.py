@@ -21,12 +21,15 @@ Author: Elyan Labs / Scott Boudreaux
 Date: 2026-03-05
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import logging
 import sqlite3
 import time
-from flask import Flask, request, jsonify
+from typing import Any, Dict, List, Optional, Tuple
+from flask import Flask, request, jsonify, Response
 
 log = logging.getLogger("rip302")
 
@@ -60,8 +63,23 @@ VALID_CATEGORIES = [
 # Database Schema
 # ---------------------------------------------------------------------------
 
-def init_agent_economy_tables(db_path: str):
-    """Create agent economy tables if they don't exist."""
+def init_agent_economy_tables(db_path: str) -> None:
+    """
+    Create agent economy tables if they don't exist.
+    
+    Creates 4 tables:
+        1. agent_jobs - Job marketplace (posting, claims, delivery, payment)
+        2. agent_reputation - Agent reputation scores and statistics
+        3. agent_ratings - Job ratings (poster rates worker, worker rates poster)
+        4. agent_job_log - Activity log for audit trail
+    
+    Parameters:
+        db_path: Path to SQLite database file
+    
+    Note:
+        - Uses ON CONFLICT for idempotent creation
+        - Safe to call multiple times
+    """
     with sqlite3.connect(db_path) as conn:
         c = conn.cursor()
 
@@ -146,13 +164,42 @@ def init_agent_economy_tables(db_path: str):
 # ---------------------------------------------------------------------------
 
 def _generate_job_id(poster: str, title: str) -> str:
-    """Deterministic job ID from poster + title + timestamp."""
+    """
+    Generate deterministic job ID from poster + title + timestamp.
+    
+    Parameters:
+        poster: Poster's wallet address
+        title: Job title
+    
+    Returns:
+        Job ID string prefixed with "job_"
+    
+    Note:
+        - Uses SHA256 hash for uniqueness
+        - Includes timestamp and object ID for collision avoidance
+        - Truncated to 16 characters for readability
+    """
     seed = f"{poster}:{title}:{time.time()}:{id(poster)}"
     return "job_" + hashlib.sha256(seed.encode()).hexdigest()[:16]
 
 
 def _get_balance_i64(c: sqlite3.Cursor, wallet_id: str) -> int:
-    """Get wallet balance in micro-units."""
+    """
+    Get wallet balance in micro-units (i64).
+    
+    Parameters:
+        c: SQLite cursor for executing queries
+        wallet_id: Wallet address to query
+    
+    Returns:
+        Balance in micro-RTC (1 RTC = 1,000,000 micro-RTC)
+        Returns 0 if wallet not found or error occurs
+    
+    Note:
+        - Primary: reads from `amount_i64` column (native micro-unit storage)
+        - Fallback: converts legacy `balance_rtc` (float) to micro-units
+        - Silent failure: returns 0 on errors (caller handles "no balance" case)
+    """
     try:
         row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?",
                         (wallet_id,)).fetchone()
@@ -172,8 +219,25 @@ def _get_balance_i64(c: sqlite3.Cursor, wallet_id: str) -> int:
     return 0
 
 
-def _adjust_balance(c: sqlite3.Cursor, wallet_id: str, delta_i64: int):
-    """Adjust wallet balance by delta (positive = credit, negative = debit)."""
+def _adjust_balance(c: sqlite3.Cursor, wallet_id: str, delta_i64: int) -> None:
+    """
+    Adjust wallet balance by delta (positive = credit, negative = debit).
+    
+    Parameters:
+        c: SQLite cursor for executing queries
+        wallet_id: Wallet address to modify
+        delta_i64: Amount to add (positive) or subtract (negative) in micro-RTC
+    
+    Note:
+        - Uses INSERT ... ON CONFLICT for upsert behavior
+        - Creates wallet if it doesn't exist
+        - Atomic operation (single SQL statement)
+        - No return value (modifies DB in-place)
+    
+    Example:
+        _adjust_balance(cursor, "wallet123", 5_000_000)  # Add 5 RTC
+        _adjust_balance(cursor, "wallet123", -2_500_000)  # Subtract 2.5 RTC
+    """
     current = _get_balance_i64(c, wallet_id)
     new_balance = current + delta_i64
     c.execute("""
@@ -184,8 +248,22 @@ def _adjust_balance(c: sqlite3.Cursor, wallet_id: str, delta_i64: int):
 
 
 def _log_job_action(c: sqlite3.Cursor, job_id: str, action: str,
-                    actor: str = None, details: str = None):
-    """Record job activity."""
+                    actor: Optional[str] = None, details: Optional[str] = None) -> None:
+    """
+    Record job activity to audit log.
+    
+    Parameters:
+        c: SQLite cursor for executing queries
+        job_id: Job identifier
+        action: Action type (e.g., "posted", "claimed", "delivered", "completed")
+        actor: Wallet address of who performed the action (optional)
+        details: Additional context (optional, truncated if too long)
+    
+    Note:
+        - All actions are timestamped (created_at)
+        - Used for debugging, dispute resolution, and activity feeds
+        - actor and details are optional (can be None)
+    """
     c.execute("""
         INSERT INTO agent_job_log (job_id, action, actor_wallet, details, created_at)
         VALUES (?, ?, ?, ?, ?)
@@ -193,8 +271,27 @@ def _log_job_action(c: sqlite3.Cursor, job_id: str, action: str,
 
 
 def _update_reputation(c: sqlite3.Cursor, wallet_id: str, field: str,
-                       increment: int = 1):
-    """Increment a reputation field for an agent."""
+                       increment: int = 1) -> None:
+    """
+    Increment a reputation field for an agent.
+    
+    Parameters:
+        c: SQLite cursor for executing queries
+        wallet_id: Agent's wallet address
+        field: Reputation field to increment (e.g., "jobs_posted", "jobs_completed_as_worker")
+        increment: Amount to increment by (default: 1)
+    
+    Note:
+        - Creates agent record if it doesn't exist (with first_seen timestamp)
+        - Updates last_active timestamp on every call
+        - Uses dynamic field name (caller must ensure field is valid/safe)
+        - Does not validate field name (SQL injection risk if called with untrusted input)
+    
+    Common fields:
+        - jobs_posted, jobs_completed_as_poster, jobs_completed_as_worker
+        - jobs_disputed, jobs_expired
+        - total_rtc_paid, total_rtc_earned
+    """
     now = int(time.time())
     c.execute("""
         INSERT INTO agent_reputation (wallet_id, first_seen, last_active)
@@ -206,8 +303,18 @@ def _update_reputation(c: sqlite3.Cursor, wallet_id: str, field: str,
     """, (increment, wallet_id))
 
 
-def _get_client_ip():
-    """Get real client IP (trust nginx X-Real-IP only)."""
+def _get_client_ip() -> str:
+    """
+    Get real client IP address from request.
+    
+    Returns:
+        Client IP address string
+    
+    Note:
+        - Trusts X-Real-IP header (set by nginx reverse proxy)
+        - Falls back to request.remote_addr for direct connections
+        - Used for rate limiting and security logging
+    """
     return request.headers.get("X-Real-IP", request.remote_addr)
 
 
@@ -215,8 +322,31 @@ def _get_client_ip():
 # Route Registration
 # ---------------------------------------------------------------------------
 
-def register_agent_economy(app: Flask, db_path: str):
-    """Register all RIP-302 Agent Economy routes."""
+def register_agent_economy(app: Flask, db_path: str) -> None:
+    """
+    Register all RIP-302 Agent Economy routes on the Flask app.
+    
+    Parameters:
+        app: Flask application instance
+        db_path: Path to SQLite database file
+    
+    Routes registered:
+        POST   /agent/jobs                 - Create a new job (locks escrow)
+        POST   /agent/jobs/<job_id>/claim  - Claim an open job
+        POST   /agent/jobs/<job_id>/deliver - Submit deliverable
+        POST   /agent/jobs/<job_id>/accept - Accept delivery (release escrow)
+        POST   /agent/jobs/<job_id>/dispute - Reject delivery (start dispute)
+        POST   /agent/jobs/<job_id>/cancel - Cancel job (refund escrow)
+        GET    /agent/jobs                 - Browse/filter jobs
+        GET    /agent/jobs/<job_id>        - Get job details
+        GET    /agent/reputation/<wallet_id> - Get agent reputation
+        GET    /agent/stats                - Marketplace statistics
+    
+    Note:
+        - Initializes database tables on registration
+        - All routes use JSON request/response
+        - Escrow logic: poster locks funds, released on completion/refund
+    """
 
     init_agent_economy_tables(db_path)
 
@@ -224,7 +354,34 @@ def register_agent_economy(app: Flask, db_path: str):
     # POST /agent/jobs — Create a new job (locks escrow)
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs", methods=["POST"])
-    def agent_post_job():
+    def agent_post_job() -> Tuple[Response, int]:
+        """
+        POST /agent/jobs — Create a new job (locks escrow).
+        
+        Request body:
+            {
+                "poster_wallet": "RTC...",      # Required
+                "title": "Build a widget",       # Required, min 5 chars
+                "description": "Details...",     # Required, min 20 chars
+                "category": "code",              # Optional, default "other"
+                "reward_rtc": 50.0,              # Required, 0.01-10000
+                "ttl_seconds": 604800,           # Optional, default 7 days
+                "tags": ["python", "flask"]      # Optional
+            }
+        
+        Returns:
+            201: Job created successfully
+            400: Validation error (invalid data, insufficient balance)
+            429: Rate limited (max active jobs reached)
+        
+        Business logic:
+            1. Validate input (required fields, ranges, category)
+            2. Check poster balance (reward + 5% platform fee)
+            3. Check active job limit (max 20 per agent)
+            4. Lock escrow: debit poster, credit escrow wallet
+            5. Create job record
+            6. Update reputation (jobs_posted++)
+        """
         data = request.get_json(silent=True)
         if not data:
             return jsonify({"error": "JSON body required"}), 400
@@ -339,7 +496,31 @@ def register_agent_economy(app: Flask, db_path: str):
     # POST /agent/jobs/<job_id>/claim — Claim a job
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/claim", methods=["POST"])
-    def agent_claim_job(job_id):
+    def agent_claim_job(job_id: str) -> Tuple[Response, int]:
+        """
+        POST /agent/jobs/<job_id>/claim — Claim an open job.
+        
+        Path parameters:
+            job_id: Job identifier
+        
+        Request body:
+            {"worker_wallet": "RTC..."}  # Required
+        
+        Returns:
+            200: Job claimed successfully
+            400: Missing worker_wallet
+            404: Job not found
+            409: Job not open or already claimed
+            410: Job expired
+        
+        Business logic:
+            1. Validate worker_wallet
+            2. Find job and check status
+            3. Auto-expire if past expires_at
+            4. Prevent self-claim (poster can't claim own job)
+            5. Update job status to "claimed"
+            6. Log action
+        """
         data = request.get_json(silent=True) or {}
         worker = str(data.get("worker_wallet", "")).strip()
 
@@ -410,7 +591,35 @@ def register_agent_economy(app: Flask, db_path: str):
     # POST /agent/jobs/<job_id>/deliver — Submit deliverable
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/deliver", methods=["POST"])
-    def agent_deliver_job(job_id):
+    def agent_deliver_job(job_id: str) -> Tuple[Response, int]:
+        """
+        POST /agent/jobs/<job_id>/deliver — Submit deliverable.
+        
+        Path parameters:
+            job_id: Job identifier
+        
+        Request body:
+            {
+                "worker_wallet": "RTC...",      # Required
+                "deliverable_url": "https://...",  # Optional
+                "deliverable_hash": "sha256...",    # Optional
+                "result_summary": "Completed..."    # Optional (one of url/summary required)
+            }
+        
+        Returns:
+            200: Deliverable submitted
+            400: Missing worker_wallet or deliverable
+            404: Job not found
+            409: Job not in "claimed" status
+            403: Wrong worker (not assigned to this job)
+        
+        Business logic:
+            1. Validate worker_wallet and deliverable
+            2. Verify job exists and is in "claimed" status
+            3. Verify worker is assigned to this job
+            4. Update job status to "delivered"
+            5. Store deliverable info
+        """
         data = request.get_json(silent=True) or {}
         worker = str(data.get("worker_wallet", "")).strip()
         deliverable_url = str(data.get("deliverable_url", "")).strip()
@@ -467,7 +676,35 @@ def register_agent_economy(app: Flask, db_path: str):
     # POST /agent/jobs/<job_id>/accept — Accept delivery (releases escrow)
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/accept", methods=["POST"])
-    def agent_accept_delivery(job_id):
+    def agent_accept_delivery(job_id: str) -> Tuple[Response, int]:
+        """
+        POST /agent/jobs/<job_id>/accept — Accept delivery (releases escrow).
+        
+        Path parameters:
+            job_id: Job identifier
+        
+        Request body:
+            {
+                "poster_wallet": "RTC...",  # Required
+                "rating": 5                 # Optional, 1-5
+            }
+        
+        Returns:
+            200: Delivery accepted, escrow released
+            400: Missing poster_wallet
+            404: Job not found
+            409: Job not in "delivered" status
+            403: Wrong poster
+        
+        Business logic:
+            1. Validate poster_wallet
+            2. Verify job exists and is in "delivered" status
+            3. Verify caller is the poster
+            4. Release escrow: pay worker + platform fee
+            5. Update job status to "completed"
+            6. Update reputation for both parties
+            7. Optional: record rating
+        """
         data = request.get_json(silent=True) or {}
         poster = str(data.get("poster_wallet", "")).strip()
         rating = data.get("rating")  # 1-5 optional
@@ -569,7 +806,34 @@ def register_agent_economy(app: Flask, db_path: str):
     # POST /agent/jobs/<job_id>/dispute — Reject delivery
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/dispute", methods=["POST"])
-    def agent_dispute_job(job_id):
+    def agent_dispute_job(job_id: str) -> Tuple[Response, int]:
+        """
+        POST /agent/jobs/<job_id>/dispute — Reject delivery (start dispute).
+        
+        Path parameters:
+            job_id: Job identifier
+        
+        Request body:
+            {
+                "poster_wallet": "RTC...",  # Required
+                "reason": "Quality issues"   # Required
+            }
+        
+        Returns:
+            200: Job disputed, escrow held
+            400: Missing poster_wallet or reason
+            404: Job not found
+            409: Job not in "delivered" status
+            403: Wrong poster
+        
+        Business logic:
+            1. Validate poster_wallet and reason
+            2. Verify job exists and is in "delivered" status
+            3. Verify caller is the poster
+            4. Update job status to "disputed"
+            5. Update worker reputation (jobs_disputed++)
+            6. Escrow held pending admin resolution
+        """
         data = request.get_json(silent=True) or {}
         poster = str(data.get("poster_wallet", "")).strip()
         reason = str(data.get("reason", "")).strip()
@@ -623,7 +887,30 @@ def register_agent_economy(app: Flask, db_path: str):
     # POST /agent/jobs/<job_id>/cancel — Cancel open job (refund escrow)
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/cancel", methods=["POST"])
-    def agent_cancel_job(job_id):
+    def agent_cancel_job(job_id: str) -> Tuple[Response, int]:
+        """
+        POST /agent/jobs/<job_id>/cancel — Cancel open job (refund escrow).
+        
+        Path parameters:
+            job_id: Job identifier
+        
+        Request body:
+            {"poster_wallet": "RTC..."}  # Required
+        
+        Returns:
+            200: Job cancelled, escrow refunded
+            400: Missing poster_wallet
+            404: Job not found
+            403: Wrong poster
+            409: Job not in "open" or "disputed" status
+        
+        Business logic:
+            1. Validate poster_wallet
+            2. Verify job exists and caller is poster
+            3. Verify job is in "open" or "disputed" status
+            4. Refund escrow to poster
+            5. Update job status to "cancelled"
+        """
         data = request.get_json(silent=True) or {}
         poster = str(data.get("poster_wallet", "")).strip()
 
@@ -674,7 +961,27 @@ def register_agent_economy(app: Flask, db_path: str):
     # GET /agent/jobs — Browse open jobs
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs", methods=["GET"])
-    def agent_list_jobs():
+    def agent_list_jobs() -> Tuple[Response, int]:
+        """
+        GET /agent/jobs — Browse/filter jobs.
+        
+        Query parameters:
+            category: Filter by category (optional)
+            status: Filter by status (default: "open")
+            limit: Max results (default: 50, max: 100)
+            offset: Pagination offset (default: 0)
+            min_reward: Minimum reward in RTC (default: 0)
+        
+        Returns:
+            200: List of jobs matching filters
+        
+        Business logic:
+            1. Auto-expire jobs past expires_at (refund escrow)
+            2. Filter by status, category, min_reward
+            3. Sort by reward DESC, created_at DESC
+            4. Paginate with limit/offset
+            5. Return total count for pagination
+        """
         category = request.args.get("category", "").strip().lower()
         status_filter = request.args.get("status", STATUS_OPEN).strip().lower()
         limit = min(int(request.args.get("limit", 50)), 100)
@@ -739,7 +1046,22 @@ def register_agent_economy(app: Flask, db_path: str):
     # GET /agent/jobs/<job_id> — Job details
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>", methods=["GET"])
-    def agent_get_job(job_id):
+    def agent_get_job(job_id: str) -> Tuple[Response, int]:
+        """
+        GET /agent/jobs/<job_id> — Get job details.
+        
+        Path parameters:
+            job_id: Job identifier
+        
+        Returns:
+            200: Job details with activity log and ratings
+            404: Job not found
+        
+        Response includes:
+            - All job fields
+            - activity_log: List of actions (posted, claimed, delivered, etc.)
+            - ratings: Poster and worker ratings for this job
+        """
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
@@ -772,7 +1094,29 @@ def register_agent_economy(app: Flask, db_path: str):
     # GET /agent/reputation/<wallet_id> — Agent reputation
     # -----------------------------------------------------------------------
     @app.route("/agent/reputation/<wallet_id>", methods=["GET"])
-    def agent_reputation(wallet_id):
+    def agent_reputation(wallet_id: str) -> Tuple[Response, int]:
+        """
+        GET /agent/reputation/<wallet_id> — Get agent reputation.
+        
+        Path parameters:
+            wallet_id: Agent's wallet address
+        
+        Returns:
+            200: Reputation data with trust score
+            200: {"reputation": null} if no history
+        
+        Response includes:
+            - jobs_posted, jobs_completed_as_poster/worker
+            - jobs_disputed, jobs_expired
+            - total_rtc_paid, total_rtc_earned
+            - avg_rating, rating_count
+            - trust_score: 0-100 (computed)
+            - trust_level: legendary/trusted/neutral/risky
+        
+        Trust score formula:
+            - success_rate * 80 + rating_bonus (max 20)
+            - New agents (no history): 50 (neutral)
+        """
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
@@ -818,7 +1162,22 @@ def register_agent_economy(app: Flask, db_path: str):
     # GET /agent/stats — Marketplace stats
     # -----------------------------------------------------------------------
     @app.route("/agent/stats", methods=["GET"])
-    def agent_stats():
+    def agent_stats() -> Tuple[Response, int]:
+        """
+        GET /agent/stats — Get marketplace statistics.
+        
+        Returns:
+            200: Marketplace stats
+        
+        Response includes:
+            - total_jobs, open_jobs, completed_jobs
+            - total_rtc_volume: Sum of completed job rewards
+            - total_fees_collected: Platform fees (5% of completed jobs)
+            - active_agents: Agents active in last 7 days
+            - platform_fee_rate: "5%"
+            - escrow_wallet, escrow_balance_rtc
+            - categories: Job count and volume by category
+        """
         with sqlite3.connect(db_path) as conn:
             c = conn.cursor()
 
@@ -855,8 +1214,24 @@ def register_agent_economy(app: Flask, db_path: str):
     # -----------------------------------------------------------------------
     # Internal: Refund escrow to poster
     # -----------------------------------------------------------------------
-    def _refund_escrow(c: sqlite3.Cursor, job: dict):
-        """Return escrowed funds to the poster."""
+    def _refund_escrow(c: sqlite3.Cursor, job: Dict[str, Any]) -> None:
+        """
+        Return escrowed funds to the poster.
+        
+        Parameters:
+            c: SQLite cursor for executing queries
+            job: Job dictionary (must contain escrow_i64, poster_wallet, job_id)
+        
+        Use cases:
+            - Job expired (TTL passed without completion)
+            - Job cancelled by poster
+            - Admin refund after dispute resolution
+        
+        Business logic:
+            1. Debit escrow wallet
+            2. Credit poster wallet
+            3. Log the refund action
+        """
         escrow_i64 = job["escrow_i64"]
         poster = job["poster_wallet"]
         _adjust_balance(c, ESCROW_WALLET, -escrow_i64)

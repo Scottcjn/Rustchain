@@ -713,7 +713,25 @@ def detect_vintage_architecture(brand_string: str) -> Tuple[str, str, int, float
 
 
 def get_vintage_description(architecture: str) -> str:
-    """Get human-readable description for vintage architecture"""
+    """
+    Get human-readable description for vintage CPU architecture
+    
+    Parameters:
+        architecture: Architecture name (e.g., "i386", "pentium_p5", "k7_athlon")
+    
+    Returns:
+        str: Human-readable description string from architecture database,
+             or "Unknown vintage CPU" if architecture not found
+    
+    Note:
+        Searches across all vintage architecture databases:
+        - VINTAGE_INTEL_X86
+        - ODDBALL_X86_VENDORS
+        - VINTAGE_AMD_X86
+        - MOTOROLA_68K
+        - POWERPC_AMIGA
+        - RISC_WORKSTATIONS
+    """
     all_archs = {
         **VINTAGE_INTEL_X86,
         **ODDBALL_X86_VENDORS,
@@ -733,8 +751,23 @@ def get_vintage_description(architecture: str) -> str:
 # TEST/DEMO CODE
 # =============================================================================
 
-def demo_vintage_detection():
-    """Demo vintage CPU detection with real-world examples"""
+def demo_vintage_detection() -> None:
+    """
+    Demo vintage CPU detection with real-world examples
+    
+    Displays detection results for vintage CPUs including:
+        - Ancient Intel x86 (80386, 80486, Pentium P5/MMX)
+        - Pentium Pro/II/III
+        - Oddball x86 vendors (Cyrix, VIA, Transmeta)
+        - Vintage AMD (K5, K6, Athlon Classic)
+        - Motorola 68K (Mac/Amiga)
+        - PowerPC Amiga
+        - RISC workstations (Alpha, SPARC, MIPS, PA-RISC)
+    
+    Note:
+        This function is for demonstration and testing purposes only.
+        Prints formatted output to stdout.
+    """
     test_cpus = [
         # Ancient Intel x86
         "Intel 80386DX @ 33MHz",

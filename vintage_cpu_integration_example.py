@@ -76,7 +76,21 @@ def detect_all_cpu_architectures(brand_string: str) -> Dict[str, Any]:
 
 def get_cpu_brand_string() -> str:
     """
-    Get CPU brand string from system
+    Get CPU brand string from current system
+    
+    Reads CPU information from platform-specific sources:
+        - Linux: /proc/cpuinfo (model name field)
+        - macOS: sysctl machdep.cpu.brand_string
+        - Windows: Registry (ProcessorNameString)
+    
+    Returns:
+        str: CPU brand string (e.g., "Intel(R) Core(TM) i7-2600K CPU @ 3.40GHz")
+             or platform.processor() as fallback
+    
+    Note:
+        - Returns empty string if all methods fail
+        - Non-x86 systems may return architecture-specific identifiers
+    """
 
     On Linux: Read /proc/cpuinfo
     On Windows: Read registry
@@ -133,8 +147,27 @@ def get_cpu_brand_string() -> str:
 def detect_hardware_for_miner() -> Dict[str, Any]:
     """
     Detect hardware for RustChain miner client
-
-    Returns device info suitable for attestation payload
+    
+    Gathers comprehensive CPU information for mining attestation:
+        - CPU brand string from system
+        - Architecture detection (vendor, architecture name, year)
+        - Expected antiquity multiplier
+        - Vintage/server classification
+    
+    Returns:
+        Dict[str, Any]: Dictionary containing:
+            - cpu_brand: Raw CPU brand string
+            - device_family: Vendor (intel, amd, powerpc, etc.)
+            - device_arch: Architecture name (sandy_bridge, zen4, etc.)
+            - cpu_year: Microarchitecture release year
+            - expected_multiplier: Base antiquity multiplier
+            - is_vintage: True if vintage CPU detected
+            - is_server: True if server/workstation CPU
+            - description: Human-readable generation name
+    
+    Note:
+        This function is called by the miner client during initialization
+        to report hardware capabilities to the node.
     """
     brand_string = get_cpu_brand_string()
     cpu_info = detect_all_cpu_architectures(brand_string)
@@ -155,15 +188,35 @@ def detect_hardware_for_miner() -> Dict[str, Any]:
 # SERVER-SIDE VALIDATION
 # =============================================================================
 
-def validate_cpu_claim(attestation: Dict[str, Any]) -> tuple:
+def validate_cpu_claim(attestation: Dict[str, Any]) -> Tuple[bool, str, Optional[str], float]:
     """
     Server-side validation of miner's CPU claim
-
+    
+    Verifies that a miner's reported CPU information matches expected values
+    for the claimed hardware. Prevents spoofing and ensures fair rewards.
+    
     Parameters:
-        attestation: Attestation payload from miner
-
+        attestation: Attestation payload from miner containing:
+            - device.cpu_brand: Reported CPU brand string
+            - device.device_arch: Reported architecture name
+            - device.expected_multiplier: Claimed antiquity multiplier
+    
     Returns:
-        (is_valid, reason, detected_arch, detected_multiplier)
+        Tuple containing:
+            - is_valid (bool): True if claim is valid
+            - reason (str): Validation result message or error reason
+            - detected_arch (Optional[str]): Detected architecture name, or None if invalid
+            - detected_multiplier (float): Expected multiplier for detected hardware
+    
+    Validation Logic:
+        1. Extract claimed CPU brand from attestation
+        2. Detect actual architecture from brand string
+        3. Compare detected architecture with claimed architecture
+        4. Verify multiplier is within acceptable range (±10%)
+    
+    Note:
+        Server should call this function before accepting attestation
+        to prevent miners from claiming false hardware for higher rewards.
     """
     # Extract claimed device info
     device = attestation.get("device", {})

@@ -15,12 +15,15 @@ Requirements:
     pip install pypresence requests
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import time
 import json
 import requests
 from datetime import datetime, timedelta
+from typing import Any, Dict, Optional
 from pypresence import Presence
 
 # RustChain API endpoint (self-signed cert requires verification=False)
@@ -32,8 +35,14 @@ STATE_FILE = os.path.expanduser("~/.rustchain_discord_state.json")
 # Default update interval (seconds)
 UPDATE_INTERVAL = 60
 
-def load_state():
-    """Load previous state from file."""
+def load_state() -> Dict[str, Any]:
+    """
+    Load previous state from file.
+    
+    Returns:
+        State dictionary with last_balance, last_update, etc.
+        Returns empty dict if file doesn't exist or error occurs.
+    """
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, 'r') as f:
@@ -42,13 +51,34 @@ def load_state():
             pass
     return {}
 
-def save_state(state):
-    """Save current state to file."""
+def save_state(state: Dict[str, Any]) -> None:
+    """
+    Save current state to file.
+    
+    Parameters:
+        state: State dictionary to persist
+    
+    Note:
+        - Overwrites existing file
+        - Uses 2-space indent for readability
+    """
     with open(STATE_FILE, 'w') as f:
         json.dump(state, f, indent=2)
 
-def get_miner_info(miner_id):
-    """Get miner information from RustChain API."""
+def get_miner_info(miner_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get miner information from RustChain API.
+    
+    Parameters:
+        miner_id: Miner wallet address
+    
+    Returns:
+        Miner data dictionary with balance info, or None on error.
+    
+    Note:
+        - Uses verify=False for self-signed certificate
+        - 10 second timeout
+    """
     try:
         response = requests.get(
             f"{RUSTCHAIN_API}/wallet/balance",
@@ -62,8 +92,17 @@ def get_miner_info(miner_id):
         print(f"Error getting balance: {e}")
         return None
 
-def get_miners_list():
-    """Get list of all active miners."""
+def get_miners_list() -> list:
+    """
+    Get list of all active miners.
+    
+    Returns:
+        List of miner dictionaries, or empty list on error.
+    
+    Note:
+        - Returns miners enrolled in current epoch
+        - Includes hardware_type, last_attest, multiplier, etc.
+    """
     try:
         response = requests.get(
             f"{RUSTCHAIN_API}/api/miners",
@@ -76,8 +115,14 @@ def get_miners_list():
         print(f"Error getting miners list: {e}")
         return []
 
-def get_epoch_info():
-    """Get current epoch information."""
+def get_epoch_info() -> Optional[Dict[str, Any]]:
+    """
+    Get current epoch information.
+    
+    Returns:
+        Epoch data dictionary with epoch number, slot, rewards, etc.
+        None on error.
+    """
     try:
         response = requests.get(
             f"{RUSTCHAIN_API}/epoch",
@@ -90,8 +135,14 @@ def get_epoch_info():
         print(f"Error getting epoch info: {e}")
         return None
 
-def get_node_health():
-    """Get node health information."""
+def get_node_health() -> Optional[Dict[str, Any]]:
+    """
+    Get node health information.
+    
+    Returns:
+        Health data dictionary with version, uptime, peers, etc.
+        None on error.
+    """
     try:
         response = requests.get(
             f"{RUSTCHAIN_API}/health",
@@ -104,8 +155,21 @@ def get_node_health():
         print(f"Error getting health: {e}")
         return None
 
-def calculate_rtc_earned_today(current_balance, state):
-    """Calculate RTC earned since last state update."""
+def calculate_rtc_earned_today(current_balance: float, state: Dict[str, Any]) -> float:
+    """
+    Calculate RTC earned since last state update.
+    
+    Parameters:
+        current_balance: Current wallet balance in RTC
+        state: Previous state dictionary with last_balance
+    
+    Returns:
+        Amount earned (0.0 if no previous state or negative earnings)
+    
+    Note:
+        - Returns 0.0 for negative earnings (withdrawals)
+        - Returns 0.0 if no previous state exists
+    """
     if not state:
         return 0.0
 
@@ -115,8 +179,22 @@ def calculate_rtc_earned_today(current_balance, state):
     # Don't show negative earnings (withdrawals)
     return max(0.0, earned)
 
-def calculate_miner_uptime(last_attest_timestamp, state):
-    """Calculate miner uptime based on last attestation."""
+def calculate_miner_uptime(last_attest_timestamp: Optional[float], state: Dict[str, Any]) -> str:
+    """
+    Calculate miner uptime based on last attestation.
+    
+    Parameters:
+        last_attest_timestamp: Last attestation Unix timestamp, or None
+        state: Previous state (unused, kept for API compatibility)
+    
+    Returns:
+        Uptime status string: "Online", "Xh ago", or "Offline"
+    
+    Logic:
+        - <2h since last attest: "Online"
+        - 2-24h: "Xh ago"
+        - >24h: "Offline"
+    """
     if not last_attest_timestamp:
         return "Unknown"
 
@@ -134,8 +212,21 @@ def calculate_miner_uptime(last_attest_timestamp, state):
     else:
         return "Offline"
 
-def get_hardware_display(hardware_type):
-    """Get a short display string for hardware type."""
+def get_hardware_display(hardware_type: str) -> str:
+    """
+    Get a short display string for hardware type.
+    
+    Parameters:
+        hardware_type: Hardware architecture string
+    
+    Returns:
+        Emoji + short name for display in Discord presence
+    
+    Examples:
+        "PowerPC G4" → "🍎 PowerPC G4"
+        "x86_64" → "💻 Modern PC"
+        "M1" → "🍎 Apple Silicon"
+    """
     if "G4" in hardware_type:
         return "🍎 PowerPC G4"
     elif "G5" in hardware_type:
@@ -149,8 +240,28 @@ def get_hardware_display(hardware_type):
     else:
         return "💻 " + hardware_type.split()[0]
 
-def format_presence_data(miner_data, balance_data, epoch_data):
-    """Format data for Discord Rich Presence."""
+def format_presence_data(miner_data: Dict[str, Any], balance_data: Dict[str, Any], epoch_data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Format data for Discord Rich Presence.
+    
+    Parameters:
+        miner_data: Miner info from /api/miners (hardware_type, multiplier, last_attest)
+        balance_data: Balance info from /wallet/balance (amount_rtc)
+        epoch_data: Epoch info from /epoch (epoch, slot)
+    
+    Returns:
+        Dictionary with Discord presence fields:
+            - state: Hardware + multiplier + uptime
+            - details: Balance display
+            - large_text: Full hardware description
+            - small_text: Epoch progress
+            - balance, uptime: For logging
+    
+    Note:
+        - Formats hardware with emoji
+        - Calculates uptime from last attestation
+        - Shows epoch/slot progress
+    """
     hardware_type = miner_data.get('hardware_type', 'Unknown')
     antiquity_multiplier = miner_data.get('antiquity_multiplier', 1.0)
     last_attest = miner_data.get('last_attest', 0)
@@ -193,8 +304,26 @@ def format_presence_data(miner_data, balance_data, epoch_data):
         'uptime': uptime
     }
 
-def main():
-    """Main loop for Discord Rich Presence."""
+def main() -> None:
+    """
+    Main loop for Discord Rich Presence.
+    
+    Command-line arguments:
+        --miner-id: Your miner ID (wallet address) [required]
+        --client-id: Discord application client ID [optional]
+        --interval: Update interval in seconds [default: 60]
+    
+    Flow:
+        1. Parse arguments
+        2. Initialize Discord RPC (if client_id provided)
+        3. Load previous state
+        4. Main loop:
+            - Fetch miner info, balance, epoch, health
+            - Calculate earnings and uptime
+            - Update Discord presence
+            - Wait for next interval
+        5. Handle Ctrl+C gracefully
+    """
     import argparse
 
     parser = argparse.ArgumentParser(description='RustChain Discord Rich Presence')

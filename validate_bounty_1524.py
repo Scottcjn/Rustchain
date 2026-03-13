@@ -19,6 +19,7 @@ import tempfile
 import subprocess
 from pathlib import Path
 from datetime import datetime
+from typing import Dict, Any, Optional, List, Tuple
 
 # ANSI Colors
 class Colors:
@@ -37,10 +38,16 @@ def colored(text, color):
 class ValidationRunner:
     """Runs comprehensive validation for Bounty #1524."""
     
-    def __init__(self, verbose=False):
+    def __init__(self, verbose: bool = False) -> None:
+        """
+        Initialize validation runner
+        
+        Parameters:
+            verbose: If True, print detailed output for each check
+        """
         self.verbose = verbose
         self.project_root = Path(__file__).parent
-        self.results = {
+        self.results: Dict[str, Any] = {
             'timestamp': datetime.now().isoformat(),
             'bounty': '1524',
             'branch': 'feat/issue1524-beacon-atlas-world',
@@ -48,8 +55,14 @@ class ValidationRunner:
             'summary': {'passed': 0, 'failed': 0, 'warnings': 0}
         }
     
-    def log(self, message, level='info'):
-        """Log message with appropriate formatting."""
+    def log(self, message: str, level: str = 'info') -> None:
+        """
+        Log message with appropriate formatting
+        
+        Parameters:
+            message: Message to log
+            level: Log level ('info', 'success', 'error', 'warning', 'section')
+        """
         colors = {
             'info': Colors.BLUE,
             'success': Colors.GREEN,
@@ -66,8 +79,15 @@ class ValidationRunner:
         }
         print(f"{colors.get(level, '')}{prefix.get(level, '')} {message}{Colors.RESET}")
     
-    def add_result(self, name, passed, details=None):
-        """Record a validation result."""
+    def add_result(self, name: str, passed: bool, details: Optional[str] = None) -> None:
+        """
+        Record a validation result
+        
+        Parameters:
+            name: Name of the validation check
+            passed: Whether the check passed
+            details: Optional details or error message
+        """
         result = {
             'name': name,
             'passed': passed,
@@ -87,11 +107,11 @@ class ValidationRunner:
     # Validation Checks
     # =========================================================================
     
-    def check_files_exist(self):
+    def check_files_exist(self) -> bool:
         """Verify all required files exist."""
         self.log("Checking required files...", 'section')
         
-        required_files = [
+        required_files: List[str] = [
             'site/beacon/bounties.js',
             'site/beacon/vehicles.js',
             'site/beacon/demo.html',
@@ -104,7 +124,7 @@ class ValidationRunner:
         ]
         
         all_exist = True
-        missing = []
+        missing: List[str] = []
         
         for filepath in required_files:
             full_path = self.project_root / filepath
@@ -120,11 +140,11 @@ class ValidationRunner:
                        f"Missing: {missing}" if missing else "All files present")
         return all_exist
     
-    def check_file_sizes(self):
+    def check_file_sizes(self) -> bool:
         """Verify files have substantial content."""
         self.log("Checking file sizes...", 'section')
         
-        min_sizes = {
+        min_sizes: Dict[str, int] = {
             'site/beacon/bounties.js': 5000,
             'site/beacon/vehicles.js': 3000,
             'site/beacon/demo.html': 5000,
@@ -134,7 +154,7 @@ class ValidationRunner:
         }
         
         all_ok = True
-        undersized = []
+        undersized: List[str] = []
         
         for filepath, min_size in min_sizes.items():
             full_path = self.project_root / filepath
@@ -150,11 +170,11 @@ class ValidationRunner:
                        f"Undersized: {undersized}" if undersized else "All files adequate size")
         return all_ok
     
-    def check_python_syntax(self):
+    def check_python_syntax(self) -> bool:
         """Verify Python files have valid syntax."""
         self.log("Checking Python syntax...", 'section')
         
-        python_files = [
+        python_files: List[str] = [
             'node/beacon_api.py',
             'tests/test_beacon_atlas.py',
             'tests/test_beacon_atlas_behavior.py',
@@ -177,11 +197,11 @@ class ValidationRunner:
                        "All Python files valid" if all_valid else "Syntax errors found")
         return all_valid
     
-    def check_javascript_syntax(self):
+    def check_javascript_syntax(self) -> bool:
         """Verify JavaScript files have ES6 module syntax."""
         self.log("Checking JavaScript syntax...", 'section')
         
-        js_files = [
+        js_files: List[str] = [
             'site/beacon/bounties.js',
             'site/beacon/vehicles.js',
             'site/beacon/scene.js',
@@ -207,14 +227,14 @@ class ValidationRunner:
                        "ES6 modules valid" if all_valid else "Syntax issues found")
         return all_valid
     
-    def check_api_endpoints(self):
+    def check_api_endpoints(self) -> bool:
         """Verify API endpoints are defined."""
         self.log("Checking API endpoints...", 'section')
         
         api_file = self.project_root / 'node/beacon_api.py'
         content = api_file.read_text()
         
-        required_endpoints = [
+        required_endpoints: List[Tuple[str, str]] = [
             ('/api/contracts', 'GET'),
             ('/api/contracts', 'POST'),
             ('/api/bounties', 'GET'),
@@ -238,14 +258,14 @@ class ValidationRunner:
                        "All endpoints defined" if all_found else "Missing endpoints")
         return all_found
     
-    def check_database_schema(self):
+    def check_database_schema(self) -> bool:
         """Verify database schema is defined."""
         self.log("Checking database schema...", 'section')
         
         api_file = self.project_root / 'node/beacon_api.py'
         content = api_file.read_text()
         
-        required_tables = [
+        required_tables: List[str] = [
             'beacon_contracts',
             'beacon_bounties',
             'beacon_reputation',
@@ -266,7 +286,7 @@ class ValidationRunner:
                        "All tables defined" if all_found else "Missing tables")
         return all_found
     
-    def check_test_coverage(self):
+    def check_test_coverage(self) -> bool:
         """Verify test suite has adequate coverage."""
         self.log("Checking test coverage...", 'section')
         
@@ -286,14 +306,14 @@ class ValidationRunner:
                        f"{test_count} tests, {class_count} classes")
         return adequate
     
-    def check_feature_implementation(self):
+    def check_feature_implementation(self) -> bool:
         """Verify key features are implemented."""
         self.log("Checking feature implementation...", 'section')
         
         bounties_js = (self.project_root / 'site/beacon/bounties.js').read_text()
         vehicles_js = (self.project_root / 'site/beacon/vehicles.js').read_text()
         
-        features = {
+        features: Dict[str, bool] = {
             'Difficulty colors': 'DIFFICULTY_COLORS' in bounties_js,
             '3D positioning': 'getBountyPosition' in bounties_js,
             'Animation': 'onAnimate' in bounties_js and 'Math.sin' in bounties_js,
@@ -312,7 +332,7 @@ class ValidationRunner:
                        "All features present" if all_implemented else "Missing features")
         return all_implemented
     
-    def run_unit_tests(self):
+    def run_unit_tests(self) -> bool:
         """Run the unit test suite."""
         self.log("Running unit tests...", 'section')
         
@@ -349,7 +369,7 @@ class ValidationRunner:
             self.add_result('unit_tests', False, str(e))
             return False
     
-    def run_behavioral_tests(self):
+    def run_behavioral_tests(self) -> bool:
         """Run behavioral integration tests."""
         self.log("Running behavioral tests...", 'section')
         
@@ -385,14 +405,14 @@ class ValidationRunner:
             self.add_result('behavioral_tests', False, str(e))
             return False
     
-    def check_documentation(self):
+    def check_documentation(self) -> bool:
         """Verify documentation is complete."""
         self.log("Checking documentation...", 'section')
         
         impl_doc = self.project_root / 'docs/BOUNTY_1524_IMPLEMENTATION.md'
         val_doc = self.project_root / 'docs/BOUNTY_1524_VALIDATION.md'
         
-        checks = {
+        checks: Dict[str, bool] = {
             'Implementation doc exists': impl_doc.exists(),
             'Validation doc exists': val_doc.exists(),
             'Bounty reference': 'Bounty #1524' in impl_doc.read_text() if impl_doc.exists() else False,
@@ -415,7 +435,7 @@ class ValidationRunner:
     # Report Generation
     # =========================================================================
     
-    def generate_report(self):
+    def generate_report(self) -> bool:
         """Generate validation report."""
         self.log("\nGenerating validation report...", 'section')
         
@@ -453,8 +473,16 @@ class ValidationRunner:
     # Main Runner
     # =========================================================================
     
-    def run_all(self, run_tests=True):
-        """Run all validation checks."""
+    def run_all(self, run_tests: bool = True) -> bool:
+        """
+        Run all validation checks.
+        
+        Args:
+            run_tests: If True, also run unit and behavioral tests
+        
+        Returns:
+            bool: True if all validations passed
+        """
         print(colored("\n" + "=" * 60, Colors.CYAN + Colors.BOLD))
         print(colored("  Bounty #1524 Validation Runner", Colors.CYAN + Colors.BOLD))
         print(colored("  Beacon Atlas 3D Agent World", Colors.CYAN + Colors.BOLD))

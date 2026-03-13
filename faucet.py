@@ -1,30 +1,76 @@
 #!/usr/bin/env python3
 """
-RustChain Testnet Faucet
-A simple Flask web application that dispenses test RTC tokens.
+RustChain Testnet Faucet - RustChain 测试网水龙头
+==================================================
 
-Features:
-- IP-based rate limiting
-- SQLite backend for tracking
-- Simple HTML form for requesting tokens
+用途:
+    为开发者提供免费测试用 RTC 代币，用于开发和测试 RustChain 应用
+
+功能特性:
+    - IP 地址限流：每个 IP 每 24 小时最多请求 0.5 RTC
+    - SQLite 后端：记录所有请求，防止滥用
+    - HTML 表单：简单的 Web 界面供用户请求代币
+    - REST API: 支持程序化请求
+
+API 端点:
+    GET  /              - HTML 表单页面
+    POST /drip          - 请求代币 (JSON: {wallet: "xxx"})
+    GET  /stats         - 水龙头统计信息
+
+限流规则:
+    - 每 IP 每 24 小时：最多 0.5 RTC
+    - 数据库记录所有请求，重启不清零
+
+作者：Elyan Labs
+日期：2026-03
 """
+
+from __future__ import annotations
 
 import sqlite3
 import time
 import os
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, render_template_string
+from typing import Optional, Any
+from flask import Flask, request, jsonify, render_template_string, Response
 
 app = Flask(__name__)
-DATABASE = 'faucet.db'
+DATABASE = 'faucet.db'  # SQLite 数据库文件，存储请求记录
 
-# Rate limiting settings (per 24 hours)
+# ─── 限流配置 ────────────────────────────────────────────────────────
+# 为什么：防止滥用，确保公平分配测试代币
+
+# 每个 IP 每 24 小时最多请求 0.5 RTC
+# 为什么选择 0.5：足够测试交易，但不足以造成重大损失
 MAX_DRIP_AMOUNT = 0.5  # RTC
+
+# 限流周期：24 小时
+# 为什么：每天重置，允许开发者持续测试但限制总量
 RATE_LIMIT_HOURS = 24
 
 
-def init_db():
-    """Initialize the SQLite database."""
+def init_db() -> None:
+    """
+    初始化 SQLite 数据库
+    
+    表结构:
+        drip_requests:
+            - id: 主键，自增
+            - wallet: 请求的钱包地址 (用于识别用户)
+            - ip_address: 请求 IP (用于限流)
+            - amount: 发放的代币数量
+            - timestamp: 请求时间 (用于计算限流周期)
+    
+    为什么:
+        - 持久化记录所有请求，防止重启后限流失效
+        - 支持按 wallet 和 IP 双重维度查询
+        - 时间戳用于计算 24 小时滚动窗口
+    
+    注意:
+        - 数据库文件：faucet.db (当前目录)
+        - 自动创建表，如果不存在
+        - 安全：使用参数化查询，防止 SQL 注入
+    """
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
     c.execute('''
@@ -40,15 +86,51 @@ def init_db():
     conn.close()
 
 
-def get_client_ip():
-    """Get client IP address from request."""
+def get_client_ip() -> str:
+    """
+    获取客户端 IP 地址
+    
+    逻辑:
+        1. 优先检查 X-Forwarded-For 头 (代理/负载均衡场景)
+        2. 如果没有，使用 request.remote_addr
+        3. 如果都没有，返回 127.0.0.1 (本地调试)
+    
+    为什么:
+        - 支持反向代理部署 (如 Nginx 后)
+        - X-Forwarded-For 可能包含多个 IP (客户端，代理 1, 代理 2...)
+        - 取第一个 IP (真实客户端)
+    
+    返回:
+        str: 客户端 IP 地址
+    
+    注意:
+        - 用于限流，防止同一用户多 IP 请求
+        - 不信任单一 IP，结合 wallet 地址双重验证
+    """
     if request.headers.get('X-Forwarded-For'):
         return request.headers.get('X-Forwarded-For').split(',')[0].strip()
     return request.remote_addr or '127.0.0.1'
 
 
-def get_last_drip_time(ip_address):
-    """Get the last time this IP requested a drip."""
+def get_last_drip_time(ip_address: str) -> Optional[str]:
+    """
+    查询指定 IP 最后一次请求的时间
+    
+    参数:
+        ip_address: 客户端 IP 地址
+    
+    返回:
+        Optional[str]: ISO 格式时间戳，如果没有记录返回 None
+    
+    SQL 逻辑:
+        - 按 ip_address 筛选
+        - 按时间降序排列
+        - 取第一条 (最近一次)
+    
+    为什么:
+        - 用于计算距离上次请求过去了多少小时
+        - 判断是否满足 24 小时间隔
+    """
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
     c.execute('''
@@ -62,21 +144,49 @@ def get_last_drip_time(ip_address):
     return result[0] if result else None
 
 
-def can_drip(ip_address):
-    """Check if the IP can request a drip (rate limiting)."""
+def can_drip(ip_address: str) -> bool:
+    """
+    检查 IP 是否可以请求代币 (限流核心逻辑)
+    
+    参数:
+        ip_address: 客户端 IP 地址
+    
+    返回:
+        bool: True 可以请求，False 需要等待
+    
+    逻辑:
+        1. 查询最后一次请求时间
+        2. 如果没有记录 → 允许 (首次请求)
+        3. 如果有记录 → 计算过去的小时数
+        4. 如果 ≥ 24 小时 → 允许，否则拒绝
+    
+    为什么:
+        - 24 小时滚动窗口，不是固定日历日
+        - 防止用户在短时间内多次请求
+        - 简单有效，不需要复杂的计数器
+    """
     last_time = get_last_drip_time(ip_address)
     if not last_time:
-        return True
+        return True  # 首次请求，允许
     
+    # 解析时间戳，计算时间差
     last_drip = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
     now = datetime.now(last_drip.tzinfo)
     hours_since = (now - last_drip).total_seconds() / 3600
     
-    return hours_since >= RATE_LIMIT_HOURS
+    return hours_since >= RATE_LIMIT_HOURS  # 是否满 24 小时
 
 
-def get_next_available(ip_address):
-    """Get the next available time for this IP."""
+def get_next_available(ip_address: str) -> Optional[str]:
+    """
+    Get the next available time for this IP.
+    
+    参数:
+        ip_address: 客户端 IP 地址
+    
+    返回:
+        Optional[str]: 下次可请求的时间 (ISO 格式),如果首次请求返回 None
+    """
     last_time = get_last_drip_time(ip_address)
     if not last_time:
         return None
@@ -90,8 +200,19 @@ def get_next_available(ip_address):
     return None
 
 
-def record_drip(wallet, ip_address, amount):
-    """Record a drip request to the database."""
+def record_drip(wallet: str, ip_address: str, amount: float) -> None:
+    """
+    Record a drip request to the database.
+    
+    参数:
+        wallet: 钱包地址
+        ip_address: 客户端 IP 地址
+        amount: 发放的代币数量 (RTC)
+    
+    注意:
+        - 使用参数化查询防止 SQL 注入
+        - 提交后立即关闭连接，避免锁表
+    """
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
     c.execute('''
@@ -255,27 +376,57 @@ HTML_TEMPLATE = """
 
 
 @app.route('/')
-def index():
-    """Serve the faucet homepage."""
+def index() -> Response:
+    """
+    Serve the faucet homepage (HTML form)
+    
+    Returns:
+        Response: Rendered HTML template with rate limit info
+    """
     return render_template_string(HTML_TEMPLATE, rate_limit=MAX_DRIP_AMOUNT, hours=RATE_LIMIT_HOURS)
 
 
 @app.route('/faucet')
-def faucet_page():
-    """Serve the faucet page (alias for index)."""
+def faucet_page() -> Response:
+    """
+    Serve the faucet page (alias for index)
+    
+    Returns:
+        Response: Rendered HTML template with rate limit info
+    """
     return render_template_string(HTML_TEMPLATE, rate_limit=MAX_DRIP_AMOUNT, hours=RATE_LIMIT_HOURS)
 
 
 @app.route('/faucet/drip', methods=['POST'])
-def drip():
+def drip() -> tuple[Response, int]:
     """
-    Handle drip requests.
+    Handle faucet drip request (distribute test tokens)
     
-    Request body:
-        {"wallet": "0x..."}
+    Request body (JSON):
+        {"wallet": "0x..."} - Wallet address to receive test RTC
     
-    Response:
-        {"ok": true, "amount": 0.5, "next_available": "2026-03-08T12:00:00Z"}
+    Response (success):
+        {
+            "ok": true,
+            "amount": 0.5,
+            "wallet": "0x...",
+            "next_available": "2026-03-14T12:59:00"
+        }
+    
+    Response (rate limited):
+        {
+            "ok": false,
+            "error": "Rate limit exceeded",
+            "next_available": "2026-03-14T12:59:00"
+        }
+    
+    Rate Limiting:
+        - Each IP can request once every 24 hours
+        - Max 0.5 RTC per request
+    
+    Validation:
+        - Wallet must start with "0x" and be at least 10 characters
+        - Returns 400 for invalid wallet, 429 for rate limit exceeded
     """
     data = request.get_json()
     
