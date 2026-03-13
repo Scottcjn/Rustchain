@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  beacon-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.beacon-dashboard
+    container_name: rustchain-beacon-dashboard
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+    environment:
+      - DASHBOARD_PORT=8080
+      - DASHBOARD_HOST=0.0.0.0
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    networks:
+      - rustchain-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  rustchain-network:
+    driver: bridge

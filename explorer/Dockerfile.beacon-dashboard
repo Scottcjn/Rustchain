@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements-beacon-dashboard.txt .
+RUN pip install --no-cache-dir -r requirements-beacon-dashboard.txt
+
+# Copy application files
+COPY beacon_dashboard_v1.1.py .
+COPY beacon_dashboard.html ./templates/
+COPY static/ ./static/
+
+# Expose port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status')" || exit 1
+
+# Run the application
+CMD ["python", "beacon_dashboard_v1.1.py"]

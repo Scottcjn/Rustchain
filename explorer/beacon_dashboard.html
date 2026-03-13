@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Beacon Dashboard v1.1</title>
+    <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <header class="dashboard-header">
+            <h1>🔍 RustChain Beacon Dashboard</h1>
+            <div class="status-indicator">
+                <span class="status-dot"></span>
+                <span id="status-text">Connecting...</span>
+            </div>
+        </header>
+
+        <main class="dashboard-content">
+            <section class="metrics-grid">
+                <div class="metric-card">
+                    <h3>Total Nodes</h3>
+                    <p class="metric-value" id="total-nodes">0</p>
+                </div>
+                <div class="metric-card">
+                    <h3>Active Nodes</h3>
+                    <p class="metric-value" id="active-nodes">0</p>
+                </div>
+                <div class="metric-card">
+                    <h3>Version</h3>
+                    <p class="metric-value">1.1</p>
+                </div>
+                <div class="metric-card">
+                    <h3>Last Update</h3>
+                    <p class="metric-value" id="last-update">-</p>
+                </div>
+            </section>
+
+            <section class="nodes-section">
+                <h2>Beacon Nodes</h2>
+                <div id="nodes-list" class="nodes-grid">
+                    <div class="loading">Loading nodes...</div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="dashboard-footer">
+            <p>RustChain Beacon Dashboard v1.1 | Real-time Node Monitoring</p>
+        </footer>
+    </div>
+
+    <script src="/static/dashboard.js"></script>
+</body>
+</html>
