@@ -1,0 +1,20 @@
+# Build output
+build/
+*.bin
+*.tap
+*.o
+*.obj
+
+# Simulator state
+*.simh
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
