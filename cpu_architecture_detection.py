@@ -489,6 +489,109 @@ APPLE_SILICON = {
 
 
 # =============================================================================
+
+# =============================================================================
+# ARM ARCHITECTURES
+# =============================================================================
+
+ARM_GENERATIONS = {
+    # ARM11 / Early ARM (Raspberry Pi Zero / 1)
+    "arm11": {
+        "years": (2002, 2014),
+        "patterns": [
+            r"ARM11",
+            r"ARMv6",
+            r"BCM2835",
+        ],
+        "base_multiplier": 1.5,
+        "description": "ARM11 / ARMv6 (Vintage ARM, Pi Zero)"
+    },
+    
+    # ARMv7 / Cortex-A7/A8/A9/A15 (Raspberry Pi 2, early smartphones)
+    "cortex_a7_a15": {
+        "years": (2011, 2015),
+        "patterns": [
+            r"Cortex-A7",
+            r"Cortex-A8",
+            r"Cortex-A9",
+            r"Cortex-A15",
+            r"ARMv7",
+        ],
+        "base_multiplier": 1.3,
+        "description": "ARM Cortex-A7/A15 (32-bit ARMv7)"
+    },
+
+    # Early 64-bit ARMv8 / Cortex-A53 (Raspberry Pi 3)
+    "cortex_a53": {
+        "years": (2012, 2016),
+        "patterns": [
+            r"Cortex-A53",
+            r"BCM2837",
+        ],
+        "base_multiplier": 1.2,
+        "description": "ARM Cortex-A53 (Early ARMv8)"
+    },
+
+    # Cortex-A72/A73 (Raspberry Pi 4)
+    "cortex_a72": {
+        "years": (2015, 2019),
+        "patterns": [
+            r"Cortex-A72",
+            r"Cortex-A73",
+            r"BCM2711",
+        ],
+        "base_multiplier": 1.1,
+        "description": "ARM Cortex-A72/A73"
+    },
+
+    # Cortex-A76/A77 (Raspberry Pi 5, modern SBCs)
+    "cortex_a76": {
+        "years": (2018, 2021),
+        "patterns": [
+            r"Cortex-A76",
+            r"Cortex-A77",
+            r"BCM2712",
+            r"RK3588",
+        ],
+        "base_multiplier": 1.05,
+        "description": "ARM Cortex-A76/A77"
+    },
+
+    # ARM Neoverse / Server
+    "neoverse_n1": {
+        "years": (2019, 2021),
+        "patterns": [
+            r"Neoverse-N1",
+            r"Ampere Altra",
+            r"AWS Graviton2",
+        ],
+        "base_multiplier": 1.05,
+        "description": "ARM Neoverse N1 (Server)"
+    },
+    
+    "neoverse_v1_n2": {
+        "years": (2021, 2025),
+        "patterns": [
+            r"Neoverse-[VN][123]",
+            r"AmpereOne",
+            r"AWS Graviton[34]",
+        ],
+        "base_multiplier": 1.0,
+        "description": "ARM Neoverse V/N-series (Modern Server)"
+    },
+
+    # Generic modern ARM fallback
+    "modern_arm": {
+        "years": (2020, 2025),
+        "patterns": [
+            r"ARM",
+            r"AArch64",
+        ],
+        "base_multiplier": 1.0,
+        "description": "Modern ARM CPU (generic)"
+    },
+}
+
 # DETECTION FUNCTIONS
 # =============================================================================
 
@@ -519,6 +622,21 @@ def detect_cpu_architecture(brand_string: str) -> Tuple[str, str, int, bool]:
             if re.search(pattern, brand_string, re.IGNORECASE):
                 return ("apple", arch_name, arch_info["years"][0], False)
 
+
+    # Check ARM CPUs (order matters - check specific patterns first)
+    if re.search(r"ARM|AArch64|Cortex|Neoverse|Ampere|Graviton|BCM|RK35", brand_string, re.IGNORECASE):
+        is_server = bool(re.search(r"Ampere|Graviton|Neoverse", brand_string, re.IGNORECASE))
+
+        for arch_name, arch_info in ARM_GENERATIONS.items():
+            if arch_name == "modern_arm":
+                continue  # Skip fallback for now
+
+            for pattern in arch_info["patterns"]:
+                if re.search(pattern, brand_string, re.IGNORECASE):
+                    return ("arm", arch_name, arch_info["years"][0], is_server)
+
+        # Fallback to modern ARM
+        return ("arm", "modern_arm", 2020, is_server)
     # Check Intel CPUs (order matters - check specific patterns first)
     if re.search(r"Intel", brand_string, re.IGNORECASE):
         # Check server patterns first (Xeon)
@@ -603,6 +721,8 @@ def calculate_antiquity_multiplier(
         base_multiplier = INTEL_GENERATIONS[architecture]["base_multiplier"]
     elif vendor == "amd":
         base_multiplier = AMD_GENERATIONS[architecture]["base_multiplier"]
+    elif vendor == "arm":
+        base_multiplier = ARM_GENERATIONS[architecture]["base_multiplier"]
 
     # Apply time decay for vintage hardware (>5 years old)
     # Decay formula: aged = 1.0 + (base - 1.0) * (1 - 0.15 * years_since_genesis)
@@ -636,6 +756,8 @@ def calculate_antiquity_multiplier(
         generation_name = INTEL_GENERATIONS[architecture]["description"]
     elif vendor == "amd":
         generation_name = AMD_GENERATIONS[architecture]["description"]
+    elif vendor == "arm":
+        generation_name = ARM_GENERATIONS[architecture]["description"]
     else:
         generation_name = "Unknown CPU"
 
@@ -696,6 +818,12 @@ def demo_detection():
         "Apple M1",
         "Apple M2",
         "Apple M3",
+
+        # ARM
+        "ARMv6-compatible processor rev 7 (v6l)",
+        "Cortex-A53",
+        "Cortex-A72",
+        "Ampere Altra",
     ]
 
     print("=" * 80)
