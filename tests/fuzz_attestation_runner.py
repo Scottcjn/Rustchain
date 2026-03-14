@@ -436,7 +436,7 @@ def send_payload(payload: Any, target_url: str, is_raw: bool = False) -> Tuple[O
 
     start = time.monotonic()
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as r:
+        with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as r:  # nosec B310
             elapsed = (time.monotonic() - start) * 1000
             return r.status, r.read().decode("utf-8", errors="replace")[:2000], elapsed
     except urllib.error.HTTPError as e:
