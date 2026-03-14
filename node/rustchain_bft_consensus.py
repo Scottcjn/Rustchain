@@ -226,14 +226,15 @@ class BFTConsensus:
 
     def get_fault_tolerance(self) -> int:
         """Calculate f (max faulty nodes we can tolerate)"""
-        # BFT requires n >= 3f + 1
-        # So f = (n - 1) / 3
+        # BFT requires n >= 3f + 1, so we can tolerate f = floor((n-1)/3) faulty nodes.
+        # E.g., 4 nodes → f=1: one Byzantine node cannot forge a 2/3 quorum.
         n = self.get_total_nodes()
         return (n - 1) // 3
 
     def get_quorum_size(self) -> int:
         """Get quorum size for consensus"""
-        # Quorum = 2f + 1 = ceil(2n/3)
+        # Quorum = 2f + 1 = ceil(2n/3). Using integer arithmetic (2n+2)//3 avoids
+        # floating point and always rounds up, ensuring we exceed the 2/3 threshold.
         n = self.get_total_nodes()
         return (2 * n + 2) // 3
 
@@ -242,7 +243,8 @@ class BFTConsensus:
         if view is None:
             view = self.current_view
 
-        # Round-robin leader election
+        # Deterministic round-robin: sorting by node_id ensures all nodes agree on
+        # the leader ordering without a separate election or coordinator.
         nodes = sorted([self.node_id] + list(self.peers.keys()))
         leader_idx = view % len(nodes)
         return nodes[leader_idx] == self.node_id
@@ -266,7 +268,10 @@ class BFTConsensus:
 
     def _verify_signature(self, node_id: str, data: str, signature: str) -> bool:
         """Verify message signature (simplified - all nodes share key in testnet)"""
-        # In production, each node would have its own keypair
+        # In production, each node would have its own keypair (ed25519 or similar).
+        # Shared HMAC is acceptable in a trusted-operator testnet but means one
+        # compromised node can forge messages from any peer.
+        # hmac.compare_digest prevents timing side-channel leaks.
         expected = hmac.new(
             self.secret_key.encode(),
             data.encode(),
@@ -352,6 +357,8 @@ class BFTConsensus:
         ]
 
         while len(hashes) > 1:
+            # Duplicate the last leaf when the count is odd so we always pair evenly.
+            # This is the standard Bitcoin-style merkle padding strategy.
             if len(hashes) % 2 == 1:
                 hashes.append(hashes[-1])
             new_hashes = []
@@ -468,6 +475,8 @@ class BFTConsensus:
 
         logging.info(f"[PREPARE] Epoch {epoch}: {prepare_count}/{quorum} prepares")
 
+        # Phase guard prevents sending duplicate COMMITs if more PREPAREs arrive
+        # after we already advanced — only transition once per epoch.
         if prepare_count >= quorum and self.phase == ConsensusPhase.PREPARE:
             # Transition to COMMIT phase
             self._send_commit(epoch)
@@ -602,7 +611,9 @@ class BFTConsensus:
                     VALUES (?, ?)
                     ON CONFLICT(miner_id) DO UPDATE SET
                     amount_i64 = amount_i64 + excluded.amount_i64
-                """, (miner_id, int(reward * 1_000_000)))  # Convert to micro-RTC
+                # Store as integer micro-RTC (1 RTC = 1,000,000 uRTC) to avoid
+                # floating-point drift accumulating across many ledger entries.
+                """, (miner_id, int(reward * 1_000_000)))
 
                 # Log in ledger
                 conn.execute("""
@@ -724,9 +735,10 @@ class BFTConsensus:
         if epoch is None or epoch < 0:
             return False
 
-        # Check total reward matches
+        # Use absolute tolerance rather than ==, since floating-point arithmetic
+        # on reward fractions can produce values like 1.4999999999 or 1.5000000001.
         total = sum(distribution.values())
-        if abs(total - 1.5) > 0.001:  # Allow small float error
+        if abs(total - 1.5) > 0.001:
             logging.warning(f"Invalid total reward: {total} != 1.5")
             return False
 
