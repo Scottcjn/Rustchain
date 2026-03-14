@@ -1,4 +1,5 @@
 /**
+ * SPDX-License-Identifier: Apache-2.0
  * RustChain API Load Test — k6 script
  * Issue: https://github.com/Scottcjn/rustchain-bounties/issues/1614
  *
