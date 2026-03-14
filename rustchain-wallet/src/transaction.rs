@@ -2,11 +2,11 @@
 //!
 //! This module provides transaction creation, signing, and serialization.
 
-use serde::{Serialize, Deserialize};
-use chrono::{DateTime, Utc};
 use crate::error::{Result, WalletError};
 use crate::keys::KeyPair;
 use crate::nonce_store::NonceStore;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 /// A RustChain transaction
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,7 +66,7 @@ impl Transaction {
             timestamp: self.timestamp.timestamp(),
             memo: self.memo.clone(),
         };
-        
+
         let json = serde_json::to_string(&tx)?;
         Ok(json.into_bytes())
     }
@@ -81,33 +81,37 @@ impl Transaction {
 
     /// Verify the transaction signature
     pub fn verify(&self, keypair: &KeyPair) -> Result<bool> {
-        let signature = self.signature.as_ref()
+        let signature = self
+            .signature
+            .as_ref()
             .ok_or_else(|| WalletError::Transaction("Transaction not signed".to_string()))?;
-        
+
         let sig_bytes = hex::decode(signature)?;
         let message = self.serialize_for_signing()?;
-        
+
         keypair.verify(&message, &sig_bytes)
     }
 
     /// Verify the transaction signature against a public key
     pub fn verify_with_pubkey(&self, public_key: &KeyPair) -> Result<bool> {
-        let signature = self.signature.as_ref()
+        let signature = self
+            .signature
+            .as_ref()
             .ok_or_else(|| WalletError::Transaction("Transaction not signed".to_string()))?;
-        
+
         let sig_bytes = hex::decode(signature)?;
         let message = self.serialize_for_signing()?;
-        
+
         public_key.verify(&message, &sig_bytes)
     }
 
     /// Get the transaction hash (for display/reference purposes)
     pub fn hash(&self) -> Result<String> {
-        use sha2::{Sha256, Digest};
-        
+        use sha2::{Digest, Sha256};
+
         let message = self.serialize_for_signing()?;
         let hash = Sha256::digest(&message);
-        Ok(hex::encode(&hash))
+        Ok(hex::encode(hash))
     }
 
     /// Serialize the complete transaction to JSON
@@ -210,23 +214,25 @@ impl TransactionBuilder {
 
     /// Build the transaction
     pub fn build(self) -> Result<Transaction> {
-        let from = self.from.ok_or_else(|| {
-            WalletError::Transaction("Sender address not set".to_string())
-        })?;
-        
-        let to = self.to.ok_or_else(|| {
-            WalletError::Transaction("Recipient address not set".to_string())
-        })?;
+        let from = self
+            .from
+            .ok_or_else(|| WalletError::Transaction("Sender address not set".to_string()))?;
+
+        let to = self
+            .to
+            .ok_or_else(|| WalletError::Transaction("Recipient address not set".to_string()))?;
 
         if self.amount == 0 {
-            return Err(WalletError::Transaction("Amount must be greater than 0".to_string()));
+            return Err(WalletError::Transaction(
+                "Amount must be greater than 0".to_string(),
+            ));
         }
 
         let mut tx = Transaction::new(from, to, self.amount, self.fee, self.nonce);
         if let Some(memo) = self.memo {
             tx = tx.with_memo(memo);
         }
-        
+
         Ok(tx)
     }
 }
@@ -250,7 +256,7 @@ mod tests {
             100,
             1,
         );
-        
+
         assert_eq!(tx.amount, 1000);
         assert_eq!(tx.fee, 100);
         assert_eq!(tx.total_cost(), 1100);
@@ -259,14 +265,9 @@ mod tests {
 
     #[test]
     fn test_transaction_with_memo() {
-        let tx = Transaction::new(
-            "from".to_string(),
-            "to".to_string(),
-            1000,
-            100,
-            1,
-        ).with_memo("Test memo".to_string());
-        
+        let tx = Transaction::new("from".to_string(), "to".to_string(), 1000, 100, 1)
+            .with_memo("Test memo".to_string());
+
         assert_eq!(tx.memo, Some("Test memo".to_string()));
     }
 
@@ -280,10 +281,10 @@ mod tests {
             100,
             1,
         );
-        
+
         tx.sign(&keypair).unwrap();
         assert!(tx.signature.is_some());
-        
+
         let valid = tx.verify(&keypair).unwrap();
         assert!(valid);
     }
@@ -297,13 +298,14 @@ mod tests {
             1000,
             100,
             1,
-        ).with_memo("Test".to_string());
-        
+        )
+        .with_memo("Test".to_string());
+
         tx.sign(&keypair).unwrap();
-        
+
         let json = tx.to_json().unwrap();
         let loaded = Transaction::from_json(&json).unwrap();
-        
+
         assert_eq!(tx.from, loaded.from);
         assert_eq!(tx.to, loaded.to);
         assert_eq!(tx.amount, loaded.amount);
@@ -322,7 +324,7 @@ mod tests {
             .memo("Builder test".to_string())
             .build()
             .unwrap();
-        
+
         assert_eq!(tx.amount, 5000);
         assert_eq!(tx.fee, 200);
         assert_eq!(tx.nonce, 42);
@@ -331,13 +333,7 @@ mod tests {
 
     #[test]
     fn test_transaction_hash() {
-        let tx = Transaction::new(
-            "from".to_string(),
-            "to".to_string(),
-            1000,
-            100,
-            1,
-        );
+        let tx = Transaction::new("from".to_string(), "to".to_string(), 1000, 100, 1);
 
         let hash = tx.hash().unwrap();
         assert_eq!(hash.len(), 64); // SHA256 hex
@@ -400,22 +396,10 @@ mod tests {
         let keypair = KeyPair::generate();
         let address = keypair.public_key_base58();
 
-        let mut tx1 = Transaction::new(
-            address.clone(),
-            "recipient".to_string(),
-            1000,
-            100,
-            0,
-        );
+        let mut tx1 = Transaction::new(address.clone(), "recipient".to_string(), 1000, 100, 0);
         tx1.sign(&keypair).unwrap();
 
-        let mut tx2 = Transaction::new(
-            address.clone(),
-            "recipient".to_string(),
-            2000,
-            100,
-            1,
-        );
+        let mut tx2 = Transaction::new(address.clone(), "recipient".to_string(), 2000, 100, 1);
         tx2.sign(&keypair).unwrap();
 
         let mut nonce_store = NonceStore::new();

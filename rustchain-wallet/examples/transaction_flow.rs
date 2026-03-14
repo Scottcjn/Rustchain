@@ -2,7 +2,7 @@
 //!
 //! This example demonstrates creating, signing, and serializing transactions.
 
-use rustchain_wallet::{Wallet, Transaction, TransactionBuilder};
+use rustchain_wallet::{Transaction, TransactionBuilder, Wallet};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== RustChain Transaction Flow Example ===\n");
@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("1. Creating wallets...");
     let sender = Wallet::generate();
     let recipient = Wallet::generate();
-    
+
     println!("   Sender:    {}", sender.address());
     println!("   Recipient: {}\n", recipient.address());
 
@@ -20,9 +20,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tx = TransactionBuilder::new()
         .from(sender.address())
         .to(recipient.address())
-        .amount(5000)           // 5000 RTC (smallest unit)
-        .fee(100)               // 100 RTC fee
-        .nonce(1)               // Transaction nonce
+        .amount(5000) // 5000 RTC (smallest unit)
+        .fee(100) // 100 RTC fee
+        .nonce(1) // Transaction nonce
         .memo("Payment for services".to_string())
         .build()?;
 
@@ -54,7 +54,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("6. Deserializing from JSON...");
     let loaded_tx = Transaction::from_json(&json)?;
     println!("   Loaded successfully!");
-    println!("   Signatures match: {}\n", tx.signature == loaded_tx.signature);
+    println!(
+        "   Signatures match: {}\n",
+        tx.signature == loaded_tx.signature
+    );
 
     // Verify the transaction
     println!("7. Verifying transaction signature...");
@@ -79,8 +82,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build()?;
         tx.sign(sender.keypair())?;
         transactions.push(tx);
-        let hash: String = transactions[i-1].hash()?;
-        println!("   TX {}: amount={}, hash={}", i, transactions[i-1].amount, hash);
+        let hash: String = transactions[i - 1].hash()?;
+        println!(
+            "   TX {}: amount={}, hash={}",
+            i,
+            transactions[i - 1].amount,
+            hash
+        );
     }
 
     println!("\n=== Example Complete ===");

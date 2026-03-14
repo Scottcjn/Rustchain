@@ -3,11 +3,11 @@
 //! This module provides persistent storage of used nonces to prevent
 //! replay attacks across application restarts.
 
+use crate::error::{Result, WalletError};
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
-use serde::{Serialize, Deserialize};
-use crate::error::{Result, WalletError};
 
 /// Persistent nonce store for replay protection
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,7 +30,7 @@ impl NonceStore {
     /// Load nonce store from file, creating empty store if not exists
     pub fn load_or_create<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
-        
+
         if !path.exists() {
             return Ok(Self::new());
         }
@@ -38,14 +38,14 @@ impl NonceStore {
         let data = fs::read(path)?;
         let store: NonceStore = serde_json::from_slice(&data)
             .map_err(|e| WalletError::Storage(format!("Failed to parse nonce store: {}", e)))?;
-        
+
         Ok(store)
     }
 
     /// Save nonce store to file
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let path = path.as_ref();
-        
+
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -69,22 +69,18 @@ impl NonceStore {
     /// Mark a nonce as used for an address
     /// Returns true if this was a new nonce (not previously used)
     pub fn mark_used(&mut self, address: &str, nonce: u64) -> bool {
-        let used = self.used_nonces
-            .entry(address.to_string())
-            .or_insert_with(HashSet::new);
-        
+        let used = self.used_nonces.entry(address.to_string()).or_default();
+
         let is_new = used.insert(nonce);
-        
+
         if is_new {
             // Update highest nonce tracker
-            let highest = self.highest_nonce
-                .entry(address.to_string())
-                .or_insert(0);
+            let highest = self.highest_nonce.entry(address.to_string()).or_insert(0);
             if nonce > *highest {
                 *highest = nonce;
             }
         }
-        
+
         is_new
     }
 
@@ -99,10 +95,7 @@ impl NonceStore {
     /// Get the next suggested nonce for an address
     /// Returns highest_used_nonce + 1, or 0 if no nonces used yet
     pub fn get_next_nonce(&self, address: &str) -> u64 {
-        self.highest_nonce
-            .get(address)
-            .map(|h| h + 1)
-            .unwrap_or(0)
+        self.highest_nonce.get(address).map(|h| h + 1).unwrap_or(0)
     }
 
     /// Get the highest used nonce for an address
@@ -122,9 +115,10 @@ impl NonceStore {
     /// Returns Ok(()) if nonce is valid, Err if it's a replay
     pub fn validate_nonce(&self, address: &str, nonce: u64) -> Result<()> {
         if self.is_used(address, nonce) {
-            return Err(WalletError::Transaction(
-                format!("Nonce {} already used for address {} (replay attempt)", nonce, address)
-            ));
+            return Err(WalletError::Transaction(format!(
+                "Nonce {} already used for address {} (replay attempt)",
+                nonce, address
+            )));
         }
         Ok(())
     }
@@ -168,15 +162,11 @@ impl NonceStore {
     /// ```
     pub fn merge(&mut self, other: &NonceStore) {
         for (address, nonces) in &other.used_nonces {
-            let used = self.used_nonces
-                .entry(address.clone())
-                .or_insert_with(HashSet::new);
+            let used = self.used_nonces.entry(address.clone()).or_default();
             used.extend(nonces);
         }
         for (address, highest) in &other.highest_nonce {
-            let entry = self.highest_nonce
-                .entry(address.clone())
-                .or_insert(0);
+            let entry = self.highest_nonce.entry(address.clone()).or_insert(0);
             if *highest > *entry {
                 *entry = *highest;
             }
@@ -215,7 +205,7 @@ mod tests {
         // Mark more nonces
         assert!(store.mark_used(address, 1));
         assert!(store.mark_used(address, 5));
-        
+
         assert_eq!(store.get_next_nonce(address), 6);
         assert_eq!(store.used_count(address), 3);
     }
@@ -317,7 +307,7 @@ mod tests {
         assert_eq!(store.used_count("addr_0"), 4);
         assert_eq!(store.used_count("addr_1"), 3);
         assert_eq!(store.used_count("addr_2"), 3);
-        
+
         // Verify specific nonces
         assert!(store.is_used("addr_0", 0));
         assert!(store.is_used("addr_0", 3));

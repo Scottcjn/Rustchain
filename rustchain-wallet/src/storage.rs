@@ -4,10 +4,10 @@
 //! using AES-256-GCM encryption with a user-provided password.
 //! It also manages persistent nonce storage for replay protection.
 
+use aes_gcm::aead::Aead;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use serde::{Serialize, Deserialize};
-use aes_gcm::aead::Aead;
 
 use crate::error::{Result, WalletError};
 use crate::keys::KeyPair;
@@ -34,10 +34,10 @@ impl WalletStorage {
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
         let storage_path = path.as_ref().to_path_buf();
         let nonce_store_path = storage_path.join("nonces.json");
-        
+
         // Load existing nonce store or create new one (migration support)
         let nonce_store = NonceStore::load_or_create(&nonce_store_path)?;
-        
+
         Ok(Self {
             storage_path,
             nonce_store_path,
@@ -47,12 +47,14 @@ impl WalletStorage {
 
     /// Get the default wallet storage directory
     pub fn default_path() -> Result<PathBuf> {
-        let base = dirs::home_dir()
-            .ok_or_else(|| WalletError::Storage("Could not determine home directory".to_string()))?;
+        let base = dirs::home_dir().ok_or_else(|| {
+            WalletError::Storage("Could not determine home directory".to_string())
+        })?;
         Ok(base.join(".rustchain").join("wallets"))
     }
 
     /// Create storage at the default location
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Result<Self> {
         let path = Self::default_path()?;
         fs::create_dir_all(&path)?;
@@ -63,21 +65,19 @@ impl WalletStorage {
     pub fn save(&self, name: &str, keypair: &KeyPair, password: &str) -> Result<PathBuf> {
         let private_key = keypair.export_private_key();
         let private_bytes = hex::decode(&private_key)?;
-        
+
         // Generate random salt
         let mut salt = [0u8; 32];
-        getrandom::getrandom(&mut salt).map_err(|e| {
-            WalletError::Encryption(format!("Failed to generate salt: {}", e))
-        })?;
+        getrandom::getrandom(&mut salt)
+            .map_err(|e| WalletError::Encryption(format!("Failed to generate salt: {}", e)))?;
 
         // Derive encryption key from password
         let key = derive_key(password, &salt)?;
 
         // Generate random nonce
         let mut nonce = [0u8; 12];
-        getrandom::getrandom(&mut nonce).map_err(|e| {
-            WalletError::Encryption(format!("Failed to generate nonce: {}", e))
-        })?;
+        getrandom::getrandom(&mut nonce)
+            .map_err(|e| WalletError::Encryption(format!("Failed to generate nonce: {}", e)))?;
 
         // Encrypt the private key
         let ciphertext = encrypt_aes_gcm(&key, &nonce, &private_bytes)?;
@@ -112,11 +112,12 @@ impl WalletStorage {
     /// Load a keypair from an encrypted file
     pub fn load(&self, name: &str, password: &str) -> Result<KeyPair> {
         let file_path = self.storage_path.join(format!("{}.wallet", name));
-        
+
         if !file_path.exists() {
-            return Err(WalletError::Storage(
-                format!("Wallet file not found: {}", file_path.display())
-            ));
+            return Err(WalletError::Storage(format!(
+                "Wallet file not found: {}",
+                file_path.display()
+            )));
         }
 
         let data = fs::read(&file_path)?;
@@ -126,11 +127,7 @@ impl WalletStorage {
         let key = derive_key(password, &encrypted.salt)?;
 
         // Decrypt the private key
-        let private_bytes = decrypt_aes_gcm(
-            &key,
-            &encrypted.nonce,
-            &encrypted.ciphertext
-        )?;
+        let private_bytes = decrypt_aes_gcm(&key, &encrypted.nonce, &encrypted.ciphertext)?;
 
         KeyPair::from_bytes(&private_bytes)
     }
@@ -138,7 +135,7 @@ impl WalletStorage {
     /// List all stored wallets
     pub fn list(&self) -> Result<Vec<String>> {
         let mut wallets = Vec::new();
-        
+
         if !self.storage_path.exists() {
             return Ok(wallets);
         }
@@ -146,7 +143,7 @@ impl WalletStorage {
         for entry in fs::read_dir(&self.storage_path)? {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.extension().and_then(|s| s.to_str()) == Some("wallet") {
                 if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
                     wallets.push(name.to_string());
@@ -166,11 +163,12 @@ impl WalletStorage {
     /// Delete a wallet
     pub fn delete(&self, name: &str) -> Result<()> {
         let file_path = self.storage_path.join(format!("{}.wallet", name));
-        
+
         if !file_path.exists() {
-            return Err(WalletError::Storage(
-                format!("Wallet file not found: {}", file_path.display())
-            ));
+            return Err(WalletError::Storage(format!(
+                "Wallet file not found: {}",
+                file_path.display()
+            )));
         }
 
         fs::remove_file(&file_path)?;
@@ -278,11 +276,12 @@ fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32]> {
 fn encrypt_aes_gcm(key: &[u8; 32], nonce: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
     use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 
-    let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|e| WalletError::Encryption(e.to_string()))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(key).map_err(|e| WalletError::Encryption(e.to_string()))?;
 
     let nonce = Nonce::from_slice(nonce);
-    let ciphertext = cipher.encrypt(nonce, plaintext)
+    let ciphertext = cipher
+        .encrypt(nonce, plaintext)
         .map_err(|e| WalletError::Encryption(e.to_string()))?;
 
     Ok(ciphertext)
@@ -306,11 +305,12 @@ fn encrypt_aes_gcm(key: &[u8; 32], nonce: &[u8], plaintext: &[u8]) -> Result<Vec
 fn decrypt_aes_gcm(key: &[u8; 32], nonce: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>> {
     use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 
-    let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|e| WalletError::Decryption(e.to_string()))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(key).map_err(|e| WalletError::Decryption(e.to_string()))?;
 
     let nonce = Nonce::from_slice(nonce);
-    let plaintext = cipher.decrypt(nonce, ciphertext)
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext)
         .map_err(|_| WalletError::Decryption("Invalid password or corrupted data".to_string()))?;
 
     Ok(plaintext)
@@ -372,7 +372,7 @@ mod tests {
     #[test]
     fn test_wallet_storage_delete() {
         let temp_dir = TempDir::new().unwrap();
-        let mut storage = WalletStorage::new(temp_dir.path()).unwrap();
+        let storage = WalletStorage::new(temp_dir.path()).unwrap();
 
         let keypair = KeyPair::generate();
         storage.save("test_wallet", &keypair, "password").unwrap();

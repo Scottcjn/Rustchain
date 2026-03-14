@@ -3,9 +3,9 @@
 //! This module provides secure key generation, storage, and signing capabilities
 //! using Ed25519 elliptic curve cryptography.
 
-use ed25519_dalek::{Signer, SigningKey, VerifyingKey, Signature, Verifier};
-use rand::rngs::OsRng;
 use bs58;
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use rand::rngs::OsRng;
 
 use crate::error::{Result, WalletError};
 
@@ -21,7 +21,7 @@ impl KeyPair {
         let mut csprng = OsRng;
         let signing_key = SigningKey::generate(&mut csprng);
         let verifying_key = signing_key.verifying_key();
-        
+
         Self {
             signing_key,
             verifying_key,
@@ -32,16 +32,16 @@ impl KeyPair {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() != 32 {
             return Err(WalletError::InvalidKey(
-                "Secret key must be 32 bytes".to_string()
+                "Secret key must be 32 bytes".to_string(),
             ));
         }
-        
+
         let mut key_bytes = [0u8; 32];
         key_bytes.copy_from_slice(bytes);
-        
+
         let signing_key = SigningKey::from_bytes(&key_bytes);
         let verifying_key = signing_key.verifying_key();
-        
+
         Ok(Self {
             signing_key,
             verifying_key,
@@ -87,13 +87,13 @@ impl KeyPair {
     pub fn verify(&self, message: &[u8], signature: &[u8]) -> Result<bool> {
         if signature.len() != 64 {
             return Err(WalletError::InvalidSignature(
-                "Signature must be 64 bytes".to_string()
+                "Signature must be 64 bytes".to_string(),
             ));
         }
-        
+
         let sig = Signature::from_slice(signature)
             .map_err(|e| WalletError::InvalidSignature(e.to_string()))?;
-        
+
         match self.verifying_key.verify(message, &sig) {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
@@ -152,20 +152,15 @@ impl Drop for KeyPair {
 /// * `Err(WalletError::KeyDerivation)` - Invalid key length during derivation
 pub fn derive_from_mnemonic(mnemonic: &str, derivation_path: &str) -> Result<KeyPair> {
     use hmac::{Hmac, Mac};
-    use sha2::{Sha512, Digest};
     use pbkdf2::pbkdf2_hmac;
+    use sha2::{Digest, Sha512};
 
     type HmacSha512 = Hmac<Sha512>;
 
     // Generate seed from mnemonic
     let mut seed = [0u8; 64];
     let salt = format!("mnemonic{}", ""); // Can add passphrase here
-    pbkdf2_hmac::<Sha512>(
-        mnemonic.as_bytes(),
-        salt.as_bytes(),
-        2048,
-        &mut seed,
-    );
+    pbkdf2_hmac::<Sha512>(mnemonic.as_bytes(), salt.as_bytes(), 2048, &mut seed);
 
     // Simple derivation (not full BIP32)
     let mut mac = HmacSha512::new_from_slice(&seed)
@@ -179,7 +174,7 @@ pub fn derive_from_mnemonic(mnemonic: &str, derivation_path: &str) -> Result<Key
     secret_bytes.copy_from_slice(&derived[..32]);
 
     // Hash to ensure uniform distribution
-    let hash_output = Sha512::digest(&secret_bytes);
+    let hash_output = Sha512::digest(secret_bytes);
     let mut key_bytes = [0u8; 32];
     key_bytes.copy_from_slice(&hash_output[..32]);
 
@@ -203,10 +198,10 @@ mod tests {
         // Generate a keypair and export it
         let original = KeyPair::generate();
         let hex = original.export_private_key();
-        
+
         // Import from hex
         let imported = KeyPair::from_hex(&hex).unwrap();
-        
+
         // Verify they match
         assert_eq!(original.public_key_hex(), imported.public_key_hex());
     }
@@ -215,7 +210,7 @@ mod tests {
     fn test_keypair_from_base58() {
         let original = KeyPair::generate();
         let base58 = bs58::encode(original.signing_key.as_bytes()).into_string();
-        
+
         let imported = KeyPair::from_base58(&base58).unwrap();
         assert_eq!(original.public_key_hex(), imported.public_key_hex());
     }
@@ -224,10 +219,10 @@ mod tests {
     fn test_signing_and_verification() {
         let keypair = KeyPair::generate();
         let message = b"Test message for signing";
-        
+
         let signature = keypair.sign(message).unwrap();
         assert_eq!(signature.len(), 64);
-        
+
         let valid = keypair.verify(message, &signature).unwrap();
         assert!(valid);
     }
@@ -237,9 +232,9 @@ mod tests {
         let keypair1 = KeyPair::generate();
         let keypair2 = KeyPair::generate();
         let message = b"Test message";
-        
+
         let signature = keypair1.sign(message).unwrap();
-        
+
         // Verify with wrong keypair should fail
         let valid = keypair2.verify(message, &signature).unwrap();
         assert!(!valid);

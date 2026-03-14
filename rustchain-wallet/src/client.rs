@@ -3,12 +3,12 @@
 //! This module provides a client for interacting with the RustChain network,
 //! including balance queries, transaction submission, and network info.
 
-use reqwest::Client;
-use serde::{Serialize, Deserialize};
-use serde_json::json;
 use crate::error::{Result, WalletError};
-use crate::transaction::Transaction;
 use crate::keys::KeyPair;
+use crate::transaction::Transaction;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 /// RustChain RPC client
 pub struct RustChainClient {
@@ -65,9 +65,14 @@ impl RustChainClient {
 
     /// Get the balance for an address
     pub async fn get_balance(&self, address: &str) -> Result<BalanceResponse> {
-        let response = self.rpc_call("getBalance", json!({
-            "address": address
-        })).await?;
+        let response = self
+            .rpc_call(
+                "getBalance",
+                json!({
+                    "address": address
+                }),
+            )
+            .await?;
 
         serde_json::from_value(response)
             .map_err(|e| WalletError::Rpc(format!("Failed to parse balance response: {}", e)))
@@ -75,19 +80,30 @@ impl RustChainClient {
 
     /// Get the current nonce for an address
     pub async fn get_nonce(&self, address: &str) -> Result<u64> {
-        let response = self.rpc_call("getNonce", json!({
-            "address": address
-        })).await?;
+        let response = self
+            .rpc_call(
+                "getNonce",
+                json!({
+                    "address": address
+                }),
+            )
+            .await?;
 
-        response["nonce"].as_u64()
+        response["nonce"]
+            .as_u64()
             .ok_or_else(|| WalletError::Rpc("Invalid nonce response".to_string()))
     }
 
     /// Submit a signed transaction
     pub async fn submit_transaction(&self, tx: &Transaction) -> Result<TransactionResponse> {
-        let response = self.rpc_call("submitTransaction", json!({
-            "transaction": tx
-        })).await?;
+        let response = self
+            .rpc_call(
+                "submitTransaction",
+                json!({
+                    "transaction": tx
+                }),
+            )
+            .await?;
 
         serde_json::from_value(response)
             .map_err(|e| WalletError::Rpc(format!("Failed to parse transaction response: {}", e)))
@@ -95,9 +111,14 @@ impl RustChainClient {
 
     /// Get transaction status by hash
     pub async fn get_transaction(&self, tx_hash: &str) -> Result<TransactionResponse> {
-        let response = self.rpc_call("getTransaction", json!({
-            "tx_hash": tx_hash
-        })).await?;
+        let response = self
+            .rpc_call(
+                "getTransaction",
+                json!({
+                    "tx_hash": tx_hash
+                }),
+            )
+            .await?;
 
         serde_json::from_value(response)
             .map_err(|e| WalletError::Rpc(format!("Failed to parse transaction status: {}", e)))
@@ -120,14 +141,14 @@ impl RustChainClient {
     /// Estimate the fee for a transaction
     pub async fn estimate_fee(&self, _amount: u64, priority: FeePriority) -> Result<u64> {
         let min_fee = self.get_min_fee().await?;
-        
+
         let multiplier = match priority {
             FeePriority::Low => 1,
             FeePriority::Normal => 2,
             FeePriority::High => 5,
             FeePriority::Instant => 10,
         };
-        
+
         Ok(min_fee * multiplier)
     }
 
@@ -174,7 +195,8 @@ impl RustChainClient {
             "id": 1
         });
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&self.rpc_url)
             .json(&request)
             .send()
@@ -182,24 +204,26 @@ impl RustChainClient {
             .map_err(|e| WalletError::Network(format!("RPC request failed: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(WalletError::Network(
-                format!("RPC returned status: {}", response.status())
-            ));
+            return Err(WalletError::Network(format!(
+                "RPC returned status: {}",
+                response.status()
+            )));
         }
 
-        let json_response: serde_json::Value = response.json().await
+        let json_response: serde_json::Value = response
+            .json()
+            .await
             .map_err(|e| WalletError::Network(format!("Failed to parse JSON: {}", e)))?;
 
         // Check for RPC error
         if let Some(error) = json_response.get("error") {
             if !error.is_null() {
-                return Err(WalletError::Rpc(
-                    format!("RPC error: {}", error)
-                ));
+                return Err(WalletError::Rpc(format!("RPC error: {}", error)));
             }
         }
 
-        json_response.get("result")
+        json_response
+            .get("result")
             .cloned()
             .ok_or_else(|| WalletError::Rpc("No result in RPC response".to_string()))
     }
@@ -244,8 +268,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_fee_priority() {
-        let client = RustChainClient::new("https://rpc.rustchain.org".to_string());
-        
+        let _client = RustChainClient::new("https://rpc.rustchain.org".to_string());
+
         // This will fail in tests without a real RPC, but tests the logic
         let _low = FeePriority::Low;
         let _normal = FeePriority::Normal;

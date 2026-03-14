@@ -3,7 +3,7 @@
 //! This example demonstrates using the RustChain RPC client.
 //! Note: This example requires a running RustChain node or access to a public RPC endpoint.
 
-use rustchain_wallet::{RustChainClient, Network, TransactionBuilder, Wallet};
+use rustchain_wallet::{Network, RustChainClient, TransactionBuilder, Wallet};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -49,8 +49,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Estimate fees for different priorities
     println!("5. Estimating fees for different priorities...");
     use rustchain_wallet::client::FeePriority;
-    
-    for priority in [FeePriority::Low, FeePriority::Normal, FeePriority::High, FeePriority::Instant] {
+
+    for priority in [
+        FeePriority::Low,
+        FeePriority::Normal,
+        FeePriority::High,
+        FeePriority::Instant,
+    ] {
         match client.estimate_fee(1000, priority).await {
             Ok(fee) => println!("   {:?}: {} RTC", priority, fee),
             Err(_) => println!("   {:?}: Could not estimate", priority),
@@ -93,10 +98,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .fee(100)
         .nonce(0)
         .build()?;
-    
+
     // Sign the transaction
     tx.sign(wallet.keypair())?;
-    
+
     println!("   Transaction prepared:");
     println!("   From:     {}", tx.from);
     println!("   To:       {}", tx.to);
@@ -125,6 +130,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Example Complete ===");
     println!("\nNote: Some operations may fail if the RPC node is offline.");
     println!("For full functionality, connect to a running RustChain node.");
-    
+
     Ok(())
 }
