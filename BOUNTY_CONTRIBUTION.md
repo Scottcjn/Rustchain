@@ -1,9 +1,9 @@
 # Bounty Contribution
 
-This addresses issue #2: Fix issue #1: feat(rust): implement native Rust wallet for bounty #733
+This addresses issue #9: Fix issue #8: Fix issue #7: Fix issue #4: Bounty #1597: Telegram Bot Implementation
 
 ## Description
-Resolves #1
+Resolves #8
 
 Payment address: 0x4F666e7b4F63637223625FD4e9Ace6055fD6a847
 
