@@ -1,9 +1,9 @@
 # Bounty Contribution
 
-This addresses issue #959: Fix issue #958: Add /wallet/history endpoint (Bounty #908)
+This addresses issue #960: Fix issue #959: Fix issue #958: Add /wallet/history endpoint (Bounty #908)
 
 ## Description
-Resolves #958
+Resolves #959
 
 Payment address: 0x4F666e7b4F63637223625FD4e9Ace6055fD6a847
 
