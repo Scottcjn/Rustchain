@@ -6341,3 +6341,100 @@ def check_hardware_wallet_consistency(hardware_id, miner_wallet, conn):
             return False, f'hardware_bound_to_different_wallet:{bound_wallet[:20]}'
     
     return True, 'ok'
+
+
+
+# === WALLET HISTORY ENDPOINT (Bounty #908) ===
+@app.route('/wallet/history', methods=['GET'])
+def get_wallet_history():
+    '''
+    Get transaction history for a given wallet/miner ID.
+    
+    Query params:
+        - miner_id: Wallet/miner ID to query
+        - limit: Number of transactions to return (default: 50)
+        - offset: Offset for pagination (default: 0)
+    
+    Returns:
+        JSON with transaction history including rewards and transfers
+    '''
+    miner_id = request.args.get('miner_id')
+    limit = int(request.args.get('limit', 50))
+    offset = int(request.args.get('offset', 0))
+    
+    if not miner_id:
+        return jsonify({'ok': False, 'error': 'miner_id is required'}), 400
+    
+    try:
+        transactions = []
+        
+        # Query epoch_rewards for mining rewards
+        c = conn.cursor()
+        c.execute('''
+            SELECT 'reward' as type, amount, epoch, timestamp, tx_hash
+            FROM epoch_rewards 
+            WHERE miner_id = ?
+            ORDER BY epoch DESC
+            LIMIT ? OFFSET ?
+        ''', (miner_id, limit, offset))
+        
+        for row in c.fetchall():
+            transactions.append({
+                'type': 'reward',
+                'amount': row[0],
+                'epoch': row[1],
+                'timestamp': row[2],
+                'tx_hash': row[3]
+            })
+        
+        # Query ledger for transfers
+        c.execute('''
+            SELECT 'transfer_in' as type, from_wallet, amount, timestamp, tx_hash
+            FROM ledger 
+            WHERE to_wallet = ?
+            ORDER BY timestamp DESC
+            LIMIT ? OFFSET ?
+        ''', (miner_id, limit, offset))
+        
+        for row in c.fetchall():
+            transactions.append({
+                'type': 'transfer_in',
+                'from': row[1],
+                'amount': row[2],
+                'timestamp': row[3],
+                'tx_hash': row[4]
+            })
+        
+        c.execute('''
+            SELECT 'transfer_out' as type, to_wallet, amount, timestamp, tx_hash
+            FROM ledger 
+            WHERE from_wallet = ?
+            ORDER BY timestamp DESC
+            LIMIT ? OFFSET ?
+        ''', (miner_id, limit, offset))
+        
+        for row in c.fetchall():
+            transactions.append({
+                'type': 'transfer_out',
+                'to': row[1],
+                'amount': row[2],
+                'timestamp': row[3],
+                'tx_hash': row[4]
+            })
+        
+        # Sort by timestamp descending
+        transactions.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        
+        # Get total count
+        c.execute('SELECT COUNT(*) FROM epoch_rewards WHERE miner_id = ?', (miner_id,))
+        total = c.fetchone()[0]
+        
+        return jsonify({
+            'ok': True,
+            'miner_id': miner_id,
+            'transactions': transactions[:limit],
+            'total': total
+        })
+        
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
