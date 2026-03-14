@@ -38,7 +38,35 @@ except ImportError:
     ROM_DB_AVAILABLE = False
 
 def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict]:
-    """Check 1: Clock-Skew & Oscillator Drift"""
+    """Check 1: Clock-Skew & Oscillator Drift
+    
+    Detects whether the hardware has a real physical crystal oscillator by
+    measuring timing variance across repeated SHA-256 hash operations.
+    
+    Real hardware exhibits natural clock drift due to:
+    - Crystal oscillator aging and temperature sensitivity
+    - Power supply fluctuations
+    - Electromagnetic interference
+    
+    Virtual machines use software-emulated clocks that produce unnaturally
+    consistent timing (CV < 0.0001) or zero drift between samples.
+    
+    Args:
+        samples: Number of timing measurements to collect (default 200).
+                 More samples increase detection accuracy but take longer.
+    
+    Returns:
+        Tuple of (passed: bool, data: dict) where data contains:
+        - mean_ns: Average time per batch of SHA-256 operations (nanoseconds)
+        - stdev_ns: Standard deviation of timing measurements
+        - cv: Coefficient of variation (stdev/mean) — key metric
+        - drift_stdev: Standard deviation of consecutive timing differences
+        - fail_reason: Present only if check failed
+    
+    Failure conditions:
+        - cv < 0.0001: Timing too consistent → likely synthetic/emulated clock
+        - drift_stdev == 0: No variation between consecutive samples → no real oscillator
+    """
     intervals = []
     reference_ops = 5000
 
@@ -78,7 +106,31 @@ def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict]:
 
 
 def check_cache_timing(iterations: int = 100) -> Tuple[bool, Dict]:
-    """Check 2: Cache Timing Fingerprint (L1/L2/L3 Latency)"""
+    """Check 2: Cache Timing Fingerprint (L1/L2/L3 Latency)
+    
+    Measures memory access latency at different buffer sizes to detect
+    the CPU's cache hierarchy. Real CPUs have distinct L1/L2/L3 caches
+    with measurably different access times.
+    
+    How it works:
+    - Allocates buffers matching typical L1 (8KB), L2 (128KB), L3 (4MB) sizes
+    - Measures average access time for each buffer size
+    - Computes ratios between cache levels
+    
+    Real hardware shows clear latency steps (L2 ~2-4x slower than L1,
+    L3 ~2-10x slower than L2). VMs often show flat latency profiles
+    because the hypervisor virtualizes memory access uniformly.
+    
+    Args:
+        iterations: Number of measurement rounds per cache level (default 100)
+    
+    Returns:
+        Tuple of (passed: bool, data: dict) with cache latency metrics.
+    
+    Failure conditions:
+        - l2_l1_ratio < 1.01 AND l3_l2_ratio < 1.01: No cache hierarchy detected
+        - Any latency is zero: Impossible on real hardware
+    """
     l1_size = 8 * 1024
     l2_size = 128 * 1024
     l3_size = 4 * 1024 * 1024
@@ -124,7 +176,26 @@ def check_cache_timing(iterations: int = 100) -> Tuple[bool, Dict]:
 
 
 def check_simd_identity() -> Tuple[bool, Dict]:
-    """Check 3: SIMD Unit Identity (SSE/AVX/AltiVec/NEON)"""
+    """Check 3: SIMD Unit Identity (SSE/AVX/AltiVec/NEON)
+    
+    Identifies the CPU's SIMD (Single Instruction Multiple Data) capabilities
+    by reading CPU flags from the operating system. Different CPU architectures
+    expose different SIMD instruction sets:
+    
+    - x86/x64: SSE, SSE2, SSE3, SSE4, AVX, AVX2, AVX-512
+    - PowerPC: AltiVec (Velocity Engine)
+    - ARM: NEON, SVE
+    
+    This check serves two purposes:
+    1. Verifies the CPU reports SIMD flags consistent with its claimed architecture
+    2. Detects emulators that may not accurately report SIMD capabilities
+    
+    A machine claiming to be PowerPC but lacking AltiVec flags, or an x86 CPU
+    with no SSE support, indicates possible emulation or spoofing.
+    
+    Returns:
+        Tuple of (passed: bool, data: dict) with detected SIMD flags and architecture.
+    """
     flags = []
     arch = platform.machine().lower()
 
@@ -174,7 +245,26 @@ def check_simd_identity() -> Tuple[bool, Dict]:
 
 
 def check_thermal_drift(samples: int = 50) -> Tuple[bool, Dict]:
-    """Check 4: Thermal Drift Entropy"""
+    """Check 4: Thermal Drift Entropy
+    
+    Monitors CPU temperature sensor readings over time to detect real hardware.
+    Physical CPUs generate heat during computation, causing measurable temperature
+    fluctuations. These thermal patterns are unique to each physical chip due to:
+    
+    - Manufacturing variations in silicon
+    - Thermal paste application differences  
+    - Cooling solution efficiency
+    - Ambient temperature effects
+    
+    VMs typically report static/missing thermal data because hypervisors don't
+    expose real thermal sensors to guest operating systems.
+    
+    Args:
+        samples: Number of temperature readings to collect (default 50)
+    
+    Returns:
+        Tuple of (passed: bool, data: dict) with thermal entropy metrics.
+    """
     cold_times = []
     for i in range(samples):
         start = time.perf_counter_ns()
@@ -216,7 +306,28 @@ def check_thermal_drift(samples: int = 50) -> Tuple[bool, Dict]:
 
 
 def check_instruction_jitter(samples: int = 100) -> Tuple[bool, Dict]:
-    """Check 5: Instruction Path Jitter"""
+    """Check 5: Instruction Path Jitter
+    
+    Measures timing variance across three different instruction types:
+    integer operations, floating-point operations, and branch operations.
+    
+    Real CPUs exhibit characteristic jitter patterns due to:
+    - Pipeline stalls and branch mispredictions
+    - Out-of-order execution scheduling variations
+    - Cache miss penalties on different operation types
+    - Microarchitectural contention between execution units
+    
+    Each CPU microarchitecture (Haswell, Zen3, M1, G4, etc.) produces a
+    unique ratio of int/fp/branch timing that acts as a fingerprint.
+    Emulators tend to show uniform timing across all operation types.
+    
+    Args:
+        samples: Number of timing measurements per operation type (default 100)
+    
+    Returns:
+        Tuple of (passed: bool, data: dict) with jitter metrics for each
+        instruction type and cross-type ratios.
+    """
     def measure_int_ops(count: int = 10000) -> float:
         start = time.perf_counter_ns()
         x = 1
