@@ -179,7 +179,7 @@ pub fn derive_from_mnemonic(mnemonic: &str, derivation_path: &str) -> Result<Key
     secret_bytes.copy_from_slice(&derived[..32]);
 
     // Hash to ensure uniform distribution
-    let hash_output = Sha512::digest(&secret_bytes);
+    let hash_output = Sha512::digest(secret_bytes);
     let mut key_bytes = [0u8; 32];
     key_bytes.copy_from_slice(&hash_output[..32]);
 

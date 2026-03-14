@@ -107,7 +107,7 @@ impl Transaction {
         
         let message = self.serialize_for_signing()?;
         let hash = Sha256::digest(&message);
-        Ok(hex::encode(&hash))
+        Ok(hex::encode(hash))
     }
 
     /// Serialize the complete transaction to JSON

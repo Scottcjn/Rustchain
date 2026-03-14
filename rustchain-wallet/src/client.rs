@@ -244,7 +244,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fee_priority() {
-        let client = RustChainClient::new("https://rpc.rustchain.org".to_string());
+        let _client = RustChainClient::new("https://rpc.rustchain.org".to_string());
         
         // This will fail in tests without a real RPC, but tests the logic
         let _low = FeePriority::Low;

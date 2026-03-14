@@ -71,7 +71,7 @@ impl NonceStore {
     pub fn mark_used(&mut self, address: &str, nonce: u64) -> bool {
         let used = self.used_nonces
             .entry(address.to_string())
-            .or_insert_with(HashSet::new);
+            .or_default();
         
         let is_new = used.insert(nonce);
         
@@ -170,7 +170,7 @@ impl NonceStore {
         for (address, nonces) in &other.used_nonces {
             let used = self.used_nonces
                 .entry(address.clone())
-                .or_insert_with(HashSet::new);
+                .or_default();
             used.extend(nonces);
         }
         for (address, highest) in &other.highest_nonce {

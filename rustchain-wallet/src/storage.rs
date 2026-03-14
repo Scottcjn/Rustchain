@@ -53,6 +53,7 @@ impl WalletStorage {
     }
 
     /// Create storage at the default location
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Result<Self> {
         let path = Self::default_path()?;
         fs::create_dir_all(&path)?;
@@ -372,7 +373,7 @@ mod tests {
     #[test]
     fn test_wallet_storage_delete() {
         let temp_dir = TempDir::new().unwrap();
-        let mut storage = WalletStorage::new(temp_dir.path()).unwrap();
+        let storage = WalletStorage::new(temp_dir.path()).unwrap();
 
         let keypair = KeyPair::generate();
         storage.save("test_wallet", &keypair, "password").unwrap();
