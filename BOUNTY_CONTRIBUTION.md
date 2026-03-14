@@ -1,12 +1,11 @@
 # Bounty Contribution
 
-This addresses issue #952: Add @zhuzhushiwojia to CONTRIBUTORS.md
+This addresses issue #954: Fix issue #953: Fix issue #950: feat: Grafana dashboard for RustChain metrics [Bounty #1609]
 
 ## Description
-Claiming bounty from issue #441
+Resolves #953
 
-GitHub: zhuzhushiwojia
-RTC Wallet: RTC53fdf727dd301da40ee79cdd7bd740d8c04d2fb4
+Payment address: 0x4F666e7b4F63637223625FD4e9Ace6055fD6a847
 
 ## Payment
 0x4F666e7b4F63637223625FD4e9Ace6055fD6a847
