@@ -2,7 +2,7 @@
 //!
 //! This example demonstrates basic wallet creation, signing, and verification.
 
-use rustchain_wallet::{Wallet, KeyPair, Network};
+use rustchain_wallet::{KeyPair, Network, Wallet};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== RustChain Wallet Basic Example ===\n");
@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generate a new wallet
     println!("1. Generating a new wallet...");
     let wallet = Wallet::generate();
-    
+
     println!("   Address:    {}", wallet.address());
     println!("   Public Key: {}", wallet.public_key());
     println!("   Network:    {}\n", wallet.network());
@@ -47,9 +47,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Import from private key
     println!("7. Importing wallet from private key...");
     let imported_keypair = KeyPair::from_hex(&private_key)?;
-    println!("   Imported Address: {}", bs58::encode(imported_keypair.public_key_bytes()).into_string());
-    println!("   Matches original: {}\n", 
-        imported_keypair.public_key_bytes() == wallet.keypair().public_key_bytes());
+    println!(
+        "   Imported Address: {}",
+        bs58::encode(imported_keypair.public_key_bytes()).into_string()
+    );
+    println!(
+        "   Matches original: {}\n",
+        imported_keypair.public_key_bytes() == wallet.keypair().public_key_bytes()
+    );
 
     println!("=== Example Complete ===");
     Ok(())

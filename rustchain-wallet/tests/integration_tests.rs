@@ -2,27 +2,29 @@
 //!
 //! These tests verify the complete wallet functionality.
 
-use rustchain_wallet::{Wallet, KeyPair, Network, Transaction, TransactionBuilder, WalletStorage, NonceStore};
+use rustchain_wallet::{
+    KeyPair, Network, NonceStore, Transaction, TransactionBuilder, Wallet, WalletStorage,
+};
 use tempfile::TempDir;
 
 #[test]
 fn test_wallet_creation_and_signing() {
     // Generate wallet
     let wallet = Wallet::generate();
-    
+
     // Verify address format
     assert!(!wallet.address().is_empty());
     // Base58 encoded Ed25519 public key is typically 43-44 characters
     assert!(wallet.address().len() >= 43);
-    
+
     // Verify public key format
     assert_eq!(wallet.public_key().len(), 64); // Hex encoded
-    
+
     // Sign and verify
     let message = b"Test message";
     let signature = wallet.sign(message).unwrap();
     assert_eq!(signature.len(), 64);
-    
+
     let valid = wallet.verify(message, &signature).unwrap();
     assert!(valid);
 }
@@ -31,10 +33,10 @@ fn test_wallet_creation_and_signing() {
 fn test_network_configuration() {
     let mainnet_wallet = Wallet::generate();
     assert_eq!(mainnet_wallet.network(), Network::Mainnet);
-    
+
     let testnet_wallet = Wallet::with_network(KeyPair::generate(), Network::Testnet);
     assert_eq!(testnet_wallet.network(), Network::Testnet);
-    
+
     let devnet_wallet = Wallet::with_network(KeyPair::generate(), Network::Devnet);
     assert_eq!(devnet_wallet.network(), Network::Devnet);
 }
@@ -44,14 +46,14 @@ fn test_keypair_import_export() {
     // Generate original keypair
     let original = KeyPair::generate();
     let original_address = original.public_key_base58();
-    
+
     // Export private key
     let private_key = original.export_private_key();
-    
+
     // Import from hex
     let imported_hex = KeyPair::from_hex(&private_key).unwrap();
     assert_eq!(imported_hex.public_key_base58(), original_address);
-    
+
     // Import from bytes
     let private_bytes = original.export_private_key_bytes();
     let imported_bytes = KeyPair::from_bytes(&private_bytes).unwrap();
@@ -62,7 +64,7 @@ fn test_keypair_import_export() {
 fn test_transaction_lifecycle() {
     let sender = Wallet::generate();
     let recipient = Wallet::generate();
-    
+
     // Create transaction
     let mut tx = TransactionBuilder::new()
         .from(sender.address())
@@ -73,24 +75,24 @@ fn test_transaction_lifecycle() {
         .memo("Test transaction".to_string())
         .build()
         .unwrap();
-    
+
     // Verify initial state
     assert_eq!(tx.amount, 1000);
     assert_eq!(tx.fee, 100);
     assert!(tx.signature.is_none());
-    
+
     // Sign transaction
     tx.sign(sender.keypair()).unwrap();
     assert!(tx.signature.is_some());
-    
+
     // Verify signature
     let valid = tx.verify(sender.keypair()).unwrap();
     assert!(valid);
-    
+
     // Verify with wrong key fails
     let valid = tx.verify(recipient.keypair()).unwrap();
     assert!(!valid);
-    
+
     // Serialize and deserialize
     let json = tx.to_json().unwrap();
     let loaded = Transaction::from_json(&json).unwrap();
@@ -107,7 +109,9 @@ fn test_encrypted_storage() {
     let password = "test_password_123";
 
     // Save wallet
-    let path = storage.save("test_wallet", wallet.keypair(), password).unwrap();
+    let path = storage
+        .save("test_wallet", wallet.keypair(), password)
+        .unwrap();
     assert!(path.exists());
 
     // Load wallet
@@ -156,20 +160,20 @@ fn test_multiple_wallets_storage() {
 fn test_signature_verification_edge_cases() {
     let keypair = KeyPair::generate();
     let message = b"Test message";
-    
+
     // Empty message
     let empty_sig = keypair.sign(b"").unwrap();
     assert!(keypair.verify(b"", &empty_sig).unwrap());
-    
+
     // Large message
     let large_message = vec![0u8; 10000];
     let large_sig = keypair.sign(&large_message).unwrap();
     assert!(keypair.verify(&large_message, &large_sig).unwrap());
-    
+
     // Invalid signature length
     let result = keypair.verify(message, &[1u8; 32]);
     assert!(result.is_err());
-    
+
     // Tampered signature
     let valid_sig = keypair.sign(message).unwrap();
     let mut tampered_sig = valid_sig.clone();
@@ -181,7 +185,7 @@ fn test_signature_verification_edge_cases() {
 #[test]
 fn test_transaction_hash_uniqueness() {
     let sender = Wallet::generate();
-    
+
     // Create two transactions with different amounts
     let mut tx1 = TransactionBuilder::new()
         .from(sender.address())
@@ -191,7 +195,7 @@ fn test_transaction_hash_uniqueness() {
         .nonce(1)
         .build()
         .unwrap();
-    
+
     let mut tx2 = TransactionBuilder::new()
         .from(sender.address())
         .to("recipient".to_string())
@@ -200,13 +204,13 @@ fn test_transaction_hash_uniqueness() {
         .nonce(2)
         .build()
         .unwrap();
-    
+
     tx1.sign(sender.keypair()).unwrap();
     tx2.sign(sender.keypair()).unwrap();
-    
+
     let hash1 = tx1.hash().unwrap();
     let hash2 = tx2.hash().unwrap();
-    
+
     assert_ne!(hash1, hash2);
 }
 
@@ -214,16 +218,16 @@ fn test_transaction_hash_uniqueness() {
 fn test_keypair_from_different_formats() {
     let original = KeyPair::generate();
     let original_hex = original.public_key_hex();
-    
+
     // From hex
     let from_hex = KeyPair::from_hex(&original.export_private_key()).unwrap();
     assert_eq!(from_hex.public_key_hex(), original_hex);
-    
+
     // From base58
     let private_base58 = bs58::encode(original.export_private_key_bytes()).into_string();
     let from_base58 = KeyPair::from_base58(&private_base58).unwrap();
     assert_eq!(from_base58.public_key_hex(), original_hex);
-    
+
     // Invalid formats
     assert!(KeyPair::from_hex("invalid_hex!").is_err());
     assert!(KeyPair::from_bytes(&[1u8; 16]).is_err()); // Wrong length
@@ -233,10 +237,10 @@ fn test_keypair_from_different_formats() {
 fn test_wallet_clone() {
     let wallet = Wallet::generate();
     let address = wallet.address();
-    
+
     let cloned = wallet.clone();
     assert_eq!(cloned.address(), address);
-    
+
     // Both should sign the same
     let message = b"Test";
     let sig1 = wallet.sign(message).unwrap();
@@ -411,23 +415,21 @@ fn test_replay_protection_complete_verification() {
     let sender = Wallet::generate();
     let address = sender.address();
 
-    let mut tx = Transaction::new(
-        address.clone(),
-        "recipient".to_string(),
-        1000,
-        100,
-        0,
-    );
+    let mut tx = Transaction::new(address.clone(), "recipient".to_string(), 1000, 100, 0);
     tx.sign(sender.keypair()).unwrap();
 
     // Complete verification should succeed initially
-    assert!(tx.verify_complete(sender.keypair(), storage.nonce_store()).unwrap());
+    assert!(tx
+        .verify_complete(sender.keypair(), storage.nonce_store())
+        .unwrap());
 
     // Mark nonce as used
     storage.mark_nonce_used(&address, 0).unwrap();
 
     // Complete verification should now fail (replay detected)
-    assert!(tx.verify_complete(sender.keypair(), storage.nonce_store()).is_err());
+    assert!(tx
+        .verify_complete(sender.keypair(), storage.nonce_store())
+        .is_err());
 }
 
 #[test]

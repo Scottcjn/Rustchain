@@ -23,19 +23,19 @@
 //! println!("Wallet address: {}", address);
 //! ```
 
+pub mod client;
 pub mod error;
 pub mod keys;
+pub mod nonce_store;
 pub mod storage;
 pub mod transaction;
-pub mod client;
-pub mod nonce_store;
 
+pub use client::RustChainClient;
 pub use error::{Result, WalletError};
 pub use keys::KeyPair;
+pub use nonce_store::NonceStore;
 pub use storage::WalletStorage;
 pub use transaction::{Transaction, TransactionBuilder};
-pub use client::RustChainClient;
-pub use nonce_store::NonceStore;
 
 /// Main wallet structure
 #[derive(Clone)]
@@ -193,15 +193,30 @@ mod tests {
     #[test]
     fn test_network_rpc_urls() {
         assert_eq!(Network::Mainnet.rpc_url(), "https://rpc.rustchain.org");
-        assert_eq!(Network::Testnet.rpc_url(), "https://testnet-rpc.rustchain.org");
-        assert_eq!(Network::Devnet.rpc_url(), "https://devnet-rpc.rustchain.org");
+        assert_eq!(
+            Network::Testnet.rpc_url(),
+            "https://testnet-rpc.rustchain.org"
+        );
+        assert_eq!(
+            Network::Devnet.rpc_url(),
+            "https://devnet-rpc.rustchain.org"
+        );
     }
 
     #[test]
     fn test_network_explorer_urls() {
-        assert_eq!(Network::Mainnet.explorer_url(), "https://explorer.rustchain.org");
-        assert_eq!(Network::Testnet.explorer_url(), "https://testnet-explorer.rustchain.org");
-        assert_eq!(Network::Devnet.explorer_url(), "https://devnet-explorer.rustchain.org");
+        assert_eq!(
+            Network::Mainnet.explorer_url(),
+            "https://explorer.rustchain.org"
+        );
+        assert_eq!(
+            Network::Testnet.explorer_url(),
+            "https://testnet-explorer.rustchain.org"
+        );
+        assert_eq!(
+            Network::Devnet.explorer_url(),
+            "https://devnet-explorer.rustchain.org"
+        );
     }
 
     #[test]

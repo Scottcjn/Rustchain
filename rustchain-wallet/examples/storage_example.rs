@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create a temporary directory for this example
     let temp_dir = TempDir::new()?;
     let storage_path = temp_dir.path().to_path_buf();
-    
+
     println!("1. Initializing storage...");
     println!("   Storage path: {}\n", storage_path.display());
 
@@ -19,19 +19,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create and save multiple wallets
     println!("2. Creating and saving wallets...");
-    
+
     let wallet1 = rustchain_wallet::Wallet::generate();
     let wallet2 = rustchain_wallet::Wallet::generate();
     let wallet3 = rustchain_wallet::Wallet::generate();
-    
+
     let password1 = "secure_password_123";
     let password2 = "another_secure_password";
     let password3 = "third_wallet_password";
-    
+
     let path1 = storage.save("alice", wallet1.keypair(), password1)?;
     let path2 = storage.save("bob", wallet2.keypair(), password2)?;
     let path3 = storage.save("charlie", wallet3.keypair(), password3)?;
-    
+
     println!("   ✓ Saved 'alice'  -> {}", path1.display());
     println!("   ✓ Saved 'bob'    -> {}", path2.display());
     println!("   ✓ Saved 'charlie' -> {}\n", path3.display());
@@ -97,6 +97,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("=== Example Complete ===");
     println!("\nNote: Temporary storage was used. Files were deleted on exit.");
-    
+
     Ok(())
 }

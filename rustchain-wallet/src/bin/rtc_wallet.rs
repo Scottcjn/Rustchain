@@ -4,10 +4,12 @@
 //! signing transactions, and interacting with the network.
 
 use clap::{Parser, Subcommand};
-use rustchain_wallet::{Wallet, KeyPair, WalletStorage, TransactionBuilder, Network, RustChainClient};
 use rustchain_wallet::error::Result;
+use rustchain_wallet::{
+    KeyPair, Network, RustChainClient, TransactionBuilder, Wallet, WalletStorage,
+};
 use std::path::PathBuf;
-use tracing::{warn, error};
+use tracing::{error, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 /// RustChain Wallet CLI - Manage your RustChain assets
@@ -170,12 +172,8 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Initialize logging
-    let filter = if cli.verbose {
-        "debug"
-    } else {
-        "info"
-    };
-    
+    let filter = if cli.verbose { "debug" } else { "info" };
+
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::new(filter))
@@ -187,7 +185,10 @@ async fn main() -> anyhow::Result<()> {
         "testnet" => Network::Testnet,
         "devnet" => Network::Devnet,
         _ => {
-            error!("Invalid network: {}. Use mainnet, testnet, or devnet", cli.network);
+            error!(
+                "Invalid network: {}. Use mainnet, testnet, or devnet",
+                cli.network
+            );
             std::process::exit(1);
         }
     };
@@ -216,14 +217,39 @@ async fn main() -> anyhow::Result<()> {
         Commands::Balance { wallet, rpc } => {
             cmd_balance(&wallet, rpc.as_deref().unwrap_or(network.rpc_url())).await?;
         }
-        Commands::Transfer { from, to, amount, fee, memo, rpc, simulate } => {
-            cmd_transfer(&storage, &from, &to, amount, fee, memo.as_deref(), 
-                        rpc.as_deref().unwrap_or(network.rpc_url()), simulate).await?;
+        Commands::Transfer {
+            from,
+            to,
+            amount,
+            fee,
+            memo,
+            rpc,
+            simulate,
+        } => {
+            cmd_transfer(
+                &storage,
+                &from,
+                &to,
+                amount,
+                fee,
+                memo.as_deref(),
+                rpc.as_deref().unwrap_or(network.rpc_url()),
+                simulate,
+            )
+            .await?;
         }
-        Commands::Sign { wallet, message, format } => {
+        Commands::Sign {
+            wallet,
+            message,
+            format,
+        } => {
             cmd_sign(&storage, &wallet, &message, &format)?;
         }
-        Commands::Verify { pubkey, message, signature } => {
+        Commands::Verify {
+            pubkey,
+            message,
+            signature,
+        } => {
             cmd_verify(&pubkey, &message, &signature)?;
         }
         Commands::Network { rpc } => {
@@ -251,14 +277,14 @@ fn cmd_create(storage: &WalletStorage, name: &str, format: &str, network: Networ
     let address = wallet.address();
 
     // Prompt for password
-    let password = rpassword::prompt_password("Enter password to encrypt wallet: ")
-        .unwrap_or_else(|_| {
+    let password =
+        rpassword::prompt_password("Enter password to encrypt wallet: ").unwrap_or_else(|_| {
             warn!("Could not read password, wallet will not be encrypted");
             String::new()
         });
 
-    let confirm = rpassword::prompt_password("Confirm password: ")
-        .unwrap_or_else(|_| String::new());
+    let confirm =
+        rpassword::prompt_password("Confirm password: ").unwrap_or_else(|_| String::new());
 
     if password != confirm {
         error!("Passwords do not match");
@@ -270,13 +296,16 @@ fn cmd_create(storage: &WalletStorage, name: &str, format: &str, network: Networ
 
     match format {
         "json" => {
-            println!("{}", serde_json::json!({
-                "name": name,
-                "address": address,
-                "public_key": wallet.public_key(),
-                "network": network.to_string(),
-                "storage_path": path.display().to_string()
-            }));
+            println!(
+                "{}",
+                serde_json::json!({
+                    "name": name,
+                    "address": address,
+                    "public_key": wallet.public_key(),
+                    "network": network.to_string(),
+                    "storage_path": path.display().to_string()
+                })
+            );
         }
         _ => {
             println!("✓ Wallet created successfully!");
@@ -320,8 +349,8 @@ fn cmd_show(storage: &WalletStorage, name: &str) -> Result<()> {
         std::process::exit(1);
     }
 
-    let password = rpassword::prompt_password("Enter wallet password: ")
-        .unwrap_or_else(|_| String::new());
+    let password =
+        rpassword::prompt_password("Enter wallet password: ").unwrap_or_else(|_| String::new());
 
     let keypair = storage.load(name, &password)?;
     let address = bs58::encode(keypair.public_key_bytes()).into_string();
@@ -343,16 +372,16 @@ fn cmd_export(storage: &WalletStorage, name: &str) -> Result<()> {
     warn!("⚠ Never share your private key with anyone!");
     println!();
 
-    let confirm = rpassword::prompt_password("Type 'YES' to confirm: ")
-        .unwrap_or_else(|_| String::new());
+    let confirm =
+        rpassword::prompt_password("Type 'YES' to confirm: ").unwrap_or_else(|_| String::new());
 
     if confirm != "YES" {
         println!("Export cancelled.");
         return Ok(());
     }
 
-    let password = rpassword::prompt_password("Enter wallet password: ")
-        .unwrap_or_else(|_| String::new());
+    let password =
+        rpassword::prompt_password("Enter wallet password: ").unwrap_or_else(|_| String::new());
 
     let keypair = storage.load(name, &password)?;
     let private_key = keypair.export_private_key();
@@ -394,6 +423,7 @@ async fn cmd_balance(wallet_or_address: &str, rpc_url: &str) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn cmd_transfer(
     storage: &WalletStorage,
     from: &str,
@@ -409,8 +439,8 @@ async fn cmd_transfer(
         std::process::exit(1);
     }
 
-    let password = rpassword::prompt_password("Enter wallet password: ")
-        .unwrap_or_else(|_| String::new());
+    let password =
+        rpassword::prompt_password("Enter wallet password: ").unwrap_or_else(|_| String::new());
 
     let keypair = storage.load(from, &password)?;
     let from_address = keypair.public_key_base58();
@@ -421,7 +451,7 @@ async fn cmd_transfer(
     let nonce = client.get_nonce(&from_address).await.unwrap_or(0);
 
     // Calculate fee
-    let fee = fee.unwrap_or_else(|| 1000); // Default fee
+    let fee = fee.unwrap_or(1000); // Default fee
 
     // Create transaction
     let mut tx = TransactionBuilder::new()
@@ -473,8 +503,8 @@ fn cmd_sign(storage: &WalletStorage, wallet: &str, message: &str, format: &str) 
         std::process::exit(1);
     }
 
-    let password = rpassword::prompt_password("Enter wallet password: ")
-        .unwrap_or_else(|_| String::new());
+    let password =
+        rpassword::prompt_password("Enter wallet password: ").unwrap_or_else(|_| String::new());
 
     let keypair = storage.load(wallet, &password)?;
     let signature = keypair.sign(message.as_bytes())?;
@@ -482,7 +512,10 @@ fn cmd_sign(storage: &WalletStorage, wallet: &str, message: &str, format: &str) 
     match format {
         "base64" => {
             use base64::Engine;
-            println!("{}", base64::engine::general_purpose::STANDARD.encode(&signature));
+            println!(
+                "{}",
+                base64::engine::general_purpose::STANDARD.encode(&signature)
+            );
         }
         _ => {
             println!("{}", hex::encode(&signature));
@@ -563,8 +596,8 @@ fn cmd_import(storage: &WalletStorage, name: &str, key: &str) -> Result<()> {
     let password = rpassword::prompt_password("Enter password to encrypt wallet: ")
         .unwrap_or_else(|_| String::new());
 
-    let confirm = rpassword::prompt_password("Confirm password: ")
-        .unwrap_or_else(|_| String::new());
+    let confirm =
+        rpassword::prompt_password("Confirm password: ").unwrap_or_else(|_| String::new());
 
     if password != confirm {
         error!("Passwords do not match");
