@@ -95,7 +95,7 @@ export default function () {
   // 3. Wallet balance
   {
     const res = http.get(
-      `${BASE_URL}/wallet/balance?miner_id=Ivan-houzhiwen`,
+      `${BASE_URL}/wallet/balance?miner_id=loadtest-benchmark`,
       params
     );
     const ok = check(res, {

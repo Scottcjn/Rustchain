@@ -18,7 +18,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Test miner IDs to rotate through for balance checks
 TEST_MINER_IDS = [
-    "Ivan-houzhiwen",
+    "loadtest-benchmark",
 ]
 
 
@@ -126,7 +126,7 @@ class RustChainReadHeavyUser(HttpUser):
     @task(2)
     def get_wallet_balance(self) -> None:
         with self.client.get(
-            "/wallet/balance?miner_id=Ivan-houzhiwen",
+            "/wallet/balance?miner_id=loadtest-benchmark",
             name="GET /wallet/balance",
             catch_response=True,
         ) as resp:
