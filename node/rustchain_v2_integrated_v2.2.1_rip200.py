@@ -4968,10 +4968,10 @@ def api_wallet_balance():
 
 @app.route('/wallet/history', methods=['GET'])
 def api_wallet_history():
-    """Get public transfer history for a specific wallet."""
-    miner_id = request.args.get("miner_id", "").strip()
+    """Get unified transaction history for a specific wallet."""
+        miner_id = request.args.get("miner_id", "").strip()
     address = request.args.get("address", "").strip()
-
+    
     if miner_id and address and miner_id != address:
         return jsonify({
             "ok": False,
@@ -4990,78 +4990,138 @@ def api_wallet_history():
     except ValueError:
         return jsonify({"ok": False, "error": "limit must be an integer"}), 400
 
-    limit = max(1, min(limit, 200))
+    offset_raw = request.args.get("offset", "0").strip()
+    try:
+        offset = int(offset_raw or "0")
+    except ValueError:
+        return jsonify({"ok": False, "error": "offset must be an integer"}), 400
 
-    with sqlite3.connect(DB_PATH) as db:
-        rows = db.execute(
-            """
-            SELECT id, ts, from_miner, to_miner, amount_i64, reason, status,
-                   created_at, confirms_at, confirmed_at, tx_hash, voided_reason
-            FROM pending_ledger
-            WHERE from_miner = ? OR to_miner = ?
-            ORDER BY COALESCE(created_at, ts) DESC, id DESC
-            LIMIT ?
-            """,
-            (miner_id, miner_id, limit),
-        ).fetchall()
+    limit = max(1, min(limit, 1000))
+    offset = max(0, offset)
 
-    items = []
-    for row in rows:
-        (
-            pending_id,
-            ts,
-            from_miner,
-            to_miner,
-            amount_i64,
-            reason,
-            raw_status,
-            created_at,
-            confirms_at,
-            confirmed_at,
-            tx_hash,
-            voided_reason,
-        ) = row
-
-        direction = "sent" if from_miner == miner_id else "received"
-        counterparty = to_miner if direction == "sent" else from_miner
-
-        public_status = "confirmed"
-        if raw_status == "pending":
-            public_status = "pending"
-        elif raw_status != "confirmed":
-            public_status = "failed"
-
-        memo = None
-        if isinstance(reason, str) and reason.startswith("signed_transfer:"):
-            memo = reason.split(":", 1)[1] or None
-
-        tx_id = tx_hash or f"pending_{pending_id}"
-        created_ts = int(created_at or ts or 0)
-
-        items.append({
-            "id": int(pending_id),
-            "tx_id": tx_id,
-            "tx_hash": tx_id,
-            "from_addr": from_miner,
-            "to_addr": to_miner,
-            "amount": int(amount_i64) / UNIT,
-            "amount_i64": int(amount_i64),
-            "amount_rtc": int(amount_i64) / UNIT,
-            "timestamp": created_ts,
-            "created_at": created_ts,
-            "confirmed_at": int(confirmed_at) if confirmed_at else None,
-            "confirms_at": int(confirms_at) if confirms_at else None,
-            "status": public_status,
-            "raw_status": raw_status,
-            "status_reason": voided_reason,
-            "confirmations": 1 if raw_status == "confirmed" else 0,
-            "direction": direction,
-            "counterparty": counterparty,
-            "reason": reason,
-            "memo": memo,
-        })
-
-    return jsonify(items)
+    try:
+        with sqlite3.connect(DB_PATH) as db:
+            tables = [row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+            has_ledger = "ledger" in tables
+            has_epoch_rewards = "epoch_rewards" in tables
+            has_balances = "balances" in tables
+            
+            queries = []
+            params = []
+            
+            if has_ledger:
+                queries.append("""
+                    SELECT 
+                        'transfer' AS source,
+                        ts,
+                        epoch,
+                        delta_i64,
+                        reason
+                    FROM ledger
+                    WHERE miner_id = ? AND (reason IS NULL OR reason NOT LIKE 'epoch_%_reward')
+                """)
+                params.append(miner_id)
+                
+            if has_epoch_rewards:
+                # Calculate approximate timestamp: GENESIS_TIMESTAMP + epoch * EPOCH_SLOTS * BLOCK_TIME
+                # 1764706927 is Dec 2, 2025. EPOCH_SLOTS=144, BLOCK_TIME=600.
+                queries.append("""
+                    SELECT 
+                        'reward' AS source,
+                        (1764706927 + (epoch * 86400)) AS ts,
+                        epoch,
+                        share_i64 AS delta_i64,
+                        'reward' AS reason
+                    FROM epoch_rewards
+                    WHERE miner_id = ?
+                """)
+                params.append(miner_id)
+                
+            if not queries:
+                return jsonify({
+                    "ok": True,
+                    "miner_id": miner_id,
+                    "transactions": [],
+                    "total": 0
+                })
+                
+            union_query = " UNION ALL ".join(queries)
+            count_query = f"SELECT COUNT(*) FROM ({union_query})"
+            final_query = f"{union_query} ORDER BY ts DESC LIMIT ? OFFSET ?"
+            
+            total = db.execute(count_query, params).fetchone()[0]
+            
+            params.extend([limit, offset])
+            rows = db.execute(final_query, params).fetchall()
+            
+            transactions = []
+            for row in rows:
+                source, ts, epoch, delta_i64, reason = row
+                
+                if source == 'reward':
+                    tx = {
+                        "type": "reward",
+                        "amount": delta_i64 / 1000000.0,
+                        "epoch": epoch,
+                        "timestamp": ts,
+                        "tx_hash": f"reward_{epoch}_{miner_id}"
+                    }
+                    transactions.append(tx)
+                else:
+                    tx_type = "transfer_in" if delta_i64 > 0 else "transfer_out"
+                    counterparty = ""
+                    tx_hash = f"tx_{ts}_{abs(delta_i64)}"
+                    
+                    if isinstance(reason, str):
+                        parts = reason.split(":")
+                        if len(parts) >= 3 and parts[0] in ("transfer_in", "transfer_out"):
+                            counterparty = parts[1]
+                            tx_hash = parts[2]
+                        elif len(parts) >= 2 and parts[0] == "signed_transfer":
+                            tx_hash = parts[1]
+                            
+                    tx = {
+                        "type": tx_type,
+                        "amount": abs(delta_i64) / 1000000.0,
+                        "timestamp": ts,
+                        "tx_hash": tx_hash
+                    }
+                    if tx_type == "transfer_in":
+                        tx["from"] = counterparty
+                    else:
+                        tx["to"] = counterparty
+                        
+                    if epoch is not None and epoch > 0:
+                        tx["epoch"] = epoch
+                        
+                    transactions.append(tx)
+            
+            # Optionally fetch balance if needed
+            balance = 0.0
+            if has_balances:
+                bal_col = "miner_pk"
+                cols = [row[1] for row in db.execute("PRAGMA table_info(balances)").fetchall()]
+                if "miner_id" in cols:
+                    bal_col = "miner_id"
+                b_row = db.execute(f"SELECT amount_i64 FROM balances WHERE {bal_col} = ?", (miner_id,)).fetchone()
+                if b_row:
+                    balance = b_row[0] / 1000000.0
+                    
+            resp = {
+                "ok": True,
+                "miner_id": miner_id,
+                "transactions": transactions,
+                "total": total
+            }
+            if b_row:
+                resp["balance"] = balance
+                
+            return jsonify(resp)
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": "Database error", "details": str(e)}), 500
 
 # =============================================================================
 # 2-PHASE COMMIT PENDING LEDGER SYSTEM
