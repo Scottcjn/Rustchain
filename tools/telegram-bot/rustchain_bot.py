@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """
 RustChain Telegram Bot — Issue #1597
 https://github.com/Scottcjn/Rustchain
