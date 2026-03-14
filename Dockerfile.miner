@@ -6,14 +6,13 @@ FROM python:3.11-slim
 
 LABEL maintainer="RustChain Community"
 LABEL description="RustChain Proof-of-Antiquity Miner"
-LABEL version="1.0.0"
+LABEL version="1.1.0"
 
 # Build argument for miner type
 ARG MINER_TYPE=linux
 ARG MINER_ARCH=x86_64
 
 # Environment variables
-# ENV WALLET_NAME and NODE_URL are read at runtime by docker-miner-entrypoint.sh
 ENV PYTHONUNBUFFERED=1 \
     WALLET_NAME="" \
     NODE_URL="https://rustchain.org" \
@@ -39,8 +38,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY miners/ ./miners/
 COPY wallet/ ./wallet/
 
-# Copy color logs helper
-COPY miners/color_logs.py ./
+# Copy entrypoint script (must happen before USER switch)
+COPY docker-miner-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Create a non-root user (security best practice)
 RUN useradd -m -u 1000 rustchain && \
@@ -48,13 +48,9 @@ RUN useradd -m -u 1000 rustchain && \
 
 USER rustchain
 
-# Health check
+# Health check - verify the node is reachable
 HEALTHCHECK --interval=5m --timeout=30s --start-period=1m --retries=3 \
-    CMD curl -f ${NODE_URL}/health || exit 1
-
-# Entry point script
-COPY docker-miner-entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+    CMD curl -fsk ${NODE_URL}/health || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
 

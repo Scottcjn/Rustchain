@@ -56,4 +56,6 @@ echo ""
 echo "[START] Launching miner: $MINER_SCRIPT"
 echo ""
 
-exec python3 -u "$MINER_SCRIPT" --wallet "$WALLET_NAME" --node "$NODE_URL"
+# NODE_URL is already exported as an environment variable for the miner.
+# The miner CLI accepts --wallet but reads NODE_URL from the environment.
+exec python3 -u "$MINER_SCRIPT" --wallet "$WALLET_NAME"
