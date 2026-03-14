@@ -70,6 +70,9 @@ def calculate_antiquity_score(release_year: int, uptime_days: int) -> float:
         2.96   # (2025-2023) * log10(31) ≈ 2 * 1.49
     """
     age = max(0, CURRENT_YEAR - release_year)
+    # log10 gives diminishing returns on uptime: day 1→0, day 10→1, day 100→2,
+    # day 1000→3. This prevents a node that just rebooted from earning zero while
+    # also preventing infinite score growth for nodes with extreme uptime.
     uptime_factor = math.log10(uptime_days + 1)
     return age * uptime_factor
 
@@ -87,6 +90,8 @@ def calculate_reward(antiquity_score: float, total_reward: TokenAmount) -> Token
     Returns:
         Calculated reward amount
     """
+    # Cap at AS_MAX so extremely old hardware (e.g., a 50-year-old mainframe)
+    # doesn't earn a disproportionate multiple of the block reward.
     reward_factor = min(1.0, antiquity_score / AS_MAX)
     reward_amount = int(total_reward.amount * reward_factor)
     return TokenAmount(reward_amount)
@@ -213,7 +218,9 @@ class ProofOfAntiquity:
         if elapsed >= BLOCK_TIME_SECONDS:
             raise BlockWindowClosedError("Block window has closed")
 
-        # Check for drift lock (RIP-0003)
+        # Drift lock (RIP-0003): nodes that exhibit behavioral anomalies (e.g.,
+        # inconsistent entropy proofs across epochs) are quarantined here rather
+        # than in the network layer to ensure the block itself stays clean.
         if wallet.address in self.drifted_nodes:
             raise DriftLockViolationError(
                 f"Node {wallet.address} is quarantined due to drift lock"
@@ -297,7 +304,9 @@ class ProofOfAntiquity:
         total_distributed = 0
 
         for proof in self.pending_proofs:
-            # Weighted share based on AS
+            # Normalize each miner's score to its proportional share of total AS,
+            # then scale by miner count so a lone miner with score=AS_MAX earns
+            # the same as `calculate_reward(AS_MAX, ...)` would independently.
             share = proof.antiquity_score / total_as
             reward = calculate_reward(
                 proof.antiquity_score * share * len(self.pending_proofs),
@@ -397,7 +406,10 @@ def select_block_validator(proofs: List[ValidatedProof]) -> Optional[ValidatedPr
     if total_as == 0:
         return random.choice(proofs)
 
-    # Weighted random selection
+    # Weighted random selection via cumulative distribution: pick a random point
+    # on [0, total_as] and return the proof whose range contains it.
+    # The last proof is returned as a fallback for floating-point rounding where
+    # cumulative may fall just short of total_as.
     r = random.uniform(0, total_as)
     cumulative = 0
 

@@ -164,7 +164,9 @@ def record_fleet_signals_from_request(
     """
     ensure_schema(db)
 
-    # Hash the /24 subnet for privacy-preserving network clustering
+    # Hash the /24 subnet rather than storing the raw IP so we can group miners
+    # by network without logging PII. The 16-char truncation is still collision-
+    # resistant enough for fleet detection while reducing storage footprint.
     if ip_address:
         parts = ip_address.split('.')
         if len(parts) == 4:
@@ -274,11 +276,13 @@ def _detect_ip_clustering(
         if sig["subnet_hash"]:
             subnet_groups[sig["subnet_hash"]].append(sig["miner"])
 
-    # Miners in large subnet groups get higher fleet signal
     for subnet, miners in subnet_groups.items():
         count = len(miners)
         if count >= FLEET_SUBNET_THRESHOLD:
-            # Signal scales with cluster size: 3→0.3, 5→0.5, 10→0.8, 20+→1.0
+            # Sublinear signal growth (count/20 + 0.15) so a small legit datacenter
+            # (e.g., 3 boxes) doesn't get the same penalty as a 20-machine farm.
+            # We take the max so a miner in multiple overlapping clusters keeps
+            # the highest signal rather than summing them.
             signal = min(1.0, count / 20.0 + 0.15)
             for m in miners:
                 scores[m] = max(scores.get(m, 0.0), signal)
@@ -307,7 +311,8 @@ def _detect_timing_correlation(
     timestamps = [(s["miner"], s["attest_ts"]) for s in signals]
     timestamps.sort(key=lambda x: x[1])
 
-    # For each miner, count how many others attested within TIMING_WINDOW
+    # O(n²) comparison is intentional: fleet epochs typically have <100 miners,
+    # so quadratic cost is negligible and we avoid false negatives from binning.
     for i, (miner_a, ts_a) in enumerate(timestamps):
         correlated = 0
         total_others = len(timestamps) - 1
@@ -382,12 +387,13 @@ def _detect_fingerprint_similarity(
                 if th_b > 0 and abs(th_a - th_b) / th_b < 0.10:
                     shared_hashes += 1
 
+            # Require 2+ matching hashes to avoid false positives from a single
+            # shared data-centre NTP server inflating clock_drift_cv similarity.
             if total_hashes >= 2 and shared_hashes >= 2:
                 matches += 1
 
-        # Signal based on how many OTHER miners look like this one
+        # Signal scales with match count: 1→0.35, 2→0.50, 5→0.95, 6+→1.0
         if matches > 0:
-            # 1 match → 0.3, 2 → 0.5, 5+ → 0.8+
             scores[sig_a["miner"]] = min(1.0, 0.2 + matches * 0.15)
         else:
             scores[sig_a["miner"]] = 0.0
@@ -449,7 +455,9 @@ def compute_fleet_scores(
         # Weighted composite: IP 40%, fingerprint 40%, timing 20%
         score = (ip * 0.4) + (fp * 0.4) + (timing * 0.2)
 
-        # Boost: if ANY two signals fire, amplify
+        # Corroboration boost: when two independent signals both fire above 0.3
+        # it is far less likely to be coincidence, so we amplify by 30%.
+        # Capped at 1.0 to keep the score a unit probability.
         fired = sum(1 for s in [ip, fp, timing] if s > 0.3)
         if fired >= 2:
             score = min(1.0, score * 1.3)
@@ -524,12 +532,14 @@ def compute_bucket_pressure(
         ratio = count / ideal_per_bucket  # >1 = overrepresented, <1 = rare
 
         if ratio > 1.0:
-            # Overrepresented: apply diminishing returns
-            # ratio 2.0 → pressure ~0.7, ratio 5.0 → pressure ~0.45
+            # Harmonic diminishing returns: 1/(1 + s*(r-1)) where s=PRESSURE_STRENGTH.
+            # At s=0.5: ratio 2→0.67, ratio 5→0.44. Floor at BUCKET_MIN_WEIGHT
+            # to avoid completely zeroing out any single bucket.
             factor = 1.0 / (1.0 + BUCKET_PRESSURE_STRENGTH * (ratio - 1.0))
             factor = max(BUCKET_MIN_WEIGHT, factor)
         else:
-            # Underrepresented: boost (up to 1.5x)
+            # Underrepresented bucket: linear boost up to 1.5x to incentivise
+            # diversity without creating an extreme advantage for ultra-rare hardware.
             factor = 1.0 + (1.0 - ratio) * 0.5
             factor = min(1.5, factor)
 
@@ -645,6 +655,8 @@ def calculate_immune_rewards_equal_split(
     if num_buckets == 0:
         return {}
 
+    # Integer division leaves rounding dust; we track it and assign it to the
+    # last bucket so no uRTC is ever lost from the epoch reward pool.
     pot_per_bucket = total_reward_urtc // num_buckets
     remainder = total_reward_urtc - (pot_per_bucket * num_buckets)
 
