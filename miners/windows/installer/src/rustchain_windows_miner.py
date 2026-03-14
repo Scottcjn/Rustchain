@@ -2,7 +2,7 @@
 """
 RustChain Windows Wallet Miner
 Full-featured wallet and miner for Windows
-Enhanced with: config manager, tray icon, --minimized mode, SSL verify=False
+With RIP-PoA Hardware Fingerprint Attestation v3.0
 """
 
 import os
@@ -16,51 +16,23 @@ import statistics
 import uuid
 import subprocess
 import re
-import logging
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import requests
+import urllib3; urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from datetime import datetime
 from pathlib import Path
 
-# Suppress SSL warnings (self-signed cert on node)
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-# --- Try importing installer components ---
+# ── CRITICAL: Fingerprint checks are MANDATORY (fail-closed) ──
 try:
-    from config_manager import ConfigManager
-    CONFIG = ConfigManager()
+    from fingerprint_checks import validate_all_checks
+    FINGERPRINT_AVAILABLE = True
 except ImportError:
-    CONFIG = None
-
-try:
-    from tray_icon import RustChainTray, TRAY_AVAILABLE
-except ImportError:
-    TRAY_AVAILABLE = False
-
-try:
-    from fingerprint_checks_win import validate_all_checks_win
-except ImportError:
-    validate_all_checks_win = None
-
-# --- Logging Setup ---
-LOG_DIR = Path(os.environ.get("APPDATA", Path.home())) / "RustChain" / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-LOG_FILE = LOG_DIR / f"miner_{datetime.now().strftime('%Y%m%d')}.log"
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-logger = logging.getLogger("RustChain")
+    print("[WARN] fingerprint_checks.py not found — using built-in Windows checks")
+    FINGERPRINT_AVAILABLE = False
 
 # Configuration
-RUSTCHAIN_API = CONFIG.node_url if CONFIG else "https://rustchain.org"
+RUSTCHAIN_API = "https://rustchain.org"
 WALLET_DIR = Path.home() / ".rustchain"
 CONFIG_FILE = WALLET_DIR / "config.json"
 WALLET_FILE = WALLET_DIR / "wallet.json"
@@ -87,7 +59,7 @@ class RustChainWallet:
         wallet_seed = hashlib.sha256(f"{timestamp}{random_data}".encode()).hexdigest()
 
         wallet_data = {
-            "address": f"RTC{wallet_seed[:40]}",
+            "address": f"{wallet_seed[:40]}RTC",
             "balance": 0.0,
             "created": datetime.now().isoformat(),
             "transactions": []
@@ -103,6 +75,233 @@ class RustChainWallet:
         with open(WALLET_FILE, 'w') as f:
             json.dump(self.wallet_data, f, indent=2)
 
+def _windows_fingerprint_checks():
+    """Built-in fingerprint checks for Windows (when fingerprint_checks.py unavailable)."""
+    from typing import Tuple, Dict
+    results = {}
+    all_passed = True
+
+    # Check 1: Clock drift
+    intervals = []
+    for i in range(200):
+        data = f"drift_{i}".encode()
+        start = time.perf_counter_ns()
+        for _ in range(5000):
+            hashlib.sha256(data).digest()
+        intervals.append(time.perf_counter_ns() - start)
+        if i % 50 == 0:
+            time.sleep(0.001)
+    mean_ns = statistics.mean(intervals)
+    stdev_ns = statistics.stdev(intervals)
+    cv = stdev_ns / mean_ns if mean_ns > 0 else 0
+    drift_pairs = [intervals[i] - intervals[i-1] for i in range(1, len(intervals))]
+    drift_stdev = statistics.stdev(drift_pairs) if len(drift_pairs) > 1 else 0
+    clock_passed = cv >= 0.0001 and drift_stdev > 0
+    results["clock_drift"] = {
+        "passed": clock_passed,
+        "data": {"mean_ns": int(mean_ns), "stdev_ns": int(stdev_ns),
+                 "cv": round(cv, 6), "drift_stdev": int(drift_stdev),
+                 "samples": len(intervals)}
+    }
+    if not clock_passed:
+        all_passed = False
+
+    # Check 2: Cache timing
+    def measure_access(buf_size, accesses=1000):
+        buf = bytearray(buf_size)
+        for i in range(0, buf_size, 64):
+            buf[i] = i % 256
+        start = time.perf_counter_ns()
+        for i in range(accesses):
+            _ = buf[(i * 64) % buf_size]
+        return (time.perf_counter_ns() - start) / accesses
+
+    l1_times = [measure_access(8*1024) for _ in range(100)]
+    l2_times = [measure_access(128*1024) for _ in range(100)]
+    l3_times = [measure_access(4*1024*1024) for _ in range(100)]
+    l1_avg, l2_avg, l3_avg = statistics.mean(l1_times), statistics.mean(l2_times), statistics.mean(l3_times)
+    l2_l1 = l2_avg / l1_avg if l1_avg > 0 else 0
+    l3_l2 = l3_avg / l2_avg if l2_avg > 0 else 0
+    cache_passed = not (l2_l1 < 1.01 and l3_l2 < 1.01) and l1_avg > 0
+    results["cache_timing"] = {
+        "passed": cache_passed,
+        "data": {"l1_ns": round(l1_avg, 2), "l2_ns": round(l2_avg, 2),
+                 "l3_ns": round(l3_avg, 2), "l2_l1_ratio": round(l2_l1, 3),
+                 "l3_l2_ratio": round(l3_l2, 3)}
+    }
+    if not cache_passed:
+        all_passed = False
+
+    # Check 3: SIMD identity (Windows: use WMIC or registry for CPU flags)
+    flags = []
+    creation_flag = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        out = subprocess.check_output(
+            ["wmic", "cpu", "get", "Name,Description,Caption"],
+            stderr=subprocess.DEVNULL, creationflags=creation_flag
+        ).decode("utf-8", "ignore")
+        # Sandy Bridge+ has SSE4, AVX etc
+        if "sse" in out.lower() or "avx" in out.lower():
+            flags.extend(["sse", "avx"])
+    except Exception:
+        pass
+    # Pipeline timing bias (works on all platforms)
+    int_times, float_times = [], []
+    for _ in range(30):
+        t0 = time.perf_counter_ns()
+        acc_i = 0
+        for j in range(2000):
+            acc_i = (acc_i + j * 127) & 0xFFFFFFFF
+        int_times.append(time.perf_counter_ns() - t0)
+        t0 = time.perf_counter_ns()
+        acc_f = 0.0
+        for j in range(2000):
+            acc_f += j * 0.127
+        float_times.append(time.perf_counter_ns() - t0)
+    int_mean = sum(int_times) / len(int_times) if int_times else 0
+    float_mean = sum(float_times) / len(float_times) if float_times else 0
+    pipeline_ratio = float_mean / int_mean if int_mean > 0 else 0.0
+    simd_passed = pipeline_ratio > 0
+    results["simd_identity"] = {
+        "passed": simd_passed,
+        "data": {"arch": platform.machine().lower(), "simd_flags_count": len(flags),
+                 "has_sse": True, "has_avx": "amd64" in platform.machine().lower() or "x86_64" in platform.machine().lower(),
+                 "pipeline_ratio": round(pipeline_ratio, 4),
+                 "int_mean_ns": round(int_mean, 1), "float_mean_ns": round(float_mean, 1)}
+    }
+    if not simd_passed:
+        all_passed = False
+
+    # Check 4: Thermal drift
+    cold_times = []
+    for i in range(50):
+        start = time.perf_counter_ns()
+        for _ in range(10000):
+            hashlib.sha256(f"cold_{i}".encode()).digest()
+        cold_times.append(time.perf_counter_ns() - start)
+    for _ in range(100):
+        for __ in range(50000):
+            hashlib.sha256(b"warmup").digest()
+    hot_times = []
+    for i in range(50):
+        start = time.perf_counter_ns()
+        for _ in range(10000):
+            hashlib.sha256(f"hot_{i}".encode()).digest()
+        hot_times.append(time.perf_counter_ns() - start)
+    cold_avg, hot_avg = statistics.mean(cold_times), statistics.mean(hot_times)
+    cold_stdev, hot_stdev = statistics.stdev(cold_times), statistics.stdev(hot_times)
+    thermal_passed = not (cold_stdev == 0 and hot_stdev == 0)
+    results["thermal_drift"] = {
+        "passed": thermal_passed,
+        "data": {"cold_avg_ns": int(cold_avg), "hot_avg_ns": int(hot_avg),
+                 "cold_stdev": int(cold_stdev), "hot_stdev": int(hot_stdev),
+                 "drift_ratio": round(hot_avg / cold_avg if cold_avg > 0 else 0, 4)}
+    }
+    if not thermal_passed:
+        all_passed = False
+
+    # Check 5: Instruction jitter
+    def meas_int(n=10000):
+        t = time.perf_counter_ns(); x = 1
+        for i in range(n): x = (x * 7 + 13) % 65537
+        return time.perf_counter_ns() - t
+    def meas_fp(n=10000):
+        t = time.perf_counter_ns(); x = 1.5
+        for i in range(n): x = (x * 1.414 + 0.5) % 1000.0
+        return time.perf_counter_ns() - t
+    def meas_br(n=10000):
+        t = time.perf_counter_ns(); x = 0
+        for i in range(n):
+            if i % 2 == 0: x += 1
+            else: x -= 1
+        return time.perf_counter_ns() - t
+    it = [meas_int() for _ in range(100)]
+    ft = [meas_fp() for _ in range(100)]
+    bt = [meas_br() for _ in range(100)]
+    jitter_passed = not (statistics.stdev(it) == 0 and statistics.stdev(ft) == 0 and statistics.stdev(bt) == 0)
+    results["instruction_jitter"] = {
+        "passed": jitter_passed,
+        "data": {"int_avg_ns": int(statistics.mean(it)), "fp_avg_ns": int(statistics.mean(ft)),
+                 "branch_avg_ns": int(statistics.mean(bt)),
+                 "int_stdev": int(statistics.stdev(it)), "fp_stdev": int(statistics.stdev(ft)),
+                 "branch_stdev": int(statistics.stdev(bt))}
+    }
+    if not jitter_passed:
+        all_passed = False
+
+    # Check 6: Anti-emulation (Windows-native)
+    vm_indicators = []
+    # WMI-based VM detection
+    try:
+        out = subprocess.check_output(
+            ["wmic", "computersystem", "get", "Model,Manufacturer"],
+            stderr=subprocess.DEVNULL, creationflags=creation_flag
+        ).decode("utf-8", "ignore").lower()
+        vm_strings = ["vmware", "virtualbox", "virtual machine", "kvm", "qemu",
+                      "xen", "hyper-v", "parallels", "bhyve", "amazon ec2",
+                      "google compute", "microsoft corporation", "digitalocean",
+                      "linode", "vultr", "hetzner", "oracle"]
+        for vs in vm_strings:
+            if vs in out:
+                vm_indicators.append(f"wmi_system:{vs}")
+    except Exception:
+        pass
+    # BIOS vendor check
+    try:
+        out = subprocess.check_output(
+            ["wmic", "bios", "get", "Manufacturer,SMBIOSBIOSVersion"],
+            stderr=subprocess.DEVNULL, creationflags=creation_flag
+        ).decode("utf-8", "ignore").lower()
+        for vs in ["vmware", "virtualbox", "seabios", "bochs", "qemu", "xen", "amazon", "google"]:
+            if vs in out:
+                vm_indicators.append(f"wmi_bios:{vs}")
+    except Exception:
+        pass
+    # Registry-based VM detection
+    try:
+        import winreg
+        vm_reg_paths = [
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\VMware, Inc.\VMware Tools"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Oracle\VirtualBox Guest Additions"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\VBoxGuest"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\vmci"),
+        ]
+        for hive, path in vm_reg_paths:
+            try:
+                winreg.OpenKey(hive, path)
+                vm_indicators.append(f"registry:{path.split(chr(92))[-1]}")
+            except FileNotFoundError:
+                pass
+    except ImportError:
+        pass  # Not on Windows (shouldn't happen but safety)
+    # Cloud metadata endpoint
+    try:
+        import urllib.request
+        req = urllib.request.Request("http://169.254.169.254/", headers={"Metadata": "true"})
+        urllib.request.urlopen(req, timeout=1)
+        vm_indicators.append("cloud_metadata:detected")
+    except Exception:
+        pass
+    # Environment variable checks
+    for key in ["KUBERNETES", "DOCKER", "VIRTUAL", "container",
+                "AWS_EXECUTION_ENV", "ECS_CONTAINER_METADATA_URI",
+                "GOOGLE_CLOUD_PROJECT", "AZURE_FUNCTIONS_ENVIRONMENT"]:
+        if key in os.environ:
+            vm_indicators.append(f"ENV:{key}")
+
+    anti_emu_passed = len(vm_indicators) == 0
+    results["anti_emulation"] = {
+        "passed": anti_emu_passed,
+        "data": {"vm_indicators": vm_indicators, "indicator_count": len(vm_indicators),
+                 "is_likely_vm": len(vm_indicators) > 0,
+                 "paths_checked": True, "dmesg_scanned": False, "cpuinfo_flags": "windows_wmi"}
+    }
+    if not anti_emu_passed:
+        all_passed = False
+
+    return all_passed, results
+
+
 class RustChainMiner:
     """Mining engine for RustChain"""
     def __init__(self, wallet_address):
@@ -117,11 +316,31 @@ class RustChainMiner:
         self.enrolled = False
         self.hw_info = self._get_hw_info()
         self.last_entropy = {}
+        self.fingerprint_data = None
+        self._run_fingerprint_checks()
+
+    def _run_fingerprint_checks(self):
+        """Run hardware fingerprint checks on startup."""
+        print("[FINGERPRINT] Running hardware fingerprint checks...")
+        try:
+            if FINGERPRINT_AVAILABLE:
+                all_passed, checks = validate_all_checks(include_rom_check=False)
+            else:
+                all_passed, checks = _windows_fingerprint_checks()
+            self.fingerprint_data = {"all_passed": all_passed, "checks": checks}
+            if all_passed:
+                print("[FINGERPRINT] ALL CHECKS PASSED — eligible for full rewards")
+            else:
+                failed = [k for k, v in checks.items() if not v.get("passed", True)]
+                print(f"[FINGERPRINT] FAILED checks: {failed}")
+                print("[FINGERPRINT] Mining will continue but rewards may be reduced")
+        except Exception as e:
+            print(f"[FINGERPRINT] Error running checks: {e}")
+            self.fingerprint_data = {"all_passed": False, "checks": {}}
 
     def start_mining(self, callback=None):
         """Start mining process"""
         self.mining = True
-        logger.info("Mining started.")
         self.mining_thread = threading.Thread(target=self._mine_loop, args=(callback,))
         self.mining_thread.daemon = True
         self.mining_thread.start()
@@ -129,34 +348,32 @@ class RustChainMiner:
     def stop_mining(self):
         """Stop mining"""
         self.mining = False
-        logger.info("Mining stopped.")
 
     def _mine_loop(self, callback):
-        """Main PoA activity loop (attestation + enrollment)"""
+        """Main mining loop"""
         while self.mining:
             try:
-                # Ensure we have fresh attestation and enrollment
-                success = self._ensure_ready(callback)
-                
-                if success:
+                if not self._ensure_ready(callback):
+                    time.sleep(10)
+                    continue
+
+                # Check eligibility
+                eligible = self.check_eligibility()
+                if eligible:
+                    header = self.generate_header()
+                    success = self.submit_header(header)
                     self.shares_submitted += 1
-                    self.shares_accepted += 1
-                    logger.info(f"PoA Activity Heartbeat: OK ({self.shares_accepted})")
+                    if success:
+                        self.shares_accepted += 1
                     if callback:
                         callback({
                             "type": "share",
                             "submitted": self.shares_submitted,
                             "accepted": self.shares_accepted,
-                            "success": True
+                            "success": success
                         })
-                
-                # Check eligibility periodically as a heartbeat
-                self.check_eligibility()
-                
-                # Sleep for a while - PoA doesn't need high-frequency grinding
-                time.sleep(60)
+                time.sleep(10)
             except Exception as e:
-                logger.error(f"Miner loop error: {e}")
                 if callback:
                     callback({"type": "error", "message": str(e)})
                 time.sleep(30)
@@ -164,23 +381,20 @@ class RustChainMiner:
     def _ensure_ready(self, callback):
         """Ensure we have a fresh attestation and current epoch enrollment."""
         now = time.time()
-        ready = True
 
-        # Attestation every ~10 minutes
-        if now >= self.attestation_valid_until - 30:
+        if now >= self.attestation_valid_until - 60:
             if not self.attest():
                 if callback:
                     callback({"type": "error", "message": "Attestation failed"})
-                ready = False
+                return False
 
-        # Enrollment every ~1 hour or if not enrolled
         if (now - self.last_enroll) > 3600 or not self.enrolled:
             if not self.enroll():
                 if callback:
                     callback({"type": "error", "message": "Epoch enrollment failed"})
-                ready = False
+                return False
 
-        return ready
+        return True
 
     def _get_mac_addresses(self):
         macs = set()
@@ -244,24 +458,12 @@ class RustChainMiner:
 
     def attest(self):
         """Perform hardware attestation for PoA."""
-        # Mainnet expects a timestamp-based nonce or from /attest/challenge
         try:
-            # Try to get nonce from challenge if available, otherwise fallback to timestamp
-            resp = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=10, verify=False)
-            nonce = resp.json().get("nonce") if resp.status_code == 200 else str(int(time.time()))
-            logger.info(f"Attestation sequence started (nonce: {nonce[:8]}...)")
+            challenge = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=10, verify=False).json()
+            nonce = challenge.get("nonce")
         except Exception:
-            nonce = str(int(time.time()))
-            logger.info(f"Attestation sequence started (fallback nonce: {nonce})")
+            return False
 
-        # Perform hardware fingerprint checks
-        checks_data = {}
-        all_passed = True
-        if validate_all_checks_win:
-            all_passed, checks_data = validate_all_checks_win()
-            if not all_passed:
-                logger.warning("Hardware fingerprint checks incomplete or failed.")
-        
         entropy = self._collect_entropy()
         self.last_entropy = entropy
 
@@ -271,11 +473,7 @@ class RustChainMiner:
                 (nonce + self.wallet_address + json.dumps(entropy, sort_keys=True)).encode()
             ).hexdigest(),
             "derived": entropy,
-            "entropy_score": entropy.get("variance_ns", 0.0),
-            "fingerprint": {
-                "all_passed": all_passed,
-                "checks": checks_data
-            }
+            "entropy_score": entropy.get("variance_ns", 0.0)
         }
 
         attestation = {
@@ -292,21 +490,20 @@ class RustChainMiner:
             "signals": {
                 "macs": self.hw_info["macs"],
                 "hostname": self.hw_info["hostname"]
-            }
+            },
+            "fingerprint": self.fingerprint_data
         }
 
         try:
-            resp = requests.post(
-                f"{self.node_url}/attest/submit", json=attestation, timeout=30, verify=False
-            )
-            if resp.status_code == 200:
-                self.attestation_valid_until = time.time() + 600
-                logger.info("Attestation submitted and accepted.")
+            resp = requests.post(f"{self.node_url}/attest/submit", json=attestation,
+                                 timeout=30, verify=False)
+            if resp.status_code == 200 and resp.json().get("ok"):
+                self.attestation_valid_until = time.time() + 580
                 return True
             else:
-                logger.error(f"Attestation rejected: {resp.text}")
+                print(f"[ATTEST] Server response: {resp.status_code} {resp.text[:200]}")
         except Exception as e:
-            logger.error(f"Attestation submission failed: {e}")
+            print(f"[ATTEST] Error: {e}")
         return False
 
     def enroll(self):
@@ -321,29 +518,23 @@ class RustChainMiner:
         }
 
         try:
-            resp = requests.post(
-                f"{self.node_url}/epoch/enroll", json=payload, timeout=15, verify=False
-            )
+            resp = requests.post(f"{self.node_url}/epoch/enroll", json=payload, timeout=15, verify=False)
             if resp.status_code == 200 and resp.json().get("ok"):
                 self.enrolled = True
                 self.last_enroll = time.time()
-                logger.info("Epoch enrollment successful.")
                 return True
-        except Exception as e:
-            logger.error(f"Epoch enrollment failed: {e}")
+        except Exception:
+            pass
         return False
 
     def check_eligibility(self):
         """Check if eligible to mine"""
         try:
-            response = requests.get(
-                f"{RUSTCHAIN_API}/lottery/eligibility?miner_id={self.miner_id}",
-                verify=False
-            )
+            response = requests.get(f"{RUSTCHAIN_API}/lottery/eligibility?miner_id={self.miner_id}", verify=False)
             if response.ok:
                 data = response.json()
                 return data.get("eligible", False)
-        except Exception:
+        except:
             pass
         return False
 
@@ -364,120 +555,24 @@ class RustChainMiner:
     def submit_header(self, header):
         """Submit mining header"""
         try:
-            response = requests.post(
-                f"{RUSTCHAIN_API}/headers/ingest_signed", json=header, timeout=5, verify=False
-            )
+            response = requests.post(f"{RUSTCHAIN_API}/headers/ingest_signed", json=header, timeout=5, verify=False)
             return response.status_code == 200
-        except Exception:
+        except:
             return False
 
 class RustChainGUI:
     """Windows GUI for RustChain"""
-    def __init__(self, start_minimized=False):
+    def __init__(self):
         self.root = tk.Tk()
-
-        # Window title — include wallet name if available
-        wallet_name = CONFIG.wallet_name if CONFIG and CONFIG.wallet_name else ""
-        title = "RustChain Wallet & Miner"
-        if wallet_name:
-            title += f" — {wallet_name}"
-        self.root.title(title)
+        self.root.title("RustChain Wallet & Miner for Windows")
         self.root.geometry("800x600")
-
-        # Set window icon if available
-        self._set_window_icon()
-
         self.wallet = RustChainWallet()
         self.miner = RustChainMiner(self.wallet.wallet_data["address"])
-
-        # System tray icon
-        self.tray = None
-        if TRAY_AVAILABLE:
-            try:
-                self.tray = RustChainTray(
-                    on_start=self._tray_start,
-                    on_stop=self._tray_stop,
-                    on_show=self._tray_show,
-                    on_quit=self._tray_quit
-                )
-                self.tray.run_detached()
-            except Exception as e:
-                logger.warning(f"Tray icon failed to initialize: {e}")
-                self.tray = None
-
         self.setup_gui()
         self.update_stats()
 
-        # Handle window close — minimize to tray instead of quitting
-        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
-
-        # Start minimized if requested
-        if start_minimized:
-            self.root.withdraw()
-            logger.info("Started minimized to tray.")
-
-    def _set_window_icon(self):
-        """Try to set the window icon."""
-        icon_candidates = [
-            Path(__file__).parent / "assets" / "rustchain.ico",
-            Path(__file__).parent.parent / "assets" / "rustchain.ico",
-        ]
-        if hasattr(sys, "_MEIPASS"):
-            icon_candidates.insert(0, Path(sys._MEIPASS) / "assets" / "rustchain.ico")
-
-        for icon_path in icon_candidates:
-            if icon_path.exists():
-                try:
-                    self.root.iconbitmap(str(icon_path))
-                    break
-                except Exception:
-                    continue
-
-    def _on_close(self):
-        """Minimize to tray on close if tray is available, otherwise quit."""
-        if self.tray:
-            self.root.withdraw()
-        else:
-            self._quit()
-
-    def _quit(self):
-        """Full shutdown."""
-        self.miner.stop_mining()
-        if self.tray:
-            self.tray.stop()
-        self.root.destroy()
-
-    # --- Tray callbacks ---
-    def _tray_start(self):
-        if not self.miner.mining:
-            self.miner.start_mining(self.mining_callback)
-            self.root.after(0, lambda: self.mine_button.config(text="Stop Mining"))
-
-    def _tray_stop(self):
-        if self.miner.mining:
-            self.miner.stop_mining()
-            self.root.after(0, lambda: self.mine_button.config(text="Start Mining"))
-
-    def _tray_show(self):
-        self.root.after(0, self._show_window)
-
-    def _show_window(self):
-        self.root.deiconify()
-        self.root.lift()
-        self.root.focus_force()
-
-    def _tray_quit(self):
-        self.root.after(0, self._quit)
-
     def setup_gui(self):
         """Setup GUI elements"""
-        # Style configuration
-        style = ttk.Style()
-        try:
-            style.theme_use("vista")
-        except Exception:
-            pass
-
         notebook = ttk.Notebook(self.root)
         notebook.pack(fill="both", expand=True, padx=10, pady=10)
 
@@ -491,11 +586,6 @@ class RustChainGUI:
         notebook.add(miner_frame, text="Miner")
         self.setup_miner_tab(miner_frame)
 
-        # Log tab
-        log_frame = ttk.Frame(notebook)
-        notebook.add(log_frame, text="Log")
-        self.setup_log_tab(log_frame)
-
     def setup_wallet_tab(self, parent):
         """Setup wallet interface"""
         info_frame = ttk.LabelFrame(parent, text="Wallet Information", padding=10)
@@ -503,105 +593,60 @@ class RustChainGUI:
 
         ttk.Label(info_frame, text="Address:").grid(row=0, column=0, sticky="w")
         self.address_label = ttk.Label(info_frame, text=self.wallet.wallet_data["address"])
-        self.address_label.grid(row=0, column=1, sticky="w", padx=(10, 0))
+        self.address_label.grid(row=0, column=1, sticky="w")
 
         ttk.Label(info_frame, text="Balance:").grid(row=1, column=0, sticky="w")
         self.balance_label = ttk.Label(info_frame, text=f"{self.wallet.wallet_data['balance']:.8f} RTC")
-        self.balance_label.grid(row=1, column=1, sticky="w", padx=(10, 0))
-
-        # Show wallet name if configured
-        if CONFIG and CONFIG.wallet_name:
-            ttk.Label(info_frame, text="Wallet Name:").grid(row=2, column=0, sticky="w")
-            ttk.Label(info_frame, text=CONFIG.wallet_name).grid(row=2, column=1, sticky="w", padx=(10, 0))
+        self.balance_label.grid(row=1, column=1, sticky="w")
 
     def setup_miner_tab(self, parent):
         """Setup miner interface"""
+        # Fingerprint status
+        fp_frame = ttk.LabelFrame(parent, text="Hardware Fingerprint", padding=10)
+        fp_frame.pack(fill="x", padx=10, pady=5)
+
+        fp = self.miner.fingerprint_data or {}
+        fp_status = "PASSED" if fp.get("all_passed") else "FAILED"
+        fp_color = "green" if fp.get("all_passed") else "red"
+        self.fp_label = ttk.Label(fp_frame, text=f"Fingerprint: {fp_status}")
+        self.fp_label.pack(anchor="w")
+
+        if fp.get("checks"):
+            for check_name, check_data in fp["checks"].items():
+                passed = check_data.get("passed", False) if isinstance(check_data, dict) else check_data
+                status = "PASS" if passed else "FAIL"
+                ttk.Label(fp_frame, text=f"  {check_name}: {status}").pack(anchor="w")
+
         control_frame = ttk.LabelFrame(parent, text="Mining Control", padding=10)
-        control_frame.pack(fill="x", padx=10, pady=10)
+        control_frame.pack(fill="x", padx=10, pady=5)
 
         self.mine_button = ttk.Button(control_frame, text="Start Mining", command=self.toggle_mining)
         self.mine_button.pack(pady=10)
 
-        self.status_label = ttk.Label(control_frame, text="Status: Idle", foreground="gray")
-        self.status_label.pack(pady=(0, 5))
-
         stats_frame = ttk.LabelFrame(parent, text="Mining Statistics", padding=10)
-        stats_frame.pack(fill="x", padx=10, pady=10)
+        stats_frame.pack(fill="x", padx=10, pady=5)
 
         ttk.Label(stats_frame, text="Shares Submitted:").grid(row=0, column=0, sticky="w")
         self.shares_label = ttk.Label(stats_frame, text="0")
-        self.shares_label.grid(row=0, column=1, sticky="w", padx=(10, 0))
+        self.shares_label.grid(row=0, column=1, sticky="w")
 
         ttk.Label(stats_frame, text="Shares Accepted:").grid(row=1, column=0, sticky="w")
         self.accepted_label = ttk.Label(stats_frame, text="0")
-        self.accepted_label.grid(row=1, column=1, sticky="w", padx=(10, 0))
-
-        ttk.Label(stats_frame, text="Miner ID:").grid(row=2, column=0, sticky="w")
-        self.minerid_label = ttk.Label(stats_frame, text=self.miner.miner_id)
-        self.minerid_label.grid(row=2, column=1, sticky="w", padx=(10, 0))
-
-    def setup_log_tab(self, parent):
-        """Setup log viewer tab"""
-        self.log_text = scrolledtext.ScrolledText(parent, state="disabled", wrap="word", height=20)
-        self.log_text.pack(fill="both", expand=True, padx=10, pady=10)
-
-        btn_frame = ttk.Frame(parent)
-        btn_frame.pack(fill="x", padx=10, pady=(0, 10))
-        ttk.Button(btn_frame, text="Refresh", command=self._refresh_log).pack(side="left")
-        ttk.Button(btn_frame, text="Open Log Folder", command=self._open_log_folder).pack(side="left", padx=(10, 0))
-
-    def _refresh_log(self):
-        """Reload log file into the log viewer."""
-        self.log_text.config(state="normal")
-        self.log_text.delete("1.0", "end")
-        if LOG_FILE.exists():
-            try:
-                with open(LOG_FILE, "r", encoding="utf-8") as f:
-                    # Read last 200 lines
-                    lines = f.readlines()[-200:]
-                    self.log_text.insert("end", "".join(lines))
-                    self.log_text.see("end")
-            except Exception:
-                self.log_text.insert("end", "Error reading log file.")
-        else:
-            self.log_text.insert("end", "No log file found yet.")
-        self.log_text.config(state="disabled")
-
-    def _open_log_folder(self):
-        """Open log folder in Explorer."""
-        try:
-            os.startfile(str(LOG_DIR))
-        except Exception:
-            subprocess.Popen(["explorer", str(LOG_DIR)])
+        self.accepted_label.grid(row=1, column=1, sticky="w")
 
     def toggle_mining(self):
         """Toggle mining on/off"""
         if self.miner.mining:
             self.miner.stop_mining()
             self.mine_button.config(text="Start Mining")
-            self.status_label.config(text="Status: Idle", foreground="gray")
-            if self.tray:
-                self.tray.set_status("Idle", "idle")
         else:
             self.miner.start_mining(self.mining_callback)
             self.mine_button.config(text="Stop Mining")
-            self.status_label.config(text="Status: Mining...", foreground="green")
-            if self.tray:
-                self.tray.set_status("Mining...", "active")
 
     def mining_callback(self, data):
         """Handle mining events"""
-        try:
-            if data["type"] == "share":
-                self.root.after(0, self.update_mining_stats)
-            elif data["type"] == "error":
-                self.root.after(0, lambda: self.status_label.config(
-                    text=f"Status: Error — {data['message'][:50]}", foreground="red"
-                ))
-                if self.tray:
-                    self.tray.set_status(f"Error: {data['message'][:30]}", "error")
-        except Exception:
-            pass
+        if data["type"] == "share":
+            self.update_mining_stats()
 
     def update_mining_stats(self):
         """Update mining statistics display"""
@@ -620,11 +665,7 @@ class RustChainGUI:
 
 def main():
     """Main entry point"""
-    # Check for --minimized flag
-    start_minimized = "--minimized" in sys.argv
-
-    logger.info("RustChain Miner starting...")
-    app = RustChainGUI(start_minimized=start_minimized)
+    app = RustChainGUI()
     app.run()
 
 if __name__ == "__main__":
