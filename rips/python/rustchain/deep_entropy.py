@@ -263,6 +263,9 @@ class DeepEntropyVerifier:
     def generate_challenge(self) -> Dict[str, Any]:
         """Generate a challenge for hardware to solve"""
         nonce = hashlib.sha256(str(time.time()).encode()).digest()
+        # Multiply the 4-op template by 25 to produce 100 total operations.
+        # The randomised values ensure each challenge is unique, preventing
+        # a cached replay attack where an attacker pre-records a real machine's response.
         operations = [
             {"op": "mul", "value": random.randint(1, 1000000)},
             {"op": "div", "value": random.randint(1, 1000)},
@@ -332,7 +335,9 @@ class DeepEntropyVerifier:
         if scores.quirks < self.thresholds["min_quirk_entropy"]:
             issues.append(f"Expected quirks not detected: {scores.quirks:.2f}")
 
-        # Calculate total score (weighted)
+        # Instruction timing carries the most weight (0.25) because it is the
+        # hardest to spoof consistently across all four measured operations.
+        # Thermal gets the least (0.15) since it can legitimately vary with room temp.
         scores.total = (
             scores.instruction * 0.25 +
             scores.memory * 0.20 +
@@ -341,7 +346,9 @@ class DeepEntropyVerifier:
             scores.quirks * 0.20
         )
 
-        # Calculate emulation probability
+        # Scale emulation probability by hardware-specific difficulty: an Alpha
+        # (0.95) with the same total_score as a G5 (0.80) is harder to emulate,
+        # so its inferred emulation probability is lower.
         emulation_prob = max(0.0, 1.0 - (scores.total * profile.emulation_difficulty))
 
         valid = (
@@ -374,7 +381,9 @@ class DeepEntropyVerifier:
                 if min_expected <= measured.get("mean", 0) <= max_expected:
                     score += 0.5
 
-                # Check if variance is reasonable (vintage has natural jitter)
+                # Variance check: real vintage CPUs have natural thermal jitter.
+                # An emulator tends to be either too uniform (std_dev ≈ 0) or
+                # unrealistically noisy. The 0.5× mean cap rejects the latter.
                 std_dev = measured.get("std_dev", 0)
                 mean = measured.get("mean", 1)
                 if 0 < std_dev < mean * 0.5:
@@ -399,7 +408,9 @@ class DeepEntropyVerifier:
         if layer.page_crossing_penalty > 10.0:
             score += 0.3
 
-        # DRAM refresh interference is strong signal of real hardware
+        # DRAM refresh interference is the strongest single signal here:
+        # real DRAM periodically stalls reads for a row refresh cycle (~7µs),
+        # which virtualised memory and SRAM-backed emulators never exhibit.
         if layer.refresh_interference_detected:
             score += 0.4
 
@@ -443,15 +454,15 @@ class DeepEntropyVerifier:
         """Verify thermal/clock characteristics"""
         score = 0.0
 
-        # Vintage hardware shouldn't have DVFS
+        # Vintage hardware predates DVFS (Dynamic Voltage and Frequency Scaling),
+        # C-states (CPU idle power states), and P-states (performance states).
+        # Detecting any of these is a strong sign the "hardware" is a modern host.
         if not layer.frequency_changed:
             score += 0.4
 
-        # No C-states on vintage hardware
         if not layer.c_states_detected:
             score += 0.3
 
-        # No P-states on vintage hardware
         if not layer.p_states_detected:
             score += 0.3
 
@@ -490,7 +501,8 @@ def emulation_cost_analysis(hardware_type: str) -> Dict[str, Any]:
     if not profile:
         return {"error": f"Unknown hardware: {hardware_type}"}
 
-    # Emulation costs
+    # Rough GPU-hours estimate: harder-to-emulate hardware (emulation_difficulty → 1.0)
+    # requires more compute to faithfully replicate all timing layers at real-time speed.
     gpu_hours_to_emulate = 50 + (profile.emulation_difficulty * 100)
     gpu_cost_per_hour = 0.50
     emulation_cost = gpu_hours_to_emulate * gpu_cost_per_hour
