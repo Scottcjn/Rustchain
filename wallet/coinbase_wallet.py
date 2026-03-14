@@ -5,6 +5,7 @@ Optional module for creating/managing Coinbase Base wallets.
 Install with: pip install clawrtc[coinbase]
 """
 
+from typing import Optional, Dict, Any
 import json
 import os
 import sys
@@ -36,8 +37,12 @@ INSTALL_DIR = os.path.join(os.path.expanduser("~"), ".clawrtc")
 COINBASE_FILE = os.path.join(INSTALL_DIR, "coinbase_wallet.json")
 
 
-def _load_coinbase_wallet():
-    """Load saved Coinbase wallet data."""
+def _load_coinbase_wallet() -> Optional[Dict[str, Any]]:
+    """Load saved Coinbase wallet data.
+    
+    Returns:
+        Dictionary containing wallet data if file exists and is valid, None otherwise.
+    """
     if not os.path.exists(COINBASE_FILE):
         return None
     try:
@@ -47,16 +52,24 @@ def _load_coinbase_wallet():
         return None
 
 
-def _save_coinbase_wallet(data):
-    """Save Coinbase wallet data to disk."""
+def _save_coinbase_wallet(data: Dict[str, Any]) -> None:
+    """Save Coinbase wallet data to disk.
+    
+    Args:
+        data: Dictionary containing wallet information to persist.
+    """
     os.makedirs(INSTALL_DIR, exist_ok=True)
     with open(COINBASE_FILE, "w") as f:
         json.dump(data, f, indent=2)
     os.chmod(COINBASE_FILE, 0o600)
 
 
-def coinbase_create(args):
-    """Create a Coinbase Base wallet via AgentKit."""
+def coinbase_create(args: Any) -> None:
+    """Create a Coinbase Base wallet via AgentKit.
+    
+    Args:
+        args: Argument namespace from argparse containing command options.
+    """
     existing = _load_coinbase_wallet()
     if existing and not getattr(args, "force", False):
         print(f"\n  {YELLOW}You already have a Coinbase wallet:{NC}")
@@ -135,8 +148,12 @@ def coinbase_create(args):
         print(f"\n  {RED}Failed to create wallet: {e}{NC}\n")
 
 
-def coinbase_show(args):
-    """Show Coinbase Base wallet info."""
+def coinbase_show(args: Any) -> None:
+    """Show Coinbase Base wallet info.
+    
+    Args:
+        args: Argument namespace from argparse (unused but required for dispatch).
+    """
     wallet = _load_coinbase_wallet()
     if not wallet:
         print(f"\n  {YELLOW}No Coinbase wallet found.{NC}")
@@ -153,8 +170,12 @@ def coinbase_show(args):
     print()
 
 
-def coinbase_link(args):
-    """Link an existing Base address as your Coinbase wallet."""
+def coinbase_link(args: Any) -> None:
+    """Link an existing Base address as your Coinbase wallet.
+    
+    Args:
+        args: Argument namespace containing base_address attribute.
+    """
     address = getattr(args, "base_address", "")
     if not address:
         print(f"\n  {YELLOW}Usage: clawrtc wallet coinbase link 0xYourBaseAddress{NC}\n")
@@ -187,8 +208,12 @@ def coinbase_link(args):
     print()
 
 
-def coinbase_swap_info(args):
-    """Show USDC→wRTC swap instructions and Aerodrome pool info."""
+def coinbase_swap_info(args: Any) -> None:
+    """Show USDC→wRTC swap instructions and Aerodrome pool info.
+    
+    Args:
+        args: Argument namespace from argparse (unused but required for dispatch).
+    """
     print(f"""
   {GREEN}{BOLD}USDC → wRTC Swap Guide{NC}
 
@@ -219,8 +244,12 @@ def coinbase_swap_info(args):
 """)
 
 
-def cmd_coinbase(args):
-    """Handle clawrtc wallet coinbase subcommand."""
+def cmd_coinbase(args: Any) -> None:
+    """Handle clawrtc wallet coinbase subcommand.
+    
+    Args:
+        args: Argument namespace containing coinbase_action attribute.
+    """
     action = getattr(args, "coinbase_action", None) or "show"
 
     dispatch = {
