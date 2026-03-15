@@ -243,7 +243,7 @@ class TestWebhookEndpoints:
 
         response = app.post(
             "/webhook",
-            json=sample_webhook_payload,
+            content=body,
             headers={
                 "X-GitHub-Event": "issues",  # Not issue_comment
                 "X-GitHub-Delivery": "test-delivery-id",
@@ -265,7 +265,7 @@ class TestWebhookEndpoints:
 
         response = app.post(
             "/webhook",
-            json=sample_webhook_payload,
+            content=body,
             headers={
                 "X-GitHub-Event": "issue_comment",
                 "X-GitHub-Delivery": "test-delivery-id",
@@ -308,7 +308,7 @@ class TestWebhookProcessing:
 
             response = app.post(
                 "/webhook",
-                json=sample_webhook_payload,
+                content=body,
                 headers={
                     "X-GitHub-Event": "issue_comment",
                     "X-GitHub-Delivery": "test-delivery-id",
@@ -377,7 +377,7 @@ class TestWebhookProcessing:
 
             response = app.post(
                 "/webhook",
-                json=payload,
+                content=body,
                 headers={
                     "X-GitHub-Event": "issue_comment",
                     "X-GitHub-Delivery": "spam-delivery-id",
@@ -401,7 +401,7 @@ class TestWebhookProcessing:
 
         response = app.post(
             "/webhook",
-            json=payload,
+            content=body,
             headers={
                 "X-GitHub-Event": "issue_comment",
                 "X-GitHub-Delivery": "test-delivery-id",

@@ -152,7 +152,7 @@ def register_routes(app: FastAPI, config: BotConfig) -> None:
 
         # Parse payload
         try:
-            payload = request.json()
+            payload = await request.json()
         except Exception as e:
             audit_logger.log_error(
                 error_type="invalid_payload",
