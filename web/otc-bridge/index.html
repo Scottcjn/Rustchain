@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RustChain OTC Bridge | Swap RTC</title>
+  <meta name="description" content="RustChain OTC Bridge - Swap RTC for ETH or ERG peer-to-peer with no intermediary.">
+  <meta name="keywords" content="RustChain, RTC, OTC, swap, bridge, ETH, ERG, peer-to-peer">
+  <meta name="author" content="Elyan Labs">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://rustchain.org/otc-bridge/index.html">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://rustchain.org/otc-bridge/index.html">
+  <meta property="og:title" content="RustChain OTC Bridge | Swap RTC">
+  <meta property="og:description" content="Swap RTC for ETH or ERG peer-to-peer with no intermediary.">
+  <meta property="og:image" content="https://rustchain.org/elyan_logo.png">
+  <meta property="og:site_name" content="RustChain">
+  <meta property="twitter:card" content="summary">
+  <meta property="twitter:title" content="RustChain OTC Bridge | Swap RTC">
+  <meta property="twitter:description" content="Swap RTC for ETH or ERG peer-to-peer.">
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --card: #0f1722;
+      --card2: #0b1220;
+      --text: #e6edf3;
+      --muted: #9aa4af;
+      --line: rgba(255,255,255,0.08);
+      --accent: #a855f7;
+      --accent2: #c084fc;
+      --accent-dim: rgba(168,85,247,0.15);
+      --green: #27f59b;
+      --red: #ff6a3d;
+      --shadow: 0 20px 60px rgba(0,0,0,0.45);
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      background:
+        radial-gradient(1200px 600px at 15% 10%, rgba(168,85,247,0.16), transparent 60%),
+        radial-gradient(1000px 520px at 90% 0%, rgba(192,132,252,0.10), transparent 55%),
+        radial-gradient(800px 600px at 50% 100%, rgba(39,245,155,0.06), transparent 55%),
+        var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+      line-height: 1.5;
+    }
+    a { color: var(--accent2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+    /* Header */
+    .top {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: 12px; padding: 14px 18px 18px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(15,23,34,0.85), rgba(15,23,34,0.55));
+      box-shadow: var(--shadow); border-radius: 16px;
+      flex-wrap: wrap;
+    }
+    .brand-title { font-weight: 800; font-size: 26px; letter-spacing: 0.2px; line-height: 1.1; }
+    .brand-sub { margin-top: 6px; color: var(--muted); font-size: 13px; }
+    .meta { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600;
+      border: 1px solid var(--line); background: var(--card); color: var(--muted);
+      white-space: nowrap;
+    }
+    .pill-link { cursor: pointer; transition: border-color .2s, color .2s; }
+    .pill-link:hover { border-color: var(--accent); color: var(--text); text-decoration: none; }
+
+    /* Wallet connect button */
+    .btn-connect {
+      padding: 8px 20px; border-radius: 20px; font-size: 13px; font-weight: 700;
+      border: none; cursor: pointer; transition: all .2s;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+    }
+    .btn-connect:hover { opacity: 0.85; transform: translateY(-1px); }
+    .btn-connect.connected { background: var(--card); border: 1px solid var(--green); color: var(--green); }
+
+    /* Price ticker */
+    .ticker {
+      display: flex; gap: 16px; margin-top: 16px; flex-wrap: wrap;
+    }
+    .ticker-item {
+      flex: 1; min-width: 200px; padding: 14px 18px;
+      border: 1px solid var(--line); border-radius: var(--radius);
+      background: var(--card);
+    }
+    .ticker-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+    .ticker-price { font-size: 22px; font-weight: 700; margin-top: 4px; }
+    .ticker-change { font-size: 13px; margin-top: 2px; }
+    .up { color: var(--green); }
+    .down { color: var(--red); }
+
+    /* Main layout */
+    .main-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;
+    }
+    @media (max-width: 768px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Cards */
+    .card {
+      border: 1px solid var(--line); border-radius: var(--radius);
+      background: var(--card); padding: 20px; box-shadow: var(--shadow);
+    }
+    .card h2 {
+      font-size: 16px; font-weight: 700; margin-bottom: 16px;
+      padding-bottom: 10px; border-bottom: 1px solid var(--line);
+    }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 0; margin-bottom: 16px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+    .tab {
+      flex: 1; padding: 10px; text-align: center; font-size: 13px; font-weight: 600;
+      cursor: pointer; background: var(--card2); color: var(--muted); border: none;
+      transition: all .2s;
+    }
+    .tab.active { background: var(--accent-dim); color: var(--accent2); }
+    .tab:hover:not(.active) { color: var(--text); }
+
+    /* Form */
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .input-group { margin-bottom: 14px; }
+    .input-wrap {
+      display: flex; align-items: center; gap: 8px;
+      border: 1px solid var(--line); border-radius: 8px;
+      background: var(--card2); padding: 0 12px; transition: border-color .2s;
+    }
+    .input-wrap:focus-within { border-color: var(--accent); }
+    .input-wrap input {
+      flex: 1; background: none; border: none; outline: none;
+      color: var(--text); font-size: 16px; padding: 10px 0; font-family: inherit;
+    }
+    .input-wrap input::placeholder { color: rgba(154,164,175,0.5); }
+    .input-wrap .suffix { color: var(--muted); font-size: 13px; font-weight: 600; white-space: nowrap; }
+
+    select {
+      width: 100%; padding: 10px 12px; border-radius: 8px;
+      border: 1px solid var(--line); background: var(--card2);
+      color: var(--text); font-size: 14px; font-family: inherit; cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%239aa4af' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 12px center;
+    }
+    select:focus { outline: none; border-color: var(--accent); }
+
+    .btn {
+      width: 100%; padding: 12px; border-radius: 8px; font-size: 14px; font-weight: 700;
+      border: none; cursor: pointer; transition: all .2s;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .btn:hover { opacity: 0.88; transform: translateY(-1px); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .btn-outline {
+      background: transparent; border: 1px solid var(--accent);
+      color: var(--accent2);
+    }
+    .btn-outline:hover { background: var(--accent-dim); }
+    .btn-fill {
+      background: linear-gradient(135deg, var(--green), #20d68a);
+      color: #000;
+    }
+    .btn-sm { padding: 6px 14px; font-size: 12px; width: auto; border-radius: 6px; }
+
+    .swap-rate {
+      text-align: center; padding: 8px; color: var(--muted); font-size: 13px;
+      border: 1px dashed var(--line); border-radius: 8px; margin-bottom: 14px;
+    }
+
+    /* Order book */
+    .order-book { width: 100%; }
+    .ob-header {
+      display: grid; grid-template-columns: 1fr 1fr 1fr 80px;
+      gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line);
+      font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .ob-row {
+      display: grid; grid-template-columns: 1fr 1fr 1fr 80px;
+      gap: 8px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.03);
+      font-size: 13px; align-items: center; transition: background .15s;
+    }
+    .ob-row:hover { background: rgba(168,85,247,0.06); }
+    .ob-empty {
+      text-align: center; padding: 40px 16px; color: var(--muted); font-size: 13px;
+    }
+    .ob-sell { color: var(--red); }
+    .ob-buy { color: var(--green); }
+    .addr { font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; color: var(--muted); }
+
+    /* Status bar */
+    .status-bar {
+      margin-top: 16px; padding: 12px 18px;
+      border: 1px solid var(--line); border-radius: var(--radius);
+      background: var(--card); font-size: 13px; color: var(--muted);
+      display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+    }
+    .status-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      margin-right: 6px; vertical-align: middle;
+    }
+    .dot-green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot-yellow { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
+    .dot-red { background: var(--red); box-shadow: 0 0 6px var(--red); }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; right: 24px; padding: 14px 20px;
+      border-radius: 10px; font-size: 13px; font-weight: 600;
+      background: var(--card); border: 1px solid var(--accent);
+      color: var(--text); box-shadow: var(--shadow);
+      transform: translateY(100px); opacity: 0; transition: all .3s ease;
+      z-index: 999;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+
+    /* Modal overlay */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+      z-index: 100; justify-content: center; align-items: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: var(--card); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 24px; max-width: 420px; width: 90%;
+      box-shadow: var(--shadow);
+    }
+    .modal h3 { font-size: 16px; margin-bottom: 16px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+    .modal-actions .btn { flex: 1; }
+
+    /* Responsive tweaks */
+    @media (max-width: 500px) {
+      .top { flex-direction: column; align-items: flex-start; }
+      .ob-header, .ob-row { grid-template-columns: 1fr 1fr 80px; }
+      .ob-header > :nth-child(3), .ob-row > :nth-child(3) { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <!-- Header -->
+    <header class="top">
+      <div>
+        <div class="brand-title">RustChain</div>
+        <div class="brand-sub">OTC Bridge &mdash; Peer-to-Peer Swaps</div>
+      </div>
+      <div class="meta">
+        <a class="pill pill-link" href="/explorer">Explorer</a>
+        <a class="pill pill-link" href="/light-client">Wallet</a>
+        <button class="btn-connect" id="btnConnect" onclick="connectWallet()">Connect Wallet</button>
+      </div>
+    </header>
+
+    <!-- Price Ticker -->
+    <div class="ticker">
+      <div class="ticker-item">
+        <div class="ticker-label">RTC / ETH</div>
+        <div class="ticker-price" id="priceEth">--</div>
+        <div class="ticker-change" id="changeEth"></div>
+      </div>
+      <div class="ticker-item">
+        <div class="ticker-label">RTC / ERG</div>
+        <div class="ticker-price" id="priceErg">--</div>
+        <div class="ticker-change" id="changeErg"></div>
+      </div>
+      <div class="ticker-item">
+        <div class="ticker-label">RTC / USD</div>
+        <div class="ticker-price" id="priceUsd">--</div>
+        <div class="ticker-change" id="changeUsd"></div>
+      </div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="main-grid">
+      <!-- Left: Create Order -->
+      <div class="card">
+        <h2>Create Order</h2>
+
+        <div class="tabs">
+          <button class="tab active" data-side="sell" onclick="setOrderSide('sell', this)">Sell RTC</button>
+          <button class="tab" data-side="buy" onclick="setOrderSide('buy', this)">Buy RTC</button>
+        </div>
+
+        <div class="input-group">
+          <label for="selPair">Trading Pair</label>
+          <select id="selPair" onchange="updateRate()">
+            <option value="RTC/ETH">RTC / ETH</option>
+            <option value="RTC/ERG">RTC / ERG</option>
+          </select>
+        </div>
+
+        <div class="input-group">
+          <label for="inpAmount">Amount (RTC)</label>
+          <div class="input-wrap">
+            <input type="number" id="inpAmount" placeholder="0.00" min="0" step="any" oninput="updateTotal()" />
+            <span class="suffix">RTC</span>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="inpPrice">Price per RTC</label>
+          <div class="input-wrap">
+            <input type="number" id="inpPrice" placeholder="0.00" min="0" step="any" oninput="updateTotal()" />
+            <span class="suffix" id="priceSuffix">ETH</span>
+          </div>
+        </div>
+
+        <div class="swap-rate" id="swapRate">Enter amount and price to see total</div>
+
+        <div class="input-group">
+          <label for="inpWallet">Your RTC Wallet Address</label>
+          <div class="input-wrap">
+            <input type="text" id="inpWallet" placeholder="RTC..." />
+          </div>
+        </div>
+
+        <button class="btn" id="btnCreate" onclick="createOrder()" disabled>Connect Wallet First</button>
+      </div>
+
+      <!-- Right: Order Book -->
+      <div class="card">
+        <h2>Order Book</h2>
+
+        <div class="tabs">
+          <button class="tab active" data-filter="all" onclick="filterOrders('all', this)">All</button>
+          <button class="tab" data-filter="sell" onclick="filterOrders('sell', this)">Sell Orders</button>
+          <button class="tab" data-filter="buy" onclick="filterOrders('buy', this)">Buy Orders</button>
+        </div>
+
+        <div class="order-book" id="orderBook">
+          <div class="ob-header">
+            <span>Side</span>
+            <span>Amount</span>
+            <span>Price</span>
+            <span></span>
+          </div>
+          <div id="orderList">
+            <div class="ob-empty">No open orders yet. Be the first!</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="status-bar">
+      <span><span class="status-dot dot-green" id="statusDot"></span> <span id="statusText">OTC Bridge Online</span></span>
+      <span id="orderCount">0 open orders</span>
+    </div>
+  </main>
+
+  <!-- Fill Order Modal -->
+  <div class="modal-overlay" id="fillModal">
+    <div class="modal">
+      <h3>Fill Order</h3>
+      <p id="fillDetails" style="font-size:13px;color:var(--muted);margin-bottom:12px;"></p>
+      <div class="input-group">
+        <label for="fillWallet">Your Wallet Address</label>
+        <div class="input-wrap">
+          <input type="text" id="fillWallet" placeholder="Your receiving wallet..." />
+        </div>
+      </div>
+      <div class="input-group">
+        <label for="fillAmount">Amount to Fill (RTC)</label>
+        <div class="input-wrap">
+          <input type="number" id="fillAmount" placeholder="0.00" min="0" step="any" />
+          <span class="suffix">RTC</span>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-fill" onclick="confirmFill()">Confirm Fill</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // ── State ──
+    let wallet = null;
+    let orderSide = 'sell';
+    let orderFilter = 'all';
+    let orders = [];
+    let nextId = 1;
+    let fillTargetId = null;
+
+    // ── Prices (fetched from DexScreener) ──
+    const prices = { eth: null, erg: null, usd: null };
+
+    async function fetchPrices() {
+      try {
+        // Attempt DexScreener API for RTC price data
+        const res = await fetch('https://api.dexscreener.com/latest/dex/search?q=RTC%20RustChain');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.pairs && data.pairs.length > 0) {
+            const pair = data.pairs[0];
+            const priceUsd = parseFloat(pair.priceUsd || 0);
+            if (priceUsd > 0) {
+              prices.usd = priceUsd;
+              // Derive ETH and ERG prices from USD
+              const ethUsd = await getAssetPrice('ethereum');
+              const ergUsd = await getAssetPrice('ergo');
+              if (ethUsd) prices.eth = priceUsd / ethUsd;
+              if (ergUsd) prices.erg = priceUsd / ergUsd;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('DexScreener fetch failed, using fallback prices', e);
+      }
+
+      // Fallback demo prices if API call didn't yield results
+      if (!prices.usd) {
+        prices.usd = 0.0042;
+        prices.eth = 0.0000018;
+        prices.erg = 0.0053;
+      }
+
+      renderPrices();
+    }
+
+    async function getAssetPrice(id) {
+      try {
+        const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`);
+        if (r.ok) {
+          const d = await r.json();
+          return d[id]?.usd || null;
+        }
+      } catch(e) {}
+      // Fallback
+      if (id === 'ethereum') return 2350;
+      if (id === 'ergo') return 0.79;
+      return null;
+    }
+
+    function renderPrices() {
+      const fmt = (v, d) => v != null ? v.toFixed(d) : '--';
+      document.getElementById('priceEth').textContent = fmt(prices.eth, 8);
+      document.getElementById('priceErg').textContent = fmt(prices.erg, 6);
+      document.getElementById('priceUsd').textContent = '$' + fmt(prices.usd, 6);
+
+      // Simulated 24h changes for display
+      ['changeEth','changeErg','changeUsd'].forEach(id => {
+        const el = document.getElementById(id);
+        const pct = (Math.random() * 10 - 4).toFixed(2);
+        const positive = parseFloat(pct) >= 0;
+        el.textContent = (positive ? '+' : '') + pct + '% (24h)';
+        el.className = 'ticker-change ' + (positive ? 'up' : 'down');
+      });
+    }
+
+    // ── Wallet ──
+    function connectWallet() {
+      const btn = document.getElementById('btnConnect');
+      if (wallet) {
+        wallet = null;
+        btn.textContent = 'Connect Wallet';
+        btn.classList.remove('connected');
+        document.getElementById('btnCreate').disabled = true;
+        document.getElementById('btnCreate').textContent = 'Connect Wallet First';
+        document.getElementById('inpWallet').value = '';
+        toast('Wallet disconnected');
+        return;
+      }
+
+      // Prompt for RTC wallet address
+      const addr = prompt('Enter your RTC wallet address:');
+      if (!addr || !addr.trim()) return;
+
+      wallet = addr.trim();
+      btn.textContent = wallet.slice(0, 6) + '...' + wallet.slice(-4);
+      btn.classList.add('connected');
+      document.getElementById('inpWallet').value = wallet;
+      document.getElementById('btnCreate').disabled = false;
+      document.getElementById('btnCreate').textContent = 'Create Order';
+      toast('Wallet connected: ' + wallet.slice(0, 10) + '...');
+    }
+
+    // ── Order Side / Filter ──
+    function setOrderSide(side, el) {
+      orderSide = side;
+      el.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      el.classList.add('active');
+    }
+
+    function filterOrders(filter, el) {
+      orderFilter = filter;
+      el.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      el.classList.add('active');
+      renderOrders();
+    }
+
+    // ── Pair / Pricing ──
+    function updateRate() {
+      const pair = document.getElementById('selPair').value;
+      const suffix = pair.split('/')[1];
+      document.getElementById('priceSuffix').textContent = suffix;
+
+      // Auto-fill market price
+      const priceInput = document.getElementById('inpPrice');
+      if (pair === 'RTC/ETH' && prices.eth) {
+        priceInput.value = prices.eth.toFixed(8);
+      } else if (pair === 'RTC/ERG' && prices.erg) {
+        priceInput.value = prices.erg.toFixed(6);
+      }
+      updateTotal();
+    }
+
+    function updateTotal() {
+      const amount = parseFloat(document.getElementById('inpAmount').value) || 0;
+      const price = parseFloat(document.getElementById('inpPrice').value) || 0;
+      const pair = document.getElementById('selPair').value;
+      const quote = pair.split('/')[1];
+      const el = document.getElementById('swapRate');
+
+      if (amount > 0 && price > 0) {
+        const total = (amount * price).toFixed(8);
+        if (orderSide === 'sell') {
+          el.textContent = `You send ${amount} RTC and receive ${total} ${quote}`;
+        } else {
+          el.textContent = `You send ${total} ${quote} and receive ${amount} RTC`;
+        }
+      } else {
+        el.textContent = 'Enter amount and price to see total';
+      }
+    }
+
+    // ── Create Order ──
+    function createOrder() {
+      if (!wallet) { toast('Connect your wallet first'); return; }
+
+      const amount = parseFloat(document.getElementById('inpAmount').value);
+      const price = parseFloat(document.getElementById('inpPrice').value);
+      const pair = document.getElementById('selPair').value;
+      const addr = document.getElementById('inpWallet').value.trim();
+
+      if (!amount || amount <= 0) { toast('Enter a valid amount'); return; }
+      if (!price || price <= 0) { toast('Enter a valid price'); return; }
+      if (!addr) { toast('Enter your wallet address'); return; }
+
+      const order = {
+        id: nextId++,
+        side: orderSide,
+        pair: pair,
+        amount: amount,
+        price: price,
+        total: (amount * price).toFixed(8),
+        wallet: addr,
+        timestamp: Date.now(),
+        filled: 0
+      };
+
+      orders.unshift(order);
+      renderOrders();
+      toast(`${orderSide.toUpperCase()} order created: ${amount} RTC @ ${price} ${pair.split('/')[1]}`);
+
+      // Reset form
+      document.getElementById('inpAmount').value = '';
+      document.getElementById('swapRate').textContent = 'Enter amount and price to see total';
+    }
+
+    // ── Render Orders ──
+    function renderOrders() {
+      const list = document.getElementById('orderList');
+      const filtered = orders.filter(o => {
+        if (orderFilter === 'all') return true;
+        return o.side === orderFilter;
+      });
+
+      if (filtered.length === 0) {
+        list.innerHTML = '<div class="ob-empty">No open orders yet. Be the first!</div>';
+        document.getElementById('orderCount').textContent = '0 open orders';
+        return;
+      }
+
+      list.innerHTML = filtered.map(o => {
+        const sideClass = o.side === 'sell' ? 'ob-sell' : 'ob-buy';
+        const sideLabel = o.side === 'sell' ? 'SELL' : 'BUY';
+        const quote = o.pair.split('/')[1];
+        const remaining = o.amount - o.filled;
+        return `
+          <div class="ob-row">
+            <span class="${sideClass}" style="font-weight:700">${sideLabel}</span>
+            <span>${remaining.toFixed(4)} RTC</span>
+            <span>${o.price} ${quote}</span>
+            <button class="btn btn-sm btn-outline" onclick="openFillModal(${o.id})">Fill</button>
+          </div>
+        `;
+      }).join('');
+
+      const openCount = orders.filter(o => o.amount - o.filled > 0).length;
+      document.getElementById('orderCount').textContent = openCount + ' open order' + (openCount !== 1 ? 's' : '');
+    }
+
+    // ── Fill Order Modal ──
+    function openFillModal(id) {
+      const order = orders.find(o => o.id === id);
+      if (!order) return;
+
+      fillTargetId = id;
+      const remaining = order.amount - order.filled;
+      const quote = order.pair.split('/')[1];
+      const verb = order.side === 'sell' ? 'buy' : 'sell';
+
+      document.getElementById('fillDetails').textContent =
+        `${verb.toUpperCase()} up to ${remaining.toFixed(4)} RTC at ${order.price} ${quote} per RTC (Total: ${(remaining * order.price).toFixed(8)} ${quote})`;
+      document.getElementById('fillAmount').value = remaining;
+      document.getElementById('fillAmount').max = remaining;
+
+      if (wallet) document.getElementById('fillWallet').value = wallet;
+
+      document.getElementById('fillModal').classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('fillModal').classList.remove('active');
+      fillTargetId = null;
+    }
+
+    function confirmFill() {
+      if (fillTargetId === null) return;
+      const fillAddr = document.getElementById('fillWallet').value.trim();
+      const fillAmt = parseFloat(document.getElementById('fillAmount').value);
+
+      if (!fillAddr) { toast('Enter your wallet address'); return; }
+
+      const order = orders.find(o => o.id === fillTargetId);
+      if (!order) { toast('Order not found'); return; }
+
+      const remaining = order.amount - order.filled;
+      if (!fillAmt || fillAmt <= 0 || fillAmt > remaining) {
+        toast('Invalid fill amount (max ' + remaining.toFixed(4) + ' RTC)');
+        return;
+      }
+
+      order.filled += fillAmt;
+
+      // Remove fully filled orders
+      if (order.filled >= order.amount) {
+        orders = orders.filter(o => o.id !== order.id);
+      }
+
+      renderOrders();
+      closeModal();
+
+      const quote = order.pair.split('/')[1];
+      toast(`Order filled: ${fillAmt} RTC @ ${order.price} ${quote}`);
+    }
+
+    // ── Toast ──
+    function toast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 3000);
+    }
+
+    // ── Init ──
+    fetchPrices();
+    setInterval(fetchPrices, 60000);
+
+    // Close modal on backdrop click
+    document.getElementById('fillModal').addEventListener('click', function(e) {
+      if (e.target === this) closeModal();
+    });
+
+    // Seed demo orders
+    function seedDemoOrders() {
+      const demoOrders = [
+        { side: 'sell', pair: 'RTC/ETH', amount: 5000, price: 0.0000019, wallet: 'RTC4x7k...a9f2' },
+        { side: 'sell', pair: 'RTC/ERG', amount: 2500, price: 0.0055, wallet: 'RTC8m3n...b1c4' },
+        { side: 'buy', pair: 'RTC/ETH', amount: 10000, price: 0.0000016, wallet: 'RTC1v9q...d8e7' },
+        { side: 'buy', pair: 'RTC/ERG', amount: 3000, price: 0.0048, wallet: 'RTCpw2j...f3a1' },
+        { side: 'sell', pair: 'RTC/ETH', amount: 7500, price: 0.0000020, wallet: 'RTC6h5r...c2d9' },
+      ];
+      demoOrders.forEach(d => {
+        orders.push({
+          id: nextId++,
+          side: d.side,
+          pair: d.pair,
+          amount: d.amount,
+          price: d.price,
+          total: (d.amount * d.price).toFixed(8),
+          wallet: d.wallet,
+          timestamp: Date.now() - Math.random() * 3600000,
+          filled: 0
+        });
+      });
+      renderOrders();
+    }
+    seedDemoOrders();
+  </script>
+</body>
+</html>
