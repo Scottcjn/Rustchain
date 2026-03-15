@@ -15,7 +15,7 @@ homepage = "https://rustchain.org"
 
 [dependencies]
 # Cryptography
-ed25519-dalek = { version = "2.0", features = ["rand_core", "serde"] }
+ed25519-dalek = { version = "2.1", features = ["rand_core", "serde"] }
 sha2 = "0.10"
 hex = "0.4"
 bs58 = "0.5"
@@ -32,7 +32,7 @@ rpassword = "7.3"
 
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }
-reqwest = { version = "0.13", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
 # Error handling
 thiserror = "1.0"
@@ -52,7 +52,6 @@ pbkdf2 = "0.12"
 
 # Random number generation
 rand = "0.8"
-rand_core = "0.10"
 getrandom = "0.2"
 
 # Filesystem

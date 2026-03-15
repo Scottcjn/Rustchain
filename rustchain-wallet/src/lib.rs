@@ -53,12 +53,12 @@ pub enum Network {
 }
 
 impl Network {
-    /// Get the RPC endpoint for this network
-    pub fn rpc_url(&self) -> &'static str {
+    /// Get the API endpoint for this network
+    pub fn api_url(&self) -> &'static str {
         match self {
-            Network::Mainnet => "https://rpc.rustchain.org",
-            Network::Testnet => "https://testnet-rpc.rustchain.org",
-            Network::Devnet => "https://devnet-rpc.rustchain.org",
+            Network::Mainnet => "https://rustchain.org",
+            Network::Testnet => "https://testnet.rustchain.org",
+            Network::Devnet => "https://devnet.rustchain.org",
         }
     }
 
@@ -69,6 +69,11 @@ impl Network {
             Network::Testnet => "https://testnet-explorer.rustchain.org",
             Network::Devnet => "https://devnet-explorer.rustchain.org",
         }
+    }
+
+    /// Alias for backward compatibility
+    pub fn rpc_url(&self) -> &'static str {
+        self.api_url()
     }
 }
 
@@ -101,9 +106,9 @@ impl Wallet {
         Self::new(KeyPair::generate())
     }
 
-    /// Get the wallet's public address
+    /// Get the wallet's RTC address (RTC + sha256(pubkey)[:40])
     pub fn address(&self) -> String {
-        self.keypair.public_key_base58()
+        self.keypair.rtc_address()
     }
 
     /// Get the public key as hex
@@ -144,7 +149,7 @@ impl Wallet {
 
     /// Create a RustChain client for this wallet
     pub fn client(&self) -> RustChainClient {
-        RustChainClient::new(self.network.rpc_url().to_string())
+        RustChainClient::new(self.network.api_url().to_string())
     }
 }
 
@@ -164,9 +169,10 @@ mod tests {
     #[test]
     fn test_wallet_generation() {
         let wallet = Wallet::generate();
-        assert!(!wallet.address().is_empty());
-        // Base58 encoded Ed25519 public key is typically 43-44 characters
-        assert!(wallet.address().len() >= 43);
+        let addr = wallet.address();
+        assert!(addr.starts_with("RTC"));
+        // RTC prefix (3) + 40 hex chars = 43 chars
+        assert_eq!(addr.len(), 43);
     }
 
     #[test]
@@ -191,16 +197,10 @@ mod tests {
     }
 
     #[test]
-    fn test_network_rpc_urls() {
-        assert_eq!(Network::Mainnet.rpc_url(), "https://rpc.rustchain.org");
-        assert_eq!(
-            Network::Testnet.rpc_url(),
-            "https://testnet-rpc.rustchain.org"
-        );
-        assert_eq!(
-            Network::Devnet.rpc_url(),
-            "https://devnet-rpc.rustchain.org"
-        );
+    fn test_network_api_urls() {
+        assert_eq!(Network::Mainnet.api_url(), "https://rustchain.org");
+        assert_eq!(Network::Testnet.api_url(), "https://testnet.rustchain.org");
+        assert_eq!(Network::Devnet.api_url(), "https://devnet.rustchain.org");
     }
 
     #[test]

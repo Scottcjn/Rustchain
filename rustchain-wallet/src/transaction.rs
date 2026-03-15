@@ -27,6 +27,8 @@ pub struct Transaction {
     pub memo: Option<String>,
     /// Signature (hex encoded)
     pub signature: Option<String>,
+    /// Public key (hex encoded) for verification
+    pub public_key: Option<String>,
 }
 
 impl Transaction {
@@ -41,6 +43,7 @@ impl Transaction {
             timestamp: Utc::now(),
             memo: None,
             signature: None,
+            public_key: None,
         }
     }
 
@@ -76,6 +79,7 @@ impl Transaction {
         let message = self.serialize_for_signing()?;
         let signature = keypair.sign(&message)?;
         self.signature = Some(hex::encode(&signature));
+        self.public_key = Some(keypair.public_key_hex());
         Ok(())
     }
 
