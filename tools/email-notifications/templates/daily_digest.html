@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily Mining Digest</title>
+<style>
+  body { margin: 0; padding: 0; background: #f4f4f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+  .wrapper { width: 100%; background: #f4f4f7; padding: 24px 0; }
+  .container { max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .header { background: #1a1a2e; padding: 24px 32px; text-align: center; }
+  .header h1 { margin: 0; color: #e94560; font-size: 22px; letter-spacing: 1px; }
+  .header .subtitle { color: #a0a0b0; font-size: 13px; margin-top: 4px; }
+  .body { padding: 32px; color: #333; line-height: 1.6; }
+  .body h2 { margin-top: 0; color: #1a1a2e; font-size: 18px; }
+  .stat-grid { display: table; width: 100%; margin: 20px 0; }
+  .stat-row { display: table-row; }
+  .stat-cell { display: table-cell; text-align: center; padding: 16px 8px; width: 33%; }
+  .stat-cell .value { font-size: 28px; font-weight: 700; color: #1a1a2e; }
+  .stat-cell .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; margin-top: 4px; }
+  .metric-table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  .metric-table td { padding: 10px 12px; border-bottom: 1px solid #eee; }
+  .metric-table td:first-child { color: #666; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; width: 45%; }
+  .metric-table td:last-child { font-weight: 600; color: #1a1a2e; text-align: right; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .badge-green { background: #d4edda; color: #155724; }
+  .badge-red { background: #f8d7da; color: #721c24; }
+  .divider { border: 0; border-top: 1px solid #eee; margin: 24px 0; }
+  .footer { background: #f4f4f7; padding: 20px 32px; text-align: center; font-size: 12px; color: #999; }
+  .miner-id { font-family: 'SF Mono', SFMono-Regular, Consolas, monospace; font-size: 13px; background: #f0f0f5; padding: 2px 8px; border-radius: 4px; word-break: break-all; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="container">
+    <div class="header">
+      <h1>RustChain</h1>
+      <div class="subtitle">Daily Mining Digest</div>
+    </div>
+    <div class="body">
+      <h2>Summary for $date</h2>
+      <p><span class="miner-id">$miner_id</span></p>
+
+      <div class="stat-grid">
+        <div class="stat-row">
+          <div class="stat-cell">
+            <div class="value">$rewards_earned</div>
+            <div class="label">RTC Earned</div>
+          </div>
+          <div class="stat-cell">
+            <div class="value">$attestations</div>
+            <div class="label">Attestations</div>
+          </div>
+          <div class="stat-cell">
+            <div class="value">$uptime_pct%</div>
+            <div class="label">Uptime</div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <table class="metric-table">
+        <tr>
+          <td>Current Balance</td>
+          <td>$current_balance RTC</td>
+        </tr>
+        <tr>
+          <td>Blocks Mined</td>
+          <td>$blocks_mined</td>
+        </tr>
+        <tr>
+          <td>Miner Status</td>
+          <td><span class="badge badge-green">$online_status</span></td>
+        </tr>
+      </table>
+    </div>
+    <div class="footer">
+      <p>RustChain Miner Notification Service</p>
+      <p>Digest delivered daily at ${digest_hour}:00 UTC</p>
+      <p>$timestamp</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>
