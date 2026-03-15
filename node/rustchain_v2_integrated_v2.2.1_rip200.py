@@ -4978,7 +4978,25 @@ def api_wallet_balance():
 
 @app.route('/wallet/history', methods=['GET'])
 def api_wallet_history():
-    """Get public transfer history for a specific wallet."""
+    """
+    Get unified transaction history for a wallet including transfers and mining rewards.
+    
+    Queries both pending_ledger (transfers) and epoch_rewards (mining rewards) tables.
+    Returns unified, sorted-by-time response with pagination support.
+    
+    Expected Response:
+    {
+        "ok": true,
+        "miner_id": "dual-g4-125",
+        "balance": 123.456,
+        "transactions": [
+            {"type": "reward", "amount": 0.297, "epoch": 424, "timestamp": 1733..., "tx_hash": "..."},
+            {"type": "transfer_in", "from": "founder_community", "amount": 10.0, "timestamp": ..., "tx_hash": "..."},
+            ...
+        ],
+        "total": 42
+    }
+    """
     miner_id = request.args.get("miner_id", "").strip()
     address = request.args.get("address", "").strip()
 
@@ -4994,29 +5012,61 @@ def api_wallet_history():
     if not miner_id:
         return jsonify({"ok": False, "error": "miner_id or address required"}), 400
 
+    # Pagination parameters
     limit_raw = request.args.get("limit", "50").strip()
+    offset_raw = request.args.get("offset", "0").strip()
+    
     try:
         limit = int(limit_raw or "50")
     except ValueError:
         return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+    
+    try:
+        offset = int(offset_raw or "0")
+    except ValueError:
+        return jsonify({"ok": False, "error": "offset must be an integer"}), 400
 
     limit = max(1, min(limit, 200))
+    offset = max(0, offset)
 
     with sqlite3.connect(DB_PATH) as db:
-        rows = db.execute(
+        # Get current balance
+        balance_row = db.execute(
+            "SELECT balance_rtc FROM balances WHERE miner_pk = ?",
+            (miner_id,)
+        ).fetchone()
+        balance = balance_row[0] if balance_row else 0.0
+
+        # Query transfers from pending_ledger
+        transfer_rows = db.execute(
             """
             SELECT id, ts, from_miner, to_miner, amount_i64, reason, status,
                    created_at, confirms_at, confirmed_at, tx_hash, voided_reason
             FROM pending_ledger
             WHERE from_miner = ? OR to_miner = ?
             ORDER BY COALESCE(created_at, ts) DESC, id DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
             """,
-            (miner_id, miner_id, limit),
+            (miner_id, miner_id, limit, offset),
         ).fetchall()
 
-    items = []
-    for row in rows:
+        # Query mining rewards from epoch_rewards
+        reward_rows = db.execute(
+            """
+            SELECT epoch, miner_id, share_i64
+            FROM epoch_rewards
+            WHERE miner_id = ?
+            ORDER BY epoch DESC
+            LIMIT ? OFFSET ?
+            """,
+            (miner_id, limit, offset),
+        ).fetchall()
+
+    # Build unified transaction list
+    transactions = []
+
+    # Process transfers
+    for row in transfer_rows:
         (
             pending_id,
             ts,
@@ -5033,6 +5083,7 @@ def api_wallet_history():
         ) = row
 
         direction = "sent" if from_miner == miner_id else "received"
+        tx_type = "transfer_out" if direction == "sent" else "transfer_in"
         counterparty = to_miner if direction == "sent" else from_miner
 
         public_status = "confirmed"
@@ -5048,30 +5099,62 @@ def api_wallet_history():
         tx_id = tx_hash or f"pending_{pending_id}"
         created_ts = int(created_at or ts or 0)
 
-        items.append({
-            "id": int(pending_id),
-            "tx_id": tx_id,
-            "tx_hash": tx_id,
-            "from_addr": from_miner,
-            "to_addr": to_miner,
+        transactions.append({
+            "type": tx_type,
             "amount": int(amount_i64) / UNIT,
             "amount_i64": int(amount_i64),
-            "amount_rtc": int(amount_i64) / UNIT,
             "timestamp": created_ts,
-            "created_at": created_ts,
-            "confirmed_at": int(confirmed_at) if confirmed_at else None,
-            "confirms_at": int(confirms_at) if confirms_at else None,
+            "tx_hash": tx_id,
+            "epoch": None,
+            "from": from_miner if tx_type == "transfer_out" else counterparty,
+            "to": to_miner if tx_type == "transfer_in" else counterparty,
             "status": public_status,
-            "raw_status": raw_status,
-            "status_reason": voided_reason,
-            "confirmations": 1 if raw_status == "confirmed" else 0,
+            "memo": memo,
             "direction": direction,
             "counterparty": counterparty,
-            "reason": reason,
-            "memo": memo,
         })
 
-    return jsonify(items)
+    # Process mining rewards
+    for row in reward_rows:
+        epoch, reward_miner_id, share_i64 = row
+        
+        # Get epoch timestamp (approximate - epoch * epoch_duration + genesis_ts)
+        # Using a reasonable estimate: each epoch is ~1 hour, genesis around 2024-11-01
+        GENESIS_TS = 1730419200  # 2024-11-01 00:00:00 UTC
+        EPOCH_DURATION = 3600  # 1 hour per epoch
+        epoch_ts = GENESIS_TS + (epoch * EPOCH_DURATION)
+
+        transactions.append({
+            "type": "reward",
+            "amount": int(share_i64) / UNIT,
+            "amount_i64": int(share_i64),
+            "timestamp": epoch_ts,
+            "tx_hash": f"reward_epoch_{epoch}",
+            "epoch": epoch,
+            "from": "protocol",
+            "to": reward_miner_id,
+            "status": "confirmed",
+            "memo": f"Mining reward for epoch {epoch}",
+            "direction": "received",
+            "counterparty": "protocol",
+        })
+
+    # Sort all transactions by timestamp (most recent first)
+    transactions.sort(key=lambda x: x["timestamp"], reverse=True)
+
+    # Apply pagination after sorting
+    total_count = len(transactions)
+    transactions = transactions[offset:offset + limit]
+
+    return jsonify({
+        "ok": True,
+        "miner_id": miner_id,
+        "balance": balance,
+        "transactions": transactions,
+        "total": total_count,
+        "limit": limit,
+        "offset": offset,
+    })
 
 # =============================================================================
 # 2-PHASE COMMIT PENDING LEDGER SYSTEM
