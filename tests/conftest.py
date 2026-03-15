@@ -31,7 +31,11 @@ def load_node_module(module_name, file_name):
     return module
 
 # Mock rustchain_crypto before loading other modules
-from tests import mock_crypto
+_mock_crypto_spec = importlib.util.spec_from_file_location(
+    "mock_crypto", str(Path(__file__).parent / "mock_crypto.py")
+)
+mock_crypto = importlib.util.module_from_spec(_mock_crypto_spec)
+_mock_crypto_spec.loader.exec_module(mock_crypto)
 sys.modules["rustchain_crypto"] = mock_crypto
 
 # Pre-load the modules to be shared across tests
