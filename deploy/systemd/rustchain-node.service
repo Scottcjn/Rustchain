@@ -1,0 +1,23 @@
+[Unit]
+Description=RustChain Proof-of-Antiquity Node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rustchain
+Group=rustchain
+WorkingDirectory=/opt/rustchain
+ExecStart=/opt/rustchain/venv/bin/python node/rustchain_v2_integrated_v2.2.1_rip200.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/rustchain/node.log
+StandardError=append:/var/log/rustchain/node-error.log
+Environment=RUSTCHAIN_HOME=/opt/rustchain
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/rustchain/data /var/log/rustchain
+
+[Install]
+WantedBy=multi-user.target
