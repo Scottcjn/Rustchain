@@ -1,0 +1,160 @@
+version: "3.8"
+
+# RustChain Development Stack
+# Usage: docker compose -f docker-compose.dev.yml up -d
+# Docs:  See README-DEV.md
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ── RustChain Node ──────────────────────────────────────────────
+  rustchain-node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rc-dev-node
+    restart: unless-stopped
+    environment:
+      PYTHONUNBUFFERED: "1"
+      RUSTCHAIN_HOME: /rustchain
+      RUSTCHAIN_DB: /rustchain/data/rustchain_v2.db
+      DOWNLOAD_DIR: /rustchain/downloads
+      MONGO_URI: "mongodb://mongo:27017/rustchain"
+      REDIS_URL: "redis://redis:6379/0"
+      PORT: "8099"
+    volumes:
+      - node-data:/rustchain/data
+      - node-downloads:/rustchain/downloads
+      # Live-reload: mount source for development
+      - ./node:/app/node:ro
+      - ./docker-entrypoint.py:/app/docker-entrypoint.py:ro
+    ports:
+      - "${NODE_PORT:-8099}:8099"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8099/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - rustchain-dev
+    logging: *default-logging
+
+  # ── MongoDB (block storage) ────────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: rc-dev-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: rustchain
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - rustchain-dev
+    logging: *default-logging
+
+  # ── Redis (caching) ───────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: rc-dev-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - rustchain-dev
+    logging: *default-logging
+
+  # ── Prometheus Exporter ────────────────────────────────────────
+  rustchain-exporter:
+    build:
+      context: ./monitoring
+      dockerfile: Dockerfile.exporter
+    container_name: rc-dev-exporter
+    restart: unless-stopped
+    environment:
+      RUSTCHAIN_NODE: "http://rustchain-node:8099"
+      EXPORTER_PORT: "9100"
+      SCRAPE_INTERVAL: "30"
+      TLS_VERIFY: "false"
+    networks:
+      - rustchain-dev
+    depends_on:
+      rustchain-node:
+        condition: service_healthy
+    logging: *default-logging
+
+  # ── Prometheus ─────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: rc-dev-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - rustchain-dev
+    depends_on:
+      - rustchain-exporter
+    logging: *default-logging
+
+  # ── Grafana ────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.1
+    container_name: rc-dev-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD:-rustchain}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/rustchain.json
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ./monitoring/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/rustchain.json:ro
+      - ./grafana-dashboard-provider.yml:/etc/grafana/provisioning/dashboards/provider.yml:ro
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    networks:
+      - rustchain-dev
+    depends_on:
+      - prometheus
+    logging: *default-logging
+
+volumes:
+  node-data:
+  node-downloads:
+  mongo-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  rustchain-dev:
+    driver: bridge
