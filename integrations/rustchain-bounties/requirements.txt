@@ -1,14 +1,4 @@
-# RustChain GitHub Tip Bot Dependencies
-
-# GitHub API
-PyGithub>=2.1.0
-
-# HTTP requests
-requests>=2.25.0
-
-# Cryptography for webhook signatures
-cryptography>=41.0
-
-# Testing
-pytest>=7.0.0
-pytest-mock>=3.0.0
+requests>=2.31.0
+PyYAML>=6.0.1
+pytest>=7.4.0
+pytest-mock>=3.12.0
