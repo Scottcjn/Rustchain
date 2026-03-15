@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta charset="utf-8"><title>RustChain ROI Dashboard</title>
+<style>*{margin:0;box-sizing:border-box}body{font-family:monospace;background:#0f0f1a;color:#e4e4f0;padding:2rem}
+.card{background:#1a1a2e;border:1px solid #2d2d4a;border-radius:8px;padding:1.2rem;margin:.5rem;display:inline-block;min-width:200px}
+.title{color:#8888aa;font-size:.75rem;text-transform:uppercase}.value{font-size:1.5rem;font-weight:700;color:#8b5cf6}
+input{background:#1a1a2e;color:#e4e4f0;border:1px solid #2d2d4a;padding:.3rem;width:80px;font-family:inherit}
+h1{color:#8b5cf6;margin-bottom:1rem}</style></head><body>
+<h1>Mining ROI Calculator</h1>
+<div>Watts: <input id="w" value="50" onchange="calc()"> Elec $/kWh: <input id="e" value="0.12" onchange="calc()"> Multiplier: <input id="m" value="1.0" onchange="calc()"></div>
+<div id="cards"></div>
+<script>
+async function calc(){
+  const w=+document.getElementById('w').value,e=+document.getElementById('e').value,m=+document.getElementById('m').value;
+  try{const r=await fetch('https://rustchain.org/epoch');const d=await r.json();
+  const pot=d.epoch_pot||d.reward_pot||0.5,miners=d.enrolled_miners||3;
+  const reward=pot/miners*m,daily=reward*24,cost=(w/1000)*24*e,profit=daily*0.10-cost;
+  document.getElementById('cards').innerHTML=
+    `<div class="card"><div class="title">Daily RTC</div><div class="value">${daily.toFixed(4)}</div></div>`+
+    `<div class="card"><div class="title">Daily Revenue</div><div class="value">$${(daily*0.10).toFixed(4)}</div></div>`+
+    `<div class="card"><div class="title">Daily Power</div><div class="value">$${cost.toFixed(4)}</div></div>`+
+    `<div class="card"><div class="title">Daily Profit</div><div class="value" style="color:${profit>0?'#22c55e':'#ef4444'}">$${profit.toFixed(4)}</div></div>`+
+    `<div class="card"><div class="title">Monthly</div><div class="value">$${(profit*30).toFixed(2)}</div></div>`+
+    `<div class="card"><div class="title">Annual</div><div class="value">$${(profit*365).toFixed(2)}</div></div>`;
+  }catch(err){document.getElementById('cards').innerHTML='Error loading data'}}
+calc();
+</script></body></html>
