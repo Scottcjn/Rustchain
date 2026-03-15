@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "RustChain RTC Balance",
+  "version": "1.0.0",
+  "description": "View your RustChain (RTC) wallet balance, network status, and latest block info.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://rustchain.org/*",
+    "https://50.28.86.131/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.svg",
+      "48": "icons/icon48.svg",
+      "128": "icons/icon128.svg"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  }
+}

@@ -1,0 +1,202 @@
+/* RustChain dark theme */
+:root {
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-card: #1c2128;
+  --border: #30363d;
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --accent: #d2691e;
+  --accent-glow: #e8852a;
+  --success: #3fb950;
+  --error: #f85149;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 340px;
+  min-height: 400px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.container {
+  padding: 16px;
+}
+
+/* Header */
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+header .logo {
+  width: 32px;
+  height: 32px;
+}
+
+header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent-glow);
+}
+
+/* Sections */
+section {
+  margin-bottom: 14px;
+}
+
+section h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+/* Input */
+label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.input-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+#miner-id {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+#miner-id:focus {
+  border-color: var(--accent);
+}
+
+#btn-refresh {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+#btn-refresh:hover {
+  background: var(--accent-glow);
+}
+
+/* Cards */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.card .label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.card .value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+#balance-display .value {
+  font-size: 26px;
+  color: var(--accent-glow);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.grid .card .value {
+  font-size: 14px;
+}
+
+/* Utilities */
+.hidden {
+  display: none !important;
+}
+
+.error {
+  font-size: 12px;
+  color: var(--error);
+  margin-top: 4px;
+}
+
+.status-ok {
+  color: var(--success);
+}
+
+.status-down {
+  color: var(--error);
+}
+
+/* Footer */
+footer {
+  text-align: center;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+footer a {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+footer a:hover {
+  color: var(--accent);
+}
+
+/* Loading spinner */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
