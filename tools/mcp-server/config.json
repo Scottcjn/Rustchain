@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "rustchain": {
+      "command": "python",
+      "args": ["tools/mcp-server/server.py"],
+      "env": {}
+    }
+  }
+}
