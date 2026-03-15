@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rustchain-node
+  namespace: rustchain
+  labels:
+    app.kubernetes.io/name: rustchain
+    app.kubernetes.io/component: node
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rustchain
+      app.kubernetes.io/component: node
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rustchain
+        app.kubernetes.io/component: node
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: rustchain-node
+          image: rustchain/node:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: dashboard
+              containerPort: 8099
+              protocol: TCP
+            - name: api
+              containerPort: 8088
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: rustchain-config
+            - secretRef:
+                name: rustchain-secrets
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: dashboard
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: dashboard
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: dashboard
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: rustchain-data
+              mountPath: /rustchain/data
+            - name: rustchain-downloads
+              mountPath: /rustchain/downloads
+      volumes:
+        - name: rustchain-data
+          persistentVolumeClaim:
+            claimName: rustchain-data-pvc
+        - name: rustchain-downloads
+          persistentVolumeClaim:
+            claimName: rustchain-downloads-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rustchain-data-pvc
+  namespace: rustchain
+  labels:
+    app.kubernetes.io/name: rustchain
+    app.kubernetes.io/component: node
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rustchain-downloads-pvc
+  namespace: rustchain
+  labels:
+    app.kubernetes.io/name: rustchain
+    app.kubernetes.io/component: node
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
