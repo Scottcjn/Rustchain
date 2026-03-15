@@ -1,0 +1,159 @@
+# Prometheus Alert Rules for RustChain Nodes
+# Requires the rustchain-exporter (monitoring/rustchain-exporter.py) to be
+# scraping the node and exposing metrics on :9100.
+
+groups:
+  - name: rustchain_node_health
+    rules:
+
+      # ---------------------------------------------------------------
+      # 1. Node Down — health-check endpoint unreachable or returning 0
+      # ---------------------------------------------------------------
+      - alert: RustChainNodeDown
+        expr: rustchain_node_health == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RustChain node is down"
+          description: >-
+            The /health endpoint on {{ $labels.instance }} has been
+            reporting unhealthy for more than 2 minutes.
+          runbook: "Check node process, network connectivity, and disk I/O."
+
+      - alert: RustChainNodeUnreachable
+        expr: up{job="rustchain-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RustChain exporter target is unreachable"
+          description: >-
+            Prometheus cannot reach the rustchain-exporter on
+            {{ $labels.instance }}. The node or exporter may be offline.
+
+      # ---------------------------------------------------------------
+      # 2. Epoch Stalled — no new slot observed in 10 minutes
+      # ---------------------------------------------------------------
+      - alert: RustChainEpochStalled
+        expr: changes(rustchain_epoch_slot[10m]) == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Epoch progress has stalled"
+          description: >-
+            The epoch slot counter on {{ $labels.instance }} has not
+            advanced in the last 10 minutes. Current epoch:
+            {{ $value }} — possible consensus halt or network partition.
+          runbook: "Verify peer connectivity, check for chain forks."
+
+      - alert: RustChainEpochNumberStuck
+        expr: changes(rustchain_epoch_number[30m]) == 0 and rustchain_epoch_slot > 50
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Epoch has not advanced in 30 minutes"
+          description: >-
+            Epoch number on {{ $labels.instance }} is unchanged for
+            30 minutes while the slot counter is high ({{ $value }}).
+            Settlement may be stuck.
+
+      # ---------------------------------------------------------------
+      # 3. Low Miner Count — fewer than 3 active miners
+      # ---------------------------------------------------------------
+      - alert: RustChainLowMinerCount
+        expr: rustchain_active_miners < 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Active miner count is critically low"
+          description: >-
+            Only {{ $value }} active miners reported by
+            {{ $labels.instance }}. Minimum recommended is 3 for
+            healthy consensus and block production.
+
+      - alert: RustChainNoMiners
+        expr: rustchain_active_miners == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No active miners on the network"
+          description: >-
+            Zero miners are reporting to {{ $labels.instance }}.
+            Block production has likely halted.
+
+      # ---------------------------------------------------------------
+      # 4. High API Latency — scrape takes > 5 seconds
+      # ---------------------------------------------------------------
+      - alert: RustChainHighAPILatency
+        expr: rustchain_scrape_duration_seconds > 5
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RustChain API response time exceeds 5 seconds"
+          description: >-
+            The exporter scrape on {{ $labels.instance }} took
+            {{ $value | printf "%.1f" }}s. This may indicate database
+            contention, heavy load, or network issues.
+
+      - alert: RustChainVeryHighAPILatency
+        expr: rustchain_scrape_duration_seconds > 15
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RustChain API response time exceeds 15 seconds"
+          description: >-
+            Scrape duration on {{ $labels.instance }} is
+            {{ $value | printf "%.1f" }}s — the node may be
+            unresponsive.
+
+      # ---------------------------------------------------------------
+      # 5. Disk Space Low — standard node_exporter filesystem metric
+      # ---------------------------------------------------------------
+      - alert: RustChainDiskSpaceLow
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} /
+           node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk space below 15% on RustChain host"
+          description: >-
+            {{ $labels.instance }} has only
+            {{ $value | printf "%.1f" }}% free disk space on /.
+            The RustChain database may fail to write new blocks.
+
+      - alert: RustChainDiskSpaceCritical
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} /
+           node_filesystem_size_bytes{mountpoint="/"}) * 100 < 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk space below 5% — imminent write failure"
+          description: >-
+            {{ $labels.instance }} is at {{ $value | printf "%.1f" }}%
+            free disk space. Immediate action required.
+
+      # ---------------------------------------------------------------
+      # Scrape error rate climbing
+      # ---------------------------------------------------------------
+      - alert: RustChainScrapeErrors
+        expr: rate(rustchain_scrape_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated scrape error rate against RustChain node"
+          description: >-
+            The exporter on {{ $labels.instance }} is seeing
+            {{ $value | printf "%.2f" }} errors/s while scraping the
+            RustChain API.
