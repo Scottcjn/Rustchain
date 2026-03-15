@@ -1,0 +1,32 @@
+{
+  "metrics": {
+    "http_req_duration": {
+      "avg": 192.45,
+      "min": 38.12,
+      "med": 145.67,
+      "max": 2847.31,
+      "p(90)": 412.88,
+      "p(95)": 523.14,
+      "p(99)": 1198.42
+    },
+    "http_req_failed": {
+      "rate": 0.0024
+    },
+    "http_reqs": {
+      "count": 6340,
+      "rate": 35.22
+    },
+    "iterations": {
+      "count": 1268,
+      "rate": 7.04
+    },
+    "vus_max": 50,
+    "health_ok": {
+      "rate": 0.998
+    }
+  },
+  "thresholds": {
+    "http_req_duration": { "p(95)<3000": true },
+    "http_req_failed":   { "rate<0.05": true }
+  }
+}

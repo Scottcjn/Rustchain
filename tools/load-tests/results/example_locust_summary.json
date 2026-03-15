@@ -1,0 +1,9 @@
+{
+  "total_requests": 4820,
+  "total_failures": 12,
+  "avg_response_time_ms": 187.34,
+  "median_ms": 140,
+  "p95_ms": 490,
+  "p99_ms": 1120,
+  "requests_per_sec": 40.17
+}
