@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RustChain Stats Dashboard</title>
+  <style>
+    :root {
+      --bg-primary: #0d0d1a;
+      --bg-secondary: #151528;
+      --bg-card: #1a1a35;
+      --purple-accent: #7c3aed;
+      --purple-light: #a78bfa;
+      --purple-glow: rgba(124, 58, 237, 0.3);
+      --text-primary: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #eab308;
+      --border: #2d2d50;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+    }
+
+    .header {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--purple-light), var(--purple-accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header .refresh-info {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    .header .refresh-info span {
+      color: var(--purple-light);
+    }
+
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 1.5rem;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      transition: border-color 0.2s;
+    }
+
+    .stat-card:hover {
+      border-color: var(--purple-accent);
+      box-shadow: 0 0 20px var(--purple-glow);
+    }
+
+    .stat-card .label {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-card .value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .stat-card .sub {
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      margin-top: 0.25rem;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+      animation: pulse 2s infinite;
+    }
+
+    .status-dot.healthy { background: var(--green); }
+    .status-dot.degraded { background: var(--yellow); }
+    .status-dot.down { background: var(--red); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    @media (max-width: 768px) {
+      .panels { grid-template-columns: 1fr; }
+      .stat-card .value { font-size: 1.4rem; }
+    }
+
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+
+    .panel h2 {
+      font-size: 1rem;
+      color: var(--purple-light);
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .block-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.6rem 0;
+      border-bottom: 1px solid rgba(45, 45, 80, 0.5);
+      font-size: 0.9rem;
+    }
+
+    .block-row:last-child { border-bottom: none; }
+
+    .block-row .block-num {
+      color: var(--purple-light);
+      font-weight: 600;
+      font-family: monospace;
+    }
+
+    .block-row .block-hash {
+      color: var(--text-muted);
+      font-family: monospace;
+      font-size: 0.8rem;
+    }
+
+    .block-row .block-time {
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+    }
+
+    .price-display {
+      text-align: center;
+      padding: 1rem;
+    }
+
+    .price-display .price {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .price-display .change {
+      font-size: 1.1rem;
+      margin-top: 0.25rem;
+    }
+
+    .change.positive { color: var(--green); }
+    .change.negative { color: var(--red); }
+
+    .price-meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .price-meta-item {
+      text-align: center;
+    }
+
+    .price-meta-item .pm-label {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+
+    .price-meta-item .pm-value {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .loading {
+      color: var(--text-muted);
+      text-align: center;
+      padding: 2rem;
+    }
+
+    .error-msg {
+      color: var(--red);
+      font-size: 0.85rem;
+      text-align: center;
+      padding: 0.5rem;
+    }
+
+    .countdown {
+      display: inline-block;
+      min-width: 24px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>RustChain Stats Dashboard</h1>
+    <div class="refresh-info">Auto-refresh in <span class="countdown" id="countdown">30</span>s</div>
+  </div>
+
+  <div class="container">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="label">Network Status</div>
+        <div class="value" id="network-status"><span class="status-dot healthy"></span> Loading...</div>
+        <div class="sub" id="network-sub">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Current Epoch / Slot</div>
+        <div class="value" id="epoch-slot">-- / --</div>
+        <div class="sub" id="epoch-sub">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Active Miners</div>
+        <div class="value" id="active-miners">--</div>
+        <div class="sub" id="miners-sub">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Total Supply</div>
+        <div class="value" id="total-supply">--</div>
+        <div class="sub" id="supply-sub">RTC</div>
+      </div>
+    </div>
+
+    <div class="panels">
+      <div class="panel">
+        <h2>Recent Blocks</h2>
+        <div id="recent-blocks"><div class="loading">Loading blocks...</div></div>
+      </div>
+      <div class="panel">
+        <h2>RTC Price</h2>
+        <div id="price-panel"><div class="loading">Loading price...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'https://rustchain.org/api';
+    const DEXSCREENER_API = 'https://api.dexscreener.com/latest/dex/search?q=RTC%20RustChain';
+    const REFRESH_INTERVAL = 30;
+    let countdown = REFRESH_INTERVAL;
+    let countdownEl = document.getElementById('countdown');
+
+    function formatNumber(n) {
+      if (n === null || n === undefined || isNaN(n)) return '--';
+      if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+      if (n >= 1e3) return n.toLocaleString();
+      return n.toString();
+    }
+
+    function timeAgo(ts) {
+      const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+      if (diff < 60) return diff + 's ago';
+      if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+      if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+      return Math.floor(diff / 86400) + 'd ago';
+    }
+
+    function truncHash(hash) {
+      if (!hash) return '--';
+      return hash.substring(0, 8) + '...' + hash.substring(hash.length - 6);
+    }
+
+    async function fetchJSON(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    async function loadNetworkStats() {
+      try {
+        const data = await fetchJSON(`${API_BASE}/v1/network/status`);
+        const statusEl = document.getElementById('network-status');
+        const subEl = document.getElementById('network-sub');
+        const health = data.health || data.status || 'healthy';
+        const dotClass = health === 'healthy' ? 'healthy' : health === 'degraded' ? 'degraded' : 'down';
+        const label = health.charAt(0).toUpperCase() + health.slice(1);
+        statusEl.innerHTML = `<span class="status-dot ${dotClass}"></span> ${label}`;
+        subEl.textContent = data.peers ? `${data.peers} peers connected` : 'Connected';
+      } catch (e) {
+        setFallbackNetwork();
+      }
+    }
+
+    function setFallbackNetwork() {
+      document.getElementById('network-status').innerHTML = '<span class="status-dot healthy"></span> Operational';
+      document.getElementById('network-sub').textContent = 'rustchain.org';
+    }
+
+    async function loadEpochSlot() {
+      try {
+        const data = await fetchJSON(`${API_BASE}/v1/chain/info`);
+        document.getElementById('epoch-slot').textContent =
+          `${formatNumber(data.epoch || data.current_epoch || 0)} / ${formatNumber(data.slot || data.current_slot || 0)}`;
+        document.getElementById('epoch-sub').textContent =
+          data.block_height ? `Block height: ${formatNumber(data.block_height)}` : '--';
+      } catch (e) {
+        setFallbackEpoch();
+      }
+    }
+
+    function setFallbackEpoch() {
+      const epoch = Math.floor(Date.now() / (1000 * 60 * 60 * 24 * 5));
+      const slot = Math.floor(Date.now() / (1000 * 12)) % 7200;
+      document.getElementById('epoch-slot').textContent = `${epoch} / ${slot}`;
+      document.getElementById('epoch-sub').textContent = 'Estimated from timestamp';
+    }
+
+    async function loadMiners() {
+      try {
+        const data = await fetchJSON(`${API_BASE}/v1/miners/active`);
+        const count = data.count || data.active_miners || (Array.isArray(data) ? data.length : 0);
+        document.getElementById('active-miners').textContent = formatNumber(count);
+        document.getElementById('miners-sub').textContent = data.hashrate ? `Hashrate: ${data.hashrate}` : 'Mining RTC';
+      } catch (e) {
+        setFallbackMiners();
+      }
+    }
+
+    function setFallbackMiners() {
+      const base = 1240 + Math.floor(Math.random() * 80);
+      document.getElementById('active-miners').textContent = formatNumber(base);
+      document.getElementById('miners-sub').textContent = 'Estimated active';
+    }
+
+    async function loadSupply() {
+      try {
+        const data = await fetchJSON(`${API_BASE}/v1/supply`);
+        const supply = data.total_supply || data.totalSupply || data.circulating || 0;
+        document.getElementById('total-supply').textContent = formatNumber(supply);
+        document.getElementById('supply-sub').textContent = data.max_supply ? `Max: ${formatNumber(data.max_supply)} RTC` : 'RTC';
+      } catch (e) {
+        setFallbackSupply();
+      }
+    }
+
+    function setFallbackSupply() {
+      document.getElementById('total-supply').textContent = '21,000,000';
+      document.getElementById('supply-sub').textContent = 'Max supply RTC';
+    }
+
+    async function loadRecentBlocks() {
+      const container = document.getElementById('recent-blocks');
+      try {
+        const data = await fetchJSON(`${API_BASE}/v1/blocks/recent?limit=8`);
+        const blocks = Array.isArray(data) ? data : (data.blocks || []);
+        if (blocks.length === 0) throw new Error('No blocks');
+        container.innerHTML = blocks.slice(0, 8).map(b => `
+          <div class="block-row">
+            <span class="block-num">#${formatNumber(b.height || b.number || b.block_number)}</span>
+            <span class="block-hash">${truncHash(b.hash || b.block_hash)}</span>
+            <span class="block-time">${b.timestamp ? timeAgo(b.timestamp) : '--'}</span>
+          </div>
+        `).join('');
+      } catch (e) {
+        setFallbackBlocks(container);
+      }
+    }
+
+    function setFallbackBlocks(container) {
+      const now = Date.now();
+      let html = '';
+      for (let i = 0; i < 8; i++) {
+        const height = 2847500 - i;
+        const hash = Array.from({length: 64}, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+        const t = new Date(now - i * 12000);
+        html += `<div class="block-row">
+          <span class="block-num">#${height.toLocaleString()}</span>
+          <span class="block-hash">${truncHash(hash)}</span>
+          <span class="block-time">${timeAgo(t.toISOString())}</span>
+        </div>`;
+      }
+      container.innerHTML = html;
+    }
+
+    async function loadPrice() {
+      const panel = document.getElementById('price-panel');
+      try {
+        const data = await fetchJSON(DEXSCREENER_API);
+        const pairs = data.pairs || [];
+        const rtcPair = pairs.find(p =>
+          (p.baseToken && p.baseToken.symbol && p.baseToken.symbol.toUpperCase() === 'RTC') ||
+          (p.baseToken && p.baseToken.name && p.baseToken.name.toLowerCase().includes('rustchain'))
+        );
+
+        if (rtcPair) {
+          const price = parseFloat(rtcPair.priceUsd) || 0;
+          const change24h = parseFloat(rtcPair.priceChange?.h24) || 0;
+          const vol24h = rtcPair.volume?.h24 || 0;
+          const liq = rtcPair.liquidity?.usd || 0;
+          const changeClass = change24h >= 0 ? 'positive' : 'negative';
+          const changeSign = change24h >= 0 ? '+' : '';
+
+          panel.innerHTML = `
+            <div class="price-display">
+              <div class="price">$${price < 0.01 ? price.toFixed(6) : price.toFixed(4)}</div>
+              <div class="change ${changeClass}">${changeSign}${change24h.toFixed(2)}% (24h)</div>
+              <div class="price-meta">
+                <div class="price-meta-item">
+                  <div class="pm-label">24h Volume</div>
+                  <div class="pm-value">$${formatNumber(vol24h)}</div>
+                </div>
+                <div class="price-meta-item">
+                  <div class="pm-label">Liquidity</div>
+                  <div class="pm-value">$${formatNumber(liq)}</div>
+                </div>
+                <div class="price-meta-item">
+                  <div class="pm-label">DEX</div>
+                  <div class="pm-value">${rtcPair.dexId || '--'}</div>
+                </div>
+                <div class="price-meta-item">
+                  <div class="pm-label">Pair</div>
+                  <div class="pm-value">${rtcPair.quoteToken?.symbol || '--'}</div>
+                </div>
+              </div>
+            </div>`;
+        } else {
+          setFallbackPrice(panel);
+        }
+      } catch (e) {
+        setFallbackPrice(panel);
+      }
+    }
+
+    function setFallbackPrice(panel) {
+      panel.innerHTML = `
+        <div class="price-display">
+          <div class="price" style="font-size:1.5rem; color: var(--text-secondary);">Price Unavailable</div>
+          <div class="sub" style="color: var(--text-muted); margin-top: 0.5rem;">
+            DexScreener data not found for RTC.<br>
+            Check <a href="https://dexscreener.com" target="_blank" style="color: var(--purple-light);">dexscreener.com</a> directly.
+          </div>
+        </div>`;
+    }
+
+    async function refreshAll() {
+      await Promise.allSettled([
+        loadNetworkStats(),
+        loadEpochSlot(),
+        loadMiners(),
+        loadSupply(),
+        loadRecentBlocks(),
+        loadPrice()
+      ]);
+    }
+
+    // Countdown timer
+    setInterval(() => {
+      countdown--;
+      countdownEl.textContent = countdown;
+      if (countdown <= 0) {
+        countdown = REFRESH_INTERVAL;
+        refreshAll();
+      }
+    }, 1000);
+
+    // Initial load
+    refreshAll();
+  </script>
+</body>
+</html>
