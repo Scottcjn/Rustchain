@@ -1872,8 +1872,8 @@ def check_enrollment_requirements(miner: str) -> tuple:
             unique_count = row[0] if row else 0
             if unique_count == 0:
                 return False, {"error": "mac_required", "hint": "Submit attestation with signals.macs"}
-# TEMP DISABLED FOR TESTING:             if unique_count > MAC_MAX_UNIQUE_PER_DAY:
-# TEMP DISABLED FOR TESTING:                 return False, {"error": "mac_churn", "unique_24h": unique_count, "limit": MAC_MAX_UNIQUE_PER_DAY}
+            if unique_count > MAC_MAX_UNIQUE_PER_DAY:
+                return False, {"error": "mac_churn", "unique_24h": unique_count, "limit": MAC_MAX_UNIQUE_PER_DAY}
     return True, {"ok": True}
 
 # RIP-0147a: VM-OUI Denylist (warn mode)
@@ -2102,6 +2102,9 @@ def museum_assets(filename: str):
     """Static assets for museum UI."""
     from flask import send_from_directory as _send_from_directory
 
+    # SECURITY: Explicit path traversal protection (consistent with light-client endpoint)
+    if ".." in filename or filename.startswith(("/", "\\")):
+        abort(404)
     return _send_from_directory(MUSEUM_DIR, filename)
 
 
@@ -3337,7 +3340,7 @@ def reject_v1_mine():
 def register_withdrawal_key():
     # SECURITY: Registering withdrawal keys allows fund extraction; require admin key.
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
+    if not admin_key or admin_key != ADMIN_KEY:
         return jsonify({"error": "Unauthorized - admin key required"}), 401
     """Register sr25519 public key for withdrawals"""
     data = request.get_json(silent=True)
@@ -3470,7 +3473,8 @@ def request_withdrawal():
                 return jsonify({"error": "Invalid signature"}), 401
         except Exception as e:
             withdrawal_failed.inc()
-            return jsonify({"error": f"Signature error: {e}"}), 400
+            logging.warning(f"Withdrawal signature error for {miner_pk}: {e}")
+            return jsonify({"error": "Signature verification failed"}), 400
 
         # Create withdrawal
         withdrawal_id = f"WD_{int(time.time() * 1000000)}_{secrets.token_hex(8)}"
@@ -3607,7 +3611,7 @@ def withdrawal_history(miner_pk):
     """Get withdrawal history for miner"""
     # SECURITY FIX 2026-02-15: Require admin key - exposes withdrawal history
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
+    if not admin_key or admin_key != ADMIN_KEY:
         return jsonify({"error": "Unauthorized - admin key required"}), 401
     limit = request.args.get('limit', 50, type=int)
 
@@ -4283,14 +4287,19 @@ def api_nodes():
         print(f"Error fetching nodes: {e}")
     
     # Also add live status check
+    # SECURITY: Only probe URLs that are NOT internal/private to prevent SSRF
     import requests
     for node in nodes:
         raw_url = node.get("url") or ""
-        try:
-            resp = requests.get(f"{raw_url}/health", timeout=3, verify=False)
-            node["online"] = resp.status_code == 200
-        except:
-            node["online"] = False
+        if raw_url and not _should_redact_url(raw_url):
+            try:
+                resp = requests.get(f"{raw_url}/health", timeout=3)
+                node["online"] = resp.status_code == 200
+            except Exception:
+                node["online"] = False
+        else:
+            # Skip health check for internal/private URLs (SSRF prevention)
+            node["online"] = None
 
         # SECURITY: don't leak private/VPN URLs to unauthenticated clients.
         if (not _is_admin()) and raw_url and _should_redact_url(raw_url):
@@ -4487,14 +4496,15 @@ def api_miner_dashboard(miner_id):
                 'generated_at': int(time.time()),
             })
     except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        logging.error(f"Miner dashboard error for {miner_id}: {e}")
+        return jsonify({'ok': False, 'error': 'internal_error'}), 500
 
 @app.route("/api/miner/<miner_id>/attestations", methods=["GET"])
 def api_miner_attestations(miner_id: str):
     """Best-effort attestation history for a single miner (museum detail view)."""
     # SECURITY FIX 2026-02-15: Require admin key - exposes miner attestation history/timing
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
+    if admin_key != ADMIN_KEY:
         return jsonify({"error": "Unauthorized - admin key required"}), 401
     limit = int(request.args.get("limit", "120") or 120)
     limit = max(1, min(limit, 500))
@@ -4537,7 +4547,7 @@ def api_balances():
     """Return wallet balances (best-effort across schema variants)."""
     # SECURITY FIX 2026-02-15: Require admin key - dumps all wallet balances
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
+    if admin_key != ADMIN_KEY:
         return jsonify({"error": "Unauthorized - admin key required"}), 401
     limit = int(request.args.get("limit", "2000") or 2000)
     limit = max(1, min(limit, 5000))
@@ -4692,7 +4702,7 @@ def attest_debug():
     """Debug endpoint: show miner's enrollment eligibility"""
     # SECURITY FIX 2026-02-15: Require admin key - exposes internal config + MAC hashes
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
+    if admin_key != ADMIN_KEY:
         return jsonify({"error": "Unauthorized - admin key required"}), 401
     data = request.get_json()
 
@@ -4809,7 +4819,7 @@ def ops_readiness():
     """Single PASS/FAIL aggregator for all go/no-go checks"""
     # SECURITY FIX 2026-02-15: Only show detailed checks to admin
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    is_admin = admin_key == os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64")
+    is_admin = admin_key == ADMIN_KEY
     out = {"ok": True, "checks": []}
 
     # Health check

@@ -41,10 +41,16 @@ def init_db():
 
 
 def get_client_ip():
-    """Get client IP address from request."""
-    if request.headers.get('X-Forwarded-For'):
+    """Get client IP address from request.
+
+    SECURITY: Only trust X-Forwarded-For from trusted reverse proxies.
+    Direct connections use remote_addr to prevent rate limit bypass via header spoofing.
+    """
+    remote = request.remote_addr or '127.0.0.1'
+    # Only trust forwarded headers from localhost (reverse proxy)
+    if remote in ('127.0.0.1', '::1') and request.headers.get('X-Forwarded-For'):
         return request.headers.get('X-Forwarded-For').split(',')[0].strip()
-    return request.remote_addr or '127.0.0.1'
+    return remote
 
 
 def get_last_drip_time(ip_address):
