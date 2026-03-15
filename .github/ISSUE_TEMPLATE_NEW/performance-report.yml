@@ -1,0 +1,20 @@
+name: Performance Report
+description: Report a performance issue
+labels: [performance]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Performance Issue
+      description: What is slow or resource-intensive?
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Node Version
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Performance Metrics
+      description: Include relevant numbers (latency, memory, CPU)
