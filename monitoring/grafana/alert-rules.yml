@@ -1,0 +1,55 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: RustChain Critical
+    folder: RustChain
+    interval: 1m
+    rules:
+      - uid: node-down
+        title: Node Down
+        condition: C
+        data:
+          - refId: A
+            queryType: ''
+            datasourceUid: prometheus
+            model:
+              expr: up{job="rustchain"} == 0
+        for: 2m
+        labels:
+          severity: critical
+      - uid: epoch-stalled
+        title: Epoch Stalled
+        condition: C
+        data:
+          - refId: A
+            queryType: ''
+            datasourceUid: prometheus
+            model:
+              expr: changes(rustchain_epoch_slot[10m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+      - uid: low-miners
+        title: Low Miner Count
+        condition: C
+        data:
+          - refId: A
+            queryType: ''
+            datasourceUid: prometheus
+            model:
+              expr: rustchain_active_miners < 2
+        for: 5m
+        labels:
+          severity: warning
+      - uid: high-latency
+        title: High API Latency
+        condition: C
+        data:
+          - refId: A
+            queryType: ''
+            datasourceUid: prometheus
+            model:
+              expr: rustchain_scrape_duration_seconds > 5
+        for: 3m
+        labels:
+          severity: warning
