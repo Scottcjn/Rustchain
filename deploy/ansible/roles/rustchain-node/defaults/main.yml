@@ -1,0 +1,33 @@
+---
+# System user that runs the node
+rustchain_user: rustchain
+rustchain_group: rustchain
+
+# Directories
+rustchain_home: /opt/rustchain
+rustchain_data_dir: "{{ rustchain_home }}/data"
+rustchain_log_dir: /var/log/rustchain
+rustchain_venv: "{{ rustchain_home }}/venv"
+
+# Git source
+rustchain_repo: https://github.com/Scottcjn/Rustchain.git
+rustchain_version: main
+
+# Application
+rustchain_bind_host: 127.0.0.1
+rustchain_bind_port: 8099
+rustchain_workers: 4
+rustchain_db_path: "{{ rustchain_data_dir }}/rustchain_v2.db"
+
+# Nginx
+rustchain_enable_nginx: true
+rustchain_domain: localhost
+rustchain_enable_ssl: false
+rustchain_ssl_cert: /etc/ssl/certs/rustchain.pem
+rustchain_ssl_key: /etc/ssl/private/rustchain.key
+
+# Node identity
+rustchain_node_name: "rustchain-{{ inventory_hostname }}"
+
+# Python
+rustchain_python_version: python3.11

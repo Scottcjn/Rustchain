@@ -1,0 +1,128 @@
+---
+- name: Install system dependencies
+  ansible.builtin.apt:
+    name:
+      - "{{ rustchain_python_version }}"
+      - "{{ rustchain_python_version }}-venv"
+      - "{{ rustchain_python_version }}-dev"
+      - python3-pip
+      - git
+      - curl
+      - sqlite3
+      - gcc
+      - nginx
+      - acl
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create rustchain group
+  ansible.builtin.group:
+    name: "{{ rustchain_group }}"
+    system: true
+    state: present
+
+- name: Create rustchain user
+  ansible.builtin.user:
+    name: "{{ rustchain_user }}"
+    group: "{{ rustchain_group }}"
+    home: "{{ rustchain_home }}"
+    shell: /usr/sbin/nologin
+    system: true
+    create_home: false
+    state: present
+
+- name: Create directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ rustchain_user }}"
+    group: "{{ rustchain_group }}"
+    mode: "0755"
+  loop:
+    - "{{ rustchain_home }}"
+    - "{{ rustchain_data_dir }}"
+    - "{{ rustchain_log_dir }}"
+
+- name: Clone RustChain repository
+  ansible.builtin.git:
+    repo: "{{ rustchain_repo }}"
+    dest: "{{ rustchain_home }}/src"
+    version: "{{ rustchain_version }}"
+    depth: 1
+    force: true
+  become_user: "{{ rustchain_user }}"
+  notify: restart rustchain
+
+- name: Create Python virtual environment
+  ansible.builtin.command:
+    cmd: "{{ rustchain_python_version }} -m venv {{ rustchain_venv }}"
+    creates: "{{ rustchain_venv }}/bin/activate"
+  become_user: "{{ rustchain_user }}"
+
+- name: Install Python dependencies
+  ansible.builtin.pip:
+    requirements: "{{ rustchain_home }}/src/requirements-node.txt"
+    virtualenv: "{{ rustchain_venv }}"
+  become_user: "{{ rustchain_user }}"
+  notify: restart rustchain
+
+- name: Deploy systemd service
+  ansible.builtin.template:
+    src: rustchain-node.service.j2
+    dest: /etc/systemd/system/rustchain-node.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart rustchain
+
+- name: Deploy nginx site configuration
+  ansible.builtin.template:
+    src: nginx-rustchain.conf.j2
+    dest: /etc/nginx/sites-available/rustchain
+    owner: root
+    group: root
+    mode: "0644"
+  when: rustchain_enable_nginx
+  notify: reload nginx
+
+- name: Enable nginx site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/rustchain
+    dest: /etc/nginx/sites-enabled/rustchain
+    state: link
+  when: rustchain_enable_nginx
+  notify: reload nginx
+
+- name: Remove default nginx site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  when: rustchain_enable_nginx
+  notify: reload nginx
+
+- name: Enable and start rustchain-node service
+  ansible.builtin.systemd:
+    name: rustchain-node
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Enable and start nginx
+  ansible.builtin.systemd:
+    name: nginx
+    enabled: true
+    state: started
+  when: rustchain_enable_nginx
+
+- name: Wait for node health endpoint
+  ansible.builtin.uri:
+    url: "http://{{ rustchain_bind_host }}:{{ rustchain_bind_port }}/health"
+    method: GET
+    status_code: 200
+  register: health_check
+  retries: 10
+  delay: 5
+  until: health_check.status == 200

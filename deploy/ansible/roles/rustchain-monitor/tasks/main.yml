@@ -1,0 +1,184 @@
+---
+# --- Prometheus -----------------------------------------------------------
+
+- name: Create prometheus system user
+  ansible.builtin.user:
+    name: prometheus
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create prometheus directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: "0755"
+  loop:
+    - "{{ prometheus_config_dir }}"
+    - "{{ prometheus_data_dir }}"
+
+- name: Download Prometheus
+  ansible.builtin.unarchive:
+    src: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    dest: /tmp
+    remote_src: true
+    creates: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64"
+
+- name: Install Prometheus binaries
+  ansible.builtin.copy:
+    src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - prometheus
+    - promtool
+
+- name: Deploy Prometheus configuration
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ prometheus_config_dir }}/prometheus.yml"
+    owner: prometheus
+    group: prometheus
+    mode: "0644"
+  notify: restart prometheus
+
+- name: Deploy Prometheus systemd unit
+  ansible.builtin.template:
+    src: prometheus.service.j2
+    dest: /etc/systemd/system/prometheus.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart prometheus
+
+- name: Enable and start Prometheus
+  ansible.builtin.systemd:
+    name: prometheus
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# --- RustChain Exporter ---------------------------------------------------
+
+- name: Install exporter dependencies
+  ansible.builtin.apt:
+    name:
+      - python3
+      - python3-pip
+      - python3-venv
+      - git
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create exporter directory
+  ansible.builtin.file:
+    path: "{{ rustchain_exporter_dir }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: "0755"
+
+- name: Copy exporter script from source
+  ansible.builtin.copy:
+    src: "{{ rustchain_home | default('/opt/rustchain') }}/src/monitoring/rustchain-exporter.py"
+    dest: "{{ rustchain_exporter_dir }}/rustchain-exporter.py"
+    remote_src: true
+    owner: prometheus
+    group: prometheus
+    mode: "0755"
+  ignore_errors: true
+
+- name: Create exporter venv and install deps
+  ansible.builtin.pip:
+    name:
+      - requests
+      - prometheus_client
+    virtualenv: "{{ rustchain_exporter_dir }}/venv"
+    virtualenv_command: python3 -m venv
+  become_user: prometheus
+
+- name: Deploy exporter systemd unit
+  ansible.builtin.template:
+    src: rustchain-exporter.service.j2
+    dest: /etc/systemd/system/rustchain-exporter.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart rustchain-exporter
+
+- name: Enable and start exporter
+  ansible.builtin.systemd:
+    name: rustchain-exporter
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# --- Grafana --------------------------------------------------------------
+
+- name: Add Grafana APT key
+  ansible.builtin.apt_key:
+    url: https://apt.grafana.com/gpg.key
+    state: present
+
+- name: Add Grafana APT repository
+  ansible.builtin.apt_repository:
+    repo: "deb https://apt.grafana.com stable main"
+    state: present
+    filename: grafana
+
+- name: Install Grafana
+  ansible.builtin.apt:
+    name: grafana
+    state: present
+    update_cache: true
+
+- name: Set Grafana admin password
+  ansible.builtin.lineinfile:
+    path: /etc/grafana/grafana.ini
+    regexp: "^;?admin_password ="
+    line: "admin_password = {{ grafana_admin_password }}"
+    section: security
+
+- name: Deploy Grafana datasource
+  ansible.builtin.template:
+    src: grafana-datasource.yml.j2
+    dest: /etc/grafana/provisioning/datasources/prometheus.yml
+    owner: grafana
+    group: grafana
+    mode: "0640"
+  notify: restart grafana
+
+- name: Create Grafana dashboard provisioning dir
+  ansible.builtin.file:
+    path: /var/lib/grafana/dashboards
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: "0755"
+
+- name: Copy RustChain Grafana dashboard
+  ansible.builtin.copy:
+    src: "{{ rustchain_home | default('/opt/rustchain') }}/src/monitoring/grafana-dashboard.json"
+    dest: /var/lib/grafana/dashboards/rustchain.json
+    remote_src: true
+    owner: grafana
+    group: grafana
+    mode: "0644"
+  ignore_errors: true
+  notify: restart grafana
+
+- name: Enable and start Grafana
+  ansible.builtin.systemd:
+    name: grafana-server
+    enabled: true
+    state: started

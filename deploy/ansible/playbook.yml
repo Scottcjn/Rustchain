@@ -1,0 +1,14 @@
+---
+- name: Deploy RustChain nodes
+  hosts: rustchain_nodes
+  become: true
+  roles:
+    - role: rustchain-node
+      tags: [node]
+
+- name: Deploy monitoring stack
+  hosts: monitoring
+  become: true
+  roles:
+    - role: rustchain-monitor
+      tags: [monitor]

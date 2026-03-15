@@ -1,0 +1,20 @@
+---
+# Prometheus
+prometheus_version: "2.51.1"
+prometheus_retention_days: 30
+prometheus_port: 9090
+prometheus_data_dir: /var/lib/prometheus
+prometheus_config_dir: /etc/prometheus
+
+# Grafana
+grafana_version: "10.4.1"
+grafana_port: 3000
+grafana_admin_password: changeme
+
+# RustChain exporter
+rustchain_exporter_port: 9100
+rustchain_exporter_dir: /opt/rustchain-exporter
+rustchain_node_url: "https://rustchain.org"
+
+# Scrape targets — built from the rustchain_nodes group
+rustchain_scrape_targets: "{{ groups['rustchain_nodes'] | default([]) }}"

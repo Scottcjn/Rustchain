@@ -1,0 +1,18 @@
+[Unit]
+Description=RustChain Prometheus Exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=prometheus
+Group=prometheus
+WorkingDirectory={{ rustchain_exporter_dir }}
+ExecStart={{ rustchain_exporter_dir }}/venv/bin/python {{ rustchain_exporter_dir }}/rustchain-exporter.py
+Restart=on-failure
+RestartSec=10
+Environment="RUSTCHAIN_NODE={{ rustchain_node_url }}"
+Environment="EXPORTER_PORT={{ rustchain_exporter_port }}"
+
+[Install]
+WantedBy=multi-user.target

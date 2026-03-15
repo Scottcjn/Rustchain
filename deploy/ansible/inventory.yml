@@ -1,0 +1,26 @@
+---
+all:
+  vars:
+    ansible_user: deploy
+    ansible_python_interpreter: /usr/bin/python3
+
+  children:
+    rustchain_nodes:
+      hosts:
+        node-01:
+          ansible_host: 203.0.113.10
+          rustchain_node_name: rustchain-primary
+        node-02:
+          ansible_host: 203.0.113.11
+          rustchain_node_name: rustchain-secondary
+      vars:
+        rustchain_enable_ssl: false
+        rustchain_domain: rustchain.example.com
+
+    monitoring:
+      hosts:
+        monitor-01:
+          ansible_host: 203.0.113.20
+      vars:
+        grafana_admin_password: "{{ vault_grafana_admin_password | default('changeme') }}"
+        prometheus_retention_days: 30

@@ -1,0 +1,36 @@
+[Unit]
+Description=RustChain Node ({{ rustchain_node_name }})
+Documentation=https://github.com/Scottcjn/Rustchain
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ rustchain_user }}
+Group={{ rustchain_group }}
+WorkingDirectory={{ rustchain_home }}/src/node
+ExecStart={{ rustchain_venv }}/bin/gunicorn \
+    --workers {{ rustchain_workers }} \
+    --bind {{ rustchain_bind_host }}:{{ rustchain_bind_port }} \
+    --timeout 120 \
+    --access-logfile {{ rustchain_log_dir }}/access.log \
+    --error-logfile {{ rustchain_log_dir }}/error.log \
+    wsgi:app
+Restart=on-failure
+RestartSec=15
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+Environment="PYTHONUNBUFFERED=1"
+Environment="RUSTCHAIN_HOME={{ rustchain_home }}"
+Environment="RUSTCHAIN_DB={{ rustchain_db_path }}"
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ rustchain_data_dir }} {{ rustchain_log_dir }}
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
