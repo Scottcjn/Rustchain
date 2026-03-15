@@ -1,0 +1,90 @@
+site_name: RustChain Documentation
+site_url: https://docs.rustchain.org
+site_description: Official documentation for RustChain — the Proof-of-Antiquity blockchain that rewards vintage hardware.
+site_author: Elyan Labs
+
+repo_name: Scottcjn/Rustchain
+repo_url: https://github.com/Scottcjn/Rustchain
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
+    logo: material/link-variant
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.expand
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - toc.follow
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Mining Guide: mining.md
+  - Architecture: architecture.md
+  - API Reference: api-reference.md
+  - Contributing: contributing.md
+  - FAQ: faq.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.mark
+  - pymdownx.critic
+  - pymdownx.keys
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Scottcjn/Rustchain
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/VqVVS2CW9Q
+  generator: false
+
+extra_css: []
+
+copyright: Copyright &copy; 2025-2026 Elyan Labs &mdash; RustChain is licensed under Apache 2.0
