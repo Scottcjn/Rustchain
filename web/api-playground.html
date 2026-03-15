@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><title>RustChain API Playground</title>
+<style>*{margin:0;box-sizing:border-box}body{font-family:monospace;background:#0f0f1a;color:#e4e4f0;padding:1rem}
+input,select,button{font-family:inherit;background:#1a1a2e;color:#e4e4f0;border:1px solid #2d2d4a;padding:.5rem;border-radius:4px}
+button{background:#8b5cf6;border:none;cursor:pointer}pre{background:#1a1a2e;padding:1rem;border-radius:8px;overflow:auto;max-height:400px;margin-top:1rem}
+h1{color:#8b5cf6;margin-bottom:1rem}</style></head><body>
+<h1>RustChain API Playground</h1>
+<select id="ep"><option>/health</option><option>/epoch</option><option>/api/miners</option><option>/headers/tip</option>
+<option>/api/stats</option><option>/api/fee_pool</option><option>/beacon/digest</option></select>
+<button onclick="run()">Send</button>
+<pre id="out">Select an endpoint and click Send</pre>
+<script>
+async function run(){
+  const ep=document.getElementById('ep').value;
+  document.getElementById('out').textContent='Loading...';
+  try{const r=await fetch('https://rustchain.org'+ep);const d=await r.json();
+  document.getElementById('out').textContent=JSON.stringify(d,null,2)}
+  catch(e){document.getElementById('out').textContent='Error: '+e.message}}
+</script></body></html>
