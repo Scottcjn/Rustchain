@@ -1,83 +1,65 @@
-# RustChain Telegram Bot
+# RustChain Telegram Community Bot
 
-Telegram bot for RustChain community.
+Telegram bot for RustChain community — Bounty #249 (50 RTC + bonuses).
 
 ## Commands
 
-- `/price` - Get real-time wRTC price from Raydium via DexScreener API
-- `/miners` - Get active miner count from RustChain network
-- `/epoch` - Get current epoch information
-- `/balance <wallet>` - Check wallet balance
-- `/health` - Check node health status
-- `/help` - Show all available commands
+| Command | Description |
+|---------|-------------|
+| `/price` | wRTC price from Raydium via DexScreener |
+| `/miners` | Active miner list and count |
+| `/epoch` | Current epoch, slot, pot, enrolled miners |
+| `/balance <wallet>` | Check RTC balance for a wallet |
+| `/health` | Node health, version, uptime, DB status |
+| `/subscribe` | Enable mining & price alerts in this chat |
+| `/unsubscribe` | Disable alerts |
+
+## Bonus Features
+
+- **Mining alerts** — notifies subscribed chats when a new miner joins or an epoch settles
+- **Price alerts** — notifies when wRTC price moves >5% (configurable)
+- **Inline queries** — type `@YourBot price`, `miners`, or `epoch` in any chat
 
 ## Setup
 
-### 1. Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Create a Telegram Bot
-1. Talk to @BotFather on Telegram
-2. Create a new bot with `/newbot`
-3. Copy the bot token provided
+1. Create a bot via [@BotFather](https://t.me/BotFather) and copy the token.
+2. Enable inline mode via BotFather (`/setinline`) for inline queries.
+3. Configure environment:
 
-### 3. Configure environment variables
-Create a `.env` file:
 ```bash
-TELEGRAM_BOT_TOKEN=your_bot_token_here
-RUSTCHAIN_API=https://rustchain.org  # Optional, default is used
+cp .env.example .env
+# Edit .env with your bot token
 ```
 
-### 4. Run the bot
-```bash
-# Option 1: Using .env file
-python telegram_bot.py
+4. Run:
 
-# Option 2: Set environment variables directly
-export TELEGRAM_BOT_TOKEN=your_bot_token_here
+```bash
 python telegram_bot.py
 ```
 
-## Docker Deployment
+## Environment Variables
 
-Create a Dockerfile:
-```dockerfile
-FROM python:3.10-slim
-WORKDIR /app
-COPY . .
-RUN pip install -r requirements.txt
-CMD ["python", "telegram_bot.py"]
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TELEGRAM_BOT_TOKEN` | _(required)_ | Bot token from BotFather |
+| `RUSTCHAIN_API` | `https://rustchain.org` | RustChain node URL |
+| `PRICE_ALERT_INTERVAL` | `120` | Seconds between price checks |
+| `MINER_ALERT_INTERVAL` | `60` | Seconds between miner checks |
+| `PRICE_CHANGE_THRESHOLD` | `5.0` | % change to trigger price alert |
 
-Build and run:
+## Docker
+
 ```bash
-docker build -t rustchain-telegram-bot .
-docker run --env-file .env rustchain-telegram-bot
+docker build -t rustchain-tg-bot .
+docker run --env-file .env rustchain-tg-bot
 ```
 
-## Features
+## Key Improvements
 
-- ✅ Real-time wRTC price fetching from DexScreener API
-- ✅ Active miner count from RustChain network
-- ✅ Wallet balance checking
-- ✅ Node health monitoring
-- ✅ Environment variable configuration
-- ✅ Comprehensive error handling
-
-## Technical Details
-
-- Uses `python-telegram-bot` library (v20.0+)
-- Fetches wRTC price from DexScreener API
-- Connects to RustChain API at `https://rustchain.org`
-- Supports both Raydium and other DEXs for price data
-
-## Bounty
-
-50 RTC - Issue #249
-Fixed version addressing code quality issues:
-1. Removed duplicate files
-2. Implemented real /price command (no placeholder)
-3. Added environment variable support
-4. Improved error handling and logging
+- **Async HTTP** — uses `aiohttp` instead of blocking `requests` in async handlers
+- **Correct API fields** — uses `amount_rtc`, `ok`, `slot`, `enrolled_miners` per API docs
+- **All bonus features** — mining alerts, price alerts, inline queries
