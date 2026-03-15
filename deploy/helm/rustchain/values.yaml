@@ -1,0 +1,117 @@
+# Default values for RustChain Helm chart
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/celebritypunks/rustchain
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# RustChain node configuration
+rustchain:
+  home: /rustchain
+  db: /rustchain/data/rustchain_v2.db
+  downloadDir: /rustchain/downloads
+  logLevel: INFO
+  dashboardPort: 8099
+  apiPort: 8088
+
+# Environment variables injected via ConfigMap
+config:
+  PYTHONUNBUFFERED: "1"
+
+# Sensitive values injected via Secret
+secrets:
+  # GitHub token for API access (leave empty to disable)
+  githubToken: ""
+  # Tip bot wallet address
+  tipBotWallet: ""
+
+service:
+  type: ClusterIP
+  dashboardPort: 8099
+  apiPort: 8088
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: rustchain.local
+      paths:
+        - path: /
+          pathType: Prefix
+          servicePort: 8099
+  tls: []
+  #  - secretName: rustchain-tls
+  #    hosts:
+  #      - rustchain.local
+
+persistence:
+  data:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 10Gi
+  downloads:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 5Gi
+
+resources:
+  limits:
+    cpu: "1"
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: dashboard
+  initialDelaySeconds: 40
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: dashboard
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
