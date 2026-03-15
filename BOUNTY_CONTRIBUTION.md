@@ -1,9 +1,9 @@
 # Bounty Contribution
 
-This addresses issue #1431: Fix issue #1430: Fix issue #1031: feat: RIP-305 cross-chain airdrop — wRTC on Solana + Base
+This addresses issue #9: Fix issue #8: Add enhanced Prometheus exporter v2
 
 ## Description
-Resolves #1430
+Resolves #8
 
 Payment address: 0x4F666e7b4F63637223625FD4e9Ace6055fD6a847
 
