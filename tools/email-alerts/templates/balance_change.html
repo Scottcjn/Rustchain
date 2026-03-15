@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Balance Change Alert</title>
+<style>
+  body { margin: 0; padding: 0; background: #f4f4f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+  .wrapper { width: 100%; background: #f4f4f7; padding: 24px 0; }
+  .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 32px 24px; text-align: center; }
+  .header h1 { color: #e94560; margin: 0; font-size: 24px; }
+  .header p { color: #a0a0b0; margin: 8px 0 0; font-size: 13px; }
+  .body { padding: 32px 24px; color: #333; line-height: 1.6; }
+  .body h2 { color: #1a1a2e; margin-top: 0; }
+  .badge { display: inline-block; background: #27ae60; color: #fff; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+  .balance { text-align: center; margin: 24px 0; }
+  .balance .amount { font-size: 36px; font-weight: 700; color: #1a1a2e; }
+  .balance .change-pos { color: #27ae60; font-size: 18px; }
+  .balance .change-neg { color: #e74c3c; font-size: 18px; }
+  .balance .label { font-size: 14px; color: #999; }
+  .info-box { background: #f8f9fa; border-left: 4px solid #27ae60; padding: 16px; margin: 16px 0; border-radius: 0 4px 4px 0; }
+  .wallet-addr { font-family: 'Courier New', monospace; font-size: 13px; background: #eee; padding: 4px 8px; border-radius: 4px; word-break: break-all; }
+  .footer { background: #f8f9fa; padding: 20px 24px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #eee; }
+  .footer a { color: #e94560; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="container">
+    <div class="header">
+      <h1>RustChain</h1>
+      <p>Proof-of-Antiquity Blockchain Alerts</p>
+    </div>
+    <div class="body">
+      <span class="badge">Balance Change</span>
+      <h2>Wallet Balance Updated</h2>
+
+      <p>Wallet: <span class="wallet-addr">{{ wallet }}</span></p>
+
+      <div class="balance">
+        <div class="amount">{{ new_balance }} RTC</div>
+        <div class="label">Current Balance</div>
+      </div>
+
+      <div class="info-box">
+        <p><strong>Previous balance:</strong> {{ old_balance }} RTC</p>
+        <p><strong>Change:</strong> {{ change }} RTC</p>
+        <p><strong>Detected at:</strong> {{ timestamp }}</p>
+      </div>
+    </div>
+    <div class="footer">
+      <p>You received this because you subscribed to balance alerts for this wallet.</p>
+      <p><a href="{{ unsubscribe_url }}">Unsubscribe</a> &middot; <a href="https://rustchain.org">rustchain.org</a></p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

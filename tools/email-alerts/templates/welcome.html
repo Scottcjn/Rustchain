@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Welcome to RustChain Alerts</title>
+<style>
+  body { margin: 0; padding: 0; background: #f4f4f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+  .wrapper { width: 100%; background: #f4f4f7; padding: 24px 0; }
+  .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 32px 24px; text-align: center; }
+  .header h1 { color: #e94560; margin: 0; font-size: 24px; }
+  .header p { color: #a0a0b0; margin: 8px 0 0; font-size: 13px; }
+  .body { padding: 32px 24px; color: #333; line-height: 1.6; }
+  .body h2 { color: #1a1a2e; margin-top: 0; }
+  .badge { display: inline-block; background: #e94560; color: #fff; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; margin: 2px; }
+  .info-box { background: #f8f9fa; border-left: 4px solid #e94560; padding: 16px; margin: 16px 0; border-radius: 0 4px 4px 0; }
+  .footer { background: #f8f9fa; padding: 20px 24px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #eee; }
+  .footer a { color: #e94560; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="container">
+    <div class="header">
+      <h1>RustChain</h1>
+      <p>Proof-of-Antiquity Blockchain Alerts</p>
+    </div>
+    <div class="body">
+      <h2>Welcome!</h2>
+      <p>You have been subscribed to RustChain blockchain alerts at <strong>{{ email }}</strong>.</p>
+
+      <div class="info-box">
+        <p><strong>Subscribed events:</strong> {{ events }}</p>
+        <p><strong>Delivery mode:</strong> {{ digest }}</p>
+      </div>
+
+      <p>You will receive notifications when the following events occur on the RustChain network:</p>
+      <ul>
+        <li><strong>New Epoch</strong> &mdash; A new epoch begins on the chain</li>
+        <li><strong>Miner Changes</strong> &mdash; Miners join or leave the network</li>
+        <li><strong>Balance Changes</strong> &mdash; Your tracked wallet balance changes</li>
+      </ul>
+
+      <p>If you did not request this subscription, you can unsubscribe at any time using the link below.</p>
+    </div>
+    <div class="footer">
+      <p><a href="{{ unsubscribe_url }}">Unsubscribe</a> &middot; <a href="https://rustchain.org">rustchain.org</a></p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

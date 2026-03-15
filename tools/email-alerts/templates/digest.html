@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RustChain {{ digest_mode }} Digest</title>
+<style>
+  body { margin: 0; padding: 0; background: #f4f4f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+  .wrapper { width: 100%; background: #f4f4f7; padding: 24px 0; }
+  .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 32px 24px; text-align: center; }
+  .header h1 { color: #e94560; margin: 0; font-size: 24px; }
+  .header p { color: #a0a0b0; margin: 8px 0 0; font-size: 13px; }
+  .body { padding: 32px 24px; color: #333; line-height: 1.6; }
+  .body h2 { color: #1a1a2e; margin-top: 0; }
+  .badge { display: inline-block; background: #8e44ad; color: #fff; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+  .stat { text-align: center; margin: 24px 0; }
+  .stat .num { font-size: 48px; font-weight: 700; color: #e94560; }
+  .stat .label { font-size: 14px; color: #999; }
+  table.data { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  table.data th, table.data td { border: 1px solid #e0e0e0; padding: 10px 12px; text-align: left; font-size: 13px; }
+  table.data th { background: #1a1a2e; color: #fff; }
+  table.data tr:nth-child(even) { background: #f8f9fa; }
+  table.data pre { margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+  .footer { background: #f8f9fa; padding: 20px 24px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #eee; }
+  .footer a { color: #e94560; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="container">
+    <div class="header">
+      <h1>RustChain</h1>
+      <p>Proof-of-Antiquity Blockchain Alerts</p>
+    </div>
+    <div class="body">
+      <span class="badge">{{ digest_mode }} Digest</span>
+      <h2>Event Summary</h2>
+
+      <div class="stat">
+        <div class="num">{{ event_count }}</div>
+        <div class="label">Events in this digest</div>
+      </div>
+
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Event</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ event_rows }}
+        </tbody>
+      </table>
+    </div>
+    <div class="footer">
+      <p>You received this {{ digest_mode }} digest because you subscribed to RustChain alerts.</p>
+      <p><a href="{{ unsubscribe_url }}">Unsubscribe</a> &middot; <a href="https://rustchain.org">rustchain.org</a></p>
+    </div>
+  </div>
+</div>
+</body>
+</html>
