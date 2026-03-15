@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RustChain Miner Health</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:monospace;background:#0f0f1a;color:#e4e4f0;padding:1rem}
+.widget{background:#1a1a2e;border:1px solid #2d2d4a;border-radius:8px;padding:1rem;max-width:400px;margin:0 auto}
+.title{font-size:.8rem;color:#8888aa;text-transform:uppercase;margin-bottom:.5rem}
+.value{font-size:2rem;font-weight:700;color:#8b5cf6}
+.row{display:flex;justify-content:space-between;padding:.3rem 0;border-bottom:1px solid #2d2d4a}
+.label{color:#8888aa;font-size:.8rem}.val{font-size:.85rem}
+.green{color:#22c55e}.red{color:#ef4444}.yellow{color:#eab308}
+</style></head><body>
+<div class="widget">
+<div class="title">Miner Health</div>
+<div class="value" id="status">Loading...</div>
+<div class="row"><span class="label">Epoch</span><span class="val" id="epoch">--</span></div>
+<div class="row"><span class="label">Slot</span><span class="val" id="slot">--</span></div>
+<div class="row"><span class="label">Miners</span><span class="val" id="miners">--</span></div>
+<div class="row"><span class="label">Pot</span><span class="val" id="pot">-- RTC</span></div>
+<div class="row"><span class="label">Version</span><span class="val" id="version">--</span></div>
+<div class="row"><span class="label">Updated</span><span class="val" id="updated">--</span></div>
+</div>
+<script>
+async function update(){
+  try{
+    const[h,e]=await Promise.all([fetch('https://rustchain.org/health').then(r=>r.json()).catch(()=>({})),
+      fetch('https://rustchain.org/epoch').then(r=>r.json()).catch(()=>({}))]);
+    document.getElementById('status').textContent=h.status==='ok'?'HEALTHY':'DEGRADED';
+    document.getElementById('status').className='value '+(h.status==='ok'?'green':'red');
+    document.getElementById('epoch').textContent=e.epoch||e.current_epoch||'?';
+    document.getElementById('slot').textContent=e.slot||'?';
+    document.getElementById('miners').textContent=e.enrolled_miners||'?';
+    document.getElementById('pot').textContent=(e.epoch_pot||e.reward_pot||'?')+' RTC';
+    document.getElementById('version').textContent=h.version||'?';
+    document.getElementById('updated').textContent=new Date().toLocaleTimeString();
+  }catch(e){document.getElementById('status').textContent='OFFLINE';document.getElementById('status').className='value red'}}
+update();setInterval(update,15000);
+</script></body></html>
