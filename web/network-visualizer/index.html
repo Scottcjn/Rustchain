@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Network Topology</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-card: #21262d;
+            --text-primary: #f0f6fc;
+            --text-secondary: #8b949e;
+            --accent: #58a6ff;
+            --success: #3fb950;
+            --warning: #d29922;
+            --danger: #f85149;
+            --border: #30363d;
+            --gradient-1: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        #app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 24px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            z-index: 10;
+            flex-shrink: 0;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo h1 {
+            font-size: 1.25rem;
+            background: linear-gradient(90deg, #58a6ff, #3fb950);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+
+        .header-stats {
+            display: flex;
+            gap: 24px;
+            align-items: center;
+        }
+
+        .stat-chip {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+
+        .stat-chip .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .stat-chip .value {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .stat-chip .label {
+            color: var(--text-secondary);
+        }
+
+        .main-area {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #graph-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #graph-container svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 320px;
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border);
+            overflow-y: auto;
+            flex-shrink: 0;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar.collapsed {
+            transform: translateX(320px);
+            width: 0;
+            border: none;
+        }
+
+        .sidebar-section {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sidebar-section h3 {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        /* Legend */
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: background 0.15s;
+        }
+
+        .legend-item:hover {
+            background: var(--bg-card);
+        }
+
+        .legend-item.dimmed {
+            opacity: 0.35;
+        }
+
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .legend-count {
+            margin-left: auto;
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+        }
+
+        /* Node detail panel */
+        .node-detail {
+            display: none;
+        }
+
+        .node-detail.active {
+            display: block;
+        }
+
+        .node-detail .node-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+            word-break: break-all;
+        }
+
+        .node-detail .node-id {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-family: monospace;
+            margin-bottom: 16px;
+            word-break: break-all;
+        }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .detail-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .detail-card .label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            letter-spacing: 0.5px;
+        }
+
+        .detail-card .value {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-top: 2px;
+        }
+
+        .detail-card.full {
+            grid-column: 1 / -1;
+        }
+
+        .peer-list {
+            margin-top: 12px;
+        }
+
+        .peer-list-item {
+            font-size: 0.8rem;
+            padding: 6px 8px;
+            background: var(--bg-card);
+            border-radius: 6px;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .peer-list-item:hover {
+            background: var(--border);
+        }
+
+        .peer-list-item .peer-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        /* Controls bar */
+        .controls {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            display: flex;
+            gap: 6px;
+            z-index: 5;
+        }
+
+        .ctrl-btn {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.15s;
+        }
+
+        .ctrl-btn:hover {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border-color: var(--accent);
+        }
+
+        .ctrl-btn.active {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* Status indicator */
+        .api-status {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            z-index: 5;
+        }
+
+        .api-status .indicator {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+
+        .api-status .indicator.live { background: var(--success); }
+        .api-status .indicator.demo { background: var(--warning); }
+        .api-status .indicator.error { background: var(--danger); }
+
+        /* Tooltip */
+        .tooltip {
+            position: absolute;
+            padding: 10px 14px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s;
+            z-index: 100;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            max-width: 260px;
+        }
+
+        .tooltip.visible { opacity: 1; }
+
+        .tooltip .tt-name {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .tooltip .tt-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            color: var(--text-secondary);
+        }
+
+        .tooltip .tt-row .tt-val {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        /* Link styling */
+        .link {
+            stroke-opacity: 0.25;
+            stroke: var(--text-secondary);
+        }
+
+        .link.highlighted {
+            stroke-opacity: 0.8;
+            stroke: var(--accent);
+        }
+
+        /* Node glow */
+        .node-glow {
+            opacity: 0.3;
+        }
+
+        /* Search */
+        .search-box {
+            padding: 8px 12px;
+            width: 100%;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .search-box:focus {
+            border-color: var(--accent);
+        }
+
+        .search-box::placeholder {
+            color: var(--text-secondary);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar { position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; }
+            .sidebar.collapsed { transform: translateX(100%); }
+            .header-stats { display: none; }
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <header>
+        <div class="logo">
+            <div>
+                <h1>RustChain Network</h1>
+                <div class="subtitle">Topology Visualizer</div>
+            </div>
+        </div>
+        <div class="header-stats">
+            <div class="stat-chip">
+                <div class="dot"></div>
+                <span class="value" id="node-count">0</span>
+                <span class="label">Nodes</span>
+            </div>
+            <div class="stat-chip">
+                <span class="value" id="peer-count">0</span>
+                <span class="label">Connections</span>
+            </div>
+            <div class="stat-chip">
+                <span class="value" id="block-height">—</span>
+                <span class="label">Height</span>
+            </div>
+            <div class="stat-chip">
+                <span class="value" id="epoch-count">—</span>
+                <span class="label">Epoch</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="main-area">
+        <div id="graph-container">
+            <div class="controls">
+                <button class="ctrl-btn" id="btn-zoom-in" title="Zoom In">+</button>
+                <button class="ctrl-btn" id="btn-zoom-out" title="Zoom Out">&minus;</button>
+                <button class="ctrl-btn" id="btn-fit" title="Fit to View">&#x26F6;</button>
+                <button class="ctrl-btn" id="btn-pause" title="Pause Simulation">&#x23F8;</button>
+                <button class="ctrl-btn" id="btn-sidebar" title="Toggle Sidebar">&#x2630;</button>
+            </div>
+
+            <div class="api-status">
+                <div class="indicator demo" id="status-dot"></div>
+                <span id="status-text">Demo Mode</span>
+            </div>
+
+            <div class="tooltip" id="tooltip"></div>
+        </div>
+
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-section">
+                <h3>Search</h3>
+                <input type="text" class="search-box" id="search" placeholder="Filter nodes...">
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Hardware Types</h3>
+                <div id="legend"></div>
+            </div>
+
+            <div class="sidebar-section node-detail" id="node-detail">
+                <h3>Node Details</h3>
+                <div class="node-name" id="detail-name"></div>
+                <div class="node-id" id="detail-id"></div>
+                <div class="detail-grid" id="detail-grid"></div>
+                <div class="peer-list" id="detail-peers"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    "use strict";
+
+    // ---- Configuration ----
+    const API_BASE = "https://50.28.86.131";
+    const POLL_INTERVAL = 15000;
+
+    const HARDWARE_COLORS = {
+        modern_x86:  "#58a6ff",
+        arm64:       "#3fb950",
+        ppc:         "#d29922",
+        ppc64:       "#db6d28",
+        ppc64le:     "#f0883e",
+        x86_32:      "#a371f7",
+        risc_v:      "#f778ba",
+        mips:        "#ff7b72",
+        sparc:       "#79c0ff",
+        unknown:     "#8b949e",
+    };
+
+    const HARDWARE_LABELS = {
+        modern_x86:  "x86-64 (Modern)",
+        arm64:       "ARM64",
+        ppc:         "PowerPC",
+        ppc64:       "PowerPC 64",
+        ppc64le:     "PPC64LE",
+        x86_32:      "x86 (32-bit)",
+        risc_v:      "RISC-V",
+        mips:        "MIPS",
+        sparc:       "SPARC",
+        unknown:     "Unknown",
+    };
+
+    // ---- State ----
+    let nodes = [];
+    let links = [];
+    let simulation = null;
+    let isPaused = false;
+    let selectedNode = null;
+    let hiddenTypes = new Set();
+    let isLive = false;
+
+    // ---- Demo data generator ----
+    function generateDemoData() {
+        const hardwareTypes = Object.keys(HARDWARE_COLORS);
+        const regions = ["us-east", "us-west", "eu-west", "eu-central", "ap-south", "ap-east", "sa-east"];
+        const count = 35 + Math.floor(Math.random() * 15);
+        const demoNodes = [];
+        const demoLinks = [];
+
+        for (let i = 0; i < count; i++) {
+            const hw = hardwareTypes[Math.floor(Math.random() * hardwareTypes.length)];
+            const region = regions[Math.floor(Math.random() * regions.length)];
+            const uptime = Math.floor(Math.random() * 720) + 1;
+            const blocksMined = hw === "ppc" || hw === "ppc64"
+                ? Math.floor(Math.random() * 2000) + 500
+                : Math.floor(Math.random() * 800);
+            const antiquity = { ppc: 2.5, ppc64: 2.0, ppc64le: 1.8, x86_32: 1.5 }[hw] || 1.0;
+
+            demoNodes.push({
+                id: `node-${String(i).padStart(3, "0")}`,
+                label: `rustchain-${region}-${i}`,
+                hardware: hw,
+                region: region,
+                uptime_hours: uptime,
+                blocks_mined: blocksMined,
+                antiquity_multiplier: antiquity,
+                version: "2.2.1-rip200",
+                port: 8099,
+                peers: [],
+            });
+        }
+
+        // Create mesh-like connectivity
+        for (let i = 0; i < demoNodes.length; i++) {
+            const peerCount = 2 + Math.floor(Math.random() * 4);
+            for (let p = 0; p < peerCount; p++) {
+                let target;
+                // Prefer same-region peers (60% chance)
+                if (Math.random() < 0.6) {
+                    const sameRegion = demoNodes.filter((n, j) => j !== i && n.region === demoNodes[i].region);
+                    if (sameRegion.length > 0) {
+                        target = sameRegion[Math.floor(Math.random() * sameRegion.length)].id;
+                    }
+                }
+                if (!target) {
+                    let j = Math.floor(Math.random() * demoNodes.length);
+                    if (j === i) j = (j + 1) % demoNodes.length;
+                    target = demoNodes[j].id;
+                }
+
+                const exists = demoLinks.some(l =>
+                    (l.source === demoNodes[i].id && l.target === target) ||
+                    (l.source === target && l.target === demoNodes[i].id)
+                );
+                if (!exists && demoNodes[i].id !== target) {
+                    demoLinks.push({ source: demoNodes[i].id, target: target });
+                    demoNodes[i].peers.push(target);
+                    const tNode = demoNodes.find(n => n.id === target);
+                    if (tNode) tNode.peers.push(demoNodes[i].id);
+                }
+            }
+        }
+
+        return { nodes: demoNodes, links: demoLinks };
+    }
+
+    // ---- API integration ----
+    async function fetchNetworkData() {
+        try {
+            const [healthRes, epochRes] = await Promise.allSettled([
+                fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(5000) }),
+                fetch(`${API_BASE}/epoch`, { signal: AbortSignal.timeout(5000) }),
+            ]);
+
+            if (healthRes.status === "fulfilled" && healthRes.value.ok) {
+                const health = await healthRes.value.json();
+                if (health.ok) {
+                    document.getElementById("status-dot").className = "indicator live";
+                    document.getElementById("status-text").textContent =
+                        `Connected — v${health.version || "2.2.1"}`;
+                    isLive = true;
+                }
+            }
+
+            if (epochRes.status === "fulfilled" && epochRes.value.ok) {
+                const epoch = await epochRes.value.json();
+                document.getElementById("block-height").textContent =
+                    (epoch.height || 0).toLocaleString();
+                document.getElementById("epoch-count").textContent = epoch.epoch || "—";
+            }
+
+            // Try /api/peers or /api/nodes for live topology
+            try {
+                const peersRes = await fetch(`${API_BASE}/api/peers`, {
+                    signal: AbortSignal.timeout(5000),
+                });
+                if (peersRes.ok) {
+                    const peersData = await peersRes.json();
+                    if (peersData.data && Array.isArray(peersData.data)) {
+                        return transformApiData(peersData.data);
+                    }
+                }
+            } catch (_) { /* fallback to demo */ }
+
+            // Try /api/nodes endpoint
+            try {
+                const nodesRes = await fetch(`${API_BASE}/api/nodes`, {
+                    signal: AbortSignal.timeout(5000),
+                });
+                if (nodesRes.ok) {
+                    const nodesData = await nodesRes.json();
+                    if (nodesData.data && Array.isArray(nodesData.data)) {
+                        return transformApiData(nodesData.data);
+                    }
+                }
+            } catch (_) { /* fallback to demo */ }
+
+        } catch (_) {
+            document.getElementById("status-dot").className = "indicator demo";
+            document.getElementById("status-text").textContent = "Demo Mode";
+        }
+
+        return null;
+    }
+
+    function transformApiData(apiNodes) {
+        const transformed = { nodes: [], links: [] };
+        const seen = new Set();
+
+        apiNodes.forEach(n => {
+            const id = n.id || n.node_id || n.miner_id || `node-${Math.random().toString(36).slice(2, 8)}`;
+            transformed.nodes.push({
+                id: id,
+                label: n.label || n.name || id,
+                hardware: n.hardware || n.arch_type || "unknown",
+                region: n.region || "unknown",
+                uptime_hours: n.uptime_hours || Math.floor((n.uptime_s || 0) / 3600),
+                blocks_mined: n.blocks_mined || n.blocks || 0,
+                antiquity_multiplier: n.antiquity_multiplier || n.antiquity || 1.0,
+                version: n.version || "2.2.1",
+                port: n.port || 8099,
+                peers: n.peers || [],
+            });
+
+            (n.peers || []).forEach(peerId => {
+                const key = [id, peerId].sort().join("-");
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    transformed.links.push({ source: id, target: peerId });
+                }
+            });
+        });
+
+        return transformed;
+    }
+
+    // ---- D3 Graph ----
+    const container = document.getElementById("graph-container");
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+
+    const svg = d3.select("#graph-container")
+        .append("svg")
+        .attr("width", "100%")
+        .attr("height", "100%");
+
+    // Defs for glow filter
+    const defs = svg.append("defs");
+    const filter = defs.append("filter").attr("id", "glow");
+    filter.append("feGaussianBlur").attr("stdDeviation", "3").attr("result", "coloredBlur");
+    const feMerge = filter.append("feMerge");
+    feMerge.append("feMergeNode").attr("in", "coloredBlur");
+    feMerge.append("feMergeNode").attr("in", "SourceGraphic");
+
+    const g = svg.append("g");
+
+    const zoom = d3.zoom()
+        .scaleExtent([0.1, 8])
+        .on("zoom", (event) => g.attr("transform", event.transform));
+
+    svg.call(zoom);
+
+    let linkGroup = g.append("g").attr("class", "links");
+    let nodeGroup = g.append("g").attr("class", "nodes");
+
+    const tooltip = document.getElementById("tooltip");
+
+    function nodeRadius(d) {
+        const base = 6;
+        const mined = d.blocks_mined || 0;
+        return base + Math.min(Math.sqrt(mined) * 0.4, 14);
+    }
+
+    function isVisible(d) {
+        return !hiddenTypes.has(d.hardware);
+    }
+
+    function renderGraph(data) {
+        nodes = data.nodes;
+        links = data.links;
+
+        updateStats();
+        buildLegend();
+
+        // Force simulation
+        simulation = d3.forceSimulation(nodes)
+            .force("link", d3.forceLink(links).id(d => d.id).distance(80))
+            .force("charge", d3.forceManyBody().strength(-200))
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collision", d3.forceCollide().radius(d => nodeRadius(d) + 4))
+            .on("tick", ticked);
+
+        updateVisuals();
+    }
+
+    function updateVisuals() {
+        // Links
+        const linkSel = linkGroup.selectAll("line")
+            .data(links, d => `${d.source.id || d.source}-${d.target.id || d.target}`);
+
+        linkSel.exit().remove();
+
+        const linkEnter = linkSel.enter()
+            .append("line")
+            .attr("class", "link")
+            .attr("stroke-width", 1);
+
+        // Nodes
+        const nodeSel = nodeGroup.selectAll("g.node")
+            .data(nodes, d => d.id);
+
+        nodeSel.exit().remove();
+
+        const nodeEnter = nodeSel.enter()
+            .append("g")
+            .attr("class", "node")
+            .call(d3.drag()
+                .on("start", dragStarted)
+                .on("drag", dragged)
+                .on("end", dragEnded));
+
+        // Glow circle
+        nodeEnter.append("circle")
+            .attr("class", "node-glow")
+            .attr("r", d => nodeRadius(d) + 4)
+            .attr("fill", d => HARDWARE_COLORS[d.hardware] || HARDWARE_COLORS.unknown)
+            .attr("filter", "url(#glow)");
+
+        // Main circle
+        nodeEnter.append("circle")
+            .attr("class", "node-core")
+            .attr("r", d => nodeRadius(d))
+            .attr("fill", d => HARDWARE_COLORS[d.hardware] || HARDWARE_COLORS.unknown)
+            .attr("stroke", "#0d1117")
+            .attr("stroke-width", 2)
+            .style("cursor", "pointer");
+
+        // Events
+        nodeEnter
+            .on("mouseover", onNodeHover)
+            .on("mousemove", onNodeMove)
+            .on("mouseout", onNodeOut)
+            .on("click", onNodeClick);
+
+        // Update existing
+        nodeGroup.selectAll("g.node").select(".node-core")
+            .attr("fill", d => HARDWARE_COLORS[d.hardware] || HARDWARE_COLORS.unknown)
+            .attr("opacity", d => isVisible(d) ? 1 : 0.08);
+
+        nodeGroup.selectAll("g.node").select(".node-glow")
+            .attr("fill", d => HARDWARE_COLORS[d.hardware] || HARDWARE_COLORS.unknown)
+            .attr("opacity", d => isVisible(d) ? 0.3 : 0);
+
+        linkGroup.selectAll("line")
+            .attr("opacity", d => {
+                const s = typeof d.source === "object" ? d.source : nodes.find(n => n.id === d.source);
+                const t = typeof d.target === "object" ? d.target : nodes.find(n => n.id === d.target);
+                return (s && isVisible(s) && t && isVisible(t)) ? 1 : 0.05;
+            });
+    }
+
+    function ticked() {
+        linkGroup.selectAll("line")
+            .attr("x1", d => d.source.x)
+            .attr("y1", d => d.source.y)
+            .attr("x2", d => d.target.x)
+            .attr("y2", d => d.target.y);
+
+        nodeGroup.selectAll("g.node")
+            .attr("transform", d => `translate(${d.x},${d.y})`);
+    }
+
+    // ---- Drag handlers ----
+    function dragStarted(event, d) {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+    }
+
+    function dragged(event, d) {
+        d.fx = event.x;
+        d.fy = event.y;
+    }
+
+    function dragEnded(event, d) {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+    }
+
+    // ---- Hover / Click ----
+    function onNodeHover(event, d) {
+        tooltip.innerHTML = `
+            <div class="tt-name">${d.label}</div>
+            <div class="tt-row"><span>Hardware</span><span class="tt-val">${HARDWARE_LABELS[d.hardware] || d.hardware}</span></div>
+            <div class="tt-row"><span>Uptime</span><span class="tt-val">${d.uptime_hours}h</span></div>
+            <div class="tt-row"><span>Blocks Mined</span><span class="tt-val">${d.blocks_mined.toLocaleString()}</span></div>
+            <div class="tt-row"><span>Antiquity</span><span class="tt-val">${d.antiquity_multiplier}x</span></div>
+            <div class="tt-row"><span>Peers</span><span class="tt-val">${d.peers.length}</span></div>
+        `;
+        tooltip.classList.add("visible");
+
+        // Highlight connected links
+        linkGroup.selectAll("line")
+            .classed("highlighted", l =>
+                (l.source.id || l.source) === d.id || (l.target.id || l.target) === d.id
+            );
+    }
+
+    function onNodeMove(event) {
+        const rect = container.getBoundingClientRect();
+        let x = event.clientX - rect.left + 16;
+        let y = event.clientY - rect.top + 16;
+
+        if (x + 260 > rect.width) x = event.clientX - rect.left - 270;
+        if (y + 160 > rect.height) y = event.clientY - rect.top - 170;
+
+        tooltip.style.left = x + "px";
+        tooltip.style.top = y + "px";
+    }
+
+    function onNodeOut() {
+        tooltip.classList.remove("visible");
+        linkGroup.selectAll("line").classed("highlighted", false);
+    }
+
+    function onNodeClick(event, d) {
+        selectedNode = d;
+        const panel = document.getElementById("node-detail");
+        panel.classList.add("active");
+
+        document.getElementById("detail-name").textContent = d.label;
+        document.getElementById("detail-id").textContent = d.id;
+
+        document.getElementById("detail-grid").innerHTML = `
+            <div class="detail-card">
+                <div class="label">Hardware</div>
+                <div class="value" style="color:${HARDWARE_COLORS[d.hardware]}">${HARDWARE_LABELS[d.hardware] || d.hardware}</div>
+            </div>
+            <div class="detail-card">
+                <div class="label">Region</div>
+                <div class="value">${d.region}</div>
+            </div>
+            <div class="detail-card">
+                <div class="label">Uptime</div>
+                <div class="value">${d.uptime_hours}h</div>
+            </div>
+            <div class="detail-card">
+                <div class="label">Blocks Mined</div>
+                <div class="value">${d.blocks_mined.toLocaleString()}</div>
+            </div>
+            <div class="detail-card">
+                <div class="label">Antiquity</div>
+                <div class="value">${d.antiquity_multiplier}x</div>
+            </div>
+            <div class="detail-card">
+                <div class="label">Version</div>
+                <div class="value">${d.version}</div>
+            </div>
+            <div class="detail-card full">
+                <div class="label">Port</div>
+                <div class="value">${d.port}</div>
+            </div>
+        `;
+
+        const peersHtml = d.peers.slice(0, 20).map(pid => {
+            const pNode = nodes.find(n => n.id === pid);
+            const color = pNode ? (HARDWARE_COLORS[pNode.hardware] || HARDWARE_COLORS.unknown) : HARDWARE_COLORS.unknown;
+            const name = pNode ? pNode.label : pid;
+            return `<div class="peer-list-item" data-peer="${pid}">
+                <div class="peer-dot" style="background:${color}"></div>
+                <span>${name}</span>
+            </div>`;
+        }).join("");
+
+        document.getElementById("detail-peers").innerHTML =
+            `<h3 style="font-size:0.75rem;text-transform:uppercase;letter-spacing:1px;color:var(--text-secondary);margin-bottom:8px;">
+                Connected Peers (${d.peers.length})
+            </h3>` + peersHtml;
+
+        // Peer click navigation
+        document.querySelectorAll(".peer-list-item").forEach(el => {
+            el.addEventListener("click", () => {
+                const peer = nodes.find(n => n.id === el.dataset.peer);
+                if (peer) onNodeClick(null, peer);
+            });
+        });
+
+        // Highlight node and its links
+        nodeGroup.selectAll("g.node").select(".node-core")
+            .attr("stroke", n => n.id === d.id ? HARDWARE_COLORS[d.hardware] : "#0d1117")
+            .attr("stroke-width", n => n.id === d.id ? 3 : 2);
+
+        linkGroup.selectAll("line")
+            .classed("highlighted", l =>
+                (l.source.id || l.source) === d.id || (l.target.id || l.target) === d.id
+            );
+    }
+
+    // ---- Stats & Legend ----
+    function updateStats() {
+        document.getElementById("node-count").textContent = nodes.length;
+        document.getElementById("peer-count").textContent = links.length;
+
+        if (!isLive) {
+            document.getElementById("block-height").textContent =
+                (67890 + Math.floor(Math.random() * 100)).toLocaleString();
+            document.getElementById("epoch-count").textContent = "95";
+        }
+    }
+
+    function buildLegend() {
+        const counts = {};
+        nodes.forEach(n => { counts[n.hardware] = (counts[n.hardware] || 0) + 1; });
+
+        const legendEl = document.getElementById("legend");
+        legendEl.innerHTML = Object.entries(counts)
+            .sort((a, b) => b[1] - a[1])
+            .map(([hw, count]) => `
+                <div class="legend-item ${hiddenTypes.has(hw) ? "dimmed" : ""}" data-hw="${hw}">
+                    <div class="legend-dot" style="background:${HARDWARE_COLORS[hw] || HARDWARE_COLORS.unknown}"></div>
+                    <span>${HARDWARE_LABELS[hw] || hw}</span>
+                    <span class="legend-count">${count}</span>
+                </div>
+            `).join("");
+
+        legendEl.querySelectorAll(".legend-item").forEach(el => {
+            el.addEventListener("click", () => {
+                const hw = el.dataset.hw;
+                if (hiddenTypes.has(hw)) {
+                    hiddenTypes.delete(hw);
+                    el.classList.remove("dimmed");
+                } else {
+                    hiddenTypes.add(hw);
+                    el.classList.add("dimmed");
+                }
+                updateVisuals();
+            });
+        });
+    }
+
+    // ---- Controls ----
+    document.getElementById("btn-zoom-in").addEventListener("click", () => {
+        svg.transition().duration(300).call(zoom.scaleBy, 1.5);
+    });
+
+    document.getElementById("btn-zoom-out").addEventListener("click", () => {
+        svg.transition().duration(300).call(zoom.scaleBy, 0.67);
+    });
+
+    document.getElementById("btn-fit").addEventListener("click", () => {
+        if (!nodes.length) return;
+        const bounds = g.node().getBBox();
+        const cw = container.clientWidth;
+        const ch = container.clientHeight;
+        const scale = Math.min(cw / bounds.width, ch / bounds.height) * 0.85;
+        const tx = cw / 2 - (bounds.x + bounds.width / 2) * scale;
+        const ty = ch / 2 - (bounds.y + bounds.height / 2) * scale;
+        svg.transition().duration(500)
+            .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+    });
+
+    document.getElementById("btn-pause").addEventListener("click", function () {
+        isPaused = !isPaused;
+        this.classList.toggle("active", isPaused);
+        this.innerHTML = isPaused ? "&#x25B6;" : "&#x23F8;";
+        this.title = isPaused ? "Resume Simulation" : "Pause Simulation";
+        if (isPaused) {
+            simulation.stop();
+        } else {
+            simulation.alpha(0.3).restart();
+        }
+    });
+
+    document.getElementById("btn-sidebar").addEventListener("click", () => {
+        document.getElementById("sidebar").classList.toggle("collapsed");
+    });
+
+    // Search
+    document.getElementById("search").addEventListener("input", function () {
+        const q = this.value.toLowerCase();
+        nodeGroup.selectAll("g.node").select(".node-core")
+            .attr("opacity", d => {
+                if (!q) return isVisible(d) ? 1 : 0.08;
+                const match = d.label.toLowerCase().includes(q) ||
+                    d.id.toLowerCase().includes(q) ||
+                    d.hardware.toLowerCase().includes(q) ||
+                    d.region.toLowerCase().includes(q);
+                return match ? 1 : 0.08;
+            });
+        nodeGroup.selectAll("g.node").select(".node-glow")
+            .attr("opacity", d => {
+                if (!q) return isVisible(d) ? 0.3 : 0;
+                const match = d.label.toLowerCase().includes(q) ||
+                    d.id.toLowerCase().includes(q) ||
+                    d.hardware.toLowerCase().includes(q) ||
+                    d.region.toLowerCase().includes(q);
+                return match ? 0.3 : 0;
+            });
+    });
+
+    // ---- Init ----
+    async function init() {
+        const apiData = await fetchNetworkData();
+        const data = apiData || generateDemoData();
+        renderGraph(data);
+
+        // Fit to view after simulation settles
+        setTimeout(() => document.getElementById("btn-fit").click(), 1500);
+
+        // Periodic refresh
+        setInterval(async () => {
+            const fresh = await fetchNetworkData();
+            if (fresh && isLive) {
+                // Soft update: merge new data
+                updateStats();
+            }
+        }, POLL_INTERVAL);
+    }
+
+    // Handle resize
+    window.addEventListener("resize", () => {
+        if (simulation) {
+            simulation.force("center", d3.forceCenter(
+                container.clientWidth / 2,
+                container.clientHeight / 2
+            ));
+            simulation.alpha(0.1).restart();
+        }
+    });
+
+    init();
+})();
+</script>
+</body>
+</html>
