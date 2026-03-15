@@ -1,0 +1,89 @@
+name: Dependency Security Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'requirements*.txt'
+      - 'pyproject.toml'
+      - 'setup.py'
+      - 'setup.cfg'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'requirements*.txt'
+      - 'pyproject.toml'
+      - 'setup.py'
+      - 'setup.cfg'
+  schedule:
+    - cron: '0 8 * * 1'  # Weekly on Monday at 8 AM UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    name: Python Dependency Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-node.txt ]; then pip install -r requirements-node.txt; fi
+
+      - name: Install audit tools
+        run: pip install pip-audit safety
+
+      - name: Run pip-audit
+        run: |
+          echo "## pip-audit results" >> $GITHUB_STEP_SUMMARY
+          pip-audit --format columns --desc 2>&1 | tee audit-results.txt
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "::warning::pip-audit found vulnerabilities in dependencies"
+            echo "Vulnerabilities detected - see output above." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No known vulnerabilities found." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Run safety check
+        continue-on-error: true
+        run: |
+          echo "## safety check results" >> $GITHUB_STEP_SUMMARY
+          safety check --output text 2>&1 | tee safety-results.txt || true
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check for unpinned dependencies
+        run: |
+          echo "## Unpinned dependency check" >> $GITHUB_STEP_SUMMARY
+          UNPINNED=$(grep -E '^[a-zA-Z].*>=|^[a-zA-Z][^=]*$' requirements.txt 2>/dev/null || true)
+          if [ -n "$UNPINNED" ]; then
+            echo "::notice::Some dependencies use loose version constraints"
+            echo "The following dependencies use loose version pins:" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "$UNPINNED" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "All dependencies are tightly pinned." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-reports
+          path: |
+            audit-results.txt
+            safety-results.txt
+          retention-days: 30
