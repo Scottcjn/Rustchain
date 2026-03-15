@@ -17,7 +17,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 #[command(name = "rtc-wallet")]
 #[command(author = "RustChain Contributors")]
 #[command(version = "0.1.0")]
-#[command(about = "A robust CLI wallet for RustChain", long_about = None)]
+#[command(about = "A native Rust CLI wallet for RustChain", long_about = None)]
 struct Cli {
     /// Network to use (mainnet, testnet, devnet)
     #[arg(short, long, default_value = "mainnet")]
@@ -37,7 +37,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Generate a new wallet
+    /// Create a new wallet with Ed25519 keypair
     Create {
         /// Name for the wallet
         #[arg(short, long)]
@@ -46,6 +46,66 @@ enum Commands {
         /// Output format (json, text)
         #[arg(short, long, default_value = "text")]
         format: String,
+    },
+
+    /// Import wallet from a private key (hex or Base58)
+    Import {
+        /// Name for the imported wallet
+        #[arg(short, long)]
+        name: String,
+
+        /// Private key (hex or Base58 encoded)
+        #[arg(short, long)]
+        key: String,
+    },
+
+    /// Send RTC to another address
+    Send {
+        /// Sender wallet name
+        #[arg(short, long)]
+        from: String,
+
+        /// Recipient RTC address
+        #[arg(short, long)]
+        to: String,
+
+        /// Amount to send (in RTC base units)
+        #[arg(short, long)]
+        amount: u64,
+
+        /// Transaction fee (optional, defaults to 1000)
+        #[arg(short, long)]
+        fee: Option<u64>,
+
+        /// Optional memo
+        #[arg(short, long)]
+        memo: Option<String>,
+
+        /// API endpoint override
+        #[arg(long)]
+        rpc: Option<String>,
+
+        /// Simulate transaction without broadcasting
+        #[arg(long)]
+        simulate: bool,
+    },
+
+    /// Show your wallet address for receiving RTC
+    Receive {
+        /// Wallet name
+        #[arg(short, long)]
+        name: String,
+    },
+
+    /// Check wallet balance from rustchain.org
+    Balance {
+        /// Wallet name or RTC address
+        #[arg(short, long)]
+        wallet: String,
+
+        /// API endpoint override
+        #[arg(long)]
+        rpc: Option<String>,
     },
 
     /// List all wallets in storage
@@ -65,48 +125,6 @@ enum Commands {
         name: String,
     },
 
-    /// Get wallet balance
-    Balance {
-        /// Wallet name or address
-        #[arg(short, long)]
-        wallet: String,
-
-        /// RPC endpoint override
-        #[arg(long)]
-        rpc: Option<String>,
-    },
-
-    /// Transfer tokens
-    Transfer {
-        /// Sender wallet name
-        #[arg(short, long)]
-        from: String,
-
-        /// Recipient address
-        #[arg(short, long)]
-        to: String,
-
-        /// Amount to transfer
-        #[arg(short, long)]
-        amount: u64,
-
-        /// Transaction fee (optional, auto-calculated if not specified)
-        #[arg(short, long)]
-        fee: Option<u64>,
-
-        /// Optional memo
-        #[arg(short, long)]
-        memo: Option<String>,
-
-        /// RPC endpoint override
-        #[arg(long)]
-        rpc: Option<String>,
-
-        /// Simulate transaction without broadcasting
-        #[arg(long)]
-        simulate: bool,
-    },
-
     /// Sign a message
     Sign {
         /// Wallet name
@@ -124,7 +142,7 @@ enum Commands {
 
     /// Verify a signature
     Verify {
-        /// Public key (Base58 or hex)
+        /// Public key (hex)
         #[arg(short, long)]
         pubkey: String,
 
@@ -139,20 +157,9 @@ enum Commands {
 
     /// Get network information
     Network {
-        /// RPC endpoint override
+        /// API endpoint override
         #[arg(long)]
         rpc: Option<String>,
-    },
-
-    /// Import wallet from private key
-    Import {
-        /// Name for the imported wallet
-        #[arg(short, long)]
-        name: String,
-
-        /// Private key (hex or Base58 encoded)
-        #[arg(short, long)]
-        key: String,
     },
 
     /// Delete a wallet from storage
@@ -205,19 +212,10 @@ async fn main() -> anyhow::Result<()> {
         Commands::Create { name, format } => {
             cmd_create(&storage, &name, &format, network)?;
         }
-        Commands::List => {
-            cmd_list(&storage)?;
+        Commands::Import { name, key } => {
+            cmd_import(&storage, &name, &key)?;
         }
-        Commands::Show { name } => {
-            cmd_show(&storage, &name)?;
-        }
-        Commands::Export { name } => {
-            cmd_export(&storage, &name)?;
-        }
-        Commands::Balance { wallet, rpc } => {
-            cmd_balance(&wallet, rpc.as_deref().unwrap_or(network.rpc_url())).await?;
-        }
-        Commands::Transfer {
+        Commands::Send {
             from,
             to,
             amount,
@@ -226,17 +224,32 @@ async fn main() -> anyhow::Result<()> {
             rpc,
             simulate,
         } => {
-            cmd_transfer(
+            cmd_send(
                 &storage,
                 &from,
                 &to,
                 amount,
                 fee,
                 memo.as_deref(),
-                rpc.as_deref().unwrap_or(network.rpc_url()),
+                rpc.as_deref().unwrap_or(network.api_url()),
                 simulate,
             )
             .await?;
+        }
+        Commands::Receive { name } => {
+            cmd_receive(&storage, &name)?;
+        }
+        Commands::Balance { wallet, rpc } => {
+            cmd_balance(&storage, &wallet, rpc.as_deref().unwrap_or(network.api_url())).await?;
+        }
+        Commands::List => {
+            cmd_list(&storage)?;
+        }
+        Commands::Show { name } => {
+            cmd_show(&storage, &name)?;
+        }
+        Commands::Export { name } => {
+            cmd_export(&storage, &name)?;
         }
         Commands::Sign {
             wallet,
@@ -253,10 +266,7 @@ async fn main() -> anyhow::Result<()> {
             cmd_verify(&pubkey, &message, &signature)?;
         }
         Commands::Network { rpc } => {
-            cmd_network(rpc.as_deref().unwrap_or(network.rpc_url())).await?;
-        }
-        Commands::Import { name, key } => {
-            cmd_import(&storage, &name, &key)?;
+            cmd_network(rpc.as_deref().unwrap_or(network.api_url())).await?;
         }
         Commands::Delete { name, yes } => {
             cmd_delete(&storage, &name, yes)?;
@@ -308,7 +318,7 @@ fn cmd_create(storage: &WalletStorage, name: &str, format: &str, network: Networ
             );
         }
         _ => {
-            println!("✓ Wallet created successfully!");
+            println!("Wallet created successfully!");
             println!();
             println!("Name:         {}", name);
             println!("Address:      {}", address);
@@ -316,122 +326,59 @@ fn cmd_create(storage: &WalletStorage, name: &str, format: &str, network: Networ
             println!("Network:      {}", network);
             println!("Storage:      {}", path.display());
             println!();
-            println!("⚠ IMPORTANT: Store your password securely. It cannot be recovered!");
+            println!("IMPORTANT: Store your password securely. It cannot be recovered!");
         }
     }
 
     Ok(())
 }
 
-fn cmd_list(storage: &WalletStorage) -> Result<()> {
-    let wallets = storage.list()?;
-
-    if wallets.is_empty() {
-        println!("No wallets found in storage.");
-        println!("Use 'rtc-wallet create --name <name>' to create a new wallet.");
-        return Ok(());
-    }
-
-    println!("Stored wallets:");
-    println!();
-    for name in &wallets {
-        println!("  • {}", name);
-    }
-    println!();
-    println!("Total: {} wallet(s)", wallets.len());
-
-    Ok(())
-}
-
-fn cmd_show(storage: &WalletStorage, name: &str) -> Result<()> {
-    if !storage.exists(name) {
-        error!("Wallet '{}' not found", name);
+fn cmd_import(storage: &WalletStorage, name: &str, key: &str) -> Result<()> {
+    if storage.exists(name) {
+        error!("Wallet '{}' already exists", name);
         std::process::exit(1);
     }
 
-    let password =
-        rpassword::prompt_password("Enter wallet password: ").unwrap_or_else(|_| String::new());
-
-    let keypair = storage.load(name, &password)?;
-    let address = bs58::encode(keypair.public_key_bytes()).into_string();
-
-    println!("Wallet: {}", name);
-    println!("Address:    {}", address);
-    println!("Public Key: {}", keypair.public_key_hex());
-
-    Ok(())
-}
-
-fn cmd_export(storage: &WalletStorage, name: &str) -> Result<()> {
-    if !storage.exists(name) {
-        error!("Wallet '{}' not found", name);
-        std::process::exit(1);
-    }
-
-    warn!("⚠ WARNING: You are about to export your private key!");
-    warn!("⚠ Never share your private key with anyone!");
-    println!();
-
-    let confirm =
-        rpassword::prompt_password("Type 'YES' to confirm: ").unwrap_or_else(|_| String::new());
-
-    if confirm != "YES" {
-        println!("Export cancelled.");
-        return Ok(());
-    }
-
-    let password =
-        rpassword::prompt_password("Enter wallet password: ").unwrap_or_else(|_| String::new());
-
-    let keypair = storage.load(name, &password)?;
-    let private_key = keypair.export_private_key();
-
-    println!();
-    println!("Private Key (hex):");
-    println!("{}", private_key);
-    println!();
-    warn!("⚠ Store this key securely and delete it from your terminal history!");
-
-    Ok(())
-}
-
-async fn cmd_balance(wallet_or_address: &str, rpc_url: &str) -> Result<()> {
-    let client = RustChainClient::new(rpc_url.to_string());
-
-    // Check if it's a wallet name or address
-    let address = if wallet_or_address.starts_with("1") || wallet_or_address.starts_with("2") {
-        wallet_or_address.to_string()
+    // Try to parse key (hex first, then base58)
+    let keypair = if key.len() == 64 && key.chars().all(|c| c.is_ascii_hexdigit()) {
+        KeyPair::from_hex(key)?
     } else {
-        error!("Please provide a wallet address (starting with 1 or 2)");
-        std::process::exit(1);
+        KeyPair::from_base58(key)?
     };
 
-    match client.get_balance(&address).await {
-        Ok(balance) => {
-            println!("Balance for: {}", address);
-            println!("  Total:     {} RTC", balance.balance);
-            println!("  Unlocked:  {} RTC", balance.unlocked);
-            println!("  Locked:    {} RTC", balance.locked);
-            println!("  Nonce:     {}", balance.nonce);
-        }
-        Err(e) => {
-            error!("Failed to get balance: {}", e);
-            std::process::exit(1);
-        }
+    let address = keypair.rtc_address();
+
+    // Prompt for password
+    let password = rpassword::prompt_password("Enter password to encrypt wallet: ")
+        .unwrap_or_else(|_| String::new());
+
+    let confirm =
+        rpassword::prompt_password("Confirm password: ").unwrap_or_else(|_| String::new());
+
+    if password != confirm {
+        error!("Passwords do not match");
+        std::process::exit(1);
     }
+
+    storage.save(name, &keypair, &password)?;
+
+    println!("Wallet imported successfully!");
+    println!();
+    println!("Name:     {}", name);
+    println!("Address:  {}", address);
 
     Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn cmd_transfer(
+async fn cmd_send(
     storage: &WalletStorage,
     from: &str,
     to: &str,
     amount: u64,
     fee: Option<u64>,
     memo: Option<&str>,
-    rpc_url: &str,
+    api_url: &str,
     simulate: bool,
 ) -> Result<()> {
     if !storage.exists(from) {
@@ -443,15 +390,15 @@ async fn cmd_transfer(
         rpassword::prompt_password("Enter wallet password: ").unwrap_or_else(|_| String::new());
 
     let keypair = storage.load(from, &password)?;
-    let from_address = keypair.public_key_base58();
+    let from_address = keypair.rtc_address();
 
-    let client = RustChainClient::new(rpc_url.to_string());
+    let client = RustChainClient::new(api_url.to_string());
 
     // Get current nonce
     let nonce = client.get_nonce(&from_address).await.unwrap_or(0);
 
     // Calculate fee
-    let fee = fee.unwrap_or(1000); // Default fee
+    let fee = fee.unwrap_or(1000);
 
     // Create transaction
     let mut tx = TransactionBuilder::new()
@@ -473,14 +420,14 @@ async fn cmd_transfer(
         println!("Simulated transaction:");
         println!("{}", tx.to_json()?);
         println!();
-        println!("✓ Transaction simulation successful");
+        println!("Transaction simulation successful");
         return Ok(());
     }
 
     // Submit transaction
     match client.submit_transaction(&tx).await {
         Ok(response) => {
-            println!("✓ Transaction submitted successfully!");
+            println!("Transaction submitted successfully!");
             println!();
             println!("TX Hash: {}", response.tx_hash);
             println!("Status:  {}", response.status);
@@ -493,6 +440,135 @@ async fn cmd_transfer(
             std::process::exit(1);
         }
     }
+
+    Ok(())
+}
+
+fn cmd_receive(storage: &WalletStorage, name: &str) -> Result<()> {
+    if !storage.exists(name) {
+        error!("Wallet '{}' not found", name);
+        std::process::exit(1);
+    }
+
+    let password =
+        rpassword::prompt_password("Enter wallet password: ").unwrap_or_else(|_| String::new());
+
+    let keypair = storage.load(name, &password)?;
+    let address = keypair.rtc_address();
+
+    println!("Receive RTC at this address:");
+    println!();
+    println!("  {}", address);
+    println!();
+    println!("Share this address with the sender.");
+    println!("Public Key: {}", keypair.public_key_hex());
+
+    Ok(())
+}
+
+async fn cmd_balance(storage: &WalletStorage, wallet_or_address: &str, api_url: &str) -> Result<()> {
+    let client = RustChainClient::new(api_url.to_string());
+
+    // If it starts with RTC, treat as address; otherwise look up wallet name
+    let address = if wallet_or_address.starts_with("RTC") {
+        wallet_or_address.to_string()
+    } else if storage.exists(wallet_or_address) {
+        let password = rpassword::prompt_password("Enter wallet password: ")
+            .unwrap_or_else(|_| String::new());
+        let keypair = storage.load(wallet_or_address, &password)?;
+        keypair.rtc_address()
+    } else {
+        // Treat as raw address
+        wallet_or_address.to_string()
+    };
+
+    match client.get_balance(&address).await {
+        Ok(balance) => {
+            println!("Balance for: {}", address);
+            println!("  Total:     {:.4} RTC", balance.balance);
+            if balance.unlocked > 0.0 || balance.locked > 0.0 {
+                println!("  Unlocked:  {:.4} RTC", balance.unlocked);
+                println!("  Locked:    {:.4} RTC", balance.locked);
+            }
+            println!("  Nonce:     {}", balance.nonce);
+        }
+        Err(e) => {
+            error!("Failed to get balance: {}", e);
+            std::process::exit(1);
+        }
+    }
+
+    Ok(())
+}
+
+fn cmd_list(storage: &WalletStorage) -> Result<()> {
+    let wallets = storage.list()?;
+
+    if wallets.is_empty() {
+        println!("No wallets found in storage.");
+        println!("Use 'rtc-wallet create --name <name>' to create a new wallet.");
+        return Ok(());
+    }
+
+    println!("Stored wallets:");
+    println!();
+    for name in &wallets {
+        println!("  - {}", name);
+    }
+    println!();
+    println!("Total: {} wallet(s)", wallets.len());
+
+    Ok(())
+}
+
+fn cmd_show(storage: &WalletStorage, name: &str) -> Result<()> {
+    if !storage.exists(name) {
+        error!("Wallet '{}' not found", name);
+        std::process::exit(1);
+    }
+
+    let password =
+        rpassword::prompt_password("Enter wallet password: ").unwrap_or_else(|_| String::new());
+
+    let keypair = storage.load(name, &password)?;
+    let address = keypair.rtc_address();
+
+    println!("Wallet: {}", name);
+    println!("Address:    {}", address);
+    println!("Public Key: {}", keypair.public_key_hex());
+
+    Ok(())
+}
+
+fn cmd_export(storage: &WalletStorage, name: &str) -> Result<()> {
+    if !storage.exists(name) {
+        error!("Wallet '{}' not found", name);
+        std::process::exit(1);
+    }
+
+    warn!("WARNING: You are about to export your private key!");
+    warn!("Never share your private key with anyone!");
+    println!();
+
+    let confirm =
+        rpassword::prompt_password("Type 'YES' to confirm: ").unwrap_or_else(|_| String::new());
+
+    if confirm != "YES" {
+        println!("Export cancelled.");
+        return Ok(());
+    }
+
+    let password =
+        rpassword::prompt_password("Enter wallet password: ").unwrap_or_else(|_| String::new());
+
+    let keypair = storage.load(name, &password)?;
+    let private_key = keypair.export_private_key();
+
+    println!();
+    println!("Private Key (hex):");
+    println!("{}", private_key);
+    println!();
+    warn!("Store this key securely and delete it from your terminal history!");
 
     Ok(())
 }
@@ -526,14 +602,8 @@ fn cmd_sign(storage: &WalletStorage, wallet: &str, message: &str, format: &str) 
 }
 
 fn cmd_verify(pubkey: &str, message: &str, signature: &str) -> Result<()> {
-    // Try to parse public key
-    let keypair = if pubkey.len() == 64 {
-        // Hex encoded
-        KeyPair::from_hex(pubkey)?
-    } else {
-        // Base58 encoded
-        KeyPair::from_base58(pubkey)?
-    };
+    // Parse public key from hex
+    let keypair = KeyPair::from_hex(pubkey)?;
 
     // Parse signature
     let sig_bytes = hex::decode(signature)
@@ -542,19 +612,19 @@ fn cmd_verify(pubkey: &str, message: &str, signature: &str) -> Result<()> {
     let valid = keypair.verify(message.as_bytes(), &sig_bytes)?;
 
     if valid {
-        println!("✓ Signature is VALID");
+        println!("Signature is VALID");
         println!("  Public Key: {}", pubkey);
         println!("  Message:    {}", message);
     } else {
-        error!("✗ Signature is INVALID");
+        error!("Signature is INVALID");
         std::process::exit(1);
     }
 
     Ok(())
 }
 
-async fn cmd_network(rpc_url: &str) -> Result<()> {
-    let client = RustChainClient::new(rpc_url.to_string());
+async fn cmd_network(api_url: &str) -> Result<()> {
+    let client = RustChainClient::new(api_url.to_string());
 
     match client.get_network_info().await {
         Ok(info) => {
@@ -575,45 +645,6 @@ async fn cmd_network(rpc_url: &str) -> Result<()> {
     Ok(())
 }
 
-fn cmd_import(storage: &WalletStorage, name: &str, key: &str) -> Result<()> {
-    if storage.exists(name) {
-        error!("Wallet '{}' already exists", name);
-        std::process::exit(1);
-    }
-
-    // Try to parse key
-    let keypair = if key.len() == 64 {
-        // Hex encoded
-        KeyPair::from_hex(key)?
-    } else {
-        // Base58 encoded
-        KeyPair::from_base58(key)?
-    };
-
-    let address = keypair.public_key_base58();
-
-    // Prompt for password
-    let password = rpassword::prompt_password("Enter password to encrypt wallet: ")
-        .unwrap_or_else(|_| String::new());
-
-    let confirm =
-        rpassword::prompt_password("Confirm password: ").unwrap_or_else(|_| String::new());
-
-    if password != confirm {
-        error!("Passwords do not match");
-        std::process::exit(1);
-    }
-
-    storage.save(name, &keypair, &password)?;
-
-    println!("✓ Wallet imported successfully!");
-    println!();
-    println!("Name:     {}", name);
-    println!("Address:  {}", address);
-
-    Ok(())
-}
-
 fn cmd_delete(storage: &WalletStorage, name: &str, yes: bool) -> Result<()> {
     if !storage.exists(name) {
         error!("Wallet '{}' not found", name);
@@ -621,8 +652,8 @@ fn cmd_delete(storage: &WalletStorage, name: &str, yes: bool) -> Result<()> {
     }
 
     if !yes {
-        warn!("⚠ WARNING: This will permanently delete wallet '{}'!", name);
-        warn!("⚠ This action cannot be undone!");
+        warn!("WARNING: This will permanently delete wallet '{}'!", name);
+        warn!("This action cannot be undone!");
         println!();
 
         let confirm = rpassword::prompt_password("Type 'DELETE' to confirm: ")
@@ -635,7 +666,7 @@ fn cmd_delete(storage: &WalletStorage, name: &str, yes: bool) -> Result<()> {
     }
 
     storage.delete(name)?;
-    println!("✓ Wallet '{}' deleted successfully", name);
+    println!("Wallet '{}' deleted successfully", name);
 
     Ok(())
 }

@@ -67,9 +67,17 @@ impl KeyPair {
         hex::encode(self.verifying_key.as_bytes())
     }
 
-    /// Get the public key as a Base58 string (wallet address)
+    /// Get the public key as a Base58 string
     pub fn public_key_base58(&self) -> String {
         bs58::encode(self.verifying_key.as_bytes()).into_string()
+    }
+
+    /// Derive the RTC address: "RTC" + sha256(pubkey_bytes)[:40] (hex)
+    pub fn rtc_address(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let hash = Sha256::digest(self.verifying_key.as_bytes());
+        let hex_hash = hex::encode(hash);
+        format!("RTC{}", &hex_hash[..40])
     }
 
     /// Get the raw public key bytes
@@ -191,6 +199,24 @@ mod tests {
         assert!(!keypair.public_key_hex().is_empty());
         assert!(!keypair.public_key_base58().is_empty());
         assert_eq!(keypair.public_key_hex().len(), 64); // 32 bytes hex
+    }
+
+    #[test]
+    fn test_rtc_address_format() {
+        let keypair = KeyPair::generate();
+        let addr = keypair.rtc_address();
+        assert!(addr.starts_with("RTC"));
+        assert_eq!(addr.len(), 43); // "RTC" + 40 hex chars
+        // Verify the hex portion is valid
+        assert!(addr[3..].chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_rtc_address_deterministic() {
+        let keypair = KeyPair::generate();
+        let addr1 = keypair.rtc_address();
+        let addr2 = keypair.rtc_address();
+        assert_eq!(addr1, addr2);
     }
 
     #[test]
