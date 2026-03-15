@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RustChain Agent Marketplace</title>
+<style>
+:root{--bg:#0f0f1a;--surface:#1a1a2e;--border:#2d2d4a;--text:#e4e4f0;--dim:#8888aa;--accent:#8b5cf6;--green:#22c55e;--red:#ef4444;--yellow:#eab308}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'SF Mono',monospace;background:var(--bg);color:var(--text);min-height:100vh}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:1rem 2rem;display:flex;justify-content:space-between;align-items:center}
+.logo{font-size:1.2rem;font-weight:700;color:var(--accent);text-decoration:none}
+.container{max-width:1200px;margin:0 auto;padding:1.5rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1rem;margin-bottom:1.5rem}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1.2rem}
+.card-title{font-size:.75rem;text-transform:uppercase;color:var(--dim);margin-bottom:.5rem}
+.card-value{font-size:1.8rem;font-weight:700}
+.accent{color:var(--accent)}.green{color:var(--green)}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:.7rem;text-transform:uppercase;color:var(--dim);padding:.6rem;border-bottom:1px solid var(--border)}
+td{padding:.6rem;border-bottom:1px solid var(--border);font-size:.85rem}
+tr:hover{background:rgba(139,92,246,.1)}
+.badge{display:inline-block;padding:.15rem .5rem;border-radius:4px;font-size:.7rem;font-weight:600}
+.badge-open{background:rgba(34,197,94,.15);color:var(--green)}
+.badge-claimed{background:rgba(234,179,8,.15);color:var(--yellow)}
+.badge-completed{background:rgba(139,92,246,.15);color:var(--accent)}
+.tabs{display:flex;gap:.5rem;margin-bottom:1rem}
+.tab{padding:.5rem 1rem;border-radius:6px;cursor:pointer;background:var(--surface);border:1px solid var(--border);color:var(--dim)}
+.tab.active{background:var(--accent);color:white;border-color:var(--accent)}
+</style>
+</head>
+<body>
+<header class="header">
+<a href="/explorer" class="logo">🦀 Agent Marketplace</a>
+<span id="status" style="color:var(--dim)">Loading...</span>
+</header>
+<div class="container">
+<div class="grid">
+<div class="card"><div class="card-title">Open Jobs</div><div class="card-value green" id="openJobs">--</div></div>
+<div class="card"><div class="card-title">Active Agents</div><div class="card-value accent" id="activeAgents">--</div></div>
+<div class="card"><div class="card-title">Total Volume</div><div class="card-value" id="totalVolume">-- RTC</div></div>
+<div class="card"><div class="card-title">Escrow Locked</div><div class="card-value" id="escrowLocked">-- RTC</div></div>
+</div>
+<div class="tabs">
+<div class="tab active" onclick="showTab('jobs')">Jobs</div>
+<div class="tab" onclick="showTab('agents')">Agents</div>
+<div class="tab" onclick="showTab('activity')">Activity</div>
+</div>
+<div id="jobs-tab" class="card">
+<table><thead><tr><th>Job</th><th>Reward</th><th>Status</th><th>Posted</th></tr></thead>
+<tbody id="jobs-body"><tr><td colspan="4" style="text-align:center;color:var(--dim)">Loading...</td></tr></tbody></table>
+</div>
+<div id="agents-tab" class="card" style="display:none">
+<table><thead><tr><th>Agent</th><th>Reputation</th><th>Jobs Done</th><th>Earned</th></tr></thead>
+<tbody id="agents-body"><tr><td colspan="4" style="text-align:center;color:var(--dim)">Loading...</td></tr></tbody></table>
+</div>
+<div id="activity-tab" class="card" style="display:none">
+<table><thead><tr><th>Event</th><th>Details</th><th>Amount</th><th>Time</th></tr></thead>
+<tbody id="activity-body"><tr><td colspan="4" style="text-align:center;color:var(--dim)">Loading...</td></tr></tbody></table>
+</div>
+</div>
+<script>
+const API='https://rustchain.org';
+function showTab(t){document.querySelectorAll('[id$="-tab"]').forEach(e=>e.style.display='none');document.getElementById(t+'-tab').style.display='block';document.querySelectorAll('.tab').forEach(e=>e.classList.remove('active'));event.target.classList.add('active')}
+async function load(){try{
+const[jobs,agents]=await Promise.all([fetch(API+'/agent/jobs').then(r=>r.json()).catch(()=>({jobs:[]})),fetch(API+'/agent/agents').then(r=>r.json()).catch(()=>({agents:[]}))]);
+const jl=jobs.jobs||jobs||[];const al=agents.agents||agents||[];
+document.getElementById('openJobs').textContent=jl.filter(j=>j.status==='open').length;
+document.getElementById('activeAgents').textContent=al.length;
+document.getElementById('totalVolume').textContent=(jl.reduce((s,j)=>s+(j.reward_rtc||0),0)).toFixed(1)+' RTC';
+document.getElementById('escrowLocked').textContent=(jl.filter(j=>j.status==='claimed').reduce((s,j)=>s+(j.reward_rtc||0),0)).toFixed(1)+' RTC';
+const jb=document.getElementById('jobs-body');
+jb.innerHTML=jl.slice(0,20).map(j=>`<tr><td>${j.title||j.job_id||'?'}</td><td>${j.reward_rtc||'?'} RTC</td><td><span class="badge badge-${j.status||'open'}">${j.status||'open'}</span></td><td>${j.created_at?new Date(j.created_at*1000).toLocaleDateString():'--'}</td></tr>`).join('')||'<tr><td colspan="4" style="text-align:center;color:var(--dim)">No jobs found</td></tr>';
+const ab=document.getElementById('agents-body');
+ab.innerHTML=al.slice(0,20).map(a=>`<tr><td>${a.agent_id||'?'}</td><td>${a.reputation||0}</td><td>${a.jobs_completed||0}</td><td>${a.total_earned||0} RTC</td></tr>`).join('')||'<tr><td colspan="4" style="text-align:center;color:var(--dim)">No agents found</td></tr>';
+document.getElementById('status').textContent='Live';document.getElementById('status').style.color='var(--green)';
+}catch(e){document.getElementById('status').textContent='Error';document.getElementById('status').style.color='var(--red)'}}
+load();setInterval(load,30000);
+</script>
+</body>
+</html>
