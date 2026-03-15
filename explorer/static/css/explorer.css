@@ -12,7 +12,7 @@
     --bg-hover: #2d3548;
     --text-primary: #e8eaed;
     --text-secondary: #9aa0a6;
-    --text-muted: #5f6368;
+    --text-muted: #8b8f96;
     --accent-primary: #8b5cf6;
     --accent-secondary: #6366f1;
     --accent-glow: rgba(139, 92, 246, 0.3);
@@ -50,6 +50,50 @@
     --transition-fast: 150ms ease;
     --transition-normal: 250ms ease;
     --transition-slow: 350ms ease;
+}
+
+/* Skip Navigation */
+.skip-link {
+    position: absolute;
+    top: -100%;
+    left: 0;
+    background: var(--accent-primary);
+    color: #fff;
+    padding: var(--spacing-sm) var(--spacing-md);
+    z-index: 1000;
+    font-weight: 600;
+    text-decoration: none;
+    border-radius: 0 0 var(--radius-md) 0;
+}
+
+.skip-link:focus {
+    top: 0;
+}
+
+/* Visually Hidden (for screen readers) */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Focus Visible */
+:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
 }
 
 /* Reset & Base */

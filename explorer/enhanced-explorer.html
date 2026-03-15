@@ -11,7 +11,7 @@
             --bg-card: #1f2940;
             --accent: #f39c12;
             --text-primary: #ffffff;
-            --text-secondary: #a0a0b0;
+            --text-secondary: #b0b0c0;
             --success: #27ae60;
             --danger: #e74c3c;
             --border: #2d3748;
@@ -275,8 +275,41 @@
         }
 
         .search-input:focus {
-            outline: none;
-            border-color: var(--accent);
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        .skip-link {
+            position: absolute;
+            top: -100%;
+            left: 0;
+            background: var(--accent);
+            color: var(--bg-primary);
+            padding: 8px 16px;
+            z-index: 1000;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .skip-link:focus {
+            top: 0;
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        :focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
         }
 
         .btn {
@@ -315,15 +348,17 @@
     </style>
 </head>
 <body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
     <header>
         <div class="container">
             <div class="header-content">
                 <a href="/" class="logo">
-                    <span class="logo-icon">🦀</span>
+                    <span class="logo-icon" aria-hidden="true">🦀</span>
                     <span>RustChain Block Explorer</span>
                 </a>
-                <nav>
-                    <button class="nav-btn active" onclick="switchView('overview')">Overview</button>
+                <nav aria-label="Main navigation">
+                    <button class="nav-btn active" aria-current="page" onclick="switchView('overview')">Overview</button>
                     <button class="nav-btn" onclick="switchView('miners')">Miners</button>
                     <button class="nav-btn" onclick="switchView('epochs')">Epochs</button>
                     <button class="nav-btn" onclick="switchView('transactions')">Transactions</button>
@@ -332,34 +367,34 @@
         </div>
     </header>
 
-    <main class="container">
+    <main class="container" id="main-content">
         <div id="overview" class="view active">
-            <button class="refresh-btn" onclick="refreshAll()">🔄 Refresh All</button>
+            <button class="refresh-btn" onclick="refreshAll()"><span aria-hidden="true">🔄</span> Refresh All</button>
             
             <div class="stats-grid">
                 <div class="stat-card">
-                    <div class="stat-icon">📊</div>
+                    <div class="stat-icon" aria-hidden="true">📊</div>
                     <div class="stat-label">Network Status</div>
                     <div id="network-status" class="stat-value">Loading...</div>
                     <div id="network-uptime" class="stat-subvalue"></div>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-icon">⛏️</div>
+                    <div class="stat-icon" aria-hidden="true">⛏️</div>
                     <div class="stat-label">Active Miners</div>
                     <div id="active-miners" class="stat-value">Loading...</div>
                     <div id="total-hashrate" class="stat-subvalue"></div>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-icon">🕐</div>
+                    <div class="stat-icon" aria-hidden="true">🕐</div>
                     <div class="stat-label">Current Epoch</div>
                     <div id="current-epoch" class="stat-value">Loading...</div>
                     <div id="epoch-slot" class="stat-subvalue"></div>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-icon">💰</div>
+                    <div class="stat-icon" aria-hidden="true">💰</div>
                     <div class="stat-label">Epoch Pot</div>
                     <div id="epoch-pot" class="stat-value">Loading...</div>
                     <div class="stat-subvalue">RTC</div>
@@ -368,16 +403,17 @@
 
             <div class="section">
                 <h2 class="section-title">Recent Miners</h2>
-                <div class="table-container">
+                <div class="table-container" role="region" aria-label="Recent miners" tabindex="0">
                     <table>
+                        <caption class="sr-only">Recent miners on the RustChain network</caption>
                         <thead>
                             <tr>
-                                <th>Miner ID</th>
-                                <th>Architecture</th>
-                                <th>Multiplier</th>
-                                <th>Status</th>
-                                <th>Last Attestation</th>
-                                <th>Earnings</th>
+                                <th scope="col">Miner ID</th>
+                                <th scope="col">Architecture</th>
+                                <th scope="col">Multiplier</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Last Attestation</th>
+                                <th scope="col">Earnings</th>
                             </tr>
                         </thead>
                         <tbody id="miners-table">
@@ -393,26 +429,28 @@
         </div>
 
         <div id="miners" class="view">
-            <button class="refresh-btn" onclick="loadMiners()">🔄 Refresh Miners</button>
+            <button class="refresh-btn" onclick="loadMiners()"><span aria-hidden="true">🔄</span> Refresh Miners</button>
             
-            <div class="search-box">
+            <div class="search-box" role="search">
+                <label for="miner-search" class="sr-only">Search miners by ID, architecture, or wallet</label>
                 <input type="text" class="search-input" id="miner-search" placeholder="Search miners by ID, architecture, or wallet...">
-                <button class="btn" onclick="searchMiners()">🔍 Search</button>
+                <button class="btn" onclick="searchMiners()"><span aria-hidden="true">🔍</span> Search</button>
             </div>
 
             <div class="section">
                 <h2 class="section-title">All Miners</h2>
-                <div class="table-container">
+                <div class="table-container" role="region" aria-label="All miners" tabindex="0">
                     <table>
+                        <caption class="sr-only">Complete list of all miners</caption>
                         <thead>
                             <tr>
-                                <th>Miner ID</th>
-                                <th>Architecture</th>
-                                <th>Multiplier</th>
-                                <th>Status</th>
-                                <th>Last Attestation</th>
-                                <th>Wallet</th>
-                                <th>Earnings</th>
+                                <th scope="col">Miner ID</th>
+                                <th scope="col">Architecture</th>
+                                <th scope="col">Multiplier</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Last Attestation</th>
+                                <th scope="col">Wallet</th>
+                                <th scope="col">Earnings</th>
                             </tr>
                         </thead>
                         <tbody id="all-miners-table">
@@ -428,29 +466,29 @@
         </div>
 
         <div id="epochs" class="view">
-            <button class="refresh-btn" onclick="loadEpoch()">🔄 Refresh Epoch</button>
+            <button class="refresh-btn" onclick="loadEpoch()"><span aria-hidden="true">🔄</span> Refresh Epoch</button>
 
             <div class="stats-grid">
                 <div class="stat-card">
-                    <div class="stat-icon">🔢</div>
+                    <div class="stat-icon" aria-hidden="true">🔢</div>
                     <div class="stat-label">Epoch Number</div>
                     <div id="epoch-number" class="stat-value">Loading...</div>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-icon">📏</div>
+                    <div class="stat-icon" aria-hidden="true">📏</div>
                     <div class="stat-label">Slot</div>
                     <div id="epoch-slot-num" class="stat-value">Loading...</div>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-icon">📐</div>
+                    <div class="stat-icon" aria-hidden="true">📐</div>
                     <div class="stat-label">Height</div>
                     <div id="epoch-height" class="stat-value">Loading...</div>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-icon">⏱️</div>
+                    <div class="stat-icon" aria-hidden="true">⏱️</div>
                     <div class="stat-label">Timestamp</div>
                     <div id="epoch-timestamp" class="stat-value">Loading...</div>
                 </div>
@@ -458,21 +496,22 @@
         </div>
 
         <div id="transactions" class="view">
-            <button class="refresh-btn" onclick="loadTransactions()">🔄 Refresh Transactions</button>
+            <button class="refresh-btn" onclick="loadTransactions()"><span aria-hidden="true">🔄</span> Refresh Transactions</button>
 
             <div class="section">
                 <h2 class="section-title">Recent Transactions</h2>
-                <div class="table-container">
+                <div class="table-container" role="region" aria-label="Recent transactions" tabindex="0">
                     <table>
+                        <caption class="sr-only">Recent transactions on the RustChain network</caption>
                         <thead>
                             <tr>
-                                <th>Hash</th>
-                                <th>From</th>
-                                <th>To</th>
-                                <th>Amount</th>
-                                <th>Fee</th>
-                                <th>Timestamp</th>
-                                <th>Status</th>
+                                <th scope="col">Hash</th>
+                                <th scope="col">From</th>
+                                <th scope="col">To</th>
+                                <th scope="col">Amount</th>
+                                <th scope="col">Fee</th>
+                                <th scope="col">Timestamp</th>
+                                <th scope="col">Status</th>
                             </tr>
                         </thead>
                         <tbody id="transactions-table">
