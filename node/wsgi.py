@@ -31,6 +31,16 @@ DB_PATH = rustchain_main.DB_PATH
 # Initialize database
 init_db()
 
+# Initialize rate limiting middleware
+try:
+    from middleware import init_rate_limiter
+    init_rate_limiter(app)
+    print("[WSGI] Rate limiter initialized successfully")
+except ImportError as e:
+    print(f"[WSGI] Rate limiter not available: {e}")
+except Exception as e:
+    print(f"[WSGI] Rate limiter init failed: {e}")
+
 # Initialize P2P if available
 p2p_node = None
 try:
