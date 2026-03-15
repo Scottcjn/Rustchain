@@ -19,7 +19,7 @@
             --accent-red: #ef4444;
             --text-primary: #f1f5f9;
             --text-secondary: #94a3b8;
-            --text-muted: #64748b;
+            --text-muted: #8b93a5;
             --border: #2d3748;
         }
         
@@ -170,7 +170,35 @@
             font-size: 14px;
         }
         
-        .search-input:focus { outline: none; border-color: var(--accent-purple); }
+        .search-input:focus { outline: 2px solid var(--accent-purple); outline-offset: 2px; }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        .skip-link {
+            position: absolute;
+            top: -100%;
+            left: 0;
+            background: var(--accent-purple);
+            color: white;
+            padding: 8px 16px;
+            z-index: 1000;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .skip-link:focus { top: 0; }
+
+        :focus-visible { outline: 2px solid var(--accent-purple); outline-offset: 2px; }
         
         .reputation-card {
             background: var(--bg-card);
@@ -211,10 +239,12 @@
     </style>
 </head>
 <body>
-    <div class="container">
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <div class="container" id="main-content">
         <header>
             <div class="logo">
-                <div class="logo-icon">🤖</div>
+                <div class="logo-icon" aria-hidden="true">🤖</div>
                 <h1>Agent Economy</h1>
             </div>
             <div class="refresh-info">Last updated: <span id="lastUpdate">--</span></div>
@@ -243,8 +273,10 @@
             </div>
         </div>
         
-        <div class="search-section">
+        <div class="search-section" role="search">
+            <label for="searchInput" class="sr-only">Search jobs by title or wallet</label>
             <input type="text" class="search-input" id="searchInput" placeholder="Search jobs by title or wallet...">
+            <label for="walletInput" class="sr-only">Wallet address for reputation lookup</label>
             <input type="text" class="search-input" id="walletInput" placeholder="Wallet address for reputation lookup">
             <button class="category-tab" onclick="lookupReputation()" style="background: var(--accent-purple); border-color: var(--accent-purple); color: white;">Lookup</button>
         </div>

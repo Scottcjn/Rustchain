@@ -25,16 +25,18 @@
     <link rel="preconnect" href="https://rustchain.org">
 </head>
 <body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
     <!-- Header -->
     <header class="header">
         <div class="container">
             <div class="header-content">
                 <a href="/" class="logo">
-                    <span class="logo-icon">🦀</span>
+                    <span class="logo-icon" aria-hidden="true">🦀</span>
                     <span>RustChain Explorer</span>
                 </a>
-                <nav class="nav">
-                    <button class="nav-btn active" data-view="overview" onclick="switchView('overview')">Overview</button>
+                <nav class="nav" aria-label="Main navigation">
+                    <button class="nav-btn active" data-view="overview" aria-current="page" onclick="switchView('overview')">Overview</button>
                     <button class="nav-btn" data-view="blocks" onclick="switchView('blocks')">Blocks</button>
                     <button class="nav-btn" data-view="transactions" onclick="switchView('transactions')">Transactions</button>
                     <button class="nav-btn" data-view="miners" onclick="switchView('miners')">Miners</button>
@@ -45,36 +47,37 @@
     </header>
     
     <!-- Status Bar -->
-    <div class="status-bar">
+    <div class="status-bar" role="status" aria-live="polite">
         <div class="container">
             <div id="status-bar-content" class="status-content">
-                <div class="loading"><div class="spinner"></div>Connecting...</div>
+                <div class="loading"><div class="spinner" aria-hidden="true"></div>Connecting...</div>
             </div>
         </div>
     </div>
     
     <!-- Main Content -->
-    <main class="main">
+    <main class="main" id="main-content">
         <div class="container">
             <!-- Search Box -->
-            <div class="search-box">
-                <input 
-                    type="text" 
-                    id="search-input" 
-                    class="search-input" 
+            <div class="search-box" role="search">
+                <label for="search-input" class="sr-only">Search by miner ID, wallet address, or architecture</label>
+                <input
+                    type="text"
+                    id="search-input"
+                    class="search-input"
                     placeholder="Search by miner ID, wallet address, or architecture..."
                     autocomplete="off"
                 >
                 <button class="btn btn-primary" onclick="handleSearch(document.getElementById('search-input').value)">
-                    🔍 Search
+                    <span aria-hidden="true">🔍</span> Search
                 </button>
-                <button id="refresh-btn" class="btn btn-secondary" title="Refresh data">
-                    🔄 Refresh
+                <button id="refresh-btn" class="btn btn-secondary" aria-label="Refresh data">
+                    <span aria-hidden="true">🔄</span> Refresh
                 </button>
             </div>
             
             <!-- Search Results -->
-            <div id="search-results" class="section" style="display: none;"></div>
+            <div id="search-results" class="section" style="display: none;" aria-live="polite" role="region" aria-label="Search results"></div>
             
             <!-- Overview View -->
             <div id="view-overview" class="view-content">
@@ -90,19 +93,19 @@
                 <div class="cards-grid">
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">📊 Network Stats</span>
+                            <span class="card-title"><span aria-hidden="true">📊</span> Network Stats</span>
                         </div>
-                        <div id="network-stats">
-                            <div class="loading"><div class="spinner"></div>Loading...</div>
+                        <div id="network-stats" aria-live="polite">
+                            <div class="loading"><div class="spinner" aria-hidden="true"></div>Loading...</div>
                         </div>
                     </div>
-                    
+
                     <div class="card">
                         <div class="card-header">
-                            <span class="card-title">⚙️ Hardware Breakdown</span>
+                            <span class="card-title"><span aria-hidden="true">⚙️</span> Hardware Breakdown</span>
                         </div>
-                        <div id="hardware-breakdown">
-                            <div class="loading"><div class="spinner"></div>Loading...</div>
+                        <div id="hardware-breakdown" aria-live="polite">
+                            <div class="loading"><div class="spinner" aria-hidden="true"></div>Loading...</div>
                         </div>
                     </div>
                 </div>
@@ -110,22 +113,23 @@
                 <!-- Recent Blocks -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">📦 Recent Blocks</h2>
+                        <h2 class="section-title"><span aria-hidden="true">📦</span> Recent Blocks</h2>
                         <button class="btn btn-secondary btn-sm" onclick="switchView('blocks')">View All</button>
                     </div>
-                    <div class="table-container">
+                    <div class="table-container" role="region" aria-label="Recent blocks" tabindex="0">
                         <table>
+                            <caption class="sr-only">Recent blocks on the RustChain network</caption>
                             <thead>
                                 <tr>
-                                    <th>Height</th>
-                                    <th>Hash</th>
-                                    <th>Timestamp</th>
-                                    <th>Miners</th>
-                                    <th>Reward</th>
+                                    <th scope="col">Height</th>
+                                    <th scope="col">Hash</th>
+                                    <th scope="col">Timestamp</th>
+                                    <th scope="col">Miners</th>
+                                    <th scope="col">Reward</th>
                                 </tr>
                             </thead>
                             <tbody id="blocks-tbody">
-                                <tr><td colspan="5" class="loading"><div class="spinner"></div>Loading blocks...</td></tr>
+                                <tr><td colspan="5" class="loading"><div class="spinner" aria-hidden="true"></div>Loading blocks...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -134,23 +138,24 @@
                 <!-- Recent Transactions -->
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">💸 Recent Transactions</h2>
+                        <h2 class="section-title"><span aria-hidden="true">💸</span> Recent Transactions</h2>
                         <button class="btn btn-secondary btn-sm" onclick="switchView('transactions')">View All</button>
                     </div>
-                    <div class="table-container">
+                    <div class="table-container" role="region" aria-label="Recent transactions" tabindex="0">
                         <table>
+                            <caption class="sr-only">Recent transactions on the RustChain network</caption>
                             <thead>
                                 <tr>
-                                    <th>Hash</th>
-                                    <th>Type</th>
-                                    <th>From</th>
-                                    <th>To</th>
-                                    <th>Amount</th>
-                                    <th>Time</th>
+                                    <th scope="col">Hash</th>
+                                    <th scope="col">Type</th>
+                                    <th scope="col">From</th>
+                                    <th scope="col">To</th>
+                                    <th scope="col">Amount</th>
+                                    <th scope="col">Time</th>
                                 </tr>
                             </thead>
                             <tbody id="transactions-tbody">
-                                <tr><td colspan="6" class="loading"><div class="spinner"></div>Loading transactions...</td></tr>
+                                <tr><td colspan="6" class="loading"><div class="spinner" aria-hidden="true"></div>Loading transactions...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -158,25 +163,28 @@
             </div>
             
             <!-- Blocks View -->
-            <div id="view-blocks" class="view-content" style="display: none;">
+            <div id="view-blocks" class="view-content" style="display: none;" role="tabpanel" aria-label="All blocks">
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">📦 All Blocks</h2>
-                        <button class="btn btn-secondary btn-sm" onclick="RustChainExplorer.refresh()">🔄 Refresh</button>
+                        <h2 class="section-title"><span aria-hidden="true">📦</span> All Blocks</h2>
+                        <button class="btn btn-secondary btn-sm" onclick="RustChainExplorer.refresh()" aria-label="Refresh blocks">
+                            <span aria-hidden="true">🔄</span> Refresh
+                        </button>
                     </div>
-                    <div class="table-container">
+                    <div class="table-container" role="region" aria-label="All blocks" tabindex="0">
                         <table>
+                            <caption class="sr-only">Complete list of blocks on the RustChain network</caption>
                             <thead>
                                 <tr>
-                                    <th>Height</th>
-                                    <th>Hash</th>
-                                    <th>Timestamp</th>
-                                    <th>Miners</th>
-                                    <th>Reward</th>
+                                    <th scope="col">Height</th>
+                                    <th scope="col">Hash</th>
+                                    <th scope="col">Timestamp</th>
+                                    <th scope="col">Miners</th>
+                                    <th scope="col">Reward</th>
                                 </tr>
                             </thead>
                             <tbody id="blocks-tbody-full">
-                                <tr><td colspan="5" class="loading"><div class="spinner"></div>Loading blocks...</td></tr>
+                                <tr><td colspan="5" class="loading"><div class="spinner" aria-hidden="true"></div>Loading blocks...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -184,26 +192,29 @@
             </div>
             
             <!-- Transactions View -->
-            <div id="view-transactions" class="view-content" style="display: none;">
+            <div id="view-transactions" class="view-content" style="display: none;" role="tabpanel" aria-label="All transactions">
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">💸 All Transactions</h2>
-                        <button class="btn btn-secondary btn-sm" onclick="RustChainExplorer.refresh()">🔄 Refresh</button>
+                        <h2 class="section-title"><span aria-hidden="true">💸</span> All Transactions</h2>
+                        <button class="btn btn-secondary btn-sm" onclick="RustChainExplorer.refresh()" aria-label="Refresh transactions">
+                            <span aria-hidden="true">🔄</span> Refresh
+                        </button>
                     </div>
-                    <div class="table-container">
+                    <div class="table-container" role="region" aria-label="All transactions" tabindex="0">
                         <table>
+                            <caption class="sr-only">Complete list of transactions on the RustChain network</caption>
                             <thead>
                                 <tr>
-                                    <th>Hash</th>
-                                    <th>Type</th>
-                                    <th>From</th>
-                                    <th>To</th>
-                                    <th>Amount</th>
-                                    <th>Time</th>
+                                    <th scope="col">Hash</th>
+                                    <th scope="col">Type</th>
+                                    <th scope="col">From</th>
+                                    <th scope="col">To</th>
+                                    <th scope="col">Amount</th>
+                                    <th scope="col">Time</th>
                                 </tr>
                             </thead>
                             <tbody id="transactions-tbody-full">
-                                <tr><td colspan="6" class="loading"><div class="spinner"></div>Loading transactions...</td></tr>
+                                <tr><td colspan="6" class="loading"><div class="spinner" aria-hidden="true"></div>Loading transactions...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -211,27 +222,28 @@
             </div>
             
             <!-- Miners View -->
-            <div id="view-miners" class="view-content" style="display: none;">
+            <div id="view-miners" class="view-content" style="display: none;" role="tabpanel" aria-label="Active miners">
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">⛏️ Active Miners</h2>
-                        <span class="badge badge-active" id="miners-count">0 Active</span>
+                        <h2 class="section-title"><span aria-hidden="true">⛏️</span> Active Miners</h2>
+                        <span class="badge badge-active" id="miners-count" aria-live="polite">0 Active</span>
                     </div>
-                    <div class="table-container">
+                    <div class="table-container" role="region" aria-label="Active miners" tabindex="0">
                         <table>
+                            <caption class="sr-only">List of active miners on the RustChain network</caption>
                             <thead>
                                 <tr>
-                                    <th>Miner ID</th>
-                                    <th>Architecture</th>
-                                    <th>Tier</th>
-                                    <th>Multiplier</th>
-                                    <th>Balance</th>
-                                    <th>Last Seen</th>
-                                    <th>Status</th>
+                                    <th scope="col">Miner ID</th>
+                                    <th scope="col">Architecture</th>
+                                    <th scope="col">Tier</th>
+                                    <th scope="col">Multiplier</th>
+                                    <th scope="col">Balance</th>
+                                    <th scope="col">Last Seen</th>
+                                    <th scope="col">Status</th>
                                 </tr>
                             </thead>
                             <tbody id="miners-tbody-full">
-                                <tr><td colspan="7" class="loading"><div class="spinner"></div>Loading miners...</td></tr>
+                                <tr><td colspan="7" class="loading"><div class="spinner" aria-hidden="true"></div>Loading miners...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -239,20 +251,20 @@
             </div>
             
             <!-- Hall of Rust View -->
-            <div id="view-hall" class="view-content" style="display: none;">
+            <div id="view-hall" class="view-content" style="display: none;" role="tabpanel" aria-label="Hall of Rust">
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">🏛️ Hall of Rust</h2>
+                        <h2 class="section-title"><span aria-hidden="true">🏛️</span> Hall of Rust</h2>
                         <span class="text-muted">Immortal registry for dying hardware</span>
                     </div>
-                    <div id="hall-of-rust">
-                        <div class="loading"><div class="spinner"></div>Loading Hall of Rust...</div>
+                    <div id="hall-of-rust" aria-live="polite">
+                        <div class="loading"><div class="spinner" aria-hidden="true"></div>Loading Hall of Rust...</div>
                     </div>
                 </div>
-                
+
                 <div class="section">
                     <div class="section-header">
-                        <h2 class="section-title">📜 About Hall of Rust</h2>
+                        <h2 class="section-title"><span aria-hidden="true">📜</span> About Hall of Rust</h2>
                     </div>
                     <div style="line-height: 1.8; color: var(--text-secondary);">
                         <p style="margin-bottom: 16px;">
@@ -325,6 +337,7 @@
             // Update nav buttons
             document.querySelectorAll('.nav-btn').forEach(btn => {
                 btn.classList.remove('active');
+                btn.removeAttribute('aria-current');
             });
             
             // Show selected view
@@ -338,6 +351,7 @@
             const activeBtn = document.querySelector(`.nav-btn[data-view="${viewName}"]`);
             if (activeBtn) {
                 activeBtn.classList.add('active');
+                activeBtn.setAttribute('aria-current', 'page');
             }
             
             // Update search results visibility

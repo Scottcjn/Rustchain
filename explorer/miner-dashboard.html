@@ -12,7 +12,7 @@
             --surface-2: #232340;
             --border: #2d2d4a;
             --text: #e4e4f0;
-            --text-dim: #8888aa;
+            --text-dim: #9898bb;
             --accent: #8b5cf6;
             --accent-glow: rgba(139, 92, 246, 0.15);
             --green: #22c55e;
@@ -54,7 +54,35 @@
             font-family: inherit;
             font-size: 0.85rem;
         }
-        .miner-input input:focus { outline: none; border-color: var(--accent); }
+        .miner-input input:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+        .skip-link {
+            position: absolute;
+            top: -100%;
+            left: 0;
+            background: var(--accent);
+            color: white;
+            padding: 0.5rem 1rem;
+            z-index: 1000;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .skip-link:focus { top: 0; }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         .miner-input input::placeholder { color: var(--text-dim); }
         .btn {
             padding: 0.5rem 1.2rem;
@@ -126,17 +154,20 @@
     </style>
 </head>
 <body>
+    <a href="#dashboard-content" class="skip-link">Skip to main content</a>
+
     <header class="header">
-        <a href="/explorer" class="logo"><span>🦀</span> Miner Dashboard</a>
-        <div class="miner-input">
+        <a href="/explorer" class="logo"><span aria-hidden="true">🦀</span> Miner Dashboard</a>
+        <div class="miner-input" role="search">
+            <label for="miner-id" class="sr-only">Enter your miner ID (public key)</label>
             <input type="text" id="miner-id" placeholder="Enter your miner ID (public key)" />
             <button class="btn" id="load-btn" onclick="loadMiner()">Load</button>
         </div>
     </header>
 
-    <div class="container">
+    <div class="container" id="dashboard-content">
         <div id="empty-state" class="empty-state">
-            <div class="icon">⛏️</div>
+            <div class="icon" aria-hidden="true">⛏️</div>
             <h2>Enter Your Miner ID</h2>
             <p>Paste your miner public key above to view your personal stats, balance, and reward history.</p>
         </div>
@@ -169,15 +200,16 @@
             </div>
 
             <div class="card" style="margin-bottom:1.5rem;">
-                <div class="section-title">Reward History</div>
+                <h2 class="section-title">Reward History</h2>
                 <div id="rewards-table-container">
                     <table>
+                        <caption class="sr-only">Miner reward history</caption>
                         <thead>
                             <tr>
-                                <th>Epoch</th>
-                                <th>Reward</th>
-                                <th>Type</th>
-                                <th>Time</th>
+                                <th scope="col">Epoch</th>
+                                <th scope="col">Reward</th>
+                                <th scope="col">Type</th>
+                                <th scope="col">Time</th>
                             </tr>
                         </thead>
                         <tbody id="rewards-body">
@@ -188,14 +220,15 @@
             </div>
 
             <div class="card" style="margin-bottom:1.5rem;">
-                <div class="section-title">Recent Activity</div>
+                <h2 class="section-title">Recent Activity</h2>
                 <div id="activity-table-container">
                     <table>
+                        <caption class="sr-only">Miner recent activity</caption>
                         <thead>
                             <tr>
-                                <th>Action</th>
-                                <th>Details</th>
-                                <th>Time</th>
+                                <th scope="col">Action</th>
+                                <th scope="col">Details</th>
+                                <th scope="col">Time</th>
                             </tr>
                         </thead>
                         <tbody id="activity-body">
@@ -206,15 +239,16 @@
             </div>
 
             <div class="card">
-                <div class="section-title">Withdrawal History</div>
+                <h2 class="section-title">Withdrawal History</h2>
                 <div id="withdrawals-table-container">
                     <table>
+                        <caption class="sr-only">Miner withdrawal history</caption>
                         <thead>
                             <tr>
-                                <th>ID</th>
-                                <th>Amount</th>
-                                <th>Status</th>
-                                <th>Requested</th>
+                                <th scope="col">ID</th>
+                                <th scope="col">Amount</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Requested</th>
                             </tr>
                         </thead>
                         <tbody id="withdrawals-body">

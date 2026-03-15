@@ -18,7 +18,7 @@
             --accent-red: #ef4444;
             --text-primary: #f1f5f9;
             --text-secondary: #94a3b8;
-            --text-muted: #64748b;
+            --text-muted: #8b93a5;
             --border: #2d3748;
         }
         
@@ -170,9 +170,37 @@
         }
         
         .search-box input:focus {
-            outline: none;
-            border-color: var(--accent-gold);
+            outline: 2px solid var(--accent-gold);
+            outline-offset: 2px;
         }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        .skip-link {
+            position: absolute;
+            top: -100%;
+            left: 0;
+            background: var(--accent-gold);
+            color: var(--bg-primary);
+            padding: 8px 16px;
+            z-index: 1000;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .skip-link:focus { top: 0; }
+
+        :focus-visible { outline: 2px solid var(--accent-gold); outline-offset: 2px; }
         
         table {
             width: 100%;
@@ -297,10 +325,12 @@
     </style>
 </head>
 <body>
-    <div class="container">
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <div class="container" id="main-content">
         <header>
             <div class="logo">
-                <div class="logo-icon">⚒️</div>
+                <div class="logo-icon" aria-hidden="true">⚒️</div>
                 <h1>RustChain Explorer</h1>
             </div>
             <div class="refresh-info">
@@ -330,19 +360,21 @@
         <div class="table-container">
             <div class="table-header">
                 <div class="table-title">Active Miners</div>
-                <div class="search-box">
+                <div class="search-box" role="search">
+                    <label for="searchInput" class="sr-only">Search miners</label>
                     <input type="text" id="searchInput" placeholder="Search miners...">
                 </div>
             </div>
             <table>
+                <caption class="sr-only">Active miners on the RustChain network</caption>
                 <thead>
                     <tr>
-                        <th>Miner</th>
-                        <th>Architecture</th>
-                        <th>Status</th>
-                        <th>Antiquity Multiplier</th>
-                        <th>Last Attestation</th>
-                        <th>Weight Score</th>
+                        <th scope="col">Miner</th>
+                        <th scope="col">Architecture</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Antiquity Multiplier</th>
+                        <th scope="col">Last Attestation</th>
+                        <th scope="col">Weight Score</th>
                     </tr>
                 </thead>
                 <tbody id="minerTable">
