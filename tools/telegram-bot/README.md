@@ -1,6 +1,6 @@
 # RustChain Telegram Bot
 
-Telegram bot for querying the RustChain network. Created for [Issue #1597](https://github.com/Scottcjn/Rustchain/issues/1597).
+Telegram bot for querying the RustChain network. Created for [Issue #1597](https://github.com/Scottcjn/rustchain-bounties/issues/1597).
 
 ## Commands
 
@@ -30,23 +30,22 @@ pip install -r requirements.txt
 
 ### 3. Configure
 
-Copy `.env.example` to `.env` and set your token:
-
-```bash
-cp .env.example .env
-# Edit .env and set TELEGRAM_BOT_TOKEN
-```
-
-Or export directly:
+Set your bot token as an environment variable:
 
 ```bash
 export TELEGRAM_BOT_TOKEN="your-token-here"
 ```
 
+Or create a `.env` file in the bot directory:
+
+```
+TELEGRAM_BOT_TOKEN=your-token-here
+```
+
 ### 4. Run
 
 ```bash
-python rustchain_bot.py
+python bot.py
 ```
 
 ## Configuration
@@ -61,12 +60,12 @@ python rustchain_bot.py
 
 ## API Endpoints Used
 
-- `GET /health` — Node health status
-- `GET /epoch` — Epoch info, miner count, supply
-- `GET /wallet/balance?miner_id=ID` — Wallet balance
+- `GET /health` -- Node health status
+- `GET /epoch` -- Epoch info, miner count, supply
+- `GET /wallet/balance?miner_id=ID` -- Wallet balance
 - DexScreener search API (optional, for live RTC price)
 
 ## Requirements
 
 - Python 3.11+
-- Network access to rustchain.org (self-signed TLS cert, handled automatically)
+- Network access to rustchain.org
