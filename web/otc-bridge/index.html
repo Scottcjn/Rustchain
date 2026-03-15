@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>RustChain OTC Bridge | Swap RTC</title>
+  <title>RustChain OTC Bridge Prototype | Swap RTC</title>
   <meta name="description" content="RustChain OTC Bridge - Swap RTC for ETH or ERG peer-to-peer with no intermediary.">
   <meta name="keywords" content="RustChain, RTC, OTC, swap, bridge, ETH, ERG, peer-to-peer">
   <meta name="author" content="Elyan Labs">
@@ -449,13 +449,9 @@
       document.getElementById('priceErg').textContent = fmt(prices.erg, 6);
       document.getElementById('priceUsd').textContent = '$' + fmt(prices.usd, 6);
 
-      // Simulated 24h changes for display
+      // Remove simulated 24h changes — real data only
       ['changeEth','changeErg','changeUsd'].forEach(id => {
-        const el = document.getElementById(id);
-        const pct = (Math.random() * 10 - 4).toFixed(2);
-        const positive = parseFloat(pct) >= 0;
-        el.textContent = (positive ? '+' : '') + pct + '% (24h)';
-        el.className = 'ticker-change ' + (positive ? 'up' : 'down');
+        document.getElementById(id).textContent = '';
       });
     }
 
