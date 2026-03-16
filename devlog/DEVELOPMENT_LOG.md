@@ -5,6 +5,58 @@ and engineering decisions for the RustChain Proof-of-Antiquity blockchain.
 
 ---
 
+## Mar 16, 2026 — Issue #1449: Anti-Double-Mining Implementation
+
+**Problem**: A single physical machine could run multiple miner instances with different `miner_id` values, each earning separate rewards per epoch. This violated the "one CPU = one vote" principle of RIP-200.
+
+**Solution**: Implemented robust anti-double-mining enforcement:
+
+### Machine Identity Keying
+- Hardware fingerprint hash combining `device_arch` + stable hardware characteristics
+- Uses CPU serial, clock drift, thermal variance, cache timing ratios
+- Same physical machine = same identity (even with different miner_ids)
+- Different physical machines = different identities (no false positives)
+
+### Ledger-Side Guardrails
+- At epoch settlement, group miners by machine identity
+- Select one representative miner per machine (highest entropy score)
+- Distribute one reward per machine, not per miner_id
+- Deterministic selection ensures idempotent re-runs
+
+### Telemetry & Alerts
+- Logs WARNING when duplicate machine identities detected
+- Emits `METRIC: duplicate_machines_count=N epoch=X` for monitoring
+- Records which miners were skipped and their selected representative
+
+### Files Added
+- `node/anti_double_mining.py` - Core enforcement logic
+- `node/tests/test_anti_double_mining.py` - 19 comprehensive tests (all passing)
+- `docs/ISSUE_1449_ANTI_DOUBLE_MINING.md` - Full documentation
+
+### Files Modified
+- `node/rewards_implementation_rip200.py` - Integrated anti-double-mining into `settle_epoch_rip200()`
+
+### Test Results
+```
+19 passed in 0.05s
+- Machine identity: 6 tests
+- Duplicate detection: 2 tests
+- Representative selection: 3 tests
+- Reward calculation: 3 tests
+- Idempotency: 2 tests
+- Edge cases: 3 tests
+```
+
+### Behavior
+- **Same machine, 3 miners**: Only 1 rewarded (representative with highest entropy)
+- **Different machines**: Each rewarded independently
+- **Fingerprint failure**: Zero weight, no reward (VM/emulator protection)
+- **Idempotent**: Repeated runs produce identical results
+
+**Impact**: Prevents reward manipulation while maintaining fairness for legitimate multi-machine operators.
+
+---
+
 ## Oct 4, 2024 — Token Genesis
 - Designed RTC tokenomics: 8,388,608 total supply (2^23)
 - 6% premine for founder allocations

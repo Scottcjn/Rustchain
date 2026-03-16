@@ -2,6 +2,11 @@
 """
 RustChain Rewards with RIP-200: Round-Robin + Time-Aging
 Replaces VRF lottery with 1 CPU = 1 vote deterministic consensus
+
+Issue #1449: Anti-Double-Mining Enforcement
+- One physical machine = one reward per epoch
+- Machine identity keyed by hardware fingerprint + device_arch
+- Telemetry/alerts for duplicate identity detection
 """
 
 import sqlite3
@@ -28,6 +33,7 @@ try:
         get_attested_miners,
         check_eligibility_round_robin,
     )
+    RIP200_AVAILABLE = True
 except ImportError:
     try:
         # Local/unit-test fallback where modules live under `node/`.
@@ -39,6 +45,7 @@ except ImportError:
             get_attested_miners,
             check_eligibility_round_robin,
         )
+        RIP200_AVAILABLE = True
     except ImportError:
         # Legacy deployment fallback that runs from /root/rustchain.
         import sys
@@ -51,6 +58,29 @@ except ImportError:
             get_attested_miners,
             check_eligibility_round_robin,
         )
+        RIP200_AVAILABLE = True
+
+# Import Issue #1449: Anti-Double-Mining (optional - falls back to standard rewards)
+try:
+    from anti_double_mining import (
+        calculate_anti_double_mining_rewards,
+        settle_epoch_with_anti_double_mining,
+        detect_duplicate_identities,
+        log_duplicate_detection
+    )
+    ANTI_DOUBLE_MINING_AVAILABLE = True
+except ImportError:
+    try:
+        from node.anti_double_mining import (
+            calculate_anti_double_mining_rewards,
+            settle_epoch_with_anti_double_mining,
+            detect_duplicate_identities,
+            log_duplicate_detection
+        )
+        ANTI_DOUBLE_MINING_AVAILABLE = True
+    except ImportError:
+        ANTI_DOUBLE_MINING_AVAILABLE = False
+        print("[WARN] anti_double_mining.py not available - using standard rewards")
 
 # Constants
 UNIT = 1_000_000  # uRTC per 1 RTC
@@ -67,13 +97,19 @@ def slot_to_epoch(slot):
     """Convert slot to epoch (144 blocks per epoch)"""
     return slot // 144
 
-def settle_epoch_rip200(db_path, epoch: int):
+def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = True):
     """
     Settle rewards for an epoch using RIP-200 time-aged multipliers
+    
+    Issue #1449: Anti-Double-Mining Enforcement
+    - When enabled, ensures one physical machine = one reward per epoch
+    - Uses hardware fingerprint + device_arch for machine identity
+    - Provides telemetry for duplicate identity detection
 
     Args:
         db_path: Database connection or path
         epoch: Epoch number to settle
+        enable_anti_double_mining: Enable Issue #1449 anti-double-mining (default: True)
 
     Returns:
         {
@@ -81,7 +117,8 @@ def settle_epoch_rip200(db_path, epoch: int):
             "epoch": epoch number,
             "distributed_rtc": float,
             "miners": [{miner_id, share_urtc, multiplier}, ...],
-            "already_settled": bool
+            "already_settled": bool,
+            "anti_double_mining_telemetry": {...}  # Only if enabled
         }
     """
     # Handle both connection and path
@@ -107,9 +144,23 @@ def settle_epoch_rip200(db_path, epoch: int):
         # Calculate current slot for age calculation
         current = current_slot()
 
-        # Get time-aged reward distribution
+        # Issue #1449: Use anti-double-mining rewards if enabled and available
+        if enable_anti_double_mining and ANTI_DOUBLE_MINING_AVAILABLE:
+            try:
+                result = settle_epoch_with_anti_double_mining(
+                    db_path if isinstance(db_path, str) else DB_PATH,
+                    epoch,
+                    PER_EPOCH_URTC,
+                    current
+                )
+                return result
+            except Exception as e:
+                print(f"[WARN] Anti-double-mining failed, falling back to standard: {e}")
+                # Fall through to standard rewards
+
+        # Standard RIP-200 rewards (no anti-double-mining)
         rewards = calculate_epoch_rewards_time_aged(
-            db_path if isinstance(db_path, str) else DB_PATH,  # Pass path for RIP-200 functions
+            db_path if isinstance(db_path, str) else DB_PATH,
             epoch,
             PER_EPOCH_URTC,
             current
