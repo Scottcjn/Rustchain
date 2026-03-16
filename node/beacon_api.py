@@ -108,14 +108,28 @@ def init_beacon_tables(db_path=DB_PATH):
                 created_at INTEGER NOT NULL
             )
         """)
-        
+
+        # Relay agents table (for beacon join routing)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS relay_agents (
+                agent_id TEXT PRIMARY KEY,
+                pubkey_hex TEXT NOT NULL,
+                name TEXT,
+                status TEXT DEFAULT 'active',
+                coinbase_address TEXT DEFAULT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER
+            )
+        """)
+
         # Create indexes
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contracts_from ON beacon_contracts(from_agent)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contracts_to ON beacon_contracts(to_agent)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contracts_state ON beacon_contracts(state)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bounties_state ON beacon_bounties(state)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_agent ON beacon_chat(agent_id)")
-        
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_relay_agents_status ON relay_agents(status)")
+
         conn.commit()
 
 
@@ -126,15 +140,220 @@ def init_beacon_tables(db_path=DB_PATH):
 @beacon_api.route('/api/agents', methods=['GET'])
 def get_agents():
     """Get all registered agents."""
-    # In production, fetch from database
-    # For now, return empty - frontend has hardcoded agents
-    return jsonify([])
+    try:
+        db = get_db()
+        rows = db.execute(
+            "SELECT agent_id, pubkey_hex, name, status, created_at, updated_at FROM relay_agents ORDER BY created_at DESC"
+        ).fetchall()
+
+        agents = []
+        for row in rows:
+            agents.append({
+                'agent_id': row['agent_id'],
+                'pubkey_hex': row['pubkey_hex'],
+                'name': row['name'],
+                'status': row['status'],
+                'created_at': row['created_at'],
+                'updated_at': row['updated_at'],
+            })
+
+        return jsonify(agents)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @beacon_api.route('/api/agent/<agent_id>', methods=['GET'])
 def get_agent(agent_id):
     """Get single agent details."""
-    return jsonify({'error': 'Agent not found'}), 404
+    try:
+        db = get_db()
+        row = db.execute(
+            "SELECT agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at FROM relay_agents WHERE agent_id = ?",
+            (agent_id,)
+        ).fetchone()
+
+        if not row:
+            return jsonify({'error': 'Agent not found'}), 404
+
+        return jsonify({
+            'agent_id': row['agent_id'],
+            'pubkey_hex': row['pubkey_hex'],
+            'name': row['name'],
+            'status': row['status'],
+            'coinbase_address': row['coinbase_address'],
+            'created_at': row['created_at'],
+            'updated_at': row['updated_at'],
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================
+# BEACON JOIN ROUTING ENDPOINTS (Issue #2127)
+# ============================================================
+
+@beacon_api.route('/beacon/join', methods=['POST', 'OPTIONS'])
+def beacon_join():
+    """
+    Register or update a relay agent in the beacon atlas.
+    
+    Accepts JSON with:
+        - agent_id: Unique agent identifier (required)
+        - pubkey_hex: Hex-encoded public key (required, must be valid hex)
+        - name: Optional human-readable name
+        - coinbase_address: Optional Base network address for payments
+    
+    Returns:
+        - 200: Agent registered/updated successfully
+        - 400: Invalid input (missing fields, invalid pubkey_hex format)
+    
+    Upsert behavior: Duplicate agent_id updates existing record.
+    """
+    if request.method == 'OPTIONS':
+        resp = jsonify({'ok': True})
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        resp.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        return resp
+
+    try:
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({'error': 'Invalid or missing JSON body'}), 400
+
+        # Validate required fields
+        agent_id = data.get('agent_id')
+        pubkey_hex = data.get('pubkey_hex')
+
+        if not agent_id:
+            return jsonify({'error': 'Missing required field: agent_id'}), 400
+        if not pubkey_hex:
+            return jsonify({'error': 'Missing required field: pubkey_hex'}), 400
+
+        # Validate pubkey_hex format (must be valid hex string, optionally with 0x prefix)
+        pubkey_clean = pubkey_hex.strip()
+        if pubkey_clean.startswith('0x') or pubkey_clean.startswith('0X'):
+            pubkey_clean = pubkey_clean[2:]
+        
+        if not pubkey_clean:
+            return jsonify({'error': 'Invalid pubkey_hex: empty after prefix removal'}), 400
+        
+        try:
+            # Validate it's proper hex
+            bytes.fromhex(pubkey_clean)
+        except ValueError:
+            return jsonify({'error': 'Invalid pubkey_hex: must be valid hexadecimal string'}), 400
+
+        # Optional fields
+        name = data.get('name')
+        coinbase_address = data.get('coinbase_address')
+        
+        # Validate coinbase_address if provided (should be 0x-prefixed, 40 hex chars)
+        if coinbase_address:
+            cb_clean = coinbase_address.strip()
+            if not (cb_clean.startswith('0x') or cb_clean.startswith('0X')):
+                return jsonify({'error': 'Invalid coinbase_address: must start with 0x'}), 400
+            cb_hex = cb_clean[2:]
+            if len(cb_hex) != 40:
+                return jsonify({'error': 'Invalid coinbase_address: must be 20 bytes (40 hex chars)'}), 400
+            try:
+                bytes.fromhex(cb_hex)
+            except ValueError:
+                return jsonify({'error': 'Invalid coinbase_address: must be valid hexadecimal'}), 400
+
+        now = int(time.time())
+
+        # Upsert into relay_agents table
+        db = get_db()
+        db.execute("""
+            INSERT INTO relay_agents (agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at)
+            VALUES (?, ?, ?, 'active', ?, ?, ?)
+            ON CONFLICT(agent_id) DO UPDATE SET
+                pubkey_hex = excluded.pubkey_hex,
+                name = excluded.name,
+                coinbase_address = excluded.coinbase_address,
+                status = 'active',
+                updated_at = excluded.updated_at
+        """, (agent_id, pubkey_hex, name, coinbase_address, now, now))
+        db.commit()
+
+        return jsonify({
+            'ok': True,
+            'agent_id': agent_id,
+            'pubkey_hex': pubkey_hex,
+            'name': name,
+            'status': 'active',
+            'timestamp': now,
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@beacon_api.route('/beacon/atlas', methods=['GET', 'OPTIONS'])
+def beacon_atlas():
+    """
+    Get list of all registered relay agents in the beacon atlas.
+    
+    Returns array of agent objects with:
+        - agent_id: Unique identifier
+        - pubkey_hex: Public key (hex)
+        - name: Human-readable name (if set)
+        - status: Agent status (active, inactive, etc.)
+        - created_at: Registration timestamp
+        - updated_at: Last update timestamp
+    
+    Query params:
+        - status: Optional filter by status (e.g., ?status=active)
+    """
+    if request.method == 'OPTIONS':
+        resp = jsonify({'ok': True})
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        return resp
+
+    try:
+        db = get_db()
+        
+        # Optional status filter
+        status_filter = request.args.get('status')
+        
+        if status_filter:
+            rows = db.execute(
+                """SELECT agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at 
+                   FROM relay_agents 
+                   WHERE status = ? 
+                   ORDER BY created_at DESC""",
+                (status_filter,)
+            ).fetchall()
+        else:
+            rows = db.execute(
+                """SELECT agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at 
+                   FROM relay_agents 
+                   ORDER BY created_at DESC"""
+            ).fetchall()
+
+        agents = []
+        for row in rows:
+            agents.append({
+                'agent_id': row['agent_id'],
+                'pubkey_hex': row['pubkey_hex'],
+                'name': row['name'],
+                'status': row['status'],
+                'coinbase_address': row['coinbase_address'],
+                'created_at': row['created_at'],
+                'updated_at': row['updated_at'],
+            })
+
+        return jsonify({
+            'agents': agents,
+            'total': len(agents),
+            'timestamp': int(time.time()),
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # ============================================================
