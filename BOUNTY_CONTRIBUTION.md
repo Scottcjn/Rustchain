@@ -1,25 +1,19 @@
 # Bounty Contribution
 
-This addresses issue #1436: feat: embeddable price chart widget (bounty #26)
+This addresses issue #1439: feat: POWER8 vec_perm PSE Benchmark Suite (Bounty #35)
 
 ## Description
 ## Summary
 
-Closes #26 — TradingView-style chart widget showing RustChain network stats in real time.
+Standardized benchmark suite for measuring llama.cpp PSE optimization performance on POWER8 S824.
 
-**What's in `dashboards/chart-widget/`:**
+- **benchmark_pse.sh** — Unattended benchmark runner across 3 build modes (Stock, PSE-MASS, PSE+Coffers) and 3 models (TinyLlama 1.1B, Qwen 14B, DeepSeek 33B)
+- **analyze_results.py** — Results parser generating markdown report + matplotlib/seaborn charts
+- **numa_topology.py** — Bonus: NUMA node visualization with coffer activity heatmaps
 
-- `chart-widget.html` — fully self-contained, zero build step required
-- `README.md` — embed instructions and API notes
+## Metrics collected
 
-**Charts:**
-- Transfer volume per epoch (area, gold)
-- Active miners trend (area, green)
-- Epoch rewards history (area, blue)
-
-**Features:**
-- Fetches live data from `/epoch` + `/api/miners` every 2 minutes
-- Time range selector: 24h
+- Prompt processing thro
 
 ## Payment
 0x4F666e7b4F63637223625FD4e9Ace6055fD6a847
