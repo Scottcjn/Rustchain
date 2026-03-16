@@ -1,9 +1,9 @@
 # Bounty Contribution
 
-This addresses issue #10: Fix issue #9: Fix issue #8: Add enhanced Prometheus exporter v2
+This addresses issue #12: Fix issue #11: Fix issue #10: Fix issue #9: Fix issue #8: Add enhanced Prometheus exporter v2
 
 ## Description
-Resolves #9
+Resolves #11
 
 Payment address: 0x4F666e7b4F63637223625FD4e9Ace6055fD6a847
 
