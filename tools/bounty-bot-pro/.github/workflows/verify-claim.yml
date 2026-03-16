@@ -1,0 +1,39 @@
+name: Bounty Verification PRO
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  verify:
+    if: contains(github.event.comment.body, 'Claiming') || contains(github.event.comment.body, 'Wallet:')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Verifier
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          # Extract username and wallet from comment using simple regex
+          USER=$(echo "${{ github.event.comment.user.login }}")
+          WALLET=$(echo "${{ github.event.comment.body }}" | grep -oE 'Wallet: [^ ]+' | awk '{print $2}')
+          ARTICLE=$(echo "${{ github.event.comment.body }}" | grep -oE 'https?://[^ ]+' | head -n 1)
+          
+          python verifier.py --user $USER --wallet "$WALLET" --article "$ARTICLE" > report.md
+
+      - name: Post Verification Result
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body-file: report.md
