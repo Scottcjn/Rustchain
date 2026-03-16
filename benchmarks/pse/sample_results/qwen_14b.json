@@ -1,0 +1,98 @@
+{
+    "benchmark_version": "1.0.0",
+    "timestamp": "2026-03-15T13:30:00Z",
+    "model": "qwen_14b",
+    "model_file": "qwen1.5-14b-chat-q4_k_m.gguf",
+    "system": {
+        "arch": "ppc64le",
+        "os": "Ubuntu 20.04.6 LTS",
+        "kernel": "5.4.0-150-generic",
+        "hostname": "power8-s824"
+    },
+    "config": {
+        "warmup_runs": 2,
+        "bench_runs": 5,
+        "pp_sizes": [128, 512, 1024],
+        "tg_sizes": [32, 128]
+    },
+    "results": [
+        {
+            "build_mode": "stock",
+            "prompt_processing": {
+                "pp128": {"mean": 82.4, "stddev": 2.8, "cv_pct": 3.40},
+                "pp512": {"mean": 65.1, "stddev": 2.3, "cv_pct": 3.53},
+                "pp1024": {"mean": 48.7, "stddev": 1.9, "cv_pct": 3.90}
+            },
+            "token_generation": {
+                "tg32": {"mean": 12.4, "stddev": 0.4, "cv_pct": 3.23},
+                "tg128": {"mean": 11.8, "stddev": 0.5, "cv_pct": 4.24}
+            },
+            "cache_metrics": {
+                "l1_dcache_loads": 12450000000,
+                "l1_dcache_misses": 996000000,
+                "l1_hit_rate_pct": 92.0,
+                "llc_loads": 996000000,
+                "llc_misses": 199200000,
+                "llc_hit_rate_pct": 80.0
+            },
+            "pse_markers": {
+                "noi": 0,
+                "divergence_ratio": 0,
+                "altivec_cycle_share": 0,
+                "memory_coffer_index": 0
+            }
+        },
+        {
+            "build_mode": "pse_mass",
+            "prompt_processing": {
+                "pp128": {"mean": 115.6, "stddev": 3.5, "cv_pct": 3.03},
+                "pp512": {"mean": 94.2, "stddev": 3.1, "cv_pct": 3.29},
+                "pp1024": {"mean": 72.8, "stddev": 2.6, "cv_pct": 3.57}
+            },
+            "token_generation": {
+                "tg32": {"mean": 15.1, "stddev": 0.5, "cv_pct": 3.31},
+                "tg128": {"mean": 14.3, "stddev": 0.6, "cv_pct": 4.20}
+            },
+            "cache_metrics": {
+                "l1_dcache_loads": 12680000000,
+                "l1_dcache_misses": 760800000,
+                "l1_hit_rate_pct": 94.0,
+                "llc_loads": 760800000,
+                "llc_misses": 114120000,
+                "llc_hit_rate_pct": 85.0
+            },
+            "pse_markers": {
+                "noi": 128450,
+                "divergence_ratio": 0.0031,
+                "altivec_cycle_share": 38.9,
+                "memory_coffer_index": 2
+            }
+        },
+        {
+            "build_mode": "pse_coffers",
+            "prompt_processing": {
+                "pp128": {"mean": 132.8, "stddev": 4.0, "cv_pct": 3.01},
+                "pp512": {"mean": 110.5, "stddev": 3.4, "cv_pct": 3.08},
+                "pp1024": {"mean": 86.1, "stddev": 3.1, "cv_pct": 3.60}
+            },
+            "token_generation": {
+                "tg32": {"mean": 16.8, "stddev": 0.4, "cv_pct": 2.38},
+                "tg128": {"mean": 15.9, "stddev": 0.6, "cv_pct": 3.77}
+            },
+            "cache_metrics": {
+                "l1_dcache_loads": 12890000000,
+                "l1_dcache_misses": 644500000,
+                "l1_hit_rate_pct": 95.0,
+                "llc_loads": 644500000,
+                "llc_misses": 77340000,
+                "llc_hit_rate_pct": 88.0
+            },
+            "pse_markers": {
+                "noi": 142800,
+                "divergence_ratio": 0.0045,
+                "altivec_cycle_share": 46.3,
+                "memory_coffer_index": 4
+            }
+        }
+    ]
+}
