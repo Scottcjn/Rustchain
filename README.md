@@ -412,7 +412,7 @@ Web UI:
 | **Ubuntu Linux** | x86_64 | ✅ Full Support | Standard miner |
 | **macOS Sonoma** | Apple Silicon | ✅ Full Support | M1/M2/M3 chips |
 | **Windows 10/11** | x86_64 | ✅ Full Support | Python 3.8+ |
-| **NAS (TerraMaster/Synology)** | aarch64 (ARM) | ✅ Full Support | Entware + Python 3.11 |
+| **NAS (TerraMaster/Synology)** | aarch64 (ARM) | ✅ Full Support | Entware + Python 3.11, low payout (modern ARM) |
 | **DOS** | 8086/286/386 | 🔧 Experimental | Badge rewards only |
 
 ## 🏅 NFT Badge System
