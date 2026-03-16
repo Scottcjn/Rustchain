@@ -1,0 +1,9 @@
+{
+  "wallet_address": "your_wallet_address_here",
+  "cpu_threads": 4,
+  "log_level": "info",
+  "api_port": 8080,
+  "node_url": "https://rustchain-node.example.com",
+  "mining_difficulty": "medium",
+  "vintage_cpu_optimization": true
+}

@@ -1,0 +1,1 @@
+This is a placeholder for the actual Windows miner executable. In a real implementation, this would be the compiled RustChain miner binary for Windows.

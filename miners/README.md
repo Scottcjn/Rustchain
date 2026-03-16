@@ -1,41 +1,89 @@
-# RustChain Miners
+# RustChain Windows Miner
 
-## Directory Structure
-- `linux/` - Linux x86_64 miners with fingerprint attestation
-- `macos/` - macOS miners for Apple Silicon and Intel
-- `windows/` - Windows miners
-- `ppc/` - PowerPC miners for G4/G5 Macs (legacy hardware bonus)
+## Overview
 
-## Version 2.4.0 Features
-- Hardware serial binding (v2)
-- 6-point fingerprint attestation
-- Anti-emulation checks
-- Auto-recovery via systemd/launchd
+The RustChain Windows Miner is designed for vintage CPU architectures and provides a simple way to participate in the RustChain Proof-of-Antiquity blockchain.
 
-## Quick Start
+## Installation
+
+### Automated Installation
+
+Run the installation script:
+
 ```bash
-# Linux
-python3 rustchain_linux_miner.py
-
-# macOS
-python3 rustchain_mac_miner_v2.4.py
-
-# Windows
-python rustchain_windows_miner.py
-
-# If your Python does not include Tcl/Tk (common on minimal/embeddable installs):
-python rustchain_windows_miner.py --headless --wallet YOUR_WALLET_ID --node https://rustchain.org
+./install-miner.sh
 ```
 
-## Windows installer & build helpers
-- Run `rustchain_miner_setup.bat` (living alongside `rustchain_windows_miner.py`) on a new Windows host to:
-  1. Detect or download/install Python 3.11 (MSI) and ensure `pip` is on the path.
-  2. Install the runtime requirements from `requirements-miner.txt`.
-  3. Fetch the latest `rustchain_windows_miner.py` from the repository if it is not present.
-  4. Print the command to launch the miner so you can create shortcuts or scheduled tasks.
-- To produce a standalone binary, run `build_windows_miner.ps1` on Windows:
-  1. It upgrades `pip`, installs `pyinstaller`, and removes the old `dist` folder.
-  2. It calls `pyinstaller --onefile --name rustchain_windows_miner rustchain_windows_miner.py`.
-  3. The resulting `dist\\rustchain_windows_miner.exe` can be bundled with the batch installer for distribution.
-- If you only have Wine on this machine, run `build_windows_miner_wine.sh`; it downloads the Python embeddable ZIP, bootstraps pip, installs PyInstaller, and produces `dist/rustchain_windows_miner.exe`.
-- When `dist/rustchain_windows_miner.exe` exists, execute `package_windows_miner_release.sh` to collect the EXE, installer batch, requirements list, and release README into `release/rustchain_windows_miner_release.zip`. Upload that ZIP or attach it to a GitHub release so Windows users can grab the ready-to-run bundle.
+This script will:
+- Check system requirements
+- Verify network connectivity
+- Validate miner files
+- Test miner execution
+- Generate a feedback report
+
+### Manual Installation
+
+1. Download the latest miner release
+2. Extract to a directory of your choice
+3. Configure `config.json` with your mining settings
+4. Run the miner with administrative privileges
+
+## Configuration
+
+Edit `config.json` to configure your miner:
+
+```json
+{
+  "wallet_address": "your_wallet_address_here",
+  "cpu_threads": 4,
+  "log_level": "info",
+  "api_port": 8080
+}
+```
+
+## Usage
+
+Start the miner:
+
+```bash
+rustchain-miner.exe
+```
+
+Monitor the miner:
+
+```bash
+curl http://localhost:8080/stats
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Miner won't start**
+   - Run as administrator
+   - Check Windows Event Viewer for errors
+   - Ensure port 8080 is available
+
+2. **Poor performance**
+   - Reduce CPU threads in config
+   - Check system temperature
+   - Close background applications
+
+3. **Connection issues**
+   - Check firewall settings
+   - Verify internet connection
+   - Check node availability
+
+### Getting Help
+
+- Check the installation feedback report
+- Review the main README.md
+- Join our Discord community
+
+## System Requirements
+
+- Windows 10 or later
+- Python 3.8+
+- At least 2GB RAM (4GB recommended)
+- Vintage CPU architecture support
+- Administrative privileges

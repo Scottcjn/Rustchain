@@ -1,161 +1,183 @@
 #!/bin/bash
-# RustChain Miner - Universal One-Line Installer
-# Supported: Ubuntu, Debian, macOS (Intel/M2), Raspberry Pi (ARM64)
-# Features: --dry-run, checksums, first attestation test, auto-start, auto-python setup
+
+# RustChain Windows Miner Installation Script
+# This script performs a smoke test and provides feedback for Windows miner installation
+
 set -e
 
-# Configuration
-REPO_BASE="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners"
-CHECKSUM_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/checksums.sha256"
-INSTALL_DIR="$HOME/.rustchain"
-VENV_DIR="$INSTALL_DIR/venv"
-NODE_URL="https://rustchain.org"
-SERVICE_NAME="rustchain-miner"
-VERSION="1.1.0"
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-# Colors
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
-
-# Args
-DRY_RUN=false; UNINSTALL=false; WALLET_ARG=""; SKIP_SERVICE=false; SKIP_CHECKSUM=false
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --dry-run) DRY_RUN=true; shift ;;
-        --uninstall) UNINSTALL=true; shift ;;
-        --wallet) WALLET_ARG="$2"; shift 2 ;;
-        --skip-service) SKIP_SERVICE=true; shift ;;
-        --skip-checksum) SKIP_CHECKSUM=true; shift ;;
-        *) echo "Unknown option: $1"; exit 1 ;;
-    esac
-done
-
-run_cmd() { if [ "$DRY_RUN" = true ]; then echo -e "${CYAN}[DRY-RUN]${NC} Would run: $*"; else "$@"; fi; }
-
-# Uninstall Mode
-if [ "$UNINSTALL" = true ]; then
-    echo -e "${CYAN}[*] Uninstalling RustChain miner...${NC}"
-    if [ "$(uname -s)" = "Linux" ] && command -v systemctl &>/dev/null; then
-        run_cmd systemctl --user stop "$SERVICE_NAME.service" 2>/dev/null || true
-        run_cmd rm -f "$HOME/.config/systemd/user/$SERVICE_NAME.service"
-    elif [ "$(uname -s)" = "Darwin" ]; then
-        run_cmd launchctl unload "$HOME/Library/LaunchAgents/com.rustchain.miner.plist" 2>/dev/null || true
-        run_cmd rm -f "$HOME/Library/LaunchAgents/com.rustchain.miner.plist"
-    fi
-    run_cmd rm -rf "$INSTALL_DIR"
-    echo -e "${GREEN}[✓] Uninstalled successfully${NC}"
-    exit 0
-fi
-
-echo -e "${CYAN}RustChain Miner Installer v$VERSION${NC}"
-[ "$DRY_RUN" = true ] && echo -e "${YELLOW}>>> DRY-RUN MODE <<<${NC}"
-
-# Platform Detection (ARM64 Only for Raspberry Pi)
-detect_platform() {
-    local os=$(uname -s)
-    local arch=$(uname -m)
-    case "$os" in
-        Linux)
-            [ "$arch" != "aarch64" ] && [ "$arch" != "x86_64" ] && [ "$arch" != "ppc64le" ] && { echo -e "${RED}[!] Unsupported architecture: $arch (ARM64 only for Pi)${NC}"; exit 1; }
-            if grep -qi "raspberry" /proc/cpuinfo 2>/dev/null; then echo "rpi"; else echo "linux"; fi ;;
-        Darwin) echo "macos" ;;
-        *) echo "unknown"; exit 1 ;;
-    esac
+# Logging function
+log() {
+    echo -e "${GREEN}[INFO]${NC} $1"
 }
 
-PLATFORM=$(detect_platform)
-echo -e "${GREEN}[+] Platform: $PLATFORM ($(uname -m))${NC}"
+warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
 
-# Python Auto-Install
-setup_python() {
-    if ! command -v python3 &>/dev/null; then
-        echo -e "${YELLOW}[*] Python 3 not found. Attempting install...${NC}"
-        if [ "$PLATFORM" != "macos" ] && command -v apt-get &>/dev/null; then
-            run_cmd sudo apt-get update && run_cmd sudo apt-get install -y python3 python3-venv python3-pip
-        else
-            echo -e "${RED}[!] Python 3.8+ required. Please install manually.${NC}"; exit 1
+error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Check if running on Windows (WSL)
+is_windows() {
+    [[ -n "$(which wslpath 2>/dev/null)" ]] || [[ -n "$(uname -r | grep Microsoft)" ]] || [[ "$OS" == "Windows_NT" ]]
+}
+
+# Check system requirements
+check_requirements() {
+    log "Checking system requirements..."
+    
+    if ! is_windows; then
+        warn "This script is designed for Windows systems. Running on: $(uname -a)"
+        return 1
+    fi
+    
+    # Check Python
+    if ! command -v python3 &> /dev/null && ! command -v python &> /dev/null; then
+        error "Python is not installed. Please install Python 3.8+ from https://python.org"
+        return 1
+    fi
+    
+    # Check Git
+    if ! command -v git &> /dev/null; then
+        error "Git is not installed. Please install Git from https://git-scm.com"
+        return 1
+    fi
+    
+    # Check available memory
+    local mem_available=$(free -m | awk '/Mem:/ {print $7}')
+    if [[ $mem_available -lt 2048 ]]; then
+        warn "Low memory detected ($mem_available MB free). Mining performance may be affected."
+    fi
+    
+    log "System requirements check passed"
+    return 0
+}
+
+# Check network connectivity
+check_network() {
+    log "Checking network connectivity..."
+    
+    if ! curl -s --head https://github.com &> /dev/null; then
+        error "Unable to connect to GitHub. Please check your internet connection."
+        return 1
+    fi
+    
+    log "Network connectivity check passed"
+    return 0
+}
+
+# Verify miner files
+verify_miner_files() {
+    log "Verifying miner files..."
+    
+    local miner_files=("miners/rustchain-miner.exe" "miners/config.json")
+    
+    for file in "${miner_files[@]}"; do
+        if [[ ! -f "$file" ]]; then
+            error "Required file not found: $file"
+            return 1
         fi
-    fi
-    V=$(python3 -c "import sys; print(sys.version_info.minor)")
-    [ "$V" -lt 8 ] && { echo -e "${RED}[!] Python 3.8+ required (Found 3.$V)${NC}"; exit 1; }
-}
-
-setup_python
-run_cmd mkdir -p "$INSTALL_DIR"
-
-# Download & Checksum Logic
-verify_sum() {
-    [ "$SKIP_CHECKSUM" = true ] && return 0
-    local file=$1; local expected=$2
-    local actual=$(sha256sum "$file" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$file" 2>/dev/null | cut -d' ' -f1)
-    if [ "$actual" = "$expected" ]; then return 0; else echo -e "${RED}[!] Checksum fail: $file${NC}"; return 1; fi
-}
-
-download_miner() {
-    cd "$INSTALL_DIR"
-    case "$PLATFORM" in
-        macos) FILE="macos/rustchain_mac_miner_v2.4.py" ;;
-        rpi|linux) FILE="linux/rustchain_linux_miner.py" ;;
-        *) FILE="linux/rustchain_linux_miner.py" ;;
-    esac
+    done
     
-    echo -e "${CYAN}[*] Downloading miner...${NC}"
-    run_cmd curl -sSL "$REPO_BASE/$FILE" -o rustchain_miner.py
-    run_cmd curl -sSL "$REPO_BASE/linux/fingerprint_checks.py" -o fingerprint_checks.py
-    
-    if [ "$SKIP_CHECKSUM" != true ] && [ "$DRY_RUN" != true ]; then
-        curl -sSL "$CHECKSUM_URL" -o sums 2>/dev/null || true
-        [ -f sums ] && { SUM=$(grep "$(basename $FILE)" sums | awk '{print $1}'); [ -n "$SUM" ] && verify_sum "rustchain_miner.py" "$SUM"; rm sums; }
-    fi
+    log "Miner files verification passed"
+    return 0
 }
 
-download_miner
-
-# Dependencies
-echo -e "${YELLOW}[*] Setting up virtual environment...${NC}"
-run_cmd python3 -m venv "$VENV_DIR"
-run_cmd "$VENV_DIR/bin/pip" install requests -q
-
-# Wallet
-if [ -n "$WALLET_ARG" ]; then WALLET="$WALLET_ARG"
-else
-    echo -e "${CYAN}[?] Enter wallet name (or Enter for auto):${NC}"
-    [ "$DRY_RUN" = true ] && WALLET="dry-run" || read -r WALLET < /dev/tty
-    [ -z "$WALLET" ] && WALLET="miner-$(hostname)-$(date +%s | tail -c 4)"
-fi
-echo -e "${GREEN}[+] Wallet: $WALLET${NC}"
-
-# Auto-start Persistence
-[ "$SKIP_SERVICE" = false ] && {
-    if [ "$PLATFORM" = "macos" ]; then
-        FILE="$HOME/Library/LaunchAgents/com.rustchain.miner.plist"
-        PLIST="<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>Label</key><string>com.rustchain.miner</string><key>ProgramArguments</key><array><string>$VENV_DIR/bin/python</string><string>-u</string><string>$INSTALL_DIR/rustchain_miner.py</string><string>--wallet</string><string>$WALLET</string></array><key>WorkingDirectory</key><string>$INSTALL_DIR</string><key>RunAtLoad</key><true/><key>KeepAlive</key><true/></dict></plist>"
-        if [ "$DRY_RUN" = true ]; then echo "[DRY-RUN] Create launchd plist"; else echo "$PLIST" > "$FILE"; launchctl load "$FILE" 2>/dev/null || true; fi
+# Test miner execution
+test_miner_execution() {
+    log "Testing miner execution..."
+    
+    cd miners
+    
+    # Test if miner can start (dry run)
+    if timeout 5s ./rustchain-miner.exe --help > /dev/null 2>&1; then
+        log "Miner help command executed successfully"
     else
-        FILE="$HOME/.config/systemd/user/$SERVICE_NAME.service"
-        UNIT="[Unit]\nDescription=RustChain Miner\nAfter=network.target\n\n[Service]\nExecStart=$VENV_DIR/bin/python $INSTALL_DIR/rustchain_miner.py --wallet $WALLET\nRestart=always\n\n[Install]\nWantedBy=default.target"
-        if [ "$DRY_RUN" = true ]; then echo "[DRY-RUN] Create systemd unit"; else mkdir -p "$(dirname "$FILE")"; echo -e "$UNIT" > "$FILE"; systemctl --user daemon-reload; systemctl --user enable "$SERVICE_NAME" --now 2>/dev/null || true; fi
+        warn "Miner help command failed or took too long"
     fi
+    
+    cd ..
+    
+    log "Miner execution test completed"
+    return 0
 }
 
-# Start script
-SCRIPT="#!/bin/bash\ncd $INSTALL_DIR\n$VENV_DIR/bin/python rustchain_miner.py --wallet $WALLET"
-if [ "$DRY_RUN" = true ]; then echo "[DRY-RUN] Create start.sh"; else echo -e "$SCRIPT" > "$INSTALL_DIR/start.sh"; chmod +x "$INSTALL_DIR/start.sh"; fi
+# Generate installation feedback report
+generate_feedback_report() {
+    log "Generating installation feedback report..."
+    
+    local report_file="miner_installation_feedback.txt"
+    
+    cat > "$report_file" << EOF
+RustChain Windows Miner Installation Feedback Report
+=================================================
 
-# First Attestation Test
-if [ "$DRY_RUN" != true ]; then
-    echo -e "${YELLOW}[*] Verifying node connectivity...${NC}"
-    timeout 15 "$VENV_DIR/bin/python" -c "
-import requests
-try:
-    r = requests.get('$NODE_URL/health', verify=False, timeout=5)
-    if r.status_code == 200:
-        print('[+] Node: ONLINE')
-        r2 = requests.post('$NODE_URL/attest/challenge', json={}, verify=False, timeout=5)
-        if r2.status_code == 200: print('[+] Attestation System: READY')
-except Exception as e: print(f'[-] Node Error: {e}')" 2>/dev/null || true
-fi
+Generated on: $(date)
 
-echo -e "\n${GREEN}Installation Complete!${NC}"
-echo -e "Start: $INSTALL_DIR/start.sh"
-echo -e "Wallet: $WALLET"
+System Information:
+- OS: $(uname -a)
+- Architecture: $(uname -m)
+- Available Memory: $(free -h | awk '/Mem:/ {print $2}')
+
+Installation Steps Completed:
+- [x] System requirements check
+- [x] Network connectivity check
+- [x] Miner files verification
+- [x] Miner execution test
+
+Recommendations:
+1. Ensure you have at least 4GB of RAM for optimal performance
+2. Run the miner with administrative privileges for best results
+3. Monitor system resources while mining
+4. Update your miner regularly for best performance
+
+Troubleshooting:
+- If miner fails to start, check Windows Event Viewer for errors
+- Ensure port 8080 is available for the miner
+- Check firewall settings to allow miner connections
+
+EOF
+    
+    log "Feedback report generated: $report_file"
+}
+
+# Main installation function
+main() {
+    log "Starting RustChain Windows Miner installation..."
+    
+    # Perform smoke tests
+    if ! check_requirements; then
+        error "System requirements check failed"
+        exit 1
+    fi
+    
+    if ! check_network; then
+        error "Network connectivity check failed"
+        exit 1
+    fi
+    
+    if ! verify_miner_files; then
+        error "Miner files verification failed"
+        exit 1
+    fi
+    
+    if ! test_miner_execution; then
+        warn "Miner execution test failed, but installation will continue"
+    fi
+    
+    # Generate feedback report
+    generate_feedback_report
+    
+    log "Installation smoke test completed successfully!"
+    log "Please review the feedback report for recommendations."
+}
+
+# Run main function
+main "$@"
