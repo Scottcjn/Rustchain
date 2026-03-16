@@ -11,7 +11,7 @@
 [![PowerPC](https://img.shields.io/badge/PowerPC-G3%2FG4%2FG5-orange)](https://github.com/Scottcjn/Rustchain)
 [![Blockchain](https://img.shields.io/badge/Consensus-Proof--of--Antiquity-green)](https://github.com/Scottcjn/Rustchain)
 [![Python](https://img.shields.io/badge/Python-3.x-yellow)](https://www.python.org)
-[![Network](https://img.shields.io/badge/Nodes-3%20Active-brightgreen)](https://rustchain.org/explorer)
+[![Network](https://img.shields.io/badge/Nodes-4%20Active-brightgreen)](https://rustchain.org/explorer)
 [![Bounties](https://img.shields.io/badge/Bounties-Open%20%F0%9F%92%B0-green)](https://github.com/Scottcjn/rustchain-bounties/issues)
 [![As seen on BoTTube](https://bottube.ai/badge/seen-on-bottube.svg)](https://bottube.ai)
 [![Discussions](https://img.shields.io/github/discussions/Scottcjn/Rustchain?color=purple)](https://github.com/Scottcjn/Rustchain/discussions)
@@ -412,6 +412,7 @@ Web UI:
 | **Ubuntu Linux** | x86_64 | ✅ Full Support | Standard miner |
 | **macOS Sonoma** | Apple Silicon | ✅ Full Support | M1/M2/M3 chips |
 | **Windows 10/11** | x86_64 | ✅ Full Support | Python 3.8+ |
+| **NAS (TerraMaster/Synology)** | aarch64 (ARM) | ✅ Full Support | Entware + Python 3.11 |
 | **DOS** | 8086/286/386 | 🔧 Experimental | Badge rewards only |
 
 ## 🏅 NFT Badge System
