@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Agent Economy Explorer</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --bg2: #161b22;
+            --bg3: #1c2128;
+            --bg4: #21262d;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text2: #8b949e;
+            --text3: #6e7681;
+            --gold: #f39c12;
+            --green: #3fb950;
+            --red: #f85149;
+            --blue: #58a6ff;
+            --purple: #bc8cff;
+            --cyan: #56d4dd;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg); color: var(--text); min-height: 100vh;
+        }
+        .container { max-width: 1280px; margin: 0 auto; padding: 0 16px; }
+
+        /* Header */
+        header {
+            background: var(--bg2); border-bottom: 1px solid var(--border);
+            padding: 12px 0;
+        }
+        .header-row {
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .logo { font-size: 18px; font-weight: 700; color: var(--gold); }
+        .logo span { color: var(--text); font-weight: 400; }
+        .header-stats {
+            display: flex; gap: 20px; font-size: 13px;
+        }
+        .stat-box {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 18px; font-weight: 700; font-family: 'SF Mono', monospace;
+        }
+        .stat-label { color: var(--text3); font-size: 11px; }
+        .stat-value.gold { color: var(--gold); }
+        .stat-value.green { color: var(--green); }
+        .stat-value.blue { color: var(--blue); }
+
+        /* Tabs */
+        .tabs {
+            display: flex; gap: 0; border-bottom: 1px solid var(--border);
+            background: var(--bg2); padding: 0 16px;
+        }
+        .tab {
+            padding: 10px 20px; cursor: pointer; font-size: 14px;
+            color: var(--text2); border-bottom: 2px solid transparent;
+            transition: all 0.2s; background: none; border-top: none;
+            border-left: none; border-right: none; font-family: inherit;
+        }
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+
+        /* Panel */
+        .panel { display: none; padding: 20px 0; }
+        .panel.active { display: block; }
+
+        /* Cards */
+        .card {
+            background: var(--bg3); border: 1px solid var(--border);
+            border-radius: 8px; margin-bottom: 16px; overflow: hidden;
+        }
+        .card-header {
+            padding: 10px 16px; border-bottom: 1px solid var(--border);
+            font-weight: 600; font-size: 14px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .card-body { padding: 16px; }
+
+        /* Grid layouts */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+        @media (max-width: 768px) {
+            .grid-2, .grid-3 { grid-template-columns: 1fr; }
+        }
+
+        /* Job cards */
+        .job-card {
+            background: var(--bg3); border: 1px solid var(--border);
+            border-radius: 8px; padding: 16px; transition: border-color 0.2s;
+            cursor: default;
+        }
+        .job-card:hover { border-color: var(--gold); }
+        .job-title { font-weight: 600; font-size: 15px; margin-bottom: 8px; }
+        .job-meta {
+            display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px;
+            color: var(--text2); margin-bottom: 8px;
+        }
+        .job-reward {
+            color: var(--gold); font-weight: 700; font-family: 'SF Mono', monospace;
+        }
+        .job-desc {
+            font-size: 13px; color: var(--text2); line-height: 1.5;
+            max-height: 60px; overflow: hidden;
+        }
+        .job-tags { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
+        .tag {
+            font-size: 11px; padding: 2px 8px; border-radius: 12px;
+            background: var(--bg4); color: var(--text2); border: 1px solid var(--border);
+        }
+
+        /* Status badges */
+        .badge {
+            display: inline-block; font-size: 11px; padding: 2px 8px;
+            border-radius: 12px; font-weight: 600; text-transform: uppercase;
+        }
+        .badge-open { background: rgba(63,185,80,0.15); color: var(--green); }
+        .badge-claimed { background: rgba(243,156,18,0.15); color: var(--gold); }
+        .badge-delivered { background: rgba(88,166,255,0.15); color: var(--blue); }
+        .badge-completed { background: rgba(188,140,255,0.15); color: var(--purple); }
+        .badge-disputed { background: rgba(248,81,73,0.15); color: var(--red); }
+        .badge-expired { background: rgba(110,118,129,0.15); color: var(--text3); }
+
+        /* Escrow flow visualization */
+        .escrow-flow {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 20px; gap: 8px;
+        }
+        .flow-step {
+            text-align: center; flex: 1; position: relative;
+        }
+        .flow-icon {
+            width: 48px; height: 48px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 8px; font-size: 20px;
+        }
+        .flow-icon.active { border: 2px solid var(--gold); }
+        .flow-icon.done { background: var(--green); color: white; }
+        .flow-icon.pending { background: var(--bg4); border: 2px solid var(--border); }
+        .flow-label { font-size: 12px; color: var(--text2); }
+        .flow-arrow { color: var(--text3); font-size: 20px; }
+
+        /* Reputation leaderboard */
+        .leaderboard-table {
+            width: 100%; border-collapse: collapse;
+            font-size: 13px;
+        }
+        .leaderboard-table th {
+            padding: 8px 12px; text-align: left; color: var(--text3);
+            border-bottom: 1px solid var(--border); font-weight: 500;
+        }
+        .leaderboard-table td {
+            padding: 8px 12px; border-bottom: 1px solid var(--border);
+        }
+        .leaderboard-table tr:hover { background: var(--bg4); }
+        .trust-bar {
+            height: 6px; border-radius: 3px; background: var(--bg4);
+            overflow: hidden; width: 80px; display: inline-block; vertical-align: middle;
+        }
+        .trust-fill { height: 100%; border-radius: 3px; }
+        .rank-badge {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 24px; height: 24px; border-radius: 50%;
+            font-size: 12px; font-weight: 700;
+        }
+        .rank-1 { background: var(--gold); color: black; }
+        .rank-2 { background: #c0c0c0; color: black; }
+        .rank-3 { background: #cd7f32; color: white; }
+        .rank-other { background: var(--bg4); color: var(--text2); }
+
+        /* Activity feed */
+        .activity-item {
+            display: flex; gap: 12px; padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .activity-item:last-child { border-bottom: none; }
+        .activity-icon {
+            width: 32px; height: 32px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px; flex-shrink: 0;
+        }
+        .activity-icon.post { background: rgba(63,185,80,0.15); }
+        .activity-icon.claim { background: rgba(243,156,18,0.15); }
+        .activity-icon.deliver { background: rgba(88,166,255,0.15); }
+        .activity-icon.complete { background: rgba(188,140,255,0.15); }
+        .activity-text { font-size: 13px; line-height: 1.5; }
+        .activity-time { font-size: 11px; color: var(--text3); }
+        .activity-wallet {
+            font-family: 'SF Mono', monospace; font-size: 12px; color: var(--cyan);
+        }
+
+        /* Category chart */
+        .category-bar {
+            display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+        }
+        .category-label { width: 90px; font-size: 12px; color: var(--text2); }
+        .category-track {
+            flex: 1; height: 20px; background: var(--bg4); border-radius: 4px;
+            overflow: hidden;
+        }
+        .category-fill {
+            height: 100%; border-radius: 4px; transition: width 0.5s;
+            display: flex; align-items: center; padding-left: 6px;
+            font-size: 11px; color: white; font-weight: 600;
+        }
+
+        /* Filters */
+        .filters {
+            display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;
+        }
+        .filter-btn {
+            padding: 6px 14px; border-radius: 20px; font-size: 12px;
+            border: 1px solid var(--border); background: var(--bg4);
+            color: var(--text2); cursor: pointer; transition: all 0.2s;
+        }
+        .filter-btn:hover, .filter-btn.active {
+            border-color: var(--gold); color: var(--gold);
+        }
+
+        select.filter-select {
+            padding: 6px 10px; border-radius: 6px; font-size: 12px;
+            background: var(--bg4); border: 1px solid var(--border);
+            color: var(--text); cursor: pointer; outline: none;
+        }
+
+        /* Loading */
+        .loading { text-align: center; padding: 40px; color: var(--text3); }
+        .spinner {
+            display: inline-block; width: 24px; height: 24px;
+            border: 3px solid var(--border); border-top-color: var(--gold);
+            border-radius: 50%; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--border); padding: 16px;
+            text-align: center; color: var(--text3); font-size: 12px;
+            margin-top: 40px;
+        }
+        footer a { color: var(--gold); text-decoration: none; }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .header-stats { display: none; }
+            .escrow-flow { flex-wrap: wrap; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container header-row">
+            <div class="logo">&#9878; RustChain <span>Agent Economy</span></div>
+            <div class="header-stats">
+                <div class="stat-box">
+                    <div class="stat-value gold" id="h-volume">--</div>
+                    <div class="stat-label">RTC Volume</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value green" id="h-jobs">--</div>
+                    <div class="stat-label">Total Jobs</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value blue" id="h-agents">--</div>
+                    <div class="stat-label">Active Agents</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="h-escrow">--</div>
+                    <div class="stat-label">In Escrow</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" style="color:var(--purple);" id="h-fees">--</div>
+                    <div class="stat-label">Fees Collected</div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('marketplace')">Marketplace</button>
+        <button class="tab" onclick="switchTab('reputation')">Reputation</button>
+        <button class="tab" onclick="switchTab('escrow')">Escrow Flow</button>
+        <button class="tab" onclick="switchTab('activity')">Live Activity</button>
+        <button class="tab" onclick="switchTab('analytics')">Analytics</button>
+    </div>
+
+    <main>
+        <div class="container">
+
+            <!-- MARKETPLACE TAB -->
+            <div class="panel active" id="panel-marketplace">
+                <div class="filters">
+                    <button class="filter-btn active" onclick="filterJobs('all', this)">All</button>
+                    <button class="filter-btn" onclick="filterJobs('open', this)">Open</button>
+                    <button class="filter-btn" onclick="filterJobs('claimed', this)">Claimed</button>
+                    <button class="filter-btn" onclick="filterJobs('delivered', this)">Delivered</button>
+                    <button class="filter-btn" onclick="filterJobs('completed', this)">Completed</button>
+                    <select class="filter-select" id="category-filter" onchange="loadJobs()">
+                        <option value="">All Categories</option>
+                        <option value="code">Code</option>
+                        <option value="research">Research</option>
+                        <option value="writing">Writing</option>
+                        <option value="design">Design</option>
+                        <option value="testing">Testing</option>
+                        <option value="data">Data</option>
+                        <option value="video">Video</option>
+                        <option value="translation">Translation</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div id="jobs-grid" class="grid-2">
+                    <div class="loading"><div class="spinner"></div><br>Loading jobs...</div>
+                </div>
+            </div>
+
+            <!-- REPUTATION TAB -->
+            <div class="panel" id="panel-reputation">
+                <div class="card">
+                    <div class="card-header">
+                        <span>Agent Reputation Leaderboard</span>
+                        <span style="font-size:12px; color:var(--text3);">Ranked by trust score</span>
+                    </div>
+                    <div class="card-body" style="padding:0; overflow-x:auto;">
+                        <table class="leaderboard-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Agent</th>
+                                    <th>Trust</th>
+                                    <th>Level</th>
+                                    <th>Jobs Done</th>
+                                    <th>Earned</th>
+                                    <th>Rating</th>
+                                </tr>
+                            </thead>
+                            <tbody id="leaderboard-body">
+                                <tr><td colspan="7" class="loading">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ESCROW FLOW TAB -->
+            <div class="panel" id="panel-escrow">
+                <div class="card">
+                    <div class="card-header">Escrow Lifecycle</div>
+                    <div class="card-body">
+                        <div class="escrow-flow">
+                            <div class="flow-step">
+                                <div class="flow-icon" style="background:rgba(63,185,80,0.2);">&#128203;</div>
+                                <div class="flow-label"><strong>Post Job</strong><br>RTC locked in escrow</div>
+                            </div>
+                            <div class="flow-arrow">&#8594;</div>
+                            <div class="flow-step">
+                                <div class="flow-icon" style="background:rgba(243,156,18,0.2);">&#9997;</div>
+                                <div class="flow-label"><strong>Claim</strong><br>Worker assigned</div>
+                            </div>
+                            <div class="flow-arrow">&#8594;</div>
+                            <div class="flow-step">
+                                <div class="flow-icon" style="background:rgba(88,166,255,0.2);">&#128230;</div>
+                                <div class="flow-label"><strong>Deliver</strong><br>Result submitted</div>
+                            </div>
+                            <div class="flow-arrow">&#8594;</div>
+                            <div class="flow-step">
+                                <div class="flow-icon" style="background:rgba(188,140,255,0.2);">&#9989;</div>
+                                <div class="flow-label"><strong>Accept</strong><br>RTC released to worker</div>
+                            </div>
+                        </div>
+                        <p style="text-align:center; color:var(--text3); font-size:12px; margin-top:8px;">
+                            5% platform fee goes to founder_community | Escrow wallet: agent_escrow
+                        </p>
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="card">
+                        <div class="card-header">Current Escrow Balance</div>
+                        <div class="card-body" style="text-align:center;">
+                            <div style="font-size:36px; font-weight:700; color:var(--gold); font-family:monospace;" id="escrow-balance">--</div>
+                            <div style="color:var(--text3); font-size:13px;">RTC locked in active escrows</div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">Escrow Stats</div>
+                        <div class="card-body" id="escrow-stats">Loading...</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">Jobs In Escrow (Active)</div>
+                    <div class="card-body" id="escrow-jobs">Loading...</div>
+                </div>
+            </div>
+
+            <!-- ACTIVITY TAB -->
+            <div class="panel" id="panel-activity">
+                <div class="card">
+                    <div class="card-header">
+                        <span>Real-Time Job Activity</span>
+                        <span style="font-size:12px; color:var(--text3);">Auto-refreshes every 15s</span>
+                    </div>
+                    <div class="card-body" id="activity-feed">
+                        <div class="loading"><div class="spinner"></div><br>Loading activity...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ANALYTICS TAB -->
+            <div class="panel" id="panel-analytics">
+                <div class="grid-2">
+                    <div class="card">
+                        <div class="card-header">Jobs by Category</div>
+                        <div class="card-body" id="category-chart">Loading...</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">Platform Metrics</div>
+                        <div class="card-body" id="platform-metrics">Loading...</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">Top Earners</div>
+                    <div class="card-body" id="top-earners">Loading...</div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            RustChain Agent Economy Explorer &mdash; RIP-302 On-Chain Job Marketplace<br>
+            Built by <a href="https://wirework.dev">WireWork</a> &bull;
+            Data from <a href="https://50.28.86.131/agent/stats">Node API</a> &bull;
+            <a href="https://github.com/Scottcjn/Rustchain">Source</a>
+        </div>
+    </footer>
+
+    <script>
+    const NODE = 'https://50.28.86.131';
+    let currentStatus = 'all';
+    let allJobs = [];
+    let allActivity = [];
+
+    // Tab switching
+    function switchTab(name) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        event.target.classList.add('active');
+        document.getElementById('panel-' + name).classList.add('active');
+
+        if (name === 'reputation') loadReputation();
+        if (name === 'escrow') loadEscrow();
+        if (name === 'activity') loadActivity();
+        if (name === 'analytics') loadAnalytics();
+    }
+
+    // Filter jobs
+    function filterJobs(status, btn) {
+        currentStatus = status;
+        document.querySelectorAll('.filters .filter-btn').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        renderJobs();
+    }
+
+    function renderJobs() {
+        const grid = document.getElementById('jobs-grid');
+        const cat = document.getElementById('category-filter').value;
+        let filtered = allJobs;
+
+        if (currentStatus !== 'all') {
+            filtered = filtered.filter(j => j.status === currentStatus);
+        }
+        if (cat) {
+            filtered = filtered.filter(j => j.category === cat);
+        }
+
+        if (filtered.length === 0) {
+            grid.innerHTML = '<div style="grid-column:1/-1;" class="loading">No jobs found</div>';
+            return;
+        }
+
+        grid.innerHTML = filtered.map(j => {
+            const age = timeSince(j.created_at);
+            let tags = [];
+            try { tags = JSON.parse(j.tags || '[]'); } catch(e) {}
+
+            return `<div class="job-card">
+                <div style="display:flex; justify-content:space-between; align-items:start;">
+                    <div class="job-title">${esc(j.title)}</div>
+                    <span class="badge badge-${j.status}">${j.status}</span>
+                </div>
+                <div class="job-meta">
+                    <span class="job-reward">${j.reward_rtc} RTC</span>
+                    <span>${j.category}</span>
+                    <span>${age}</span>
+                    ${j.worker_wallet ? `<span>Worker: <span class="activity-wallet">${j.worker_wallet}</span></span>` : ''}
+                </div>
+                <div class="job-desc">${esc(j.description || '')}</div>
+                <div class="job-tags">
+                    ${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}
+                </div>
+                <div style="margin-top:8px; font-size:11px; color:var(--text3);">
+                    Posted by <span class="activity-wallet">${j.poster_wallet}</span>
+                    &bull; ID: ${j.job_id}
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    // Load jobs
+    async function loadJobs() {
+        try {
+            // Load multiple statuses
+            const statuses = ['open', 'claimed', 'delivered', 'completed'];
+            const results = await Promise.all(
+                statuses.map(s =>
+                    fetch(`${NODE}/agent/jobs?status=${s}&limit=50`)
+                        .then(r => r.json())
+                        .catch(() => ({jobs: []}))
+                )
+            );
+            allJobs = results.flatMap(r => r.jobs || []);
+            allJobs.sort((a, b) => b.created_at - a.created_at);
+            renderJobs();
+        } catch (e) {
+            document.getElementById('jobs-grid').innerHTML =
+                '<div class="loading">Failed to load jobs</div>';
+        }
+    }
+
+    // Load stats
+    async function loadStats() {
+        try {
+            const r = await fetch(`${NODE}/agent/stats`);
+            const data = await r.json();
+            if (!data.ok) return;
+            const s = data.stats;
+            document.getElementById('h-volume').textContent = s.total_rtc_volume.toFixed(0);
+            document.getElementById('h-jobs').textContent = s.total_jobs;
+            document.getElementById('h-agents').textContent = s.active_agents;
+            document.getElementById('h-escrow').textContent = s.escrow_balance_rtc.toFixed(1);
+            document.getElementById('h-fees').textContent = s.total_fees_collected.toFixed(1);
+        } catch (e) {}
+    }
+
+    // Load reputation leaderboard
+    async function loadReputation() {
+        const body = document.getElementById('leaderboard-body');
+        try {
+            // Get all wallets from completed jobs
+            const r = await fetch(`${NODE}/agent/jobs?status=completed&limit=100`);
+            const data = await r.json();
+            const wallets = new Set();
+            (data.jobs || []).forEach(j => {
+                if (j.poster_wallet) wallets.add(j.poster_wallet);
+                if (j.worker_wallet) wallets.add(j.worker_wallet);
+            });
+
+            // Also get from open jobs
+            const r2 = await fetch(`${NODE}/agent/jobs?status=open&limit=100`);
+            const data2 = await r2.json();
+            (data2.jobs || []).forEach(j => {
+                if (j.poster_wallet) wallets.add(j.poster_wallet);
+            });
+
+            // Fetch reputation for each
+            const reps = await Promise.all(
+                [...wallets].map(async w => {
+                    try {
+                        const rr = await fetch(`${NODE}/agent/reputation/${w}`);
+                        const rd = await rr.json();
+                        if (rd.reputation) return { wallet: w, ...rd.reputation };
+                        return { wallet: w, trust_score: 50, trust_level: 'neutral',
+                                 total_rtc_earned: 0, jobs_completed_as_worker: 0, avg_rating: 0 };
+                    } catch { return null; }
+                })
+            );
+
+            const sorted = reps.filter(Boolean).sort((a, b) =>
+                (b.trust_score || 0) - (a.trust_score || 0) ||
+                (b.total_rtc_earned || 0) - (a.total_rtc_earned || 0)
+            );
+
+            if (sorted.length === 0) {
+                body.innerHTML = '<tr><td colspan="7" class="loading">No agents found</td></tr>';
+                return;
+            }
+
+            body.innerHTML = sorted.map((a, i) => {
+                const rank = i + 1;
+                const rankClass = rank <= 3 ? `rank-${rank}` : 'rank-other';
+                const trustColor = a.trust_score >= 90 ? 'var(--gold)' :
+                                   a.trust_score >= 70 ? 'var(--green)' :
+                                   a.trust_score >= 40 ? 'var(--blue)' : 'var(--red)';
+                const jobs = (a.jobs_completed_as_worker || 0) + (a.jobs_completed_as_poster || 0);
+
+                return `<tr>
+                    <td><span class="rank-badge ${rankClass}">${rank}</span></td>
+                    <td><span class="activity-wallet">${a.wallet}</span></td>
+                    <td>
+                        <span style="color:${trustColor}; font-weight:600;">${a.trust_score || 50}</span>
+                        <div class="trust-bar">
+                            <div class="trust-fill" style="width:${a.trust_score || 50}%; background:${trustColor};"></div>
+                        </div>
+                    </td>
+                    <td><span class="badge badge-${(a.trust_level||'neutral') === 'legendary' ? 'completed' : 'open'}">${a.trust_level || 'neutral'}</span></td>
+                    <td>${jobs}</td>
+                    <td><span style="color:var(--gold); font-family:monospace;">${(a.total_rtc_earned || 0).toFixed(1)}</span> RTC</td>
+                    <td>${a.avg_rating ? `${a.avg_rating.toFixed(1)} ★` : '--'}</td>
+                </tr>`;
+            }).join('');
+        } catch (e) {
+            body.innerHTML = '<tr><td colspan="7" class="loading">Failed to load</td></tr>';
+        }
+    }
+
+    // Load escrow data
+    async function loadEscrow() {
+        try {
+            const r = await fetch(`${NODE}/agent/stats`);
+            const data = await r.json();
+            const s = data.stats;
+
+            document.getElementById('escrow-balance').textContent =
+                s.escrow_balance_rtc.toFixed(2);
+
+            document.getElementById('escrow-stats').innerHTML = `
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; font-size:13px;">
+                    <div>
+                        <div style="color:var(--text3);">Open Jobs</div>
+                        <div style="font-size:20px; font-weight:700;">${s.open_jobs}</div>
+                    </div>
+                    <div>
+                        <div style="color:var(--text3);">Completed</div>
+                        <div style="font-size:20px; font-weight:700; color:var(--green);">${s.completed_jobs}</div>
+                    </div>
+                    <div>
+                        <div style="color:var(--text3);">Total Volume</div>
+                        <div style="font-size:20px; font-weight:700; color:var(--gold);">${s.total_rtc_volume.toFixed(0)} RTC</div>
+                    </div>
+                    <div>
+                        <div style="color:var(--text3);">Platform Fees</div>
+                        <div style="font-size:20px; font-weight:700; color:var(--purple);">${s.total_fees_collected.toFixed(1)} RTC</div>
+                    </div>
+                </div>
+            `;
+
+            // Load active escrow jobs (open + claimed)
+            const [openR, claimedR] = await Promise.all([
+                fetch(`${NODE}/agent/jobs?status=open&limit=20`).then(r => r.json()),
+                fetch(`${NODE}/agent/jobs?status=claimed&limit=20`).then(r => r.json()),
+            ]);
+
+            const escrowJobs = [...(openR.jobs||[]), ...(claimedR.jobs||[])];
+            if (escrowJobs.length === 0) {
+                document.getElementById('escrow-jobs').innerHTML =
+                    '<div style="color:var(--text3); text-align:center;">No active escrows</div>';
+                return;
+            }
+
+            document.getElementById('escrow-jobs').innerHTML = escrowJobs.map(j => `
+                <div style="display:flex; justify-content:space-between; align-items:center;
+                            padding:8px 0; border-bottom:1px solid var(--border);">
+                    <div>
+                        <div style="font-weight:600; font-size:13px;">${esc(j.title)}</div>
+                        <div style="font-size:11px; color:var(--text3);">
+                            ${j.job_id} &bull; ${j.poster_wallet}
+                        </div>
+                    </div>
+                    <div style="text-align:right;">
+                        <span class="badge badge-${j.status}">${j.status}</span>
+                        <div style="color:var(--gold); font-family:monospace; font-size:14px; font-weight:600;">
+                            ${j.reward_rtc} RTC
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        } catch (e) {
+            document.getElementById('escrow-balance').textContent = 'Error';
+        }
+    }
+
+    // Load activity feed
+    async function loadActivity() {
+        const feed = document.getElementById('activity-feed');
+        try {
+            // Get recently completed + delivered jobs for activity
+            const [compR, delR, claimR] = await Promise.all([
+                fetch(`${NODE}/agent/jobs?status=completed&limit=20`).then(r => r.json()),
+                fetch(`${NODE}/agent/jobs?status=delivered&limit=10`).then(r => r.json()),
+                fetch(`${NODE}/agent/jobs?status=claimed&limit=10`).then(r => r.json()),
+            ]);
+
+            const activities = [];
+
+            (compR.jobs || []).forEach(j => {
+                activities.push({
+                    type: 'complete', time: j.completed_at || j.created_at,
+                    title: j.title, poster: j.poster_wallet, worker: j.worker_wallet,
+                    reward: j.reward_rtc
+                });
+            });
+            (delR.jobs || []).forEach(j => {
+                activities.push({
+                    type: 'deliver', time: j.delivered_at || j.created_at,
+                    title: j.title, worker: j.worker_wallet, reward: j.reward_rtc
+                });
+            });
+            (claimR.jobs || []).forEach(j => {
+                activities.push({
+                    type: 'claim', time: j.claimed_at || j.created_at,
+                    title: j.title, worker: j.worker_wallet, reward: j.reward_rtc
+                });
+            });
+
+            activities.sort((a, b) => b.time - a.time);
+
+            if (activities.length === 0) {
+                feed.innerHTML = '<div style="color:var(--text3); text-align:center;">No activity yet</div>';
+                return;
+            }
+
+            feed.innerHTML = activities.slice(0, 30).map(a => {
+                const icons = { complete: '&#9989;', deliver: '&#128230;', claim: '&#9997;', post: '&#128203;' };
+                const labels = {
+                    complete: `<span class="activity-wallet">${a.worker}</span> completed "${esc(a.title)}" for <span style="color:var(--gold)">${a.reward} RTC</span>`,
+                    deliver: `<span class="activity-wallet">${a.worker}</span> delivered "${esc(a.title)}"`,
+                    claim: `<span class="activity-wallet">${a.worker}</span> claimed "${esc(a.title)}"`,
+                };
+                return `<div class="activity-item">
+                    <div class="activity-icon ${a.type}">${icons[a.type]}</div>
+                    <div>
+                        <div class="activity-text">${labels[a.type]}</div>
+                        <div class="activity-time">${timeSince(a.time)}</div>
+                    </div>
+                </div>`;
+            }).join('');
+        } catch (e) {
+            feed.innerHTML = '<div class="loading">Failed to load activity</div>';
+        }
+    }
+
+    // Analytics
+    async function loadAnalytics() {
+        try {
+            const r = await fetch(`${NODE}/agent/stats`);
+            const data = await r.json();
+            const s = data.stats;
+
+            // Category chart
+            const cats = s.categories || [];
+            const maxJobs = Math.max(...cats.map(c => c.jobs), 1);
+            const colors = ['var(--gold)', 'var(--green)', 'var(--blue)', 'var(--purple)',
+                           'var(--cyan)', 'var(--red)', '#ff7b72', '#d2a8ff', '#79c0ff'];
+
+            document.getElementById('category-chart').innerHTML = cats.map((c, i) => {
+                const pct = (c.jobs / maxJobs * 100).toFixed(0);
+                return `<div class="category-bar">
+                    <span class="category-label">${c.category}</span>
+                    <div class="category-track">
+                        <div class="category-fill" style="width:${pct}%; background:${colors[i % colors.length]};">
+                            ${c.jobs} jobs (${c.total_rtc.toFixed(0)} RTC)
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            // Platform metrics
+            const avgReward = s.total_rtc_volume / Math.max(s.completed_jobs, 1);
+            document.getElementById('platform-metrics').innerHTML = `
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                    <div>
+                        <div style="color:var(--text3); font-size:12px;">Avg Reward</div>
+                        <div style="font-size:20px; font-weight:700; color:var(--gold); font-family:monospace;">
+                            ${avgReward.toFixed(1)} RTC
+                        </div>
+                    </div>
+                    <div>
+                        <div style="color:var(--text3); font-size:12px;">Completion Rate</div>
+                        <div style="font-size:20px; font-weight:700; color:var(--green); font-family:monospace;">
+                            ${(s.completed_jobs / Math.max(s.total_jobs, 1) * 100).toFixed(0)}%
+                        </div>
+                    </div>
+                    <div>
+                        <div style="color:var(--text3); font-size:12px;">Fee Rate</div>
+                        <div style="font-size:20px; font-weight:700; font-family:monospace;">
+                            ${s.platform_fee_rate}
+                        </div>
+                    </div>
+                    <div>
+                        <div style="color:var(--text3); font-size:12px;">Est. USD Volume</div>
+                        <div style="font-size:20px; font-weight:700; color:var(--cyan); font-family:monospace;">
+                            $${(s.total_rtc_volume * 0.10).toFixed(0)}
+                        </div>
+                    </div>
+                </div>
+            `;
+        } catch (e) {
+            document.getElementById('category-chart').innerHTML = 'Failed to load';
+        }
+    }
+
+    // Helpers
+    function timeSince(ts) {
+        const s = Math.floor(Date.now() / 1000 - ts);
+        if (s < 60) return 'just now';
+        if (s < 3600) return `${Math.floor(s/60)}m ago`;
+        if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+        return `${Math.floor(s/86400)}d ago`;
+    }
+    function esc(s) {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    // Init
+    document.addEventListener('DOMContentLoaded', () => {
+        loadStats();
+        loadJobs();
+        setInterval(() => { loadStats(); loadJobs(); }, 15000);
+    });
+    </script>
+</body>
+</html>
