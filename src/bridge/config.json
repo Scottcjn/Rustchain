@@ -1,0 +1,5 @@
+{
+  "ergo_rpc_url": "https://ergo.mainnet.rpc",
+  "rustchain_node_url": "http://localhost:8080",
+  "contract_address": "9d97f3f8e6b225c8e7a3edfb618f604b257bc2d9bfc9d7ee599c3ff64c7de02f"
+}
