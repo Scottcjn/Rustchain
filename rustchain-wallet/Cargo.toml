@@ -44,7 +44,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Secure memory
 zeroize = { version = "1.7", features = ["derive"] }
-secrecy = "0.8"
+secrecy = "0.10"
 
 # Key derivation
 hmac = "0.12"
