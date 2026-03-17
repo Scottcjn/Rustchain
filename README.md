@@ -1,8 +1,5 @@
-# Rustchain
-A blockchain implementation in Rust
+<div align="center">
 
-## ⭐ Star this repo to earn RTC tokens!
-Visit [rustchain.org/stars](https://rustchain.org/stars.html) to see all participating repos and claim your rewards.
 # 🧱 RustChain: Proof-of-Antiquity Blockchain
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
@@ -10,38 +7,48 @@ Visit [rustchain.org/stars](https://rustchain.org/stars.html) to see all partici
 [![GitHub Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
 [![Contributors](https://img.shields.io/github/contributors/Scottcjn/Rustchain?color=brightgreen)](https://github.com/Scottcjn/Rustchain/graphs/contributors)
 [![Last Commit](https://img.shields.io/github/last-commit/Scottcjn/Rustchain?color=blue)](https://github.com/Scottcjn/Rustchain/commits/main)
-[![Open Issues](https://img.shields.io/github/issues/Scottcjn/Rustchain?color=orange)](https://github.com/Scottcjn/Rustchain/issues)
-[![PowerPC](https://img.shields.io/badge/PowerPC-G3%2FG4%2FG5-orange)](https://github.com/Scottcjn/Rustchain)
-[![Blockchain](https://img.shields.io/badge/Consensus-Proof--of--Antiquity-green)](https://github.com/Scottcjn/Rustchain)
+[![Bounties](https://img.shields.io/badge/Bounties-Open%20%F0%9F%92%B0-green)](https://github.com/Scottcjn/rustchain-bounties/issues)
+[![As seen on BoTTube](https://bottube.ai/badge/seen-on-bottube.svg)](https://bottube.ai)
+[![Discussions](https://img.shields.io/github/discussions/Scottcjn/Rustchain?color=purple)](https://github.com/Scottcjn/Rustchain/discussions)
+
+## 5,000 Stars Campaign
+
+**Pool: 5,000 RTC ($500 value)** | Currently at **337 stars** across 86 repos — need **4,663 more**.
+
+
 [![Python](https://img.shields.io/badge/Python-3.x-yellow)](https://www.python.org)
-[![Network](https://img.shields.io/badge/Nodes-3%20Active-brightgreen)](https://rustchain.org/explorer)
+[![Network](https://img.shields.io/badge/Nodes-4%20Active-brightgreen)](https://rustchain.org/explorer)
 [![Bounties](https://img.shields.io/badge/Bounties-Open%20%F0%9F%92%B0-green)](https://github.com/Scottcjn/rustchain-bounties/issues)
 [![As seen on BoTTube](https://bottube.ai/badge/seen-on-bottube.svg)](https://bottube.ai)
 [![Discussions](https://img.shields.io/github/discussions/Scottcjn/Rustchain?color=purple)](https://github.com/Scottcjn/Rustchain/discussions)
 
 **The first blockchain that rewards vintage hardware for being old, not fast.**
 
-*Your PowerPC G4 earns more than a modern Threadripper. That's the point.*
+*Named after a 486 with rusty serial ports that still boots. That's the whole point.*
 
-[Website](https://rustchain.org) • [Live Explorer](https://rustchain.org/explorer) • [Swap wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Quickstart](docs/wrtc.md) • [wRTC Tutorial](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia Ref](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [Quick Start](#-quick-start) • [How It Works](#-how-proof-of-antiquity-works)
+*Your PowerPC G4 earns more than a modern Threadripper.*
 
-</div>
+[Website](https://rustchain.org) • [Manifesto](https://rustchain.org/manifesto.html) • [Boudreaux Principles](docs/BOUDREAUX_COMPUTING_PRINCIPLES.md) • [Live Explorer](https://rustchain.org/explorer) • [Swap wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Quickstart](docs/wrtc.md) • [wRTC Tutorial](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia Ref](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [Quickstart](#-quickstart) • [How It Works](#-how-proof-of-antiquity-works)
+
+---
+
+ 🌐 **Languages**
+
+[English](README.md) | [日本語](README_JA.md) | [हिन्दी](README_HI.md) | [Deutsch](README_DE.md) | [Español](README_ES.md) | [中文](README_ZH.md) 
+</div> 
 
 ---
 
 ## Q1 2026 Traction
 
-> *All data from [live GitHub API pull](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) compared against [GitClear](https://www.gitclear.com/research_studies/git_commit_count_percentiles_annual_days_active_from_largest_data_set) (878K dev-years), [LinearB](https://linearb.io/resources/software-engineering-benchmarks-report) (8.1M PRs), and [Electric Capital](https://www.developerreport.com) benchmarks.*
+> *Data from [live GitHub API pull](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) compared against [GitClear](https://www.gitclear.com/research_studies/git_commit_count_percentiles_annual_days_active_from_largest_data_set) (878K dev-years) and [LinearB](https://linearb.io/resources/software-engineering-benchmarks-report) (8.1M PRs) benchmarks.*
 
-| Metric (90 days) | Elyan Labs | Industry Median | Sei Protocol ($85M) |
-|-------------------|-----------|----------------|---------------------|
-| Commits | **1,882** | 105-168 | 297 |
-| Repos shipped | **97** | 1-3 | 0 new |
-| GitHub stars | **1,334** | 5-30 | 2,837 (lifetime) |
-| Developer interactions | **150+** | 0-2 | 78 (lifetime) |
-| Commits/dev/month | **627** | 56 | 7.6 |
-| External contributions | **32 PRs** | 0-2 | 0 |
-| Funding | **$0** | $0 | $85,000,000 |
+| Metric (90 days) | Elyan Labs | Industry Median |
+|-------------------|-----------|----------------|
+| Commits | **1,882** | 105-168 |
+| Repos shipped | **97** | 1-3 |
+| External contributions | **32 PRs** | 0-2 |
+| Funding | **$0** | $0 |
 
 **[Full traction report with methodology and sources →](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md)**
 
@@ -136,7 +143,13 @@ clawrtc wallet coinbase link 0xYourBaseAddress
 
 **Core Principle**: Authentic vintage hardware that has survived decades deserves recognition. RustChain flips mining upside-down.
 
-## ⚡ Quick Start
+### Why "RustChain"?
+
+The name comes from a literal 486 laptop with oxidized serial ports that still boots to DOS and mines RTC. "Rust" here means iron oxide on 30-year-old silicon — not the programming language (though we do have [Rust components](https://github.com/Scottcjn/clawrtc-rs) too). The whole thesis is that corroding vintage hardware still has computational value and dignity. If your machine has rusty ports and still computes, it belongs here.
+
+## ⚡ Quickstart
+
+> 🎬 **Visual Guide**: Watch the [Installation Walkthrough](docs/INSTALLATION_WALKTHROUGH.md) for step-by-step video recordings of the installation and first attestation process.
 
 ### One-Line Install (Recommended)
 ```bash
@@ -175,6 +188,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
   python3 --version
   curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
   ```
+- **`clawrtc wallet show` says `could not reach network`**: verify the live node directly with `curl -sk https://rustchain.org/health` and `curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"`. Older helper builds may still reference the retired `bulbous-bouffant.metalseed.net` host, and current `clawrtc` releases do not expose a generic `wallet show` subcommand.
 - **HTTPS certificate errors in `curl`**: this can happen with non-browser client environments; check connectivity first with `curl -I https://rustchain.org` before wallet checks.
 - **Miner exits immediately**: verify wallet exists and service is running (`systemctl --user status rustchain-miner` or `launchctl list | grep rustchain`)
 
@@ -350,6 +364,50 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 open https://rustchain.org/explorer
 ```
 
+### Governance Proposals & Voting
+
+Rules:
+- Proposal lifecycle: `Draft -> Active (7 days) -> Passed/Failed`
+- Proposal creation: wallet must hold **more than 10 RTC**
+- Voting eligibility: voter must be an **active miner** (from the attested miners view)
+- Signature: votes require **Ed25519** signature verification
+- Vote weight: `1 RTC = 1 base vote`, then multiplied by the miner antiquity multiplier
+- Pass condition at close: `yes_weight > no_weight`
+
+Endpoints:
+
+```bash
+# Create proposal
+curl -sk -X POST https://rustchain.org/governance/propose \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "wallet":"RTC...",
+    "title":"Enable parameter X",
+    "description":"Rationale and implementation details"
+  }'
+
+# List proposals
+curl -sk https://rustchain.org/governance/proposals
+
+# Proposal detail
+curl -sk https://rustchain.org/governance/proposal/1
+
+# Submit signed vote
+curl -sk -X POST https://rustchain.org/governance/vote \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "proposal_id":1,
+    "wallet":"RTC...",
+    "vote":"yes",
+    "nonce":"1700000000",
+    "public_key":"<ed25519_pubkey_hex>",
+    "signature":"<ed25519_signature_hex>"
+  }'
+```
+
+Web UI:
+- `GET /governance/ui` serves a lightweight page to list proposals and submit votes.
+
 ## 🖥️ Supported Platforms
 
 | Platform | Architecture | Status | Notes |
@@ -360,6 +418,7 @@ open https://rustchain.org/explorer
 | **Ubuntu Linux** | x86_64 | ✅ Full Support | Standard miner |
 | **macOS Sonoma** | Apple Silicon | ✅ Full Support | M1/M2/M3 chips |
 | **Windows 10/11** | x86_64 | ✅ Full Support | Python 3.8+ |
+| **NAS (TerraMaster/Synology)** | aarch64 (ARM) | ✅ Full Support | Entware + Python 3.11, low payout (modern ARM) |
 | **DOS** | 8086/286/386 | 🔧 Experimental | Badge rewards only |
 
 ## 🏅 NFT Badge System
@@ -431,8 +490,6 @@ Read the draft spec:
 | [ppc-compilers](https://github.com/Scottcjn/ppc-compilers) | Modern compilers for vintage Macs |
 
 ## 📝 Articles
-
-- [I Built More in 90 Days With $0 Than an $85M-Funded Team](https://dev.to/scottcjn/i-built-more-in-90-days-with-0-than-an-85m-funded-team-of-13-engineers-3oi0) - Dev.to
 - [Proof of Antiquity: A Blockchain That Rewards Vintage Hardware](https://dev.to/scottcjn/proof-of-antiquity-a-blockchain-that-rewards-vintage-hardware-4ii3) - Dev.to
 - [I Run LLMs on a 768GB IBM POWER8 Server](https://dev.to/scottcjn/i-run-llms-on-a-768gb-ibm-power8-server-and-its-faster-than-you-think-1o) - Dev.to
 
@@ -481,10 +538,58 @@ Expected: all 6 hardware fingerprint checks execute on native ARM64 without arch
 
 ---
 
+## Tech Stack
+
+*Other projects flex React and Kubernetes. We flex COBOL and N64 assembly.*
+
+**Vintage & Retro** — the stuff nobody else runs:
+
+![COBOL](https://img.shields.io/badge/COBOL-%F0%9F%91%B4_Grandpa_Code-8B4513?style=flat-square)
+![68K](https://img.shields.io/badge/68K-Mac_Classic-000000?style=flat-square&logo=apple&logoColor=white)
+![i386](https://img.shields.io/badge/i386-DOS-808080?style=flat-square&logo=intel&logoColor=white)
+![N64](https://img.shields.io/badge/N64-MIPS_R4300i-E60012?style=flat-square&logo=nintendo&logoColor=white)
+![N64 ASM](https://img.shields.io/badge/N64_ASM-f3d_opcodes-228B22?style=flat-square)
+![NES](https://img.shields.io/badge/NES-6502-CC0000?style=flat-square)
+![Game Boy](https://img.shields.io/badge/Game_Boy-Z80-8DB600?style=flat-square)
+![Amiga](https://img.shields.io/badge/Amiga-Kickstart-FF4500?style=flat-square)
+![SPARC](https://img.shields.io/badge/SPARC-Sun-FF6600?style=flat-square)
+
+**PowerPC & POWER** — where the antiquity bonus lives:
+
+![G4](https://img.shields.io/badge/G4-2.5x_Antiquity-7B68EE?style=flat-square&logo=apple&logoColor=white)
+![G5](https://img.shields.io/badge/G5-Dual_970-9370DB?style=flat-square&logo=apple&logoColor=white)
+![POWER8](https://img.shields.io/badge/POWER8-128_Threads-0530AD?style=flat-square&logo=ibm&logoColor=white)
+![512GB](https://img.shields.io/badge/RAM-512_GB-DC143C?style=flat-square)
+![VSX](https://img.shields.io/badge/VSX-vec__perm-4B0082?style=flat-square)
+![AltiVec](https://img.shields.io/badge/AltiVec-Velocity_Engine-8A2BE2?style=flat-square)
+
+**AI & Blockchain** — the frontier:
+
+![llama.cpp](https://img.shields.io/badge/llama.cpp-PSE_Fork-00ADD8?style=flat-square)
+![Claude](https://img.shields.io/badge/Claude-Opus_4-D4A574?style=flat-square&logo=anthropic&logoColor=white)
+![CUDA](https://img.shields.io/badge/CUDA-V100_%C3%973-76B900?style=flat-square&logo=nvidia&logoColor=white)
+![GGUF](https://img.shields.io/badge/GGUF-Q4__K__M-FF6347?style=flat-square)
+![Ergo](https://img.shields.io/badge/Ergo-Anchor-FF5733?style=flat-square)
+![Rust](https://img.shields.io/badge/Rust-Ed25519-DEA584?style=flat-square&logo=rust&logoColor=black)
+![Python](https://img.shields.io/badge/Python-Flask-3776AB?style=flat-square&logo=python&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-Every_DB-003B57?style=flat-square&logo=sqlite&logoColor=white)
+
+**Hardware** — 18 GPUs, all from pawn shops and eBay:
+
+![228GB VRAM](https://img.shields.io/badge/VRAM-228_GB-FF1493?style=flat-square)
+![18 GPUs](https://img.shields.io/badge/GPUs-18-76B900?style=flat-square)
+![FPGA](https://img.shields.io/badge/Alveo_U30-FPGA_%C3%972-EE3524?style=flat-square)
+![Hailo](https://img.shields.io/badge/Hailo--8-TPU-00BFFF?style=flat-square)
+![VC](https://img.shields.io/badge/VC_Funding-$0-228B22?style=flat-square)
+![Pawn Shop](https://img.shields.io/badge/Source-%F0%9F%8F%AA_Pawn_Shops-DAA520?style=flat-square)
+
+
+---
+
 <div align="center">
 
-**[Elyan Labs](https://github.com/Scottcjn)** · 1,882 commits · 97 repos · 1,334 stars · $0 raised
+**[Elyan Labs](https://github.com/Scottcjn)** · Built with $0 VC and a room full of pawn shop hardware
 
-[⭐ Star Rustchain](https://github.com/Scottcjn/Rustchain) · [📊 Q1 2026 Traction Report](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) · [Follow @Scottcjn](https://github.com/Scottcjn)
+[⭐ Star Rustchain](https://github.com/Scottcjn/Rustchain) · [📊 Traction Report](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) · [Follow @Scottcjn](https://github.com/Scottcjn)
 
 </div>
