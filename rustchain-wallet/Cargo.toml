@@ -51,7 +51,7 @@ hmac = "0.12"
 pbkdf2 = "0.12"
 
 # Random number generation
-rand = "0.8"
+rand = "0.10"
 getrandom = "0.2"
 
 # Filesystem
