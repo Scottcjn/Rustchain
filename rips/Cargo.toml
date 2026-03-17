@@ -13,7 +13,7 @@ categories = ["cryptography", "hardware-support"]
 # Cryptography
 sha2 = "0.10"
 hex = "0.4"
-rand = "0.8"
+rand = "0.10"
 rand_chacha = "0.10"
 
 # Serialization
