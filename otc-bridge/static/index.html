@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain OTC Bridge</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-card: #1c2128;
+            --bg-input: #21262d;
+            --border: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --gold: #f39c12;
+            --gold-dim: #d4851a;
+            --green: #3fb950;
+            --green-dim: #238636;
+            --red: #f85149;
+            --red-dim: #da3633;
+            --blue: #58a6ff;
+            --purple: #bc8cff;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+
+        /* Header */
+        header {
+            border-bottom: 1px solid var(--border);
+            padding: 16px 0;
+            background: var(--bg-secondary);
+        }
+        .header-inner {
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .logo {
+            display: flex; align-items: center; gap: 12px;
+            font-size: 20px; font-weight: 700; color: var(--gold);
+            text-decoration: none;
+        }
+        .logo-icon { font-size: 28px; }
+        .logo span { color: var(--text-primary); font-weight: 400; }
+        .nav-stats {
+            display: flex; gap: 24px; font-size: 13px; color: var(--text-secondary);
+        }
+        .nav-stat strong { color: var(--gold); }
+
+        /* Ticker Bar */
+        .ticker-bar {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 8px 0;
+            display: flex; justify-content: center; gap: 32px;
+            font-size: 14px; font-family: 'SF Mono', 'Fira Code', monospace;
+        }
+        .ticker-item { display: flex; gap: 8px; align-items: center; }
+        .ticker-label { color: var(--text-muted); }
+        .ticker-value { color: var(--text-primary); font-weight: 600; }
+        .ticker-change.up { color: var(--green); }
+        .ticker-change.down { color: var(--red); }
+
+        /* Main Layout */
+        main { padding: 24px 0; }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 20px;
+        }
+        @media (max-width: 900px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .card-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+            font-weight: 600; font-size: 14px;
+        }
+        .card-body { padding: 16px; }
+
+        /* Order Book */
+        .orderbook-table {
+            width: 100%; border-collapse: collapse;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 13px;
+        }
+        .orderbook-table th {
+            padding: 6px 12px; text-align: right;
+            color: var(--text-muted); font-weight: 500;
+            border-bottom: 1px solid var(--border);
+        }
+        .orderbook-table th:first-child { text-align: left; }
+        .orderbook-table td {
+            padding: 4px 12px; text-align: right;
+        }
+        .orderbook-table td:first-child { text-align: left; }
+        .ask-row td { color: var(--red); }
+        .bid-row td { color: var(--green); }
+        .spread-row td {
+            text-align: center; color: var(--text-muted);
+            padding: 8px; border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            font-size: 12px;
+        }
+        .depth-bar {
+            position: absolute; top: 0; bottom: 0; right: 0;
+            opacity: 0.08; pointer-events: none;
+        }
+        .ask-row .depth-bar { background: var(--red); }
+        .bid-row .depth-bar { background: var(--green); }
+        .orderbook-table tr { position: relative; }
+
+        /* Order Form */
+        .tab-bar {
+            display: flex; border-bottom: 1px solid var(--border);
+        }
+        .tab {
+            flex: 1; padding: 10px; text-align: center;
+            cursor: pointer; font-weight: 600; font-size: 14px;
+            border: none; background: none; color: var(--text-secondary);
+            transition: all 0.2s;
+        }
+        .tab.active-buy { color: var(--green); border-bottom: 2px solid var(--green); }
+        .tab.active-sell { color: var(--red); border-bottom: 2px solid var(--red); }
+        .tab:hover { color: var(--text-primary); }
+
+        .form-group { margin-bottom: 12px; }
+        .form-label {
+            display: block; font-size: 12px; color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        .form-input {
+            width: 100%; padding: 10px 12px;
+            background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: 6px; color: var(--text-primary);
+            font-size: 14px; font-family: 'SF Mono', 'Fira Code', monospace;
+            outline: none; transition: border-color 0.2s;
+        }
+        .form-input:focus { border-color: var(--gold); }
+        .form-input::placeholder { color: var(--text-muted); }
+
+        .form-row { display: flex; gap: 8px; }
+        .form-row .form-group { flex: 1; }
+
+        .form-total {
+            padding: 12px; background: var(--bg-input); border-radius: 6px;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            margin-bottom: 12px; font-size: 13px;
+        }
+        .form-total .label { color: var(--text-muted); }
+        .form-total .value { float: right; font-weight: 600; }
+
+        .btn {
+            width: 100%; padding: 12px; border: none; border-radius: 6px;
+            font-size: 15px; font-weight: 600; cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-buy { background: var(--green-dim); color: white; }
+        .btn-sell { background: var(--red-dim); color: white; }
+
+        .pair-select {
+            background: var(--bg-input); border: 1px solid var(--border);
+            color: var(--text-primary); padding: 6px 10px; border-radius: 6px;
+            font-size: 13px; cursor: pointer; outline: none;
+        }
+
+        /* Open Orders */
+        .orders-list { max-height: 400px; overflow-y: auto; }
+        .order-item {
+            padding: 12px 16px; border-bottom: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+            transition: background 0.2s; cursor: pointer;
+        }
+        .order-item:hover { background: var(--bg-input); }
+        .order-side {
+            font-weight: 700; font-size: 11px; padding: 2px 8px;
+            border-radius: 3px; text-transform: uppercase;
+        }
+        .order-side.buy { background: var(--green-dim); color: white; }
+        .order-side.sell { background: var(--red-dim); color: white; }
+        .order-info { flex: 1; margin-left: 12px; }
+        .order-amount { font-weight: 600; font-family: 'SF Mono', monospace; font-size: 14px; }
+        .order-price { color: var(--text-secondary); font-size: 12px; font-family: 'SF Mono', monospace; }
+        .order-wallet { color: var(--text-muted); font-size: 11px; }
+        .order-actions { display: flex; gap: 8px; }
+        .btn-sm {
+            padding: 4px 12px; font-size: 12px; border-radius: 4px;
+            border: 1px solid var(--border); background: var(--bg-input);
+            color: var(--text-primary); cursor: pointer;
+        }
+        .btn-sm:hover { border-color: var(--gold); }
+        .btn-match { border-color: var(--green-dim); color: var(--green); }
+
+        /* Trade History */
+        .trades-table {
+            width: 100%; border-collapse: collapse;
+            font-family: 'SF Mono', monospace; font-size: 12px;
+        }
+        .trades-table th {
+            padding: 6px 8px; text-align: right; color: var(--text-muted);
+            font-weight: 500; border-bottom: 1px solid var(--border);
+        }
+        .trades-table th:first-child { text-align: left; }
+        .trades-table td { padding: 5px 8px; text-align: right; }
+        .trades-table td:first-child { text-align: left; }
+        .trades-table tr:hover { background: var(--bg-input); }
+
+        /* Wallet Bar */
+        .wallet-bar {
+            display: flex; gap: 8px; align-items: center;
+            padding: 12px 16px; background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border); font-size: 13px;
+        }
+        .wallet-input {
+            flex: 1; padding: 6px 10px;
+            background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: 4px; color: var(--text-primary); font-size: 13px;
+            outline: none;
+        }
+        .wallet-input:focus { border-color: var(--gold); }
+        .wallet-balance { color: var(--gold); font-family: 'SF Mono', monospace; }
+
+        /* Status badges */
+        .status { font-size: 11px; padding: 2px 6px; border-radius: 3px; }
+        .status-open { background: var(--green-dim); color: white; }
+        .status-matched { background: var(--gold-dim); color: white; }
+        .status-completed { background: var(--blue); color: white; }
+
+        /* Escrow indicator */
+        .escrow-badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            font-size: 11px; color: var(--gold); padding: 2px 6px;
+            background: rgba(243, 156, 18, 0.1); border-radius: 3px;
+        }
+
+        /* Toast notifications */
+        .toast-container {
+            position: fixed; top: 20px; right: 20px; z-index: 1000;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .toast {
+            padding: 12px 20px; border-radius: 6px; font-size: 14px;
+            animation: slideIn 0.3s ease;
+        }
+        .toast-success { background: var(--green-dim); color: white; }
+        .toast-error { background: var(--red-dim); color: white; }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* Empty state */
+        .empty {
+            text-align: center; padding: 40px 20px;
+            color: var(--text-muted); font-size: 14px;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.7); z-index: 100;
+            align-items: center; justify-content: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 24px; max-width: 480px; width: 90%;
+        }
+        .modal h3 { margin-bottom: 16px; }
+        .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+        .modal-actions .btn { width: auto; padding: 8px 20px; }
+        .btn-ghost {
+            background: none; border: 1px solid var(--border);
+            color: var(--text-primary);
+        }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 16px 0; text-align: center;
+            color: var(--text-muted); font-size: 12px;
+            margin-top: 40px;
+        }
+        footer a { color: var(--gold); text-decoration: none; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container header-inner">
+            <a href="/" class="logo">
+                <span class="logo-icon">&#9878;</span>
+                RustChain <span>OTC Bridge</span>
+            </a>
+            <div class="nav-stats">
+                <span>Last: <strong id="nav-last-price">$0.10</strong></span>
+                <span>24h Vol: <strong id="nav-volume">0 RTC</strong></span>
+                <span>Orders: <strong id="nav-orders">0</strong></span>
+            </div>
+        </div>
+    </header>
+
+    <div class="ticker-bar">
+        <div class="ticker-item">
+            <span class="ticker-label">RTC/USDC</span>
+            <span class="ticker-value" id="tick-usdc">0.1000</span>
+        </div>
+        <div class="ticker-item">
+            <span class="ticker-label">RTC/ETH</span>
+            <span class="ticker-value" id="tick-eth">--</span>
+        </div>
+        <div class="ticker-item">
+            <span class="ticker-label">24h Trades</span>
+            <span class="ticker-value" id="tick-trades">0</span>
+        </div>
+        <div class="ticker-item">
+            <span class="ticker-label">Escrow Locked</span>
+            <span class="ticker-value" id="tick-escrow">-- RTC</span>
+        </div>
+    </div>
+
+    <div class="wallet-bar">
+        <span style="color: var(--text-muted);">Wallet:</span>
+        <input type="text" class="wallet-input" id="wallet-input"
+               placeholder="Enter your RTC wallet ID (e.g. my-wallet-name)" />
+        <span class="wallet-balance" id="wallet-balance">--</span>
+        <button class="btn-sm" onclick="checkBalance()">Check</button>
+    </div>
+
+    <main>
+        <div class="container">
+            <div class="grid">
+                <div>
+                    <!-- Order Book -->
+                    <div class="card" style="margin-bottom: 20px;">
+                        <div class="card-header">
+                            <span>Order Book</span>
+                            <select class="pair-select" id="pair-select" onchange="loadAll()">
+                                <option value="RTC/USDC">RTC/USDC</option>
+                                <option value="RTC/ETH">RTC/ETH</option>
+                                <option value="RTC/ERG">RTC/ERG</option>
+                            </select>
+                        </div>
+                        <div class="card-body" style="padding: 0;">
+                            <table class="orderbook-table">
+                                <thead>
+                                    <tr>
+                                        <th>Price</th>
+                                        <th>Amount (RTC)</th>
+                                        <th>Total</th>
+                                        <th>Orders</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="orderbook-asks"></tbody>
+                                <tbody>
+                                    <tr class="spread-row">
+                                        <td colspan="4" id="spread-display">Spread: --</td>
+                                    </tr>
+                                </tbody>
+                                <tbody id="orderbook-bids"></tbody>
+                            </table>
+                            <div class="empty" id="orderbook-empty" style="display:none;">
+                                No orders yet. Be the first to trade!
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Open Orders List -->
+                    <div class="card" style="margin-bottom: 20px;">
+                        <div class="card-header">
+                            <span>Open Orders</span>
+                            <span style="color: var(--text-muted); font-size: 12px;" id="order-count">0 orders</span>
+                        </div>
+                        <div class="orders-list" id="orders-list">
+                            <div class="empty">Loading...</div>
+                        </div>
+                    </div>
+
+                    <!-- Trade History -->
+                    <div class="card">
+                        <div class="card-header">
+                            <span>Recent Trades</span>
+                        </div>
+                        <div class="card-body" style="padding: 0;">
+                            <table class="trades-table">
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Side</th>
+                                        <th>Price</th>
+                                        <th>Amount</th>
+                                        <th>Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="trades-body">
+                                    <tr><td colspan="5" class="empty">No trades yet</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Order Form -->
+                <div>
+                    <div class="card" style="margin-bottom: 20px;">
+                        <div class="tab-bar">
+                            <button class="tab active-buy" id="tab-buy" onclick="setTab('buy')">Buy RTC</button>
+                            <button class="tab" id="tab-sell" onclick="setTab('sell')">Sell RTC</button>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label class="form-label">Price per RTC</label>
+                                <input type="number" class="form-input" id="input-price"
+                                       placeholder="0.10" step="0.0001" min="0" oninput="updateTotal()" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Amount (RTC)</label>
+                                <input type="number" class="form-input" id="input-amount"
+                                       placeholder="100" step="0.1" min="0.1" oninput="updateTotal()" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">ETH/USDC Address (for settlement)</label>
+                                <input type="text" class="form-input" id="input-eth"
+                                       placeholder="0x... or leave blank" />
+                            </div>
+                            <div class="form-total">
+                                <span class="label">Total</span>
+                                <span class="value" id="total-display">0.00 USDC</span>
+                            </div>
+                            <div class="form-total" style="margin-top: -4px;">
+                                <span class="label">Escrow (RTC side)</span>
+                                <span class="value" id="escrow-display">--</span>
+                            </div>
+                            <button class="btn btn-buy" id="submit-btn" onclick="submitOrder()">
+                                Place Buy Order
+                            </button>
+                            <p style="margin-top: 8px; font-size: 11px; color: var(--text-muted); text-align: center;">
+                                Sell orders lock RTC in RIP-302 escrow. 5% platform fee applies.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Market Info Card -->
+                    <div class="card">
+                        <div class="card-header">Market Info</div>
+                        <div class="card-body" style="font-size: 13px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                <span style="color: var(--text-secondary);">Reference Rate</span>
+                                <span style="color: var(--gold); font-family: monospace;">$0.10 USD</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                <span style="color: var(--text-secondary);">Total Supply</span>
+                                <span style="font-family: monospace;">8,300,000 RTC</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                <span style="color: var(--text-secondary);">FDV (at ref)</span>
+                                <span style="font-family: monospace;">$830,000</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                <span style="color: var(--text-secondary);">Escrow System</span>
+                                <span class="escrow-badge">RIP-302 Escrow</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: var(--text-secondary);">Platform Fee</span>
+                                <span style="font-family: monospace;">5%</span>
+                            </div>
+                            <hr style="border: none; border-top: 1px solid var(--border); margin: 12px 0;" />
+                            <div style="color: var(--text-muted); font-size: 11px; line-height: 1.5;">
+                                RTC sell orders are escrowed on-chain via RIP-302 Agent Economy.
+                                ETH/USDC settlement is peer-to-peer with HTLC verification.
+                                <a href="https://github.com/Scottcjn/Rustchain" target="_blank"
+                                   style="color: var(--gold);">View source</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Match Modal -->
+    <div class="modal-overlay" id="match-modal">
+        <div class="modal">
+            <h3>Match Order</h3>
+            <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 16px;" id="match-details"></p>
+            <div class="form-group">
+                <label class="form-label">Your Wallet</label>
+                <input type="text" class="form-input" id="match-wallet" placeholder="Your RTC wallet ID" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Your ETH/USDC Address (for settlement)</label>
+                <input type="text" class="form-input" id="match-eth" placeholder="0x..." />
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-buy" id="match-btn" onclick="confirmMatch()">Match Order</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toasts"></div>
+
+    <footer>
+        <div class="container">
+            RustChain OTC Bridge &mdash; Peer-to-peer RTC trading with on-chain escrow<br />
+            Built by <a href="https://wirework.dev">WireWork</a> &bull;
+            Powered by <a href="https://github.com/Scottcjn/Rustchain">RIP-302 Agent Economy</a> &bull;
+            <a href="https://explorer.rustchain.org">Explorer</a>
+        </div>
+    </footer>
+
+    <script>
+    const API = window.location.origin + '/api';
+    let currentTab = 'buy';
+    let currentPair = 'RTC/USDC';
+    let matchingOrderId = null;
+
+    // Toast notifications
+    function toast(msg, type = 'success') {
+        const container = document.getElementById('toasts');
+        const el = document.createElement('div');
+        el.className = `toast toast-${type}`;
+        el.textContent = msg;
+        container.appendChild(el);
+        setTimeout(() => el.remove(), 4000);
+    }
+
+    // Tab switching
+    function setTab(tab) {
+        currentTab = tab;
+        document.getElementById('tab-buy').className = tab === 'buy' ? 'tab active-buy' : 'tab';
+        document.getElementById('tab-sell').className = tab === 'sell' ? 'tab active-sell' : 'tab';
+        const btn = document.getElementById('submit-btn');
+        btn.className = `btn btn-${tab}`;
+        btn.textContent = tab === 'buy' ? 'Place Buy Order' : 'Place Sell Order';
+        updateTotal();
+    }
+
+    // Update total display
+    function updateTotal() {
+        const price = parseFloat(document.getElementById('input-price').value) || 0;
+        const amount = parseFloat(document.getElementById('input-amount').value) || 0;
+        const pair = document.getElementById('pair-select').value;
+        const quote = pair.split('/')[1];
+        const total = (price * amount).toFixed(quote === 'ETH' ? 8 : 4);
+        document.getElementById('total-display').textContent = `${total} ${quote}`;
+
+        // Escrow display
+        const escrowEl = document.getElementById('escrow-display');
+        if (currentTab === 'sell') {
+            const escrow = (amount * 1.05).toFixed(2); // 5% platform fee
+            escrowEl.textContent = `${escrow} RTC (locked)`;
+            escrowEl.style.color = 'var(--gold)';
+        } else {
+            escrowEl.textContent = 'Taker locks on match';
+            escrowEl.style.color = 'var(--text-muted)';
+        }
+    }
+
+    // Check wallet balance
+    async function checkBalance() {
+        const wallet = document.getElementById('wallet-input').value.trim();
+        if (!wallet) return;
+        try {
+            const r = await fetch(`https://50.28.86.131/wallet/balance?miner_id=${encodeURIComponent(wallet)}`);
+            const data = await r.json();
+            document.getElementById('wallet-balance').textContent =
+                data.amount_rtc !== undefined ? `${data.amount_rtc} RTC` : 'Not found';
+        } catch (e) {
+            // Try via our proxy if direct fails
+            document.getElementById('wallet-balance').textContent = 'Check failed';
+        }
+    }
+
+    // Submit order
+    async function submitOrder() {
+        const wallet = document.getElementById('wallet-input').value.trim();
+        if (!wallet) { toast('Enter your wallet ID first', 'error'); return; }
+
+        const price = parseFloat(document.getElementById('input-price').value);
+        const amount = parseFloat(document.getElementById('input-amount').value);
+        const ethAddr = document.getElementById('input-eth').value.trim();
+        const pair = document.getElementById('pair-select').value;
+
+        if (!price || price <= 0) { toast('Enter a valid price', 'error'); return; }
+        if (!amount || amount < 0.1) { toast('Minimum amount: 0.1 RTC', 'error'); return; }
+
+        const btn = document.getElementById('submit-btn');
+        btn.disabled = true;
+        btn.textContent = 'Submitting...';
+
+        try {
+            const r = await fetch(`${API}/orders`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    side: currentTab,
+                    pair: pair,
+                    wallet: wallet,
+                    amount_rtc: amount,
+                    price_per_rtc: price,
+                    eth_address: ethAddr
+                })
+            });
+            const data = await r.json();
+            if (data.ok) {
+                toast(`Order created: ${data.order_id}`);
+                document.getElementById('input-price').value = '';
+                document.getElementById('input-amount').value = '';
+                loadAll();
+            } else {
+                toast(data.error || 'Order failed', 'error');
+            }
+        } catch (e) {
+            toast('Network error', 'error');
+        }
+        btn.disabled = false;
+        btn.textContent = currentTab === 'buy' ? 'Place Buy Order' : 'Place Sell Order';
+    }
+
+    // Load order book
+    async function loadOrderbook() {
+        const pair = document.getElementById('pair-select').value;
+        try {
+            const r = await fetch(`${API}/orderbook?pair=${pair}`);
+            const data = await r.json();
+            if (!data.ok) return;
+
+            const asksEl = document.getElementById('orderbook-asks');
+            const bidsEl = document.getElementById('orderbook-bids');
+            const emptyEl = document.getElementById('orderbook-empty');
+
+            // Find max total for depth bars
+            const allTotals = [...data.asks, ...data.bids].map(o => o.total_rtc);
+            const maxTotal = Math.max(...allTotals, 1);
+
+            if (data.asks.length === 0 && data.bids.length === 0) {
+                asksEl.innerHTML = '';
+                bidsEl.innerHTML = '';
+                emptyEl.style.display = 'block';
+                return;
+            }
+            emptyEl.style.display = 'none';
+
+            const quote = pair.split('/')[1];
+            const decimals = quote === 'ETH' ? 6 : 4;
+
+            // Asks (reversed so lowest is at bottom, near spread)
+            asksEl.innerHTML = [...data.asks].reverse().map(a => {
+                const pct = (a.total_rtc / maxTotal * 100).toFixed(0);
+                return `<tr class="ask-row">
+                    <td>${a.price.toFixed(decimals)}</td>
+                    <td>${a.total_rtc.toFixed(2)}</td>
+                    <td>${(a.price * a.total_rtc).toFixed(decimals)}</td>
+                    <td>${a.order_count}</td>
+                    <div class="depth-bar" style="width:${pct}%"></div>
+                </tr>`;
+            }).join('');
+
+            // Bids
+            bidsEl.innerHTML = data.bids.map(b => {
+                const pct = (b.total_rtc / maxTotal * 100).toFixed(0);
+                return `<tr class="bid-row">
+                    <td>${b.price.toFixed(decimals)}</td>
+                    <td>${b.total_rtc.toFixed(2)}</td>
+                    <td>${(b.price * b.total_rtc).toFixed(decimals)}</td>
+                    <td>${b.order_count}</td>
+                    <div class="depth-bar" style="width:${pct}%"></div>
+                </tr>`;
+            }).join('');
+
+            // Spread
+            const spreadEl = document.getElementById('spread-display');
+            if (data.spread !== null) {
+                spreadEl.textContent = `Spread: ${data.spread.toFixed(decimals)} ${quote}`;
+            } else {
+                spreadEl.textContent = 'Spread: --';
+            }
+
+            // Update ticker
+            if (data.last_price) {
+                const tickId = quote === 'USDC' ? 'tick-usdc' : quote === 'ETH' ? 'tick-eth' : null;
+                if (tickId) document.getElementById(tickId).textContent = data.last_price.toFixed(decimals);
+                document.getElementById('nav-last-price').textContent = `$${data.last_price.toFixed(4)}`;
+            }
+            document.getElementById('tick-trades').textContent = data.trades_24h;
+            document.getElementById('nav-volume').textContent = `${data.volume_24h_rtc.toFixed(0)} RTC`;
+        } catch (e) {
+            console.error('Orderbook load failed:', e);
+        }
+    }
+
+    // Load open orders
+    async function loadOrders() {
+        const pair = document.getElementById('pair-select').value;
+        try {
+            const r = await fetch(`${API}/orders?pair=${pair}`);
+            const data = await r.json();
+            if (!data.ok) return;
+
+            const el = document.getElementById('orders-list');
+            document.getElementById('order-count').textContent = `${data.total} orders`;
+            document.getElementById('nav-orders').textContent = data.total;
+
+            if (data.orders.length === 0) {
+                el.innerHTML = '<div class="empty">No open orders. Create the first one!</div>';
+                return;
+            }
+
+            const quote = pair.split('/')[1];
+            el.innerHTML = data.orders.map(o => {
+                const age = timeSince(o.created_at);
+                const escrowed = o.escrow_job_id ? '<span class="escrow-badge">Escrowed</span>' : '';
+                return `<div class="order-item">
+                    <span class="order-side ${o.side}">${o.side}</span>
+                    <div class="order-info">
+                        <div class="order-amount">${o.amount_rtc} RTC @ ${o.price_per_rtc} ${quote}</div>
+                        <div class="order-price">Total: ${o.total_quote.toFixed(4)} ${quote} ${escrowed}</div>
+                        <div class="order-wallet">${o.maker_wallet} &bull; ${age}</div>
+                    </div>
+                    <div class="order-actions">
+                        <button class="btn-sm btn-match" onclick="openMatch('${o.order_id}', '${o.side}', ${o.amount_rtc}, ${o.price_per_rtc}, '${quote}', '${o.maker_wallet}')">Match</button>
+                    </div>
+                </div>`;
+            }).join('');
+        } catch (e) {
+            console.error('Orders load failed:', e);
+        }
+    }
+
+    // Load trades
+    async function loadTrades() {
+        try {
+            const r = await fetch(`${API}/trades?limit=20`);
+            const data = await r.json();
+            if (!data.ok) return;
+
+            const el = document.getElementById('trades-body');
+            if (data.trades.length === 0) {
+                el.innerHTML = '<tr><td colspan="5" class="empty">No trades yet</td></tr>';
+                return;
+            }
+
+            el.innerHTML = data.trades.map(t => {
+                const quote = t.pair.split('/')[1];
+                const time = new Date(t.completed_at * 1000).toLocaleTimeString();
+                const sideColor = t.side === 'buy' ? 'var(--green)' : 'var(--red)';
+                return `<tr>
+                    <td>${time}</td>
+                    <td style="color:${sideColor}; text-transform:uppercase; font-weight:600;">${t.side}</td>
+                    <td>${t.price_per_rtc.toFixed(4)}</td>
+                    <td>${t.amount_rtc.toFixed(2)}</td>
+                    <td>${t.total_quote.toFixed(4)} ${quote}</td>
+                </tr>`;
+            }).join('');
+        } catch (e) {
+            console.error('Trades load failed:', e);
+        }
+    }
+
+    // Match modal
+    function openMatch(orderId, side, amount, price, quote, maker) {
+        matchingOrderId = orderId;
+        const action = side === 'sell' ? 'buy' : 'sell';
+        document.getElementById('match-details').innerHTML =
+            `You will <strong>${action}</strong> <strong>${amount} RTC</strong> at ` +
+            `<strong>${price} ${quote}/RTC</strong> (total: ${(amount * price).toFixed(4)} ${quote}).<br/>` +
+            `Counterparty: ${maker}` +
+            (side === 'buy' ? '<br/><em style="color:var(--gold);">Your RTC will be locked in escrow.</em>' : '');
+
+        const btn = document.getElementById('match-btn');
+        btn.className = `btn btn-${action === 'buy' ? 'buy' : 'sell'}`;
+        btn.textContent = action === 'buy' ? 'Buy RTC' : 'Sell RTC';
+
+        // Pre-fill wallet
+        document.getElementById('match-wallet').value =
+            document.getElementById('wallet-input').value;
+
+        document.getElementById('match-modal').classList.add('active');
+    }
+
+    function closeModal() {
+        document.getElementById('match-modal').classList.remove('active');
+        matchingOrderId = null;
+    }
+
+    async function confirmMatch() {
+        if (!matchingOrderId) return;
+        const wallet = document.getElementById('match-wallet').value.trim();
+        const ethAddr = document.getElementById('match-eth').value.trim();
+
+        if (!wallet) { toast('Enter your wallet', 'error'); return; }
+
+        const btn = document.getElementById('match-btn');
+        btn.disabled = true;
+        btn.textContent = 'Matching...';
+
+        try {
+            const r = await fetch(`${API}/orders/${matchingOrderId}/match`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ wallet, eth_address: ethAddr })
+            });
+            const data = await r.json();
+            if (data.ok) {
+                toast('Order matched! Follow settlement instructions.');
+                closeModal();
+                loadAll();
+            } else {
+                toast(data.error || 'Match failed', 'error');
+            }
+        } catch (e) {
+            toast('Network error', 'error');
+        }
+        btn.disabled = false;
+    }
+
+    // Load stats
+    async function loadStats() {
+        try {
+            const r = await fetch(`${API}/stats`);
+            const data = await r.json();
+            if (!data.ok) return;
+            const s = data.stats;
+            // Update nav
+            if (s.last_price) {
+                document.getElementById('nav-last-price').textContent = `$${s.last_price.toFixed(4)}`;
+            }
+        } catch (e) {}
+    }
+
+    // Helpers
+    function timeSince(ts) {
+        const seconds = Math.floor(Date.now() / 1000 - ts);
+        if (seconds < 60) return 'just now';
+        if (seconds < 3600) return `${Math.floor(seconds/60)}m ago`;
+        if (seconds < 86400) return `${Math.floor(seconds/3600)}h ago`;
+        return `${Math.floor(seconds/86400)}d ago`;
+    }
+
+    function loadAll() {
+        currentPair = document.getElementById('pair-select').value;
+        loadOrderbook();
+        loadOrders();
+        loadTrades();
+        loadStats();
+        updateTotal();
+    }
+
+    // Init
+    document.addEventListener('DOMContentLoaded', () => {
+        loadAll();
+        // Auto-refresh every 15s
+        setInterval(loadAll, 15000);
+        // Set default price
+        document.getElementById('input-price').value = '0.10';
+        updateTotal();
+    });
+    </script>
+</body>
+</html>
