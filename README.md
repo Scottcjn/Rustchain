@@ -16,6 +16,10 @@
 [![As seen on BoTTube](https://bottube.ai/badge/seen-on-bottube.svg)](https://bottube.ai)
 [![Discussions](https://img.shields.io/github/discussions/Scottcjn/Rustchain?color=purple)](https://github.com/Scottcjn/Rustchain/discussions)
 
+![Node 1](https://img.shields.io/endpoint?url=https%3A%2F%2Frustchain.org%2Fapi%2Fbadge%2Fnode-health&label=Node%201&logo=server&logoColor=white)
+![NAS Miner](https://img.shields.io/endpoint?url=https%3A%2F%2Frustchain.org%2Fapi%2Fbadge%2Fsophia-nas-c4130&label=NAS%20Miner&logo=opnsense&logoColor=white)
+![G4 Miner](https://img.shields.io/endpoint?url=https%3A%2F%2Frustchain.org%2Fapi%2Fbadge%2Fdual-g4-125&label=G4%20Miner&logo=apple&logoColor=white)
+
 **The first blockchain that rewards vintage hardware for being old, not fast.**
 
 *Named after a 486 with rusty serial ports that still boots. That's the whole point.*
