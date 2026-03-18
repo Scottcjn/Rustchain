@@ -25,7 +25,7 @@
     "watch": "mm-snap watch"
   },
   "dependencies": {
-    "@metamask/snaps-sdk": "^3.0.0"
+    "@metamask/snaps-sdk": "^11.0.0"
   },
   "devDependencies": {
     "@metamask/snaps-cli": "^8.4.1",
