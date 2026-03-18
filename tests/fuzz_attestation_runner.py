@@ -90,7 +90,7 @@ def baseline_payload(wallet: str = "test-miner") -> dict:
             "arch": random.choice(KNOWN_ARCHS),
             "family": random.choice(KNOWN_FAMILIES),
             "cores": random.randint(4, 16),
-            "cpu_serial": hashlib.md5(wallet.encode()).hexdigest(),
+            "cpu_serial": hashlib.md5(wallet.encode(), usedforsecurity=False).hexdigest(),
             "device_id": f"{secrets.token_hex(8)}-{secrets.token_hex(4)}-{secrets.token_hex(4)}-{secrets.token_hex(4)}-{secrets.token_hex(12)}",
             "serial_number": f"SERIAL-{random.randint(1000, 9999)}",
         },
