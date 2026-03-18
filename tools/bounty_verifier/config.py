@@ -95,7 +95,7 @@ class Config:
         if "github" in data:
             gh = data["github"]
             config.github = GitHubConfig(
-                token=gh.get("token", os.getenv("GITHUB_TOKEN", "")),
+                token=gh.get("token") or os.getenv("GITHUB_TOKEN", ""),
                 owner=gh.get("owner", "Scottcjn"),
                 repo=gh.get("repo", "rustchain-bounties"),
                 target_user=gh.get("target_user", "Scottcjn"),
