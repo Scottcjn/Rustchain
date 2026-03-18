@@ -31,7 +31,7 @@
     "chai": "^6.2.2",
     "ethers": "^6.13.1",
     "hardhat": "^2.22.5",
-    "hardhat-gas-reporter": "^1.0.10",
+    "hardhat-gas-reporter": "^2.3.0",
     "prettier": "^3.3.2",
     "prettier-plugin-solidity": "^1.3.1",
     "solidity-coverage": "^0.8.12",
