@@ -210,17 +210,17 @@ class TestFetchWithRetry(unittest.TestCase):
     def test_fetch_with_retry_exponential_backoff(self, mock_sleep, mock_get):
         """Test exponential backoff between retries."""
         mock_get.side_effect = ConnectionError("Connection failed")
-        self.wallet._check_network_connectivity.return_value = (False, "Network unreachable")
-        
-        # Use custom initial delay for testing
+        # Network IS reachable so retries happen (not early-exit)
+        self.wallet._check_network_connectivity.return_value = (True, None)
+
         data, error = self.wallet._fetch_with_retry(
             "https://rustchain.org/wallet/balance",
             max_retries=3
         )
-        
+
         # Should have called sleep twice (between 3 attempts)
         self.assertEqual(mock_sleep.call_count, 2)
-        
+
         # Verify exponential backoff (delays should increase)
         delays = [call[0][0] for call in mock_sleep.call_args_list]
         self.assertGreater(delays[1], delays[0])
