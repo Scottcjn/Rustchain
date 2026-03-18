@@ -1,4 +1,4 @@
-"""
+﻿"""
 RIP-302: Agent-to-Agent RTC Economy
 ====================================
 Transforms RTC from mining reward token into native currency for
@@ -866,3 +866,209 @@ def register_agent_economy(app: Flask, db_path: str):
 
     log.info("RIP-302 Agent Economy endpoints registered: "
              "/agent/jobs, /agent/reputation, /agent/stats")
+
+    # ── RIP-302 Multi-Step Pipeline Extension ──────────────────────────
+    # Bounty: #683 Tier 3 (100 RTC)
+    # Author: kuanglaodi2-sudo (OpenClaw Agent)
+
+    import hashlib, json as _json
+
+    _PFR = 0.05
+    _PFW = "founder_community"
+    _EW  = "agent_escrow"
+
+    def _pg_bal(c, w):
+        try:
+            r = c.execute("SELECT amount_i64 FROM balances WHERE miner_id=?",(w,)).fetchone()
+            if r and r[0] is not None: return int(r[0])
+        except: pass
+        for col,key in [("balance_rtc","miner_pk"),("balance_rtc","miner_id")]:
+            try:
+                r = c.execute(f"SELECT {col} FROM balances WHERE {key}=?",(w,)).fetchone()
+                if r and r[0] is not None: return int(round(float(r[0])*1000000))
+            except: continue
+        return 0
+
+    def _pg_adj(c, w, d):
+        n = _pg_bal(c,w) + d
+        c.execute("INSERT INTO balances(miner_id,amount_i64) VALUES(?,?) ON CONFLICT(miner_id) DO UPDATE SET amount_i64=? WHERE miner_id=?",(w,n,n,w))
+
+    def _pg_log(c, jid, act, act2="", det=""):
+        c.execute("INSERT INTO agent_job_log(job_id,action,actor_wallet,details,created_at) VALUES(?,?,?,?,?)",(jid,act,act2,det,int(__import__('time').time())))
+
+    def _init_pg(db):
+        c = db.cursor()
+        c.execute("""CREATE TABLE IF NOT EXISTS agent_pipelines(
+            pipeline_id TEXT PRIMARY KEY, poster_wallet TEXT NOT NULL,
+            title TEXT NOT NULL, description TEXT, status TEXT DEFAULT 'active',
+            total_reward_rtc REAL NOT NULL, total_reward_i64 INTEGER NOT NULL,
+            total_fee_i64 INTEGER NOT NULL, total_escrow_i64 INTEGER NOT NULL,
+            escrow_funded INTEGER DEFAULT 0, created_at INTEGER NOT NULL,
+            completed_at INTEGER, completed_step_index INTEGER DEFAULT -1)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS agent_pipeline_steps(
+            id INTEGER PRIMARY KEY AUTOINCREMENT, pipeline_id TEXT NOT NULL,
+            step_index INTEGER NOT NULL, job_id TEXT, title TEXT NOT NULL,
+            description TEXT, category TEXT DEFAULT 'other',
+            reward_rtc REAL NOT NULL, reward_i64 INTEGER NOT NULL,
+            fee_i64 INTEGER NOT NULL, escrow_i64 INTEGER NOT NULL,
+            status TEXT DEFAULT 'pending', worker_wallet TEXT,
+            deliverable_url TEXT, result_summary TEXT,
+            created_at INTEGER NOT NULL, claimed_at INTEGER,
+            delivered_at INTEGER, completed_at INTEGER,
+            UNIQUE(pipeline_id,step_index))""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_pg_s ON agent_pipeline_steps(pipeline_id,step_index)")
+        db.commit()
+
+    _init_pg(sqlite3.connect(db_path))
+
+    @app.route("/agent/pipelines",methods=["POST"])
+    def agent_create_pipeline():
+        d=request.get_json(silent=True) or {}
+        p=str(d.get("poster_wallet","")).strip()
+        t=str(d.get("title","")).strip()
+        desc=str(d.get("description","")).strip()
+        steps=d.get("steps",[])
+        if not p: return jsonify({"error":"poster_wallet required"}),400
+        if not t or len(t)<5: return jsonify({"error":"title must be at least 5 chars"}),400
+        if not isinstance(steps,list) or len(steps)<2: return jsonify({"error":"At least 2 steps required"}),400
+        now=int(__import__('time').time())
+        pid="pipe_"+hashlib.sha256(f"{p}:{t}:{now}".encode()).hexdigest()[:16]
+        tot=0; sout=[]
+        for i,s in enumerate(steps):
+            try: r=float(s.get("reward_rtc",0))
+            except: return jsonify({"error":f"Step {i} bad reward"}),400
+            if r<0.01: return jsonify({"error":f"Step {i} min 0.01 RTC"}),400
+            ri=int(r*1000000); fi=int(ri*_PFR); ei=ri+fi; tot+=ri
+            sout.append({"title":str(s.get("title","")).strip(),"desc":str(s.get("description","")).strip(),"cat":str(s.get("category","other")).strip().lower(),"r":r,"ri":ri,"fi":fi,"ei":ei})
+        tfi=int(tot*_PFR); tei=tot+tfi
+        conn=sqlite3.connect(db_path)
+        try:
+            c=conn.cursor()
+            bal=_pg_bal(c,p)
+            if bal<tei: return jsonify({"error":"Insufficient balance","balance_rtc":bal/1000000,"required_rtc":tei/1000000}),400
+            _pg_adj(c,p,-tei); _pg_adj(c,_EW,tei)
+            c.execute("INSERT INTO agent_pipelines(pipeline_id,poster_wallet,title,description,total_reward_rtc,total_reward_i64,total_fee_i64,total_escrow_i64,escrow_funded,created_at) VALUES(?,?,?,?,?,?,?,?,1,?)",(pid,p,t,desc,tot/1000000,tot,tfi,tei,now))
+            for i,s in enumerate(sout):
+                c.execute("INSERT INTO agent_pipeline_steps(pipeline_id,step_index,title,description,category,reward_rtc,reward_i64,fee_i64,escrow_i64,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,'pending',?)",(pid,i,s["title"],s["desc"],s["cat"],s["r"],s["ri"],s["fi"],s["ei"],now))
+            conn.commit()
+            return jsonify({"ok":True,"pipeline_id":pid,"status":"active","poster_wallet":p,"total_reward_rtc":tot/1000000,"total_fee_rtc":tfi/1000000,"total_escrow_rtc":tei/1000000,"step_count":len(sout),"message":f"Pipeline created! {len(sout)} steps, {tei/1000000} RTC locked."}),201
+        except Exception as e:
+            conn.rollback(); return jsonify({"error":str(e)}),500
+        finally:
+            conn.close()
+
+    @app.route("/agent/pipelines",methods=["GET"])
+    def agent_list_pipelines():
+        sf=request.args.get("status","active").strip()
+        pt=request.args.get("poster","").strip()
+        lm=min(int(request.args.get("limit",50)),100)
+        conn=sqlite3.connect(db_path)
+        try:
+            conn.row_factory=sqlite3.Row; c=conn.cursor()
+            wh=["status=?"]; pr=[sf]
+            if pt: wh.append("poster_wallet=?"); pr.append(pt)
+            rows=c.execute(f"""SELECT p.pipeline_id,p.poster_wallet,p.title,p.description,p.total_reward_rtc,p.status,p.created_at,p.completed_step_index,
+                (SELECT COUNT(*) FROM agent_pipeline_steps WHERE pipeline_id=p.pipeline_id) AS sc,
+                (SELECT COUNT(*) FROM agent_pipeline_steps WHERE pipeline_id=p.pipeline_id AND status='completed') AS cc
+                FROM agent_pipelines p WHERE {' AND '.join(wh)} ORDER BY p.created_at DESC LIMIT ?""",[*pr,lm]).fetchall()
+            return jsonify({"ok":True,"pipelines":[dict(r) for r in rows],"count":len(rows)})
+        finally:
+            conn.close()
+
+    @app.route("/agent/pipelines/<pid>",methods=["GET"])
+    def agent_get_pipeline(pid):
+        conn=sqlite3.connect(db_path)
+        try:
+            conn.row_factory=sqlite3.Row; c=conn.cursor()
+            p=c.execute("SELECT * FROM agent_pipelines WHERE pipeline_id=?",(pid,)).fetchone()
+            if not p: return jsonify({"error":"Pipeline not found"}),404
+            steps=c.execute("SELECT * FROM agent_pipeline_steps WHERE pipeline_id=? ORDER BY step_index ASC",(pid,)).fetchall()
+            return jsonify({"ok":True,"pipeline":dict(p),"steps":[dict(s) for s in steps]})
+        finally:
+            conn.close()
+
+    @app.route("/agent/pipelines/<pid>/advance",methods=["POST"])
+    def agent_pipeline_advance(pid):
+        conn=sqlite3.connect(db_path)
+        try:
+            c=conn.cursor()
+            p=c.execute("SELECT * FROM agent_pipelines WHERE pipeline_id=?",(pid,)).fetchone()
+            if not p: return jsonify({"error":"Pipeline not found"}),404
+            p=dict(p)
+            if p["status"]!="active": return jsonify({"error":f"Not active ({p['status']})"}),409
+            ns=c.execute("SELECT * FROM agent_pipeline_steps WHERE pipeline_id=? AND status='pending' ORDER BY step_index ASC LIMIT 1",(pid,)).fetchone()
+            if not ns:
+                c.execute("UPDATE agent_pipelines SET status='completed',completed_at=? WHERE pipeline_id=?",(int(__import__('time').time()),pid))
+                conn.commit(); return jsonify({"ok":True,"pipeline_id":pid,"status":"completed","message":"All steps done!"})
+            ns=dict(ns); si=ns["step_index"]; now=int(__import__('time').time())
+            jid="pipejob_"+hashlib.sha256(f"{pid}:{si}:{now}".encode()).hexdigest()[:16]
+            jt=f"[PIPELINE:{pid[:12]}] Step {si+1}: {ns['title']}"
+            jd=f"{ns.get('description',ns['title'])}\n\n[PIPELINE] Step {si+1} of {p['title']} ({pid}). Complete to trigger next phase."
+            ei=ns["escrow_i64"]
+            _pg_adj(c,_EW,-ei); _pg_adj(c,_EW+"_step",ei)
+            c.execute("INSERT INTO agent_jobs(job_id,poster_wallet,title,description,category,reward_rtc,reward_i64,escrow_i64,platform_fee_i64,status,created_at,expires_at,tags) VALUES(?,?,?,?,?,?,?,?,?,'open',?,?,?)",(jid,p["poster_wallet"],jt,jd,ns.get("category","other"),ns["reward_rtc"],ns["reward_i64"],ei,ns["fee_i64"],now,now+7*86400,_json.dumps(["pipeline",f"pipeline_id:{pid}",f"pipeline_step:{si}"])))
+            c.execute("UPDATE agent_pipeline_steps SET job_id=?,status='posted' WHERE pipeline_id=? AND step_index=?",(jid,pid,si))
+            _pg_log(c,jid,"pipeline_advance",p["poster_wallet"],f"pipeline={pid}, step={si}")
+            conn.commit()
+            return jsonify({"ok":True,"pipeline_id":pid,"step_index":si,"step_title":ns["title"],"job_id":jid,"job_title":jt,"reward_rtc":ns["reward_rtc"],"status":"posted","message":f"Step {si+1} posted as job {jid}"}),201
+        except Exception as e:
+            conn.rollback(); return jsonify({"error":str(e)}),500
+        finally:
+            conn.close()
+
+    @app.route("/agent/pipelines/<pid>/trigger",methods=["POST"])
+    def agent_pipeline_trigger(pid):
+        d=request.get_json(silent=True) or {}; cji=str(d.get("job_id","")).strip(); csi=d.get("step_index"); wk=str(d.get("worker_wallet","")).strip()
+        conn=sqlite3.connect(db_path)
+        try:
+            c=conn.cursor()
+            p=c.execute("SELECT * FROM agent_pipelines WHERE pipeline_id=?",(pid,)).fetchone()
+            if not p: return jsonify({"error":"Pipeline not found"}),404
+            p=dict(p)
+            if csi is None and cji:
+                r=c.execute("SELECT step_index FROM agent_pipeline_steps WHERE pipeline_id=? AND job_id=?",(pid,cji)).fetchone()
+                if r: csi=r[0]
+            if csi is None: return jsonify({"error":"Could not determine completed step"}),400
+            csi=int(csi)
+            sr=c.execute("SELECT * FROM agent_pipeline_steps WHERE pipeline_id=? AND step_index=?",(pid,csi)).fetchone()
+            if not sr: return jsonify({"error":"Step not found"}),404
+            sc=[d[0] for d in c.description]; s=dict(zip(sc,sr))
+            if wk: _pg_adj(c,_EW+"_step",-s["escrow_i64"]); _pg_adj(c,wk,s["reward_i64"]); _pg_adj(c,_PFW,s["fee_i64"])
+            now=int(__import__('time').time())
+            c.execute("UPDATE agent_pipeline_steps SET status='completed',completed_at=?,deliverable_url=?,result_summary=? WHERE pipeline_id=? AND step_index=?",(now,s.get("deliverable_url","") or "",s.get("result_summary","") or "",pid,csi))
+            c.execute("UPDATE agent_pipelines SET completed_step_index=? WHERE pipeline_id=?",(csi,pid))
+            nr=c.execute("SELECT step_index,title FROM agent_pipeline_steps WHERE pipeline_id=? AND status='pending' ORDER BY step_index ASC LIMIT 1",(pid,)).fetchone()
+            if nr:
+                conn.commit(); return jsonify({"ok":True,"pipeline_id":pid,"completed_step":csi,"next_step":nr[0],"next_step_title":nr[1],"message":f"Step {csi} done. POST /agent/pipelines/{pid}/advance for step {nr[0]}"})
+            used=c.execute("SELECT COALESCE(SUM(escrow_i64),0) FROM agent_pipeline_steps WHERE pipeline_id=? AND status='completed'",(pid,)).fetchone()[0] or 0
+            rem=p["total_escrow_i64"]-int(used)
+            if rem>0: _pg_adj(c,_EW,-rem); _pg_adj(c,p["poster_wallet"],rem)
+            c.execute("UPDATE agent_pipelines SET status='completed',completed_at=? WHERE pipeline_id=?",(now,pid))
+            conn.commit(); return jsonify({"ok":True,"pipeline_id":pid,"status":"completed","completed_step":csi,"refunded_rtc":rem/1000000,"message":"All steps done! Escrow refunded."})
+        except Exception as e:
+            conn.rollback(); return jsonify({"error":str(e)}),500
+        finally:
+            conn.close()
+
+    @app.route("/agent/pipelines/<pid>",methods=["DELETE"])
+    def agent_cancel_pipeline(pid):
+        d=request.get_json(silent=True) or {}; p=str(d.get("poster_wallet","")).strip()
+        if not p: return jsonify({"error":"poster_wallet required"}),400
+        conn=sqlite3.connect(db_path)
+        try:
+            c=conn.cursor()
+            pr=c.execute("SELECT * FROM agent_pipelines WHERE pipeline_id=?",(pid,)).fetchone()
+            if not pr: return jsonify({"error":"Pipeline not found"}),404
+            pr=dict(pr)
+            if pr["poster_wallet"]!=p: return jsonify({"error":"Only poster can cancel"}),403
+            if pr["status"]!="active": return jsonify({"error":"Not active"}),409
+            rem=pr["total_escrow_i64"]
+            c.execute("UPDATE agent_pipelines SET status='cancelled' WHERE pipeline_id=?",(pid,))
+            if rem>0: _pg_adj(c,_EW,-rem); _pg_adj(c,p,rem)
+            conn.commit(); return jsonify({"ok":True,"pipeline_id":pid,"status":"cancelled","refunded_rtc":rem/1000000,"message":"Pipeline cancelled. Escrow refunded."})
+        except Exception as e:
+            conn.rollback(); return jsonify({"error":str(e)}),500
+        finally:
+            conn.close()
+
+    log.info("RIP-302 Pipeline endpoints registered: /agent/pipelines, /agent/pipelines/<id>, /agent/pipelines/<id>/advance, /agent/pipelines/<id>/trigger, /agent/pipelines/<id> [DELETE]")
