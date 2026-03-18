@@ -70,7 +70,9 @@ def init_app(app, db_path):
     def wallet_link_coinbase():
         """Link a Coinbase Base address to a miner_id. Requires admin key."""
         admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-        expected = os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64")
+        expected = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected:
+            return jsonify({"error": "Admin key not configured"}), 503
         if admin_key != expected:
             return jsonify({"error": "Unauthorized — admin key required"}), 401
 

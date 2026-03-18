@@ -17,6 +17,7 @@ Bounty: https://github.com/Scottcjn/rustchain-bounties/issues/31
 """
 
 import os
+import sys
 import json
 import hashlib
 import time
@@ -40,7 +41,10 @@ from telegram.ext import (
 NODE_URL = os.environ.get("RUSTCHAIN_NODE_URL", "https://50.28.86.131")
 VERIFY_SSL = os.environ.get("RUSTCHAIN_VERIFY_SSL", "false").lower() == "true"
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-BOT_SECRET = os.environ.get("BOT_SECRET", "rustchain-tip-bot-secret-key")
+BOT_SECRET = os.environ.get("BOT_SECRET")
+if not BOT_SECRET:
+    print("FATAL: BOT_SECRET environment variable is required")
+    sys.exit(1)
 
 # Rate limiting
 MIN_TIP_AMOUNT = 0.001  # Minimum tip in RTC

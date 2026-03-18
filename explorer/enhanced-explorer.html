@@ -557,6 +557,8 @@
             }
         }
 
+        function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+
         async function loadHealth() {
             const health = await fetchAPI('/health');
             if (health) {
@@ -577,25 +579,25 @@
                 const overviewTable = document.getElementById('miners-table');
                 overviewTable.innerHTML = minerList.slice(0, 10).map(miner => `
                     <tr>
-                        <td><strong>${miner.miner_id || 'Unknown'}</strong></td>
-                        <td><span class="arch-badge">${miner.architecture || miner.device_arch || 'Unknown'}</span></td>
-                        <td><span class="multiplier">x${miner.multiplier || miner.antiquity_multiplier || '1.0'}</span></td>
+                        <td><strong>${esc(miner.miner_id || 'Unknown')}</strong></td>
+                        <td><span class="arch-badge">${esc(miner.architecture || miner.device_arch || 'Unknown')}</span></td>
+                        <td><span class="multiplier">x${esc(miner.multiplier || miner.antiquity_multiplier || '1.0')}</span></td>
                         <td><span class="badge badge-success">Online</span></td>
-                        <td>${formatTime(miner.last_attestation || miner.last_seen)}</td>
-                        <td>${(miner.earnings || miner.total_earned || 0).toFixed(2)} RTC</td>
+                        <td>${esc(formatTime(miner.last_attestation || miner.last_seen))}</td>
+                        <td>${esc((miner.earnings || miner.total_earned || 0).toFixed(2))} RTC</td>
                     </tr>
                 `).join('');
 
                 const allMinersTable = document.getElementById('all-miners-table');
                 allMinersTable.innerHTML = minerList.map(miner => `
                     <tr>
-                        <td><strong>${miner.miner_id || 'Unknown'}</strong></td>
-                        <td><span class="arch-badge">${miner.architecture || miner.device_arch || 'Unknown'}</span></td>
-                        <td><span class="multiplier">x${miner.multiplier || miner.antiquity_multiplier || '1.0'}</span></td>
+                        <td><strong>${esc(miner.miner_id || 'Unknown')}</strong></td>
+                        <td><span class="arch-badge">${esc(miner.architecture || miner.device_arch || 'Unknown')}</span></td>
+                        <td><span class="multiplier">x${esc(miner.multiplier || miner.antiquity_multiplier || '1.0')}</span></td>
                         <td><span class="badge badge-success">Online</span></td>
-                        <td>${formatTime(miner.last_attestation || miner.last_seen)}</td>
-                        <td><code>${miner.wallet || miner.wallet_address || 'N/A'}</code></td>
-                        <td>${(miner.earnings || miner.total_earned || 0).toFixed(2)} RTC</td>
+                        <td>${esc(formatTime(miner.last_attestation || miner.last_seen))}</td>
+                        <td><code>${esc(miner.wallet || miner.wallet_address || 'N/A')}</code></td>
+                        <td>${esc((miner.earnings || miner.total_earned || 0).toFixed(2))} RTC</td>
                     </tr>
                 `).join('');
             }

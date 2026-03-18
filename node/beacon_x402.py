@@ -173,7 +173,9 @@ def init_app(app, get_db_func):
 
         # Simple admin check — require admin key in header
         admin_key = request.headers.get("X-Admin-Key", "")
-        expected = os.environ.get("BEACON_ADMIN_KEY", "beacon_admin_2025")
+        expected = os.environ.get("BEACON_ADMIN_KEY", "")
+        if not expected:
+            return _cors_json({"error": "Admin key not configured"}, 503)
         if admin_key != expected:
             return _cors_json({"error": "Unauthorized — admin key required"}, 401)
 

@@ -481,7 +481,13 @@ class AnchorService:
 # =============================================================================
 
 def create_anchor_api_routes(app, anchor_service: AnchorService):
-    """Create Flask routes for anchor API"""
+    """Create Flask routes for anchor API.
+
+    Security note: All anchor endpoints are intentionally public and read-only
+    (GET only). They expose only on-chain verification data (proofs, status,
+    anchor list) and contain no write operations or sensitive information.
+    No admin authentication is required for these transparency endpoints.
+    """
     from flask import request, jsonify
 
     @app.route('/anchor/status', methods=['GET'])
