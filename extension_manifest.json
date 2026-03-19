@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "RustChain Wallet",
+  "version": "1.0.0",
+  "description": "Secure blockchain wallet for RustChain network with transaction signing and balance management",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "host_permissions"
+  ],
+  "host_permissions": [
+    "http://localhost:*/*",
+    "https://api.rustchain.network/*",
+    "https://explorer.rustchain.network/*",
+    "https://*.rustchain.network/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "RustChain Wallet"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["inject.js", "rustchain_crypto.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
