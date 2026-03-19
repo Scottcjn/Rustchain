@@ -1,130 +1,327 @@
-# Contributing to RustChain
+# Contributing to Rustchain
 
-Thanks for your interest in contributing to RustChain! We pay bounties in RTC tokens for quality contributions.
+Welcome to the Rustchain project! We appreciate your interest in contributing to our blockchain implementation in Rust. This guide will help you get started and ensure smooth collaboration.
 
-## Quick Start
+## Table of Contents
 
-1. **Browse open bounties**: Check [Issues](https://github.com/Scottcjn/Rustchain/issues?q=is%3Aissue+is%3Aopen+label%3Abounty) labeled `bounty`
-2. **Comment on the issue** you want to work on (prevents duplicate work)
-3. **Fork the repo** and create a feature branch
-4. **Submit a PR** referencing the issue number
-5. **Get paid** in RTC on merge
+- [Getting Started](#getting-started)
+- [Development Setup](#development-setup)
+- [Code Style Guidelines](#code-style-guidelines)
+- [Pull Request Process](#pull-request-process)
+- [Bug Reports](#bug-reports)
+- [Feature Requests](#feature-requests)
+- [Documentation Improvements](#documentation-improvements)
+- [Testing Requirements](#testing-requirements)
+- [Community Guidelines](#community-guidelines)
+- [RTC Bounty Program](#rtc-bounty-program)
 
-## Bounty Tiers
+## Getting Started
 
-| Tier | RTC Range | Example |
-|------|-----------|---------|
-| Micro | 1-10 RTC | Star + share, small docs fixes |
-| Standard | 20-50 RTC | Docker setup, monitoring tools, calculators |
-| Major | 75-100 RTC | SDK, CLI tools, CI pipeline, Windows installer |
-| Critical | 100-150 RTC | Security audits, protocol work, bridges |
+Before contributing, please:
 
-**Reference rate: 1 RTC = $0.10 USD**
+1. Read our [Code of Conduct](CODE_OF_CONDUCT.md)
+2. Check existing issues and pull requests to avoid duplicates
+3. Join our community discussions
+4. Familiarize yourself with the project structure and goals
 
-## What Gets Merged
+### First-Time Contributors
 
-- Code that works against the live node (`https://rustchain.org`)
-- Tests that actually test something meaningful
-- Documentation that a human can follow end-to-end
-- Security fixes with proof of concept
-- Tools that make the ecosystem more useful
-
-## What Gets Rejected
-
-- AI-generated bulk PRs with no testing evidence
-- PRs that include all code from prior PRs (we track this)
-- "Fixes" that break existing functionality
-- Submissions that don't match the bounty requirements
-- Placeholder data, fake screenshots, or fabricated metrics
+Look for issues labeled with:
+- `good first issue` - Perfect for newcomers
+- `documentation` - Documentation improvements
+- `easy bounty` - Small fixes with RTC rewards
 
 ## Development Setup
 
-```bash
-# Clone
-git clone https://github.com/Scottcjn/Rustchain.git
-cd Rustchain
+### Prerequisites
 
-# Python environment
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+- Rust 1.70+ with Cargo
+- Git
+- Python 3.8+ (for Flask components)
+- Node.js 16+ (for frontend tooling)
 
-# Test against live node
-curl -sk https://rustchain.org/health
-curl -sk https://rustchain.org/api/miners
-curl -sk https://rustchain.org/epoch
+### Local Setup
+
+1. **Fork and Clone**
+   ```bash
+   git clone https://github.com/yourusername/Rustchain.git
+   cd Rustchain
+   ```
+
+2. **Install Rust Dependencies**
+   ```bash
+   cargo build
+   ```
+
+3. **Install Python Dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Run Tests**
+   ```bash
+   cargo test
+   python -m pytest
+   ```
+
+5. **Start Development Server**
+   ```bash
+   # Rust components
+   cargo run
+   
+   # Flask app
+   flask run
+   ```
+
+## Code Style Guidelines
+
+### Rust Code
+
+- Follow standard Rust formatting with `rustfmt`
+- Use `clippy` for linting
+- Include SPDX license header:
+  ```rust
+  // SPDX-License-Identifier: MIT
+  ```
+- Write comprehensive documentation
+- Follow naming conventions:
+  - `snake_case` for functions and variables
+  - `PascalCase` for types and structs
+  - `SCREAMING_SNAKE_CASE` for constants
+
+### Python/Flask Code
+
+- Follow PEP 8 style guidelines
+- Use Flask patterns, NOT Django
+- Include type hints where appropriate
+- Write docstrings for functions and classes
+- Keep route handlers simple and delegate to service layers
+
+### General Guidelines
+
+- Write clear, self-documenting code
+- Include comments for complex logic
+- Keep functions small and focused
+- Use meaningful variable names
+- Maintain consistent indentation (4 spaces)
+
+## Pull Request Process
+
+1. **Create Feature Branch**
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+2. **Make Changes**
+   - Write tests for new functionality
+   - Update documentation as needed
+   - Follow code style guidelines
+
+3. **Test Locally**
+   ```bash
+   cargo test
+   cargo clippy
+   cargo fmt --check
+   python -m pytest
+   ```
+
+4. **Commit Changes**
+   ```bash
+   git add .
+   git commit -m "feat: add new blockchain validation logic"
+   ```
+
+5. **Push and Create PR**
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+
+### PR Requirements
+
+- [ ] Clear title and description
+- [ ] Tests pass locally
+- [ ] Code follows style guidelines
+- [ ] Documentation updated
+- [ ] No merge conflicts
+- [ ] Linked to relevant issue
+
+### Commit Message Format
+
+Use conventional commits:
+- `feat:` - New features
+- `fix:` - Bug fixes
+- `docs:` - Documentation changes
+- `style:` - Code style changes
+- `refactor:` - Code refactoring
+- `test:` - Adding tests
+- `chore:` - Maintenance tasks
+
+## Bug Reports
+
+When reporting bugs, include:
+
+### Required Information
+- **Environment**: OS, Rust version, Python version
+- **Steps to Reproduce**: Clear, numbered steps
+- **Expected Behavior**: What should happen
+- **Actual Behavior**: What actually happens
+- **Error Messages**: Full error text and stack traces
+- **Screenshots**: If applicable
+
+### Template
+```markdown
+**Environment:**
+- OS: [e.g., Ubuntu 22.04]
+- Rust version: [e.g., 1.70.0]
+- Python version: [e.g., 3.10.0]
+
+**Steps to Reproduce:**
+1. Step one
+2. Step two
+3. Step three
+
+**Expected Behavior:**
+[Description]
+
+**Actual Behavior:**
+[Description]
+
+**Error Messages:**
+```
+[Error text here]
 ```
 
-## Live Infrastructure
-
-| Endpoint | URL |
-|----------|-----|
-| Node Health | `https://rustchain.org/health` |
-| Active Miners | `https://rustchain.org/api/miners` |
-| Current Epoch | `https://rustchain.org/epoch` |
-| Block Explorer | `https://rustchain.org/explorer` |
-| wRTC Bridge | `https://bottube.ai/bridge` |
-
-## RTC Payout Process
-
-1. PR gets reviewed and merged
-2. We comment asking for your wallet address
-3. RTC is transferred from the community fund
-4. Bridge RTC to wRTC (Solana) via [bottube.ai/bridge](https://bottube.ai/bridge)
-5. Trade on [Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X)
-
-
-## Documentation Quality Checklist
-
-Before opening a docs PR, please verify:
-
-- [ ] Instructions work exactly as written (commands are copy-pastable).
-- [ ] OS/architecture assumptions are explicit (Linux/macOS/Windows).
-- [ ] New terms are defined at first use.
-- [ ] Broken links are removed or corrected.
-- [ ] At least one `example` command/output is updated if behavior changed.
-- [ ] File and section names follow existing naming conventions.
-
-## Common Troubleshooting Entries
-
-If you changed setup or CLI docs, add at least one section covering common failures, for example:
-
-- `Command not found`: verify PATH and virtualenv activation.
-- `Permission denied` on scripts: ensure execute bit and shell compatibility.
-- `Connection error to live node`: include curl timeout/retry guidance and fallback endpoint checks.
-
-This keeps bounty-quality docs usable by new contributors and operators.
-
-## Code Style
-
-- Python 3.8+ compatible
-- Type hints appreciated but not yet enforced
-- Keep PRs focused — one issue per PR
-- Test against the live node, not just local mocks
-
-## BCOS (Beacon Certified Open Source)
-
-RustChain uses BCOS checks to keep contributions auditable and license-clean without forcing rewrites of legacy code.
-
-- **Tier label required (non-doc PRs)**: Add `BCOS-L1` or `BCOS-L2` (also accepted: `bcos:l1`, `bcos:l2`).
-- **Doc-only exception**: PRs that only touch `docs/**`, `*.md`, or common image/PDF files do not require a tier label.
-- **SPDX required (new code files only)**: Newly added code files must include an SPDX header near the top, e.g. `# SPDX-License-Identifier: MIT`.
-- **Evidence artifacts**: CI uploads `bcos-artifacts` (SBOM, license report, hashes, and a machine-readable attestation JSON).
-
-When to pick a tier:
-- `BCOS-L1`: normal features, refactors, non-sensitive changes.
-- `BCOS-L2`: security-sensitive changes, transfer/wallet logic, consensus/rewards, auth/crypto, supply-chain touching changes.
-
-## Start Mining
-
-Don't just code — mine! Install the miner and earn RTC while you contribute:
-
-```bash
-pip install clawrtc
-clawrtc --wallet YOUR_NAME
+**Additional Context:**
+[Any other relevant information]
 ```
 
-Vintage hardware (PowerPC G4/G5, POWER8) earns **2-2.5x** more than modern PCs.
+## Feature Requests
 
-## Questions?
+For new features:
 
-Open an issue or join the community. We're friendly.
+1. **Check Existing Issues**: Avoid duplicates
+2. **Describe Use Case**: Why is this needed?
+3. **Provide Examples**: How would it work?
+4. **Consider Impact**: Performance, security, complexity
+
+### Template
+```markdown
+**Feature Summary:**
+[Brief description]
+
+**Use Case:**
+[Why this feature is needed]
+
+**Proposed Implementation:**
+[How it might work]
+
+**Alternatives Considered:**
+[Other approaches you've thought about]
+
+**Additional Context:**
+[Any other relevant information]
+```
+
+## Documentation Improvements
+
+We welcome documentation contributions:
+
+### Types of Documentation
+- **API Documentation**: Code comments and docstrings
+- **User Guides**: How-to guides and tutorials
+- **Architecture Docs**: Design decisions and system overview
+- **README Updates**: Installation and usage instructions
+
+### Documentation Standards
+- Write in clear, simple language
+- Include code examples
+- Test all code examples
+- Update table of contents
+- Check for spelling and grammar
+
+## Testing Requirements
+
+### Test Coverage
+- Unit tests for core functionality
+- Integration tests for component interaction
+- End-to-end tests for critical paths
+- Performance tests for bottlenecks
+
+### Running Tests
+```bash
+# Rust tests
+cargo test
+
+# Python tests
+python -m pytest
+
+# Coverage report
+cargo tarpaulin --out html
+pytest --cov=src
+```
+
+### Writing Tests
+- Test both success and failure cases
+- Use descriptive test names
+- Keep tests focused and independent
+- Mock external dependencies
+
+## Community Guidelines
+
+### Code of Conduct
+- Be respectful and inclusive
+- Welcome newcomers
+- Provide constructive feedback
+- Help others learn and grow
+
+### Communication
+- Use GitHub issues for bug reports and feature requests
+- Join our Discord for real-time discussions
+- Follow up on your contributions
+- Be patient with review processes
+
+### Recognition
+Contributors are recognized through:
+- Git commit history
+- Contributor lists in documentation
+- RTC bounty rewards
+- Community shoutouts
+
+## RTC Bounty Program
+
+### How It Works
+1. Look for issues labeled with `bounty` and RTC amounts
+2. Complete the task and submit a PR
+3. Comment on the issue with:
+   - Link to your PR
+   - Your wallet address for RTC payment
+4. Receive payment after PR is merged
+
+### Bounty Types
+- **Easy Bounty (2 RTC)**: Typos, documentation fixes, small improvements
+- **Medium Bounty (5-10 RTC)**: Bug fixes, small features
+- **Large Bounty (20+ RTC)**: Major features, security improvements
+
+### Bounty Rules
+- Multiple claims allowed for different fixes
+- Payment after PR approval and merge
+- Quality standards still apply
+- Communicate if you're working on a bounty
+
+### Current Bounties
+Check issues with the `bounty` label for:
+- Documentation improvements
+- Code cleanup
+- Bug fixes
+- Feature implementations
+
+---
+
+## Getting Help
+
+- **GitHub Issues**: For bugs and feature requests
+- **Discord**: Real-time chat and support
+- **Documentation**: Check existing docs first
+- **Code Review**: Learn from PR feedback
+
+Thank you for contributing to Rustchain! Together, we're building the future of blockchain technology. 🚀
