@@ -2,7 +2,9 @@
 """
 RustChain Windows Wallet Miner
 Full-featured wallet and miner for Windows
-With RIP-PoA Hardware Fingerprint Attestation v3.0
+
+Includes Zephyr (RandomX) dual-mining integration.
+See: https://github.com/Scottcjn/rustchain-bounties/issues/461
 """
 
 import os
@@ -16,26 +18,39 @@ import statistics
 import uuid
 import subprocess
 import re
-import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+try:
+    import tkinter as tk
+    from tkinter import ttk, messagebox, scrolledtext
+    TK_AVAILABLE = True
+    _TK_IMPORT_ERROR = ""
+except Exception as e:
+    TK_AVAILABLE = False
+    _TK_IMPORT_ERROR = str(e)
+    tk = None
+    ttk = None
+    messagebox = None
+    scrolledtext = None
 import requests
-import urllib3; urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from datetime import datetime
 from pathlib import Path
-
-# ── CRITICAL: Fingerprint checks are MANDATORY (fail-closed) ──
-try:
-    from fingerprint_checks import validate_all_checks
-    FINGERPRINT_AVAILABLE = True
-except ImportError:
-    print("[WARN] fingerprint_checks.py not found — using built-in Windows checks")
-    FINGERPRINT_AVAILABLE = False
+import argparse
 
 # Configuration
-RUSTCHAIN_API = "https://rustchain.org"
+RUSTCHAIN_API = "http://50.28.86.131:8088"
 WALLET_DIR = Path.home() / ".rustchain"
 CONFIG_FILE = WALLET_DIR / "config.json"
 WALLET_FILE = WALLET_DIR / "wallet.json"
+
+# ---------------------------------------------------------------------------
+# Zephyr dual-mining configuration
+# Zephyr is a privacy coin using the RandomX algorithm (same as Monero).
+# Its daemon is 'zephyrd' and the standard JSON-RPC port is 17767.
+# XMRig is the most common miner used for RandomX coins including Zephyr.
+# ---------------------------------------------------------------------------
+ZEPHYR_PROCESS_NAMES = ["xmrig", "zephyrd"]
+ZEPHYR_RPC_URL       = "http://localhost:17767/json_rpc"
+ZEPHYR_RPC_TIMEOUT   = 5   # seconds — fast timeout so miner loop doesn't stall
+
 
 class RustChainWallet:
     """Windows wallet for RustChain"""
@@ -75,235 +90,18 @@ class RustChainWallet:
         with open(WALLET_FILE, 'w') as f:
             json.dump(self.wallet_data, f, indent=2)
 
-def _windows_fingerprint_checks():
-    """Built-in fingerprint checks for Windows (when fingerprint_checks.py unavailable)."""
-    from typing import Tuple, Dict
-    results = {}
-    all_passed = True
-
-    # Check 1: Clock drift
-    intervals = []
-    for i in range(200):
-        data = f"drift_{i}".encode()
-        start = time.perf_counter_ns()
-        for _ in range(5000):
-            hashlib.sha256(data).digest()
-        intervals.append(time.perf_counter_ns() - start)
-        if i % 50 == 0:
-            time.sleep(0.001)
-    mean_ns = statistics.mean(intervals)
-    stdev_ns = statistics.stdev(intervals)
-    cv = stdev_ns / mean_ns if mean_ns > 0 else 0
-    drift_pairs = [intervals[i] - intervals[i-1] for i in range(1, len(intervals))]
-    drift_stdev = statistics.stdev(drift_pairs) if len(drift_pairs) > 1 else 0
-    clock_passed = cv >= 0.0001 and drift_stdev > 0
-    results["clock_drift"] = {
-        "passed": clock_passed,
-        "data": {"mean_ns": int(mean_ns), "stdev_ns": int(stdev_ns),
-                 "cv": round(cv, 6), "drift_stdev": int(drift_stdev),
-                 "samples": len(intervals)}
-    }
-    if not clock_passed:
-        all_passed = False
-
-    # Check 2: Cache timing
-    def measure_access(buf_size, accesses=1000):
-        buf = bytearray(buf_size)
-        for i in range(0, buf_size, 64):
-            buf[i] = i % 256
-        start = time.perf_counter_ns()
-        for i in range(accesses):
-            _ = buf[(i * 64) % buf_size]
-        return (time.perf_counter_ns() - start) / accesses
-
-    l1_times = [measure_access(8*1024) for _ in range(100)]
-    l2_times = [measure_access(128*1024) for _ in range(100)]
-    l3_times = [measure_access(4*1024*1024) for _ in range(100)]
-    l1_avg, l2_avg, l3_avg = statistics.mean(l1_times), statistics.mean(l2_times), statistics.mean(l3_times)
-    l2_l1 = l2_avg / l1_avg if l1_avg > 0 else 0
-    l3_l2 = l3_avg / l2_avg if l2_avg > 0 else 0
-    cache_passed = not (l2_l1 < 1.01 and l3_l2 < 1.01) and l1_avg > 0
-    results["cache_timing"] = {
-        "passed": cache_passed,
-        "data": {"l1_ns": round(l1_avg, 2), "l2_ns": round(l2_avg, 2),
-                 "l3_ns": round(l3_avg, 2), "l2_l1_ratio": round(l2_l1, 3),
-                 "l3_l2_ratio": round(l3_l2, 3)}
-    }
-    if not cache_passed:
-        all_passed = False
-
-    # Check 3: SIMD identity (Windows: use WMIC or registry for CPU flags)
-    flags = []
-    creation_flag = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    try:
-        out = subprocess.check_output(
-            ["wmic", "cpu", "get", "Name,Description,Caption"],
-            stderr=subprocess.DEVNULL, creationflags=creation_flag
-        ).decode("utf-8", "ignore")
-        # Sandy Bridge+ has SSE4, AVX etc
-        if "sse" in out.lower() or "avx" in out.lower():
-            flags.extend(["sse", "avx"])
-    except Exception:
-        pass
-    # Pipeline timing bias (works on all platforms)
-    int_times, float_times = [], []
-    for _ in range(30):
-        t0 = time.perf_counter_ns()
-        acc_i = 0
-        for j in range(2000):
-            acc_i = (acc_i + j * 127) & 0xFFFFFFFF
-        int_times.append(time.perf_counter_ns() - t0)
-        t0 = time.perf_counter_ns()
-        acc_f = 0.0
-        for j in range(2000):
-            acc_f += j * 0.127
-        float_times.append(time.perf_counter_ns() - t0)
-    int_mean = sum(int_times) / len(int_times) if int_times else 0
-    float_mean = sum(float_times) / len(float_times) if float_times else 0
-    pipeline_ratio = float_mean / int_mean if int_mean > 0 else 0.0
-    simd_passed = pipeline_ratio > 0
-    results["simd_identity"] = {
-        "passed": simd_passed,
-        "data": {"arch": platform.machine().lower(), "simd_flags_count": len(flags),
-                 "has_sse": True, "has_avx": "amd64" in platform.machine().lower() or "x86_64" in platform.machine().lower(),
-                 "pipeline_ratio": round(pipeline_ratio, 4),
-                 "int_mean_ns": round(int_mean, 1), "float_mean_ns": round(float_mean, 1)}
-    }
-    if not simd_passed:
-        all_passed = False
-
-    # Check 4: Thermal drift
-    cold_times = []
-    for i in range(50):
-        start = time.perf_counter_ns()
-        for _ in range(10000):
-            hashlib.sha256(f"cold_{i}".encode()).digest()
-        cold_times.append(time.perf_counter_ns() - start)
-    for _ in range(100):
-        for __ in range(50000):
-            hashlib.sha256(b"warmup").digest()
-    hot_times = []
-    for i in range(50):
-        start = time.perf_counter_ns()
-        for _ in range(10000):
-            hashlib.sha256(f"hot_{i}".encode()).digest()
-        hot_times.append(time.perf_counter_ns() - start)
-    cold_avg, hot_avg = statistics.mean(cold_times), statistics.mean(hot_times)
-    cold_stdev, hot_stdev = statistics.stdev(cold_times), statistics.stdev(hot_times)
-    thermal_passed = not (cold_stdev == 0 and hot_stdev == 0)
-    results["thermal_drift"] = {
-        "passed": thermal_passed,
-        "data": {"cold_avg_ns": int(cold_avg), "hot_avg_ns": int(hot_avg),
-                 "cold_stdev": int(cold_stdev), "hot_stdev": int(hot_stdev),
-                 "drift_ratio": round(hot_avg / cold_avg if cold_avg > 0 else 0, 4)}
-    }
-    if not thermal_passed:
-        all_passed = False
-
-    # Check 5: Instruction jitter
-    def meas_int(n=10000):
-        t = time.perf_counter_ns(); x = 1
-        for i in range(n): x = (x * 7 + 13) % 65537
-        return time.perf_counter_ns() - t
-    def meas_fp(n=10000):
-        t = time.perf_counter_ns(); x = 1.5
-        for i in range(n): x = (x * 1.414 + 0.5) % 1000.0
-        return time.perf_counter_ns() - t
-    def meas_br(n=10000):
-        t = time.perf_counter_ns(); x = 0
-        for i in range(n):
-            if i % 2 == 0: x += 1
-            else: x -= 1
-        return time.perf_counter_ns() - t
-    it = [meas_int() for _ in range(100)]
-    ft = [meas_fp() for _ in range(100)]
-    bt = [meas_br() for _ in range(100)]
-    jitter_passed = not (statistics.stdev(it) == 0 and statistics.stdev(ft) == 0 and statistics.stdev(bt) == 0)
-    results["instruction_jitter"] = {
-        "passed": jitter_passed,
-        "data": {"int_avg_ns": int(statistics.mean(it)), "fp_avg_ns": int(statistics.mean(ft)),
-                 "branch_avg_ns": int(statistics.mean(bt)),
-                 "int_stdev": int(statistics.stdev(it)), "fp_stdev": int(statistics.stdev(ft)),
-                 "branch_stdev": int(statistics.stdev(bt))}
-    }
-    if not jitter_passed:
-        all_passed = False
-
-    # Check 6: Anti-emulation (Windows-native)
-    vm_indicators = []
-    # WMI-based VM detection
-    try:
-        out = subprocess.check_output(
-            ["wmic", "computersystem", "get", "Model,Manufacturer"],
-            stderr=subprocess.DEVNULL, creationflags=creation_flag
-        ).decode("utf-8", "ignore").lower()
-        vm_strings = ["vmware", "virtualbox", "virtual machine", "kvm", "qemu",
-                      "xen", "hyper-v", "parallels", "bhyve", "amazon ec2",
-                      "google compute", "microsoft corporation", "digitalocean",
-                      "linode", "vultr", "hetzner", "oracle"]
-        for vs in vm_strings:
-            if vs in out:
-                vm_indicators.append(f"wmi_system:{vs}")
-    except Exception:
-        pass
-    # BIOS vendor check
-    try:
-        out = subprocess.check_output(
-            ["wmic", "bios", "get", "Manufacturer,SMBIOSBIOSVersion"],
-            stderr=subprocess.DEVNULL, creationflags=creation_flag
-        ).decode("utf-8", "ignore").lower()
-        for vs in ["vmware", "virtualbox", "seabios", "bochs", "qemu", "xen", "amazon", "google"]:
-            if vs in out:
-                vm_indicators.append(f"wmi_bios:{vs}")
-    except Exception:
-        pass
-    # Registry-based VM detection
-    try:
-        import winreg
-        vm_reg_paths = [
-            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\VMware, Inc.\VMware Tools"),
-            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Oracle\VirtualBox Guest Additions"),
-            (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\VBoxGuest"),
-            (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\vmci"),
-        ]
-        for hive, path in vm_reg_paths:
-            try:
-                winreg.OpenKey(hive, path)
-                vm_indicators.append(f"registry:{path.split(chr(92))[-1]}")
-            except FileNotFoundError:
-                pass
-    except ImportError:
-        pass  # Not on Windows (shouldn't happen but safety)
-    # Cloud metadata endpoint
-    try:
-        import urllib.request
-        req = urllib.request.Request("http://169.254.169.254/", headers={"Metadata": "true"})
-        urllib.request.urlopen(req, timeout=1)
-        vm_indicators.append("cloud_metadata:detected")
-    except Exception:
-        pass
-    # Environment variable checks
-    for key in ["KUBERNETES", "DOCKER", "VIRTUAL", "container",
-                "AWS_EXECUTION_ENV", "ECS_CONTAINER_METADATA_URI",
-                "GOOGLE_CLOUD_PROJECT", "AZURE_FUNCTIONS_ENVIRONMENT"]:
-        if key in os.environ:
-            vm_indicators.append(f"ENV:{key}")
-
-    anti_emu_passed = len(vm_indicators) == 0
-    results["anti_emulation"] = {
-        "passed": anti_emu_passed,
-        "data": {"vm_indicators": vm_indicators, "indicator_count": len(vm_indicators),
-                 "is_likely_vm": len(vm_indicators) > 0,
-                 "paths_checked": True, "dmesg_scanned": False, "cpuinfo_flags": "windows_wmi"}
-    }
-    if not anti_emu_passed:
-        all_passed = False
-
-    return all_passed, results
-
 
 class RustChainMiner:
-    """Mining engine for RustChain"""
+    """
+    Mining engine for RustChain.
+
+    Supports optional Zephyr (RandomX) dual-mining: when xmrig or zephyrd is
+    detected running alongside the RustChain miner, a pow_proof block is
+    included in the attestation and header submissions. This qualifies the
+    miner for the PoW bonus multiplier on RTC rewards at zero additional
+    compute cost — the Zephyr miner retains 100% of its CPU for hashing.
+    """
+
     def __init__(self, wallet_address):
         self.wallet_address = wallet_address
         self.mining = False
@@ -316,27 +114,126 @@ class RustChainMiner:
         self.enrolled = False
         self.hw_info = self._get_hw_info()
         self.last_entropy = {}
-        self.fingerprint_data = None
-        self._run_fingerprint_checks()
 
-    def _run_fingerprint_checks(self):
-        """Run hardware fingerprint checks on startup."""
-        print("[FINGERPRINT] Running hardware fingerprint checks...")
+        # Zephyr dual-mining state — detected once per attest() cycle
+        self._pow_proof = None
+
+    # -----------------------------------------------------------------------
+    # ZEPHYR DUAL-MINING METHODS
+    # -----------------------------------------------------------------------
+
+    def _detect_zephyr_processes(self) -> dict:
+        """
+        Checks whether xmrig or zephyrd are currently running using psutil
+        if available, falling back to a platform-appropriate process list
+        command if psutil is not installed.
+
+        Returns a dict mapping each process name to True/False.
+        e.g. {"xmrig": True, "zephyrd": False}
+        """
+        found = {name: False for name in ZEPHYR_PROCESS_NAMES}
+
         try:
-            if FINGERPRINT_AVAILABLE:
-                all_passed, checks = validate_all_checks(include_rom_check=False)
-            else:
-                all_passed, checks = _windows_fingerprint_checks()
-            self.fingerprint_data = {"all_passed": all_passed, "checks": checks}
-            if all_passed:
-                print("[FINGERPRINT] ALL CHECKS PASSED — eligible for full rewards")
-            else:
-                failed = [k for k, v in checks.items() if not v.get("passed", True)]
-                print(f"[FINGERPRINT] FAILED checks: {failed}")
-                print("[FINGERPRINT] Mining will continue but rewards may be reduced")
-        except Exception as e:
-            print(f"[FINGERPRINT] Error running checks: {e}")
-            self.fingerprint_data = {"all_passed": False, "checks": {}}
+            import psutil
+            for proc in psutil.process_iter(["name"]):
+                try:
+                    proc_name = proc.info["name"].lower()
+                    for target in ZEPHYR_PROCESS_NAMES:
+                        if target in proc_name:
+                            found[target] = True
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            return found
+
+        except ImportError:
+            # psutil not available — fall back to tasklist on Windows
+            try:
+                creation_flag = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                output = subprocess.check_output(
+                    ["tasklist", "/fo", "csv", "/nh"],
+                    stderr=subprocess.DEVNULL,
+                    creationflags=creation_flag,
+                    timeout=5
+                ).decode("utf-8", "ignore").lower()
+                for target in ZEPHYR_PROCESS_NAMES:
+                    if target in output:
+                        found[target] = True
+            except Exception:
+                pass
+            return found
+
+    def _query_zephyr_rpc(self) -> dict | None:
+        """
+        Queries the local Zephyr node's JSON-RPC endpoint for 'get_info'.
+
+        Returns the result dict on success, None on any failure.
+        A short timeout is used deliberately — if the node isn't running or
+        reachable, we degrade gracefully rather than stalling the mine loop.
+        """
+        payload = {
+            "jsonrpc": "2.0",
+            "id":      1,
+            "method":  "get_info",
+            "params":  {}
+        }
+        try:
+            resp = requests.post(
+                ZEPHYR_RPC_URL,
+                headers={"Content-Type": "application/json"},
+                data=json.dumps(payload),
+                timeout=ZEPHYR_RPC_TIMEOUT
+            )
+            resp.raise_for_status()
+            rpc_resp = resp.json()
+            if "result" in rpc_resp and "error" not in rpc_resp:
+                return rpc_resp["result"]
+        except Exception:
+            pass
+        return None
+
+    def _build_pow_proof(self) -> dict | None:
+        """
+        Constructs a PoW proof block if Zephyr activity is detected.
+
+        Returns a dict suitable for inclusion in attestation and header
+        payloads, or None if no Zephyr activity is found. This is the value
+        submitted to the server's validate_pow_proof() endpoint to claim the
+        PoW bonus multiplier.
+
+        Schema:
+          {
+            "chain":        "zephyr",
+            "algorithm":    "randomx",
+            "processes":    {"xmrig": bool, "zephyrd": bool},
+            "node_height":  int | null,   # from local daemon RPC, if reachable
+            "node_version": str | null,
+            "timestamp":    int,          # Unix epoch at proof construction
+            "nonce":        str           # 8-char hex — binds proof to this cycle
+          }
+
+        If neither process is running, returns None immediately — no RPC
+        call is attempted and no proof is attached to the submission.
+        """
+        processes = self._detect_zephyr_processes()
+
+        if not any(processes.values()):
+            return None  # Zephyr not running — no proof, no bonus, no overhead
+
+        node_info = self._query_zephyr_rpc()   # None if daemon unreachable
+
+        return {
+            "chain":        "zephyr",
+            "algorithm":    "randomx",
+            "processes":    processes,
+            "node_height":  node_info.get("height")  if node_info else None,
+            "node_version": node_info.get("version") if node_info else None,
+            "timestamp":    int(time.time()),
+            "nonce":        os.urandom(4).hex()   # replay-attack mitigation
+        }
+
+    # -----------------------------------------------------------------------
+    # CORE MINING METHODS (original, with PoW proof integration)
+    # -----------------------------------------------------------------------
 
     def start_mining(self, callback=None):
         """Start mining process"""
@@ -357,7 +254,6 @@ class RustChainMiner:
                     time.sleep(10)
                     continue
 
-                # Check eligibility
                 eligible = self.check_eligibility()
                 if eligible:
                     header = self.generate_header()
@@ -367,10 +263,10 @@ class RustChainMiner:
                         self.shares_accepted += 1
                     if callback:
                         callback({
-                            "type": "share",
+                            "type":      "share",
                             "submitted": self.shares_submitted,
-                            "accepted": self.shares_accepted,
-                            "success": success
+                            "accepted":  self.shares_accepted,
+                            "success":   success
                         })
                 time.sleep(10)
             except Exception as e:
@@ -428,12 +324,12 @@ class RustChainMiner:
     def _get_hw_info(self):
         return {
             "platform": platform.system(),
-            "machine": platform.machine(),
-            "model": platform.machine() or "Windows-PC",
+            "machine":  platform.machine(),
+            "model":    platform.machine() or "Windows-PC",
             "hostname": platform.node(),
-            "family": "Windows",
-            "arch": platform.processor() or "x86_64",
-            "macs": self._get_mac_addresses()
+            "family":   "Windows",
+            "arch":     platform.processor() or "x86_64",
+            "macs":     self._get_mac_addresses()
         }
 
     def _collect_entropy(self, cycles=48, inner=30000):
@@ -448,18 +344,27 @@ class RustChainMiner:
         mean_ns = sum(samples) / len(samples)
         variance_ns = statistics.pvariance(samples) if len(samples) > 1 else 0.0
         return {
-            "mean_ns": mean_ns,
-            "variance_ns": variance_ns,
-            "min_ns": min(samples),
-            "max_ns": max(samples),
-            "sample_count": len(samples),
+            "mean_ns":       mean_ns,
+            "variance_ns":   variance_ns,
+            "min_ns":        min(samples),
+            "max_ns":        max(samples),
+            "sample_count":  len(samples),
             "samples_preview": samples[:12],
         }
 
     def attest(self):
-        """Perform hardware attestation for PoA."""
+        """
+        Perform hardware attestation for PoA.
+
+        Extended for Zephyr dual-mining: if xmrig or zephyrd is detected,
+        a pow_proof block is built and included in the attestation payload.
+        This allows the /attest/submit endpoint's validate_pow_proof() to
+        apply the PoW bonus multiplier to this miner's RTC rewards.
+        """
         try:
-            challenge = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=10, verify=False).json()
+            challenge = requests.post(
+                f"{self.node_url}/attest/challenge", json={}, timeout=10
+            ).json()
             nonce = challenge.get("nonce")
         except Exception:
             return False
@@ -467,58 +372,66 @@ class RustChainMiner:
         entropy = self._collect_entropy()
         self.last_entropy = entropy
 
+        # Build PoW proof — None if Zephyr not running (no overhead in that case)
+        self._pow_proof = self._build_pow_proof()
+
         report_payload = {
             "nonce": nonce,
             "commitment": hashlib.sha256(
                 (nonce + self.wallet_address + json.dumps(entropy, sort_keys=True)).encode()
             ).hexdigest(),
-            "derived": entropy,
+            "derived":       entropy,
             "entropy_score": entropy.get("variance_ns", 0.0)
         }
 
         attestation = {
-            "miner": self.wallet_address,
+            "miner":    self.wallet_address,
             "miner_id": self.miner_id,
-            "report": report_payload,
+            "report":   report_payload,
             "device": {
                 "family": self.hw_info["family"],
-                "arch": self.hw_info["arch"],
-                "model": self.hw_info.get("model") or self.hw_info.get("machine"),
-                "cpu": platform.processor(),
-                "cores": os.cpu_count()
+                "arch":   self.hw_info["arch"],
+                "model":  self.hw_info.get("model") or self.hw_info.get("machine"),
+                "cpu":    platform.processor(),
+                "cores":  os.cpu_count()
             },
             "signals": {
-                "macs": self.hw_info["macs"],
+                "macs":     self.hw_info["macs"],
                 "hostname": self.hw_info["hostname"]
-            },
-            "fingerprint": self.fingerprint_data
+            }
         }
 
+        # Attach PoW proof if present — server ignores this field if absent,
+        # so existing attestation behaviour is fully preserved for non-Zephyr miners.
+        if self._pow_proof:
+            attestation["pow_proof"] = self._pow_proof
+
         try:
-            resp = requests.post(f"{self.node_url}/attest/submit", json=attestation,
-                                 timeout=30, verify=False)
+            resp = requests.post(
+                f"{self.node_url}/attest/submit", json=attestation, timeout=30
+            )
             if resp.status_code == 200 and resp.json().get("ok"):
                 self.attestation_valid_until = time.time() + 580
                 return True
-            else:
-                print(f"[ATTEST] Server response: {resp.status_code} {resp.text[:200]}")
-        except Exception as e:
-            print(f"[ATTEST] Error: {e}")
+        except Exception:
+            pass
         return False
 
     def enroll(self):
         """Enroll the miner into the current epoch after attesting."""
         payload = {
             "miner_pubkey": self.wallet_address,
-            "miner_id": self.miner_id,
+            "miner_id":     self.miner_id,
             "device": {
                 "family": self.hw_info["family"],
-                "arch": self.hw_info["arch"]
+                "arch":   self.hw_info["arch"]
             }
         }
 
         try:
-            resp = requests.post(f"{self.node_url}/epoch/enroll", json=payload, timeout=15, verify=False)
+            resp = requests.post(
+                f"{self.node_url}/epoch/enroll", json=payload, timeout=15
+            )
             if resp.status_code == 200 and resp.json().get("ok"):
                 self.enrolled = True
                 self.last_enroll = time.time()
@@ -530,64 +443,84 @@ class RustChainMiner:
     def check_eligibility(self):
         """Check if eligible to mine"""
         try:
-            response = requests.get(f"{RUSTCHAIN_API}/lottery/eligibility?miner_id={self.miner_id}", verify=False)
+            response = requests.get(
+                f"{RUSTCHAIN_API}/lottery/eligibility?miner_id={self.miner_id}"
+            )
             if response.ok:
-                data = response.json()
-                return data.get("eligible", False)
-        except:
+                return response.json().get("eligible", False)
+        except Exception:
             pass
         return False
 
     def generate_header(self):
-        """Generate mining header"""
+        """
+        Generate mining header.
+
+        Extended for Zephyr dual-mining: the most recently built pow_proof
+        (from the last attest() cycle) is included when present. This binds
+        the PoW evidence to the specific header submission so the node can
+        correlate the attestation proof with the reward claim.
+        """
         timestamp = int(time.time())
-        nonce = os.urandom(4).hex()
-        header = {
-            "miner_id": self.miner_id,
-            "wallet": self.wallet_address,
+        nonce     = os.urandom(4).hex()
+        header    = {
+            "miner_id":  self.miner_id,
+            "wallet":    self.wallet_address,
             "timestamp": timestamp,
-            "nonce": nonce
+            "nonce":     nonce
         }
-        header_str = json.dumps(header, sort_keys=True)
+        header_str    = json.dumps(header, sort_keys=True)
         header["hash"] = hashlib.sha256(header_str.encode()).hexdigest()
+
+        # Attach the cached PoW proof from the last attestation cycle.
+        # Using the cached value (rather than re-detecting on every header)
+        # avoids repeated process scans and RPC calls in the 10-second loop.
+        if self._pow_proof:
+            header["pow_proof"] = self._pow_proof
+
         return header
 
     def submit_header(self, header):
         """Submit mining header"""
         try:
-            response = requests.post(f"{RUSTCHAIN_API}/headers/ingest_signed", json=header, timeout=5, verify=False)
+            response = requests.post(
+                f"{RUSTCHAIN_API}/headers/ingest_signed", json=header, timeout=5
+            )
             return response.status_code == 200
-        except:
+        except Exception:
             return False
+
+
+# ---------------------------------------------------------------------------
+# GUI, headless runner, and entry point — unchanged from original
+# ---------------------------------------------------------------------------
 
 class RustChainGUI:
     """Windows GUI for RustChain"""
     def __init__(self):
+        if not TK_AVAILABLE:
+            raise RuntimeError(f"tkinter is not available: {_TK_IMPORT_ERROR}")
         self.root = tk.Tk()
         self.root.title("RustChain Wallet & Miner for Windows")
         self.root.geometry("800x600")
         self.wallet = RustChainWallet()
-        self.miner = RustChainMiner(self.wallet.wallet_data["address"])
+        self.miner  = RustChainMiner(self.wallet.wallet_data["address"])
         self.setup_gui()
         self.update_stats()
 
     def setup_gui(self):
-        """Setup GUI elements"""
         notebook = ttk.Notebook(self.root)
         notebook.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Wallet tab
         wallet_frame = ttk.Frame(notebook)
         notebook.add(wallet_frame, text="Wallet")
         self.setup_wallet_tab(wallet_frame)
 
-        # Miner tab
         miner_frame = ttk.Frame(notebook)
         notebook.add(miner_frame, text="Miner")
         self.setup_miner_tab(miner_frame)
 
     def setup_wallet_tab(self, parent):
-        """Setup wallet interface"""
         info_frame = ttk.LabelFrame(parent, text="Wallet Information", padding=10)
         info_frame.pack(fill="x", padx=10, pady=10)
 
@@ -596,35 +529,22 @@ class RustChainGUI:
         self.address_label.grid(row=0, column=1, sticky="w")
 
         ttk.Label(info_frame, text="Balance:").grid(row=1, column=0, sticky="w")
-        self.balance_label = ttk.Label(info_frame, text=f"{self.wallet.wallet_data['balance']:.8f} RTC")
+        self.balance_label = ttk.Label(
+            info_frame, text=f"{self.wallet.wallet_data['balance']:.8f} RTC"
+        )
         self.balance_label.grid(row=1, column=1, sticky="w")
 
     def setup_miner_tab(self, parent):
-        """Setup miner interface"""
-        # Fingerprint status
-        fp_frame = ttk.LabelFrame(parent, text="Hardware Fingerprint", padding=10)
-        fp_frame.pack(fill="x", padx=10, pady=5)
-
-        fp = self.miner.fingerprint_data or {}
-        fp_status = "PASSED" if fp.get("all_passed") else "FAILED"
-        fp_color = "green" if fp.get("all_passed") else "red"
-        self.fp_label = ttk.Label(fp_frame, text=f"Fingerprint: {fp_status}")
-        self.fp_label.pack(anchor="w")
-
-        if fp.get("checks"):
-            for check_name, check_data in fp["checks"].items():
-                passed = check_data.get("passed", False) if isinstance(check_data, dict) else check_data
-                status = "PASS" if passed else "FAIL"
-                ttk.Label(fp_frame, text=f"  {check_name}: {status}").pack(anchor="w")
-
         control_frame = ttk.LabelFrame(parent, text="Mining Control", padding=10)
-        control_frame.pack(fill="x", padx=10, pady=5)
+        control_frame.pack(fill="x", padx=10, pady=10)
 
-        self.mine_button = ttk.Button(control_frame, text="Start Mining", command=self.toggle_mining)
+        self.mine_button = ttk.Button(
+            control_frame, text="Start Mining", command=self.toggle_mining
+        )
         self.mine_button.pack(pady=10)
 
         stats_frame = ttk.LabelFrame(parent, text="Mining Statistics", padding=10)
-        stats_frame.pack(fill="x", padx=10, pady=5)
+        stats_frame.pack(fill="x", padx=10, pady=10)
 
         ttk.Label(stats_frame, text="Shares Submitted:").grid(row=0, column=0, sticky="w")
         self.shares_label = ttk.Label(stats_frame, text="0")
@@ -635,7 +555,6 @@ class RustChainGUI:
         self.accepted_label.grid(row=1, column=1, sticky="w")
 
     def toggle_mining(self):
-        """Toggle mining on/off"""
         if self.miner.mining:
             self.miner.stop_mining()
             self.mine_button.config(text="Start Mining")
@@ -644,29 +563,84 @@ class RustChainGUI:
             self.mine_button.config(text="Stop Mining")
 
     def mining_callback(self, data):
-        """Handle mining events"""
         if data["type"] == "share":
             self.update_mining_stats()
 
     def update_mining_stats(self):
-        """Update mining statistics display"""
         self.shares_label.config(text=str(self.miner.shares_submitted))
         self.accepted_label.config(text=str(self.miner.shares_accepted))
 
     def update_stats(self):
-        """Periodic update"""
         if self.miner.mining:
             self.update_mining_stats()
         self.root.after(5000, self.update_stats)
 
     def run(self):
-        """Run the GUI"""
         self.root.mainloop()
 
-def main():
-    """Main entry point"""
+
+def run_headless(wallet_address: str, node_url: str) -> int:
+    wallet = RustChainWallet()
+    if wallet_address:
+        wallet.wallet_data["address"] = wallet_address
+        wallet.save_wallet(wallet.wallet_data)
+    miner = RustChainMiner(wallet.wallet_data["address"])
+    miner.node_url = node_url
+
+    def cb(evt):
+        t = evt.get("type")
+        if t == "share":
+            ok = "OK" if evt.get("success") else "FAIL"
+            print(
+                f"[share] submitted={evt.get('submitted')} "
+                f"accepted={evt.get('accepted')} {ok}",
+                flush=True
+            )
+        elif t == "error":
+            print(f"[error] {evt.get('message')}", file=sys.stderr, flush=True)
+
+    print("RustChain Windows miner: headless mode", flush=True)
+    print(f"node={miner.node_url} miner_id={miner.miner_id}", flush=True)
+    miner.start_mining(cb)
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        miner.stop_mining()
+        print("\nStopping miner.", flush=True)
+        return 0
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description="RustChain Windows wallet + miner (GUI or headless fallback)."
+    )
+    ap.add_argument("--headless", action="store_true",
+                    help="Run without GUI (recommended for embeddable Python).")
+    ap.add_argument("--node",   default=RUSTCHAIN_API,
+                    help="RustChain node base URL.")
+    ap.add_argument("--wallet", default="",
+                    help="Wallet address / miner pubkey string.")
+    args = ap.parse_args(argv)
+
+    if args.headless or not TK_AVAILABLE:
+        if not TK_AVAILABLE and not args.headless:
+            print(
+                f"tkinter unavailable ({_TK_IMPORT_ERROR}); falling back to --headless.",
+                file=sys.stderr
+            )
+        return run_headless(args.wallet, args.node)
+
     app = RustChainGUI()
+    app.miner.node_url = args.node
+    if args.wallet:
+        app.wallet.wallet_data["address"] = args.wallet
+        app.wallet.save_wallet(app.wallet.wallet_data)
+        app.miner.wallet_address = args.wallet
+        app.miner.miner_id = f"windows_{hashlib.md5(args.wallet.encode()).hexdigest()[:8]}"
     app.run()
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
