@@ -1,0 +1,353 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!--
+SPDX-License-Identifier: MIT
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro Computing Meme Contest - RustChain</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0f0f0f;
+            color: #00ff00;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border: 2px solid #00ff00;
+            padding: 20px;
+            background: rgba(0, 255, 0, 0.1);
+        }
+        .contest-info {
+            background: rgba(255, 165, 0, 0.1);
+            border: 1px solid #ffa500;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .meme-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .meme-card {
+            border: 1px solid #00ff00;
+            background: rgba(0, 255, 0, 0.05);
+            padding: 15px;
+            border-radius: 5px;
+            position: relative;
+        }
+        .meme-card img {
+            width: 100%;
+            height: auto;
+            border: 1px solid #555;
+            border-radius: 3px;
+        }
+        .meme-info {
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+        .voting-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .vote-btn {
+            padding: 5px 15px;
+            background: transparent;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.3s;
+        }
+        .vote-btn:hover {
+            background: rgba(0, 255, 0, 0.2);
+        }
+        .vote-btn.upvoted {
+            background: rgba(0, 255, 0, 0.3);
+        }
+        .admin-controls {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            display: none;
+        }
+        .admin-controls.show {
+            display: block;
+        }
+        .admin-btn {
+            padding: 3px 8px;
+            margin: 2px;
+            font-size: 0.7em;
+            background: rgba(255, 0, 0, 0.2);
+            border: 1px solid #ff0000;
+            color: #ff0000;
+            cursor: pointer;
+        }
+        .submission-form {
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid #00ff00;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 8px;
+            background: #000;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            font-family: inherit;
+        }
+        .submit-btn {
+            background: transparent;
+            border: 2px solid #00ff00;
+            color: #00ff00;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.3s;
+        }
+        .submit-btn:hover {
+            background: rgba(0, 255, 0, 0.2);
+        }
+        .rules {
+            background: rgba(255, 165, 0, 0.1);
+            border: 1px solid #ffa500;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .rules ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid #00ff00;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .stat {
+            text-align: center;
+        }
+        .rtc-reward {
+            color: #ffa500;
+            font-weight: bold;
+        }
+        .loading {
+            text-align: center;
+            color: #888;
+        }
+        @media (max-width: 768px) {
+            .meme-grid {
+                grid-template-columns: 1fr;
+            }
+            .stats {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🖥️ RETRO COMPUTING MEME CONTEST 🖥️</h1>
+        <p class="rtc-reward">Rewards: 1 RTC per accepted meme • 3 RTC for top 3</p>
+    </div>
+
+    <div class="contest-info">
+        <h3>Contest Status: {{ contest_status }}</h3>
+        <p>Submissions: {{ total_submissions }} • Voting Ends: {{ voting_deadline }}</p>
+    </div>
+
+    <div class="stats">
+        <div class="stat">
+            <div>Total Memes</div>
+            <div><strong>{{ total_submissions }}</strong></div>
+        </div>
+        <div class="stat">
+            <div>Total Votes</div>
+            <div><strong>{{ total_votes }}</strong></div>
+        </div>
+        <div class="stat">
+            <div>RTC Pool</div>
+            <div class="rtc-reward"><strong>{{ rtc_pool }} RTC</strong></div>
+        </div>
+    </div>
+
+    {% if show_submission_form %}
+    <div class="submission-form">
+        <h3>Submit Your Meme</h3>
+        <form id="memeForm" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="title">Meme Title:</label>
+                <input type="text" id="title" name="title" required maxlength="100">
+            </div>
+            <div class="form-group">
+                <label for="description">Description (optional):</label>
+                <textarea id="description" name="description" rows="3" maxlength="500"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="image">Meme Image (PNG/JPG, min 500px wide):</label>
+                <input type="file" id="image" name="image" accept=".png,.jpg,.jpeg" required>
+            </div>
+            <div class="form-group">
+                <label for="wallet">Your RTC Wallet Address:</label>
+                <input type="text" id="wallet" name="wallet" required placeholder="rust1...">
+            </div>
+            <button type="submit" class="submit-btn">Submit Meme</button>
+        </form>
+    </div>
+    {% endif %}
+
+    <div class="rules">
+        <h3>Contest Rules</h3>
+        <ul>
+            <li><strong>Original memes only</strong> (you made it, not found it)</li>
+            <li>Must relate to: retro computing, RustChain PoA, vintage mining, or "1 CPU = 1 Vote"</li>
+            <li>Image format: PNG or JPG, at least 500px wide</li>
+            <li><strong>Max 5 memes per person</strong> (quality over quantity)</li>
+            <li>Standard meme formats welcome (Drake, expanding brain, etc.)</li>
+        </ul>
+    </div>
+
+    <div id="memeGallery" class="meme-grid">
+        {% if memes %}
+            {% for meme in memes %}
+            <div class="meme-card" data-id="{{ meme.id }}">
+                <div class="admin-controls {{ 'show' if is_admin else '' }}">
+                    <button class="admin-btn" onclick="approveMeme({{ meme.id }})">Approve</button>
+                    <button class="admin-btn" onclick="rejectMeme({{ meme.id }})">Reject</button>
+                    <button class="admin-btn" onclick="deleteMeme({{ meme.id }})">Delete</button>
+                </div>
+                
+                <img src="{{ meme.image_url }}" alt="{{ meme.title }}" loading="lazy">
+                
+                <div class="meme-info">
+                    <h4>{{ meme.title }}</h4>
+                    {% if meme.description %}
+                    <p>{{ meme.description }}</p>
+                    {% endif %}
+                    <p><small>by {{ meme.author }} • {{ meme.created_at }}</small></p>
+                    <p><small>Status: <span class="status-{{ meme.status }}">{{ meme.status.title() }}</span></small></p>
+                </div>
+                
+                {% if show_voting and meme.status == 'approved' %}
+                <div class="voting-buttons">
+                    <button class="vote-btn" onclick="vote({{ meme.id }}, 'up')" 
+                            data-votes="{{ meme.upvotes }}">
+                        👍 {{ meme.upvotes }}
+                    </button>
+                    <button class="vote-btn" onclick="vote({{ meme.id }}, 'down')" 
+                            data-votes="{{ meme.downvotes }}">
+                        👎 {{ meme.downvotes }}
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="loading">No memes submitted yet. Be the first!</div>
+        {% endif %}
+    </div>
+
+    <script>
+        function vote(memeId, voteType) {
+            fetch(`/api/memes/${memeId}/vote`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({vote: voteType})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Vote failed: ' + data.error);
+                }
+            });
+        }
+
+        function approveMeme(memeId) {
+            if (confirm('Approve this meme for voting?')) {
+                updateMemeStatus(memeId, 'approved');
+            }
+        }
+
+        function rejectMeme(memeId) {
+            if (confirm('Reject this meme?')) {
+                updateMemeStatus(memeId, 'rejected');
+            }
+        }
+
+        function deleteMeme(memeId) {
+            if (confirm('Delete this meme permanently?')) {
+                fetch(`/api/memes/${memeId}`, {method: 'DELETE'})
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) location.reload();
+                    else alert('Delete failed');
+                });
+            }
+        }
+
+        function updateMemeStatus(memeId, status) {
+            fetch(`/api/memes/${memeId}/status`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({status: status})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) location.reload();
+                else alert('Status update failed');
+            });
+        }
+
+        document.getElementById('memeForm')?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            
+            fetch('/api/memes/submit', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Meme submitted successfully!');
+                    location.reload();
+                } else {
+                    alert('Submission failed: ' + data.error);
+                }
+            });
+        });
+
+        setInterval(() => {
+            fetch('/api/memes/stats')
+            .then(response => response.json())
+            .then(data => {
+                document.querySelector('.stat:nth-child(1) strong').textContent = data.total_submissions;
+                document.querySelector('.stat:nth-child(2) strong').textContent = data.total_votes;
+            });
+        }, 30000);
+    </script>
+</body>
+</html>
