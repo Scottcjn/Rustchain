@@ -1,0 +1,319 @@
+# SPDX-License-Identifier: MIT
+name: Bounty Bot PRO
+
+on:
+  issues:
+    types: [labeled, unlabeled]
+  issue_comment:
+    types: [created]
+
+env:
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  RUSTCHAIN_NODE_URL: ${{ vars.RUSTCHAIN_NODE_URL || 'http://localhost:5000' }}
+  BOT_WEBHOOK_SECRET: ${{ secrets.BOT_WEBHOOK_SECRET }}
+
+jobs:
+  bounty-verification:
+    if: contains(github.event.issue.labels.*.name, 'bounty') || contains(github.event.issue.labels.*.name, 'reward')
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests google-generativeai beautifulsoup4 lxml validators
+        
+    - name: Initialize Bounty Bot PRO
+      id: bot-init
+      run: |
+        python -c "
+        import os
+        import json
+        
+        # Extract issue data
+        event_data = json.loads(os.environ['GITHUB_EVENT_PATH'])
+        with open(event_data, 'r') as f:
+            event = json.load(f)
+            
+        issue_number = event['issue']['number']
+        issue_title = event['issue']['title']
+        issue_body = event['issue']['body'] or ''
+        
+        print(f'ISSUE_NUMBER={issue_number}')
+        print(f'ISSUE_TITLE={issue_title}')
+        print(f'ISSUE_BODY_LENGTH={len(issue_body)}')
+        " >> $GITHUB_OUTPUT
+        
+    - name: AI Quality Assessment
+      id: ai-scoring
+      env:
+        ISSUE_TITLE: ${{ steps.bot-init.outputs.ISSUE_TITLE }}
+        ISSUE_NUMBER: ${{ steps.bot-init.outputs.ISSUE_NUMBER }}
+      run: |
+        python << 'EOF'
+        import os
+        import json
+        import requests
+        import google.generativeai as genai
+        from bs4 import BeautifulSoup
+        import re
+        import validators
+        
+        # Configure Gemini
+        genai.configure(api_key=os.environ['GEMINI_API_KEY'])
+        model = genai.GenerativeModel('gemini-1.5-pro')
+        
+        def extract_urls(text):
+            url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+            return re.findall(url_pattern, text)
+            
+        def fetch_content(url):
+            try:
+                headers = {'User-Agent': 'Mozilla/5.0 (compatible; BountyBotPRO/1.0)'}
+                resp = requests.get(url, headers=headers, timeout=10)
+                if resp.status_code == 200:
+                    soup = BeautifulSoup(resp.content, 'html.parser')
+                    # Remove script and style elements
+                    for script in soup(['script', 'style']):
+                        script.decompose()
+                    return soup.get_text()[:3000]  # Limit content for API
+            except:
+                pass
+            return None
+            
+        def assess_quality(content, submission_type='article'):
+            prompt = f'''
+            Evaluate this {submission_type} submission for a blockchain bounty program:
+            
+            Content: {content[:2000]}
+            
+            Score on these criteria (0-10 each):
+            1. Technical Depth - How technically informative is it?
+            2. Clarity - How well-written and clear is it?  
+            3. Originality - How original/unique is the content?
+            
+            Respond ONLY with JSON: {{"technical_depth": X, "clarity": Y, "originality": Z, "total": sum, "reasoning": "brief explanation"}}
+            '''
+            
+            try:
+                response = model.generate_content(prompt)
+                result = json.loads(response.text.strip())
+                return result
+            except Exception as e:
+                return {"technical_depth": 0, "clarity": 0, "originality": 0, "total": 0, "reasoning": f"Assessment failed: {str(e)}"}
+        
+        # Get issue content from GitHub API
+        repo = os.environ['GITHUB_REPOSITORY']
+        issue_num = os.environ['ISSUE_NUMBER']
+        
+        gh_resp = requests.get(
+            f'https://api.github.com/repos/{repo}/issues/{issue_num}',
+            headers={'Authorization': f'token {os.environ["GITHUB_TOKEN"]}'}
+        )
+        
+        if gh_resp.status_code != 200:
+            print("ERROR: Could not fetch issue data")
+            exit(1)
+            
+        issue_data = gh_resp.json()
+        issue_body = issue_data.get('body', '')
+        
+        # Extract submission URLs
+        urls = extract_urls(issue_body)
+        
+        total_score = 0
+        assessment_results = []
+        
+        for url in urls[:3]:  # Limit to first 3 URLs
+            if validators.url(url):
+                content = fetch_content(url)
+                if content:
+                    score_result = assess_quality(content)
+                    assessment_results.append({
+                        'url': url,
+                        'scores': score_result
+                    })
+                    total_score += score_result.get('total', 0)
+        
+        avg_score = total_score / len(assessment_results) if assessment_results else 0
+        
+        # Output results
+        print(f"AI_SCORE={avg_score:.1f}")
+        print(f"ASSESSMENT_COUNT={len(assessment_results)}")
+        
+        # Save detailed results
+        with open('ai_assessment.json', 'w') as f:
+            json.dump({
+                'average_score': avg_score,
+                'assessments': assessment_results,
+                'threshold_passed': avg_score >= 6.0
+            }, f, indent=2)
+            
+        EOF
+        
+    - name: Wallet Verification
+      id: wallet-check
+      run: |
+        python << 'EOF'
+        import os
+        import json
+        import requests
+        import re
+        
+        # Get issue content
+        repo = os.environ['GITHUB_REPOSITORY']
+        issue_num = os.environ.get('ISSUE_NUMBER', '')
+        
+        gh_resp = requests.get(
+            f'https://api.github.com/repos/{repo}/issues/{issue_num}',
+            headers={'Authorization': f'token {os.environ["GITHUB_TOKEN"]}'}
+        )
+        
+        issue_data = gh_resp.json()
+        issue_body = issue_data.get('body', '')
+        
+        # Extract wallet addresses (RustChain format)
+        wallet_pattern = r'\b[A-Za-z0-9]{40,64}\b'  # Typical blockchain address pattern
+        wallet_candidates = re.findall(wallet_pattern, issue_body)
+        
+        node_url = os.environ.get('RUSTCHAIN_NODE_URL', 'http://localhost:5000')
+        valid_wallets = []
+        
+        for wallet in wallet_candidates[:3]:  # Check first 3 candidates
+            try:
+                # Query RustChain node for wallet balance
+                resp = requests.get(f'{node_url}/wallet/balance', 
+                                   params={'address': wallet}, timeout=5)
+                if resp.status_code == 200:
+                    balance_data = resp.json()
+                    if 'balance' in balance_data:
+                        valid_wallets.append({
+                            'address': wallet,
+                            'balance': balance_data['balance'],
+                            'verified': True
+                        })
+            except:
+                continue
+                
+        print(f"VALID_WALLET_COUNT={len(valid_wallets)}")
+        
+        if valid_wallets:
+            print(f"PRIMARY_WALLET={valid_wallets[0]['address']}")
+            print("WALLET_VERIFIED=true")
+        else:
+            print("WALLET_VERIFIED=false")
+            
+        # Save wallet data
+        with open('wallet_verification.json', 'w') as f:
+            json.dump({'valid_wallets': valid_wallets}, f, indent=2)
+            
+        EOF
+        
+    - name: Star King Detection
+      id: star-detection
+      run: |
+        python << 'EOF'
+        import os
+        import requests
+        
+        username = os.environ['GITHUB_ACTOR']
+        
+        # Check user's star activity
+        try:
+            user_resp = requests.get(f'https://api.github.com/users/{username}',
+                                   headers={'Authorization': f'token {os.environ["GITHUB_TOKEN"]}'})
+            
+            if user_resp.status_code == 200:
+                user_data = user_resp.json()
+                public_repos = user_data.get('public_repos', 0)
+                followers = user_data.get('followers', 0)
+                
+                # Simple heuristics for "Star King" detection
+                star_king_score = 0
+                if public_repos > 20:
+                    star_king_score += 2
+                if followers > 50:
+                    star_king_score += 2
+                if user_data.get('created_at', '').split('-')[0] < '2020':  # Account age
+                    star_king_score += 1
+                    
+                is_star_king = star_king_score >= 3
+                
+                print(f"STAR_KING_SCORE={star_king_score}")
+                print(f"IS_STAR_KING={str(is_star_king).lower()}")
+            else:
+                print("STAR_KING_SCORE=0")
+                print("IS_STAR_KING=false")
+        except:
+            print("STAR_KING_SCORE=0")
+            print("IS_STAR_KING=false")
+            
+        EOF
+        
+    - name: Generate Bounty Report
+      run: |
+        python << 'EOF'
+        import json
+        import os
+        
+        # Load assessment data
+        try:
+            with open('ai_assessment.json', 'r') as f:
+                ai_data = json.load(f)
+        except:
+            ai_data = {'average_score': 0, 'threshold_passed': False}
+            
+        try:
+            with open('wallet_verification.json', 'r') as f:
+                wallet_data = json.load(f)
+        except:
+            wallet_data = {'valid_wallets': []}
+            
+        ai_score = ai_data.get('average_score', 0)
+        wallet_verified = len(wallet_data.get('valid_wallets', [])) > 0
+        star_king = os.environ.get('IS_STAR_KING', 'false') == 'true'
+        
+        # Generate report
+        report = f"""## 🤖 Bounty Bot PRO Assessment
+        
+        **AI Quality Score**: {ai_score:.1f}/10.0 {'✅' if ai_score >= 6.0 else '❌'}
+        **Wallet Verification**: {'✅ Verified' if wallet_verified else '❌ No valid wallet found'}
+        **Star King Status**: {'⭐ Detected' if star_king else '👤 Regular contributor'}
+        
+        ### Assessment Details:
+        - **Content URLs Analyzed**: {len(ai_data.get('assessments', []))}
+        - **Valid Wallets Found**: {len(wallet_data.get('valid_wallets', []))}
+        
+        {'**🎯 BOUNTY ELIGIBLE** - All verification criteria met!' if (ai_score >= 6.0 and wallet_verified) else '**⏳ REVIEW NEEDED** - Some criteria not met'}
+        
+        ---
+        *Powered by Bounty Bot PRO v2.1 | Node Integration Enabled*
+        """
+        
+        # Save for comment posting
+        with open('bounty_report.md', 'w') as f:
+            f.write(report)
+            
+        EOF
+        
+    - name: Post Assessment Comment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const report = fs.readFileSync('bounty_report.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: report
+          });
