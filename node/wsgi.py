@@ -42,6 +42,18 @@ except ImportError as e:
 except Exception as e:
     print(f"[WSGI] P2P init failed: {e}")
 
+# RIP-306: SophiaCore Attestation Inspector
+try:
+    from sophia_attestation_inspector import register_sophia_endpoints, ensure_schema as sophia_schema
+    sophia_schema(DB_PATH)
+    register_sophia_endpoints(app, DB_PATH)
+    print("[RIP-306] SophiaCore Attestation Inspector registered")
+    print("[RIP-306]   Endpoints: /sophia/status, /sophia/inspect, /sophia/batch")
+except ImportError as e:
+    print(f"[RIP-306] SophiaCore not available: {e}")
+except Exception as e:
+    print(f"[RIP-306] SophiaCore init failed: {e}")
+
 # Expose the app for gunicorn
 application = app
 
