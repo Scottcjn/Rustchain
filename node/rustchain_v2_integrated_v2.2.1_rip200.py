@@ -1133,12 +1133,17 @@ HARDWARE_WEIGHTS = {
 POWERPC_ARCHES = {"g3", "g4", "g5", "power8", "power9", "powerpc", "power macintosh"}
 X86_CPU_BRANDS = {"intel", "xeon", "core", "celeron", "pentium", "amd", "ryzen", "epyc", "athlon", "threadripper"}
 ARM_CPU_BRANDS = {
+    # Modern ARM (NAS/SBC/cloud — 0.0005x)
     "arm", "aarch64", "cortex", "neoverse",
     "apple m1", "apple m2", "apple m3", "apple m4", "apple m",
     "broadcom", "allwinner", "rockchip", "amlogic",
     "qualcomm", "snapdragon", "mediatek", "exynos",
     "graviton", "a64fx", "thunderx", "cavium",
     "kunpeng", "phytium", "ampere",
+    # Vintage ARM (LEGENDARY/ANCIENT — high multipliers)
+    "strongarm", "sa-110", "sa-1100", "sa-1110",
+    "xscale", "arm7tdmi", "arm710", "arm610",
+    "arm926", "arm1176",
 }
 
 
@@ -1350,7 +1355,23 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
 
     # ARM detection runs for ALL miners — not just PowerPC claims.
     # ARM NAS/SBC devices claiming x86 get overridden to ARM (0.0005x multiplier).
+    # BUT vintage ARM (ARM2, ARM7TDMI, StrongARM, etc.) keeps its specific arch
+    # for proper LEGENDARY/ANCIENT multipliers.
     if _detect_arm_evidence(device, fingerprint):
+        # Vintage ARM architectures that deserve high multipliers
+        vintage_arm_arches = {
+            "arm2", "arm3", "arm6", "arm7", "arm7tdmi",
+            "strongarm", "sa1100", "sa1110", "xscale",
+            "arm9", "arm926ej", "arm11", "arm1176",
+            "cortex_a8", "cortex_a9",
+        }
+        arch_lower = arch.lower().replace("-", "_").replace(" ", "_")
+        if arch_lower in vintage_arm_arches:
+            # Vintage ARM — preserve the specific arch for multiplier lookup
+            print(f"[ARM_DETECT] VINTAGE: {arch_lower} -> ARM/{arch_lower} (LEGENDARY/ANCIENT)")
+            return {"device_family": "ARM", "device_arch": arch_lower}
+
+        # Modern ARM — generic penalty
         machine = str(device.get("machine") or "").lower()
         arm_arch = "armv7" if machine in ("armv7l", "armv6l", "armhf") else "aarch64"
         if family.lower() in ("x86", "x86_64"):

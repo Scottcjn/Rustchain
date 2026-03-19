@@ -247,15 +247,36 @@ ANTIQUITY_MULTIPLIERS = {
     "m4": 1.05,
     
     # ===========================================
+    # VINTAGE ARM (1987-2005) — LEGENDARY/ANCIENT
+    # These are museum pieces, not NAS boxes
+    # ===========================================
+
+    "arm2": 4.0,              # Acorn Archimedes (1987) - MYTHIC
+    "arm3": 3.8,              # ARM3 with cache (1989)
+    "arm6": 3.5,              # ARM610, first for RiscPC (1992)
+    "arm7": 3.0,              # ARM7 (1994)
+    "arm7tdmi": 3.0,          # ARM7TDMI - GBA, tons of embedded (1995)
+    "strongarm": 2.8,         # DEC/Intel StrongARM SA-110 (1996)
+    "sa1100": 2.7,            # StrongARM SA-1100 - iPAQ era (1998)
+    "sa1110": 2.7,            # StrongARM SA-1110 (1999)
+    "xscale": 2.5,            # Intel XScale - PDAs, Zaurus (2000)
+    "arm9": 2.5,              # ARM9 (1998)
+    "arm926ej": 2.3,          # ARM926EJ-S (2001)
+    "arm11": 2.0,             # ARM11 - original iPhone, RPi 1 (2003)
+    "arm1176": 2.0,           # ARM1176JZF-S - Raspberry Pi 1 (2003)
+    "cortex_a8": 1.8,         # Cortex-A8 - BeagleBoard, iPhone 3GS (2005)
+    "cortex_a9": 1.5,         # Cortex-A9 - Tegra 2, OMAP4 (2007)
+
+    # ===========================================
     # DEFAULTS
     # ===========================================
-    
+
     "retro": 1.4,
     "modern": 0.8,
     "x86_64": 0.8,
-    "aarch64": 0.0005,
-    "arm": 0.0005,
-    "armv7": 0.0005,
+    "aarch64": 0.0005,        # Modern ARM — NAS/SBC spam penalty
+    "arm": 0.0005,            # Generic modern ARM
+    "armv7": 0.0005,          # Modern ARMv7
     "armv7l": 0.0005,
     "default": 0.8,
     "unknown": 0.8
