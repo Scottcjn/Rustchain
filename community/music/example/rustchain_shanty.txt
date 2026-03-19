@@ -1,0 +1,97 @@
+SPDX-License-Identifier: MIT
+
+# The RustChain Shanty
+
+## Verse 1
+What shall we do with old hardware, early in the morning?
+What shall we do with old hardware, early in the morning?
+What shall we do with old hardware, early in the morning?
+Way hey and up she rises!
+
+Mine some RTC with a PowerPC, early in the morning!
+Mine some RTC with a PowerPC, early in the morning!
+Mine some RTC with a PowerPC, early in the morning!
+Way hey and up she rises!
+
+## Chorus
+Way hey and up she rises
+Way hey and up she rises  
+Way hey and up she rises
+Early in the morning!
+
+One CPU equals one vote, me hearties
+Proof-of-Antiquity sets us free
+From the depths of vintage silicon
+RustChain sails across the binary sea!
+
+## Verse 2
+Fire up that Pentium II, early in the morning!
+Fire up that Pentium II, early in the morning!
+Fire up that Pentium II, early in the morning!
+Way hey and up she rises!
+
+Hash the blocks with RISC and CISC, early in the morning!
+Hash the blocks with RISC and CISC, early in the morning!
+Hash the blocks with RISC and CISC, early in the morning!
+Way hey and up she rises!
+
+## Chorus
+Way hey and up she rises
+Way hey and up she rises
+Way hey and up she rises
+Early in the morning!
+
+One CPU equals one vote, me hearties
+Proof-of-Antiquity sets us free
+From the depths of vintage silicon
+RustChain sails across the binary sea!
+
+## Bridge
+No ASIC pirates on our chain
+No GPU farms causing strain
+Just honest miners with their old machines
+Living the retro computing dreams
+
+## Final Verse
+What shall we do with the RTC rewards, early in the morning?
+What shall we do with the RTC rewards, early in the morning?  
+What shall we do with the RTC rewards, early in the morning?
+Way hey and up she rises!
+
+Share them fair among the crew, early in the morning!
+Share them fair among the crew, early in the morning!
+Share them fair among the crew, early in the morning!
+Way hey and up she rises!
+
+## Final Chorus
+Way hey and up she rises
+Way hey and up she rises
+Way hey and up she rises
+Early in the morning!
+
+RustChain forever, me hearties
+Vintage silicon sets us free
+From the depths of old computers
+We sail on the decentralized sea!
+
+---
+
+## Performance Notes
+
+- Traditional sea shanty rhythm (4/4 time, moderate tempo)
+- Call and response format perfect for group singing
+- "Early in the morning" can be sung with enthusiasm
+- Emphasize "Way hey and up she rises" with gusto
+- Bridge can be sung slower/more melodically
+- Final chorus should build in volume and energy
+
+## Technical References Included
+
+- RustChain (blockchain name)
+- RTC (coin/token name) 
+- Proof-of-Antiquity (consensus mechanism)
+- One CPU = One Vote (mining principle)
+- PowerPC, Pentium II (vintage hardware examples)
+- RISC/CISC (CPU architectures)
+- Hash, blocks (blockchain terminology)
+- ASIC/GPU mining critique (anti-industrial mining stance)
