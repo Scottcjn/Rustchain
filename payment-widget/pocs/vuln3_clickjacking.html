@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Clickjacking PoC</title></head>
+<body style="background:#0a0a0f;color:#e2e2f0;font-family:monospace;padding:2rem">
+<h1 style="color:#f97316">Vulnerability #3: Clickjacking / UI Overlay</h1>
+
+<p>The widget modal has <code>z-index: 999999</code> with no frame-busting protection.
+A malicious site can embed the widget in an iframe and overlay a transparent button to
+trick users into signing payments.</p>
+
+<div style="background:#12121e;border:1px solid #f87171;padding:1rem;border-radius:8px;margin:1rem 0">
+<p style="color:#f87171;font-size:0.85rem">
+⚠️ This PoC shows the vulnerability pattern. Full attack requires the widget to be
+embedded in an iframe on a malicious page.
+</p>
+</div>
+
+<p>The attack flow:</p>
+<ol>
+  <li>Attacker embeds widget in iframe on evil.com</li>
+  <li>Attacker overlays a transparent "Confirm Payment" button at z-index > 999999</li>
+  <li>Victim thinks they're clicking "Cancel" but actually triggers payment</li>
+</ol>
+
+<pre style="background:#12121e;padding:1rem;border-radius:4px;color:#c9a227">
+iframe {
+  opacity: 0.01;        /* almost invisible */
+  position: absolute;
+  top: 0; left: 0;
+  z-index: 9999999;     /* above widget */
+}
+button {
+  position: absolute;
+  top: 620px; left: 80px; /* on top of "Sign & Send" button */
+  width: 200px; height: 48px;
+  opacity: 0.01;
+}
+</pre>
+
+<p>Fix: Add <code>blockFraming()</code> at the top of <code>openPaymentModal()</code>
+to prevent iframe embedding entirely.</p>
+</body>
+</html>

