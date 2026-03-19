@@ -1,0 +1,85 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bounty Payout Ledger - RustChain</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; }
+        .header { margin-bottom: 30px; }
+        .status-definitions { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .ledger-table { width: 100%; border-collapse: collapse; }
+        .ledger-table th, .ledger-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        .ledger-table th { background: #f1f3f4; font-weight: 600; }
+        .status-queued { color: #e8710a; }
+        .status-pending { color: #1a73e8; }
+        .status-confirmed { color: #137333; }
+        .status-voided { color: #d93025; }
+        .amount { text-align: right; }
+        .tx-hash { font-family: monospace; font-size: 0.9em; }
+        .notes { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+        .operational-notes { background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Bounty Payout Ledger</h1>
+        <p>Single source of truth for payout status across active bounties.</p>
+    </div>
+    
+    <div class="status-definitions">
+        <h3>Status Definitions</h3>
+        <ul>
+            <li><strong class="status-queued">Queued</strong>: approved and transfer submitted</li>
+            <li><strong class="status-pending">Pending</strong>: in RustChain 24h pending window</li>
+            <li><strong class="status-confirmed">Confirmed</strong>: pending window passed and transfer confirmed</li>
+            <li><strong class="status-voided">Voided</strong>: canceled before confirmation</li>
+        </ul>
+    </div>
+
+    <div class="operational-notes">
+        <h3>Operational Notes</h3>
+        <ul>
+            <li>RustChain pending confirmations are processed hourly.</li>
+            <li>Each payout update should include: bounty reference, wallet, amount, pending id, tx hash.</li>
+            <li>Keep this ledger updated for transparency and anti-fraud tracking.</li>
+        </ul>
+    </div>
+    
+    <table class="ledger-table">
+        <thead>
+            <tr>
+                <th>Date (UTC)</th>
+                <th>Bounty Ref</th>
+                <th>GitHub User</th>
+                <th>Wallet</th>
+                <th>Amount RTC</th>
+                <th>Status</th>
+                <th>Pending ID</th>
+                <th>Tx Hash</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for payout in payouts %}
+            <tr>
+                <td>{{ payout.date_utc.strftime('%Y-%m-%d') if payout.date_utc else '' }}</td>
+                <td>{{ payout.bounty_ref }}</td>
+                <td>@{{ payout.github_user }}</td>
+                <td><code>{{ payout.wallet }}</code></td>
+                <td class="amount">{{ payout.amount_rtc }}</td>
+                <td class="status-{{ payout.status.lower() }}">{{ payout.status }}</td>
+                <td>{{ payout.pending_id or '' }}</td>
+                <td class="tx-hash">{{ payout.tx_hash or '' }}</td>
+                <td class="notes">{{ payout.notes or '' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    {% if not payouts %}
+    <p><em>No payout entries found.</em></p>
+    {% endif %}
+</body>
+</html>
