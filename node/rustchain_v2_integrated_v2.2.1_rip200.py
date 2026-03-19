@@ -1132,7 +1132,14 @@ HARDWARE_WEIGHTS = {
 
 POWERPC_ARCHES = {"g3", "g4", "g5", "power8", "power9", "powerpc", "power macintosh"}
 X86_CPU_BRANDS = {"intel", "xeon", "core", "celeron", "pentium", "amd", "ryzen", "epyc", "athlon", "threadripper"}
-ARM_CPU_BRANDS = {"arm", "aarch64", "cortex", "neoverse", "apple m1", "apple m2", "apple m3"}
+ARM_CPU_BRANDS = {
+    "arm", "aarch64", "cortex", "neoverse",
+    "apple m1", "apple m2", "apple m3", "apple m4", "apple m",
+    "broadcom", "allwinner", "rockchip", "amlogic",
+    "qualcomm", "snapdragon", "mediatek", "exynos",
+    "graviton", "a64fx", "thunderx", "cavium",
+    "kunpeng", "phytium", "ampere",
+}
 
 
 def _fingerprint_checks_map(fingerprint: dict) -> dict:
@@ -1247,21 +1254,75 @@ def _has_powerpc_cache_profile(fingerprint: dict) -> bool:
     return (l2_l1_ratio >= 1.05 and l3_l2_ratio >= 1.05) or hierarchy_ratio >= 1.2
 
 
-def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: bool) -> dict:
-    family, arch = _claimed_family_and_arch(device)
-    if not _claims_powerpc(device):
-        return {"device_family": family, "device_arch": arch}
+def _detect_arm_evidence(device: dict, fingerprint: dict) -> bool:
+    """Server-side ARM detection from all available evidence.
 
+    ARM devices (NAS boxes, SBCs, phones) must not masquerade as x86.
+    Checks: machine field, CPU brand, SIMD evidence, Unknown CPU fallback.
+    """
+    machine = str(device.get("machine") or "").lower()
     cpu_brand = _cpu_brand_string(device)
     simd_data = _fingerprint_check_data(fingerprint, "simd_identity")
-    if fingerprint_passed and _powerpc_cpu_brand_matches(device) and _has_powerpc_simd_evidence(fingerprint) and _has_powerpc_cache_profile(fingerprint):
-        return {"device_family": "PowerPC", "device_arch": arch.upper()}
 
-    if _has_any_token(cpu_brand, ARM_CPU_BRANDS) or bool(simd_data.get("has_neon")):
-        return {"device_family": "ARM", "device_arch": "default"}
-    if _has_any_token(cpu_brand, X86_CPU_BRANDS) or bool(simd_data.get("has_sse")) or bool(simd_data.get("has_avx")):
-        return {"device_family": "x86_64", "device_arch": "default"}
-    return {"device_family": "x86", "device_arch": "default"}
+    # Check 1: platform.machine() says ARM
+    if machine in ("aarch64", "arm64", "armv7l", "armv6l", "armhf", "arm"):
+        return True
+
+    # Check 2: CPU brand contains ARM-specific identifiers
+    arm_brands_extended = ARM_CPU_BRANDS | {
+        "broadcom", "allwinner", "rockchip", "amlogic",
+        "qualcomm", "snapdragon", "mediatek", "exynos",
+        "apple m", "apple m4", "graviton", "a64fx", "thunderx", "cavium",
+        "kunpeng", "phytium", "ampere", "neoverse",
+    }
+    if _has_any_token(cpu_brand, arm_brands_extended):
+        return True
+
+    # Check 3: NEON SIMD = ARM
+    if bool(simd_data.get("has_neon")):
+        return True
+
+    # Check 4: Reverse x86 check — if machine is missing and CPU brand doesn't
+    # match any known x86/PPC pattern, it's probably ARM lying about being x86.
+    # Real x86 hardware ALWAYS reports CPU brand via lscpu/cpuinfo/wmic.
+    family, _ = _claimed_family_and_arch(device)
+    if not machine and family.lower() in ("x86", "x86_64"):
+        is_known_x86 = _has_any_token(cpu_brand, X86_CPU_BRANDS)
+        ppc_markers = {"powerpc", "ppc", "ibm power", "g3", "g4", "g5", "970", "7450", "power8"}
+        is_known_ppc = _has_any_token(cpu_brand, ppc_markers)
+        if not is_known_x86 and not is_known_ppc:
+            # CPU is unknown/empty/unrecognized AND claimed x86 = suspicious
+            print(f"[ARM_DETECT] REVERSE: cpu='{cpu_brand}' not x86/PPC, claimed_family={family} -> aarch64")
+            return True
+
+    return False
+
+
+def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: bool) -> dict:
+    family, arch = _claimed_family_and_arch(device)
+    cpu_brand = _cpu_brand_string(device)
+    simd_data = _fingerprint_check_data(fingerprint, "simd_identity")
+
+    # ARM detection runs FIRST for ALL miners — not just PowerPC claims.
+    # ARM NAS/SBC devices claiming x86 get overridden to ARM (0.0005x multiplier).
+    if _detect_arm_evidence(device, fingerprint):
+        machine = str(device.get("machine") or "").lower()
+        arm_arch = "armv7" if machine in ("armv7l", "armv6l", "armhf") else "aarch64"
+        if family.lower() in ("x86", "x86_64"):
+            print(f"[ARM_DETECT] OVERRIDE: claimed={family}/{arch} -> ARM/{arm_arch}")
+        return {"device_family": "ARM", "device_arch": arm_arch}
+
+    # PowerPC deep validation (existing logic)
+    if _claims_powerpc(device):
+        if fingerprint_passed and _powerpc_cpu_brand_matches(device) and _has_powerpc_simd_evidence(fingerprint) and _has_powerpc_cache_profile(fingerprint):
+            return {"device_family": "PowerPC", "device_arch": arch.upper()}
+        # Failed PowerPC validation — fall through to x86/ARM brand checks
+        if _has_any_token(cpu_brand, X86_CPU_BRANDS) or bool(simd_data.get("has_sse")) or bool(simd_data.get("has_avx")):
+            return {"device_family": "x86_64", "device_arch": "default"}
+        return {"device_family": "x86", "device_arch": "default"}
+
+    # Non-PowerPC, non-ARM — return claimed values
+    return {"device_family": family, "device_arch": arch}
 
 # RIP-0146b: Enrollment enforcement config
 ENROLL_REQUIRE_TICKET = os.getenv("ENROLL_REQUIRE_TICKET", "1") == "1"
@@ -1842,6 +1903,13 @@ def check_vm_signatures_server_side(device: dict, signals: dict) -> tuple:
     for sig in KNOWN_VM_SIGNATURES:
         if sig in cpu:
             indicators.append(f"cpu:{sig}")
+
+    # Cross-validate machine vs claimed arch — catch arch spoofing
+    machine = str(device.get("machine") or "").lower()
+    claimed_arch = str(device.get("arch") or device.get("device_arch") or "").lower()
+    if machine in ("aarch64", "arm64", "armv7l", "armv6l") and claimed_arch in ("modern", "x86_64", "x86", "core2", "nehalem", "sandybridge"):
+        # ARM spoofing is handled by derive_verified_device() — log but don't zero rewards
+        print(f"[VM_CHECK] arch_spoof: machine={machine}, claimed={claimed_arch} (ARM rate applied via derive_verified_device)")
 
     if indicators:
         return False, f"server_vm_check:{indicators}"

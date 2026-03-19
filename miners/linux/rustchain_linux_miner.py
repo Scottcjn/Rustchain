@@ -190,6 +190,7 @@ class LocalMiner:
 
     def _get_hw_info(self):
         """Collect hardware info"""
+        machine = platform.machine().lower()
         hw = {
             "platform": platform.system(),
             "machine": platform.machine(),
@@ -198,6 +199,18 @@ class LocalMiner:
             "arch": "modern",  # Less than 10 years old
             "serial": get_linux_serial()  # Hardware serial for v2 binding
         }
+
+        # Detect architecture family from platform.machine() FIRST
+        # ARM/aarch64 devices (NAS boxes, SBCs, ARM servers) must report honestly
+        if machine in ('aarch64', 'arm64'):
+            hw["family"] = "ARM"
+            hw["arch"] = "aarch64"
+        elif machine in ('armv7l', 'armv6l', 'armhf', 'arm'):
+            hw["family"] = "ARM"
+            hw["arch"] = "armv7"
+        elif machine in ('ppc', 'ppc64', 'ppc64le', 'powerpc', 'powerpc64'):
+            hw["family"] = "PowerPC"
+            hw["arch"] = "powerpc"
 
         # Get CPU
         cpu = self._run_cmd("lscpu | grep 'Model name' | cut -d: -f2 | xargs")
@@ -264,11 +277,12 @@ class LocalMiner:
             "device": {
                 "family": self.hw_info["family"],
                 "arch": self.hw_info["arch"],
-                "model": "AMD Ryzen 5 8645HS",
+                "model": self.hw_info.get("cpu", "Unknown"),
                 "cpu": self.hw_info["cpu"],
                 "cores": self.hw_info["cores"],
                 "memory_gb": self.hw_info["memory_gb"],
-                "serial": self.hw_info.get("serial")  # Hardware serial for v2 binding
+                "serial": self.hw_info.get("serial"),  # Hardware serial for v2 binding
+                "machine": self.hw_info.get("machine", platform.machine()),
             },
             "signals": {
                 "macs": self.hw_info.get("macs", [self.hw_info["mac"]]),
