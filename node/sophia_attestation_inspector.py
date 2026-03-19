@@ -46,8 +46,8 @@ POWER8_SERVER_URL = os.getenv("POWER8_LLM_URL", "http://100.75.100.89:8080")
 
 DB_PATH = os.getenv("RUSTCHAIN_DB_PATH", "/root/rustchain/rustchain_v2.db")
 
-OLLAMA_TIMEOUT = 30    # seconds for regular model
-DEEP_TIMEOUT = 120     # seconds for GPT-OSS 120B deep analysis
+OLLAMA_TIMEOUT = 120   # seconds — POWER8 GPT-OSS 120B at ~2-5 tok/s needs generous timeout
+DEEP_TIMEOUT = 180     # seconds for GPT-OSS 120B deep analysis (escalation)
 BATCH_DELAY = 1.0      # seconds between inspections to avoid hammering
 
 # Verdict constants
@@ -123,16 +123,35 @@ def _try_ollama_api(ep: str, prompt: str) -> Optional[str]:
         "model": MODEL,
         "prompt": prompt,
         "stream": False,
-        "options": {"temperature": 0.3, "num_predict": 300},
+        "options": {"temperature": 0.3, "num_predict": 150},
     }
-    resp = requests.post(url, json=payload, timeout=OLLAMA_TIMEOUT)
+    resp = requests.post(url, json=payload, timeout=(10, OLLAMA_TIMEOUT))
     if resp.status_code == 200:
         return resp.json().get("response", "")
     return None
 
 
+def _try_llamaserver_api(ep: str, prompt: str) -> Optional[str]:
+    """Try llama-server native /completion endpoint (POWER8).
+
+    GPT-OSS 120B runs at ~2-5 tok/s on POWER8 so we limit to 150 tokens
+    and use a generous read timeout. The prompt asks for concise JSON so
+    150 tokens is plenty for verdict + confidence + 2 sentence reasoning.
+    """
+    url = f"{ep.rstrip('/')}/completion"
+    payload = {
+        "prompt": prompt,
+        "n_predict": 150,
+        "temperature": 0.3,
+    }
+    resp = requests.post(url, json=payload, timeout=(10, OLLAMA_TIMEOUT))
+    if resp.status_code == 200:
+        return resp.json().get("content", "")
+    return None
+
+
 def _try_openai_api(ep: str, prompt: str) -> Optional[str]:
-    """Try OpenAI-compatible /v1/completions endpoint (llama-server on POWER8)."""
+    """Try OpenAI-compatible /v1/completions endpoint."""
     url = f"{ep.rstrip('/')}/v1/completions"
     payload = {
         "prompt": prompt,
@@ -162,19 +181,25 @@ def _call_ollama(prompt: str, endpoint: str = None) -> Optional[str]:
     for ep in endpoints:
         try:
             log.debug("Trying LLM at %s", ep)
-            # Try Ollama API first
+            # Try llama-server native /completion first (POWER8)
+            text = _try_llamaserver_api(ep, prompt)
+            if text:
+                log.info("Got response from %s via llama-server (%d chars)", ep, len(text))
+                return text
+
+            # Try Ollama API
             text = _try_ollama_api(ep, prompt)
             if text:
-                log.debug("Got response from %s via Ollama API (%d chars)", ep, len(text))
+                log.info("Got response from %s via Ollama API (%d chars)", ep, len(text))
                 return text
 
-            # Fall back to OpenAI-compatible API (llama-server on POWER8)
+            # Fall back to OpenAI-compatible API
             text = _try_openai_api(ep, prompt)
             if text:
-                log.debug("Got response from %s via OpenAI API (%d chars)", ep, len(text))
+                log.info("Got response from %s via OpenAI API (%d chars)", ep, len(text))
                 return text
 
-            log.warning("LLM %s: no response from either API", ep)
+            log.warning("LLM %s: no response from any API", ep)
         except requests.exceptions.Timeout:
             log.warning("LLM %s timed out after %ds", ep, OLLAMA_TIMEOUT)
         except requests.exceptions.ConnectionError:
@@ -281,8 +306,10 @@ Look for:
 - Too-perfect data (real hardware is messy)
 - Sudden changes from previous attestations
 
-Respond in this exact JSON format and nothing else:
-{{"verdict": "APPROVED|CAUTIOUS|SUSPICIOUS|REJECTED", "confidence": 0.0-1.0, "reasoning": "2-3 sentences"}}"""
+Reply with a single line of JSON. No other text. Use these exact keys:
+verdict (APPROVED or CAUTIOUS or SUSPICIOUS or REJECTED), confidence (0.0 to 1.0), reasoning (one sentence).
+
+{{"verdict": "APPROVED", "confidence": """
 
     return prompt
 
@@ -300,6 +327,11 @@ def _parse_verdict(response_text: str) -> Tuple[str, float, str]:
 
     # Try to find JSON in the response (model may emit preamble text)
     text = response_text.strip()
+
+    # The prompt ends with '{"verdict": "APPROVED", "confidence": ' so the model continues.
+    # Prepend the prefix if the response doesn't start with '{'
+    if not text.startswith("{"):
+        text = '{"verdict": "APPROVED", "confidence": ' + text
 
     # Look for JSON object boundaries
     start = text.find("{")
@@ -359,12 +391,15 @@ def _fetch_miner_data(miner_id: str, db_path: str = None) -> Tuple[dict, dict, l
                     "fingerprint_passed": row["fingerprint_passed"],
                 }
 
-            # Latest fingerprint profile from history table
-            hist_rows = conn.execute(
-                "SELECT ts, profile_json FROM miner_fingerprint_history "
-                "WHERE miner = ? ORDER BY ts DESC LIMIT 10",
-                (miner_id,)
-            ).fetchall()
+            # Latest fingerprint profile from history table (may not exist on all nodes)
+            try:
+                hist_rows = conn.execute(
+                    "SELECT ts, profile_json FROM miner_fingerprint_history "
+                    "WHERE miner = ? ORDER BY ts DESC LIMIT 10",
+                    (miner_id,)
+                ).fetchall()
+            except Exception:
+                hist_rows = []
             for hr in hist_rows:
                 try:
                     profile = json.loads(hr["profile_json"] or "{}")
