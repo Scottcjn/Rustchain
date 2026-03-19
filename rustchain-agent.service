@@ -1,0 +1,43 @@
+[Unit]
+Description=RustChain Multi-Platform Advertising Agent
+After=network-online.target
+Wants=network-online.target
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+User=rustchain
+Group=rustchain
+WorkingDirectory=/opt/rustchain
+ExecStart=/usr/bin/python3 /opt/rustchain/advertising_agent.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONPATH=/opt/rustchain
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=RUSTCHAIN_ENV=production
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/rustchain/data /opt/rustchain/logs
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+MemoryMax=512M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
