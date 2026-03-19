@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: MIT
+
+[Unit]
+Description=RustChain Prometheus Metrics Exporter
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rustchain
+Group=rustchain
+WorkingDirectory=/opt/rustchain-exporter
+ExecStart=/usr/bin/python3 /opt/rustchain-exporter/prometheus_exporter.py
+Restart=always
+RestartSec=10
+KillMode=process
+TimeoutStopSec=30
+
+Environment=RUSTCHAIN_NODE_URL=http://localhost:5000
+Environment=EXPORTER_PORT=9100
+Environment=EXPORTER_HOST=0.0.0.0
+Environment=SCRAPE_INTERVAL=15
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rustchain-exporter
+
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/rustchain-exporter
+
+[Install]
+WantedBy=multi-user.target
