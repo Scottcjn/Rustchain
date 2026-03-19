@@ -201,7 +201,7 @@ class LocalMiner:
         }
 
         # Detect architecture family from platform.machine() FIRST
-        # ARM/aarch64 devices (NAS boxes, SBCs, ARM servers) must report honestly
+        # Non-x86 devices must report their real architecture
         if machine in ('aarch64', 'arm64'):
             hw["family"] = "ARM"
             hw["arch"] = "aarch64"
@@ -211,6 +211,12 @@ class LocalMiner:
         elif machine in ('ppc', 'ppc64', 'ppc64le', 'powerpc', 'powerpc64'):
             hw["family"] = "PowerPC"
             hw["arch"] = "powerpc"
+        elif machine in ('sparc', 'sparc64', 'sun4u', 'sun4v'):
+            hw["family"] = "SPARC"
+            hw["arch"] = "sparc"
+        elif machine in ('mips', 'mips64', 'mipsel', 'mips64el'):
+            hw["family"] = "MIPS"
+            hw["arch"] = "mips"
 
         # Get CPU
         cpu = self._run_cmd("lscpu | grep 'Model name' | cut -d: -f2 | xargs")

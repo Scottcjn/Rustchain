@@ -1283,19 +1283,49 @@ def _detect_arm_evidence(device: dict, fingerprint: dict) -> bool:
         return True
 
     # Check 4: Reverse x86 check — if machine is missing and CPU brand doesn't
-    # match any known x86/PPC pattern, it's probably ARM lying about being x86.
+    # match any known x86/PPC/SPARC/MIPS pattern, it's probably ARM lying about being x86.
     # Real x86 hardware ALWAYS reports CPU brand via lscpu/cpuinfo/wmic.
     family, _ = _claimed_family_and_arch(device)
     if not machine and family.lower() in ("x86", "x86_64"):
         is_known_x86 = _has_any_token(cpu_brand, X86_CPU_BRANDS)
         ppc_markers = {"powerpc", "ppc", "ibm power", "g3", "g4", "g5", "970", "7450", "power8"}
+        sparc_markers = {"sparc", "ultrasparc", "sun4", "fujitsu sparc"}
+        mips_markers = {"mips", "r2000", "r3000", "r4000", "r4400", "r5000", "r8000", "r10000", "r12000", "r14000", "r16000", "vr4300", "loongson", "ingenic"}
         is_known_ppc = _has_any_token(cpu_brand, ppc_markers)
-        if not is_known_x86 and not is_known_ppc:
+        is_known_sparc = _has_any_token(cpu_brand, sparc_markers)
+        is_known_mips = _has_any_token(cpu_brand, mips_markers)
+        if not is_known_x86 and not is_known_ppc and not is_known_sparc and not is_known_mips:
             # CPU is unknown/empty/unrecognized AND claimed x86 = suspicious
-            print(f"[ARM_DETECT] REVERSE: cpu='{cpu_brand}' not x86/PPC, claimed_family={family} -> aarch64")
+            print(f"[ARM_DETECT] REVERSE: cpu='{cpu_brand}' not x86/PPC/SPARC/MIPS, claimed_family={family} -> aarch64")
             return True
 
     return False
+
+
+def _detect_sparc_or_mips(device: dict) -> dict | None:
+    """Detect SPARC or MIPS architecture from machine field and CPU brand.
+    Returns {"device_family": ..., "device_arch": ...} or None if not SPARC/MIPS.
+    """
+    machine = str(device.get("machine") or "").lower()
+    cpu_brand = _cpu_brand_string(device)
+    family, arch = _claimed_family_and_arch(device)
+
+    # SPARC detection
+    sparc_machines = ("sparc", "sparc64", "sun4u", "sun4v")
+    sparc_brands = {"sparc", "ultrasparc", "sun4", "fujitsu sparc"}
+    if machine in sparc_machines or _has_any_token(cpu_brand, sparc_brands) or family.lower() == "sparc":
+        detected_arch = arch if arch.lower().startswith("sparc") or arch.lower().startswith("ultra") else "sparc"
+        return {"device_family": "SPARC", "device_arch": detected_arch}
+
+    # MIPS detection
+    mips_machines = ("mips", "mips64", "mipsel", "mips64el")
+    mips_brands = {"mips", "r2000", "r3000", "r4000", "r4400", "r5000", "r8000", "r10000",
+                   "r12000", "r14000", "r16000", "vr4300", "loongson", "ingenic"}
+    if machine in mips_machines or _has_any_token(cpu_brand, mips_brands) or family.lower() == "mips":
+        detected_arch = arch if arch.lower().startswith("mips") or arch.lower().startswith("r") else "mips"
+        return {"device_family": "MIPS", "device_arch": detected_arch}
+
+    return None
 
 
 def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: bool) -> dict:
@@ -1303,7 +1333,13 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
     cpu_brand = _cpu_brand_string(device)
     simd_data = _fingerprint_check_data(fingerprint, "simd_identity")
 
-    # ARM detection runs FIRST for ALL miners — not just PowerPC claims.
+    # SPARC/MIPS detection — exotic architectures with LEGENDARY multipliers.
+    # Must run BEFORE ARM detection so they don't get misclassified.
+    exotic = _detect_sparc_or_mips(device)
+    if exotic:
+        return exotic
+
+    # ARM detection runs for ALL miners — not just PowerPC claims.
     # ARM NAS/SBC devices claiming x86 get overridden to ARM (0.0005x multiplier).
     if _detect_arm_evidence(device, fingerprint):
         machine = str(device.get("machine") or "").lower()
@@ -1321,7 +1357,7 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
             return {"device_family": "x86_64", "device_arch": "default"}
         return {"device_family": "x86", "device_arch": "default"}
 
-    # Non-PowerPC, non-ARM — return claimed values
+    # Non-PowerPC, non-ARM, non-exotic — return claimed values
     return {"device_family": family, "device_arch": arch}
 
 # RIP-0146b: Enrollment enforcement config
