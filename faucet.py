@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #!/usr/bin/env python3
 """
 RustChain Testnet Faucet
@@ -12,8 +13,11 @@ Features:
 import sqlite3
 import time
 import os
+import hmac
+import hashlib
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template_string
+from faucet_security_patch import SecureRateLimit, validate_proxy_origin, generate_client_token
 
 app = Flask(__name__)
 DATABASE = 'faucet.db'
@@ -21,6 +25,10 @@ DATABASE = 'faucet.db'
 # Rate limiting settings (per 24 hours)
 MAX_DRIP_AMOUNT = 0.5  # RTC
 RATE_LIMIT_HOURS = 24
+
+# Security settings for HMAC-based IP validation
+HMAC_SECRET = os.environ.get('FAUCET_HMAC_SECRET', 'default-secret-change-in-production')
+TRUSTED_PROXIES = {'127.0.0.1', '::1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'}
 
 
 def init_db():
@@ -41,16 +49,38 @@ def init_db():
 
 
 def get_client_ip():
-    """Get client IP address from request.
-
-    SECURITY: Only trust X-Forwarded-For from trusted reverse proxies.
-    Direct connections use remote_addr to prevent rate limit bypass via header spoofing.
+    """Get client IP address with secure HMAC token validation.
+    
+    SECURITY: Uses HMAC tokens and stricter proxy validation to prevent
+    rate limit bypass via X-Forwarded-For spoofing attacks.
     """
-    remote = request.remote_addr or '127.0.0.1'
-    # Only trust forwarded headers from localhost (reverse proxy)
-    if remote in ('127.0.0.1', '::1') and request.headers.get('X-Forwarded-For'):
-        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
-    return remote
+    remote_addr = request.remote_addr or '127.0.0.1'
+    
+    # Check if request comes from trusted proxy with proper validation
+    if not validate_proxy_origin(remote_addr, TRUSTED_PROXIES):
+        return remote_addr
+    
+    # Get forwarded IP from trusted proxy
+    forwarded_for = request.headers.get('X-Forwarded-For')
+    if not forwarded_for:
+        return remote_addr
+    
+    # Extract first IP from comma-separated list
+    client_ip = forwarded_for.split(',')[0].strip()
+    
+    # Validate HMAC token if present to ensure request authenticity
+    hmac_token = request.headers.get('X-Faucet-Token')
+    if hmac_token:
+        expected_token = generate_client_token(client_ip, HMAC_SECRET)
+        if not hmac.compare_digest(hmac_token, expected_token):
+            # Token mismatch, fallback to remote_addr for security
+            return remote_addr
+    
+    # Additional validation for suspicious patterns
+    if client_ip in ['0.0.0.0', '255.255.255.255'] or client_ip.startswith('127.'):
+        return remote_addr
+    
+    return client_ip
 
 
 def get_last_drip_time(ip_address):
@@ -296,6 +326,16 @@ def drip():
     
     ip = get_client_ip()
     
+    # Integrate secure rate limiting with enhanced IP validation
+    secure_rate_limit = SecureRateLimit(DATABASE, RATE_LIMIT_HOURS)
+    if not secure_rate_limit.can_request(ip):
+        next_available = get_next_available(ip)
+        return jsonify({
+            'ok': False,
+            'error': 'Rate limit exceeded',
+            'next_available': next_available
+        }), 429
+    
     # Check rate limit
     if not can_drip(ip):
         next_available = get_next_available(ip)
@@ -309,6 +349,7 @@ def drip():
     # For now, we simulate the drip
     amount = MAX_DRIP_AMOUNT
     record_drip(wallet, ip, amount)
+    secure_rate_limit.record_request(ip, wallet, amount)
     
     return jsonify({
         'ok': True,
