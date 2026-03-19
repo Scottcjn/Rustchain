@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: MIT
+
+# Core Flask dependencies
+Flask==2.3.3
+Werkzeug==2.3.7
+
+# AI/ML dependencies for Bounty Bot PRO
+google-generativeai==0.3.2
+openai==1.3.7
+
+# HTTP requests and API calls
+requests==2.31.0
+urllib3==2.0.7
+
+# Database and storage
+sqlite3-utils==3.35.2
+
+# Security and authentication
+cryptography==41.0.7
+PyJWT==2.8.0
+
+# Data processing
+beautifulsoup4==4.12.2
+lxml==4.9.3
+markdown==3.5.1
+
+# Async support for node communications
+aiohttp==3.9.1
+asyncio-throttle==1.0.2
+
+# Validation and parsing
+jsonschema==4.19.2
+pydantic==2.5.1
+
+# Utilities
+python-dotenv==1.0.0
+click==8.1.7
+rich==13.7.0
+
+# Testing (optional)
+pytest==7.4.3
+pytest-flask==1.3.0
+
+# Development tools (optional)
+black==23.11.0
+flake8==6.1.0
