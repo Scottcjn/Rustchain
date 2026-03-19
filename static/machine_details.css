@@ -1,0 +1,237 @@
+/* SPDX-License-Identifier: MIT */
+
+.machine-detail {
+    background-color: #000;
+    color: #00ff00;
+    font-family: 'Courier New', monospace;
+    min-height: 100vh;
+    padding: 20px;
+    line-height: 1.4;
+}
+
+.machine-header {
+    border: 1px solid #00ff00;
+    padding: 20px;
+    margin-bottom: 20px;
+    background-color: #001100;
+}
+
+.machine-header h1 {
+    color: #00ff00;
+    font-size: 2em;
+    margin: 0 0 10px 0;
+    text-shadow: 0 0 10px #00ff00;
+}
+
+.machine-header .rust-score {
+    font-size: 1.5em;
+    color: #ffff00;
+    text-shadow: 0 0 5px #ffff00;
+}
+
+.machine-status {
+    display: inline-block;
+    padding: 5px 15px;
+    margin-top: 10px;
+    border: 1px solid;
+    font-weight: bold;
+}
+
+.machine-status.active {
+    color: #00ff00;
+    border-color: #00ff00;
+    background-color: rgba(0, 255, 0, 0.1);
+}
+
+.machine-status.deceased {
+    color: #ff0000;
+    border-color: #ff0000;
+    background-color: rgba(255, 0, 0, 0.1);
+    animation: memorial-glow 2s ease-in-out infinite alternate;
+}
+
+@keyframes memorial-glow {
+    from { text-shadow: 0 0 5px #ff0000; }
+    to { text-shadow: 0 0 15px #ff0000, 0 0 20px #ff4444; }
+}
+
+.memorial-frame {
+    border: 2px solid #ff0000;
+    box-shadow: 0 0 20px #ff0000;
+    background-color: #110000;
+}
+
+.memorial-frame .machine-header h1 {
+    color: #ff4444;
+    text-shadow: 0 0 10px #ff0000;
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.info-section {
+    border: 1px solid #00ff00;
+    padding: 15px;
+    background-color: #001100;
+}
+
+.info-section h3 {
+    color: #ffff00;
+    margin: 0 0 15px 0;
+    font-size: 1.2em;
+    text-transform: uppercase;
+}
+
+.spec-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.spec-list li {
+    padding: 3px 0;
+    border-bottom: 1px dotted #004400;
+}
+
+.spec-list li:last-child {
+    border-bottom: none;
+}
+
+.spec-label {
+    display: inline-block;
+    width: 120px;
+    color: #888;
+    font-size: 0.9em;
+}
+
+.spec-value {
+    color: #00ff00;
+    font-weight: bold;
+}
+
+.attestation-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    background-color: #000;
+}
+
+.attestation-table th,
+.attestation-table td {
+    padding: 10px;
+    text-align: left;
+    border: 1px solid #004400;
+    font-family: 'Courier New', monospace;
+}
+
+.attestation-table th {
+    background-color: #002200;
+    color: #ffff00;
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 0.9em;
+}
+
+.attestation-table td {
+    color: #00ff00;
+    font-size: 0.85em;
+}
+
+.attestation-table tr:hover {
+    background-color: #001100;
+}
+
+.back-link {
+    display: inline-block;
+    margin-bottom: 20px;
+    color: #00aaff;
+    text-decoration: none;
+    border: 1px solid #00aaff;
+    padding: 10px 20px;
+    background-color: #000044;
+    transition: all 0.3s ease;
+}
+
+.back-link:hover {
+    background-color: #001166;
+    color: #ffffff;
+    text-shadow: 0 0 5px #00aaff;
+}
+
+.terminal-prompt::before {
+    content: "root@rustchain:~$ ";
+    color: #888;
+}
+
+.error-text {
+    color: #ff0000;
+    font-weight: bold;
+    text-shadow: 0 0 5px #ff0000;
+}
+
+.success-text {
+    color: #00ff00;
+    font-weight: bold;
+    text-shadow: 0 0 5px #00ff00;
+}
+
+.timestamp {
+    color: #888;
+    font-size: 0.8em;
+}
+
+@media (max-width: 768px) {
+    .machine-detail {
+        padding: 10px;
+    }
+    
+    .info-grid {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+    
+    .machine-header {
+        padding: 15px;
+    }
+    
+    .machine-header h1 {
+        font-size: 1.5em;
+    }
+    
+    .attestation-table {
+        font-size: 0.8em;
+    }
+    
+    .attestation-table th,
+    .attestation-table td {
+        padding: 8px 5px;
+    }
+    
+    .spec-label {
+        width: 100px;
+        font-size: 0.8em;
+    }
+}
+
+@media (max-width: 480px) {
+    .machine-header h1 {
+        font-size: 1.3em;
+    }
+    
+    .attestation-table {
+        font-size: 0.7em;
+    }
+    
+    .attestation-table th,
+    .attestation-table td {
+        padding: 5px 3px;
+    }
+    
+    .info-section {
+        padding: 10px;
+    }
+}
