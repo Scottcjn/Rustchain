@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: MIT
+[package]
+name = "rustchain-sdk"
+version = "0.1.0"
+authors = ["RustChain Contributors"]
+edition = "2021"
+license = "MIT"
+description = "Official Rust SDK for RustChain network API client"
+homepage = "https://github.com/Scottcjn/Rustchain"
+repository = "https://github.com/Scottcjn/Rustchain"
+readme = "README.md"
+keywords = ["blockchain", "rustchain", "api", "sdk", "client"]
+categories = ["api-bindings", "cryptography", "web-programming::http-client"]
+
+[dependencies]
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+thiserror = "1.0"
+url = "2.4"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+base64 = "0.21"
+hex = "0.4"
+
+[dev-dependencies]
+tokio-test = "0.4"
+wiremock = "0.5"
+
+[features]
+default = []
+wallet = ["bip39", "ed25519-dalek"]
+bip39 = { version = "2.0", optional = true }
+ed25519-dalek = { version = "2.0", optional = true }
