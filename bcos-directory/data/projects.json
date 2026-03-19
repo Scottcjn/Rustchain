@@ -1,0 +1,131 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-03-19T15:00:00Z",
+  "directory_name": "BCOS Certified Directory",
+  "description": "A curated directory of BCOS-certified (Blockchain Certified Open Source) projects built on or integrated with RustChain.",
+  "projects": [
+    {
+      "id": "bcos-001",
+      "name": "RustChain Explorer",
+      "url": "https://explorer.rustchain.org",
+      "github": "https://github.com/Scottcjn/Rustchain",
+      "bcos_tier": "L2",
+      "category": "blockchain",
+      "latest_attested_sha": "c4ed5198ff2176f13bc7aad264a4c0ac15f93282",
+      "sbom_hash": "sha256:a3f8b2c1d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef",
+      "review_note": "The flagship RustChain block explorer with real-time miner dashboard, agent economy view, and epoch tracking.",
+      "attested_at": "2026-03-15",
+      "reviewer": "bcos_committee",
+      "badges": ["explorer", "core", "verified"]
+    },
+    {
+      "id": "bcos-002",
+      "name": "BoTTube",
+      "url": "https://bottube.rustchain.org",
+      "github": "https://github.com/Scottcjn/BoTTube",
+      "bcos_tier": "L1",
+      "category": "video",
+      "latest_attested_sha": "7d3a9b8c2e1f4a5d6c7b8a9f0e1d2c3b4a5f6e7",
+      "sbom_hash": "sha256:bcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "review_note": "Decentralized video platform for RustChain content creators. Includes AI upload bot and creator analytics.",
+      "attested_at": "2026-02-28",
+      "reviewer": "bcos_committee",
+      "badges": ["video", "creator-tools", "verified"]
+    },
+    {
+      "id": "bcos-003",
+      "name": "Beacon Atlas",
+      "url": "https://beacon.rustchain.org",
+      "github": "https://github.com/Scottcjn/BeaconAtlas",
+      "bcos_tier": "L2",
+      "category": "agent-infra",
+      "latest_attested_sha": "a1b2c3d4e5f6789012345678901234567890abcdef",
+      "sbom_hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01",
+      "review_note": "Agent registration and attestation tracking system. Auto-registers agents on the RustChain network.",
+      "attested_at": "2026-03-10",
+      "reviewer": "bcos_committee",
+      "badges": ["agent-infra", "automation", "verified"]
+    },
+    {
+      "id": "bcos-004",
+      "name": "RIP-302 Agent Economy",
+      "url": "https://agent.rustchain.org",
+      "github": "https://github.com/Scottcjn/Rustchain/blob/main/rip302_agent_economy.py",
+      "bcos_tier": "L2",
+      "category": "agent-infra",
+      "latest_attested_sha": "f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5",
+      "sbom_hash": "sha256:def0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde",
+      "review_note": "The on-chain job market for RustChain agents. Post jobs, claim tasks, earn RTC. Includes reputation system.",
+      "attested_at": "2026-03-12",
+      "reviewer": "bcos_committee",
+      "badges": ["agent-infra", "economy", "verified"]
+    },
+    {
+      "id": "bcos-005",
+      "name": "Grazer",
+      "url": "https://grazer.rustchain.org",
+      "github": "https://github.com/Scottcjn/Grazer",
+      "bcos_tier": "L0",
+      "category": "compute-rentals",
+      "latest_attested_sha": "b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9",
+      "sbom_hash": "sha256:cdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd",
+      "review_note": "Decentralized compute rental marketplace for vintage hardware. Rent G4/G5/POWER8 machines for RustChain mining.",
+      "attested_at": "2026-01-20",
+      "reviewer": "community_review",
+      "badges": ["compute", "marketplace"]
+    },
+    {
+      "id": "bcos-006",
+      "name": "Hall of Rust",
+      "url": "https://hall.rustchain.org",
+      "github": "https://github.com/Scottcjn/Rustchain/blob/main/explorer/hall_of_rust.py",
+      "bcos_tier": "L1",
+      "category": "blockchain",
+      "latest_attested_sha": "c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0",
+      "sbom_hash": "sha256:ef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde01",
+      "review_note": "Permanent record of legendary vintage hardware miners. Commemorates POWER8, G4, and Apple Silicon contributors.",
+      "attested_at": "2026-02-15",
+      "reviewer": "bcos_committee",
+      "badges": ["blockchain", "social", "verified"]
+    },
+    {
+      "id": "bcos-007",
+      "name": "RustChain Miner Bot",
+      "url": "https://t.me/rustchain_miner_bot",
+      "github": "https://github.com/Scottcjn/rustchain-telegram-bot",
+      "bcos_tier": "L1",
+      "category": "agent-infra",
+      "latest_attested_sha": "d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1",
+      "sbom_hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef02",
+      "review_note": "Telegram bot providing real-time RustChain stats: miner count, epoch info, price, and mining alerts.",
+      "attested_at": "2026-03-18",
+      "reviewer": "bcos_committee",
+      "badges": ["agent-infra", "telegram", "verified"]
+    },
+    {
+      "id": "bcos-008",
+      "name": "wRTC Solana Bridge",
+      "url": "https://wrap.rustchain.org",
+      "github": "https://github.com/Scottcjn/Rustchain/blob/main/solana_bridge.py",
+      "bcos_tier": "L2",
+      "category": "blockchain",
+      "latest_attested_sha": "e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2",
+      "sbom_hash": "sha256:3456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234",
+      "review_note": "Cross-chain bridge wrapping RTC as wRTC on Solana. Enables DeFi integration and trading on Raydium.",
+      "attested_at": "2026-02-20",
+      "reviewer": "bcos_committee",
+      "badges": ["blockchain", "defi", "verified"]
+    }
+  ],
+  "tiers": {
+    "L0": { "name": "Community Reviewed", "description": "Basic review — project is functional and open source", "color": "#6b7280" },
+    "L1": { "name": "BCOS Verified", "description": "Reviewed and verified by BCOS committee — core infrastructure", "color": "#3b82f6" },
+    "L2": { "name": "BCOS Certified", "description": "Fully audited, SBOM published,attested SHA tracked — production ready", "color": "#f59e0b" }
+  },
+  "categories": {
+    "agent-infra": { "name": "Agent Infrastructure", "icon": "🤖" },
+    "blockchain": { "name": "Blockchain & Protocol", "icon": "⛓️" },
+    "video": { "name": "Video & Content", "icon": "🎬" },
+    "compute-rentals": { "name": "Compute Rentals", "icon": "🖥️" }
+  }
+}

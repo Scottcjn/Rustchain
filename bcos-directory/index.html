@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BCOS Certified Directory</title>
+    <meta name="description" content="Blockchain Certified Open Source — curated directory of verified RustChain ecosystem projects">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>">
+    <style>
+        :root {
+            --bg: #09090f;
+            --surface: #12121e;
+            --surface-2: #1a1a2d;
+            --surface-3: #22223a;
+            --border: #2a2a45;
+            --text: #e2e2f0;
+            --text-dim: #7070a0;
+            --accent: #c9a227;
+            --accent-dim: rgba(201, 162, 39, 0.10);
+            --tier-l0: #6b7280;
+            --tier-l1: #3b82f6;
+            --tier-l2: #f59e0b;
+            --green: #22c55e;
+            --cat-agent: #a78bfa;
+            --cat-block: #60a5fa;
+            --cat-video: #f472b6;
+            --cat-compute: #fb923c;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        /* ── Header ── */
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 1.2rem 1.5rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header-inner {
+            max-width: 1300px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            text-decoration: none;
+        }
+        .logo-icon { font-size: 1.4rem; }
+        .logo-text { font-size: 0.95rem; font-weight: 700; color: var(--text); }
+        .logo-text span { color: var(--accent); }
+        .logo-sub { font-size: 0.65rem; color: var(--text-dim); display: block; letter-spacing: 0.05em; }
+
+        .header-actions { display: flex; gap: 0.5rem; align-items: center; }
+        .btn {
+            padding: 0.35rem 0.9rem;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 0.75rem;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: var(--surface-2);
+            color: var(--text);
+            transition: all 0.15s;
+        }
+        .btn:hover { border-color: var(--accent); color: var(--accent); }
+        .btn-primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+        .btn-primary:hover { opacity: 0.85; }
+
+        /* ── Filters ── */
+        .filters-bar {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem 1.5rem;
+        }
+        .filters-inner {
+            max-width: 1300px;
+            margin: 0 auto;
+            display: flex;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .filter-label { font-size: 0.7rem; color: var(--text-dim); margin-right: 0.2rem; }
+        .filter-btn {
+            padding: 0.25rem 0.65rem;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-dim);
+            font-family: inherit;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .filter-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+        .search-box {
+            flex: 1;
+            min-width: 180px;
+            padding: 0.3rem 0.75rem;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 0.8rem;
+        }
+        .search-box::placeholder { color: var(--text-dim); }
+        .search-box:focus { outline: none; border-color: var(--accent); }
+
+        /* ── Main ── */
+        main { max-width: 1300px; margin: 0 auto; padding: 1.5rem; }
+
+        /* ── Tier Legend ── */
+        .tier-legend {
+            display: flex;
+            gap: 1.2rem;
+            margin-bottom: 1.2rem;
+            flex-wrap: wrap;
+        }
+        .tier-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; color: var(--text-dim); }
+        .tier-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .tier-dot.l0 { background: var(--tier-l0); }
+        .tier-dot.l1 { background: var(--tier-l1); }
+        .tier-dot.l2 { background: var(--tier-l2); box-shadow: 0 0 6px var(--tier-l2); }
+
+        /* ── Grid ── */
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 1rem;
+        }
+
+        /* ── Project Card ── */
+        .project-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            transition: border-color 0.15s, box-shadow 0.15s;
+            position: relative;
+        }
+        .project-card:hover {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent-dim), 0 4px 20px rgba(201,162,39,0.06);
+        }
+        .project-card.tier-l2 { border-left: 3px solid var(--tier-l2); }
+        .project-card.tier-l1 { border-left: 3px solid var(--tier-l1); }
+        .project-card.tier-l0 { border-left: 3px solid var(--tier-l0); }
+
+        .card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
+        .project-name { font-size: 0.95rem; font-weight: 700; color: var(--text); }
+        .project-links { display: flex; gap: 0.4rem; }
+        .link-icon {
+            width: 26px; height: 26px;
+            border-radius: 5px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.7rem;
+            text-decoration: none;
+            transition: border-color 0.15s;
+        }
+        .link-icon:hover { border-color: var(--accent); }
+        .link-icon svg { width: 12px; height: 12px; fill: var(--text-dim); }
+
+        .badges { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+        .badge {
+            display: inline-flex; align-items: center; gap: 0.2rem;
+            padding: 0.1rem 0.45rem;
+            border-radius: 4px;
+            font-size: 0.6rem;
+            font-weight: 600;
+        }
+        .badge-tier { color: #fff; font-weight: 700; }
+        .badge-tier.l0 { background: var(--tier-l0); }
+        .badge-tier.l1 { background: var(--tier-l1); }
+        .badge-tier.l2 { background: var(--tier-l2); color: #000; }
+        .badge-cat { background: var(--surface-3); color: var(--text-dim); border: 1px solid var(--border); }
+        .badge-verified { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+
+        .project-url { font-size: 0.75rem; color: var(--accent); text-decoration: none; }
+        .project-url:hover { text-decoration: underline; }
+
+        .review-note {
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            line-height: 1.5;
+            border-left: 2px solid var(--border);
+            padding-left: 0.6rem;
+            flex: 1;
+        }
+
+        .card-meta {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.4rem;
+            padding-top: 0.6rem;
+            border-top: 1px solid var(--border);
+        }
+        .meta-item { display: flex; flex-direction: column; gap: 0.1rem; }
+        .meta-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+        .meta-value { font-size: 0.72rem; color: var(--text); word-break: break-all; }
+        .meta-value.mono { font-family: 'SF Mono', monospace; }
+        .meta-value.sha { color: var(--accent); }
+        .meta-value.sbom { color: var(--text-dim); font-size: 0.65rem; }
+
+        .card-footer { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+        .attested-date { font-size: 0.65rem; color: var(--text-dim); }
+        .attested-date::before { content: "✦ "; color: var(--accent); }
+        .embed-btn { font-size: 0.65rem; padding: 0.2rem 0.5rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; color: var(--text-dim); cursor: pointer; font-family: inherit; transition: all 0.15s; }
+        .embed-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+        /* ── Embed Modal ── */
+        .modal-overlay {
+            display: none;
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            max-width: 500px;
+            width: 100%;
+        }
+        .modal-title { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.8rem; }
+        .modal-code {
+            width: 100%;
+            padding: 0.6rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--accent);
+            font-family: 'SF Mono', monospace;
+            font-size: 0.72rem;
+            resize: none;
+            height: 80px;
+        }
+        .modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.8rem; }
+        .copied-toast {
+            position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
+            background: var(--accent); color: #000; padding: 0.5rem 1rem;
+            border-radius: 6px; font-size: 0.8rem; font-weight: 600;
+            opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        }
+        .copied-toast.show { opacity: 1; }
+
+        /* ── Empty / Loading ── */
+        .loading { text-align: center; padding: 4rem; color: var(--text-dim); }
+        .loading-spinner { width: 28px; height: 28px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 1rem; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .empty-state { text-align: center; padding: 4rem; color: var(--text-dim); }
+        .empty-state .icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+
+        /* ── Footer ── */
+        footer { border-top: 1px solid var(--border); padding: 1.5rem; text-align: center; font-size: 0.72rem; color: var(--text-dim); }
+        footer a { color: var(--accent); text-decoration: none; }
+        footer a:hover { text-decoration: underline; }
+
+        /* ── Stats bar ── */
+        .stats-bar {
+            display: flex;
+            gap: 1.5rem;
+            padding: 0.8rem 1.5rem;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            max-width: 1300px;
+            margin: 0 auto;
+        }
+        .stats-bar span { color: var(--accent); font-weight: 600; }
+
+        /* ── Add project CTA ── */
+        .add-project-cta {
+            background: var(--accent-dim);
+            border: 1px dashed var(--accent);
+            border-radius: 12px;
+            padding: 1.2rem;
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .add-project-cta:hover { border-color: var(--accent); color: var(--accent); }
+
+        @media (max-width: 768px) {
+            .header-inner { flex-direction: column; align-items: flex-start; }
+            .projects-grid { grid-template-columns: 1fr; }
+            .filters-inner { flex-direction: column; align-items: stretch; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-inner">
+        <a href="#" class="logo">
+            <span class="logo-icon">📋</span>
+            <div>
+                <div class="logo-text">BCOS <span>Certified Directory</span></div>
+                <span class="logo-sub">Blockchain Certified Open Source · RustChain Ecosystem</span>
+            </div>
+        </a>
+        <div class="header-actions">
+            <button class="btn" onclick="exportJSON()">📄 Export JSON</button>
+            <button class="btn btn-primary" onclick="document.getElementById('add-pr').scrollIntoView({behavior:'smooth'})">+ Submit Project</button>
+        </div>
+    </div>
+</header>
+
+<div class="filters-bar">
+    <div class="filters-inner">
+        <span class="filter-label">Tier:</span>
+        <button class="filter-btn active" data-tier="all" onclick="setTierFilter('all')">All</button>
+        <button class="filter-btn" data-tier="L2" onclick="setTierFilter('L2')">L2 Certified</button>
+        <button class="filter-btn" data-tier="L1" onclick="setTierFilter('L1')">L1 Verified</button>
+        <button class="filter-btn" data-tier="L0" onclick="setTierFilter('L0')">L0 Reviewed</button>
+        <span style="width:1rem"></span>
+        <span class="filter-label">Category:</span>
+        <button class="filter-btn active" data-cat="all" onclick="setCatFilter('all')">All</button>
+        <button class="filter-btn" data-cat="blockchain" onclick="setCatFilter('blockchain')">⛓️ Blockchain</button>
+        <button class="filter-btn" data-cat="agent-infra" onclick="setCatFilter('agent-infra')">🤖 Agent</button>
+        <button class="filter-btn" data-cat="video" onclick="setCatFilter('video')">🎬 Video</button>
+        <button class="filter-btn" data-cat="compute-rentals" onclick="setCatFilter('compute-rentals')">🖥️ Compute</button>
+        <input type="search" class="search-box" id="search-box" placeholder="🔍 Search projects…" oninput="onSearch()" />
+    </div>
+</div>
+
+<div class="stats-bar" id="stats-bar">
+    Loading…
+</div>
+
+<main>
+    <div class="tier-legend" id="tier-legend">
+        <div class="tier-item"><span class="tier-dot l0"></span>L0 — Community Reviewed</div>
+        <div class="tier-item"><span class="tier-dot l1"></span>L1 — BCOS Verified</div>
+        <div class="tier-item"><span class="tier-dot l2"></span>L2 — BCOS Certified (production-ready)</div>
+    </div>
+    <div class="projects-grid" id="projects-grid">
+        <div class="loading"><div class="loading-spinner"></div>Loading BCOS directory…</div>
+    </div>
+</main>
+
+<!-- Embed Modal -->
+<div class="modal-overlay" id="embed-modal" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+        <div class="modal-title">🔗 Embed Badge</div>
+        <label style="font-size:0.72rem;color:var(--text-dim);display:block;margin-bottom:0.4rem;">Copy this snippet into your README:</label>
+        <textarea class="modal-code" id="embed-code" readonly></textarea>
+        <div class="modal-actions">
+            <button class="btn" onclick="closeModal()">Close</button>
+            <button class="btn btn-primary" onclick="copyEmbed()">📋 Copy</button>
+        </div>
+    </div>
+</div>
+<div class="copied-toast" id="copied-toast">Copied!</div>
+
+<footer>
+    BCOS Certified Directory · Submit new projects via <a href="https://github.com/Scottcjn/Rustchain/tree/main/bcos-directory" target="_blank">PR to bcos-directory/data/projects.json</a>
+    · BCOS Committee · RustChain Ecosystem
+</footer>
+
+<script>
+    // ── State ────────────────────────────────────────────────────────────────
+    let allProjects = [];
+    let tierFilter = 'all';
+    let catFilter = 'all';
+    let searchQuery = '';
+
+    // ── Init ────────────────────────────────────────────────────────────────
+    async function init() {
+        try {
+            const resp = await fetch('data/projects.json');
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            allProjects = data.projects || [];
+            updateStats();
+            renderProjects();
+        } catch (err) {
+            console.error('Failed to load projects:', err);
+            document.getElementById('projects-grid').innerHTML = `
+                <div class="empty-state">
+                    <div class="icon">⚠️</div>
+                    <div>Failed to load directory data.</div>
+                    <div style="font-size:0.75rem;margin-top:0.3rem;">Try refreshing or check the data/projects.json file.</div>
+                </div>`;
+        }
+    }
+
+    // ── Filters ─────────────────────────────────────────────────────────────
+    function setTierFilter(t) {
+        tierFilter = t;
+        document.querySelectorAll('[data-tier]').forEach(b => b.classList.toggle('active', b.dataset.tier === t));
+        renderProjects();
+    }
+
+    function setCatFilter(c) {
+        catFilter = c;
+        document.querySelectorAll('[data-cat]').forEach(b => b.classList.toggle('active', b.dataset.cat === c));
+        renderProjects();
+    }
+
+    function onSearch() {
+        searchQuery = document.getElementById('search-box').value.trim().toLowerCase();
+        renderProjects();
+    }
+
+    function getFiltered() {
+        return allProjects.filter(p => {
+            if (tierFilter !== 'all' && p.bcos_tier !== tierFilter) return false;
+            if (catFilter !== 'all' && p.category !== catFilter) return false;
+            if (searchQuery) {
+                const q = searchQuery;
+                if (!p.name.toLowerCase().includes(q) &&
+                    !p.review_note.toLowerCase().includes(q) &&
+                    !p.category.toLowerCase().includes(q)) return false;
+            }
+            return true;
+        });
+    }
+
+    // ── Stats ───────────────────────────────────────────────────────────────
+    function updateStats() {
+        const total = allProjects.length;
+        const l2 = allProjects.filter(p => p.bcos_tier === 'L2').length;
+        const l1 = allProjects.filter(p => p.bcos_tier === 'L1').length;
+        const cats = [...new Set(allProjects.map(p => p.category))].length;
+        document.getElementById('stats-bar').innerHTML =
+            `<span>${total}</span> projects` +
+            ` · <span>${l2}</span> L2 Certified` +
+            ` · <span>${l1}</span> L1 Verified` +
+            ` · <span>${cats}</span> categories`;
+    }
+
+    // ── Render ──────────────────────────────────────────────────────────────
+    function renderProjects() {
+        const grid = document.getElementById('projects-grid');
+        const filtered = getFiltered();
+
+        if (!filtered.length) {
+            grid.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><div>No projects match your filters.</div></div>`;
+            return;
+        }
+
+        grid.innerHTML = filtered.map(p => {
+            const tierClass = p.bcos_tier.toLowerCase();
+            const tierColors = { L0: 'l0', L1: 'l1', L2: 'l2' };
+            const catIcons = { 'agent-infra': '🤖', 'blockchain': '⛓️', 'video': '🎬', 'compute-rentals': '🖥️' };
+            const catNames = { 'agent-infra': 'Agent Infra', 'blockchain': 'Blockchain', 'video': 'Video', 'compute-rentals': 'Compute' };
+            const verifiedBadges = (p.badges || []).filter(b => b === 'verified').map(() =>
+                `<span class="badge badge-verified">✓ Verified</span>`).join('');
+            const catBadge = `<span class="badge badge-cat">${catIcons[p.category] || '📁'} ${catNames[p.category] || p.category}</span>`;
+            const shortSha = p.latest_attested_sha ? p.latest_attested_sha.slice(0, 12) : '';
+
+            return `<article class="project-card tier-${tierClass}">
+                <div class="card-header">
+                    <div>
+                        <div class="project-name">${escHtml(p.name)}</div>
+                        <a class="project-url" href="${escHtml(p.url)}" target="_blank" rel="noopener">${escHtml(p.url)}</a>
+                    </div>
+                    <div class="project-links">
+                        <a class="link-icon" href="${escHtml(p.github)}" target="_blank" rel="noopener" title="GitHub">
+                            <svg viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                        </a>
+                    </div>
+                </div>
+                <div class="badges">
+                    <span class="badge badge-tier ${tierColors[p.bcos_tier]}">${p.bcos_tier}</span>
+                    ${verifiedBadges}
+                    ${catBadge}
+                </div>
+                <p class="review-note">${escHtml(p.review_note)}</p>
+                <div class="card-meta">
+                    <div class="meta-item">
+                        <span class="meta-label">Attested SHA</span>
+                        <span class="meta-value mono sha" title="${escHtml(p.latest_attested_sha)}">${shortSha}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">SBOM Hash</span>
+                        <span class="meta-value sbom" title="${escHtml(p.sbom_hash)}">${escHtml(p.sbom_hash.slice(0, 20))}…</span>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <span class="attested-date">Attested ${escHtml(p.attested_at)}</span>
+                    <button class="embed-btn" onclick="openEmbed('${escHtml(p.id)}')">🔗 Embed</button>
+                </div>
+            </article>`;
+        }).join('');
+    }
+
+    // ── Embed ────────────────────────────────────────────────────────────────
+    function openEmbed(projectId) {
+        const p = allProjects.find(x => x.id === projectId);
+        if (!p) return;
+        const badgeUrl = `${window.location.origin}/badges/${p.bcos_tier.toLowerCase()}.svg`;
+        const code = `[![BCOS ${p.bcos_tier}](${badgeUrl})](${p.url})`;
+        document.getElementById('embed-code').value = code;
+        document.getElementById('embed-modal').classList.add('open');
+    }
+
+    function closeModal() {
+        document.getElementById('embed-modal').classList.remove('open');
+    }
+
+    function copyEmbed() {
+        const ta = document.getElementById('embed-code');
+        ta.select();
+        navigator.clipboard.writeText(ta.value).then(() => {
+            const toast = document.getElementById('copied-toast');
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 1500);
+        });
+    }
+
+    function exportJSON() {
+        const blob = new Blob([JSON.stringify(allProjects, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'projects.json';
+        a.click();
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    function escHtml(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ── Boot ────────────────────────────────────────────────────────────────
+    init();
+</script>
+</body>
+</html>
