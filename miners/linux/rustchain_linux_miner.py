@@ -217,6 +217,9 @@ class LocalMiner:
         elif machine in ('mips', 'mips64', 'mipsel', 'mips64el'):
             hw["family"] = "MIPS"
             hw["arch"] = "mips"
+        elif machine in ('riscv64', 'riscv32', 'riscv'):
+            hw["family"] = "RISC-V"
+            hw["arch"] = "riscv"
 
         # Get CPU
         cpu = self._run_cmd("lscpu | grep 'Model name' | cut -d: -f2 | xargs")

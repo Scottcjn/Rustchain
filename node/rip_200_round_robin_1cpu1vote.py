@@ -96,6 +96,11 @@ ANTIQUITY_MULTIPLIERS = {
     "ultrasparc_t1": 1.9,
     "ultrasparc_t2": 1.8,
     
+    # RISC-V (2010+) — open ISA, exotic but modern
+    "riscv": 1.4,             # Generic RISC-V boards (SiFive, StarFive, etc.)
+    "riscv64": 1.4,
+    "riscv32": 1.5,           # 32-bit even rarer
+
     # DEC Alpha (1992) - Fastest 1990s CPU
     "alpha_21064": 2.7,
     "alpha_21164": 2.5,

@@ -514,6 +514,13 @@ WORKSTATION_DATABASE: Dict[str, HardwareEntry] = {
     "r16000": HardwareEntry("r16000", "MIPS R16000", "mips", 2002, 2.5, 0.4, "ANCIENT", "Final SGI MIPS"),
     "mips": HardwareEntry("mips", "MIPS", "mips", 1985, 3.0, 0.4, "LEGENDARY"),
 
+    # ============ RISC-V (2010+) — Open ISA ============
+    "riscv": HardwareEntry("riscv", "RISC-V", "riscv", 2010, 1.4, 0.5, "EXOTIC"),
+    "riscv64": HardwareEntry("riscv64", "RISC-V 64-bit", "riscv", 2014, 1.4, 0.5, "EXOTIC"),
+    "riscv32": HardwareEntry("riscv32", "RISC-V 32-bit", "riscv", 2010, 1.5, 0.55, "EXOTIC"),
+    "sifive_u74": HardwareEntry("sifive_u74", "SiFive U74", "riscv", 2020, 1.3, 0.4, "EXOTIC", "HiFive Unmatched"),
+    "starfive_jh7110": HardwareEntry("starfive_jh7110", "StarFive JH7110", "riscv", 2022, 1.3, 0.35, "EXOTIC", "VisionFive 2"),
+
     # ============ IBM mainframes (VERY RARE) ============
     "s390": HardwareEntry("s390", "IBM S/390", "ibm", 1990, 3.0, 0.8, "LEGENDARY", "Mainframe"),
     "z900": HardwareEntry("z900", "IBM zSeries z900", "ibm", 2000, 2.5, 0.6, "ANCIENT"),

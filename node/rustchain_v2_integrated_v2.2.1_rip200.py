@@ -1291,10 +1291,12 @@ def _detect_arm_evidence(device: dict, fingerprint: dict) -> bool:
         ppc_markers = {"powerpc", "ppc", "ibm power", "g3", "g4", "g5", "970", "7450", "power8"}
         sparc_markers = {"sparc", "ultrasparc", "sun4", "fujitsu sparc"}
         mips_markers = {"mips", "r2000", "r3000", "r4000", "r4400", "r5000", "r8000", "r10000", "r12000", "r14000", "r16000", "vr4300", "loongson", "ingenic"}
+        riscv_markers = {"riscv", "risc-v", "sifive", "thead", "starfive", "kendryte", "xuantie"}
         is_known_ppc = _has_any_token(cpu_brand, ppc_markers)
         is_known_sparc = _has_any_token(cpu_brand, sparc_markers)
         is_known_mips = _has_any_token(cpu_brand, mips_markers)
-        if not is_known_x86 and not is_known_ppc and not is_known_sparc and not is_known_mips:
+        is_known_riscv = _has_any_token(cpu_brand, riscv_markers)
+        if not is_known_x86 and not is_known_ppc and not is_known_sparc and not is_known_mips and not is_known_riscv:
             # CPU is unknown/empty/unrecognized AND claimed x86 = suspicious
             print(f"[ARM_DETECT] REVERSE: cpu='{cpu_brand}' not x86/PPC/SPARC/MIPS, claimed_family={family} -> aarch64")
             return True
@@ -1324,6 +1326,13 @@ def _detect_sparc_or_mips(device: dict) -> dict | None:
     if machine in mips_machines or _has_any_token(cpu_brand, mips_brands) or family.lower() == "mips":
         detected_arch = arch if arch.lower().startswith("mips") or arch.lower().startswith("r") else "mips"
         return {"device_family": "MIPS", "device_arch": detected_arch}
+
+    # RISC-V detection
+    riscv_machines = ("riscv64", "riscv32", "riscv")
+    riscv_brands = {"riscv", "risc-v", "sifive", "thead", "starfive", "kendryte", "allwinner d1", "xuantie"}
+    if machine in riscv_machines or _has_any_token(cpu_brand, riscv_brands) or family.lower() in ("risc-v", "riscv"):
+        detected_arch = arch if arch.lower().startswith("riscv") else "riscv"
+        return {"device_family": "RISC-V", "device_arch": detected_arch}
 
     return None
 
