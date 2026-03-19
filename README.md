@@ -26,13 +26,20 @@ The computing industry throws away working machines every 3-5 years. GPUs that m
 
 Proof-of-Antiquity rewards hardware for *surviving*, not for being fast. Older machines get higher multipliers because keeping them alive prevents manufacturing emissions and e-waste:
 
-| Hardware | Multiplier | Power Draw | Years Beyond "Obsolete" |
-|----------|-----------|------------|------------------------|
-| PowerPC G4 (2003) | **2.5x** | ~30W | 23 years |
-| PowerPC G5 (2005) | **2.0x** | ~150W | 21 years |
-| PowerPC G3 (1997) | **1.8x** | ~20W | 29 years |
-| Apple Silicon M1/M2 | **1.2x** | ~10W | Modern but efficient |
-| Modern x86_64 | **1.0x** | varies | Baseline — still welcome |
+| Hardware | Multiplier | Era | Why It Matters |
+|----------|-----------|-----|----------------|
+| DEC VAX-11/780 (1977) | **3.5x** | MYTHIC | "Shall we play a game?" |
+| Acorn ARM2 (1987) | **4.0x** | MYTHIC | Where ARM began |
+| Inmos Transputer (1984) | **3.5x** | MYTHIC | Parallel computing pioneer |
+| Motorola 68000 (1979) | **3.0x** | LEGENDARY | Amiga, Atari ST, classic Mac |
+| Sun SPARC (1987) | **2.9x** | LEGENDARY | Workstation royalty |
+| SGI MIPS R4000 (1991) | **2.7x** | LEGENDARY | 64-bit before it was cool |
+| PS3 Cell BE (2006) | **2.2x** | ANCIENT | 7 SPE cores of legend |
+| PowerPC G4 (2003) | **2.5x** | ANCIENT | Still running, still earning |
+| RISC-V (2014) | **1.4x** | EXOTIC | Open ISA, the future |
+| Apple Silicon M1 (2020) | **1.2x** | MODERN | Efficient, welcome |
+| Modern x86_64 | **0.8x** | MODERN | Baseline |
+| Modern ARM NAS/SBC | **0.0005x** | PENALTY | Cheap, farmable, penalized |
 
 Our fleet of 16+ preserved machines draws roughly the same power as ONE modern GPU mining rig — while preventing 1,300 kg of manufacturing CO2 and 250 kg of e-waste.
 
@@ -67,7 +74,7 @@ curl -sk https://rustchain.org/epoch           # Current epoch
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 ```
 
-Works on Linux (x86_64, ppc64le), macOS (Intel, Apple Silicon, PowerPC), IBM POWER8, and Windows.
+Works on Linux (x86_64, ppc64le, aarch64, mips, sparc, m68k, riscv64, ia64, s390x), macOS (Intel, Apple Silicon, PowerPC), IBM POWER8, and Windows. If it runs Python, it can mine.
 
 ```bash
 # Install with a specific wallet name
