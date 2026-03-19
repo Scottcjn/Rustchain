@@ -1,0 +1,28 @@
+[Unit]
+Description=RustChain Telegram Community Bot
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/rustchain/tools/telegram_bot
+Environment=TELEGRAM_BOT_TOKEN
+Environment=RUSTCHAIN_API_URL=https://explorer.rustchain.org
+Environment=LOG_LEVEL=INFO
+ExecStart=/home/ubuntu/rustchain/tools/telegram_bot/venv/bin/python bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rustchain_bot
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/ubuntu/rustchain
+
+[Install]
+WantedBy=multi-user.target

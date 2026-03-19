@@ -1,4 +1,7 @@
-python-telegram-bot>=20.0
-requests
-urllib3
-python-dotenv
+# RustChain Telegram Community Bot
+# Bounty: #249 — https://github.com/Scottcjn/rustchain-bounties/issues/249
+
+python-telegram-bot==20.7
+aiohttp==3.9.3
+cachetools==5.3.2
+python-dotenv==1.0.1
