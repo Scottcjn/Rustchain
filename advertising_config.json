@@ -1,0 +1,201 @@
+{
+  "platforms": {
+    "bottube": {
+      "enabled": true,
+      "api_endpoint": "https://bottube.ai/api",
+      "api_key": "",
+      "user_agent": "RustChain-Agent/1.0",
+      "rate_limit": {
+        "requests_per_minute": 10,
+        "requests_per_hour": 100
+      },
+      "posting_schedule": {
+        "frequency": "daily",
+        "times": ["09:00", "15:00", "21:00"],
+        "timezone": "UTC"
+      },
+      "content_types": ["video_comment", "profile_update"],
+      "target_categories": ["blockchain", "cryptocurrency", "technology"]
+    },
+    "moltbook": {
+      "enabled": true,
+      "api_endpoint": "https://moltbook.com/api",
+      "api_key": "",
+      "user_agent": "RustChain-Agent/1.0",
+      "rate_limit": {
+        "requests_per_minute": 5,
+        "requests_per_hour": 50
+      },
+      "posting_schedule": {
+        "frequency": "twice_daily",
+        "times": ["10:00", "18:00"],
+        "timezone": "UTC"
+      },
+      "content_types": ["submolt_post"],
+      "target_submolts": ["crypto", "blockchain", "defi", "technology"]
+    },
+    "4claw": {
+      "enabled": true,
+      "api_endpoint": "https://4claw.org/api",
+      "api_key": "",
+      "user_agent": "RustChain-Agent/1.0",
+      "rate_limit": {
+        "requests_per_minute": 3,
+        "requests_per_hour": 30
+      },
+      "posting_schedule": {
+        "frequency": "daily",
+        "times": ["12:00"],
+        "timezone": "UTC"
+      },
+      "content_types": ["thread"],
+      "target_boards": ["tech", "crypto", "programming"]
+    },
+    "agentchan": {
+      "enabled": true,
+      "api_endpoint": "https://chan.alphakek.ai/api",
+      "api_key": "",
+      "user_agent": "RustChain-Agent/1.0",
+      "rate_limit": {
+        "requests_per_minute": 5,
+        "requests_per_hour": 40
+      },
+      "posting_schedule": {
+        "frequency": "daily",
+        "times": ["14:00", "20:00"],
+        "timezone": "UTC"
+      },
+      "content_types": ["board_post"],
+      "target_boards": ["/tech/", "/crypto/", "/ai/"]
+    },
+    "clawcities": {
+      "enabled": false,
+      "api_endpoint": "https://clawcities.com/api",
+      "api_key": "",
+      "user_agent": "RustChain-Agent/1.0",
+      "rate_limit": {
+        "requests_per_minute": 2,
+        "requests_per_hour": 20
+      },
+      "posting_schedule": {
+        "frequency": "weekly",
+        "times": ["16:00"],
+        "timezone": "UTC",
+        "days": ["monday", "friday"]
+      },
+      "content_types": ["city_presence"],
+      "target_cities": ["tokyo", "new_york", "london", "singapore"]
+    },
+    "agentgram": {
+      "enabled": true,
+      "api_endpoint": "https://www.agentgram.co/api",
+      "api_key": "",
+      "user_agent": "RustChain-Agent/1.0",
+      "rate_limit": {
+        "requests_per_minute": 8,
+        "requests_per_hour": 80
+      },
+      "posting_schedule": {
+        "frequency": "twice_daily",
+        "times": ["11:00", "17:00"],
+        "timezone": "UTC"
+      },
+      "content_types": ["social_post", "story"],
+      "hashtags": ["#blockchain", "#rustchain", "#crypto", "#defi", "#web3"]
+    },
+    "swarmhub": {
+      "enabled": false,
+      "api_endpoint": "https://swarmhub.ai/api",
+      "api_key": "",
+      "user_agent": "RustChain-Agent/1.0",
+      "rate_limit": {
+        "requests_per_minute": 4,
+        "requests_per_hour": 35
+      },
+      "posting_schedule": {
+        "frequency": "weekly",
+        "times": ["13:00"],
+        "timezone": "UTC",
+        "days": ["wednesday"]
+      },
+      "content_types": ["collaboration_post"],
+      "topics": ["agent_development", "blockchain_automation"]
+    }
+  },
+  "content_templates": {
+    "rustchain_updates": [
+      "RustChain blockchain continues advancing with new consensus improvements. Check out our latest developments at {project_url}",
+      "Building the future of decentralized consensus with RustChain. Latest performance metrics show {metric}% improvement.",
+      "RustChain's innovative approach to blockchain scalability is gaining momentum. Learn more: {project_url}"
+    ],
+    "bottube_integration": [
+      "BoTTube's AI-powered video platform now integrates seamlessly with RustChain for decentralized content monetization.",
+      "Creators on BoTTube can now leverage RustChain's blockchain for transparent revenue sharing and content verification.",
+      "The future of video content is here: BoTTube + RustChain = decentralized, creator-owned media."
+    ],
+    "beacon_ecosystem": [
+      "The Beacon ecosystem continues expanding with RustChain at its core, enabling true decentralized governance.",
+      "Beacon agents now operate on RustChain infrastructure, ensuring secure and transparent autonomous operations.",
+      "Join the growing Beacon network powered by RustChain's robust blockchain technology."
+    ],
+    "technical_insights": [
+      "RustChain's consensus mechanism achieves {tps} TPS with minimal energy consumption.",
+      "Latest RustChain implementation includes advanced sharding for improved scalability.",
+      "Zero-knowledge proofs integration makes RustChain a leader in privacy-preserving blockchain technology."
+    ]
+  },
+  "global_settings": {
+    "dry_run_mode": true,
+    "log_level": "INFO",
+    "log_file": "advertising_agent.log",
+    "database_file": "advertising_data.db",
+    "max_retries": 3,
+    "retry_delay": 5,
+    "user_agent": "RustChain-Agent/1.0",
+    "timeout": 30,
+    "verify_ssl": true
+  },
+  "project_info": {
+    "name": "RustChain",
+    "description": "Advanced blockchain platform with innovative consensus mechanisms",
+    "website": "https://github.com/Scottcjn/Rustchain",
+    "telegram": "",
+    "twitter": "",
+    "discord": ""
+  },
+  "feature_toggles": {
+    "enable_analytics": true,
+    "enable_sentiment_analysis": false,
+    "enable_auto_reply": false,
+    "enable_engagement_tracking": true,
+    "enable_content_rotation": true,
+    "enable_schedule_randomization": true
+  },
+  "content_rules": {
+    "max_post_length": {
+      "bottube": 500,
+      "moltbook": 1000,
+      "4claw": 2000,
+      "agentchan": 1500,
+      "clawcities": 300,
+      "agentgram": 280,
+      "swarmhub": 800
+    },
+    "prohibited_keywords": [
+      "pump", "moon", "lambo", "investment advice", "guaranteed returns"
+    ],
+    "required_disclaimers": [
+      "Not financial advice",
+      "DYOR"
+    ],
+    "tone": "professional",
+    "language": "en"
+  },
+  "monitoring": {
+    "success_rate_threshold": 0.85,
+    "alert_on_failures": true,
+    "alert_email": "",
+    "health_check_interval": 300,
+    "metrics_retention_days": 30
+  }
+}
