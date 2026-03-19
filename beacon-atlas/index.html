@@ -1,0 +1,385 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Beacon Atlas - RustChain Agent World</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Courier New', monospace;
+            color: #00ff88;
+        }
+        
+        #beacon-world {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #agent-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            background: rgba(0, 20, 40, 0.9);
+            border: 2px solid #00ff88;
+            border-radius: 8px;
+            padding: 20px;
+            display: none;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+        }
+        
+        .agent-header {
+            border-bottom: 1px solid #00ff88;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .agent-id {
+            font-size: 18px;
+            font-weight: bold;
+            color: #00ff88;
+        }
+        
+        .agent-name {
+            font-size: 14px;
+            color: #88ffaa;
+            margin-top: 5px;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-top: 8px;
+        }
+        
+        .status-online { background: #00aa44; color: white; }
+        .status-idle { background: #ffaa00; color: black; }
+        .status-offline { background: #aa4400; color: white; }
+        
+        .agent-field {
+            margin: 10px 0;
+            font-size: 12px;
+        }
+        
+        .field-label {
+            color: #66ccaa;
+            font-weight: bold;
+        }
+        
+        .field-value {
+            color: #aaffcc;
+            margin-top: 2px;
+            word-break: break-all;
+        }
+        
+        .close-btn {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            background: none;
+            border: none;
+            color: #00ff88;
+            font-size: 18px;
+            cursor: pointer;
+            font-family: monospace;
+        }
+        
+        .close-btn:hover {
+            color: #ff4444;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #00ff88;
+            font-size: 16px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading Beacon Atlas...</div>
+    <div id="beacon-world"></div>
+    
+    <div id="agent-panel">
+        <button class="close-btn" onclick="closeAgentPanel()">×</button>
+        <div class="agent-header">
+            <div class="agent-id" id="panel-agent-id"></div>
+            <div class="agent-name" id="panel-agent-name"></div>
+            <div class="status-badge" id="panel-status"></div>
+        </div>
+        <div class="agent-field">
+            <div class="field-label">Reputation</div>
+            <div class="field-value" id="panel-reputation">Loading...</div>
+        </div>
+        <div class="agent-field">
+            <div class="field-label">Registered</div>
+            <div class="field-value" id="panel-registered"></div>
+        </div>
+        <div class="agent-field">
+            <div class="field-label">Last Seen</div>
+            <div class="field-value" id="panel-last-seen"></div>
+        </div>
+        <div class="agent-field">
+            <div class="field-label">Public Key</div>
+            <div class="field-value" id="panel-pubkey"></div>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer, raycaster, mouse;
+        let agents = [];
+        let beacons = [];
+        let gridSize = 100;
+        let beaconSpacing = 8;
+        
+        async function initBeaconWorld() {
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x001122, 50, 200);
+            
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 30, 50);
+            camera.lookAt(0, 0, 0);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x000011);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            
+            document.getElementById('beacon-world').appendChild(renderer.domElement);
+            
+            // Mouse/raycasting
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+            
+            // Create world environment
+            createStarField();
+            createAtmosphericGrid();
+            createCornerPillars();
+            
+            // Load agents and create beacons
+            await loadAgents();
+            createBeacons();
+            
+            // Event listeners
+            renderer.domElement.addEventListener('click', onBeaconClick);
+            window.addEventListener('resize', onWindowResize);
+            
+            // Start animation loop
+            animate();
+            
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        function createStarField() {
+            const starGeometry = new THREE.BufferGeometry();
+            const starCount = 1000;
+            const positions = new Float32Array(starCount * 3);
+            
+            for (let i = 0; i < starCount * 3; i++) {
+                positions[i] = (Math.random() - 0.5) * 400;
+            }
+            
+            starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const starMaterial = new THREE.PointsMaterial({ color: 0x88aaff, size: 0.5 });
+            const stars = new THREE.Points(starGeometry, starMaterial);
+            scene.add(stars);
+        }
+        
+        function createAtmosphericGrid() {
+            const gridHelper = new THREE.GridHelper(gridSize, 20, 0x003366, 0x001133);
+            gridHelper.position.y = -2;
+            scene.add(gridHelper);
+            
+            // Add subtle glow plane
+            const planeGeometry = new THREE.PlaneGeometry(gridSize, gridSize);
+            const planeMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0x001144, 
+                transparent: true, 
+                opacity: 0.1 
+            });
+            const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+            plane.rotation.x = -Math.PI / 2;
+            plane.position.y = -2.1;
+            scene.add(plane);
+        }
+        
+        function createCornerPillars() {
+            const pillarGeometry = new THREE.CylinderGeometry(0.5, 0.8, 20);
+            const pillarMaterial = new THREE.MeshLambertMaterial({ color: 0x004488 });
+            
+            const positions = [
+                [-gridSize/2, 8, -gridSize/2],
+                [gridSize/2, 8, -gridSize/2],
+                [-gridSize/2, 8, gridSize/2],
+                [gridSize/2, 8, gridSize/2]
+            ];
+            
+            positions.forEach(pos => {
+                const pillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
+                pillar.position.set(pos[0], pos[1], pos[2]);
+                scene.add(pillar);
+            });
+            
+            // Add ambient light
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.3);
+            scene.add(ambientLight);
+            
+            // Add directional light
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(10, 20, 5);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+        }
+        
+        async function loadAgents() {
+            try {
+                const response = await fetch('/api/agents');
+                agents = await response.json();
+            } catch (error) {
+                console.error('Failed to load agents:', error);
+                // Mock data for demo
+                agents = [
+                    { id: 'agent_001', name: 'Genesis Node', status: 'online', registered: '2024-01-01T00:00:00Z', last_seen: '2024-01-15T12:30:00Z', pubkey: 'pk_abc123def456' },
+                    { id: 'agent_002', name: 'Validator Alpha', status: 'idle', registered: '2024-01-02T08:15:00Z', last_seen: '2024-01-14T18:45:00Z', pubkey: 'pk_def456ghi789' },
+                    { id: 'agent_003', name: 'Monitor Beta', status: 'offline', registered: '2024-01-03T14:22:00Z', last_seen: '2024-01-13T09:10:00Z', pubkey: 'pk_ghi789jkl012' }
+                ];
+            }
+        }
+        
+        function createBeacons() {
+            const gridCols = Math.ceil(Math.sqrt(agents.length));
+            
+            agents.forEach((agent, index) => {
+                const row = Math.floor(index / gridCols);
+                const col = index % gridCols;
+                
+                const x = (col - gridCols/2) * beaconSpacing;
+                const z = (row - gridCols/2) * beaconSpacing;
+                const y = 2;
+                
+                const beacon = createBeaconMesh(agent);
+                beacon.position.set(x, y, z);
+                beacon.userData = { agent };
+                
+                scene.add(beacon);
+                beacons.push(beacon);
+            });
+        }
+        
+        function createBeaconMesh(agent) {
+            let geometry, material;
+            
+            if (agent.status === 'online') {
+                geometry = new THREE.OctahedronGeometry(1.2);
+                material = new THREE.MeshLambertMaterial({ 
+                    color: 0x00aa44,
+                    emissive: 0x003311
+                });
+            } else {
+                geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+                const color = agent.status === 'idle' ? 0xffaa00 : 0xaa4400;
+                const emissive = agent.status === 'idle' ? 0x332200 : 0x220011;
+                material = new THREE.MeshLambertMaterial({ 
+                    color: color,
+                    emissive: emissive
+                });
+            }
+            
+            const beacon = new THREE.Mesh(geometry, material);
+            beacon.castShadow = true;
+            beacon.receiveShadow = true;
+            
+            return beacon;
+        }
+        
+        function onBeaconClick(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(beacons);
+            
+            if (intersects.length > 0) {
+                const beacon = intersects[0].object;
+                const agent = beacon.userData.agent;
+                showAgentPanel(agent);
+            }
+        }
+        
+        async function showAgentPanel(agent) {
+            document.getElementById('panel-agent-id').textContent = agent.id;
+            document.getElementById('panel-agent-name').textContent = agent.name;
+            document.getElementById('panel-registered').textContent = new Date(agent.registered).toLocaleDateString();
+            document.getElementById('panel-last-seen').textContent = new Date(agent.last_seen).toLocaleString();
+            document.getElementById('panel-pubkey').textContent = agent.pubkey;
+            
+            // Set status badge
+            const statusEl = document.getElementById('panel-status');
+            statusEl.textContent = agent.status.toUpperCase();
+            statusEl.className = `status-badge status-${agent.status}`;
+            
+            // Load reputation
+            try {
+                const response = await fetch(`/api/reputation/${agent.id}`);
+                const reputation = await response.json();
+                document.getElementById('panel-reputation').textContent = 
+                    `Jobs: ${reputation.jobs_completed || 0} | Trust: ${reputation.trust_level || 'Unknown'}`;
+            } catch (error) {
+                document.getElementById('panel-reputation').textContent = 'Jobs: 0 | Trust: Unknown';
+            }
+            
+            document.getElementById('agent-panel').style.display = 'block';
+        }
+        
+        function closeAgentPanel() {
+            document.getElementById('agent-panel').style.display = 'none';
+        }
+        
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Rotate beacons slowly
+            beacons.forEach((beacon, index) => {
+                beacon.rotation.y += 0.01 + index * 0.001;
+                
+                // Gentle floating animation
+                beacon.position.y = 2 + Math.sin(Date.now() * 0.001 + index) * 0.3;
+            });
+            
+            // Rotate camera around center
+            const time = Date.now() * 0.0001;
+            camera.position.x = Math.cos(time) * 50;
+            camera.position.z = Math.sin(time) * 50;
+            camera.lookAt(0, 0, 0);
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Initialize when page loads
+        window.addEventListener('load', initBeaconWorld);
+    </script>
+</body>
+</html>
