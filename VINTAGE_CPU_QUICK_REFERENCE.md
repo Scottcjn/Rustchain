@@ -2,12 +2,33 @@
 
 ## Multiplier Tiers (Highest to Lowest)
 
+### 💎 4.0x - MYTHIC (Pre-1990 ARM)
+| CPU | Year | Detection Pattern | Systems |
+|-----|------|-------------------|---------|
+| **ARM2** | 1986 | `ARM2`, `Acorn.*ARM2` | Acorn Archimedes A305/A310 |
+| **ARM3** | 1989 | `ARM3`, `Acorn.*ARM3` | Acorn Archimedes A540 |
+
+### 🔥 3.5x - ULTRA-RARE (Extinct Architectures)
+| CPU | Year | Detection Pattern | Systems |
+|-----|------|-------------------|---------|
+| **DEC VAX** | 1977 | `VAX`, `MicroVAX`, `VAXstation` | VMS, ULTRIX |
+| **Transputer T414** | 1985 | `T414`, `Transputer.*T4` | INMOS parallel |
+| **Transputer T800** | 1988 | `T800`, `Transputer.*T8` | INMOS w/ FPU |
+| **Fairchild Clipper** | 1986 | `Clipper`, `C100`, `C300`, `C400` | Intergraph workstations |
+| **NS32K** | 1982 | `NS32032`, `NS32332`, `NS32532`, `NS32K` | National Semiconductor |
+| **IBM ROMP** | 1986 | `ROMP`, `IBM RT` | IBM RT PC (first RISC workstation) |
+
 ### 🏆 3.0x - Computing Pioneers (1979-1989)
 | CPU | Year | Detection Pattern | Systems |
 |-----|------|-------------------|---------|
 | **Motorola 68000** | 1979 | `68000`, `MC68000`, `m68000` | Original Mac, Amiga 500/1000, Atari ST |
 | **Intel 386** | 1985 | `i386`, `80386`, `Intel.*386` | First 32-bit x86 |
 | **MIPS R2000** | 1985 | `R2000`, `MIPS R2000` | First commercial RISC |
+| **Intel i860** | 1989 | `i860`, `Intel.*860` | Parallel RISC |
+| **Intel i960** | 1988 | `i960`, `Intel.*960` | Embedded RISC |
+| **Motorola 88K** | 1988 | `88000`, `88100`, `88110`, `MC88\d{3}` | Data General AViiON |
+| **AMD 29000** | 1987 | `29000`, `Am29000`, `29K` | Embedded RISC, laser printers |
+| **ARM7TDMI** | 1994 | `ARM7TDMI`, `ARM7` | Game Boy Advance, iPod |
 
 ### 🥈 2.8-2.9x - Early Innovations (1982-1992)
 | CPU | Year | Pattern | Notes |
@@ -19,6 +40,7 @@
 | **MIPS R3000** | 1988 | `R3000`, `MIPS R3000` | PlayStation 1 CPU |
 | **Intel 486** | 1989 | `i486`, `80486`, `486DX` | Pipelined x86 |
 | **IBM POWER1** | 1990 | `POWER1`, `RIOS` | Original POWER |
+| **StrongARM** | 1996 | `StrongARM`, `SA-110`, `SA-1100` | DEC/Intel, Newton MP2x00 |
 
 ### 🥉 2.6-2.7x - Vintage Era (1987-1995)
 | CPU | Year | Pattern | Market |
@@ -32,6 +54,8 @@
 | **IBM POWER2** | 1993 | `POWER2`, `P2SC` | RS/6000 |
 | **Cyrix 6x86** | 1995 | `Cyrix`, `6x86`, `MediaGX` | Budget Pentium competitor |
 | **DEC Alpha 21164** | 1995 | `Alpha 21164`, `EV5` | 300-600 MHz |
+| **Hitachi SH-1** | 1992 | `SH-1`, `SH7032`, `SH703\d` | Sega 32X |
+| **Hitachi SH-2** | 1994 | `SH-2`, `SH7604`, `SH760\d` | Sega Saturn |
 
 ### 🎖️ 2.4-2.5x - Late Vintage (1990-2002)
 | CPU | Year | Pattern | Description |
@@ -43,6 +67,9 @@
 | **PA-RISC 2.0** | 1996 | `PA-RISC 2\.0`, `PA8000` | 64-bit HP |
 | **IBM POWER3** | 1998 | `POWER3` | pSeries |
 | **AmigaOne G3** | 2002 | `AmigaOne.*G3` | AmigaOS 4 |
+| **Intel Itanium** | 2001 | `Itanium`, `IA-64` | HP Integrity |
+| **IBM S/390** | 1990 | `S/390`, `System/390` | IBM mainframes |
+| **XScale** | 2000 | `XScale`, `PXA2\d{2}`, `PXA27\d` | Zaurus, early phones |
 
 ### 🏅 2.2-2.3x - Retro Era (1994-2004)
 | CPU | Year | Pattern | Market Position |
@@ -58,6 +85,10 @@
 | **Pegasos G3** | 2002 | `Pegasos.*G3`, `Pegasos I` | MorphOS |
 | **AmigaOne G4** | 2003 | `AmigaOne.*G4` | PowerPC 7450/7447 |
 | **Pegasos G4** | 2004 | `Pegasos.*G4`, `Pegasos II` | MorphOS flagship |
+| **Hitachi SH-4** | 1998 | `SH-4`, `SH7750`, `SH7091` | Sega Dreamcast |
+| **Hitachi SH-4A** | 2003 | `SH-4A`, `SH7780` | Embedded |
+| **PS3 Cell BE** | 2006 | `Cell`, `Cell BE`, `CBE` | PlayStation 3 |
+| **PS2 Emotion Engine** | 2000 | `Emotion Engine`, `R5900` | PlayStation 2 |
 
 ### 🎗️ 2.0-2.1x - Early Modern (1999-2007)
 | CPU | Year | Pattern | Notes |
@@ -67,6 +98,10 @@
 | **IBM POWER5** | 2004 | `POWER5`, `POWER5\+` | SMT, virtualization |
 | **Transmeta Efficeon** | 2004 | `Transmeta Efficeon`, `TM8\d{3}` | 2nd-gen morphing |
 | **Sam440** | 2007 | `Sam440`, `440EP` | AmigaOS 4 embedded |
+| **Xbox 360 Xenon** | 2005 | `Xenon`, `IBM.*Xenon` | Xbox 360 (3-core PPC) |
+| **GameCube Gekko** | 2001 | `Gekko`, `IBM.*Gekko` | Nintendo GameCube |
+| **Wii Broadway** | 2006 | `Broadway`, `IBM.*Broadway` | Nintendo Wii |
+| **PSP Allegrex** | 2004 | `Allegrex`, `MIPS.*Allegrex` | PlayStation Portable |
 
 ### 🏵️ 1.8-1.9x - Late Retro (2001-2010)
 | CPU | Year | Pattern | Last of Era |
@@ -79,6 +114,13 @@
 | **VIA Nano** | 2008 | `VIA Nano`, `Isaiah` | Final VIA mainstream |
 | **IBM POWER7** | 2010 | `POWER7`, `POWER7\+` | TurboCore |
 | **Sam460** | 2010 | `Sam460`, `460EX` | AmigaOS 4 modern |
+
+### 🌐 1.4-1.5x - EXOTIC (RISC-V)
+| CPU | Year | Pattern | Systems |
+|-----|------|---------|---------|
+| **RISC-V (SiFive U74)** | 2020 | `SiFive.*U74`, `sifive,u74` | VisionFive 2, HiFive Unmatched |
+| **RISC-V (StarFive JH7110)** | 2022 | `JH7110`, `StarFive.*JH7110` | VisionFive 2 SoC |
+| **RISC-V (generic)** | 2014+ | `riscv`, `riscv64`, `riscv32`, `RISC-V` | Open-source ISA |
 
 ---
 
@@ -164,6 +206,59 @@
 1.7x  2008  VIA Nano  - Isaiah
 ```
 
+### Hitachi SuperH
+```
+2.7x  1992  SH-1      - Sega 32X
+2.6x  1994  SH-2      - Sega Saturn
+2.3x  1998  SH-4      - Sega Dreamcast
+2.2x  2003  SH-4A     - Embedded
+```
+
+### Game Console CPUs
+```
+2.2x  2006  Cell BE         - PlayStation 3
+2.2x  2000  Emotion Engine  - PlayStation 2
+2.1x  2001  Gekko           - Nintendo GameCube
+2.0x  2005  Xenon           - Xbox 360
+2.0x  2006  Broadway        - Nintendo Wii
+2.0x  2004  Allegrex        - PlayStation Portable
+```
+
+### Vintage ARM (NOT Modern ARM Penalty)
+```
+4.0x  1986  ARM2        - Acorn Archimedes (MYTHIC)
+3.8x  1989  ARM3        - Acorn A540 (MYTHIC)
+3.0x  1994  ARM7TDMI    - GBA, iPod
+2.8x  1996  StrongARM   - SA-110/SA-1100
+2.5x  2000  XScale      - PXA2xx, Zaurus
+```
+
+### Ultra-Rare / Extinct Architectures
+```
+3.5x  1977  VAX         - DEC MicroVAX, VAXstation
+3.5x  1985  Transputer  - INMOS T414/T800
+3.5x  1986  Clipper     - Fairchild/Intergraph
+3.5x  1982  NS32K       - National Semiconductor
+3.5x  1986  IBM ROMP    - IBM RT PC
+3.0x  1989  i860        - Intel parallel RISC
+3.0x  1988  i960        - Intel embedded RISC
+3.0x  1988  88K         - Motorola 88000
+3.0x  1987  Am29000     - AMD 29K
+```
+
+### Intel/IBM Mainframe & Server
+```
+2.5x  2001  Itanium     - IA-64
+2.5x  1990  S/390       - IBM mainframe
+```
+
+### RISC-V
+```
+1.5x  2020  SiFive U74  - VisionFive 2
+1.4x  2014  RISC-V      - Open ISA (generic)
+1.4x  2022  JH7110      - StarFive SoC
+```
+
 ### PowerPC Amiga
 ```
 2.4x  2002  AmigaOne G3   - 750/7457
@@ -196,6 +291,19 @@
 11. **Oddball x86** (Cyrix/VIA/Transmeta) - Rare niche
 12. **PA-RISC** (1986-2008) - HP-UX legacy
 13. **POWER** (1990-2013) - AIX/pSeries legacy
+
+### Tier 4 - Exotic / Emerging
+14. **RISC-V** (2020+) - SiFive/StarFive boards, growing community
+15. **Hitachi SuperH** (1992-2003) - Dreamcast homebrew, embedded
+16. **Game Consoles** (2000-2006) - PS3/PS2 Linux, homebrew scenes
+
+### Tier 5 - Museum / Unicorn
+17. **VAX** (1977-2000) - OpenVMS collectors, Hobbyist licenses
+18. **Transputer** (1985-1993) - Parallel computing historians
+19. **Clipper/NS32K/ROMP** - Nearly extinct, museum pieces
+20. **i860/i960/88K/Am29K** - Embedded legacy, academic
+21. **Vintage ARM** (ARM2/3/7) - Acorn collectors, retro ARM
+22. **Itanium** (2001-2021) - HP-UX servers, end-of-life
 
 ---
 
@@ -231,6 +339,43 @@ cat /proc/cpuinfo | grep "cpu"
 ```bash
 cat /proc/cpuinfo | grep "cpu model"
 # Output: cpu model : EV56
+```
+
+**Hitachi SuperH (Dreamcast/Embedded):**
+```bash
+cat /proc/cpuinfo | grep "cpu type"
+# Output: cpu type : SH7750
+# OR:     cpu type : SH7091   (Dreamcast variant)
+```
+
+**RISC-V:**
+```bash
+cat /proc/cpuinfo | grep "isa"
+# Output: isa : rv64imafdc
+uname -m
+# Output: riscv64
+```
+
+**Cell BE (PS3 Linux):**
+```bash
+cat /proc/cpuinfo | grep "cpu"
+# Output: cpu : Cell Broadband Engine, altivec supported
+# OR:     platform : Cell
+```
+
+**Itanium:**
+```bash
+cat /proc/cpuinfo | grep "family"
+# Output: family : Itanium 2
+uname -m
+# Output: ia64
+```
+
+**VAX:**
+```bash
+# OpenVMS DCL:
+SHOW CPU
+# Output: Process CPU : MicroVAX 3100
 ```
 
 ### Test Script
