@@ -222,3 +222,7 @@ Named after a 486 laptop with oxidized serial ports that still boots to DOS and 
 [Boudreaux Principles](docs/Boudreaux_COMPUTING_PRINCIPLES.md) · [Green Tracker](https://rustchain.org/preserved.html) · [Bounties](https://github.com/Scottcjn/rustchain-bounties/issues)
 
 </div>
+
+
+## Contributing
+Please read the [Bounty Board](https://github.com/Scottcjn/rustchain-bounties) for active tasks and rewards.
