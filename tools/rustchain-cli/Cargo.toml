@@ -1,0 +1,50 @@
+[package]
+name = "rustchain-cli"
+version = "0.1.0"
+edition = "2021"
+authors = ["kuanglaodi2-sudo"]
+license = "MIT OR Apache-2.0"
+description = "RustChain CLI wallet and utilities — interact with RustChain from the command line"
+repository = "https://github.com/Scottcjn/Rustchain"
+keywords = ["rustchain", "blockchain", "cli", "wallet"]
+rust-version = "1.70"
+
+[dependencies]
+# CLI
+clap = { version = "4.4", features = ["derive", "env"] }
+anyhow = "1.0"
+thiserror = "1.0"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.11", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+# Crypto / encoding
+ed25519-dalek = { version = "2.0", features = ["rand_core"] }
+rand = "0.8"
+base58 = "0.2"
+sha2 = "0.10"
+hex = "0.4"
+# Time / formatting
+chrono = { version = "0.4", features = ["serde"] }
+humantime = "2.1"
+indicatif = { version = "0.17", optional = true }
+console = { version = "0.15", optional = true }
+# Async
+futures = "0.3"
+
+[features]
+default = ["cli-output"]
+cli-output = ["indicatif", "console"]
+
+[dev-dependencies]
+tempfile = "3.8"
+
+[[bin]]
+name = "rustchain"
+path = "src/main.rs"
+doc = "RustChain CLI wallet and utilities"
+
+[lib]
+name = "rustchain_cli"
+path = "src/lib.rs"

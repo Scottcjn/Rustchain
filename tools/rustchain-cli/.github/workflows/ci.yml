@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'tools/rustchain-cli/**'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          version: stable
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/rustchain-cli
+
+      - name: Format check
+        working-directory: tools/rustchain-cli
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (lint)
+        working-directory: tools/rustchain-cli
+        run: cargo clippy -- -D warnings
+
+      - name: Build
+        working-directory: tools/rustchain-cli
+        run: cargo build --verbose
+
+      - name: Run tests
+        working-directory: tools/rustchain-cli
+        run: cargo test --verbose
+
+      - name: Test release build
+        working-directory: tools/rustchain-cli
+        run: cargo build --release --verbose
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          version: stable
+
+      - name: Build docs
+        working-directory: tools/rustchain-cli
+        run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
