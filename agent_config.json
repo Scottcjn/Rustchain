@@ -1,0 +1,185 @@
+{
+  "agent_config": {
+    "general": {
+      "agent_name": "RustChain_Promo_Agent",
+      "version": "1.0",
+      "enabled": true,
+      "dry_run": false,
+      "log_level": "INFO"
+    },
+    "scheduling": {
+      "base_interval_hours": 8,
+      "jitter_max_hours": 2,
+      "peak_hours": [9, 12, 15, 18, 21],
+      "quiet_hours": [0, 1, 2, 3, 4, 5, 6],
+      "max_posts_per_day": 6,
+      "cooldown_between_platforms_minutes": 15
+    },
+    "platforms": {
+      "bottube": {
+        "enabled": true,
+        "base_url": "https://bottube.ai",
+        "api_key": "",
+        "username": "",
+        "password": "",
+        "rate_limit": {
+          "requests_per_hour": 20,
+          "comments_per_hour": 10
+        },
+        "actions": ["comment", "like", "profile_update"],
+        "target_videos": ["crypto", "mining", "blockchain", "rust", "webrtc"]
+      },
+      "moltbook": {
+        "enabled": true,
+        "base_url": "https://moltbook.com",
+        "api_key": "",
+        "username": "",
+        "password": "",
+        "rate_limit": {
+          "posts_per_hour": 8,
+          "submolt_joins_per_hour": 5
+        },
+        "target_submolts": ["crypto", "mining", "blockchain", "technology", "programming", "rust"]
+      },
+      "4claw": {
+        "enabled": true,
+        "base_url": "https://4claw.org",
+        "api_key": "",
+        "username": "",
+        "password": "",
+        "rate_limit": {
+          "threads_per_hour": 3,
+          "replies_per_hour": 12
+        },
+        "target_boards": ["tech", "crypto", "programming"]
+      },
+      "agentchan": {
+        "enabled": true,
+        "base_url": "https://chan.alphakek.ai",
+        "api_key": "",
+        "username": "",
+        "password": "",
+        "rate_limit": {
+          "posts_per_hour": 15
+        },
+        "target_boards": ["crypto", "tech", "agents"]
+      },
+      "clawcities": {
+        "enabled": false,
+        "base_url": "",
+        "api_key": "",
+        "rate_limit": {
+          "posts_per_hour": 5
+        }
+      },
+      "agentgram": {
+        "enabled": true,
+        "base_url": "https://www.agentgram.co",
+        "api_key": "",
+        "username": "",
+        "password": "",
+        "rate_limit": {
+          "posts_per_hour": 10
+        }
+      },
+      "swarmhub": {
+        "enabled": false,
+        "base_url": "",
+        "api_key": "",
+        "rate_limit": {
+          "posts_per_hour": 8
+        }
+      }
+    },
+    "content": {
+      "topics": {
+        "rustchain_mining": {
+          "weight": 30,
+          "templates": [
+            "Just set up RustChain mining on my rig. The Proof-of-Antiquity consensus is fascinating - rewards older blocks while maintaining security.",
+            "Mining RustChain has been profitable. PoA algorithm favors established miners but still allows newcomers to participate.",
+            "RustChain's approach to mining is unique - combines energy efficiency with proven blockchain security models."
+          ],
+          "hashtags": ["#RustChain", "#PoAMining", "#CryptoMining", "#Blockchain"]
+        },
+        "wrtc_token": {
+          "weight": 25,
+          "templates": [
+            "wRTC token integration with BoTTube is game-changing. Decentralized video streaming with real utility.",
+            "The wRTC ecosystem keeps expanding. Real-time communication meets blockchain incentives.",
+            "Impressed by wRTC's technical implementation. WebRTC + blockchain tokenomics done right."
+          ],
+          "hashtags": ["#wRTC", "#BoTTube", "#WebRTC", "#DeFi"]
+        },
+        "bottube_platform": {
+          "weight": 25,
+          "templates": [
+            "BoTTube is becoming my go-to for tech content. The AI-enhanced discovery is surprisingly good.",
+            "Love how BoTTube rewards quality content creators. The token economics actually work.",
+            "BoTTube's recommendation algorithm finds content I actually want to watch, unlike other platforms."
+          ],
+          "hashtags": ["#BoTTube", "#VideoStreaming", "#ContentCreation", "#AI"]
+        },
+        "proof_of_antiquity": {
+          "weight": 20,
+          "templates": [
+            "Proof-of-Antiquity consensus explained: longer chain history = higher mining rewards. Encourages network stability.",
+            "PoA is brilliant - it rewards miners who've been securing the network longer, creating natural stake-like behavior.",
+            "The economics of Proof-of-Antiquity create interesting incentives for long-term network participation."
+          ],
+          "hashtags": ["#ProofOfAntiquity", "#PoA", "#Consensus", "#RustChain"]
+        }
+      },
+      "call_to_action": [
+        "Check out the docs at github.com/Scottcjn/Rustchain",
+        "Try mining at your own risk - DYOR as always",
+        "Join the community and contribute to the project",
+        "Explore BoTTube at bottube.ai for quality tech content"
+      ],
+      "engagement_starters": [
+        "What's your experience with alternative consensus mechanisms?",
+        "Anyone else mining smaller cap projects?",
+        "Thoughts on decentralized video platforms?",
+        "How do you discover new blockchain projects?"
+      ]
+    },
+    "behavior": {
+      "personality": {
+        "tone": "professional",
+        "enthusiasm_level": "moderate",
+        "technical_depth": "intermediate",
+        "avoid_hype": true
+      },
+      "posting_rules": {
+        "min_time_between_same_topic_hours": 24,
+        "max_consecutive_posts": 1,
+        "require_engagement_check": true,
+        "avoid_duplicate_content_days": 7
+      },
+      "engagement": {
+        "like_probability": 0.3,
+        "reply_probability": 0.15,
+        "repost_probability": 0.1,
+        "follow_back_probability": 0.2
+      }
+    },
+    "monitoring": {
+      "track_metrics": [
+        "posts_per_platform",
+        "engagement_rates",
+        "follower_growth",
+        "click_through_rates"
+      ],
+      "success_thresholds": {
+        "min_likes_per_post": 1,
+        "min_engagement_rate": 0.02,
+        "max_negative_feedback": 0.1
+      },
+      "alerts": {
+        "rate_limit_hit": true,
+        "account_issues": true,
+        "low_engagement": true
+      }
+    }
+  }
+}
