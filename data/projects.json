@@ -1,0 +1,92 @@
+{
+  "projects": [
+    {
+      "name": "RustChain Agent Framework",
+      "url": "https://rustchain.ai",
+      "github_repo": "https://github.com/Scottcjn/Rustchain",
+      "bcos_tier": "L1",
+      "latest_sha": "a1b2c3d4e5f6789012345678901234567890abcd",
+      "sbom_hash": "sha256:f4e3d2c1b0a9876543210fedcba9876543210abcdef123456789abcdef123456",
+      "review_note": "Comprehensive agent framework with robust P2P networking and mining capabilities. Excellent documentation and test coverage.",
+      "category": "agent_infrastructure",
+      "last_updated": "2024-01-15T10:30:00Z"
+    },
+    {
+      "name": "ChainGuard Validator",
+      "url": "https://chainguard.io",
+      "github_repo": "https://github.com/chainguard/validator-node",
+      "bcos_tier": "L0",
+      "latest_sha": "b2c3d4e5f6789012345678901234567890abcdef1",
+      "sbom_hash": "sha256:e3d2c1b0a9876543210fedcba9876543210abcdef123456789abcdef123456789",
+      "review_note": "High-security blockchain validator with zero-trust architecture. Battle-tested in production environments.",
+      "category": "blockchain",
+      "last_updated": "2024-01-14T14:22:00Z"
+    },
+    {
+      "name": "Neural Compute Mesh",
+      "url": "https://neuralcompute.ai",
+      "github_repo": "https://github.com/neural-compute/mesh-core",
+      "bcos_tier": "L2",
+      "latest_sha": "c3d4e5f6789012345678901234567890abcdef12",
+      "sbom_hash": "sha256:d2c1b0a9876543210fedcba9876543210abcdef123456789abcdef123456789abc",
+      "review_note": "Distributed compute mesh optimized for AI workloads. Efficient resource allocation and scheduling.",
+      "category": "compute",
+      "last_updated": "2024-01-13T09:15:00Z"
+    },
+    {
+      "name": "StreamCast Video Infrastructure",
+      "url": "https://streamcast.network",
+      "github_repo": "https://github.com/streamcast/video-infra",
+      "bcos_tier": "L1",
+      "latest_sha": "d4e5f6789012345678901234567890abcdef1234",
+      "sbom_hash": "sha256:c1b0a9876543210fedcba9876543210abcdef123456789abcdef123456789abcde",
+      "review_note": "Decentralized video streaming platform with content delivery network. Scales efficiently with peer-to-peer distribution.",
+      "category": "video",
+      "last_updated": "2024-01-12T16:45:00Z"
+    },
+    {
+      "name": "AgentOS Runtime",
+      "url": "https://agent-os.dev",
+      "github_repo": "https://github.com/agent-os/runtime",
+      "bcos_tier": "L0",
+      "latest_sha": "e5f6789012345678901234567890abcdef12345a",
+      "sbom_hash": "sha256:b0a9876543210fedcba9876543210abcdef123456789abcdef123456789abcdef1",
+      "review_note": "Lightweight agent runtime with sandboxing and resource management. Excellent isolation and security model.",
+      "category": "agent_infrastructure",
+      "last_updated": "2024-01-11T11:30:00Z"
+    },
+    {
+      "name": "BlockMesh P2P",
+      "url": "https://blockmesh.network",
+      "github_repo": "https://github.com/blockmesh/p2p-core",
+      "bcos_tier": "L1",
+      "latest_sha": "f6789012345678901234567890abcdef12345abc",
+      "sbom_hash": "sha256:a9876543210fedcba9876543210abcdef123456789abcdef123456789abcdef12",
+      "review_note": "Robust peer-to-peer networking layer with gossip protocols and fault tolerance. Proven in high-throughput scenarios.",
+      "category": "blockchain",
+      "last_updated": "2024-01-10T13:20:00Z"
+    },
+    {
+      "name": "RentCompute Marketplace",
+      "url": "https://rentcompute.io",
+      "github_repo": "https://github.com/rentcompute/marketplace",
+      "bcos_tier": "L2",
+      "latest_sha": "789012345678901234567890abcdef12345abcde",
+      "sbom_hash": "sha256:9876543210fedcba9876543210abcdef123456789abcdef123456789abcdef123",
+      "review_note": "Decentralized compute rental platform with fair pricing and reputation system. Smart contracts for automated payments.",
+      "category": "compute",
+      "last_updated": "2024-01-09T08:55:00Z"
+    },
+    {
+      "name": "VideoChain Encoder",
+      "url": "https://videochain.media",
+      "github_repo": "https://github.com/videochain/encoder-node",
+      "bcos_tier": "L1",
+      "latest_sha": "89012345678901234567890abcdef12345abcdef",
+      "sbom_hash": "sha256:876543210fedcba9876543210abcdef123456789abcdef123456789abcdef1234",
+      "review_note": "High-performance video encoding with blockchain verification. Supports multiple codecs and quality profiles.",
+      "category": "video",
+      "last_updated": "2024-01-08T15:40:00Z"
+    }
+  ]
+}
