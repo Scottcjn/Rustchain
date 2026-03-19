@@ -172,12 +172,13 @@ Every contribution earns RTC tokens. Browse [open bounties](https://github.com/S
 
 ## Publications
 
-| Paper | DOI |
-|-------|-----|
-| **One CPU, One Vote** | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623592.svg)](https://doi.org/10.5281/zenodo.18623592) |
-| **Non-Bijunctive Permutation Collapse** | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623920.svg)](https://doi.org/10.5281/zenodo.18623920) |
-| **PSE Hardware Entropy** | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623922.svg)](https://doi.org/10.5281/zenodo.18623922) |
-| **RAM Coffers** | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18321905.svg)](https://doi.org/10.5281/zenodo.18321905) |
+| Paper | Venue | DOI |
+|-------|-------|-----|
+| **Emotional Vocabulary as Semantic Grounding** | **CVPR 2026 Workshop (GRAIL-V)** — Accepted | [OpenReview](https://openreview.net/forum?id=pXjE6Tqp70) |
+| **One CPU, One Vote** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623592.svg)](https://doi.org/10.5281/zenodo.18623592) |
+| **Non-Bijunctive Permutation Collapse** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623920.svg)](https://doi.org/10.5281/zenodo.18623920) |
+| **PSE Hardware Entropy** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623922.svg)](https://doi.org/10.5281/zenodo.18623922) |
+| **RAM Coffers** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18321905.svg)](https://doi.org/10.5281/zenodo.18321905) |
 
 ---
 
