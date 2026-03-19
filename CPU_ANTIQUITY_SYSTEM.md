@@ -4,7 +4,7 @@
 
 The RustChain cryptocurrency implements a **Proof-of-Antiquity (PoA)** reward system that incentivizes preservation and operation of vintage computing hardware. Older CPUs receive higher mining reward multipliers, with time-based decay to reward early adopters.
 
-This document provides comprehensive CPU generation detection patterns and antiquity multipliers for all supported architectures: Intel, AMD, PowerPC, Apple Silicon, Sun SPARC, SGI MIPS, Motorola 68K, Hitachi SuperH, Vintage ARM, RISC-V, Game Console CPUs, and ultra-rare/dead architectures.
+This document provides comprehensive CPU generation detection patterns and antiquity multipliers for Intel, AMD, PowerPC, and Apple Silicon architectures from 2000-2025.
 
 ## Key Principles
 
