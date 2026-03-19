@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Rustchain API Reference
 
 Here’s a quick guide to the main API endpoints we run in Rustchain. Hope this makes it easier for devs to plug in and test things out.
