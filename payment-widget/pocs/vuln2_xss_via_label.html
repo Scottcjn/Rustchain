@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>XSS via data-label</title></head>
+<body style="background:#0a0a0f;color:#e2e2f0;font-family:monospace;padding:2rem">
+<h1 style="color:#f97316">Vulnerability #2: Stored XSS via data-label</h1>
+<p>The <code>data-label</code> attribute is injected into <code>btn.innerHTML</code> without sanitization:</p>
+<pre style="background:#12121e;padding:1rem;border-radius:4px;color:#c9a227">
+btn.innerHTML = `${LOGO_SVG} ${config.label}`;
+</pre>
+
+<!--
+  POC: data-label contains JavaScript that executes on button click.
+  The attacker uses the label to inject an onerror handler.
+-->
+<div id="rtc-pay"
+     data-label='&lt;img src=x onerror=alert("XSS via label!")&gt;'
+     data-to="C4c7r9WPsnEe6CUfegMU9M7ReHD1pWg8qeSfTBoRcLbg"
+     data-amount="1">
+</div>
+
+<script src="../payment-widget/rustchain-pay.js"></script>
+</body>
+</html>
