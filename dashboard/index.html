@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Live Stats</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            color: #fff;
+        }
+        .container {
+            max-width: 800px;
+            width: 100%;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2rem;
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            transition: transform 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            background: rgba(255,255,255,0.08);
+        }
+        .label {
+            font-size: 0.875rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #00d4ff;
+        }
+        .status {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status.online { background: #00ff88; box-shadow: 0 0 10px #00ff88; }
+        .status.offline { background: #ff4444; }
+        .footer {
+            text-align: center;
+            color: #666;
+            font-size: 0.875rem;
+            margin-top: auto;
+            padding-top: 30px;
+        }
+        .footer a {
+            color: #00d4ff;
+            text-decoration: none;
+        }
+        .refresh {
+            text-align: center;
+            color: #666;
+            font-size: 0.75rem;
+            margin-top: 10px;
+        }
+        .error {
+            background: rgba(255,68,68,0.1);
+            border-color: #ff4444;
+            color: #ff8888;
+        }
+        @media (max-width: 600px) {
+            h1 { font-size: 1.5rem; }
+            .value { font-size: 1.5rem; }
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔥 RustChain Live Stats</h1>
+        
+        <div class="grid">
+            <div class="card" id="epoch-card">
+                <div class="label">Current Epoch</div>
+                <div class="value" id="epoch">-</div>
+            </div>
+            
+            <div class="card" id="miners-card">
+                <div class="label">Active Miners</div>
+                <div class="value" id="miners">-</div>
+            </div>
+            
+            <div class="card" id="health-card">
+                <div class="label">Network Health</div>
+                <div class="value" style="font-size: 1.25rem;">
+                    <span class="status offline" id="health-dot"></span>
+                    <span id="health">-</span>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="label">API Endpoint</div>
+                <div class="value" style="font-size: 1rem; color: #888;">rustchain.org</div>
+            </div>
+        </div>
+        
+        <div class="refresh">Auto-refreshing every 60 seconds</div>
+    </div>
+    
+    <div class="footer">
+        Powered by <a href="https://rustchain.org" target="_blank">RustChain</a> • 
+        <a href="https://github.com/Scottcjn/Rustchain" target="_blank">Open Source</a>
+    </div>
+
+    <script>
+        const API_BASE = 'https://rustchain.org';
+        
+        async function fetchStats() {
+            try {
+                const [healthRes, minersRes, epochRes] = await Promise.all([
+                    fetch(`${API_BASE}/health`).catch(() => null),
+                    fetch(`${API_BASE}/api/miners`).catch(() => null),
+                    fetch(`${API_BASE}/epoch`).catch(() => null)
+                ]);
+                
+                // Health
+                const healthCard = document.getElementById('health-card');
+                const healthDot = document.getElementById('health-dot');
+                const healthText = document.getElementById('health');
+                
+                if (healthRes && healthRes.ok) {
+                    const health = await healthRes.text();
+                    healthText.textContent = 'operational';
+                    healthDot.className = 'status online';
+                    healthCard.classList.remove('error');
+                } else {
+                    healthText.textContent = 'unreachable';
+                    healthDot.className = 'status offline';
+                    healthCard.classList.add('error');
+                }
+                
+                // Miners
+                if (minersRes && minersRes.ok) {
+                    const miners = await minersRes.json();
+                    document.getElementById('miners').textContent = miners.count || miners.length || '0';
+                } else {
+                    document.getElementById('miners').textContent = '?';
+                }
+                
+                // Epoch
+                if (epochRes && epochRes.ok) {
+                    const epoch = await epochRes.text();
+                    document.getElementById('epoch').textContent = epoch.replace(/"/g, '').trim();
+                } else {
+                    document.getElementById('epoch').textContent = '?';
+                }
+                
+            } catch (err) {
+                console.error('Fetch error:', err);
+                document.getElementById('health').textContent = 'error';
+                document.getElementById('health-dot').className = 'status offline';
+            }
+        }
+        
+        // Initial fetch
+        fetchStats();
+        
+        // Auto-refresh every 60 seconds
+        setInterval(fetchStats, 60000);
+    </script>
+</body>
+</html>
