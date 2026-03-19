@@ -84,9 +84,53 @@ ANTIQUITY_MULTIPLIERS = {
 
     # Generic CPU families used across consoles and computers
     "6502": 2.8,              # MOS 6502 (Apple II, Commodore 64, NES, Atari)
+    "65c02": 2.7,             # WDC 65C02 (Apple IIe enhanced, BBC Master)
     "65c816": 2.7,            # WDC 65C816 (SNES, Apple IIGS)
     "z80": 2.6,               # Zilog Z80 (Game Boy, SMS, MSX, Spectrum)
+    "sh1": 2.7,               # Hitachi SH-1 (1992) - early embedded
     "sh2": 2.6,               # Hitachi SH-2 (Sega Saturn, 32X)
+    "sh4": 2.3,               # Hitachi SH-4 (Dreamcast, 1998) - 200MHz superscalar
+    "sh4a": 2.2,              # Renesas SH-4A (2003)
+
+    # ===========================================
+    # GAME CONSOLE CPUs — specific silicon (2000-2006)
+    # ===========================================
+
+    "dreamcast_sh4": 2.3,     # Sega Dreamcast - Hitachi SH-4 @ 200MHz (1998)
+    "ps2_ee": 2.2,            # PS2 Emotion Engine - Custom MIPS R5900 + VU0/VU1 (2000)
+    "emotion_engine": 2.2,    # PS2 alias
+    "gamecube_gekko": 2.1,    # GameCube - IBM Gekko (PowerPC 750CXe, 2001)
+    "xbox_celeron": 1.8,      # Xbox OG - Custom Pentium III / Celeron (2001)
+    "psp_allegrex": 2.0,      # PSP - Allegrex (MIPS R4000, 2004)
+    "xbox360_xenon": 2.0,     # Xbox 360 - Xenon tri-core PowerPC (2005)
+    "xenon": 2.0,             # Xbox 360 alias
+    "ps3_cell": 2.2,          # PS3 - Cell Broadband Engine (PPE + 7 SPE, 2006)
+    "cell_be": 2.2,           # Cell BE alias — legendary parallel arch
+    "wii_broadway": 2.0,      # Wii - IBM Broadway (PowerPC 750CL, 2006)
+    "nds_arm7_arm9": 2.3,     # Nintendo DS - ARM7TDMI + ARM946E dual (2004)
+
+    # ===========================================
+    # EXOTIC/DEAD ARCHITECTURES — unicorn tier
+    # ===========================================
+
+    "itanium": 2.5,           # Intel IA-64 Itanium (2001) — dead arch, extremely rare
+    "itanium2": 2.3,          # Itanium 2 / Montecito / Poulson
+    "ia64": 2.5,              # IA-64 alias
+    "vax": 3.5,               # DEC VAX (1977) — minicomputer legend, if you have one...
+    "vax_780": 3.5,           # VAX-11/780 — the original MIPS benchmark machine
+    "transputer": 3.5,        # Inmos Transputer (1984) — parallel computing pioneer
+    "t800": 3.5,              # Transputer T800 (with FPU)
+    "t414": 3.5,              # Transputer T414
+    "i860": 3.0,              # Intel i860 (1989) — failed "Cray on a chip"
+    "i960": 3.0,              # Intel i960 (1988) — embedded RISC, military/aerospace
+    "clipper": 3.5,           # Fairchild Clipper (1986) — workstation RISC, ultra-rare
+    "ns32k": 3.5,             # National Semiconductor NS32032 (1984) — failed x86 killer
+    "88k": 3.0,               # Motorola 88000 (1988) — killed by PowerPC alliance
+    "mc88100": 3.0,           # 88100 alias
+    "am29k": 3.0,             # AMD 29000 (1987) — AMD's RISC attempt, laser printers
+    "romp": 3.5,              # IBM ROMP (1986) — first commercial RISC, RT PC
+    "s390": 2.5,              # IBM System/390 mainframe
+    "s390x": 2.3,             # 64-bit z/Architecture
 
     # Sun SPARC (1987)
     "sparc_v7": 2.9,

@@ -220,6 +220,18 @@ class LocalMiner:
         elif machine in ('riscv64', 'riscv32', 'riscv'):
             hw["family"] = "RISC-V"
             hw["arch"] = "riscv"
+        elif machine in ('m68k',):
+            hw["family"] = "M68K"
+            hw["arch"] = "68000"
+        elif machine in ('ia64',):
+            hw["family"] = "IA-64"
+            hw["arch"] = "itanium"
+        elif machine in ('s390', 's390x'):
+            hw["family"] = "S390"
+            hw["arch"] = "s390"
+        elif machine.startswith('sh'):
+            hw["family"] = "SuperH"
+            hw["arch"] = machine
 
         # Get CPU
         cpu = self._run_cmd("lscpu | grep 'Model name' | cut -d: -f2 | xargs")

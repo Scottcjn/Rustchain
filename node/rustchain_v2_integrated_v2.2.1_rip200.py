@@ -1295,13 +1295,21 @@ def _detect_arm_evidence(device: dict, fingerprint: dict) -> bool:
         is_known_x86 = _has_any_token(cpu_brand, X86_CPU_BRANDS)
         ppc_markers = {"powerpc", "ppc", "ibm power", "g3", "g4", "g5", "970", "7450", "power8"}
         sparc_markers = {"sparc", "ultrasparc", "sun4", "fujitsu sparc"}
-        mips_markers = {"mips", "r2000", "r3000", "r4000", "r4400", "r5000", "r8000", "r10000", "r12000", "r14000", "r16000", "vr4300", "loongson", "ingenic"}
+        mips_markers = {"mips", "r2000", "r3000", "r4000", "r4400", "r5000", "r8000", "r10000", "r12000", "r14000", "r16000", "vr4300", "loongson", "ingenic", "emotion engine", "allegrex"}
         riscv_markers = {"riscv", "risc-v", "sifive", "thead", "starfive", "kendryte", "xuantie"}
+        exotic_markers = {"sh-", "sh1", "sh2", "sh4", "superh", "renesas",  # Hitachi SH
+                         "68000", "68020", "68030", "68040", "mc68", "m68k",  # Motorola 68K
+                         "cell", "spursengine",                                # Cell BE
+                         "itanium", "ia-64", "ia64",                          # Itanium
+                         "vax", "transputer", "i860", "i960", "clipper",      # Ultra-rare
+                         "ns32", "88000", "mc88", "am29", "romp",             # Dead RISC
+                         "s/390", "z/arch"}                                    # IBM mainframe
         is_known_ppc = _has_any_token(cpu_brand, ppc_markers)
         is_known_sparc = _has_any_token(cpu_brand, sparc_markers)
         is_known_mips = _has_any_token(cpu_brand, mips_markers)
         is_known_riscv = _has_any_token(cpu_brand, riscv_markers)
-        if not is_known_x86 and not is_known_ppc and not is_known_sparc and not is_known_mips and not is_known_riscv:
+        is_known_exotic = _has_any_token(cpu_brand, exotic_markers)
+        if not is_known_x86 and not is_known_ppc and not is_known_sparc and not is_known_mips and not is_known_riscv and not is_known_exotic:
             # CPU is unknown/empty/unrecognized AND claimed x86 = suspicious
             print(f"[ARM_DETECT] REVERSE: cpu='{cpu_brand}' not x86/PPC/SPARC/MIPS, claimed_family={family} -> aarch64")
             return True
@@ -1309,35 +1317,81 @@ def _detect_arm_evidence(device: dict, fingerprint: dict) -> bool:
     return False
 
 
-def _detect_sparc_or_mips(device: dict) -> dict | None:
-    """Detect SPARC or MIPS architecture from machine field and CPU brand.
-    Returns {"device_family": ..., "device_arch": ...} or None if not SPARC/MIPS.
+def _detect_exotic_arch(device: dict) -> dict | None:
+    """Detect exotic/vintage architectures from machine field and CPU brand.
+    Returns {"device_family": ..., "device_arch": ...} or None if not exotic.
+    Covers: SPARC, MIPS, RISC-V, Hitachi SH, Motorola 68K, Cell BE,
+    Itanium, VAX, Transputer, and other rare/dead architectures.
     """
     machine = str(device.get("machine") or "").lower()
     cpu_brand = _cpu_brand_string(device)
     family, arch = _claimed_family_and_arch(device)
+    family_lower = family.lower()
+    arch_lower = arch.lower()
 
     # SPARC detection
     sparc_machines = ("sparc", "sparc64", "sun4u", "sun4v")
     sparc_brands = {"sparc", "ultrasparc", "sun4", "fujitsu sparc"}
-    if machine in sparc_machines or _has_any_token(cpu_brand, sparc_brands) or family.lower() == "sparc":
-        detected_arch = arch if arch.lower().startswith("sparc") or arch.lower().startswith("ultra") else "sparc"
+    if machine in sparc_machines or _has_any_token(cpu_brand, sparc_brands) or family_lower == "sparc":
+        detected_arch = arch if arch_lower.startswith("sparc") or arch_lower.startswith("ultra") else "sparc"
         return {"device_family": "SPARC", "device_arch": detected_arch}
 
-    # MIPS detection
+    # MIPS detection (includes PS1 R3000A, PS2 Emotion Engine, PSP Allegrex, N64, SGI)
     mips_machines = ("mips", "mips64", "mipsel", "mips64el")
     mips_brands = {"mips", "r2000", "r3000", "r4000", "r4400", "r5000", "r8000", "r10000",
-                   "r12000", "r14000", "r16000", "vr4300", "loongson", "ingenic"}
-    if machine in mips_machines or _has_any_token(cpu_brand, mips_brands) or family.lower() == "mips":
-        detected_arch = arch if arch.lower().startswith("mips") or arch.lower().startswith("r") else "mips"
+                   "r12000", "r14000", "r16000", "vr4300", "loongson", "ingenic",
+                   "emotion engine", "allegrex", "r5900"}
+    if machine in mips_machines or _has_any_token(cpu_brand, mips_brands) or family_lower == "mips":
+        detected_arch = arch if arch_lower.startswith(("mips", "r", "ps", "emotion", "allegrex")) else "mips"
         return {"device_family": "MIPS", "device_arch": detected_arch}
 
     # RISC-V detection
     riscv_machines = ("riscv64", "riscv32", "riscv")
     riscv_brands = {"riscv", "risc-v", "sifive", "thead", "starfive", "kendryte", "allwinner d1", "xuantie"}
-    if machine in riscv_machines or _has_any_token(cpu_brand, riscv_brands) or family.lower() in ("risc-v", "riscv"):
-        detected_arch = arch if arch.lower().startswith("riscv") else "riscv"
+    if machine in riscv_machines or _has_any_token(cpu_brand, riscv_brands) or family_lower in ("risc-v", "riscv"):
+        detected_arch = arch if arch_lower.startswith("riscv") else "riscv"
         return {"device_family": "RISC-V", "device_arch": detected_arch}
+
+    # Hitachi/Renesas SuperH detection (SH-1 through SH-4, Dreamcast, Saturn)
+    sh_brands = {"sh-1", "sh-2", "sh-4", "sh4", "sh2", "sh1", "sh4a", "superh", "renesas sh"}
+    if _has_any_token(cpu_brand, sh_brands) or arch_lower.startswith("sh") and arch_lower in ("sh1", "sh2", "sh4", "sh4a"):
+        detected_arch = arch_lower if arch_lower in ("sh1", "sh2", "sh4", "sh4a") else "sh4"
+        return {"device_family": "SuperH", "device_arch": detected_arch}
+
+    # Motorola 68K detection (Amiga, Atari ST, classic Mac, Sun-3)
+    m68k_machines = ("m68k",)
+    m68k_brands = {"68000", "68010", "68020", "68030", "68040", "68060", "mc68", "m68k", "motorola 68"}
+    if machine in m68k_machines or _has_any_token(cpu_brand, m68k_brands) or family_lower in ("m68k", "68k", "motorola"):
+        detected_arch = arch if arch_lower.startswith("68") or arch_lower.startswith("mc68") else "68000"
+        return {"device_family": "M68K", "device_arch": detected_arch}
+
+    # Cell Broadband Engine (PS3) — PowerPC PPE + 7 SPE
+    cell_brands = {"cell broadband", "cell be", "cell b.e", "ps3", "spursengine"}
+    if _has_any_token(cpu_brand, cell_brands) or arch_lower in ("cell_be", "ps3_cell", "cell"):
+        return {"device_family": "Cell", "device_arch": arch_lower if arch_lower.startswith("cell") or arch_lower.startswith("ps3") else "cell_be"}
+
+    # Itanium / IA-64
+    ia64_machines = ("ia64",)
+    ia64_brands = {"itanium", "ia-64", "ia64", "montecito", "poulson", "tukwila"}
+    if machine in ia64_machines or _has_any_token(cpu_brand, ia64_brands) or family_lower in ("ia64", "itanium"):
+        return {"device_family": "IA-64", "device_arch": arch_lower if "itanium" in arch_lower or "ia64" in arch_lower else "itanium"}
+
+    # IBM S/390 / z/Architecture (mainframes)
+    s390_machines = ("s390", "s390x")
+    s390_brands = {"s/390", "z/architecture", "z900", "z990", "z9", "z10", "z13", "z14", "z15"}
+    if machine in s390_machines or _has_any_token(cpu_brand, s390_brands) or family_lower in ("s390", "s390x", "zarchitecture"):
+        return {"device_family": "S390", "device_arch": arch_lower if arch_lower.startswith(("s390", "z")) else "s390"}
+
+    # Ultra-rare / dead architectures — trust claimed family if it matches
+    rare_families = {
+        "vax": "VAX", "transputer": "Transputer", "i860": "i860", "i960": "i960",
+        "clipper": "Clipper", "ns32k": "NS32K", "88k": "M88K", "mc88100": "M88K",
+        "am29k": "Am29K", "romp": "ROMP",
+    }
+    if family_lower in rare_families:
+        return {"device_family": rare_families[family_lower], "device_arch": arch}
+    if arch_lower in rare_families:
+        return {"device_family": rare_families[arch_lower], "device_arch": arch}
 
     return None
 
@@ -1347,9 +1401,9 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
     cpu_brand = _cpu_brand_string(device)
     simd_data = _fingerprint_check_data(fingerprint, "simd_identity")
 
-    # SPARC/MIPS detection — exotic architectures with LEGENDARY multipliers.
-    # Must run BEFORE ARM detection so they don't get misclassified.
-    exotic = _detect_sparc_or_mips(device)
+    # Exotic arch detection — SPARC, MIPS, RISC-V, SH, 68K, Cell, Itanium, etc.
+    # Must run BEFORE ARM detection so vintage chips don't get misclassified.
+    exotic = _detect_exotic_arch(device)
     if exotic:
         return exotic
 
