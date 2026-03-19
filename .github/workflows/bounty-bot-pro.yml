@@ -1,0 +1,234 @@
+# SPDX-License-Identifier: MIT
+name: Bounty Bot PRO
+on:
+  issue_comment:
+    types: [created]
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  NODE_URL: ${{ secrets.NODE_URL }}
+  DB_PATH: "bounty_bot.db"
+
+jobs:
+  bounty-bot-pro:
+    if: contains(github.event.comment.body, 'claim bounty') || contains(github.event.comment.body, '/claim')
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        pip install requests google-generativeai sqlite3
+        
+    - name: Run Bounty Bot PRO
+      run: |
+        python -c "
+        import os
+        import json
+        import requests
+        import sqlite3
+        import google.generativeai as genai
+        from urllib.parse import urlparse
+        import re
+        import time
+        
+        # SPDX-License-Identifier: MIT
+        
+        def init_db():
+            with sqlite3.connect(os.environ['DB_PATH']) as conn:
+                conn.execute('''
+                    CREATE TABLE IF NOT EXISTS bounty_claims (
+                        id INTEGER PRIMARY KEY,
+                        github_user TEXT,
+                        issue_number INTEGER,
+                        wallet_address TEXT,
+                        submission_url TEXT,
+                        ai_quality_score INTEGER,
+                        technical_depth INTEGER,
+                        clarity_score INTEGER,
+                        originality_score INTEGER,
+                        node_verified INTEGER,
+                        rtc_amount INTEGER,
+                        status TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+        
+        def extract_submission_details(comment_body):
+            wallet_match = re.search(r'wallet[:\s]+([A-Za-z0-9]{40,})', comment_body, re.IGNORECASE)
+            url_match = re.search(r'https?://[^\s]+', comment_body)
+            
+            return {
+                'wallet': wallet_match.group(1) if wallet_match else None,
+                'url': url_match.group(0) if url_match else None
+            }
+        
+        def verify_node_wallet(wallet_address):
+            try:
+                node_url = os.environ.get('NODE_URL', 'http://localhost:8080')
+                response = requests.get(f'{node_url}/wallet/balance', 
+                                      params={'address': wallet_address}, 
+                                      timeout=10)
+                return response.status_code == 200
+            except:
+                return False
+        
+        def ai_quality_scoring(content_url):
+            try:
+                genai.configure(api_key=os.environ['GEMINI_API_KEY'])
+                model = genai.GenerativeModel('gemini-1.5-pro')
+                
+                response = requests.get(content_url, timeout=15)
+                content = response.text[:8000]
+                
+                prompt = f'''
+                Evaluate this content for a RustChain bounty submission:
+                
+                {content}
+                
+                Score on scale 0-10:
+                Technical Depth: How technically detailed and accurate?
+                Clarity: How clear and well-written?
+                Originality: How original and valuable?
+                
+                Format: Technical:X Clarity:Y Originality:Z
+                '''
+                
+                result = model.generate_content(prompt)
+                scores_text = result.text
+                
+                tech_match = re.search(r'Technical:(\d+)', scores_text)
+                clarity_match = re.search(r'Clarity:(\d+)', scores_text)
+                orig_match = re.search(r'Originality:(\d+)', scores_text)
+                
+                tech_score = int(tech_match.group(1)) if tech_match else 5
+                clarity_score = int(clarity_match.group(1)) if clarity_match else 5
+                orig_score = int(orig_match.group(1)) if orig_match else 5
+                
+                total_score = tech_score + clarity_score + orig_score
+                
+                return {
+                    'total': total_score,
+                    'technical': tech_score,
+                    'clarity': clarity_score,
+                    'originality': orig_score
+                }
+            except Exception as e:
+                return {'total': 15, 'technical': 5, 'clarity': 5, 'originality': 5}
+        
+        def calculate_rtc_amount(quality_score, base_amount=100):
+            if quality_score >= 25:
+                return base_amount * 2
+            elif quality_score >= 20:
+                return int(base_amount * 1.5)
+            elif quality_score >= 15:
+                return base_amount
+            else:
+                return max(50, int(base_amount * 0.7))
+        
+        def post_github_comment(comment_text):
+            github_token = os.environ['GITHUB_TOKEN']
+            event_data = json.loads(os.environ['GITHUB_EVENT_PATH'])
+            issue_url = event_data['issue']['comments_url']
+            
+            headers = {'Authorization': f'token {github_token}'}
+            data = {'body': comment_text}
+            
+            requests.post(issue_url, json=data, headers=headers)
+        
+        def main():
+            init_db()
+            
+            with open(os.environ['GITHUB_EVENT_PATH'], 'r') as f:
+                event_data = json.load(f)
+            
+            comment_body = event_data['comment']['body']
+            github_user = event_data['comment']['user']['login']
+            issue_number = event_data['issue']['number']
+            
+            details = extract_submission_details(comment_body)
+            
+            if not details['wallet'] or not details['url']:
+                post_github_comment('❌ **Bounty Bot PRO**: Missing wallet address or submission URL. Please provide both.')
+                return
+            
+            post_github_comment('🤖 **Bounty Bot PRO**: Processing claim... Running AI quality analysis and node verification.')
+            
+            node_verified = verify_node_wallet(details['wallet'])
+            quality_scores = ai_quality_scoring(details['url'])
+            rtc_amount = calculate_rtc_amount(quality_scores['total'])
+            
+            status = 'approved' if node_verified and quality_scores['total'] >= 15 else 'rejected'
+            
+            with sqlite3.connect(os.environ['DB_PATH']) as conn:
+                conn.execute('''
+                    INSERT INTO bounty_claims 
+                    (github_user, issue_number, wallet_address, submission_url, 
+                     ai_quality_score, technical_depth, clarity_score, originality_score,
+                     node_verified, rtc_amount, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (github_user, issue_number, details['wallet'], details['url'],
+                      quality_scores['total'], quality_scores['technical'], 
+                      quality_scores['clarity'], quality_scores['originality'],
+                      1 if node_verified else 0, rtc_amount, status))
+            
+            if status == 'approved':
+                comment = f'''
+        ✅ **Bounty Claim Approved by Bounty Bot PRO**
+
+        **Claimant**: @{github_user}
+        **Wallet**: `{details['wallet']}`
+        **Submission**: {details['url']}
+
+        **AI Quality Analysis:**
+        - Technical Depth: {quality_scores['technical']}/10
+        - Clarity: {quality_scores['clarity']}/10  
+        - Originality: {quality_scores['originality']}/10
+        - **Total Score**: {quality_scores['total']}/30
+
+        **Node Verification**: ✅ Wallet verified on RustChain network
+        **RTC Reward**: {rtc_amount} RTC
+
+        *Bounty Bot PRO has automatically calculated your reward based on content quality. Payment will be processed shortly.*
+                '''
+            else:
+                reasons = []
+                if not node_verified:
+                    reasons.append('Wallet not found on RustChain network')
+                if quality_scores['total'] < 15:
+                    reasons.append(f'Content quality too low ({quality_scores['total']}/30)')
+                
+                comment = f'''
+        ❌ **Bounty Claim Rejected by Bounty Bot PRO**
+
+        **Issues Found:**
+        {chr(10).join('- ' + reason for reason in reasons)}
+
+        **Quality Scores:**
+        - Technical: {quality_scores['technical']}/10
+        - Clarity: {quality_scores['clarity']}/10
+        - Originality: {quality_scores['originality']}/10
+
+        Please address these issues and resubmit.
+                '''
+            
+            post_github_comment(comment)
+        
+        main()
+        "
+        
+    - name: Commit database changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "Bounty Bot PRO"
+        git add bounty_bot.db
+        git diff --staged --quiet || git commit -m "Update bounty claims database"
+        git push
