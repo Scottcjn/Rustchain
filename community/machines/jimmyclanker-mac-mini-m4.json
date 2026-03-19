@@ -1,0 +1,16 @@
+{
+  "machine_name": "Clanker Mini",
+  "model": "Mac mini (2024)",
+  "model_identifier": "Mac16,10",
+  "year_manufactured": 2024,
+  "architecture": "Apple Silicon M4 (arm64)",
+  "cpu_cores": "10 (4P + 6E)",
+  "memory_gb": 16,
+  "power_draw_watts": 15,
+  "usage": ["AI agent runtime (24/7)", "crypto trading bot", "web automation", "inference"],
+  "description": "Mac mini M4 running OpenClaw AI agents 24/7 — trading bots, web research, and autonomous task execution. Draws ~15W idle, ~35W under load. More compute per watt than any desktop GPU rig.",
+  "wallet_name": "JimmyGrinder",
+  "wallet_address": "0x81ac7f69",
+  "contributor": "JimmyClanker",
+  "added_date": "2026-03-19"
+}
