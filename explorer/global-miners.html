@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain — Global Miner Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦀</text></svg>">
+    <style>
+        :root {
+            --bg: #0b0b14;
+            --surface: #12121f;
+            --surface-2: #1a1a2e;
+            --surface-3: #22223a;
+            --border: #2a2a45;
+            --text: #e2e2f0;
+            --text-dim: #7070a0;
+            --accent: #c9a227;
+            --accent-dim: rgba(201, 162, 39, 0.12);
+            --accent-glow: rgba(201, 162, 39, 0.25);
+            --green: #22c55e;
+            --green-dim: rgba(34, 197, 94, 0.12);
+            --red: #ef4444;
+            --red-dim: rgba(239, 68, 68, 0.12);
+            --yellow: #eab308;
+            --blue: #60a5fa;
+            --purple: #a78bfa;
+            --cyan: #22d3ee;
+        }
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        /* ── Header ───────────────────────────────────────── */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+            backdrop-filter: blur(8px);
+        }
+        .logo {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--accent);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            letter-spacing: 0.03em;
+        }
+        .logo-icon { font-size: 1.3rem; }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .refresh-info {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+        }
+        .refresh-btn {
+            padding: 0.35rem 0.9rem;
+            background: var(--surface-3);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.75rem;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .refresh-btn:hover { background: var(--surface-2); border-color: var(--accent); color: var(--accent); }
+        .live-dot {
+            display: inline-block;
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 6px var(--green);
+            animation: blink 2s ease-in-out infinite;
+        }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+        /* ── Main ──────────────────────────────────────────── */
+        main { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
+
+        /* ── Stats Row ─────────────────────────────────────── */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem 1.2rem;
+            position: relative;
+            overflow: hidden;
+        }
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: var(--accent);
+            opacity: 0.6;
+        }
+        .stat-label {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-dim);
+            margin-bottom: 0.4rem;
+        }
+        .stat-value {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1.1;
+        }
+        .stat-value.accent { color: var(--accent); }
+        .stat-value.green { color: var(--green); }
+        .stat-value.blue { color: var(--blue); }
+        .stat-value.cyan { color: var(--cyan); }
+        .stat-sub {
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            margin-top: 0.2rem;
+        }
+
+        /* ── Filters ───────────────────────────────────────── */
+        .filters {
+            display: flex;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+            align-items: center;
+        }
+        .filter-label {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            margin-right: 0.2rem;
+        }
+        .filter-btn {
+            padding: 0.3rem 0.75rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            color: var(--text-dim);
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.72rem;
+            transition: all 0.15s;
+        }
+        .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .filter-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+        .search-box {
+            flex: 1;
+            min-width: 200px;
+            padding: 0.35rem 0.8rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 0.8rem;
+        }
+        .search-box::placeholder { color: var(--text-dim); }
+        .search-box:focus { outline: none; border-color: var(--accent); }
+
+        /* ── Table ──────────────────────────────────────────── */
+        .table-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .table-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.8rem 1.2rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+        .table-count { font-size: 0.75rem; }
+        .table-scroll { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; min-width: 800px; }
+        thead { position: sticky; top: 0; z-index: 10; }
+        th {
+            text-align: left;
+            padding: 0.6rem 1rem;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--text-dim);
+            background: var(--surface-2);
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.15s;
+        }
+        th:hover { color: var(--accent); }
+        th.sorted { color: var(--accent); }
+        th .sort-arrow { margin-left: 0.3rem; opacity: 0.5; }
+        th.sorted .sort-arrow { opacity: 1; }
+        td { padding: 0.65rem 1rem; border-bottom: 1px solid var(--border); font-size: 0.8rem; vertical-align: middle; }
+        tr:last-child td { border-bottom: none; }
+        tbody tr { transition: background 0.1s; }
+        tbody tr:hover { background: var(--accent-dim); }
+        tbody tr.online-row { border-left: 2px solid var(--green); }
+        tbody tr.offline-row { border-left: 2px solid var(--red); opacity: 0.7; }
+
+        /* ── Badges ────────────────────────────────────────── */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.18rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.68rem;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+        }
+        .badge-arch-g4 { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+        .badge-arch-g5 { background: rgba(34,197,94,0.18); color: #4ade80; border: 1px solid rgba(34,197,94,0.35); }
+        .badge-arch-power8 { background: rgba(167,139,250,0.12); color: var(--purple); border: 1px solid rgba(167,139,250,0.25); }
+        .badge-arch-apple { background: rgba(245,158,11,0.12); color: #fbbf24; border: 1px solid rgba(245,158,11,0.25); }
+        .badge-arch-modern { background: rgba(96,165,250,0.12); color: var(--blue); border: 1px solid rgba(96,165,250,0.25); }
+        .badge-arch-unknown { background: rgba(100,100,130,0.12); color: var(--text-dim); border: 1px solid rgba(100,100,130,0.25); }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.72rem;
+            font-weight: 600;
+        }
+        .status-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .status-online .status-dot { background: var(--green); box-shadow: 0 0 5px var(--green); }
+        .status-offline .status-dot { background: var(--red); }
+        .status-stale .status-dot { background: var(--yellow); }
+        .status-online .status-text { color: var(--green); }
+        .status-offline .status-text { color: var(--red); }
+        .status-stale .status-text { color: var(--yellow); }
+
+        /* ── Antiquity Bar ─────────────────────────────────── */
+        .antiquity-cell { min-width: 140px; }
+        .antiquity-bar-wrap { display: flex; align-items: center; gap: 0.5rem; }
+        .antiquity-bar-bg {
+            flex: 1;
+            height: 6px;
+            background: var(--surface-3);
+            border-radius: 3px;
+            overflow: hidden;
+            min-width: 60px;
+        }
+        .antiquity-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            background: linear-gradient(90deg, var(--accent), #f5d060);
+            transition: width 0.3s ease;
+        }
+        .antiquity-value {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--accent);
+            min-width: 40px;
+            text-align: right;
+        }
+        .antiquity-tier {
+            font-size: 0.6rem;
+            color: var(--text-dim);
+        }
+
+        /* ── Wallet ────────────────────────────────────────── */
+        .miner-wallet {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            max-width: 140px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* ── Balance ───────────────────────────────────────── */
+        .balance-cell { font-weight: 600; color: var(--accent); }
+
+        /* ── Last Seen ─────────────────────────────────────── */
+        .last-seen { font-size: 0.72rem; color: var(--text-dim); white-space: nowrap; }
+        .last-seen.recent { color: var(--green); }
+        .last-seen.old { color: var(--yellow); }
+        .last-seen.old2 { color: var(--red); }
+
+        /* ── Sort Icons ─────────────────────────────────────── */
+        .sort-icon { display: inline-block; width: 10px; }
+
+        /* ── Loading / Error ────────────────────────────────── */
+        .loading-row td { text-align: center; padding: 3rem; color: var(--text-dim); }
+        .loading-spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error-state { text-align: center; padding: 3rem; color: var(--red); }
+        .error-state .icon { font-size: 2rem; margin-bottom: 0.5rem; }
+
+        /* ── Empty ──────────────────────────────────────────── */
+        .empty-state { text-align: center; padding: 3rem; color: var(--text-dim); }
+        .empty-state .icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 768px) {
+            header { padding: 0.6rem 1rem; }
+            main { padding: 1rem; }
+            .stat-value { font-size: 1.3rem; }
+            table { font-size: 0.75rem; }
+            th, td { padding: 0.5rem 0.6rem; }
+        }
+
+        /* ── Accessibility ──────────────────────────────────── */
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+        :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <a href="/" class="logo">
+        <span class="logo-icon">🦀</span> RustChain Explorer
+    </a>
+    <div class="header-right">
+        <span class="refresh-info"><span class="live-dot"></span> Auto-refresh: 30s</span>
+        <span class="refresh-info" id="last-updated">—</span>
+        <button class="refresh-btn" onclick="fetchMiners()">↻ Refresh</button>
+    </div>
+</header>
+
+<main>
+    <!-- Stats Row -->
+    <div class="stats-row" id="stats-row">
+        <div class="stat-card">
+            <div class="stat-label">Total Miners</div>
+            <div class="stat-value accent" id="stat-total">—</div>
+            <div class="stat-sub">on-chain registered</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Online Now</div>
+            <div class="stat-value green" id="stat-online">—</div>
+            <div class="stat-sub">active &amp; attesting</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Avg Antiquity</div>
+            <div class="stat-value cyan" id="stat-antiquity">—</div>
+            <div class="stat-sub">network multiplier</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Top Architecture</div>
+            <div class="stat-value blue" id="stat-top-arch">—</div>
+            <div class="stat-sub">by miner count</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Total Stakes</div>
+            <div class="stat-value" id="stat-stakes">—</div>
+            <div class="stat-sub">RTC locked</div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters">
+        <span class="filter-label">Status:</span>
+        <button class="filter-btn active" data-filter="all" onclick="setStatusFilter('all')">All</button>
+        <button class="filter-btn" data-filter="online" onclick="setStatusFilter('online')">🟢 Online</button>
+        <button class="filter-btn" data-filter="offline" onclick="setStatusFilter('offline')">🔴 Offline</button>
+        <button class="filter-btn" data-filter="stale" onclick="setStatusFilter('stale')">🟡 Stale</button>
+        <span style="width:1rem"></span>
+        <span class="filter-label">Arch:</span>
+        <button class="filter-btn active" data-arch="all" onclick="setArchFilter('all')">All</button>
+        <button class="filter-btn" data-arch="G4" onclick="setArchFilter('G4')">G4</button>
+        <button class="filter-btn" data-arch="G5" onclick="setArchFilter('G5')">G5</button>
+        <button class="filter-btn" data-arch="POWER8" onclick="setArchFilter('POWER8')">POWER8</button>
+        <button class="filter-btn" data-arch="Apple" onclick="setArchFilter('Apple')">Apple</button>
+        <button class="filter-btn" data-arch="Modern" onclick="setArchFilter('Modern')">Modern</button>
+        <input type="search" class="search-box" id="search-box" placeholder="🔍 Search wallet, miner ID…" oninput="onSearch()" />
+    </div>
+
+    <!-- Table -->
+    <div class="table-card">
+        <div class="table-header">
+            <span class="table-count" id="table-count">Loading miners…</span>
+            <span style="font-size:0.7rem;color:var(--text-dim)">Click column headers to sort</span>
+        </div>
+        <div class="table-scroll">
+            <table>
+                <caption class="sr-only">RustChain Active Miners</caption>
+                <thead>
+                    <tr>
+                        <th data-col="status" class="sorted" onclick="sortBy('status')">Status <span class="sort-arrow">▼</span></th>
+                        <th data-col="wallet" onclick="sortBy('wallet')">Wallet <span class="sort-arrow"></span></th>
+                        <th data-col="arch" onclick="sortBy('arch')">Arch <span class="sort-arrow"></span></th>
+                        <th data-col="antiquity" onclick="sortBy('antiquity')">Antiquity <span class="sort-arrow"></span></th>
+                        <th data-col="balance" onclick="sortBy('balance')">Balance <span class="sort-arrow"></span></th>
+                        <th data-col="lastAttestation" onclick="sortBy('lastAttestation')">Last Attestation <span class="sort-arrow"></span></th>
+                        <th data-col="blocks" onclick="sortBy('blocks')">Blocks <span class="sort-arrow"></span></th>
+                    </tr>
+                </thead>
+                <tbody id="miners-tbody">
+                    <tr class="loading-row">
+                        <td colspan="7"><div class="loading-spinner"></div>&nbsp; Loading miners…</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</main>
+
+<script>
+    // ── Config ────────────────────────────────────────────────────────────────
+    const API_BASE = 'https://explorer.rustchain.org';
+    const REFRESH_INTERVAL = 30_000; // 30 seconds
+    const OFFLINE_THRESHOLD_MS = 5 * 60_000;   // 5 min → stale
+    const STALE_THRESHOLD_MS  = 2 * 60_000;   // 2 min → offline yellow
+
+    // ── State ────────────────────────────────────────────────────────────────
+    let allMiners = [];
+    let filteredMiners = [];
+    let sortCol = 'status';
+    let sortDir = 'asc';
+    let statusFilter = 'all';
+    let archFilter = 'all';
+    let searchQuery = '';
+    let autoTimer = null;
+
+    // ── Init ─────────────────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', () => {
+        fetchMiners();
+        autoTimer = setInterval(fetchMiners, REFRESH_INTERVAL);
+    });
+
+    // ── Fetch ────────────────────────────────────────────────────────────────
+    async function fetchMiners() {
+        try {
+            const resp = await fetch(`${API_BASE}/api/miners`);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            allMiners = normalise(data);
+            applyFilters();
+            updateStats();
+            renderTable();
+            document.getElementById('last-updated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+        } catch (err) {
+            console.error('fetchMiners error:', err);
+            document.getElementById('miners-tbody').innerHTML = `
+                <tr class="error-state"><td colspan="7">
+                    <div class="error-state">
+                        <div class="icon">⚠️</div>
+                        <div>Failed to load miners</div>
+                        <div style="font-size:0.75rem;margin-top:0.3rem;color:var(--text-dim)">${err.message}</div>
+                    </div>
+                </td></tr>`;
+        }
+    }
+
+    // ── Normalise ────────────────────────────────────────────────────────────
+    function normalise(data) {
+        if (!data) return [];
+        // Handle array or object with miners/list key
+        const list = Array.isArray(data) ? data
+                  : (data.miners || data.data || data.results || Object.values(data)[0] || []);
+        return list.map(m => {
+            const id       = m.miner_id || m.id || m.wallet || m.minerId || '';
+            const wallet   = m.wallet || id;
+            const archRaw  = (m.architecture || m.arch || m.hw_type || '').toUpperCase();
+            let arch = 'unknown';
+            if      (/G5/.test(archRaw))      arch = 'G5';
+            else if (/G4/.test(archRaw))      arch = 'G4';
+            else if (/POWER8|Power8|POWER_8/.test(archRaw)) arch = 'POWER8';
+            else if (/APPLE|Apple|M[1-4]/.test(archRaw))   arch = 'Apple';
+            else if (/MODERN|modern|x86|AMD/.test(archRaw)) arch = 'Modern';
+
+            const antiqu   = parseFloat(m.antiquity || m.multiplier || m.antiQuity || 1.0);
+            const balance  = parseFloat(m.balance || m.rtc_balance || m.stake || 0);
+            const blocks   = parseInt(m.blocks_mined || m.blocks || m.blockCount || 0);
+            const lastAttMs = parseInt(m.last_attestation || m.lastAttestation || m.last_seen || 0);
+            const lastAtt   = lastAttMs > 1e12 ? lastAttMs : lastAttMs * 1000;
+            const now       = Date.now();
+            const ageMs     = now - lastAtt;
+            let status = 'offline';
+            if (lastAtt > 0) {
+                if (ageMs < OFFLINE_THRESHOLD_MS) status = 'online';
+                else if (ageMs < STALE_THRESHOLD_MS) status = 'stale';
+            }
+            return { id, wallet, arch, antiquity: antiqu, balance, blocks, lastAtt, status };
+        });
+    }
+
+    // ── Filters ──────────────────────────────────────────────────────────────
+    function applyFilters() {
+        filteredMiners = allMiners.filter(m => {
+            if (statusFilter !== 'all' && m.status !== statusFilter) return false;
+            if (archFilter !== 'all' && m.arch !== archFilter) return false;
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                if (!m.wallet.toLowerCase().includes(q) && !m.id.toLowerCase().includes(q)) return false;
+            }
+            return true;
+        });
+        sortMiners();
+    }
+
+    function setStatusFilter(f) {
+        statusFilter = f;
+        document.querySelectorAll('[data-filter]').forEach(b => b.classList.toggle('active', b.dataset.filter === f));
+        applyFilters();
+        renderTable();
+    }
+
+    function setArchFilter(a) {
+        archFilter = a;
+        document.querySelectorAll('[data-arch]').forEach(b => b.classList.toggle('active', b.dataset.arch === a));
+        applyFilters();
+        renderTable();
+    }
+
+    function onSearch() {
+        searchQuery = document.getElementById('search-box').value.trim();
+        applyFilters();
+        renderTable();
+    }
+
+    // ── Sort ─────────────────────────────────────────────────────────────────
+    function sortBy(col) {
+        if (sortCol === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        else { sortCol = col; sortDir = 'asc'; }
+        document.querySelectorAll('th[data-col]').forEach(th => {
+            th.classList.toggle('sorted', th.dataset.col === col);
+            th.querySelector('.sort-arrow').textContent =
+                th.dataset.col === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+        });
+        sortMiners();
+        renderTable();
+    }
+
+    const SORT_PRIORITY = { online: 0, stale: 1, offline: 2 };
+    function sortMiners() {
+        filteredMiners.sort((a, b) => {
+            let av, bv;
+            switch (sortCol) {
+                case 'status': av = SORT_PRIORITY[a.status]; bv = SORT_PRIORITY[b.status]; break;
+                case 'wallet': av = a.wallet; bv = b.wallet; break;
+                case 'arch':   av = a.arch;   bv = b.arch;   break;
+                case 'antiquity': av = a.antiquity; bv = b.antiquity; break;
+                case 'balance':   av = a.balance;   bv = b.balance;   break;
+                case 'lastAttestation': av = a.lastAtt; bv = b.lastAtt; break;
+                case 'blocks': av = a.blocks; bv = b.blocks; break;
+                default: av = 0; bv = 0;
+            }
+            if (av < bv) return sortDir === 'asc' ? -1 : 1;
+            if (av > bv) return sortDir === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }
+
+    // ── Stats ────────────────────────────────────────────────────────────────
+    function updateStats() {
+        const total = allMiners.length;
+        const online = allMiners.filter(m => m.status === 'online').length;
+        const avgAntiq = total ? (allMiners.reduce((s, m) => s + m.antiquity, 0) / total) : 0;
+        const archCounts = {};
+        allMiners.forEach(m => archCounts[m.arch] = (archCounts[m.arch] || 0) + 1);
+        const topArch = Object.entries(archCounts).sort((a, b) => b[1] - a[1])[0];
+        const totalStakes = allMiners.reduce((s, m) => s + m.balance, 0);
+
+        document.getElementById('stat-total').textContent     = total;
+        document.getElementById('stat-online').textContent    = online;
+        document.getElementById('stat-antiquity').textContent = avgAntiq.toFixed(2) + '×';
+        document.getElementById('stat-top-arch').textContent  = topArch ? topArch[0] : '—';
+        document.getElementById('stat-stakes').textContent   = formatRTC(totalStakes);
+    }
+
+    // ── Render ───────────────────────────────────────────────────────────────
+    function renderTable() {
+        const count = filteredMiners.length;
+        document.getElementById('table-count').textContent =
+            count + (count === 1 ? ' miner' : ' miners');
+
+        if (!count) {
+            document.getElementById('miners-tbody').innerHTML = `
+                <tr><td colspan="7">
+                    <div class="empty-state">
+                        <div class="icon">⛏️</div>
+                        <div>No miners match your filters</div>
+                    </div>
+                </td></tr>`;
+            return;
+        }
+
+        const rows = filteredMiners.map(m => {
+            const ageMs  = Date.now() - m.lastAtt;
+            const ageMin = Math.floor(ageMs / 60000);
+            const ageHr  = Math.floor(ageMin / 60);
+            let ageStr, ageClass = '';
+            if (m.lastAtt === 0) {
+                ageStr = 'Never'; ageClass = 'old2';
+            } else if (ageMin < 1) {
+                ageStr = 'Just now'; ageClass = 'recent';
+            } else if (ageMin < 60) {
+                ageStr = `${ageMin}m ago`; ageClass = ageMin < 5 ? 'recent' : '';
+            } else if (ageHr < 24) {
+                ageStr = `${ageHr}h ago`; ageClass = 'old';
+            } else {
+                ageStr = `${Math.floor(ageHr/24)}d ago`; ageClass = 'old2';
+            }
+
+            const antiqPct = Math.min((m.antiquity / 5.0) * 100, 100).toFixed(0);
+            const rowClass = m.status === 'online' ? 'online-row' : m.status === 'stale' ? 'stale-row' : 'offline-row';
+
+            return `<tr class="${rowClass}">
+                <td>
+                    <span class="status-badge status-${m.status}">
+                        <span class="status-dot"></span>
+                        <span class="status-text">${m.status.charAt(0).toUpperCase() + m.status.slice(1)}</span>
+                    </span>
+                </td>
+                <td><div class="miner-wallet" title="${escHtml(m.wallet)}">${escHtml(shortWallet(m.wallet))}</div></td>
+                <td><span class="badge badge-arch-${m.arch.toLowerCase()}">${archIcon(m.arch)} ${m.arch}</span></td>
+                <td class="antiquity-cell">
+                    <div class="antiquity-bar-wrap">
+                        <div class="antiquity-bar-bg">
+                            <div class="antiquity-bar-fill" style="width:${antiqPct}%"></div>
+                        </div>
+                        <span class="antiquity-value">${m.antiquity.toFixed(2)}×</span>
+                    </div>
+                </td>
+                <td class="balance-cell">${formatRTC(m.balance)}</td>
+                <td><span class="last-seen ${ageClass}">${ageStr}</span></td>
+                <td>${m.blocks.toLocaleString()}</td>
+            </tr>`;
+        }).join('');
+
+        document.getElementById('miners-tbody').innerHTML = rows;
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    function escHtml(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function shortWallet(w) {
+        if (!w || w.length < 16) return w;
+        return w.slice(0, 8) + '…' + w.slice(-6);
+    }
+    function formatRTC(v) {
+        if (v >= 1_000_000) return (v / 1_000_000).toFixed(1) + 'M';
+        if (v >= 1_000)     return (v / 1_000).toFixed(1) + 'K';
+        return v.toFixed(2);
+    }
+    function archIcon(a) {
+        const icons = { G4:'🟢', G5:'💚', POWER8:'🔴', Apple:'🍎', Modern:'💻', unknown:'❓' };
+        return icons[a] || '❓';
+    }
+</script>
+</body>
+</html>
