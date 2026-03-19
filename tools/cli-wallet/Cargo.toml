@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: MIT
+
+[package]
+name = "rustchain-cli-wallet"
+version = "0.1.0"
+edition = "2021"
+authors = ["RustChain Contributors"]
+description = "CLI wallet for RustChain blockchain"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1.0", features = ["full"] }
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.8"
+secp256k1 = "0.27"
+base58 = "0.2"
+anyhow = "1.0"
+
+[[bin]]
+name = "rustchain-wallet"
+path = "src/main.rs"
