@@ -4,6 +4,7 @@ import sqlite3
 import json
 import time
 from flask import Flask, request, jsonify
+from signature_verifier import verify_ping_signature
 
 DB_PATH = "relay_ping.db"
 app = Flask(__name__)
