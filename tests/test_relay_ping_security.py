@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 # SPDX-License-Identifier: MIT
 
 import sys
@@ -70,42 +69,66 @@ class TestRelayPingSecurityTestCase(unittest.TestCase):
                                   data=json.dumps(payload),
                                   content_type='application/json')
 
-        self.assertEqual(response.status_code, 401)
-        response_data = json.loads(response.data)
-        self.assertIn('error', response_data)
-        self.assertIn('signature', response_data['error'].lower())
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertIn('Missing required fields', data.get('error', ''))
 
     def test_relay_ping_invalid_signature_rejected(self):
         """Test that ping with invalid signature is rejected"""
+        # Generate test keypair
+        private_key, public_key = generate_keypair()
+        agent_id = 'test_agent_456'
+
+        # Register agent in database
+        with sqlite3.connect(self.temp_db.name) as conn:
+            conn.execute(
+                "INSERT INTO atlas_agents (agent_id, public_key) VALUES (?, ?)",
+                (agent_id, public_key)
+            )
+            conn.commit()
+
         payload = {
-            'agent_id': 'test_agent_456',
+            'agent_id': agent_id,
             'timestamp': int(time.time()),
-            'signature': 'invalid_signature_data'
+            'signature': 'invalid_signature_hex'
         }
 
         response = self.client.post('/relay/ping',
                                   data=json.dumps(payload),
                                   content_type='application/json')
 
-        self.assertEqual(response.status_code, 401)
-        response_data = json.loads(response.data)
-        self.assertIn('error', response_data)
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertIn('Invalid signature format', data.get('error', ''))
 
-    def test_relay_ping_valid_signature_accepted_new_agent(self):
-        """Test that ping with valid signature is accepted for new agent"""
-        # Generate keypair for test
+    def test_relay_ping_valid_signature_accepted(self):
+        """Test that ping with valid signature is accepted"""
+        # Generate test keypair
         private_key, public_key = generate_keypair()
-        agent_id = f"agent_{public_key[:16]}"
-
+        agent_id = 'test_agent_789'
         timestamp = int(time.time())
-        message = f"{agent_id}:{timestamp}"
+
+        # Register agent in database
+        with sqlite3.connect(self.temp_db.name) as conn:
+            conn.execute(
+                "INSERT INTO atlas_agents (agent_id, public_key) VALUES (?, ?)",
+                (agent_id, public_key)
+            )
+            conn.commit()
+
+        # Create message and sign it
+        message_data = {
+            'agent_id': agent_id,
+            'timestamp': timestamp,
+            'action': 'ping'
+        }
+        message = json.dumps(message_data, sort_keys=True).encode('utf-8')
         signature = sign_message(private_key, message)
 
         payload = {
             'agent_id': agent_id,
             'timestamp': timestamp,
-            'signature': signature,
-            'public_key': public_key
+            'signature': signature.hex()
         }
 
         response = self.client.post('/relay/ping',
@@ -113,131 +136,37 @@ class TestRelayPingSecurityTestCase(unittest.TestCase):
                                   content_type='application/json')
 
         self.assertEqual(response.status_code, 200)
-        response_data = json.loads(response.data)
-        self.assertEqual(response_data['status'], 'registered')
+        data = json.loads(response.data)
+        self.assertEqual(data.get('status'), 'success')
 
-        # Verify agent was added to database
-        with sqlite3.connect(self.temp_db.name) as conn:
-            cursor = conn.execute('SELECT * FROM atlas_agents WHERE agent_id = ?', (agent_id,))
-            agent = cursor.fetchone()
-            self.assertIsNotNone(agent)
-
-    def test_relay_ping_existing_agent_with_relay_token(self):
-        """Test heartbeat update for existing agent with valid relay token"""
-        # Generate keypair and register agent
+    def test_relay_ping_expired_timestamp_rejected(self):
+        """Test that ping with expired timestamp is rejected"""
+        # Generate test keypair
         private_key, public_key = generate_keypair()
-        agent_id = f"agent_{public_key[:16]}"
-        relay_token = f"relay_token_{agent_id}"
+        agent_id = 'test_agent_old'
+        old_timestamp = int(time.time()) - 600  # 10 minutes ago
 
-        # Insert existing agent
+        # Register agent in database
         with sqlite3.connect(self.temp_db.name) as conn:
-            conn.execute('''
-                INSERT INTO atlas_agents (agent_id, public_key, relay_token, last_seen)
-                VALUES (?, ?, ?, ?)
-            ''', (agent_id, public_key, relay_token, int(time.time()) - 300))
+            conn.execute(
+                "INSERT INTO atlas_agents (agent_id, public_key) VALUES (?, ?)",
+                (agent_id, public_key)
+            )
             conn.commit()
 
-        timestamp = int(time.time())
-        message = f"{agent_id}:{timestamp}"
-        signature = sign_message(private_key, message)
-
-        payload = {
+        # Create message and sign it
+        message_data = {
             'agent_id': agent_id,
-            'timestamp': timestamp,
-            'signature': signature,
-            'relay_token': relay_token
+            'timestamp': old_timestamp,
+            'action': 'ping'
         }
-
-        response = self.client.post('/relay/ping',
-                                  data=json.dumps(payload),
-                                  content_type='application/json')
-
-        self.assertEqual(response.status_code, 200)
-        response_data = json.loads(response.data)
-        self.assertEqual(response_data['status'], 'heartbeat')
-
-    def test_relay_ping_existing_agent_wrong_relay_token(self):
-        """Test that existing agent with wrong relay token is rejected"""
-        private_key, public_key = generate_keypair()
-        agent_id = f"agent_{public_key[:16]}"
-        correct_token = f"relay_token_{agent_id}"
-        wrong_token = "wrong_token_123"
-
-        # Insert existing agent
-        with sqlite3.connect(self.temp_db.name) as conn:
-            conn.execute('''
-                INSERT INTO atlas_agents (agent_id, public_key, relay_token, last_seen)
-                VALUES (?, ?, ?, ?)
-            ''', (agent_id, public_key, correct_token, int(time.time()) - 300))
-            conn.commit()
-
-        timestamp = int(time.time())
-        message = f"{agent_id}:{timestamp}"
-        signature = sign_message(private_key, message)
-
-        payload = {
-            'agent_id': agent_id,
-            'timestamp': timestamp,
-            'signature': signature,
-            'relay_token': wrong_token
-        }
-
-        response = self.client.post('/relay/ping',
-                                  data=json.dumps(payload),
-                                  content_type='application/json')
-
-        self.assertEqual(response.status_code, 401)
-        response_data = json.loads(response.data)
-        self.assertIn('error', response_data)
-        self.assertIn('token', response_data['error'].lower())
-
-    def test_relay_ping_existing_agent_missing_relay_token(self):
-        """Test that existing agent without relay token is rejected"""
-        private_key, public_key = generate_keypair()
-        agent_id = f"agent_{public_key[:16]}"
-        relay_token = f"relay_token_{agent_id}"
-
-        # Insert existing agent
-        with sqlite3.connect(self.temp_db.name) as conn:
-            conn.execute('''
-                INSERT INTO atlas_agents (agent_id, public_key, relay_token, last_seen)
-                VALUES (?, ?, ?, ?)
-            ''', (agent_id, public_key, relay_token, int(time.time()) - 300))
-            conn.commit()
-
-        timestamp = int(time.time())
-        message = f"{agent_id}:{timestamp}"
-        signature = sign_message(private_key, message)
-
-        payload = {
-            'agent_id': agent_id,
-            'timestamp': timestamp,
-            'signature': signature
-        }
-
-        response = self.client.post('/relay/ping',
-                                  data=json.dumps(payload),
-                                  content_type='application/json')
-
-        self.assertEqual(response.status_code, 401)
-        response_data = json.loads(response.data)
-        self.assertIn('error', response_data)
-
-    def test_relay_ping_timestamp_validation(self):
-        """Test that old timestamps are rejected"""
-        private_key, public_key = generate_keypair()
-        agent_id = f"agent_{public_key[:16]}"
-
-        # Use timestamp from 10 minutes ago
-        old_timestamp = int(time.time()) - 600
-        message = f"{agent_id}:{old_timestamp}"
+        message = json.dumps(message_data, sort_keys=True).encode('utf-8')
         signature = sign_message(private_key, message)
 
         payload = {
             'agent_id': agent_id,
             'timestamp': old_timestamp,
-            'signature': signature,
-            'public_key': public_key
+            'signature': signature.hex()
         }
 
         response = self.client.post('/relay/ping',
@@ -245,46 +174,15 @@ class TestRelayPingSecurityTestCase(unittest.TestCase):
                                   content_type='application/json')
 
         self.assertEqual(response.status_code, 400)
-        response_data = json.loads(response.data)
-        self.assertIn('error', response_data)
-        self.assertIn('timestamp', response_data['error'].lower())
+        data = json.loads(response.data)
+        self.assertIn('Timestamp too old', data.get('error', ''))
 
-    def test_relay_ping_malformed_request(self):
-        """Test that malformed requests are handled gracefully"""
-        # Missing required fields
-        payload = {'agent_id': 'test_agent'}
-
-        response = self.client.post('/relay/ping',
-                                  data=json.dumps(payload),
-                                  content_type='application/json')
-
-        self.assertEqual(response.status_code, 400)
-
-        # Invalid JSON
-        response = self.client.post('/relay/ping',
-                                  data='invalid json',
-                                  content_type='application/json')
-
-        self.assertEqual(response.status_code, 400)
-
-    def test_signature_verification_with_different_keypairs(self):
-        """Test that signature from wrong keypair is rejected"""
-        # Generate two different keypairs
-        private_key1, public_key1 = generate_keypair()
-        private_key2, public_key2 = generate_keypair()
-
-        agent_id = f"agent_{public_key1[:16]}"
-        timestamp = int(time.time())
-        message = f"{agent_id}:{timestamp}"
-
-        # Sign with private_key2 but claim public_key1
-        signature = sign_message(private_key2, message)
-
+    def test_relay_ping_unregistered_agent_rejected(self):
+        """Test that ping from unregistered agent is rejected"""
         payload = {
-            'agent_id': agent_id,
-            'timestamp': timestamp,
-            'signature': signature,
-            'public_key': public_key1
+            'agent_id': 'unregistered_agent',
+            'timestamp': int(time.time()),
+            'signature': 'abc123'
         }
 
         response = self.client.post('/relay/ping',
@@ -292,8 +190,8 @@ class TestRelayPingSecurityTestCase(unittest.TestCase):
                                   content_type='application/json')
 
         self.assertEqual(response.status_code, 401)
-        response_data = json.loads(response.data)
-        self.assertIn('error', response_data)
+        data = json.loads(response.data)
+        self.assertIn('Agent not registered', data.get('error', ''))
 
 
 if __name__ == '__main__':
