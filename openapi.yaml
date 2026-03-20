@@ -1,0 +1,603 @@
+# SPDX-License-Identifier: MIT
+openapi: 3.0.3
+info:
+  title: RustChain Node API
+  description: |
+    RustChain node API for blockchain operations, mining, transactions, and network management.
+
+    This API provides comprehensive access to blockchain data, transaction management,
+    mining operations, and peer-to-peer network functionality.
+  version: 2.2.1
+  contact:
+    name: RustChain Development Team
+    url: https://github.com/Scottcjn/Rustchain
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:5000
+    description: Local development node
+  - url: http://localhost:8080
+    description: Default production node
+
+tags:
+  - name: blockchain
+    description: Blockchain data and operations
+  - name: transactions
+    description: Transaction management
+  - name: mining
+    description: Mining operations
+  - name: network
+    description: Network and peer management
+  - name: wallet
+    description: Wallet operations
+  - name: auth
+    description: Authentication endpoints
+
+paths:
+  /api/blockchain:
+    get:
+      tags: [blockchain]
+      summary: Get full blockchain
+      description: Retrieve the complete blockchain with all blocks
+      responses:
+        '200':
+          description: Blockchain data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chain:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Block'
+                  length:
+                    type: integer
+
+  /api/blockchain/latest:
+    get:
+      tags: [blockchain]
+      summary: Get latest block
+      description: Retrieve the most recent block in the chain
+      responses:
+        '200':
+          description: Latest block data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Block'
+
+  /api/blockchain/height:
+    get:
+      tags: [blockchain]
+      summary: Get blockchain height
+      description: Get the current height of the blockchain
+      responses:
+        '200':
+          description: Blockchain height
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  height:
+                    type: integer
+
+  /api/blockchain/block/{index}:
+    get:
+      tags: [blockchain]
+      summary: Get block by index
+      description: Retrieve a specific block by its index
+      parameters:
+        - name: index
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: Block data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Block'
+        '404':
+          description: Block not found
+
+  /api/blockchain/validate:
+    get:
+      tags: [blockchain]
+      summary: Validate blockchain
+      description: Check if the blockchain is valid
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  message:
+                    type: string
+
+  /api/transactions:
+    get:
+      tags: [transactions]
+      summary: Get all transactions
+      description: Retrieve all transactions from the mempool and blockchain
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 1000
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Transaction list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Transaction'
+                  total:
+                    type: integer
+
+    post:
+      tags: [transactions]
+      summary: Submit new transaction
+      description: Submit a new transaction to the network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionInput'
+      responses:
+        '201':
+          description: Transaction submitted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  txid:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          description: Invalid transaction
+        '403':
+          description: Insufficient balance
+
+  /api/transactions/{txid}:
+    get:
+      tags: [transactions]
+      summary: Get transaction by ID
+      description: Retrieve a specific transaction by its ID
+      parameters:
+        - name: txid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Transaction data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '404':
+          description: Transaction not found
+
+  /api/transactions/pending:
+    get:
+      tags: [transactions]
+      summary: Get pending transactions
+      description: Retrieve transactions waiting in the mempool
+      responses:
+        '200':
+          description: Pending transactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pending:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Transaction'
+                  count:
+                    type: integer
+
+  /api/mining/start:
+    post:
+      tags: [mining]
+      summary: Start mining
+      description: Begin mining operations
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                miner_address:
+                  type: string
+                  description: Address to receive mining rewards
+      responses:
+        '200':
+          description: Mining started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '401':
+          description: Unauthorized
+
+  /api/mining/stop:
+    post:
+      tags: [mining]
+      summary: Stop mining
+      description: Stop mining operations
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Mining stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+
+  /api/mining/status:
+    get:
+      tags: [mining]
+      summary: Get mining status
+      description: Check current mining status and statistics
+      responses:
+        '200':
+          description: Mining status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mining:
+                    type: boolean
+                  hashrate:
+                    type: number
+                  blocks_mined:
+                    type: integer
+                  difficulty:
+                    type: integer
+
+  /api/mining/difficulty:
+    get:
+      tags: [mining]
+      summary: Get current difficulty
+      description: Retrieve the current mining difficulty
+      responses:
+        '200':
+          description: Current difficulty
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  difficulty:
+                    type: integer
+                  next_adjustment:
+                    type: integer
+
+  /api/network/peers:
+    get:
+      tags: [network]
+      summary: Get connected peers
+      description: List all connected network peers
+      responses:
+        '200':
+          description: Peer list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  peers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Peer'
+                  count:
+                    type: integer
+
+    post:
+      tags: [network]
+      summary: Add peer
+      description: Manually add a peer to the network
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                address:
+                  type: string
+                port:
+                  type: integer
+              required: [address, port]
+      responses:
+        '201':
+          description: Peer added successfully
+        '400':
+          description: Invalid peer address
+
+  /api/network/sync:
+    post:
+      tags: [network]
+      summary: Trigger network sync
+      description: Manually trigger blockchain synchronization
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Sync initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+
+  /api/wallet/balance/{address}:
+    get:
+      tags: [wallet]
+      summary: Get address balance
+      description: Retrieve the balance for a specific address
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Address balance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  address:
+                    type: string
+                  balance:
+                    type: number
+                  confirmed:
+                    type: number
+                  unconfirmed:
+                    type: number
+
+  /api/wallet/utxo/{address}:
+    get:
+      tags: [wallet]
+      summary: Get UTXOs for address
+      description: Retrieve unspent transaction outputs for an address
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: UTXO list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  utxos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UTXO'
+                  total_value:
+                    type: number
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Authenticate user
+      description: Login and receive API key for authenticated endpoints
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+              required: [username, password]
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  expires_in:
+                    type: integer
+        '401':
+          description: Invalid credentials
+
+  /api/stats:
+    get:
+      tags: [blockchain]
+      summary: Get blockchain statistics
+      description: Retrieve general blockchain statistics
+      responses:
+        '200':
+          description: Blockchain statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_blocks:
+                    type: integer
+                  total_transactions:
+                    type: integer
+                  total_supply:
+                    type: number
+                  market_cap:
+                    type: number
+                  avg_block_time:
+                    type: number
+                  network_hashrate:
+                    type: number
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    Block:
+      type: object
+      properties:
+        index:
+          type: integer
+        timestamp:
+          type: number
+        previous_hash:
+          type: string
+        hash:
+          type: string
+        nonce:
+          type: integer
+        difficulty:
+          type: integer
+        merkle_root:
+          type: string
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        miner:
+          type: string
+
+    Transaction:
+      type: object
+      properties:
+        txid:
+          type: string
+        timestamp:
+          type: number
+        inputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionInput'
+        outputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionOutput'
+        fee:
+          type: number
+        signature:
+          type: string
+        confirmed:
+          type: boolean
+        block_index:
+          type: integer
+
+    TransactionInput:
+      type: object
+      properties:
+        sender:
+          type: string
+        recipient:
+          type: string
+        amount:
+          type: number
+        private_key:
+          type: string
+          description: Only required for transaction submission
+      required: [sender, recipient, amount]
+
+    TransactionOutput:
+      type: object
+      properties:
+        address:
+          type: string
+        amount:
+          type: number
+        script:
+          type: string
+
+    UTXO:
+      type: object
+      properties:
+        txid:
+          type: string
+        output_index:
+          type: integer
+        address:
+          type: string
+        amount:
+          type: number
+        confirmations:
+          type: integer
+        spendable:
+          type: boolean
+
+    Peer:
+      type: object
+      properties:
+        address:
+          type: string
+        port:
+          type: integer
+        connected_at:
+          type: number
+        last_seen:
+          type: number
+        version:
+          type: string
+        height:
+          type: integer
+        latency:
+          type: number
