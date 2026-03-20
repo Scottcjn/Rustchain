@@ -1,26 +1,22 @@
+# SPDX-License-Identifier: MIT
 """
-RustChain Bounty Verifier - Issue #747
-
-Automated bounty claim verification bot for RustChain bounties.
-Verifies GitHub follow status, star counts, wallet existence, URL liveness,
-and duplicate claim detection.
+Bounty verification bot package for RustChain.
+Automatically verifies GitHub stars, follows, wallets, and articles.
 """
 
 __version__ = "1.0.0"
 __author__ = "RustChain Contributors"
 
-from .verifier import BountyVerifier, VerificationResult, VerificationStatus
+from .core import BountyVerifier
+from .parsers import CommentParser
 from .github_client import GitHubClient
-from .config import Config, load_config
-from .models import ClaimComment, VerificationCriteria
+from .rustchain_client import RustChainClient
+from .article_checker import ArticleChecker
 
 __all__ = [
     "BountyVerifier",
-    "VerificationResult",
-    "VerificationStatus",
+    "CommentParser",
     "GitHubClient",
-    "Config",
-    "load_config",
-    "ClaimComment",
-    "VerificationCriteria",
+    "RustChainClient",
+    "ArticleChecker"
 ]
