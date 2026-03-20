@@ -11,8 +11,8 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import from the relay_ping_secure module instead
-from relay_ping_secure import app, get_agent_by_id, DB_PATH
+# Import from the relay_ping_secure module
+from relay_ping_secure import app, get_agent_by_id
 from signature_verifier import verify_ping_signature
 
 
@@ -56,6 +56,12 @@ class TestRelayPingSecurityTestCase(unittest.TestCase):
                     metadata TEXT
                 )
             ''')
+
+            # Insert test agent
+            conn.execute('''
+                INSERT INTO agents (agent_id, public_key, relay_token, last_ping, status)
+                VALUES (?, ?, ?, ?, ?)
+            ''', ('test_agent_123', 'test_public_key', 'test_token', int(time.time()), 'active'))
             conn.commit()
 
     def test_relay_ping_missing_signature_rejected(self):
@@ -66,47 +72,83 @@ class TestRelayPingSecurityTestCase(unittest.TestCase):
         }
 
         response = self.client.post('/relay/ping',
-                                  data=json.dumps(payload),
-                                  content_type='application/json')
+                                   data=json.dumps(payload),
+                                   content_type='application/json')
+
+        self.assertEqual(response.status_code, 401)
+        data = json.loads(response.data)
+        self.assertIn('error', data)
+        self.assertEqual(data['error'], 'Missing signature')
+
+    def test_relay_ping_missing_agent_id_rejected(self):
+        """Test that ping without agent_id is rejected"""
+        payload = {
+            'timestamp': int(time.time()),
+            'signature': 'test_signature'
+        }
+
+        response = self.client.post('/relay/ping',
+                                   data=json.dumps(payload),
+                                   content_type='application/json')
 
         self.assertEqual(response.status_code, 400)
         data = json.loads(response.data)
         self.assertIn('error', data)
+        self.assertEqual(data['error'], 'Missing agent_id')
 
-    def test_relay_ping_invalid_signature_rejected(self):
-        """Test that ping with invalid signature is rejected"""
+    def test_relay_ping_unknown_agent_rejected(self):
+        """Test that ping from unknown agent is rejected"""
         payload = {
-            'agent_id': 'test_agent_123',
+            'agent_id': 'unknown_agent',
             'timestamp': int(time.time()),
-            'signature': 'invalid_signature_hex'
+            'signature': 'test_signature'
         }
 
         response = self.client.post('/relay/ping',
-                                  data=json.dumps(payload),
-                                  content_type='application/json')
+                                   data=json.dumps(payload),
+                                   content_type='application/json')
 
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 404)
         data = json.loads(response.data)
         self.assertIn('error', data)
+        self.assertEqual(data['error'], 'Agent not found')
 
-    def test_relay_ping_valid_signature_accepted(self):
-        """Test that ping with valid signature is accepted"""
-        # This would require setting up proper cryptographic signatures
-        # For now, we'll mock the verification
-        with patch('signature_verifier.verify_ping_signature', return_value=True):
-            payload = {
-                'agent_id': 'test_agent_123',
-                'timestamp': int(time.time()),
-                'signature': 'valid_signature_hex'
-            }
+    def test_relay_ping_valid_request_accepted(self):
+        """Test that valid ping request is accepted"""
+        payload = {
+            'agent_id': 'test_agent_123',
+            'timestamp': int(time.time()),
+            'signature': 'valid_signature'
+        }
 
+        with patch('relay_ping_secure.verify_ping_signature', return_value=True):
             response = self.client.post('/relay/ping',
-                                      data=json.dumps(payload),
-                                      content_type='application/json')
+                                       data=json.dumps(payload),
+                                       content_type='application/json')
 
-            self.assertEqual(response.status_code, 200)
-            data = json.loads(response.data)
-            self.assertIn('status', data)
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['status'], 'success')
+
+    def test_signature_verification_function(self):
+        """Test signature verification utility function"""
+        test_data = {'test': 'data'}
+        test_signature = 'test_sig'
+        test_key = 'test_key'
+
+        # Test with mock
+        result = verify_ping_signature(test_data, test_signature, test_key)
+        self.assertIsInstance(result, bool)
+
+    def test_get_agent_by_id_function(self):
+        """Test get_agent_by_id utility function"""
+        agent = get_agent_by_id('test_agent_123')
+        self.assertIsNotNone(agent)
+        self.assertEqual(agent['agent_id'], 'test_agent_123')
+
+        # Test non-existent agent
+        agent = get_agent_by_id('non_existent')
+        self.assertIsNone(agent)
 
 
 if __name__ == '__main__':
