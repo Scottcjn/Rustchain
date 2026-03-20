@@ -1,267 +1,208 @@
-#!/usr/bin/env python3
-"""
-Command-line interface for bounty verifier.
-"""
+# SPDX-License-Identifier: MIT
 
 import argparse
-import json
 import logging
+import os
 import sys
-from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
-from .config import Config, load_config
-from .github_client import RateLimitExceeded
-from .models import VerificationStatus
-from .verifier import BountyVerifier
+from .core import BountyVerifier
 
 
-def setup_logging(level: str) -> None:
-    """Configure logging."""
+def setup_logging(level: str = "INFO") -> None:
+    """Configure logging for the CLI."""
+    log_level = getattr(logging, level.upper(), logging.INFO)
     logging.basicConfig(
-        level=getattr(logging, level.upper(), logging.INFO),
+        level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
     )
 
 
-def cmd_verify(
-    verifier: BountyVerifier,
-    issue_number: int,
-    comment_id: Optional[int] = None,
-    output_json: bool = False,
-) -> int:
-    """Verify a specific claim or all claims on an issue."""
-    logger = logging.getLogger(__name__)
-    
-    try:
-        if comment_id:
-            # Verify specific comment
-            if not verifier.github:
-                logger.error("GitHub client not configured")
-                return 1
-            
-            comments = verifier.github.get_issue_comments(issue_number)
-            claim = next((c for c in comments if c.id == comment_id), None)
-            
-            if not claim:
-                logger.error(f"Comment #{comment_id} not found on issue #{issue_number}")
-                return 1
-            
-            if not verifier.is_claim_comment(claim):
-                logger.warning(f"Comment #{comment_id} does not appear to be a claim")
-            
-            result = verifier.verify_claim(claim, all_comments=comments)
-            results = [result]
-        else:
-            # Verify all claims on issue
-            results = verifier.verify_issue_claims(issue_number)
-        
-        if not results:
-            logger.info(f"No claims found on issue #{issue_number}")
-            return 0
-        
-        # Output results
-        if output_json:
-            output = []
-            for r in results:
-                output.append({
-                    "user": r.claim.user_login,
-                    "wallet": r.claim.wallet_address,
-                    "status": r.overall_status.value,
-                    "payout": r.payout_amount,
-                    "coefficient": r.payout_coefficient,
-                    "checks": [
-                        {
-                            "name": c.name,
-                            "status": c.status.value,
-                            "message": c.message,
-                        }
-                        for c in r.checks
-                    ],
-                })
-            print(json.dumps(output, indent=2))
-        else:
-            for result in results:
-                status_icon = {
-                    VerificationStatus.PASSED: "✅",
-                    VerificationStatus.FAILED: "❌",
-                    VerificationStatus.ERROR: "⚠️",
-                    VerificationStatus.SKIPPED: "⏭️",
-                }.get(result.overall_status, "❓")
-                
-                print(f"\n{status_icon} Claim by @{result.claim.user_login}")
-                print(f"   Wallet: {result.claim.wallet_address or 'N/A'}")
-                print(f"   Status: {result.overall_status.value.upper()}")
-                
-                if result.payout_amount > 0:
-                    print(f"   Payout: {result.payout_amount:.2f} WRTC (coef: {result.payout_coefficient:.2f})")
-                
-                for check in result.checks:
-                    icon = {
-                        VerificationStatus.PASSED: "✓",
-                        VerificationStatus.FAILED: "✗",
-                        VerificationStatus.ERROR: "!",
-                        VerificationStatus.SKIPPED: "-",
-                    }.get(check.status, "?")
-                    print(f"   [{icon}] {check.name}: {check.message}")
-        
-        # Post comments if enabled
-        if verifier.config.post_comments and not verifier.config.dry_run:
-            for result in results:
-                try:
-                    url = verifier.post_verification_comment(issue_number, result)
-                    if url:
-                        logger.info(f"Posted verification comment: {url}")
-                except Exception as e:
-                    logger.error(f"Failed to post comment: {e}")
-        
-        # Return non-zero if any claims failed
-        failed = [r for r in results if r.overall_status == VerificationStatus.FAILED]
-        return 1 if failed else 0
-        
-    except RateLimitExceeded as e:
-        logger.error(f"Rate limit exceeded: {e}")
-        return 2
-    except Exception as e:
-        logger.exception(f"Verification failed: {e}")
-        return 1
+def get_env_config() -> dict:
+    """Load configuration from environment variables."""
+    return {
+        "github_token": os.getenv("GITHUB_TOKEN"),
+        "github_owner": os.getenv("GITHUB_OWNER", "Scottcjn"),
+        "github_repo": os.getenv("GITHUB_REPO", "Rustchain"),
+        "rustchain_node_url": os.getenv("RUSTCHAIN_NODE_URL", "http://localhost:3030"),
+        "dry_run": os.getenv("DRY_RUN", "false").lower() == "true",
+        "log_level": os.getenv("LOG_LEVEL", "INFO"),
+    }
 
 
-def cmd_check_rate_limit(verifier: BountyVerifier) -> int:
-    """Check GitHub API rate limit status."""
-    if not verifier.github:
-        print("GitHub client not configured")
-        return 1
-    
-    status = verifier.github.get_rate_limit_status()
-    
-    core = status.get("resources", {}).get("core", {})
-    graphql = status.get("resources", {}).get("graphql", {})
-    
-    print("GitHub API Rate Limit Status:")
-    print(f"  Core API: {core.get('remaining', 'N/A')}/{core.get('limit', 'N/A')}")
-    print(f"  GraphQL: {graphql.get('remaining', 'N/A')}/{graphql.get('limit', 'N/A')}")
-    
-    return 0
-
-
-def cmd_parse_comment(verifier: BountyVerifier, text: str) -> int:
-    """Parse a claim comment and extract data."""
-    from .models import ClaimComment
-    from datetime import datetime
-    
-    # Create a mock comment
-    comment = ClaimComment(
-        id=0,
-        user_login="test_user",
-        user_id=12345,
-        body=text,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        issue_number=0,
-        html_url="https://github.com/test",
-    )
-    
-    parsed = verifier.parse_claim_comment(comment)
-    
-    print("Parsed Claim Data:")
-    print(f"  Wallet: {parsed.wallet_address or 'N/A'}")
-    print(f"  Follow Proof URL: {parsed.follow_proof_url or 'N/A'}")
-    print(f"  Star Proof URL: {parsed.star_proof_url or 'N/A'}")
-    print(f"  Additional URLs: {parsed.additional_urls or '[]'}")
-    print(f"  Is Claim: {verifier.is_claim_comment(comment)}")
-    
-    return 0
-
-
-def main(argv: Optional[List[str]] = None) -> int:
-    """Main entry point."""
+def create_parser() -> argparse.ArgumentParser:
+    """Create the CLI argument parser."""
     parser = argparse.ArgumentParser(
-        prog="bounty-verifier",
-        description="RustChain Bounty Claim Verification Bot",
+        description="Bounty Verification Bot - Auto-verify GitHub bounty claims",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python -m bounty_verifier.cli verify 123
+  python -m bounty_verifier.cli verify 123 --comment-id 456789
+  python -m bounty_verifier.cli verify 123 --dry-run
+  python -m bounty_verifier.cli status --issue 123
+        """.strip()
     )
-    
+
     parser.add_argument(
-        "-c", "--config",
-        type=Path,
-        help="Path to configuration file",
+        "--token",
+        help="GitHub API token (or set GITHUB_TOKEN env var)"
+    )
+    parser.add_argument(
+        "--owner",
+        default="Scottcjn",
+        help="GitHub repository owner (default: %(default)s)"
+    )
+    parser.add_argument(
+        "--repo",
+        default="Rustchain",
+        help="GitHub repository name (default: %(default)s)"
+    )
+    parser.add_argument(
+        "--node-url",
+        default="http://localhost:3030",
+        help="RustChain node URL (default: %(default)s)"
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Run without posting comments or making changes",
-    )
-    parser.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Enable verbose logging",
+        help="Perform verification without posting comments"
     )
     parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         default="INFO",
-        help="Logging level",
+        help="Logging level (default: %(default)s)"
     )
-    
-    subparsers = parser.add_subparsers(dest="command", help="Commands")
-    
-    # Verify command
-    verify_parser = subparsers.add_parser("verify", help="Verify bounty claims")
+
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Verify bounty claims in an issue"
+    )
     verify_parser.add_argument(
         "issue_number",
         type=int,
-        help="GitHub issue number",
+        help="GitHub issue number to verify"
     )
     verify_parser.add_argument(
         "--comment-id",
         type=int,
-        help="Specific comment ID to verify",
+        help="Specific comment ID to verify (optional)"
     )
-    verify_parser.add_argument(
-        "--json",
-        action="store_true",
-        dest="output_json",
-        help="Output results as JSON",
+
+    status_parser = subparsers.add_parser(
+        "status",
+        help="Show bounty verification status"
     )
-    
-    # Rate limit command
-    subparsers.add_parser("rate-limit", help="Check GitHub API rate limit")
-    
-    # Parse command
-    parse_parser = subparsers.add_parser("parse", help="Parse a claim comment")
-    parse_parser.add_argument(
-        "text",
-        nargs="+",
-        help="Comment text to parse",
+    status_parser.add_argument(
+        "--issue",
+        type=int,
+        help="Issue number to check status for"
     )
-    
-    args = parser.parse_args(argv)
-    
-    # Setup logging
-    if args.verbose:
-        args.log_level = "DEBUG"
-    setup_logging(args.log_level)
-    
-    # Load configuration
-    config = load_config(str(args.config) if args.config else None)
-    
-    # Override with CLI flags
-    if args.dry_run:
-        config.dry_run = True
-    
-    # Create verifier
-    verifier = BountyVerifier(config)
-    
-    # Execute command
+
+    return parser
+
+
+def verify_command(verifier: BountyVerifier, issue_number: int, comment_id: Optional[int] = None) -> int:
+    """Execute the verify command."""
+    try:
+        if comment_id:
+            result = verifier.verify_comment(issue_number, comment_id)
+            if result:
+                logging.info(f"Successfully verified comment {comment_id} on issue {issue_number}")
+                return 0
+            else:
+                logging.warning(f"Verification failed for comment {comment_id} on issue {issue_number}")
+                return 1
+        else:
+            results = verifier.verify_issue(issue_number)
+            verified_count = sum(1 for r in results if r.get("success", False))
+            total_count = len(results)
+
+            logging.info(f"Verified {verified_count}/{total_count} claims in issue {issue_number}")
+            return 0 if verified_count > 0 or total_count == 0 else 1
+
+    except Exception as e:
+        logging.error(f"Verification failed: {e}")
+        return 1
+
+
+def status_command(verifier: BountyVerifier, issue_number: Optional[int] = None) -> int:
+    """Execute the status command."""
+    try:
+        if issue_number:
+            status = verifier.get_verification_status(issue_number)
+            print(f"Issue #{issue_number} verification status:")
+            print(f"  Total comments: {status.get('total_comments', 0)}")
+            print(f"  Verified claims: {status.get('verified_claims', 0)}")
+            print(f"  Failed verifications: {status.get('failed_verifications', 0)}")
+            print(f"  Last updated: {status.get('last_updated', 'Never')}")
+        else:
+            stats = verifier.get_overall_stats()
+            print("Overall bounty verification statistics:")
+            print(f"  Total issues processed: {stats.get('issues_processed', 0)}")
+            print(f"  Total claims verified: {stats.get('claims_verified', 0)}")
+            print(f"  Success rate: {stats.get('success_rate', 0):.1%}")
+
+        return 0
+    except Exception as e:
+        logging.error(f"Status check failed: {e}")
+        return 1
+
+
+def main() -> int:
+    """Main CLI entry point."""
+    parser = create_parser()
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        return 1
+
+    env_config = get_env_config()
+
+    # Override env config with CLI args where provided
+    config = {
+        "github_token": args.token or env_config["github_token"],
+        "github_owner": args.owner or env_config["github_owner"],
+        "github_repo": args.repo or env_config["github_repo"],
+        "rustchain_node_url": args.node_url or env_config["rustchain_node_url"],
+        "dry_run": args.dry_run or env_config["dry_run"],
+        "log_level": args.log_level or env_config["log_level"],
+    }
+
+    # Validate required configuration
+    if not config["github_token"]:
+        logging.error("GitHub token is required. Set GITHUB_TOKEN env var or use --token")
+        return 1
+
+    setup_logging(config["log_level"])
+
+    verifier = BountyVerifier(
+        github_token=config["github_token"],
+        github_owner=config["github_owner"],
+        github_repo=config["github_repo"],
+        rustchain_node_url=config["rustchain_node_url"],
+        dry_run=config["dry_run"]
+    )
+
     if args.command == "verify":
-        return cmd_verify(verifier, args.issue_number, args.comment_id, args.output_json)
-    elif args.command == "rate-limit":
-        return cmd_check_rate_limit(verifier)
-    elif args.command == "parse":
-        return cmd_parse_comment(verifier, " ".join(args.text))
+        return verify_command(
+            verifier=verifier,
+            issue_number=args.issue_number,
+            comment_id=getattr(args, "comment_id", None)
+        )
+    elif args.command == "status":
+        return status_command(
+            verifier=verifier,
+            issue_number=getattr(args, "issue", None)
+        )
     else:
         parser.print_help()
-        return 0
+        return 1
 
 
 if __name__ == "__main__":
