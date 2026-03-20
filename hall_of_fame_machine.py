@@ -9,8 +9,36 @@ app = Flask(__name__)
 
 DB_PATH = 'rustchain.db'
 
+def init_hall_of_fame_db():
+    """Initialize hall_of_fame table if it doesn't exist"""
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS hall_of_fame (
+                fingerprint_hash TEXT PRIMARY KEY,
+                machine_name TEXT,
+                first_seen TIMESTAMP,
+                total_attestations INTEGER DEFAULT 0,
+                rust_score INTEGER DEFAULT 0,
+                fleet_rank INTEGER
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS attestations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fingerprint_hash TEXT,
+                epoch INTEGER,
+                rust_score INTEGER,
+                timestamp TIMESTAMP,
+                FOREIGN KEY (fingerprint_hash) REFERENCES hall_of_fame(fingerprint_hash)
+            )
+        ''')
+        conn.commit()
+
 def get_machine_details(fingerprint_hash):
     """Get detailed machine information"""
+    init_hall_of_fame_db()  # Ensure tables exist
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -66,60 +94,81 @@ def machine_detail_page():
     fleet_stats = machine_data['fleet_stats']
 
     # Calculate performance metrics
-    avg_score = fleet_stats['avg_score'] or 0
-    performance_vs_fleet = (machine['rust_score'] - avg_score) / avg_score * 100 if avg_score > 0 else 0
+    avg_score = sum(h['rust_score'] for h in history) / len(history) if history else 0
 
     html_template = '''
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Machine Profile - {{ machine.machine_name }}</title>
+        <title>Machine Details - {{ machine.machine_name }}</title>
         <style>
-            body { font-family: Arial, sans-serif; margin: 20px; background: #0a0a0f; color: #e0e0e0; }
-            .header { background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 20px; border-radius: 10px; margin-bottom: 20px; }
-            .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin: 20px 0; }
-            .stat-card { background: #1a1a2e; padding: 15px; border-radius: 8px; border-left: 4px solid #ff6b35; }
-            .history { background: #1a1a2e; padding: 20px; border-radius: 10px; margin-top: 20px; }
-            .attestation-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #333; }
+            body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a1a; color: #fff; }
+            .machine-card { background: #2a2a2a; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+            .metric { display: inline-block; margin-right: 20px; }
+            .history-table { width: 100%; border-collapse: collapse; background: #333; }
+            .history-table th, .history-table td { padding: 8px; border: 1px solid #555; }
+            .history-table th { background: #444; }
+            .back-link { color: #4CAF50; text-decoration: none; }
         </style>
     </head>
     <body>
-        <div class="header">
-            <h1>{{ machine.machine_name }}</h1>
-            <p>Fingerprint: <code>{{ machine.fingerprint_hash }}</code></p>
-            <p>Fleet Rank: #{{ machine.fleet_rank }}</p>
+        <a href="/hall-of-fame" class="back-link">← Back to Hall of Fame</a>
+
+        <div class="machine-card">
+            <h1>{{ machine.machine_name or 'Machine-' + machine.fingerprint_hash[:8] }}</h1>
+            <p><strong>Fingerprint:</strong> {{ machine.fingerprint_hash }}</p>
+            <p><strong>First Seen:</strong> {{ machine.first_seen }}</p>
+
+            <div class="metrics">
+                <div class="metric">
+                    <strong>Current Rust Score:</strong> {{ machine.rust_score }}
+                </div>
+                <div class="metric">
+                    <strong>Fleet Rank:</strong> #{{ machine.fleet_rank }}
+                </div>
+                <div class="metric">
+                    <strong>Total Attestations:</strong> {{ machine.total_attestations }}
+                </div>
+            </div>
         </div>
 
-        <div class="stats-grid">
-            <div class="stat-card">
-                <h3>Rust Score</h3>
-                <div style="font-size: 2em; color: #ff6b35;">{{ machine.rust_score }}</div>
-                <p>{{ "+%.1f" % performance_vs_fleet if performance_vs_fleet >= 0 else "%.1f" % performance_vs_fleet }}% vs fleet avg</p>
-            </div>
-            <div class="stat-card">
-                <h3>Total Attestations</h3>
-                <div style="font-size: 2em;">{{ machine.total_attestations }}</div>
-                <p>Since {{ machine.first_seen }}</p>
-            </div>
-        </div>
-
-        <div class="history">
+        {% if history %}
+        <div class="machine-card">
             <h2>Recent Attestation History</h2>
-            {% for att in history %}
-            <div class="attestation-row">
-                <span>Epoch {{ att.epoch }}</span>
-                <span>Score: {{ att.rust_score }}</span>
-                <span>{{ att.timestamp }}</span>
-            </div>
-            {% endfor %}
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>Epoch</th>
+                        <th>Rust Score</th>
+                        <th>Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for attestation in history %}
+                    <tr>
+                        <td>{{ attestation.epoch }}</td>
+                        <td>{{ attestation.rust_score }}</td>
+                        <td>{{ attestation.timestamp }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
+        {% endif %}
 
-        <p><a href="/hall-of-fame" style="color: #ff6b35;">← Back to Hall of Fame</a></p>
+        <div class="machine-card">
+            <h2>Fleet Comparison</h2>
+            <p><strong>Fleet Average Score:</strong> {{ "%.1f"|format(fleet_stats.avg_score or 0) }}</p>
+            <p><strong>Total Fleet Machines:</strong> {{ fleet_stats.total_machines }}</p>
+        </div>
     </body>
     </html>
     '''
 
-    return render_template_string(html_template, machine=machine, history=history, performance_vs_fleet=performance_vs_fleet)
+    return render_template_string(html_template,
+                                machine=machine,
+                                history=history,
+                                fleet_stats=fleet_stats)
 
 if __name__ == '__main__':
     app.run(debug=True)
