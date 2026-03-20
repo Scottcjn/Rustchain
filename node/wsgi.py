@@ -54,6 +54,17 @@ except ImportError as e:
 except Exception as e:
     print(f"[RIP-306] SophiaCore init failed: {e}")
 
+# RIP-302 Tier 3: Auto-Matching Engine
+try:
+    from rip302_auto_match import register_auto_match
+    register_auto_match(app, DB_PATH)
+    print("[RIP-302 Auto-Match] registered")
+    print("[RIP-302 Auto-Match]   Endpoints: /agent/match/<job_id>, /agent/match/suggest, /agent/match/leaderboard, /agent/match/stats")
+except ImportError as e:
+    print(f"[RIP-302 Auto-Match] not available: {e}")
+except Exception as e:
+    print(f"[RIP-302 Auto-Match] init failed: {e}")
+
 # Expose the app for gunicorn
 application = app
 
