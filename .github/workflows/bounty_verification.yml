@@ -1,0 +1,216 @@
+# SPDX-License-Identifier: MIT
+
+name: Bounty Verification Bot
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  verify_bounty_claim:
+    if: contains(github.event.issue.labels.*.name, 'bounty')
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install requests beautifulsoup4 aiohttp
+
+    - name: Verify bounty claim
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        RUSTCHAIN_NODE_URL: ${{ vars.RUSTCHAIN_NODE_URL || 'http://localhost:8080' }}
+      run: |
+        python3 << 'EOF'
+        import os
+        import re
+        import json
+        import time
+        import requests
+        from urllib.parse import urlparse
+        from bs4 import BeautifulSoup
+
+        # GitHub API setup
+        token = os.environ['GITHUB_TOKEN']
+        headers = {'Authorization': f'token {token}', 'Accept': 'application/vnd.github.v3+json'}
+
+        # Get event data
+        event_path = os.environ.get('GITHUB_EVENT_PATH')
+        with open(event_path, 'r') as f:
+            event = json.load(f)
+
+        comment_body = event['comment']['body'].lower()
+        comment_user = event['comment']['user']['login']
+        issue_number = event['issue']['number']
+        repo_full_name = event['repository']['full_name']
+
+        # Check if this looks like a bounty claim
+        claim_keywords = ['claim', 'claiming', 'done', 'completed', 'finished', 'here is', 'my wallet']
+        if not any(keyword in comment_body for keyword in claim_keywords):
+            print("No bounty claim detected")
+            exit(0)
+
+        print(f"Detected bounty claim from {comment_user}")
+
+        verification_results = []
+
+        # 1. Star verification
+        def check_star():
+            try:
+                url = f"https://api.github.com/repos/{repo_full_name}/stargazers"
+                response = requests.get(url, headers=headers)
+                if response.status_code == 200:
+                    stargazers = response.json()
+                    starred = any(star['login'] == comment_user for star in stargazers)
+                    return f"⭐ **Star Check**: {'✅ VERIFIED' if starred else '❌ NOT FOUND'}"
+                return "⭐ **Star Check**: ⚠️ API Error"
+            except Exception as e:
+                return f"⭐ **Star Check**: ⚠️ Error - {str(e)}"
+
+        # 2. Follow verification
+        def check_follow():
+            try:
+                # Check if user follows the repo owner
+                repo_owner = repo_full_name.split('/')[0]
+                url = f"https://api.github.com/users/{comment_user}/following/{repo_owner}"
+                response = requests.get(url, headers=headers)
+                following = response.status_code == 204
+                return f"👥 **Follow Check**: {'✅ VERIFIED' if following else '❌ NOT FOUND'}"
+            except Exception as e:
+                return f"👥 **Follow Check**: ⚠️ Error - {str(e)}"
+
+        # 3. Wallet existence check
+        def check_wallet():
+            try:
+                # Extract wallet addresses from comment
+                wallet_pattern = r'[13][a-km-z1-9]{25,34}|bc1[a-z0-9]{39,59}|0x[a-fA-F0-9]{40}|[A-Za-z0-9]{32,44}'
+                wallets = re.findall(wallet_pattern, event['comment']['body'])
+
+                if not wallets:
+                    return "💰 **Wallet Check**: ❌ No wallet address found"
+
+                wallet = wallets[0]
+                node_url = os.environ.get('RUSTCHAIN_NODE_URL', 'http://localhost:8080')
+
+                # Try to query RustChain node
+                response = requests.get(f"{node_url}/api/wallet/{wallet}", timeout=10)
+                if response.status_code == 200:
+                    return f"💰 **Wallet Check**: ✅ VERIFIED ({wallet[:8]}...)"
+                elif response.status_code == 404:
+                    return f"💰 **Wallet Check**: ⚠️ Wallet not found on chain ({wallet[:8]}...)"
+                else:
+                    return f"💰 **Wallet Check**: ⚠️ Node unreachable ({wallet[:8]}...)"
+            except Exception as e:
+                return f"💰 **Wallet Check**: ⚠️ Error - {str(e)}"
+
+        # 4. Article/URL verification
+        def check_articles():
+            try:
+                # Extract URLs from comment
+                url_pattern = r'https?://(?:dev\.to|medium\.com|hackernoon\.com|hashnode\.com)/[^\s]+'
+                urls = re.findall(url_pattern, event['comment']['body'])
+
+                if not urls:
+                    return "📝 **Article Check**: ❌ No article links found"
+
+                results = []
+                for url in urls[:3]:  # Check up to 3 URLs
+                    try:
+                        resp = requests.get(url, timeout=15, headers={'User-Agent': 'Mozilla/5.0'})
+                        if resp.status_code == 200:
+                            # Check word count for dev.to articles
+                            if 'dev.to' in url:
+                                soup = BeautifulSoup(resp.text, 'html.parser')
+                                content = soup.find('div', {'class': 'crayons-article__main'})
+                                if content:
+                                    word_count = len(content.get_text().split())
+                                    quality = "📈 High quality" if word_count > 500 else "📊 Standard"
+                                    results.append(f"✅ {url} ({word_count} words, {quality})")
+                                else:
+                                    results.append(f"✅ {url} (Live)")
+                            else:
+                                results.append(f"✅ {url} (Live)")
+                        else:
+                            results.append(f"❌ {url} (HTTP {resp.status_code})")
+                    except Exception as e:
+                        results.append(f"⚠️ {url} (Error)")
+
+                return "📝 **Article Check**:\n" + '\n'.join(f"   - {r}" for r in results)
+            except Exception as e:
+                return f"📝 **Article Check**: ⚠️ Error - {str(e)}"
+
+        # 5. Duplicate claim detection
+        def check_duplicates():
+            try:
+                # Get all comments on this issue
+                url = f"https://api.github.com/repos/{repo_full_name}/issues/{issue_number}/comments"
+                response = requests.get(url, headers=headers)
+
+                if response.status_code == 200:
+                    comments = response.json()
+                    user_claims = []
+
+                    for comment in comments:
+                        if comment['user']['login'] == comment_user:
+                            body = comment['body'].lower()
+                            if any(keyword in body for keyword in claim_keywords):
+                                user_claims.append(comment['created_at'])
+
+                    if len(user_claims) > 1:
+                        return f"🔄 **Duplicate Check**: ⚠️ Found {len(user_claims)} claims from this user"
+                    else:
+                        return "🔄 **Duplicate Check**: ✅ First claim"
+                else:
+                    return "🔄 **Duplicate Check**: ⚠️ API Error"
+            except Exception as e:
+                return f"🔄 **Duplicate Check**: ⚠️ Error - {str(e)}"
+
+        # Run all verification checks
+        print("Running verification checks...")
+
+        verification_results = [
+            check_star(),
+            check_follow(),
+            check_wallet(),
+            check_articles(),
+            check_duplicates()
+        ]
+
+        # Calculate verification score
+        passed_checks = sum(1 for result in verification_results if '✅' in result)
+        total_checks = len(verification_results)
+        score = f"{passed_checks}/{total_checks}"
+
+        # Create verification report
+        report = f"""## 🤖 Bounty Verification Report
+
+        **Claim by:** @{comment_user}
+        **Verification Score:** {score}
+
+        {chr(10).join(verification_results)}
+
+        ---
+        *Automated verification by RustChain Bounty Bot*
+        """
+
+        # Post verification report as comment
+        comment_url = f"https://api.github.com/repos/{repo_full_name}/issues/{issue_number}/comments"
+        comment_data = {'body': report}
+
+        response = requests.post(comment_url, headers=headers, json=comment_data)
+
+        if response.status_code == 201:
+            print(f"Verification report posted successfully (Score: {score})")
+        else:
+            print(f"Failed to post verification report: {response.status_code}")
+            print(response.text)
+
+        EOF
