@@ -1,0 +1,144 @@
+{
+  "epoch_id": "epoch_2024_001_normal",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "block_height": 150000,
+  "configuration": {
+    "base_reward": 50.0,
+    "attestation_weight": 0.4,
+    "enrollment_weight": 0.3,
+    "multiplier_weight": 0.3,
+    "min_attestations": 3,
+    "max_reward_multiplier": 2.5,
+    "decay_factor": 0.98
+  },
+  "attestations": [
+    {
+      "node_id": "node_alpha_001",
+      "attester_id": "attester_beta_042",
+      "reputation_score": 85.7,
+      "timestamp": "2024-01-15T10:25:14Z",
+      "signature": "304502210089a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef12345678901234567890"
+    },
+    {
+      "node_id": "node_beta_005",
+      "attester_id": "attester_gamma_018",
+      "reputation_score": 92.3,
+      "timestamp": "2024-01-15T10:25:42Z",
+      "signature": "3046022100bcdef123456789012345678901234567890abcdef123456789012345678901234567890abcdef12"
+    },
+    {
+      "node_id": "node_gamma_012",
+      "attester_id": "attester_alpha_091",
+      "reputation_score": 78.9,
+      "timestamp": "2024-01-15T10:26:03Z",
+      "signature": "304502210067890abcdef123456789012345678901234567890abcdef1234567890abcdef123456789012"
+    },
+    {
+      "node_id": "node_delta_023",
+      "attester_id": "attester_delta_155",
+      "reputation_score": 88.1,
+      "timestamp": "2024-01-15T10:26:28Z",
+      "signature": "3045022100345678901234567890abcdef123456789012345678901234567890abcdef12345678901234"
+    },
+    {
+      "node_id": "node_epsilon_007",
+      "attester_id": "attester_epsilon_072",
+      "reputation_score": 95.4,
+      "timestamp": "2024-01-15T10:26:55Z",
+      "signature": "304602210090abcdef123456789012345678901234567890abcdef1234567890abcdef123456789012345"
+    }
+  ],
+  "enrollments": [
+    {
+      "node_id": "node_alpha_001",
+      "enrollment_timestamp": "2024-01-14T08:15:30Z",
+      "stake_amount": 1000.0,
+      "enrollment_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "status": "active"
+    },
+    {
+      "node_id": "node_beta_005",
+      "enrollment_timestamp": "2024-01-14T09:22:15Z",
+      "stake_amount": 1500.0,
+      "enrollment_hash": "d4c5b83ea988a47c1f0c4b8d2e8ff0b4b3c2a191827da5e2c44b8a7f8c9d0e1f",
+      "status": "active"
+    },
+    {
+      "node_id": "node_gamma_012",
+      "enrollment_timestamp": "2024-01-14T11:45:22Z",
+      "stake_amount": 800.0,
+      "enrollment_hash": "a1b2c3d4e5f67890123456789012345678901234567890abcdef1234567890abcd",
+      "status": "active"
+    },
+    {
+      "node_id": "node_delta_023",
+      "enrollment_timestamp": "2024-01-14T13:18:44Z",
+      "stake_amount": 1200.0,
+      "enrollment_hash": "f9e8d7c6b5a49382716051847362819283746512837465190283746512837465",
+      "status": "active"
+    },
+    {
+      "node_id": "node_epsilon_007",
+      "enrollment_timestamp": "2024-01-14T14:33:17Z",
+      "stake_amount": 2000.0,
+      "enrollment_hash": "1a2b3c4d5e6f789012345678901234567890abcdef123456789012345678901234",
+      "status": "active"
+    }
+  ],
+  "multipliers": [
+    {
+      "node_id": "node_alpha_001",
+      "performance_multiplier": 1.15,
+      "uptime_multiplier": 1.08,
+      "network_contribution": 1.12,
+      "calculated_at": "2024-01-15T10:29:45Z"
+    },
+    {
+      "node_id": "node_beta_005",
+      "performance_multiplier": 1.23,
+      "uptime_multiplier": 1.19,
+      "network_contribution": 1.21,
+      "calculated_at": "2024-01-15T10:29:45Z"
+    },
+    {
+      "node_id": "node_gamma_012",
+      "performance_multiplier": 1.07,
+      "uptime_multiplier": 0.95,
+      "network_contribution": 1.03,
+      "calculated_at": "2024-01-15T10:29:45Z"
+    },
+    {
+      "node_id": "node_delta_023",
+      "performance_multiplier": 1.18,
+      "uptime_multiplier": 1.14,
+      "network_contribution": 1.16,
+      "calculated_at": "2024-01-15T10:29:45Z"
+    },
+    {
+      "node_id": "node_epsilon_007",
+      "performance_multiplier": 1.32,
+      "uptime_multiplier": 1.28,
+      "network_contribution": 1.35,
+      "calculated_at": "2024-01-15T10:29:45Z"
+    }
+  ],
+  "network_state": {
+    "total_active_nodes": 5,
+    "total_stake": 6500.0,
+    "network_difficulty": 0.00012345,
+    "consensus_threshold": 0.67,
+    "epoch_duration_seconds": 3600
+  },
+  "expected_outputs": {
+    "total_rewards_distributed": 250.0,
+    "individual_rewards": {
+      "node_alpha_001": 47.85,
+      "node_beta_005": 63.12,
+      "node_gamma_012": 35.23,
+      "node_delta_023": 52.94,
+      "node_epsilon_007": 50.86
+    },
+    "settlement_hash": "b8c7d6e5f4a392817160518473628192837465128374651902837465128374651",
+    "consensus_achieved": true
+  }
+}
