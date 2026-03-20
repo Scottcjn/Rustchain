@@ -14,11 +14,12 @@ RUSTCHAIN_API_BASE = 'http://localhost:8000'
 class BountyVerifier:
 
     def __init__(self):
+        self.DB_PATH = DB_PATH
         self.init_database()
 
     def init_database(self):
         """Initialize the bounty claims database"""
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(self.DB_PATH) as conn:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS bounty_claims (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,7 +57,7 @@ class BountyVerifier:
             return False, f"Network error: {str(e)}"
 
     def verify_github_follow(self, username, target_user):
-        """Check if user is following target user"""
+        """Check if user is following the target user"""
         url = f"{GITHUB_API_BASE}/users/{username}/following/{target_user}"
 
         try:
@@ -71,91 +72,56 @@ class BountyVerifier:
         except requests.RequestException as e:
             return False, f"Network error: {str(e)}"
 
-    def verify_article_mention(self, article_url, required_mention):
-        """Verify if article mentions required content"""
+    def store_claim(self, username, claim_type, claim_data, verification_status):
+        """Store a bounty claim in the database"""
         try:
-            response = requests.get(article_url, timeout=10)
-            if response.status_code != 200:
-                return False, f"Failed to fetch article: {response.status_code}"
+            claim_hash = hashlib.md5(f"{username}{claim_type}{claim_data}".encode()).hexdigest()
 
-            content = response.text.lower()
-            if required_mention.lower() in content:
-                return True, f"✓ Article contains required mention: {required_mention}"
-            else:
-                return False, f"✗ Article does NOT contain: {required_mention}"
-
-        except requests.RequestException as e:
-            return False, f"Network error: {str(e)}"
-
-    def store_claim(self, github_user, claim_type, claim_data, verification_status="pending", **kwargs):
-        """Store bounty claim in database"""
-        claim_hash = hashlib.md5(f"{github_user}_{claim_type}_{claim_data}".encode()).hexdigest()
-
-        with sqlite3.connect(DB_PATH) as conn:
-            try:
+            with sqlite3.connect(self.DB_PATH) as conn:
                 conn.execute('''
-                    INSERT INTO bounty_claims
-                    (github_user, claim_type, claim_data, verification_status, claim_hash, wallet_address, article_url)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (github_user, claim_type, claim_data, verification_status, claim_hash,
-                     kwargs.get('wallet_address'), kwargs.get('article_url')))
+                    INSERT OR REPLACE INTO bounty_claims
+                    (github_user, claim_type, claim_data, verification_status, claim_hash, verified_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (username, claim_type, claim_data, verification_status, claim_hash, datetime.now()))
                 conn.commit()
-                return True, f"Claim stored with hash: {claim_hash}"
-            except sqlite3.IntegrityError:
-                return False, "Duplicate claim already exists"
 
-    def get_claims_by_user(self, github_user):
-        """Get all claims by a specific user"""
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.execute(
-                'SELECT * FROM bounty_claims WHERE github_user = ? ORDER BY created_at DESC',
-                (github_user,)
-            )
-            return cursor.fetchall()
+            return True, "Claim stored successfully"
 
-    def update_claim_status(self, claim_hash, status, verified_at=None):
-        """Update claim verification status"""
-        if verified_at is None:
-            verified_at = datetime.now()
+        except sqlite3.Error as e:
+            return False, f"Database error: {str(e)}"
 
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute(
-                'UPDATE bounty_claims SET verification_status = ?, verified_at = ? WHERE claim_hash = ?',
-                (status, verified_at, claim_hash)
-            )
-            conn.commit()
+    def get_claims(self, username=None):
+        """Retrieve bounty claims from the database"""
+        try:
+            with sqlite3.connect(self.DB_PATH) as conn:
+                if username:
+                    cursor = conn.execute(
+                        'SELECT * FROM bounty_claims WHERE github_user = ? ORDER BY created_at DESC',
+                        (username,)
+                    )
+                else:
+                    cursor = conn.execute(
+                        'SELECT * FROM bounty_claims ORDER BY created_at DESC'
+                    )
 
-    def process_claim(self, github_user, claim_text):
-        """Process and verify a bounty claim"""
-        results = []
+                columns = [description[0] for description in cursor.description]
+                claims = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
-        # Parse claim for star verification
-        star_pattern = r'STAR\s+([\w-]+/[\w-]+)'
-        star_matches = re.findall(star_pattern, claim_text, re.IGNORECASE)
+            return True, claims
 
-        for repo in star_matches:
-            repo_owner, repo_name = repo.split('/')
-            success, message = self.verify_github_star(github_user, repo_owner, repo_name)
-            self.store_claim(github_user, 'star', repo, 'verified' if success else 'failed')
-            results.append({'type': 'star', 'target': repo, 'success': success, 'message': message})
+        except sqlite3.Error as e:
+            return False, f"Database error: {str(e)}"
 
-        # Parse claim for follow verification
-        follow_pattern = r'FOLLOW\s+([\w-]+)'
-        follow_matches = re.findall(follow_pattern, claim_text, re.IGNORECASE)
+    def verify_claim(self, username, claim_type, claim_data):
+        """Verify a bounty claim based on type"""
+        if claim_type == 'star':
+            parts = claim_data.split('/')
+            if len(parts) != 2:
+                return False, "Invalid repository format. Use 'owner/repo'"
+            return self.verify_github_star(username, parts[0], parts[1])
 
-        for target_user in follow_matches:
-            success, message = self.verify_github_follow(github_user, target_user)
-            self.store_claim(github_user, 'follow', target_user, 'verified' if success else 'failed')
-            results.append({'type': 'follow', 'target': target_user, 'success': success, 'message': message})
+        elif claim_type == 'follow':
+            return self.verify_github_follow(username, claim_data)
 
-        # Parse claim for article mention
-        article_pattern = r'ARTICLE\s+(https?://[^\s]+)\s+MENTION\s+"([^"]+)"'
-        article_matches = re.findall(article_pattern, claim_text, re.IGNORECASE)
-
-        for article_url, mention in article_matches:
-            success, message = self.verify_article_mention(article_url, mention)
-            self.store_claim(github_user, 'article', f"{article_url}|{mention}",
-                           'verified' if success else 'failed', article_url=article_url)
-            results.append({'type': 'article', 'target': article_url, 'success': success, 'message': message})
-
-        return results
+        else:
+            return False, f"Unknown claim type: {claim_type}"
