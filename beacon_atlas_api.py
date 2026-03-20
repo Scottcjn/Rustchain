@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 # SPDX-License-Identifier: MIT
 
 from flask import Flask, request, jsonify, render_template_string
@@ -6,12 +5,17 @@ import sqlite3
 import json
 import logging
 import os
+import hashlib
+import hmac
+import ipaddress
+from urllib.parse import urlparse
 from datetime import datetime
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
 DB_PATH = '/root/beacon/beacon_atlas.db'
+ADMIN_KEY = os.environ.get('BEACON_ADMIN_KEY', 'change-me-in-production')
 
 def init_db():
     """Initialize the beacon atlas database"""
@@ -38,75 +42,95 @@ def validate_pubkey(pubkey):
         return False
     return True
 
+def is_private_ip(ip_str):
+    """Check if IP is private, link-local, or loopback"""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return ip.is_private or ip.is_link_local or ip.is_loopback or ip.is_multicast
+    except ValueError:
+        return True  # Invalid IP, treat as suspicious
+
 def validate_endpoint(endpoint):
-    """Basic endpoint validation"""
+    """Enhanced endpoint validation to prevent SSRF"""
     if not endpoint or not isinstance(endpoint, str):
         return False
+
     if not (endpoint.startswith('http://') or endpoint.startswith('https://')):
         return False
-    return True
+
+    try:
+        parsed = urlparse(endpoint)
+        hostname = parsed.hostname
+
+        if not hostname:
+            return False
+
+        # Block private/internal IPs
+        if is_private_ip(hostname):
+            return False
+
+        # Additional checks for common internal hostnames
+        blocked_hosts = ['localhost', 'metadata.google.internal', 'metadata']
+        if hostname.lower() in blocked_hosts:
+            return False
+
+        return True
+    except Exception:
+        return False
+
+def verify_admin_auth(request):
+    """Verify admin key authentication"""
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return False
+
+    token = auth_header[7:]  # Remove 'Bearer ' prefix
+    return hmac.compare_digest(token, ADMIN_KEY)
 
 @app.route('/api/join', methods=['POST'])
 def join_beacon():
-    """Agent registration endpoint"""
+    """Agent registration endpoint with admin authentication"""
     try:
+        # Require admin authentication
+        if not verify_admin_auth(request):
+            return jsonify({'error': 'Admin authentication required'}), 401
+
         data = request.get_json()
         if not data:
             return jsonify({'error': 'JSON data required'}), 400
-        
+
         pubkey = data.get('pubkey')
         endpoint = data.get('endpoint')
         metadata = data.get('metadata', {})
-        
+
         if not validate_pubkey(pubkey):
             return jsonify({'error': 'Invalid pubkey format'}), 400
-        
+
         if not validate_endpoint(endpoint):
-            return jsonify({'error': 'Invalid endpoint format'}), 400
-        
+            return jsonify({'error': 'Invalid endpoint format or blocked address'}), 400
+
+        # Store in database
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            
-            # Check for existing agent
-            cursor.execute('SELECT id FROM relay_agents WHERE pubkey = ?', (pubkey,))
-            existing = cursor.fetchone()
-            
-            if existing:
-                # Update existing agent
-                cursor.execute('''
-                    UPDATE relay_agents 
-                    SET endpoint = ?, metadata = ?, last_seen = CURRENT_TIMESTAMP, status = 'active'
-                    WHERE pubkey = ?
-                ''', (endpoint, json.dumps(metadata), pubkey))
-                
-                logging.info(f"Updated existing agent: {pubkey[:16]}...")
-                return jsonify({
-                    'status': 'updated',
-                    'message': 'Agent registration updated',
-                    'pubkey': pubkey
-                })
-            else:
-                # Insert new agent
-                cursor.execute('''
-                    INSERT INTO relay_agents (pubkey, endpoint, metadata, status)
-                    VALUES (?, ?, ?, 'active')
-                ''', (pubkey, endpoint, json.dumps(metadata)))
-                
-                conn.commit()
-                
-                logging.info(f"Registered new agent: {pubkey[:16]}...")
-                return jsonify({
-                    'status': 'registered',
-                    'message': 'Agent successfully registered',
-                    'pubkey': pubkey
-                })
-                
-    except sqlite3.IntegrityError as e:
-        logging.error(f"Database integrity error: {e}")
-        return jsonify({'error': 'Registration failed - duplicate entry'}), 409
+            cursor.execute('''
+                INSERT OR REPLACE INTO relay_agents
+                (pubkey, endpoint, metadata, last_seen, status)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, 'active')
+            ''', (pubkey, endpoint, json.dumps(metadata)))
+            conn.commit()
+
+        logging.info(f"Agent registered: {pubkey[:8]}... -> {endpoint}")
+
+        return jsonify({
+            'success': True,
+            'message': 'Agent registered successfully',
+            'pubkey': pubkey,
+            'endpoint': endpoint
+        })
+
     except Exception as e:
         logging.error(f"Registration error: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
+        return jsonify({'error': 'Registration failed'}), 500
 
 @app.route('/api/agents', methods=['GET'])
 def list_agents():
@@ -115,117 +139,79 @@ def list_agents():
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT pubkey, endpoint, last_seen, metadata, status, created_at 
-                FROM relay_agents 
+                SELECT pubkey, endpoint, last_seen, status, metadata
+                FROM relay_agents
+                WHERE status = 'active'
                 ORDER BY last_seen DESC
             ''')
-            
-            rows = cursor.fetchall()
-            
+
             agents = []
-            for row in rows:
-                try:
-                    metadata = json.loads(row[3]) if row[3] else {}
-                except json.JSONDecodeError:
-                    metadata = {}
-                
+            for row in cursor.fetchall():
                 agents.append({
                     'pubkey': row[0],
                     'endpoint': row[1],
                     'last_seen': row[2],
-                    'metadata': metadata,
-                    'status': row[4],
-                    'created_at': row[5]
+                    'status': row[3],
+                    'metadata': json.loads(row[4]) if row[4] else {}
                 })
-            
-            return jsonify({
-                'agents': agents,
-                'count': len(agents),
-                'timestamp': datetime.utcnow().isoformat()
-            })
-            
-    except Exception as e:
-        logging.error(f"Error listing agents: {e}")
-        return jsonify({'error': 'Failed to retrieve agents'}), 500
 
-@app.route('/beacon/atlas', methods=['GET'])
-def beacon_atlas():
-    """Web interface for beacon atlas"""
-    try:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT pubkey, endpoint, last_seen, status 
-                FROM relay_agents 
-                ORDER BY last_seen DESC
-            ''')
-            
-            agents = cursor.fetchall()
-            
-            html_template = '''
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Beacon Atlas - Agent Registry</title>
-                <style>
-                    body { font-family: monospace; margin: 40px; background: #0a0a0a; color: #00ff00; }
-                    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-                    th, td { border: 1px solid #333; padding: 8px; text-align: left; }
-                    th { background: #1a1a1a; }
-                    .status-active { color: #00ff00; }
-                    .status-inactive { color: #ff6600; }
-                    .header { color: #00ccff; margin-bottom: 20px; }
-                </style>
-            </head>
-            <body>
-                <h1 class="header">🚀 Beacon Atlas - Agent Registry</h1>
-                <p>Total Agents: {{ agent_count }}</p>
-                
-                <table>
-                    <tr>
-                        <th>Public Key</th>
-                        <th>Endpoint</th>
-                        <th>Last Seen</th>
-                        <th>Status</th>
-                    </tr>
-                    {% for agent in agents %}
-                    <tr>
-                        <td>{{ agent[0][:16] }}...</td>
-                        <td>{{ agent[1] }}</td>
-                        <td>{{ agent[2] }}</td>
-                        <td class="status-{{ agent[3] }}">{{ agent[3] }}</td>
-                    </tr>
-                    {% endfor %}
-                </table>
-                
-                <div style="margin-top: 30px; color: #666;">
-                    <p>API Endpoints:</p>
-                    <ul>
-                        <li>POST /api/join - Register new agent</li>
-                        <li>GET /api/agents - List all agents (JSON)</li>
-                    </ul>
-                </div>
-            </body>
-            </html>
-            '''
-            
-            return render_template_string(html_template, 
-                                        agents=agents, 
-                                        agent_count=len(agents))
-            
+            return jsonify({
+                'success': True,
+                'agents': agents,
+                'count': len(agents)
+            })
+
     except Exception as e:
-        logging.error(f"Error rendering atlas page: {e}")
-        return f"Error loading beacon atlas: {str(e)}", 500
+        logging.error(f"List agents error: {e}")
+        return jsonify({'error': 'Failed to list agents'}), 500
+
+@app.route('/atlas', methods=['GET'])
+def beacon_atlas():
+    """Beacon atlas endpoint"""
+    html_template = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Beacon Atlas</title>
+        <style>
+            body { font-family: monospace; background: #1a1a1a; color: #0ff; margin: 20px; }
+            .agent { margin: 10px 0; padding: 10px; border: 1px solid #333; }
+            .pubkey { color: #ff0; }
+            .endpoint { color: #0f0; }
+        </style>
+    </head>
+    <body>
+        <h1>Beacon Atlas - Active Relay Agents</h1>
+        <div id="agents"></div>
+        <script>
+            fetch('/api/agents')
+                .then(r => r.json())
+                .then(data => {
+                    const div = document.getElementById('agents');
+                    if (data.success) {
+                        div.innerHTML = data.agents.map(a =>
+                            `<div class="agent">
+                                <div class="pubkey">PubKey: ${a.pubkey}</div>
+                                <div class="endpoint">Endpoint: ${a.endpoint}</div>
+                                <div>Last Seen: ${a.last_seen}</div>
+                            </div>`
+                        ).join('');
+                    } else {
+                        div.innerHTML = 'Error loading agents';
+                    }
+                });
+        </script>
+    </body>
+    </html>
+    """
+    return render_template_string(html_template)
 
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'service': 'beacon_atlas_api',
-        'timestamp': datetime.utcnow().isoformat()
-    })
+    return jsonify({'status': 'healthy', 'timestamp': datetime.utcnow().isoformat()})
 
 if __name__ == '__main__':
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     init_db()
     app.run(host='0.0.0.0', port=8071, debug=False)
