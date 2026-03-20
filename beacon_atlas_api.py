@@ -10,6 +10,9 @@ import hmac
 import ipaddress
 from urllib.parse import urlparse
 from datetime import datetime
+import base64
+import nacl.encoding
+import nacl.signing
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -69,149 +72,185 @@ def validate_endpoint(endpoint):
         if is_private_ip(hostname):
             return False
 
-        # Additional checks for common internal hostnames
-        blocked_hosts = ['localhost', 'metadata.google.internal', 'metadata']
-        if hostname.lower() in blocked_hosts:
+        # Check for allowed domains/patterns
+        allowed_patterns = ['rustchain.org', '.rustchain.org']
+        if not any(hostname.endswith(pattern) or hostname == pattern.lstrip('.') for pattern in allowed_patterns):
             return False
 
         return True
     except Exception:
         return False
 
-def verify_admin_auth(request):
-    """Verify admin key authentication"""
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith('Bearer '):
+def verify_admin_key(admin_key):
+    """Verify admin key using HMAC"""
+    if not admin_key:
+        return False
+    return hmac.compare_digest(admin_key, ADMIN_KEY)
+
+def verify_ed25519_signature(pubkey_hex, message, signature_hex):
+    """Verify Ed25519 signature"""
+    try:
+        # Decode hex pubkey and signature
+        pubkey_bytes = bytes.fromhex(pubkey_hex)
+        signature_bytes = bytes.fromhex(signature_hex)
+
+        # Create verifying key
+        verify_key = nacl.signing.VerifyKey(pubkey_bytes)
+
+        # Verify signature
+        verify_key.verify(message.encode(), signature_bytes)
+        return True
+    except Exception as e:
+        logging.warning(f"Signature verification failed: {e}")
         return False
 
-    token = auth_header[7:]  # Remove 'Bearer ' prefix
-    return hmac.compare_digest(token, ADMIN_KEY)
-
-@app.route('/api/join', methods=['POST'])
+@app.route('/api/join', methods=['POST', 'OPTIONS'])
 def join_beacon():
-    """Agent registration endpoint with admin authentication"""
-    try:
-        # Require admin authentication
-        if not verify_admin_auth(request):
-            return jsonify({'error': 'Admin authentication required'}), 401
+    """Register a new beacon agent with authentication"""
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        return response
 
+    try:
         data = request.get_json()
         if not data:
-            return jsonify({'error': 'JSON data required'}), 400
+            return jsonify({'error': 'Invalid JSON'}), 400
 
-        pubkey = data.get('pubkey')
-        endpoint = data.get('endpoint')
+        pubkey = data.get('pubkey', '').strip()
+        endpoint = data.get('endpoint', '').strip()
         metadata = data.get('metadata', {})
+        admin_key = data.get('admin_key', '')
+        signature = data.get('signature', '')
 
         if not validate_pubkey(pubkey):
             return jsonify({'error': 'Invalid pubkey format'}), 400
 
         if not validate_endpoint(endpoint):
-            return jsonify({'error': 'Invalid endpoint format or blocked address'}), 400
+            return jsonify({'error': 'Invalid or blocked endpoint'}), 400
 
-        # Store in database
+        # Authentication: either admin key OR valid Ed25519 signature
+        auth_valid = False
+
+        if admin_key and verify_admin_key(admin_key):
+            auth_valid = True
+            logging.info(f"Agent registration via admin key: {pubkey[:16]}...")
+        elif signature:
+            # Message to sign: "register:{pubkey}:{endpoint}"
+            message = f"register:{pubkey}:{endpoint}"
+            if verify_ed25519_signature(pubkey, message, signature):
+                auth_valid = True
+                logging.info(f"Agent registration via signature: {pubkey[:16]}...")
+
+        if not auth_valid:
+            return jsonify({'error': 'Authentication required: provide admin_key or valid signature'}), 401
+
+        # Register the agent
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT OR REPLACE INTO relay_agents
                 (pubkey, endpoint, metadata, last_seen, status)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP, 'active')
+                VALUES (?, ?, ?, datetime('now'), 'active')
             ''', (pubkey, endpoint, json.dumps(metadata)))
             conn.commit()
 
-        logging.info(f"Agent registered: {pubkey[:8]}... -> {endpoint}")
+        logging.info(f"Registered beacon agent: {pubkey[:16]}... at {endpoint}")
 
-        return jsonify({
-            'success': True,
-            'message': 'Agent registered successfully',
+        response = jsonify({
+            'status': 'registered',
             'pubkey': pubkey,
-            'endpoint': endpoint
+            'endpoint': endpoint,
+            'timestamp': datetime.utcnow().isoformat()
         })
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
 
     except Exception as e:
         logging.error(f"Registration error: {e}")
         return jsonify({'error': 'Registration failed'}), 500
 
-@app.route('/api/agents', methods=['GET'])
-def list_agents():
-    """List all registered agents"""
+@app.route('/atlas')
+def beacon_atlas():
+    """Return list of active beacon agents"""
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT pubkey, endpoint, last_seen, status, metadata
+                SELECT pubkey, endpoint, last_seen, metadata, status
                 FROM relay_agents
                 WHERE status = 'active'
                 ORDER BY last_seen DESC
             ''')
-
             agents = []
             for row in cursor.fetchall():
+                pubkey, endpoint, last_seen, metadata_str, status = row
+                try:
+                    metadata = json.loads(metadata_str) if metadata_str else {}
+                except:
+                    metadata = {}
+
                 agents.append({
-                    'pubkey': row[0],
-                    'endpoint': row[1],
-                    'last_seen': row[2],
-                    'status': row[3],
-                    'metadata': json.loads(row[4]) if row[4] else {}
+                    'pubkey': pubkey,
+                    'endpoint': endpoint,
+                    'last_seen': last_seen,
+                    'metadata': metadata,
+                    'status': status
                 })
 
-            return jsonify({
-                'success': True,
-                'agents': agents,
-                'count': len(agents)
-            })
+        response = jsonify({
+            'beacon_agents': agents,
+            'count': len(agents),
+            'timestamp': datetime.utcnow().isoformat()
+        })
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
 
     except Exception as e:
-        logging.error(f"List agents error: {e}")
-        return jsonify({'error': 'Failed to list agents'}), 500
+        logging.error(f"Atlas error: {e}")
+        return jsonify({'error': 'Atlas unavailable'}), 500
 
-@app.route('/atlas', methods=['GET'])
-def beacon_atlas():
-    """Beacon atlas endpoint"""
-    html_template = """
+@app.route('/status')
+def status():
+    """Health check endpoint"""
+    response = jsonify({
+        'service': 'beacon_atlas',
+        'status': 'running',
+        'timestamp': datetime.utcnow().isoformat()
+    })
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    return response
+
+@app.route('/')
+def index():
+    """Basic info page"""
+    html = '''
     <!DOCTYPE html>
     <html>
-    <head>
-        <title>Beacon Atlas</title>
-        <style>
-            body { font-family: monospace; background: #1a1a1a; color: #0ff; margin: 20px; }
-            .agent { margin: 10px 0; padding: 10px; border: 1px solid #333; }
-            .pubkey { color: #ff0; }
-            .endpoint { color: #0f0; }
-        </style>
-    </head>
+    <head><title>Beacon Atlas API</title></head>
     <body>
-        <h1>Beacon Atlas - Active Relay Agents</h1>
-        <div id="agents"></div>
-        <script>
-            fetch('/api/agents')
-                .then(r => r.json())
-                .then(data => {
-                    const div = document.getElementById('agents');
-                    if (data.success) {
-                        div.innerHTML = data.agents.map(a =>
-                            `<div class="agent">
-                                <div class="pubkey">PubKey: ${a.pubkey}</div>
-                                <div class="endpoint">Endpoint: ${a.endpoint}</div>
-                                <div>Last Seen: ${a.last_seen}</div>
-                            </div>`
-                        ).join('');
-                    } else {
-                        div.innerHTML = 'Error loading agents';
-                    }
-                });
-        </script>
+    <h1>Beacon Atlas API</h1>
+    <p>Agent registration and discovery service for Rustchain beacon network.</p>
+    <h2>Endpoints:</h2>
+    <ul>
+        <li><code>POST /api/join</code> - Register beacon agent (requires authentication)</li>
+        <li><code>GET /atlas</code> - List active agents</li>
+        <li><code>GET /status</code> - Service status</li>
+    </ul>
+    <h2>Authentication:</h2>
+    <p>Registration requires either:</p>
+    <ul>
+        <li><code>admin_key</code> - Server admin key</li>
+        <li><code>signature</code> - Ed25519 signature of "register:{pubkey}:{endpoint}"</li>
+    </ul>
     </body>
     </html>
-    """
-    return render_template_string(html_template)
-
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({'status': 'healthy', 'timestamp': datetime.utcnow().isoformat()})
+    '''
+    return render_template_string(html)
 
 if __name__ == '__main__':
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    os.makedirs('/root/beacon', exist_ok=True)
     init_db()
-    app.run(host='0.0.0.0', port=8071, debug=False)
+    app.run(host='127.0.0.1', port=8071, debug=False)
