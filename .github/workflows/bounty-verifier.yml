@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 name: Bounty Verifier
 
 on:
@@ -29,22 +30,22 @@ jobs:
     permissions:
       issues: write
       contents: read
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-      
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-      
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyyaml
-      
+          pip install pyyaml requests beautifulsoup4 lxml
+
       - name: Run bounty verifier
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -53,11 +54,10 @@ jobs:
           DRY_RUN: "false"
           LOG_LEVEL: "INFO"
         run: |
-          cd tools
-          python -m bounty_verifier.cli verify \
-            ${{ github.event.issue.number || inputs.issue_number }} \
+          python bounty_verifier.py \
+            --issue-number "${{ github.event.issue.number || inputs.issue_number }}" \
             ${{ github.event.comment.id && format('--comment-id {0}', github.event.comment.id) || '' }}
-      
+
       - name: Handle rate limit
         if: failure()
         run: |
