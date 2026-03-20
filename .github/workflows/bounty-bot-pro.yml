@@ -1,0 +1,211 @@
+# SPDX-License-Identifier: MIT
+name: Bounty Bot PRO
+
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created, edited]
+
+env:
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  RUSTCHAIN_NODE_URL: ${{ secrets.RUSTCHAIN_NODE_URL || 'http://localhost:8000' }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  bounty-bot-pro:
+    runs-on: ubuntu-latest
+    if: contains(github.event.issue.labels.*.name, 'bounty') || contains(github.event.issue.title, '[BOUNTY]')
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests google-generativeai sqlite3-utils beautifulsoup4 python-dotenv
+
+    - name: Run Bounty Bot PRO
+      run: |
+        python -c "
+        import os
+        import re
+        import json
+        import requests
+        import sqlite3
+        import google.generativeai as genai
+        from bs4 import BeautifulSoup
+        from urllib.parse import urlparse
+        import time
+
+        # Configuration
+        GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+        NODE_URL = os.environ.get('RUSTCHAIN_NODE_URL', 'http://localhost:8000')
+        GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN')
+
+        if not all([GEMINI_API_KEY, GITHUB_TOKEN]):
+            print('Missing required environment variables')
+            exit(1)
+
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel('gemini-1.5-pro')
+
+        # GitHub API setup
+        headers = {
+            'Authorization': f'token {GITHUB_TOKEN}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+
+        event_name = os.environ.get('GITHUB_EVENT_NAME')
+        with open(os.environ.get('GITHUB_EVENT_PATH')) as f:
+            event_data = json.load(f)
+
+        repo = event_data['repository']['full_name']
+        issue_number = event_data['issue']['number']
+
+        def extract_wallet_address(text):
+            # Match RustChain wallet format (assuming 32-64 char hex)
+            wallet_pattern = r'wallet[:\s]*([a-fA-F0-9]{32,64})'
+            match = re.search(wallet_pattern, text, re.IGNORECASE)
+            return match.group(1) if match else None
+
+        def verify_wallet_with_node(wallet_addr):
+            try:
+                response = requests.get(f'{NODE_URL}/wallet/balance/{wallet_addr}', timeout=10)
+                return response.status_code == 200
+            except:
+                return False
+
+        def extract_content_from_url(url):
+            try:
+                response = requests.get(url, timeout=15, headers={'User-Agent': 'BountyBotPRO/1.0'})
+                soup = BeautifulSoup(response.content, 'html.parser')
+
+                # Remove script and style elements
+                for script in soup(['script', 'style']):
+                    script.decompose()
+
+                text = soup.get_text()
+                lines = (line.strip() for line in text.splitlines())
+                chunks = (phrase.strip() for line in lines for phrase in line.split('  '))
+                return ' '.join(chunk for chunk in chunks if chunk)
+            except:
+                return ''
+
+        def score_content_with_ai(content, bounty_description):
+            if len(content) < 100:
+                return {'technical_depth': 0, 'clarity': 0, 'originality': 0, 'total': 0}
+
+            prompt = f'''
+            Evaluate this content submission for a blockchain bounty program. The bounty asked for: {bounty_description[:300]}
+
+            Content to evaluate:
+            {content[:2000]}
+
+            Score on these criteria (0-10 each):
+            1. Technical Depth: How technically comprehensive and detailed is the content?
+            2. Clarity: How well-written and understandable is the content?
+            3. Originality: How unique and non-generic is the content?
+
+            Respond ONLY with JSON format:
+            {{\"technical_depth\": X, \"clarity\": Y, \"originality\": Z, \"total\": X+Y+Z}}
+            '''
+
+            try:
+                response = model.generate_content(prompt)
+                result = json.loads(response.text.strip())
+                return result
+            except:
+                return {'technical_depth': 5, 'clarity': 5, 'originality': 5, 'total': 15}
+
+        def check_star_king_bonus(user):
+            # Check if user has star reactions on recent contributions
+            try:
+                search_url = f'https://api.github.com/search/issues?q=repo:{repo}+author:{user}+created:>2024-01-01'
+                response = requests.get(search_url, headers=headers)
+                if response.status_code == 200:
+                    issues = response.json().get('items', [])
+                    star_count = sum(1 for issue in issues if issue.get('reactions', {}).get('hooray', 0) > 0)
+                    return min(star_count * 10, 50)  # Max 50% bonus
+                return 0
+            except:
+                return 0
+
+        def calculate_payout(base_amount, quality_score, star_bonus):
+            quality_multiplier = max(0.1, quality_score / 30.0)  # 30 is max score
+            star_multiplier = 1.0 + (star_bonus / 100.0)
+            return int(base_amount * quality_multiplier * star_multiplier)
+
+        # Process the event
+        issue = event_data['issue']
+        issue_body = issue['body'] or ''
+
+        # Extract bounty amount from issue
+        bounty_match = re.search(r'bounty[:\s]*(\d+)', issue['title'] + ' ' + issue_body, re.IGNORECASE)
+        base_bounty = int(bounty_match.group(1)) if bounty_match else 100
+
+        if event_name == 'issue_comment':
+            comment = event_data['comment']
+            text_to_analyze = comment['body']
+            user = comment['user']['login']
+            comment_id = comment['id']
+        else:
+            text_to_analyze = issue_body
+            user = issue['user']['login']
+            comment_id = None
+
+        # Extract wallet and URLs
+        wallet_addr = extract_wallet_address(text_to_analyze)
+        urls = re.findall(r'https?://[^\s<>\"\']+', text_to_analyze)
+
+        if not wallet_addr:
+            comment_body = '🤖 **Bounty Bot PRO**: No valid wallet address found. Please provide your RustChain wallet address.'
+        elif not verify_wallet_with_node(wallet_addr):
+            comment_body = f'🤖 **Bounty Bot PRO**: Wallet `{wallet_addr}` could not be verified with RustChain node. Please check your wallet address.'
+        elif not urls:
+            comment_body = '🤖 **Bounty Bot PRO**: No submission URLs found. Please provide links to your work.'
+        else:
+            # Analyze content quality
+            all_content = ''
+            for url in urls:
+                content = extract_content_from_url(url)
+                all_content += content + ' '
+
+            quality_scores = score_content_with_ai(all_content, issue['title'] + ' ' + issue_body)
+            star_bonus = check_star_king_bonus(user)
+            final_payout = calculate_payout(base_bounty, quality_scores['total'], star_bonus)
+
+            comment_body = f'''🤖 **Bounty Bot PRO Analysis Complete**
+
+            **Contributor:** @{user}
+            **Wallet:** `{wallet_addr}`
+
+            **Quality Scores:**
+            - Technical Depth: {quality_scores['technical_depth']}/10
+            - Clarity: {quality_scores['clarity']}/10
+            - Originality: {quality_scores['originality']}/10
+            - **Total Quality Score:** {quality_scores['total']}/30
+
+            **Star King Bonus:** +{star_bonus}%
+            **Base Bounty:** {base_bounty} RC
+            **Final Payout:** {final_payout} RC
+
+            {'✅ **APPROVED FOR PAYOUT**' if quality_scores['total'] >= 15 else '❌ **NEEDS IMPROVEMENT** (Min score: 15/30)'}
+            '''
+
+        # Post comment to GitHub
+        comment_url = f'https://api.github.com/repos/{repo}/issues/{issue_number}/comments'
+        comment_data = {'body': comment_body}
+
+        response = requests.post(comment_url, headers=headers, json=comment_data)
+        if response.status_code == 201:
+            print('Bounty Bot PRO analysis posted successfully')
+        else:
+            print(f'Failed to post comment: {response.status_code}')
+        "
