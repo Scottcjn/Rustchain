@@ -1,0 +1,233 @@
+# SPDX-License-Identifier: MIT
+
+name: Bounty Verification Bot
+
+on:
+  issue_comment:
+    types: [created, edited]
+
+jobs:
+  verify-bounty-claim:
+    if: contains(github.event.issue.labels.*.name, 'bounty')
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests beautifulsoup4 pyyaml
+
+    - name: Parse and verify bounty claim
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        RUSTCHAIN_NODE_URL: ${{ vars.RUSTCHAIN_NODE_URL || 'http://localhost:5000' }}
+      run: |
+        python3 << 'EOF'
+        import os
+        import re
+        import json
+        import requests
+        from urllib.parse import urlparse
+        from bs4 import BeautifulSoup
+        import time
+
+        def get_github_api(endpoint, token):
+            headers = {
+                'Authorization': f'token {token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            response = requests.get(f'https://api.github.com{endpoint}', headers=headers)
+            if response.status_code == 200:
+                return response.json()
+            return None
+
+        def check_star_status(username, repo_owner, repo_name, token):
+            endpoint = f'/user/starred/{repo_owner}/{repo_name}'
+            headers = {
+                'Authorization': f'token {token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            # Check if user starred repo
+            response = requests.get(f'https://api.github.com{endpoint}', headers=headers)
+            return response.status_code == 204
+
+        def check_follow_status(username, target_user, token):
+            endpoint = f'/user/following/{target_user}'
+            headers = {
+                'Authorization': f'token {token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            response = requests.get(f'https://api.github.com{endpoint}', headers=headers)
+            return response.status_code == 204
+
+        def check_wallet_exists(address, node_url):
+            try:
+                response = requests.get(f'{node_url}/api/wallet/{address}', timeout=10)
+                return response.status_code == 200
+            except:
+                return False
+
+        def verify_article_url(url):
+            try:
+                response = requests.get(url, timeout=15, headers={'User-Agent': 'Mozilla/5.0 (compatible; BountyBot/1.0)'})
+                if response.status_code != 200:
+                    return False, 0
+
+                soup = BeautifulSoup(response.content, 'html.parser')
+
+                # Extract text content
+                for script in soup(["script", "style"]):
+                    script.decompose()
+                text = soup.get_text()
+                words = len(text.split())
+
+                return True, words
+            except:
+                return False, 0
+
+        def check_duplicate_claims(username, issue_num, token):
+            # Get all comments on issue
+            comments = get_github_api(f'/repos/{os.environ["GITHUB_REPOSITORY"]}/issues/{issue_num}/comments', token)
+            if not comments:
+                return False
+
+            user_claims = 0
+            for comment in comments:
+                if comment['user']['login'].lower() == username.lower():
+                    # Look for claim indicators in comment body
+                    body = comment['body'].lower()
+                    if any(phrase in body for phrase in ['claim', 'bounty', 'rtc wallet', 'starred', 'following']):
+                        user_claims += 1
+
+            return user_claims > 1
+
+        def post_verification_comment(issue_num, comment_body, token):
+            url = f'https://api.github.com/repos/{os.environ["GITHUB_REPOSITORY"]}/issues/{issue_num}/comments'
+            headers = {
+                'Authorization': f'token {token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            data = {'body': comment_body}
+            response = requests.post(url, headers=headers, json=data)
+            return response.status_code == 201
+
+        # Main verification logic
+        github_token = os.environ['GITHUB_TOKEN']
+        node_url = os.environ['RUSTCHAIN_NODE_URL']
+
+        # Parse GitHub event
+        with open(os.environ['GITHUB_EVENT_PATH'], 'r') as f:
+            event = json.load(f)
+
+        comment_body = event['comment']['body']
+        commenter = event['comment']['user']['login']
+        issue_number = event['issue']['number']
+        repo_owner, repo_name = os.environ['GITHUB_REPOSITORY'].split('/')
+
+        # Look for bounty claim patterns
+        claim_patterns = [
+            r'(?:claim|claiming)\s+(?:bounty|rtc)',
+            r'rtc\s+wallet\s*:?\s*([a-fA-F0-9]{64})',
+            r'starred\s+(?:repo|repository)',
+            r'following\s+@?(\w+)',
+            r'article\s+(?:link|url)\s*:?\s*(https?://\S+)'
+        ]
+
+        is_claim = any(re.search(pattern, comment_body, re.IGNORECASE) for pattern in claim_patterns)
+
+        if not is_claim:
+            print("No bounty claim detected in comment")
+            exit(0)
+
+        print(f"Processing bounty claim from {commenter}")
+
+        # Extract verification data
+        wallet_match = re.search(r'wallet\s*:?\s*([a-fA-F0-9]{64})', comment_body, re.IGNORECASE)
+        article_match = re.search(r'(?:article|link|url)\s*:?\s*(https?://\S+)', comment_body, re.IGNORECASE)
+
+        verification_results = []
+        total_score = 0
+
+        # Check star status (30 RTC)
+        star_status = check_star_status(commenter, repo_owner, repo_name, github_token)
+        if star_status:
+            verification_results.append("✅ **Repository starred** (+30 RTC)")
+            total_score += 30
+        else:
+            verification_results.append("❌ **Repository not starred** (0 RTC)")
+
+        # Check follow status (assuming following repo owner)
+        follow_status = check_follow_status(commenter, repo_owner, github_token)
+        if follow_status:
+            verification_results.append(f"✅ **Following @{repo_owner}** (bonus points)")
+        else:
+            verification_results.append(f"❌ **Not following @{repo_owner}**")
+
+        # Check wallet existence (10 RTC)
+        if wallet_match:
+            wallet_addr = wallet_match.group(1)
+            wallet_exists = check_wallet_exists(wallet_addr, node_url)
+            if wallet_exists:
+                verification_results.append("✅ **Valid RTC wallet** (+10 RTC)")
+                total_score += 10
+            else:
+                verification_results.append("❌ **Wallet not found on RustChain** (0 RTC)")
+        else:
+            verification_results.append("⚠️  **No wallet address provided** (0 RTC)")
+
+        # Check article URL (10-25 RTC)
+        if article_match:
+            article_url = article_match.group(1)
+            url_valid, word_count = verify_article_url(article_url)
+
+            if url_valid:
+                verification_results.append(f"✅ **Article URL accessible** (+10 RTC)")
+                total_score += 10
+
+                if word_count >= 300:
+                    verification_results.append(f"✅ **Quality article** ({word_count} words) (+10 RTC)")
+                    total_score += 10
+                else:
+                    verification_results.append(f"⚠️  **Short article** ({word_count} words)")
+            else:
+                verification_results.append("❌ **Article URL not accessible** (0 RTC)")
+        else:
+            verification_results.append("⚠️  **No article URL provided** (0 RTC)")
+
+        # Check for duplicate claims (15 RTC penalty)
+        if check_duplicate_claims(commenter, issue_number, github_token):
+            verification_results.append("⚠️  **Multiple claims detected** (-15 RTC)")
+            total_score = max(0, total_score - 15)
+
+        # Generate verification comment
+        comment_lines = [
+            f"## 🤖 Bounty Verification Results for @{commenter}",
+            "",
+            "### Verification Status:",
+            *verification_results,
+            "",
+            f"**Total Estimated Reward:** {total_score} RTC",
+            "",
+            "_Automated verification completed. Manual review may be required for final payout._",
+            "",
+            f"<!-- verification-timestamp: {int(time.time())} -->"
+        ]
+
+        verification_comment = "\n".join(comment_lines)
+
+        # Post verification results
+        success = post_verification_comment(issue_number, verification_comment, github_token)
+        if success:
+            print(f"Verification results posted for {commenter}")
+        else:
+            print("Failed to post verification comment")
+
+        EOF
