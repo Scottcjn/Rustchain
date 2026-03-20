@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 # SPDX-License-Identifier: MIT
 
 import hashlib
@@ -63,52 +62,27 @@ def verify_ping_signature(payload: Dict[str, Any]) -> bool:
         'timestamp': payload.get('timestamp'),
         'action': 'ping'
     }
+    message = json.dumps(message_data, sort_keys=True).encode('utf-8')
 
-    message_json = json.dumps(message_data, sort_keys=True, separators=(',', ':'))
-    message_bytes = message_json.encode('utf-8')
+    return verify_ed25519_signature(public_key_bytes, message, signature_bytes)
 
-    return verify_ed25519_signature(public_key_bytes, message_bytes, signature_bytes)
+def create_signature_message(agent_id: str, timestamp: int, action: str = 'ping') -> bytes:
+    """Create canonical message bytes for signature verification."""
+    message_data = {
+        'agent_id': agent_id,
+        'timestamp': timestamp,
+        'action': action
+    }
+    return json.dumps(message_data, sort_keys=True).encode('utf-8')
 
-def verify_relay_token(agent_id: str, relay_token: str, secret_key: str) -> bool:
-    """Verify relay token for existing agents using HMAC."""
-    if not agent_id or not relay_token or not secret_key:
-        return False
-
+def verify_hmac_signature(message: bytes, signature: str, secret_key: str) -> bool:
+    """Verify HMAC-SHA256 signature."""
     try:
-        expected_token = hmac.new(
+        expected = hmac.new(
             secret_key.encode('utf-8'),
-            agent_id.encode('utf-8'),
+            message,
             hashlib.sha256
         ).hexdigest()
-        return hmac.compare_digest(relay_token, expected_token)
+        return hmac.compare_digest(expected, signature)
     except Exception:
         return False
-
-def validate_agent_ping(payload: Dict[str, Any], secret_key: str, is_existing_agent: bool = False) -> Dict[str, Union[bool, str]]:
-    """
-    Validate agent ping payload with signature verification.
-
-    Returns dict with 'valid' boolean and optional 'error' message.
-    """
-    if not isinstance(payload, dict):
-        return {'valid': False, 'error': 'Invalid payload format'}
-
-    agent_id = payload.get('agent_id')
-    if not agent_id:
-        return {'valid': False, 'error': 'Missing agent_id'}
-
-    # For existing agents, check relay token
-    if is_existing_agent:
-        relay_token = payload.get('relay_token')
-        if not relay_token:
-            return {'valid': False, 'error': 'Missing relay_token for existing agent'}
-
-        if not verify_relay_token(agent_id, relay_token, secret_key):
-            return {'valid': False, 'error': 'Invalid relay_token'}
-
-    # Always require valid signature for new registrations
-    if not is_existing_agent:
-        if not verify_ping_signature(payload):
-            return {'valid': False, 'error': 'Invalid or missing signature'}
-
-    return {'valid': True}
