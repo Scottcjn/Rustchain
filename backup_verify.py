@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 # SPDX-License-Identifier: MIT
 
 import sqlite3
@@ -61,175 +60,87 @@ def verify_table_existence(backup_path, required_tables):
         logging.error(f"Table verification failed: {e}")
         return False
 
-def get_table_counts(db_path, tables):
-    """Get row counts for specified tables."""
-    counts = {}
+def get_table_row_counts(db_path):
+    """Get row counts for all tables."""
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = [row[0] for row in cursor.fetchall()]
+
+            counts = {}
             for table in tables:
-                cursor.execute(f"SELECT COUNT(*) FROM {table};")
+                cursor.execute(f"SELECT COUNT(*) FROM {table}")
                 counts[table] = cursor.fetchone()[0]
+            return counts
     except Exception as e:
-        logging.error(f"Count query failed for {db_path}: {e}")
-        return None
-    return counts
+        logging.error(f"Row count failed: {e}")
+        return {}
 
-def verify_data_presence(backup_path):
-    """Verify key tables have meaningful data."""
-    checks = []
+def verify_data_consistency(live_db_path, backup_path):
+    """Compare row counts between live DB and backup."""
+    live_counts = get_table_row_counts(live_db_path)
+    backup_counts = get_table_row_counts(backup_path)
 
-    try:
-        with sqlite3.connect(backup_path) as conn:
-            cursor = conn.cursor()
-
-            # Check balances table has positive amounts
-            cursor.execute("SELECT COUNT(*) FROM balances WHERE amount > 0;")
-            positive_balances = cursor.fetchone()[0]
-            checks.append(('balances_positive', positive_balances > 0))
-
-            # Check recent attestations (within 24 hours)
-            cutoff_time = int((datetime.now() - timedelta(hours=24)).timestamp())
-            cursor.execute("SELECT COUNT(*) FROM miner_attest_recent WHERE timestamp > ?;", (cutoff_time,))
-            recent_attestations = cursor.fetchone()[0]
-            checks.append(('recent_attestations', recent_attestations > 0))
-
-            # Check headers exist
-            cursor.execute("SELECT COUNT(*) FROM headers;")
-            header_count = cursor.fetchone()[0]
-            checks.append(('headers_exist', header_count > 0))
-
-            # Check ledger has transactions
-            cursor.execute("SELECT COUNT(*) FROM ledger;")
-            ledger_count = cursor.fetchone()[0]
-            checks.append(('ledger_exists', ledger_count > 0))
-
-            # Check epoch rewards exist
-            cursor.execute("SELECT COUNT(*) FROM epoch_rewards;")
-            rewards_count = cursor.fetchone()[0]
-            checks.append(('epoch_rewards_exist', rewards_count > 0))
-
-    except Exception as e:
-        logging.error(f"Data verification failed: {e}")
-        return False, []
-
-    all_passed = all(check[1] for check in checks)
-    return all_passed, checks
-
-def compare_with_live_db(backup_path, live_db_path):
-    """Compare backup row counts with live database."""
-    tables = ['balances', 'miner_attest_recent', 'headers', 'ledger', 'epoch_rewards']
-
-    backup_counts = get_table_counts(backup_path, tables)
-    live_counts = get_table_counts(live_db_path, tables)
-
-    if not backup_counts or not live_counts:
-        return False, {}
-
-    comparison = {}
-    acceptable_lag = True
-
-    for table in tables:
-        backup_count = backup_counts.get(table, 0)
-        live_count = live_counts.get(table, 0)
-        diff = live_count - backup_count
-
-        # Allow some lag but not too much
-        max_acceptable_diff = max(100, live_count * 0.05)  # 5% or 100 rows
-
-        if diff > max_acceptable_diff:
-            acceptable_lag = False
-
-        comparison[table] = {
-            'backup': backup_count,
-            'live': live_count,
-            'diff': diff,
-            'acceptable': diff <= max_acceptable_diff
-        }
-
-    return acceptable_lag, comparison
-
-def run_verification():
-    """Main verification routine."""
-    logging.info("Starting backup verification process")
-
-    # Find latest backup
-    backup_file = find_latest_backup()
-    if not backup_file:
-        logging.error("No backup files found")
+    if not live_counts or not backup_counts:
         return False
 
-    logging.info(f"Found backup file: {backup_file}")
-    backup_age = datetime.now() - datetime.fromtimestamp(os.path.getmtime(backup_file))
-    logging.info(f"Backup age: {backup_age}")
+    inconsistencies = []
+    for table in live_counts:
+        if table not in backup_counts:
+            inconsistencies.append(f"Table {table} missing from backup")
+        elif live_counts[table] != backup_counts[table]:
+            inconsistencies.append(
+                f"Table {table}: live={live_counts[table]}, backup={backup_counts[table]}"
+            )
 
-    # Create temporary copy
-    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as temp_file:
-        temp_backup_path = temp_file.name
-
-    try:
-        shutil.copy2(backup_file, temp_backup_path)
-        logging.info(f"Created temporary copy: {temp_backup_path}")
-
-        # Run integrity check
-        logging.info("Running integrity check...")
-        if not verify_backup_integrity(temp_backup_path):
-            logging.error("FAIL: Backup integrity check failed")
-            return False
-        logging.info("PASS: Backup integrity check")
-
-        # Verify required tables exist
-        required_tables = ['balances', 'miner_attest_recent', 'headers', 'ledger', 'epoch_rewards']
-        logging.info("Checking table existence...")
-        if not verify_table_existence(temp_backup_path, required_tables):
-            logging.error("FAIL: Required tables missing")
-            return False
-        logging.info("PASS: All required tables present")
-
-        # Verify data presence
-        logging.info("Verifying data presence...")
-        data_ok, data_checks = verify_data_presence(temp_backup_path)
-        for check_name, passed in data_checks:
-            status = "PASS" if passed else "FAIL"
-            logging.info(f"{status}: {check_name}")
-
-        if not data_ok:
-            logging.error("FAIL: Data verification failed")
-            return False
-
-        # Compare with live database
-        if os.path.exists(DB_PATH):
-            logging.info("Comparing with live database...")
-            counts_ok, comparison = compare_with_live_db(temp_backup_path, DB_PATH)
-
-            for table, data in comparison.items():
-                status = "PASS" if data['acceptable'] else "FAIL"
-                logging.info(f"{status}: {table} - backup:{data['backup']} live:{data['live']} diff:{data['diff']}")
-
-            if not counts_ok:
-                logging.warning("WARNING: Backup appears to be significantly behind live database")
-        else:
-            logging.warning("Live database not found, skipping comparison")
-
-        logging.info("PASS: Backup verification completed successfully")
-        return True
-
-    except Exception as e:
-        logging.error(f"Verification failed with exception: {e}")
+    if inconsistencies:
+        logging.warning(f"Data inconsistencies found: {inconsistencies}")
         return False
-    finally:
-        # Cleanup temporary file
-        try:
-            os.unlink(temp_backup_path)
-        except:
-            pass
+    return True
+
+def verify_backup(live_db_path=None, backup_path=None):
+    """Main backup verification function."""
+    if not live_db_path:
+        live_db_path = DB_PATH
+
+    if not backup_path:
+        backup_path = find_latest_backup()
+        if not backup_path:
+            logging.error("No backup files found")
+            return False
+
+    logging.info(f"Verifying backup: {backup_path}")
+
+    # Required tables for rustchain
+    required_tables = ['balances', 'miner_attest_recent', 'headers', 'ledger']
+
+    # Run all verification checks
+    checks = [
+        ("File exists", os.path.exists(backup_path)),
+        ("File readable", os.access(backup_path, os.R_OK)),
+        ("SQLite integrity", verify_backup_integrity(backup_path)),
+        ("Required tables", verify_table_existence(backup_path, required_tables)),
+    ]
+
+    # Only run data consistency if live DB exists
+    if os.path.exists(live_db_path):
+        checks.append(("Data consistency", verify_data_consistency(live_db_path, backup_path)))
+
+    all_passed = True
+    for check_name, result in checks:
+        status = "PASS" if result else "FAIL"
+        logging.info(f"{check_name}: {status}")
+        if not result:
+            all_passed = False
+
+    if all_passed:
+        logging.info("Backup verification completed successfully")
+    else:
+        logging.error("Backup verification failed")
+
+    return all_passed
 
 if __name__ == "__main__":
-    success = run_verification()
-
-    if success:
-        print("Backup verification: PASS")
-        sys.exit(0)
-    else:
-        print("Backup verification: FAIL")
-        sys.exit(1)
+    success = verify_backup()
+    sys.exit(0 if success else 1)
