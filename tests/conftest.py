@@ -1,48 +1,68 @@
-"""
-Pytest configuration for RustChain tests.
-"""
+# SPDX-License-Identifier: MIT
 
+import os
 import sys
+import tempfile
 import sqlite3
 import pytest
-import os
-import importlib.util
-from pathlib import Path
 
-# Add project root and node directory to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / "node"))
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Mock environment variables required by the module at import time
-os.environ["RC_ADMIN_KEY"] = "0" * 32
-os.environ["DB_PATH"] = ":memory:"
+@pytest.fixture(scope='function')
+def test_db():
+    """Create a temporary database for testing"""
+    db_fd, db_path = tempfile.mkstemp()
 
-# Helper to load modules with non-standard names (containing dots)
-def load_node_module(module_name, file_name):
-    if module_name in sys.modules:
-        return sys.modules[module_name]
+    # Initialize test database with required schema
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet_address TEXT UNIQUE,
+                username TEXT UNIQUE,
+                email TEXT,
+                referral_code TEXT UNIQUE NOT NULL,
+                referred_by TEXT,
+                stage INTEGER DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
+                total_earnings_rtc REAL DEFAULT 0,
+                hardware_type TEXT,
+                is_active BOOLEAN DEFAULT 1,
+                mining_setup_complete BOOLEAN DEFAULT 0
+            );
 
-    node_dir = project_root / "node"
-    spec = importlib.util.spec_from_file_location(module_name, str(node_dir / file_name))
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
+            CREATE TABLE IF NOT EXISTS micro_bounties (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                bounty_type TEXT NOT NULL,
+                completed_at DATETIME,
+                reward_rtc REAL DEFAULT 0
+            );
 
-# Mock rustchain_crypto before loading other modules
-from tests import mock_crypto
-sys.modules["rustchain_crypto"] = mock_crypto
+            CREATE TABLE IF NOT EXISTS brag_cards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                total_earned_rtc REAL DEFAULT 0,
+                mining_days INTEGER DEFAULT 0,
+                referrals_count INTEGER DEFAULT 0,
+                achievements_text TEXT,
+                generated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        ''')
 
-# Pre-load the modules to be shared across tests
-load_node_module("integrated_node", "rustchain_v2_integrated_v2.2.1_rip200.py")
-load_node_module("rewards_mod", "rewards_implementation_rip200.py")
-load_node_module("rr_mod", "rip_200_round_robin_1cpu1vote.py")
-load_node_module("tx_handler", "rustchain_tx_handler.py")
+    yield db_path
 
-@pytest.fixture
-def db_conn():
-    """Provides an in-memory SQLite database connection."""
-    conn = sqlite3.connect(":memory:")
-    yield conn
-    conn.close()
+    # Cleanup
+    os.close(db_fd)
+    os.unlink(db_path)
+
+@pytest.fixture(scope='function')
+def client():
+    """Create a test client for Flask app"""
+    import human_funnel
+
+    human_funnel.app.config['TESTING'] = True
+    with human_funnel.app.test_client() as client:
+        yield client
