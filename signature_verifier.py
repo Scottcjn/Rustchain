@@ -43,8 +43,9 @@ def verify_ping_signature(payload: Dict[str, Any]) -> bool:
 
     agent_id = payload.get('agent_id')
     signature_hex = payload.get('signature')
+    timestamp = payload.get('timestamp')
 
-    if not agent_id or not signature_hex:
+    if not agent_id or not signature_hex or not timestamp:
         return False
 
     try:
@@ -59,30 +60,8 @@ def verify_ping_signature(payload: Dict[str, Any]) -> bool:
     # Create canonical message for signing
     message_data = {
         'agent_id': agent_id,
-        'timestamp': payload.get('timestamp'),
-        'action': 'ping'
+        'timestamp': timestamp
     }
     message = json.dumps(message_data, sort_keys=True).encode('utf-8')
 
     return verify_ed25519_signature(public_key_bytes, message, signature_bytes)
-
-def create_signature_message(agent_id: str, timestamp: int, action: str = 'ping') -> bytes:
-    """Create canonical message bytes for signature verification."""
-    message_data = {
-        'agent_id': agent_id,
-        'timestamp': timestamp,
-        'action': action
-    }
-    return json.dumps(message_data, sort_keys=True).encode('utf-8')
-
-def verify_hmac_signature(message: bytes, signature: str, secret_key: str) -> bool:
-    """Verify HMAC-SHA256 signature."""
-    try:
-        expected = hmac.new(
-            secret_key.encode('utf-8'),
-            message,
-            hashlib.sha256
-        ).hexdigest()
-        return hmac.compare_digest(expected, signature)
-    except Exception:
-        return False
