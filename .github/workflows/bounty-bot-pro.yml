@@ -1,0 +1,155 @@
+# SPDX-License-Identifier: MIT
+
+name: Bounty Bot PRO
+
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created, edited]
+  pull_request:
+    types: [opened, synchronize, closed]
+
+env:
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  RUSTCHAIN_NODE_ENDPOINT: ${{ vars.RUSTCHAIN_NODE_ENDPOINT || 'http://localhost:8000' }}
+  RUSTCHAIN_DB_PATH: ${{ vars.RUSTCHAIN_DB_PATH || 'rustchain.db' }}
+  BOT_WEBHOOK_SECRET: ${{ secrets.BOT_WEBHOOK_SECRET }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  bounty-bot-pro:
+    runs-on: ubuntu-latest
+    if: contains(github.event.issue.labels.*.name, 'bounty') || contains(github.event.pull_request.labels.*.name, 'bounty')
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests google-generativeai flask sqlite3
+
+    - name: Initialize RustChain database
+      run: |
+        python -c "
+        import sqlite3
+        import os
+
+        db_path = os.environ.get('RUSTCHAIN_DB_PATH', 'rustchain.db')
+
+        with sqlite3.connect(db_path) as conn:
+            conn.execute('''CREATE TABLE IF NOT EXISTS bounties (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                issue_number INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                creator TEXT NOT NULL,
+                amount REAL NOT NULL,
+                wallet_address TEXT,
+                status TEXT DEFAULT 'open',
+                ai_score_technical REAL,
+                ai_score_clarity REAL,
+                ai_score_originality REAL,
+                ai_score_total REAL,
+                node_verified INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )''')
+
+            conn.execute('''CREATE TABLE IF NOT EXISTS claims (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bounty_id INTEGER,
+                claimant TEXT NOT NULL,
+                pr_number INTEGER,
+                content_url TEXT,
+                wallet_address TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                ai_verified INTEGER DEFAULT 0,
+                node_verified INTEGER DEFAULT 0,
+                score_breakdown TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (bounty_id) REFERENCES bounties (id)
+            )''')
+        "
+
+    - name: Process bounty claim
+      run: |
+        python bounty_bot_pro.py \
+          --event-type "${{ github.event_name }}" \
+          --issue-number "${{ github.event.issue.number || github.event.pull_request.number }}" \
+          --action "${{ github.event.action }}" \
+          --repository "${{ github.repository }}" \
+          --actor "${{ github.actor }}"
+
+    - name: Verify node connectivity
+      run: |
+        python -c "
+        import requests
+        import os
+        import sys
+
+        endpoint = os.environ.get('RUSTCHAIN_NODE_ENDPOINT')
+
+        try:
+            response = requests.get(f'{endpoint}/health', timeout=10)
+            if response.status_code == 200:
+                print(f'✓ Node connectivity verified: {endpoint}')
+            else:
+                print(f'⚠ Node returned status {response.status_code}')
+                sys.exit(0)  # Continue workflow
+        except Exception as e:
+            print(f'⚠ Node connection failed: {e}')
+            print('Continuing without node verification...')
+        "
+
+    - name: Generate quality report
+      if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged
+      run: |
+        python -c "
+        import os
+        import sqlite3
+        import json
+
+        db_path = os.environ.get('RUSTCHAIN_DB_PATH', 'rustchain.db')
+        pr_number = ${{ github.event.pull_request.number }}
+
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.execute('''
+                SELECT c.*, b.title, b.amount
+                FROM claims c
+                JOIN bounties b ON c.bounty_id = b.id
+                WHERE c.pr_number = ?
+            ''', (pr_number,))
+
+            claim = cursor.fetchone()
+            if claim:
+                report = {
+                    'pr_number': pr_number,
+                    'bounty_title': claim[9],
+                    'amount': claim[10],
+                    'ai_scores': {
+                        'technical': claim[7] if claim[7] else 0,
+                        'clarity': claim[8] if claim[8] else 0,
+                        'originality': claim[9] if claim[9] else 0
+                    },
+                    'node_verified': bool(claim[8])
+                }
+
+                with open('bounty_report.json', 'w') as f:
+                    json.dump(report, f, indent=2)
+
+                print(f'Generated quality report for PR #{pr_number}')
+        "
+
+    - name: Upload bounty report
+      if: hashFiles('bounty_report.json') != ''
+      uses: actions/upload-artifact@v3
+      with:
+        name: bounty-quality-report-${{ github.event.pull_request.number }}
+        path: bounty_report.json
+        retention-days: 30
