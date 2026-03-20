@@ -8,6 +8,7 @@ import time
 import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
+import base64
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -34,6 +35,8 @@ class TestRelayPingSecurityTestCase(unittest.TestCase):
 
         # Initialize test database
         self.init_test_db()
+        # Insert test agent
+        self.insert_test_agent()
 
     def tearDown(self):
         # Restore original DB_PATH
@@ -58,6 +61,18 @@ class TestRelayPingSecurityTestCase(unittest.TestCase):
             ''')
             conn.commit()
 
+    def insert_test_agent(self):
+        """Insert a test agent with valid public key"""
+        # Mock Ed25519 public key (base64 encoded)
+        test_public_key = base64.b64encode(b'x' * 32).decode('ascii')  # 32 bytes for Ed25519
+
+        with sqlite3.connect(self.temp_db.name) as conn:
+            conn.execute(
+                "INSERT INTO agents (agent_id, public_key, relay_token, last_ping, status) VALUES (?, ?, ?, ?, ?)",
+                ('test_agent_123', test_public_key, 'test_token', int(time.time()), 'active')
+            )
+            conn.commit()
+
     def test_relay_ping_missing_signature_rejected(self):
         """Test that ping without signature is rejected"""
         payload = {
@@ -66,8 +81,8 @@ class TestRelayPingSecurityTestCase(unittest.TestCase):
         }
 
         response = self.client.post('/relay/ping',
-                                  data=json.dumps(payload),
-                                  content_type='application/json')
+                                    data=json.dumps(payload),
+                                    content_type='application/json')
 
         self.assertEqual(response.status_code, 400)
         data = json.loads(response.data)
@@ -82,31 +97,49 @@ class TestRelayPingSecurityTestCase(unittest.TestCase):
         }
 
         response = self.client.post('/relay/ping',
-                                  data=json.dumps(payload),
-                                  content_type='application/json')
+                                    data=json.dumps(payload),
+                                    content_type='application/json')
 
         self.assertEqual(response.status_code, 403)
         data = json.loads(response.data)
         self.assertIn('error', data)
 
-    def test_relay_ping_valid_signature_accepted(self):
+    @patch('relay_ping_secure.verify_ed25519_signature')
+    def test_relay_ping_valid_signature_accepted(self, mock_verify):
         """Test that ping with valid signature is accepted"""
-        # This would require setting up proper cryptographic signatures
-        # For now, we'll mock the verification
-        with patch('signature_verifier.verify_ping_signature', return_value=True):
-            payload = {
-                'agent_id': 'test_agent_123',
-                'timestamp': int(time.time()),
-                'signature': 'valid_signature_hex'
-            }
+        # Mock signature verification to return True
+        mock_verify.return_value = True
 
-            response = self.client.post('/relay/ping',
-                                      data=json.dumps(payload),
-                                      content_type='application/json')
+        payload = {
+            'agent_id': 'test_agent_123',
+            'timestamp': int(time.time()),
+            'signature': 'deadbeefcafebabe' * 8  # 64 hex chars
+        }
 
-            self.assertEqual(response.status_code, 200)
-            data = json.loads(response.data)
-            self.assertIn('status', data)
+        response = self.client.post('/relay/ping',
+                                    data=json.dumps(payload),
+                                    content_type='application/json')
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['status'], 'success')
+        self.assertEqual(data['agent_id'], 'test_agent_123')
+
+    def test_relay_ping_unknown_agent_rejected(self):
+        """Test that ping from unknown agent is rejected"""
+        payload = {
+            'agent_id': 'unknown_agent',
+            'timestamp': int(time.time()),
+            'signature': 'deadbeefcafebabe' * 8
+        }
+
+        response = self.client.post('/relay/ping',
+                                    data=json.dumps(payload),
+                                    content_type='application/json')
+
+        self.assertEqual(response.status_code, 403)
+        data = json.loads(response.data)
+        self.assertIn('error', data)
 
 
 if __name__ == '__main__':
