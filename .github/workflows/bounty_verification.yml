@@ -1,0 +1,282 @@
+# SPDX-License-Identifier: MIT
+
+name: Bounty Verification Bot
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  verify-bounty-claim:
+    if: contains(github.event.comment.body, 'CLAIM') || contains(github.event.comment.body, 'claim')
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        pip install requests beautifulsoup4 feedparser
+
+    - name: Parse and verify bounty claim
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        RUSTCHAIN_NODE_URL: ${{ vars.RUSTCHAIN_NODE_URL || 'http://localhost:8080' }}
+      run: |
+        python3 << 'EOF'
+        import os
+        import json
+        import re
+        import requests
+        import time
+        from urllib.parse import urlparse
+        from bs4 import BeautifulSoup
+
+        # Get event data
+        github_token = os.environ['GITHUB_TOKEN']
+        node_url = os.environ['RUSTCHAIN_NODE_URL']
+
+        with open(os.environ['GITHUB_EVENT_PATH'], 'r') as f:
+            event = json.load(f)
+
+        comment_body = event['comment']['body']
+        commenter = event['comment']['user']['login']
+        issue_number = event['issue']['number']
+        repo_owner = event['repository']['owner']['login']
+        repo_name = event['repository']['name']
+
+        headers = {
+            'Authorization': f'token {github_token}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+
+        def check_star_status():
+            """Check if user has starred the repository"""
+            url = f"https://api.github.com/user/starred/{repo_owner}/{repo_name}"
+            resp = requests.get(url, headers={'Authorization': f'token {github_token}', 'X-GitHub-User': commenter})
+            return resp.status_code == 204
+
+        def check_follow_status():
+            """Check if user is following the repo owner"""
+            url = f"https://api.github.com/user/following/{repo_owner}"
+            resp = requests.get(url, headers={'Authorization': f'token {github_token}', 'X-GitHub-User': commenter})
+            return resp.status_code == 204
+
+        def verify_wallet_exists(wallet_addr):
+            """Check wallet existence via RustChain node API"""
+            try:
+                resp = requests.get(f"{node_url}/api/wallet/{wallet_addr}", timeout=10)
+                return resp.status_code == 200
+            except:
+                return False
+
+        def verify_url_live(url):
+            """Check if URL is accessible and returns valid content"""
+            try:
+                resp = requests.get(url, timeout=15, headers={'User-Agent': 'RustChain-Bot/1.0'})
+                return resp.status_code == 200
+            except:
+                return False
+
+        def analyze_article_content(url):
+            """Analyze dev.to or Medium article for word count and quality"""
+            try:
+                resp = requests.get(url, timeout=15, headers={'User-Agent': 'RustChain-Bot/1.0'})
+                if resp.status_code != 200:
+                    return None, 0
+
+                soup = BeautifulSoup(resp.text, 'html.parser')
+
+                # Remove script and style elements
+                for script in soup(["script", "style"]):
+                    script.extract()
+
+                # Get text content
+                text = soup.get_text()
+                words = len(text.split())
+
+                # Basic quality checks
+                quality_score = 0
+                if words >= 500:
+                    quality_score += 3
+                elif words >= 300:
+                    quality_score += 2
+                elif words >= 150:
+                    quality_score += 1
+
+                # Check for code blocks or technical content
+                if any(keyword in text.lower() for keyword in ['blockchain', 'rust', 'crypto', 'node', 'api']):
+                    quality_score += 2
+
+                return quality_score, words
+            except:
+                return None, 0
+
+        def check_duplicate_claims():
+            """Check if user has already claimed this bounty"""
+            url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/issues/{issue_number}/comments"
+            resp = requests.get(url, headers=headers)
+
+            if resp.status_code == 200:
+                comments = resp.json()
+                user_claims = 0
+                for comment in comments:
+                    if (comment['user']['login'] == commenter and
+                        ('CLAIM' in comment['body'] or 'claim' in comment['body']) and
+                        comment['id'] != event['comment']['id']):
+                        user_claims += 1
+                return user_claims > 0
+            return False
+
+        # Parse claim details from comment
+        results = {
+            'user': commenter,
+            'timestamp': int(time.time()),
+            'verifications': {}
+        }
+
+        # Extract wallet address
+        wallet_pattern = r'\b[A-Za-z0-9]{32,64}\b'
+        wallet_matches = re.findall(wallet_pattern, comment_body)
+        wallet_addr = wallet_matches[0] if wallet_matches else None
+
+        # Extract URLs
+        url_pattern = r'https?://[^\s)]+(?:\.[^\s)]+)*/?[^\s)]*'
+        urls = re.findall(url_pattern, comment_body)
+
+        # Star verification (30 RTC)
+        star_status = check_star_status()
+        results['verifications']['star'] = {
+            'status': 'PASS' if star_status else 'FAIL',
+            'reward': 30 if star_status else 0,
+            'details': f"Repository star status: {'✓ Starred' if star_status else '✗ Not starred'}"
+        }
+
+        # Follow verification (included in star milestone)
+        follow_status = check_follow_status()
+        results['verifications']['follow'] = {
+            'status': 'PASS' if follow_status else 'FAIL',
+            'reward': 0,  # Included in star reward
+            'details': f"Follow status: {'✓ Following' if follow_status else '✗ Not following'}"
+        }
+
+        # Wallet verification (+10 RTC)
+        if wallet_addr:
+            wallet_exists = verify_wallet_exists(wallet_addr)
+            results['verifications']['wallet'] = {
+                'status': 'PASS' if wallet_exists else 'FAIL',
+                'reward': 10 if wallet_exists else 0,
+                'details': f"Wallet {wallet_addr[:8]}...: {'✓ Exists' if wallet_exists else '✗ Not found'}"
+            }
+        else:
+            results['verifications']['wallet'] = {
+                'status': 'FAIL',
+                'reward': 0,
+                'details': '✗ No wallet address provided'
+            }
+
+        # URL verification (+10 RTC)
+        live_urls = []
+        article_urls = []
+
+        for url in urls:
+            if verify_url_live(url):
+                live_urls.append(url)
+                domain = urlparse(url).netloc.lower()
+                if any(site in domain for site in ['dev.to', 'medium.com', 'hashnode.com']):
+                    article_urls.append(url)
+
+        results['verifications']['url'] = {
+            'status': 'PASS' if live_urls else 'FAIL',
+            'reward': 10 if live_urls else 0,
+            'details': f"URLs verified: {len(live_urls)}/{len(urls)} live"
+        }
+
+        # Article quality verification (+10 RTC)
+        if article_urls:
+            total_quality = 0
+            total_words = 0
+
+            for article_url in article_urls[:2]:  # Check max 2 articles
+                quality, words = analyze_article_content(article_url)
+                if quality is not None:
+                    total_quality += quality
+                    total_words += words
+
+            quality_pass = total_quality >= 3 and total_words >= 300
+            results['verifications']['article_quality'] = {
+                'status': 'PASS' if quality_pass else 'FAIL',
+                'reward': 10 if quality_pass else 0,
+                'details': f"Article analysis: {total_words} words, quality score: {total_quality}/10"
+            }
+        else:
+            results['verifications']['article_quality'] = {
+                'status': 'FAIL',
+                'reward': 0,
+                'details': '✗ No article URLs found'
+            }
+
+        # Duplicate claim check (+15 RTC bonus if no duplicates)
+        has_duplicates = check_duplicate_claims()
+        results['verifications']['duplicate'] = {
+            'status': 'PASS' if not has_duplicates else 'FAIL',
+            'reward': 15 if not has_duplicates else 0,
+            'details': f"Duplicate check: {'✗ Previous claims found' if has_duplicates else '✓ First claim'}"
+        }
+
+        # Calculate total reward
+        total_reward = sum(v['reward'] for v in results['verifications'].values())
+
+        # Format verification response
+        response_lines = [
+            f"## 🤖 Bounty Verification Results for @{commenter}",
+            "",
+            f"**Total Eligible Reward: {total_reward} RTC**",
+            "",
+            "### Verification Details:",
+            ""
+        ]
+
+        for check_type, result in results['verifications'].items():
+            status_icon = "✅" if result['status'] == 'PASS' else "❌"
+            reward_text = f" (+{result['reward']} RTC)" if result['reward'] > 0 else ""
+            response_lines.append(f"- {status_icon} **{check_type.title()}**: {result['details']}{reward_text}")
+
+        if total_reward > 0:
+            response_lines.extend([
+                "",
+                f"**🎉 Congratulations! You've earned {total_reward} RTC**",
+                "",
+                "Please wait for manual review and payout processing.",
+                "",
+                f"*Verification completed at {time.strftime('%Y-%m-%d %H:%M:%S UTC')}*"
+            ])
+        else:
+            response_lines.extend([
+                "",
+                "❌ **No reward earned** - Please complete the required actions and try again.",
+                "",
+                f"*Verification completed at {time.strftime('%Y-%m-%d %H:%M:%S UTC')}*"
+            ])
+
+        verification_comment = "\n".join(response_lines)
+
+        # Post verification result as comment
+        comment_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/issues/{issue_number}/comments"
+        comment_data = {'body': verification_comment}
+
+        post_resp = requests.post(comment_url, headers=headers, json=comment_data)
+
+        if post_resp.status_code == 201:
+            print(f"✅ Verification comment posted successfully")
+            print(f"Total reward calculated: {total_reward} RTC")
+        else:
+            print(f"❌ Failed to post comment: {post_resp.status_code}")
+            print(post_resp.text)
+
+        EOF
