@@ -61,38 +61,37 @@ class TranslationVerifier:
 
         return sections
 
-    def load_original_content(self, file_path: str) -> None:
-        """Load original README content"""
-        if not os.path.exists(file_path):
-            raise TranslationError(f"Original file not found: {file_path}")
+    def load_original_content(self, path: str) -> None:
+        """Load the original README content"""
+        if not os.path.exists(path):
+            raise TranslationError(f"Original file not found: {path}")
 
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(path, 'r', encoding='utf-8') as f:
             self.original_content = f.read()
 
-    def load_translation_content(self, file_path: str) -> None:
-        """Load translation content"""
-        if not os.path.exists(file_path):
-            raise TranslationError(f"Translation file not found: {file_path}")
+    def load_translation_content(self, path: str) -> None:
+        """Load the translation content"""
+        if not os.path.exists(path):
+            raise TranslationError(f"Translation file not found: {path}")
 
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(path, 'r', encoding='utf-8') as f:
             self.translation_content = f.read()
 
-    def validate_markdown_structure(self, content: str) -> List[ValidationIssue]:
-        """Validate markdown structure completeness"""
+    def validate_markdown_structure(self, content: str) -> Dict[str, any]:
+        """Validate markdown structure of translation"""
         issues = []
+        missing_sections = []
 
-        # Check for required sections
+        # Extract headers from content
         header_pattern = r'^#+\s+(.+)$'
         found_headers = []
-
         for match in re.finditer(header_pattern, content, re.MULTILINE):
             header = match.group(1).strip()
             found_headers.append(header)
 
-        # Check if all required sections are present
-        missing_sections = []
+        # Check for missing required sections
         for required in self.required_sections:
-            if not any(required.lower() in found.lower() for found in found_headers):
+            if not any(required.lower() in header.lower() for header in found_headers):
                 missing_sections.append(required)
 
         if missing_sections:
@@ -102,9 +101,14 @@ class TranslationVerifier:
                 message=f"Missing required sections: {', '.join(missing_sections)}"
             ))
 
-        return issues
+        return {
+            "issues": issues,
+            "missing_sections": missing_sections,
+            "found_headers": found_headers,
+            "overall_valid": len(missing_sections) == 0
+        }
 
-    def check_technical_terms(self, content: str) -> List[ValidationIssue]:
+    def check_technical_terms(self, content: str) -> Dict[str, any]:
         """Check if technical terms are preserved"""
         issues = []
         missing_terms = []
@@ -117,165 +121,135 @@ class TranslationVerifier:
             issues.append(ValidationIssue(
                 severity=SeverityLevel.WARNING,
                 category="technical_terms",
-                message=f"Missing technical terms: {', '.join(missing_terms)}"
+                message=f"Missing technical terms: {', '.join(missing_terms[:5])}"
             ))
 
-        return issues
+        return {
+            "issues": issues,
+            "missing_terms": missing_terms,
+            "overall_valid": len(missing_terms) == 0
+        }
 
-    def validate_code_blocks(self, original: str, translation: str) -> List[ValidationIssue]:
+    def validate_code_blocks(self, original: str, translation: str) -> Dict[str, any]:
         """Validate that code blocks are preserved"""
         issues = []
 
-        # Extract code blocks from both versions
-        code_block_pattern = r'```[\s\S]*?```'
-        original_blocks = re.findall(code_block_pattern, original)
-        translation_blocks = re.findall(code_block_pattern, translation)
+        # Extract code blocks
+        code_pattern = r'```[\w]*\n([\s\S]*?)```'
+        original_blocks = re.findall(code_pattern, original)
+        translation_blocks = re.findall(code_pattern, translation)
 
         if len(original_blocks) != len(translation_blocks):
             issues.append(ValidationIssue(
                 severity=SeverityLevel.ERROR,
                 category="code_blocks",
-                message=f"Code block count mismatch: original has {len(original_blocks)}, translation has {len(translation_blocks)}"
+                message=f"Code block count mismatch: {len(original_blocks)} vs {len(translation_blocks)}"
             ))
 
-        # Check if code content is preserved
-        for i, (orig_block, trans_block) in enumerate(zip(original_blocks, translation_blocks)):
-            if orig_block != trans_block:
+        # Check if code blocks are identical
+        for i, (orig, trans) in enumerate(zip(original_blocks, translation_blocks)):
+            if orig.strip() != trans.strip():
                 issues.append(ValidationIssue(
                     severity=SeverityLevel.ERROR,
                     category="code_blocks",
-                    message=f"Code block {i+1} content modified"
+                    message=f"Code block {i+1} modified in translation"
                 ))
 
-        return issues
+        return {
+            "issues": issues,
+            "original_blocks": original_blocks,
+            "translation_blocks": translation_blocks,
+            "overall_valid": len(issues) == 0
+        }
 
-    def check_format_consistency(self, content: str) -> List[ValidationIssue]:
+    def check_format_consistency(self, content: str) -> Dict[str, any]:
         """Check format consistency"""
         issues = []
-        lines = content.split('\n')
 
-        # Check for consistent heading format
-        heading_pattern = r'^(#+)\s+(.+)$'
-        for i, line in enumerate(lines):
-            match = re.match(heading_pattern, line)
-            if match:
-                level = len(match.group(1))
-                title = match.group(2)
-
-                # Check for trailing spaces in headings
-                if title != title.strip():
-                    issues.append(ValidationIssue(
-                        severity=SeverityLevel.WARNING,
-                        category="format",
-                        message=f"Heading has trailing spaces at line {i+1}",
-                        line_number=i+1
-                    ))
-
-        return issues
-
-    def detect_language(self, content: str) -> str:
-        """Detect language of the content"""
-        # Simple language detection based on common words
-        content_lower = content.lower()
-
-        if any(word in content_lower for word in ['visão geral', 'características', 'instalação', 'português']):
-            return 'pt-BR'
-        elif any(word in content_lower for word in ['overview', 'features', 'installation', 'english']):
-            return 'en'
-        elif any(word in content_lower for word in ['características', 'instalación', 'español']):
-            return 'es'
-        elif any(word in content_lower for word in ['aperçu', 'fonctionnalités', 'français']):
-            return 'fr'
-        else:
-            return 'unknown'
-
-    def verify_translation(self, translation_path: str, language_code: str) -> List[ValidationIssue]:
-        """Main verification method"""
-        issues = []
-
-        # Load translation content
-        try:
-            self.load_translation_content(translation_path)
-        except TranslationError as e:
+        # Check for proper markdown formatting
+        if not re.search(r'^#\s+', content, re.MULTILINE):
             issues.append(ValidationIssue(
                 severity=SeverityLevel.ERROR,
-                category="file",
-                message=str(e)
-            ))
-            return issues
-
-        # Load original content if not already loaded
-        if self.original_content is None:
-            try:
-                self.load_original_content(self.original_path)
-            except TranslationError as e:
-                issues.append(ValidationIssue(
-                    severity=SeverityLevel.ERROR,
-                    category="file",
-                    message=str(e)
-                ))
-                return issues
-
-        # Run all validation checks
-        issues.extend(self.validate_markdown_structure(self.translation_content))
-        issues.extend(self.check_technical_terms(self.translation_content))
-        issues.extend(self.validate_code_blocks(self.original_content, self.translation_content))
-        issues.extend(self.check_format_consistency(self.translation_content))
-
-        # Verify detected language matches expected
-        detected_lang = self.detect_language(self.translation_content)
-        if detected_lang != language_code and detected_lang != 'unknown':
-            issues.append(ValidationIssue(
-                severity=SeverityLevel.WARNING,
-                category="language",
-                message=f"Language mismatch: expected {language_code}, detected {detected_lang}"
+                category="format",
+                message="No main header found"
             ))
 
-        return issues
+        return {
+            "issues": issues,
+            "overall_valid": len(issues) == 0
+        }
+
+    def detect_language(self, content: str) -> str:
+        """Detect the language of the content"""
+        # Simple language detection based on common words
+        portuguese_indicators = ['o', 'a', 'e', 'de', 'para', 'com', 'uma', 'um', 'são', 'é']
+        spanish_indicators = ['el', 'la', 'y', 'de', 'para', 'con', 'una', 'un', 'son', 'es']
+        french_indicators = ['le', 'la', 'et', 'de', 'pour', 'avec', 'une', 'un', 'sont', 'est']
+
+        words = content.lower().split()
+
+        pt_count = sum(1 for word in words if word in portuguese_indicators)
+        es_count = sum(1 for word in words if word in spanish_indicators)
+        fr_count = sum(1 for word in words if word in french_indicators)
+
+        if pt_count > es_count and pt_count > fr_count:
+            return 'pt'
+        elif es_count > fr_count:
+            return 'es'
+        elif fr_count > 0:
+            return 'fr'
+        else:
+            return 'en'
+
+    def verify_translation(self, translation_path: str, language_code: str) -> List[ValidationIssue]:
+        """Verify a complete translation file"""
+        all_issues = []
+
+        # Load translation content
+        self.load_translation_content(translation_path)
+
+        # Run all validations
+        structure_result = self.validate_markdown_structure(self.translation_content)
+        all_issues.extend(structure_result['issues'])
+
+        terms_result = self.check_technical_terms(self.translation_content)
+        all_issues.extend(terms_result['issues'])
+
+        format_result = self.check_format_consistency(self.translation_content)
+        all_issues.extend(format_result['issues'])
+
+        if self.original_content:
+            code_result = self.validate_code_blocks(self.original_content, self.translation_content)
+            all_issues.extend(code_result['issues'])
+
+        return all_issues
 
 
-def validate_translation_file(translation_path: str, language_code: str) -> Dict:
+def validate_translation_file(translation_path: str, original_path: str = "README.md") -> Dict[str, any]:
     """Standalone function to validate a translation file"""
-    verifier = TranslationVerifier()
+    verifier = TranslationVerifier(original_path)
+
+    if os.path.exists(original_path):
+        verifier.load_original_content(original_path)
+
+    language_code = Path(translation_path).stem.split('.')[-1] if '.' in Path(translation_path).stem else 'unknown'
     issues = verifier.verify_translation(translation_path, language_code)
 
     return {
-        'valid': len([i for i in issues if i.severity == SeverityLevel.ERROR]) == 0,
-        'issues': [{
-            'severity': issue.severity.value,
-            'category': issue.category,
-            'message': issue.message,
-            'line_number': issue.line_number,
-            'suggestion': issue.suggestion
-        } for issue in issues]
+        "valid": len([i for i in issues if i.severity == SeverityLevel.ERROR]) == 0,
+        "issues": issues,
+        "language_code": language_code
     }
 
 
-def check_technical_terms_consistency(translation_path: str) -> Dict:
-    """Check technical terms consistency"""
+def check_technical_terms_consistency(content: str) -> List[str]:
+    """Standalone function to check technical terms"""
     verifier = TranslationVerifier()
-    try:
-        verifier.load_translation_content(translation_path)
-        issues = verifier.check_technical_terms(verifier.translation_content)
-
-        return {
-            'consistent': len(issues) == 0,
-            'missing_terms': [issue.message for issue in issues if 'Missing technical terms' in issue.message]
-        }
-    except TranslationError as e:
-        return {'consistent': False, 'error': str(e)}
+    result = verifier.check_technical_terms(content)
+    return result['missing_terms']
 
 
-def verify_markdown_structure(translation_path: str) -> Dict:
-    """Verify markdown structure"""
+def verify_markdown_structure(content: str) -> Dict[str, any]:
+    """Standalone function to verify markdown structure"""
     verifier = TranslationVerifier()
-    try:
-        verifier.load_translation_content(translation_path)
-        issues = verifier.validate_markdown_structure(verifier.translation_content)
-
-        return {
-            'valid_structure': len([i for i in issues if i.severity == SeverityLevel.ERROR]) == 0,
-            'structure_issues': [issue.message for issue in issues]
-        }
-    except TranslationError as e:
-        return {'valid_structure': False, 'error': str(e)}
+    return verifier.validate_markdown_structure(content)
