@@ -62,11 +62,45 @@ def verify_ping_signature(data, db_path: str) -> bool:
 
     try:
         signature_bytes = bytes.fromhex(signature_hex)
-        public_key_bytes = base64.b64decode(agent['public_key'])
+        public_key_bytes = extract_public_key_from_agent_id(agent_id)
+        if not public_key_bytes:
+            # Try from database record
+            if agent.get('public_key'):
+                public_key_bytes = base64.b64decode(agent['public_key'])
+            else:
+                return False
 
-        # Create canonical message for verification
-        message = f"{agent_id}:{timestamp}".encode('utf-8')
+        # Create message to verify
+        message_data = {
+            'agent_id': agent_id,
+            'timestamp': timestamp,
+            'action': 'ping'
+        }
+        message = json.dumps(message_data, sort_keys=True).encode('utf-8')
 
         return verify_ed25519_signature(message, signature_bytes, public_key_bytes)
-    except (ValueError, TypeError, Exception):
+    except Exception:
         return False
+
+def require_signature_verification(db_path: str):
+    """Decorator to require signature verification for relay endpoints"""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            from flask import request, jsonify
+
+            if request.method == 'POST':
+                try:
+                    data = request.get_json()
+                    if not data:
+                        return jsonify({'error': 'Invalid JSON payload'}), 400
+
+                    if not verify_ping_signature(data, db_path):
+                        return jsonify({'error': 'Signature verification failed'}), 403
+
+                except Exception as e:
+                    return jsonify({'error': f'Signature verification error: {str(e)}'}), 400
+
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
