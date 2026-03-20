@@ -1,0 +1,40 @@
+{
+  "epoch": {
+    "height": 1,
+    "timestamp": 1640995200,
+    "previous_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "hash": "000abc123def456789abcdef123456789abcdef123456789abcdef123456789a"
+  },
+  "attestations": [],
+  "enrollments": [
+    {
+      "node_id": "node_minimal_001",
+      "public_key": "02a1b2c3d4e5f6789012345678901234567890123456789012345678901234567890",
+      "enrollment_height": 1,
+      "stake": 1000,
+      "status": "active"
+    }
+  ],
+  "multipliers": {
+    "base_reward": 100,
+    "participation_bonus": 1.0,
+    "stake_weight": 1.0
+  },
+  "config": {
+    "min_stake": 100,
+    "max_validators": 1000,
+    "epoch_duration": 3600,
+    "reward_distribution": "proportional"
+  },
+  "expected_outputs": {
+    "total_rewards": 100,
+    "validator_payouts": [
+      {
+        "node_id": "node_minimal_001",
+        "reward": 100,
+        "reason": "sole_validator"
+      }
+    ],
+    "settlement_hash": "d5e6f7890123456789012345678901234567890123456789012345678901234567"
+  }
+}
