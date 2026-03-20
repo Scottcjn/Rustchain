@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: MIT
+name: Bounty Proof / Claim
+description: Submit proof and claim for completed bounty work
+title: "[CLAIM] "
+labels: ["bounty-claim", "needs-review"]
+assignees:
+  - Scottcjn
+body:
+  - type: dropdown
+    id: proof-type
+    attributes:
+      label: Proof Type
+      description: What type of bounty are you claiming?
+      options:
+        - Merged PR payout request
+        - Install report claim
+        - Marketing / campaign proof
+        - Star / follow / referral claim
+        - Bug fix bounty
+        - Feature implementation
+        - Documentation bounty
+        - Security disclosure
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: wallet-address
+    attributes:
+      label: Wallet Address
+      description: Your registered wallet address for payout
+      placeholder: "0x... or bc1... or similar"
+    validations:
+      required: true
+
+  - type: input
+    id: bounty-reference
+    attributes:
+      label: Bounty Reference
+      description: Link to original bounty issue or PR
+      placeholder: "https://github.com/Scottcjn/rustchain-bounties/issues/..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: proof-details
+    attributes:
+      label: Proof Details
+      description: Provide detailed evidence of completed work
+      placeholder: |
+        For PR claims: Link to merged PR
+        For install reports: Screenshots and system info
+        For marketing: Links to posts, engagement metrics
+        For referrals: User handles and signup confirmations
+    validations:
+      required: true
+
+  - type: textarea
+    id: supporting-evidence
+    attributes:
+      label: Supporting Evidence
+      description: Additional links, screenshots, or documentation
+      placeholder: |
+        - Screenshot links
+        - Social media posts
+        - Code repository links
+        - Transaction hashes
+        - Other relevant evidence
+    validations:
+      required: false
+
+  - type: input
+    id: claim-amount
+    attributes:
+      label: Claim Amount
+      description: Expected bounty payout amount (if specified)
+      placeholder: "0.001 BTC, 10 USDC, etc."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: verification
+    attributes:
+      label: Verification
+      description: Confirm the following
+      options:
+        - label: I have completed all requirements for this bounty
+          required: true
+        - label: My wallet address is correct and accessible
+          required: true
+        - label: All provided evidence is authentic and verifiable
+          required: true
+        - label: I understand payouts are processed manually and may take time
+          required: true
