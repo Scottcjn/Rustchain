@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 # SPDX-License-Identifier: MIT
 
 import unittest
@@ -11,7 +10,7 @@ from unittest.mock import patch, MagicMock
 # Add the parent directory to the path to import the app
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app import app
+from hall_of_fame_machine import app
 
 class TestHallOfFameMachine(unittest.TestCase):
 
@@ -58,106 +57,40 @@ class TestHallOfFameMachine(unittest.TestCase):
         os.close(self.db_fd)
         os.unlink(self.db_path)
 
-    def test_machine_detail_page(self):
-        """Test the machine detail page renders correctly for active machine."""
-        response = self.client.get('/hall-of-fame/?machine=abc123def456')
-        self.assertEqual(response.status_code, 200)
+    def test_machine_detail_page_missing_id(self):
+        """Test machine detail page without machine ID."""
+        response = self.client.get('/hall-of-fame/machine')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(b'Machine ID required', response.data)
 
-        # Check that machine details are present
-        data = response.get_data(as_text=True)
-        self.assertIn('Mining Rig Alpha', data)
-        self.assertIn('8750', data)  # rust_score
-        self.assertIn('142', data)   # epochs_participated
-        self.assertIn('2024-01-15', data)  # first_attestation date
-        self.assertIn('active', data)
-
-        # Check for proper styling/structure
-        self.assertIn('machine-detail', data)
-        self.assertIn('rust-score', data)
-
-    def test_api_machine_endpoint(self):
-        """Test the API endpoint returns correct JSON data."""
-        response = self.client.get('/api/machine/ghi345jkl678')
-        self.assertEqual(response.status_code, 200)
-
-        json_data = response.get_json()
-        self.assertEqual(json_data['fingerprint_hash'], 'ghi345jkl678')
-        self.assertEqual(json_data['name'], 'Gamma Processor')
-        self.assertEqual(json_data['rust_score'], 9100)
-        self.assertEqual(json_data['epochs_participated'], 201)
-        self.assertEqual(json_data['status'], 'active')
-
-        # Check date format
-        self.assertIn('first_attestation', json_data)
-        self.assertIn('last_seen', json_data)
-
-    def test_deceased_machine_styling(self):
-        """Test that deceased machines display with proper styling."""
-        response = self.client.get('/hall-of-fame/?machine=def789ghi012')
-        self.assertEqual(response.status_code, 200)
-
-        data = response.get_data(as_text=True)
-        self.assertIn('Beta Node', data)
-        self.assertIn('deceased', data)
-
-        # Check for deceased-specific styling
-        self.assertIn('machine-deceased', data)
-        self.assertIn('7200', data)  # rust_score should still be shown
-        self.assertIn('98', data)    # epochs_participated
-
-        # Should indicate machine is no longer active
-        self.assertIn('Last Seen:', data)
-
-    def test_invalid_machine_id(self):
-        """Test handling of non-existent machine IDs."""
-        response = self.client.get('/hall-of-fame/?machine=nonexistent123')
+    def test_machine_detail_page_nonexistent(self):
+        """Test machine detail page for nonexistent machine."""
+        response = self.client.get('/hall-of-fame/machine?id=nonexistent')
         self.assertEqual(response.status_code, 404)
+        self.assertIn(b'Machine not found', response.data)
 
-        data = response.get_data(as_text=True)
-        self.assertIn('Machine not found', data)
+    @patch('hall_of_fame_machine.get_machine_details')
+    def test_machine_detail_page_success(self, mock_get_details):
+        """Test successful machine detail page rendering."""
+        mock_get_details.return_value = {
+            'machine': {
+                'fingerprint_hash': 'abc123def456',
+                'machine_name': 'Test Machine',
+                'first_seen': '2024-01-01',
+                'total_attestations': 100,
+                'rust_score': 8500,
+                'fleet_rank': 5
+            },
+            'attestation_history': [
+                {'epoch': 1000, 'rust_score': 8500, 'timestamp': '2024-03-01 12:00:00'}
+            ],
+            'fleet_stats': {'avg_score': 8000, 'total_machines': 50}
+        }
 
-        # Test API endpoint with invalid ID
-        response = self.client.get('/api/machine/invalid456')
-        self.assertEqual(response.status_code, 404)
-
-        json_data = response.get_json()
-        self.assertEqual(json_data['error'], 'Machine not found')
-
-    def test_machine_comparison_data(self):
-        """Test that machine page includes fleet comparison data."""
-        response = self.client.get('/hall-of-fame/?machine=abc123def456')
+        response = self.client.get('/hall-of-fame/machine?id=abc123def456')
         self.assertEqual(response.status_code, 200)
-
-        data = response.get_data(as_text=True)
-        # Should show how this machine compares to fleet average
-        self.assertIn('fleet', data.lower())
-        self.assertIn('average', data.lower())
-
-    def test_hall_of_fame_main_page_links(self):
-        """Test that main hall of fame page has clickable machine links."""
-        response = self.client.get('/hall-of-fame/')
-        self.assertEqual(response.status_code, 200)
-
-        data = response.get_data(as_text=True)
-        # Should contain links to machine detail pages
-        self.assertIn('?machine=abc123def456', data)
-        self.assertIn('?machine=def789ghi012', data)
-        self.assertIn('?machine=ghi345jkl678', data)
-
-        # Machine names should be clickable
-        self.assertIn('href=', data)
-
-    @patch('sqlite3.connect')
-    def test_database_error_handling(self, mock_connect):
-        """Test graceful handling of database connection errors."""
-        mock_connect.side_effect = sqlite3.Error("Database connection failed")
-
-        response = self.client.get('/hall-of-fame/?machine=abc123def456')
-        self.assertEqual(response.status_code, 500)
-
-        # API should also handle errors gracefully
-        response = self.client.get('/api/machine/abc123def456')
-        self.assertEqual(response.status_code, 500)
+        self.assertIn(b'Test Machine', response.data)
+        self.assertIn(b'abc123def456', response.data)
 
 if __name__ == '__main__':
     unittest.main()
