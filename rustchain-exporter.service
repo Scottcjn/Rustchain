@@ -1,0 +1,33 @@
+[Unit]
+Description=RustChain Prometheus Exporter
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=rustchain
+Group=rustchain
+WorkingDirectory=/opt/rustchain-exporter
+ExecStart=/usr/bin/python3 /opt/rustchain-exporter/rustchain_exporter.py
+Environment=NODE_URL=http://localhost:3030
+Environment=EXPORTER_PORT=9090
+Environment=SCRAPE_INTERVAL=15
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rustchain-exporter
+KillMode=mixed
+TimeoutStopSec=30
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/rustchain-exporter/logs
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
