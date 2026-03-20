@@ -42,6 +42,29 @@ except ImportError as e:
 except Exception as e:
     print(f"[WSGI] P2P init failed: {e}")
 
+# RIP-306: SophiaCore Attestation Inspector
+try:
+    from sophia_attestation_inspector import register_sophia_endpoints, ensure_schema as sophia_schema
+    sophia_schema(DB_PATH)
+    register_sophia_endpoints(app, DB_PATH)
+    print("[RIP-306] SophiaCore Attestation Inspector registered")
+    print("[RIP-306]   Endpoints: /sophia/status, /sophia/inspect, /sophia/batch")
+except ImportError as e:
+    print(f"[RIP-306] SophiaCore not available: {e}")
+except Exception as e:
+    print(f"[RIP-306] SophiaCore init failed: {e}")
+
+# RIP-302 Tier 3: Auto-Matching Engine
+try:
+    from rip302_auto_match import register_auto_match
+    register_auto_match(app, DB_PATH)
+    print("[RIP-302 Auto-Match] registered")
+    print("[RIP-302 Auto-Match]   Endpoints: /agent/match/<job_id>, /agent/match/suggest, /agent/match/leaderboard, /agent/match/stats")
+except ImportError as e:
+    print(f"[RIP-302 Auto-Match] not available: {e}")
+except Exception as e:
+    print(f"[RIP-302 Auto-Match] init failed: {e}")
+
 # Expose the app for gunicorn
 application = app
 
