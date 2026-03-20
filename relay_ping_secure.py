@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 # SPDX-License-Identifier: MIT
 
 import json
@@ -58,122 +57,71 @@ def get_agent_by_id(agent_id: str):
 
 def register_new_agent(agent_id: str, public_key: str, relay_token: str = None):
     """Register new authenticated agent"""
-    current_time = int(time.time())
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             "INSERT OR REPLACE INTO agents (agent_id, public_key, relay_token, last_ping, status) VALUES (?, ?, ?, ?, ?)",
-            (agent_id, public_key, relay_token, current_time, 'active')
+            (agent_id, public_key, relay_token, int(time.time()), 'active')
         )
         conn.commit()
 
-def update_agent_ping(agent_id: str, relay_token: str = None):
-    """Update existing agent ping timestamp"""
-    current_time = int(time.time())
-    with sqlite3.connect(DB_PATH) as conn:
-        if relay_token:
-            conn.execute(
-                "UPDATE agents SET last_ping = ?, relay_token = ? WHERE agent_id = ?",
-                (current_time, relay_token, agent_id)
-            )
-        else:
-            conn.execute(
-                "UPDATE agents SET last_ping = ? WHERE agent_id = ?",
-                (current_time, agent_id)
-            )
-        conn.commit()
-
 @app.route('/relay/ping', methods=['POST'])
-def relay_ping_secure():
-    """Secure relay ping endpoint with signature verification"""
+def relay_ping():
+    """Secure ping endpoint with signature verification"""
     try:
         data = request.get_json()
         if not data:
             return jsonify({'error': 'Invalid JSON payload'}), 400
 
         agent_id = data.get('agent_id')
-        signature_b64 = data.get('signature')
-        public_key = data.get('public_key')
-        relay_token = data.get('relay_token')
+        signature_hex = data.get('signature')
+        timestamp = data.get('timestamp')
 
-        if not agent_id:
-            return jsonify({'error': 'agent_id required'}), 400
+        if not all([agent_id, signature_hex, timestamp]):
+            return jsonify({'error': 'Missing required fields: agent_id, signature, timestamp'}), 400
 
-        # Check if agent exists
-        existing_agent = get_agent_by_id(agent_id)
+        # Check timestamp freshness (within 5 minutes)
+        current_time = int(time.time())
+        if abs(current_time - timestamp) > 300:
+            return jsonify({'error': 'Timestamp too old or in future'}), 400
 
-        if existing_agent:
-            # Existing agent - require relay_token for heartbeat updates
-            if not relay_token:
-                return jsonify({'error': 'relay_token required for existing agents'}), 401
+        try:
+            signature = bytes.fromhex(signature_hex)
+        except ValueError:
+            return jsonify({'error': 'Invalid signature format'}), 400
 
-            # Verify relay token matches stored token
-            if existing_agent['relay_token'] != relay_token:
-                return jsonify({'error': 'Invalid relay_token'}), 401
+        # Get agent from database
+        agent = get_agent_by_id(agent_id)
+        if not agent:
+            return jsonify({'error': 'Agent not registered'}), 401
 
-            # Update ping timestamp
-            update_agent_ping(agent_id, relay_token)
+        # Create message for verification
+        message_data = {
+            'agent_id': agent_id,
+            'timestamp': timestamp,
+            'action': 'ping'
+        }
+        message = json.dumps(message_data, sort_keys=True).encode('utf-8')
 
-            return jsonify({
-                'status': 'success',
-                'message': 'Agent heartbeat updated',
-                'agent_id': agent_id,
-                'timestamp': int(time.time())
-            })
+        # Verify signature
+        if not verify_ed25519_signature(message, signature, agent['public_key']):
+            return jsonify({'error': 'Invalid signature'}), 401
 
-        else:
-            # New agent registration - require signature verification
-            if not signature_b64 or not public_key:
-                return jsonify({'error': 'signature and public_key required for new agents'}), 400
+        # Update last ping time
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute(
+                "UPDATE agents SET last_ping = ? WHERE agent_id = ?",
+                (current_time, agent_id)
+            )
+            conn.commit()
 
-            try:
-                signature_bytes = base64.b64decode(signature_b64)
-            except Exception:
-                return jsonify({'error': 'Invalid signature encoding'}), 400
-
-            # Create message to verify (agent_id + timestamp within 5 min window)
-            timestamp = int(time.time())
-            message = f"{agent_id}:{timestamp}".encode('utf-8')
-
-            # Verify Ed25519 signature
-            if not verify_ed25519_signature(message, signature_bytes, public_key):
-                # Try with a small time window for clock drift
-                for offset in [-300, -60, 60, 300]:  # 5min, 1min windows
-                    test_timestamp = timestamp + offset
-                    test_message = f"{agent_id}:{test_timestamp}".encode('utf-8')
-                    if verify_ed25519_signature(test_message, signature_bytes, public_key):
-                        break
-                else:
-                    return jsonify({'error': 'Invalid signature'}), 401
-
-            # Register new authenticated agent
-            register_new_agent(agent_id, public_key, relay_token)
-
-            return jsonify({
-                'status': 'success',
-                'message': 'Agent registered successfully',
-                'agent_id': agent_id,
-                'timestamp': timestamp
-            })
+        return jsonify({
+            'status': 'success',
+            'message': 'Ping verified',
+            'timestamp': current_time
+        })
 
     except Exception as e:
-        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
-
-@app.route('/relay/agents', methods=['GET'])
-def list_agents():
-    """List all registered agents"""
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.execute(
-            "SELECT agent_id, last_ping, status FROM agents WHERE status = 'active' ORDER BY last_ping DESC"
-        )
-        agents = []
-        for row in cursor.fetchall():
-            agents.append({
-                'agent_id': row[0],
-                'last_ping': row[1],
-                'status': row[2]
-            })
-
-    return jsonify({'agents': agents, 'count': len(agents)})
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 if __name__ == '__main__':
     init_db()
