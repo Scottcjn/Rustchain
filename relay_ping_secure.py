@@ -59,69 +59,58 @@ def register_new_agent(agent_id: str, public_key: str, relay_token: str = None):
     """Register new authenticated agent"""
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO agents (agent_id, public_key, relay_token, last_ping, status) VALUES (?, ?, ?, ?, ?)",
-            (agent_id, public_key, relay_token, int(time.time()), 'active')
+            "INSERT OR REPLACE INTO agents (agent_id, public_key, relay_token, last_ping) VALUES (?, ?, ?, ?)",
+            (agent_id, public_key, relay_token, int(time.time()))
         )
         conn.commit()
 
 @app.route('/relay/ping', methods=['POST'])
 def relay_ping():
-    """Secure ping endpoint with signature verification"""
+    """Handle secure relay ping with signature verification"""
     try:
         data = request.get_json()
         if not data:
             return jsonify({'error': 'Invalid JSON payload'}), 400
 
         agent_id = data.get('agent_id')
-        signature_hex = data.get('signature')
         timestamp = data.get('timestamp')
+        signature_hex = data.get('signature')
 
-        if not all([agent_id, signature_hex, timestamp]):
-            return jsonify({'error': 'Missing required fields: agent_id, signature, timestamp'}), 400
-
-        # Check timestamp freshness (within 5 minutes)
-        current_time = int(time.time())
-        if abs(current_time - timestamp) > 300:
-            return jsonify({'error': 'Timestamp too old or in future'}), 400
-
-        try:
-            signature = bytes.fromhex(signature_hex)
-        except ValueError:
-            return jsonify({'error': 'Invalid signature format'}), 400
+        # Validate required fields
+        if not all([agent_id, timestamp, signature_hex]):
+            return jsonify({'error': 'Missing required fields'}), 400
 
         # Get agent from database
         agent = get_agent_by_id(agent_id)
         if not agent:
-            return jsonify({'error': 'Agent not registered'}), 401
-
-        # Create message for verification
-        message_data = {
-            'agent_id': agent_id,
-            'timestamp': timestamp,
-            'action': 'ping'
-        }
-        message = json.dumps(message_data, sort_keys=True).encode('utf-8')
+            return jsonify({'error': 'Agent not found'}), 403
 
         # Verify signature
-        if not verify_ed25519_signature(message, signature, agent['public_key']):
-            return jsonify({'error': 'Invalid signature'}), 401
+        try:
+            signature_bytes = bytes.fromhex(signature_hex)
+            message = f"{agent_id}:{timestamp}".encode('utf-8')
 
-        # Update last ping time
+            if not verify_ed25519_signature(message, signature_bytes, agent['public_key']):
+                return jsonify({'error': 'Invalid signature'}), 403
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid signature format'}), 403
+
+        # Update last ping timestamp
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
                 "UPDATE agents SET last_ping = ? WHERE agent_id = ?",
-                (current_time, agent_id)
+                (int(time.time()), agent_id)
             )
             conn.commit()
 
         return jsonify({
             'status': 'success',
-            'message': 'Ping verified',
-            'timestamp': current_time
-        })
+            'message': 'Ping verified and recorded',
+            'agent_id': agent_id
+        }), 200
 
     except Exception as e:
-        return jsonify({'error': f'Server error: {str(e)}'}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
     init_db()
