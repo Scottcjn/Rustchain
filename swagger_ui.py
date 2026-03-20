@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 # SPDX-License-Identifier: MIT
 
 import sqlite3
@@ -64,9 +63,9 @@ def swagger_ui():
                 onComplete: function() {
                     console.log('Swagger UI loaded');
                 },
-                onFailure: function(err) {
-                    console.error('Failed to load API spec:', err);
-                }
+                docExpansion: 'list',
+                filter: true,
+                showRequestHeaders: true
             });
         };
     </script>
@@ -77,216 +76,41 @@ def swagger_ui():
 
 @app.route('/api/openapi.json')
 def openapi_spec():
-    """Serve the OpenAPI specification for RustChain node API"""
-
-    openapi_spec = {
-        "openapi": "3.0.3",
-        "info": {
-            "title": "RustChain Node API",
-            "description": "REST API for RustChain blockchain node operations including blocks, transactions, mining, and peer management",
-            "version": "2.2.1",
-            "contact": {
-                "name": "RustChain Development Team",
-                "url": "https://github.com/Scottcjn/Rustchain"
-            },
-            "license": {
-                "name": "MIT",
-                "url": "https://opensource.org/licenses/MIT"
-            }
-        },
-        "servers": [
-            {
-                "url": "http://localhost:5000",
-                "description": "Local development server"
-            }
-        ],
-        "paths": {
-            "/api/blocks": {
-                "get": {
-                    "summary": "Get all blocks",
-                    "description": "Retrieve all blocks in the blockchain",
-                    "tags": ["Blockchain"],
-                    "responses": {
-                        "200": {
-                            "description": "List of blocks",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "type": "array",
-                                        "items": {"$ref": "#/components/schemas/Block"}
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            "/api/blocks/{block_id}": {
-                "get": {
-                    "summary": "Get block by ID",
-                    "description": "Retrieve a specific block by its ID",
-                    "tags": ["Blockchain"],
-                    "parameters": [
-                        {
-                            "name": "block_id",
-                            "in": "path",
-                            "required": True,
-                            "schema": {"type": "integer"},
-                            "description": "Block ID"
-                        }
-                    ],
-                    "responses": {
-                        "200": {
-                            "description": "Block details",
-                            "content": {
-                                "application/json": {
-                                    "schema": {"$ref": "#/components/schemas/Block"}
-                                }
-                            }
-                        },
-                        "404": {
-                            "description": "Block not found"
-                        }
-                    }
-                }
-            },
-            "/api/transactions": {
-                "get": {
-                    "summary": "Get all transactions",
-                    "description": "Retrieve all transactions from the blockchain",
-                    "tags": ["Transactions"],
-                    "responses": {
-                        "200": {
-                            "description": "List of transactions",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "type": "array",
-                                        "items": {"$ref": "#/components/schemas/Transaction"}
-                                    }
-                                }
-                            }
-                        }
-                    }
+    """Serve OpenAPI specification as JSON"""
+    try:
+        # Check if openapi.yaml exists
+        if os.path.exists('openapi.yaml'):
+            import yaml
+            with open('openapi.yaml', 'r') as f:
+                spec = yaml.safe_load(f)
+            return jsonify(spec)
+        else:
+            # Return minimal spec if file doesn't exist
+            minimal_spec = {
+                "openapi": "3.0.3",
+                "info": {
+                    "title": "RustChain Node API",
+                    "version": "2.2.1",
+                    "description": "RustChain blockchain node API"
                 },
-                "post": {
-                    "summary": "Create new transaction",
-                    "description": "Submit a new transaction to the blockchain",
-                    "tags": ["Transactions"],
-                    "requestBody": {
-                        "required": True,
-                        "content": {
-                            "application/json": {
-                                "schema": {"$ref": "#/components/schemas/TransactionInput"}
-                            }
-                        }
-                    },
-                    "responses": {
-                        "201": {
-                            "description": "Transaction created successfully",
-                            "content": {
-                                "application/json": {
-                                    "schema": {"$ref": "#/components/schemas/Transaction"}
-                                }
-                            }
-                        },
-                        "400": {
-                            "description": "Invalid transaction data"
-                        }
-                    }
-                }
-            },
-            "/api/balance/{address}": {
-                "get": {
-                    "summary": "Get wallet balance",
-                    "description": "Retrieve the balance for a specific wallet address",
-                    "tags": ["Wallet"],
-                    "parameters": [
-                        {
-                            "name": "address",
-                            "in": "path",
-                            "required": True,
-                            "schema": {"type": "string"},
-                            "description": "Wallet address"
-                        }
-                    ],
-                    "responses": {
-                        "200": {
-                            "description": "Wallet balance",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "type": "object",
-                                        "properties": {
-                                            "address": {"type": "string"},
-                                            "balance": {"type": "number"}
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                        "404": {
-                            "description": "Address not found"
-                        }
-                    }
-                }
-            },
-            "/api/mine": {
-                "post": {
-                    "summary": "Mine new block",
-                    "description": "Start mining a new block with pending transactions",
-                    "tags": ["Mining"],
-                    "requestBody": {
-                        "required": True,
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "miner_address": {
-                                            "type": "string",
-                                            "description": "Address to receive mining reward"
-                                        }
-                                    },
-                                    "required": ["miner_address"]
-                                }
-                            }
-                        }
-                    },
-                    "responses": {
-                        "200": {
-                            "description": "Block mined successfully",
-                            "content": {
-                                "application/json": {
-                                    "schema": {"$ref": "#/components/schemas/Block"}
-                                }
-                            }
-                        },
-                        "400": {
-                            "description": "Mining failed"
-                        }
-                    }
-                }
-            },
-            "/api/peers": {
-                "get": {
-                    "summary": "Get connected peers",
-                    "description": "Retrieve list of connected network peers",
-                    "tags": ["Network"],
-                    "responses": {
-                        "200": {
-                            "description": "List of peers",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "id": {"type": "string"},
-                                                "host": {"type": "string"},
-                                                "port": {"type": "integer"},
-                                                "status": {"type": "string"}
+                "servers": [
+                    {"url": "http://localhost:5000", "description": "Local development node"}
+                ],
+                "paths": {
+                    "/api/stats": {
+                        "get": {
+                            "summary": "Get node statistics",
+                            "tags": ["blockchain"],
+                            "responses": {
+                                "200": {
+                                    "description": "Node statistics",
+                                    "content": {
+                                        "application/json": {
+                                            "schema": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "status": {"type": "string"}
+                                                }
                                             }
                                         }
                                     }
@@ -295,95 +119,73 @@ def openapi_spec():
                         }
                     }
                 }
-            },
-            "/api/network/status": {
-                "get": {
-                    "summary": "Get network status",
-                    "description": "Retrieve current network and node status information",
-                    "tags": ["Network"],
-                    "responses": {
-                        "200": {
-                            "description": "Network status",
-                            "content": {
-                                "application/json": {
-                                    "schema": {
-                                        "type": "object",
-                                        "properties": {
-                                            "node_id": {"type": "string"},
-                                            "version": {"type": "string"},
-                                            "block_height": {"type": "integer"},
-                                            "peer_count": {"type": "integer"},
-                                            "sync_status": {"type": "string"}
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
             }
-        },
-        "components": {
-            "schemas": {
-                "Block": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "integer"},
-                        "index": {"type": "integer"},
-                        "timestamp": {"type": "string", "format": "date-time"},
-                        "data": {"type": "string"},
-                        "previous_hash": {"type": "string"},
-                        "hash": {"type": "string"},
-                        "nonce": {"type": "integer"},
-                        "transactions": {
-                            "type": "array",
-                            "items": {"$ref": "#/components/schemas/Transaction"}
-                        }
-                    },
-                    "required": ["id", "index", "timestamp", "hash", "previous_hash"]
-                },
-                "Transaction": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "string"},
-                        "from_address": {"type": "string"},
-                        "to_address": {"type": "string"},
-                        "amount": {"type": "number"},
-                        "timestamp": {"type": "string", "format": "date-time"},
-                        "signature": {"type": "string"},
-                        "hash": {"type": "string"}
-                    },
-                    "required": ["id", "from_address", "to_address", "amount", "timestamp"]
-                },
-                "TransactionInput": {
-                    "type": "object",
-                    "properties": {
-                        "from_address": {"type": "string"},
-                        "to_address": {"type": "string"},
-                        "amount": {"type": "number"},
-                        "private_key": {"type": "string", "description": "Private key for signing"}
-                    },
-                    "required": ["from_address", "to_address", "amount", "private_key"]
-                }
-            },
-            "securitySchemes": {
-                "ApiKeyAuth": {
-                    "type": "apiKey",
-                    "in": "header",
-                    "name": "X-API-Key"
-                }
-            }
-        },
-        "tags": [
-            {"name": "Blockchain", "description": "Blockchain and block operations"},
-            {"name": "Transactions", "description": "Transaction management"},
-            {"name": "Wallet", "description": "Wallet and balance operations"},
-            {"name": "Mining", "description": "Block mining operations"},
-            {"name": "Network", "description": "Network and peer management"}
-        ]
-    }
+            return jsonify(minimal_spec)
+    except Exception as e:
+        return jsonify({"error": f"Failed to load OpenAPI spec: {str(e)}"}), 500
 
-    return jsonify(openapi_spec)
+@app.route('/api/validation/report')
+def validation_report():
+    """Get latest API validation report"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+
+            # Check if validation table exists
+            cursor.execute('''
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name='api_validation_reports'
+            ''')
+
+            if not cursor.fetchone():
+                return jsonify({"error": "No validation reports available"}), 404
+
+            # Get latest report
+            cursor.execute('''
+                SELECT report_data FROM api_validation_reports
+                ORDER BY timestamp DESC LIMIT 1
+            ''')
+
+            row = cursor.fetchone()
+            if row:
+                return jsonify(json.loads(row[0]))
+            else:
+                return jsonify({"error": "No validation reports found"}), 404
+
+    except Exception as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
+
+@app.route('/api/validation/history')
+def validation_history():
+    """Get validation report history"""
+    try:
+        limit = request.args.get('limit', 10, type=int)
+
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT timestamp, total_endpoints, successful_endpoints,
+                       failed_endpoints, success_rate, node_accessible
+                FROM api_validation_reports
+                ORDER BY timestamp DESC LIMIT ?
+            ''', (limit,))
+
+            reports = []
+            for row in cursor.fetchall():
+                reports.append({
+                    "timestamp": row[0],
+                    "total_endpoints": row[1],
+                    "successful_endpoints": row[2],
+                    "failed_endpoints": row[3],
+                    "success_rate": row[4],
+                    "node_accessible": bool(row[5])
+                })
+
+            return jsonify({"reports": reports})
+
+    except Exception as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, port=5001)
