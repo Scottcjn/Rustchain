@@ -1,0 +1,46 @@
+{
+  "wallet": {
+    "balance_insufficient": "Solde insuffisant pour effectuer cette transaction",
+    "address_invalid": "Adresse de portefeuille invalide",
+    "private_key_invalid": "Clé privée invalide",
+    "transaction_failed": "Échec de la transaction",
+    "wallet_locked": "Portefeuille verrouillé",
+    "password_incorrect": "Mot de passe incorrect",
+    "backup_failed": "Échec de la sauvegarde du portefeuille",
+    "restore_failed": "Échec de la restauration du portefeuille",
+    "seed_phrase_invalid": "Phrase de récupération invalide",
+    "wallet_not_found": "Portefeuille introuvable"
+  },
+  "miner": {
+    "mining_start_failed": "Impossible de démarrer le minage",
+    "mining_stopped": "Minage arrêté",
+    "hash_rate_low": "Taux de hachage faible",
+    "block_validation_failed": "Échec de la validation du bloc",
+    "difficulty_adjustment_error": "Erreur d'ajustement de la difficulté",
+    "mining_pool_connection_failed": "Connexion au pool de minage échouée",
+    "reward_calculation_error": "Erreur de calcul de récompense",
+    "nonce_not_found": "Nonce non trouvé après recherche maximale"
+  },
+  "network": {
+    "peer_connection_failed": "Échec de connexion au pair",
+    "sync_failed": "Échec de synchronisation",
+    "node_unreachable": "Nœud injoignable",
+    "blockchain_corrupted": "Blockchain corrompue détectée",
+    "consensus_error": "Erreur de consensus"
+  },
+  "ui": {
+    "loading": "Chargement...",
+    "success": "Succès",
+    "error": "Erreur",
+    "warning": "Avertissement",
+    "confirm": "Confirmer",
+    "cancel": "Annuler",
+    "send": "Envoyer",
+    "receive": "Recevoir",
+    "balance": "Solde",
+    "transaction_history": "Historique des transactions",
+    "mining_status": "Statut du minage",
+    "network_status": "Statut du réseau",
+    "settings": "Paramètres"
+  }
+}
