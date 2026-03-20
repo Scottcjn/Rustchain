@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SophiaCore — Attestation Inspector</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #0f1117; color: #e0e0e0; padding: 2rem; }
+  h1 { color: #7c6af7; margin-bottom: 1.5rem; }
+  h2 { color: #a090ff; margin: 1.5rem 0 0.75rem; font-size: 1.1rem; }
+  .card { background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 8px;
+          padding: 1.25rem; margin-bottom: 1rem; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
+           font-size: 0.75rem; font-weight: bold; }
+  .APPROVED { background: #0d3d1e; color: #4ade80; }
+  .CAUTIOUS { background: #3d2e0d; color: #fbbf24; }
+  .SUSPICIOUS { background: #3d1a0d; color: #fb923c; }
+  .REJECTED { background: #3d0d0d; color: #f87171; }
+  table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-size: 0.875rem; }
+  th { text-align: left; padding: 6px 10px; border-bottom: 1px solid #2a2d3a; color: #888; }
+  td { padding: 6px 10px; border-bottom: 1px solid #1f2230; }
+  tr:hover td { background: #1f2230; }
+  .mono { font-family: monospace; font-size: 0.8rem; color: #888; }
+  form { display: grid; gap: 0.75rem; }
+  label { font-size: 0.85rem; color: #888; }
+  input, select { background: #0f1117; border: 1px solid #2a2d3a; border-radius: 4px;
+                  color: #e0e0e0; padding: 6px 10px; font-size: 0.875rem; width: 100%; }
+  button { background: #7c6af7; color: white; border: none; border-radius: 4px;
+           padding: 8px 16px; cursor: pointer; font-size: 0.875rem; }
+  button:hover { background: #6b5ce7; }
+  button.danger { background: #dc2626; }
+  button.danger:hover { background: #b91c1c; }
+  .msg { padding: 8px 12px; border-radius: 4px; margin-top: 0.75rem; font-size: 0.85rem; }
+  .msg.ok { background: #0d3d1e; color: #4ade80; }
+  .msg.err { background: #3d0d0d; color: #f87171; }
+  .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .col { flex: 1; min-width: 300px; }
+  #queue-table td:first-child { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+</style>
+</head>
+<body>
+<h1>SophiaCore Attestation Inspector</h1>
+
+<div class="row">
+  <div class="col">
+    <div class="card">
+      <h2>Queue — Pending Review</h2>
+      <div id="queue-msg">Loading...</div>
+      <table id="queue-table" style="display:none">
+        <thead><tr><th>Miner ID</th><th>Verdict</th><th>Confidence</th><th>Latest At</th></tr></thead>
+        <tbody id="queue-body"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card">
+      <h2>Admin Override</h2>
+      <form id="override-form">
+        <div>
+          <label>Miner ID</label>
+          <input type="text" id="ov-miner" required>
+        </div>
+        <div>
+          <label>New Verdict</label>
+          <select id="ov-verdict">
+            <option value="APPROVED">APPROVED</option>
+            <option value="CAUTIOUS">CAUTIOUS</option>
+            <option value="SUSPICIOUS">SUSPICIOUS</option>
+            <option value="REJECTED">REJECTED</option>
+          </select>
+        </div>
+        <div>
+          <label>Reason</label>
+          <input type="text" id="ov-reason" required>
+        </div>
+        <div>
+          <label>Admin Key</label>
+          <input type="password" id="ov-key" required>
+        </div>
+        <button type="submit">Apply Override</button>
+        <div id="ov-msg"></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Batch Inspection</h2>
+      <button id="batch-btn">Run Batch</button>
+      <div id="batch-msg"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Recent Inspection History</h2>
+  <div id="hist-msg">Loading...</div>
+  <table id="hist-table" style="display:none">
+    <thead><tr><th>Miner ID</th><th>Verdict</th><th>Confidence</th><th>Reasoning</th><th>Inspected At</th></tr></thead>
+    <tbody id="hist-body"></tbody>
+  </table>
+</div>
+
+<script>
+const API = '/sophia';
+async function jsonFetch(url, opts) {
+  const r = await fetch(url, opts);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || 'Request failed');
+  return j;
+}
+
+async function loadQueue() {
+  try {
+    const d = await jsonFetch(API + '/queue');
+    const tbl = document.getElementById('queue-table');
+    const body = document.getElementById('queue-body');
+    if (d.count === 0) {
+      document.getElementById('queue-msg').textContent = 'No pending items.';
+      return;
+    }
+    document.getElementById('queue-msg').textContent = '';
+    tbl.style.display = '';
+    body.innerHTML = '';
+    d.items.forEach(r => {
+      body.innerHTML += '<tr>' +
+        '<td title="' + r.miner_id + '">' + r.miner_id + '</td>' +
+        '<td><span class="badge ' + r.verdict + '">' + r.verdict + '</span></td>' +
+        '<td>' + (r.confidence*100).toFixed(1) + '%</td>' +
+        '<td class="mono">' + r.latest_at + '</td>' +
+      '</tr>';
+    });
+  } catch(e) { document.getElementById('queue-msg').textContent = e.message; }
+}
+
+document.getElementById('override-form').onsubmit = async e => {
+  e.preventDefault();
+  const msg = document.getElementById('ov-msg');
+  try {
+    const r = await jsonFetch(API + '/override', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        miner_id: document.getElementById('ov-miner').value,
+        new_verdict: document.getElementById('ov-verdict').value,
+        reason: document.getElementById('ov-reason').value,
+        admin_key: document.getElementById('ov-key').value,
+      })
+    });
+    msg.className = 'msg ok';
+    msg.textContent = 'Override applied: ' + r.new_verdict;
+    loadQueue();
+  } catch(e) { msg.className = 'msg err'; msg.textContent = e.message; }
+};
+
+document.getElementById('batch-btn').onclick = async () => {
+  const msg = document.getElementById('batch-msg');
+  msg.className = 'msg';
+  msg.textContent = 'Running batch...';
+  try {
+    const r = await jsonFetch(API + '/batch', {
+      method: 'POST',
+      headers: {'X-Admin-Key': 'SOPHIA_ADMIN_KEY'}
+    });
+    const rr = r.results;
+    msg.className = 'msg ok';
+    msg.textContent = 'Batch done: ' + rr.total + ' miners — APPROVED=' + rr.APPROVED + ' CAUTIOUS=' + rr.CAUTIOUS + ' SUSPICIOUS=' + rr.SUSPICIOUS + ' REJECTED=' + rr.REJECTED + ' errors=' + rr.errors;
+    loadQueue();
+  } catch(e) { msg.className = 'msg err'; msg.textContent = e.message; }
+};
+
+loadQueue();
+</script>
+</body>
+</html>

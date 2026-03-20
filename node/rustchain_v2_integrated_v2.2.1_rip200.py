@@ -333,6 +333,14 @@ try:
 except ImportError as e:
     print(f"[INIT] Hall of Rust not available: {e}")
 
+# RIP-306: SophiaCore Attestation Inspector
+try:
+    from sophia_core import sophia_bp
+    app.register_blueprint(sophia_bp, url_prefix='/sophia')
+    print("[INIT] SophiaCore blueprint registered")
+except Exception as e:
+    print(f"[INIT] SophiaCore not available: {e}")
+
 # x402 + Coinbase Wallet endpoints (swap-info, link-coinbase)
 try:
     import rustchain_x402
