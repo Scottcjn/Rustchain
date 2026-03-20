@@ -1,0 +1,51 @@
+# BoTTube <-> RustChain RTC Bridge Configuration
+# Bounty: #64 — 100 RTC
+# Author: kuanglaodi2-sudo
+
+# ---------------------------------------------------------------------------
+# API Configuration
+# ---------------------------------------------------------------------------
+BOTTUBE_API: "https://bottube.ai"
+BOTTUBE_API_KEY: ""          # Set your BoTTube API key here
+
+# ---------------------------------------------------------------------------
+# RustChain Configuration
+# ---------------------------------------------------------------------------
+RUSTCHAIN_NODE: "https://50.28.86.131"
+VERIFY_SSL: "false"
+
+# ---------------------------------------------------------------------------
+# Bridge Wallet (REQUIRED)
+# ---------------------------------------------------------------------------
+# The bridge wallet that holds RTC for distribution
+# MUST have sufficient balance for ongoing rewards
+BRIDGE_WALLET: ""           # e.g., "RTCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+BRIDGE_PRIVATE_KEY: ""     # Private key for signing transfers
+BRIDGE_RTC_RESERVE: "100.0"  # Minimum balance to maintain
+
+# ---------------------------------------------------------------------------
+# Reward Rates (RTC per event)
+# ---------------------------------------------------------------------------
+REWARD_UPLOAD: "0.5"         # Per approved upload
+REWARD_VIEW_BASE: "0.0001"   # Per verified unique view
+REWARD_SUBSCRIBER: "1.0"    # Per new subscriber milestone
+REWARD_LIKE: "0.01"         # Per like
+REWARD_COMMENT: "0.05"       # Per comment
+
+# ---------------------------------------------------------------------------
+# Anti-Abuse Configuration
+# ---------------------------------------------------------------------------
+MIN_VIDEO_SECONDS: "60"      # Minimum video duration to qualify
+MIN_VIDEO_RES: "480"         # Minimum vertical resolution (pixels)
+MIN_ACCOUNT_DAYS: "7"        # Minimum creator account age
+MAX_REWARDS_PER_CREATOR_PER_DAY: "10"   # Max rewards per creator per day
+MAX_REWARDS_TIP_PER_USER_PER_DAY: "50.0" # Max tips per user per day
+MILESTONE_HOLD_HOURS: "24"  # Hold period before reward is paid
+VIEW_MIN_SECONDS: "30"      # Minimum watch time per unique IP
+ANOMALY_THRESHOLD_IQR: "3.0" # IQR multiplier for anomaly detection
+
+# ---------------------------------------------------------------------------
+# Daemon Configuration
+# ---------------------------------------------------------------------------
+BRIDGE_DB: "/tmp/bottube_rtc_bridge.db"
+POLL_INTERVAL_SECS: "300"   # Poll every 5 minutes

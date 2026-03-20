@@ -1,0 +1,23 @@
+[Unit]
+Description=BoTTube RTC Bridge Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/bottube_rtc_bridge
+EnvironmentFile=/opt/bottube_rtc_bridge/bridge.env
+ExecStart=/usr/bin/python3 /opt/bottube_rtc_bridge/bottube_rtc_bridge.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/tmp
+
+[Install]
+WantedBy=multi-user.target
