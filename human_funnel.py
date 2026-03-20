@@ -55,193 +55,201 @@ def init_db():
                     total_earned_rtc REAL DEFAULT 0,
                     mining_days INTEGER DEFAULT 0,
                     referrals_count INTEGER DEFAULT 0,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    achievements_text TEXT,
+                    generated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
+
+                CREATE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code);
+                CREATE INDEX IF NOT EXISTS idx_users_wallet ON users(wallet_address);
+                CREATE INDEX IF NOT EXISTS idx_bounties_user ON micro_bounties(user_id);
             ''')
     else:
-        with open(schema_path, 'r') as f:
-            schema = f.read()
+        # Execute schema from file
         with sqlite3.connect(DB_PATH) as conn:
-            conn.executescript(schema)
+            with open(schema_path, 'r') as f:
+                conn.executescript(f.read())
 
-def validate_referral_code(referral_code):
-    """Validate if referral code exists and is active"""
-    if not referral_code:
+def validate_referral_code(code):
+    """Validate referral code format"""
+    if not code or len(code) < 6:
         return False
-
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id FROM users WHERE referral_code = ? AND is_active = 1",
-            (referral_code,)
-        )
-        return cursor.fetchone() is not None
+    return code.isalnum()
 
 def generate_brag_card_data(user_id):
     """Generate brag card data for a user"""
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
+        cursor.execute("""
+            SELECT u.username, u.total_earnings_rtc, u.created_at,
+                   COUNT(DISTINCT mb.id) as bounties_completed,
+                   COUNT(DISTINCT ref.id) as referrals_made
+            FROM users u
+            LEFT JOIN micro_bounties mb ON u.id = mb.user_id
+            LEFT JOIN users ref ON u.referral_code = ref.referred_by
+            WHERE u.id = ?
+            GROUP BY u.id
+        """, (user_id,))
 
-        # Get user data
-        cursor.execute(
-            "SELECT username, total_earnings_rtc FROM users WHERE id = ?",
-            (user_id,)
-        )
-        user_data = cursor.fetchone()
-
-        if not user_data:
-            return None
-
-        # Get referrals count
-        cursor.execute(
-            "SELECT COUNT(*) FROM users WHERE referred_by IN (SELECT referral_code FROM users WHERE id = ?)",
-            (user_id,)
-        )
-        referrals_count = cursor.fetchone()[0]
-
-        # Get completed bounties
-        cursor.execute(
-            "SELECT COUNT(*), SUM(reward_rtc) FROM micro_bounties WHERE user_id = ? AND completed_at IS NOT NULL",
-            (user_id,)
-        )
-        bounty_data = cursor.fetchone()
-
-        return {
-            'username': user_data[0],
-            'total_earnings': user_data[1],
-            'referrals_count': referrals_count,
-            'bounties_completed': bounty_data[0] or 0,
-            'bounty_earnings': bounty_data[1] or 0
-        }
+        row = cursor.fetchone()
+        if row:
+            return {
+                'username': row[0],
+                'total_earned': row[1] or 0,
+                'days_mining': (datetime.now() - datetime.fromisoformat(row[2].replace('Z', '+00:00'))).days,
+                'bounties_completed': row[3] or 0,
+                'referrals_made': row[4] or 0
+            }
+        return None
 
 def calculate_hall_of_fame_rankings():
-    """Calculate and return hall of fame rankings"""
+    """Calculate hall of fame rankings"""
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT username, total_earnings_rtc,
-                   (SELECT COUNT(*) FROM users u2 WHERE u2.referred_by = u1.referral_code) as referrals
-            FROM users u1
-            WHERE is_active = 1
-            ORDER BY total_earnings_rtc DESC
+            SELECT u.username, u.total_earnings_rtc,
+                   COUNT(DISTINCT ref.id) as referrals_count
+            FROM users u
+            LEFT JOIN users ref ON u.referral_code = ref.referred_by
+            WHERE u.total_earnings_rtc > 0
+            GROUP BY u.id
+            ORDER BY u.total_earnings_rtc DESC, referrals_count DESC
             LIMIT 10
         """)
-        return cursor.fetchall()
+
+        return [{
+            'username': row[0],
+            'earnings': row[1],
+            'referrals': row[2]
+        } for row in cursor.fetchall()]
 
 def process_micro_bounty_completion(user_id, bounty_type, reward_rtc):
-    """Process completion of a micro bounty"""
+    """Process micro bounty completion"""
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
 
-        # Record bounty completion
-        cursor.execute("""
-            INSERT INTO micro_bounties (user_id, bounty_type, completed_at, reward_rtc)
-            VALUES (?, ?, CURRENT_TIMESTAMP, ?)
-        """, (user_id, bounty_type, reward_rtc))
+        # Check if already completed
+        cursor.execute(
+            "SELECT id FROM micro_bounties WHERE user_id = ? AND bounty_type = ?",
+            (user_id, bounty_type)
+        )
+        if cursor.fetchone():
+            return False
+
+        # Add completion
+        cursor.execute(
+            "INSERT INTO micro_bounties (user_id, bounty_type, completed_at, reward_rtc) VALUES (?, ?, ?, ?)",
+            (user_id, bounty_type, datetime.now().isoformat(), reward_rtc)
+        )
 
         # Update user earnings
-        cursor.execute("""
-            UPDATE users
-            SET total_earnings_rtc = total_earnings_rtc + ?
-            WHERE id = ?
-        """, (reward_rtc, user_id))
+        cursor.execute(
+            "UPDATE users SET total_earnings_rtc = total_earnings_rtc + ? WHERE id = ?",
+            (reward_rtc, user_id)
+        )
 
         conn.commit()
         return True
 
-@app.route('/api/funnel/landing', methods=['GET'])
+@app.route('/api/funnel/landing')
 def landing_page():
-    """Stage 1: Landing page with referral tracking"""
-    referral_code = request.args.get('ref', '')
-
-    html_template = '''
+    """Landing page endpoint"""
+    hero_html = '''
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Rustchain - Next-Gen Mining Platform</title>
+        <title>Rustchain - Mine RTC & Earn</title>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            body { font-family: Arial, sans-serif; margin: 0; background: #1a1a1a; color: #fff; }
-            .container { max-width: 800px; margin: 0 auto; padding: 20px; }
-            .hero { text-align: center; padding: 60px 20px; }
-            .cta-button { background: #ff6600; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-size: 18px; }
-            .referral-bonus { background: #2d5a2d; padding: 15px; border-radius: 8px; margin: 20px 0; }
-        </style>
     </head>
     <body>
-        <div class="container">
-            <div class="hero">
-                <h1>Welcome to Rustchain</h1>
-                <p>Join the next generation of decentralized mining</p>
-                {% if referral_code %}
-                <div class="referral-bonus">
-                    <h3>🎉 Special Referral Bonus!</h3>
-                    <p>You've been invited by a Rustchain miner. Get bonus RTC when you start mining!</p>
-                </div>
-                {% endif %}
-                <a href="/api/funnel/signup?ref={{ referral_code }}" class="cta-button">Start Mining Now</a>
+        <div class="hero">
+            <h1>Join the Rustchain Revolution</h1>
+            <p>Mine RTC tokens with your hardware. Earn rewards. Build the future.</p>
+            <div class="cta-buttons">
+                <a href="/signup" class="btn-primary">Start Mining Now</a>
+                <a href="/learn-more" class="btn-secondary">Learn More</a>
+            </div>
+        </div>
+        <div class="features">
+            <div class="feature">
+                <h3>Easy Setup</h3>
+                <p>Get started mining in minutes</p>
+            </div>
+            <div class="feature">
+                <h3>Fair Rewards</h3>
+                <p>Earn based on your contribution</p>
+            </div>
+            <div class="feature">
+                <h3>Community Driven</h3>
+                <p>Join thousands of miners worldwide</p>
             </div>
         </div>
     </body>
     </html>
     '''
+    return render_template_string(hero_html)
 
-    return render_template_string(html_template, referral_code=referral_code)
+@app.route('/api/funnel/hall-of-fame')
+def hall_of_fame():
+    """Hall of fame page"""
+    rankings = calculate_hall_of_fame_rankings()
 
-@app.route('/api/funnel/brag-card/<user_id>', methods=['GET'])
-def generate_brag_card(user_id):
-    """Generate shareable brag card for user achievements"""
-    try:
-        user_id = int(user_id)
-        card_data = generate_brag_card_data(user_id)
-
-        if not card_data:
-            return jsonify({'error': 'User not found'}), 404
-
-        html_template = '''
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>{{ username }}'s Rustchain Stats</title>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>
-                body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin: 0; padding: 20px; }
-                .brag-card { max-width: 400px; margin: 0 auto; background: white; border-radius: 15px; padding: 30px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
-                .username { font-size: 24px; font-weight: bold; color: #333; margin-bottom: 20px; }
-                .stat { margin: 15px 0; }
-                .stat-value { font-size: 28px; font-weight: bold; color: #ff6600; }
-                .stat-label { font-size: 14px; color: #666; text-transform: uppercase; }
-                .join-btn { background: #ff6600; color: white; padding: 12px 25px; text-decoration: none; border-radius: 25px; margin-top: 20px; display: inline-block; }
-            </style>
-        </head>
-        <body>
-            <div class="brag-card">
-                <div class="username">{{ username }}</div>
-                <div class="stat">
-                    <div class="stat-value">{{ "%.2f"|format(total_earnings) }}</div>
-                    <div class="stat-label">RTC Earned</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-value">{{ referrals_count }}</div>
-                    <div class="stat-label">Referrals</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-value">{{ bounties_completed }}</div>
-                    <div class="stat-label">Bounties Completed</div>
-                </div>
-                <a href="/api/funnel/landing" class="join-btn">Join Rustchain</a>
+    hall_html = '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Rustchain Hall of Fame</title>
+    </head>
+    <body>
+        <h1>Hall of Fame</h1>
+        <div class="rankings">
+            {% for rank, user in enumerate(rankings, 1) %}
+            <div class="rank-{{ rank }}">
+                <span class="position">#{{ rank }}</span>
+                <span class="username">{{ user.username }}</span>
+                <span class="earnings">{{ user.earnings }} RTC</span>
+                <span class="referrals">{{ user.referrals }} referrals</span>
             </div>
-        </body>
-        </html>
-        '''
+            {% endfor %}
+        </div>
+    </body>
+    </html>
+    '''
+    return render_template_string(hall_html, rankings=rankings, enumerate=enumerate)
 
-        return render_template_string(html_template, **card_data)
+@app.route('/api/funnel/brag-card/<int:user_id>')
+def generate_brag_card(user_id):
+    """Generate brag card for user"""
+    data = generate_brag_card_data(user_id)
+    if not data:
+        return jsonify({'error': 'User not found'}), 404
 
-    except (ValueError, TypeError):
-        return jsonify({'error': 'Invalid user ID'}), 400
+    return jsonify({
+        'success': True,
+        'brag_card': data
+    })
+
+@app.route('/api/funnel/micro-bounty', methods=['POST'])
+def complete_micro_bounty():
+    """Complete a micro bounty"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    user_id = data.get('user_id')
+    bounty_type = data.get('bounty_type')
+    reward_rtc = data.get('reward_rtc', 0.5)
+
+    if not user_id or not bounty_type:
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    success = process_micro_bounty_completion(user_id, bounty_type, reward_rtc)
+
+    if success:
+        return jsonify({'success': True, 'reward': reward_rtc})
+    else:
+        return jsonify({'error': 'Bounty already completed or invalid'}), 400
 
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True)
