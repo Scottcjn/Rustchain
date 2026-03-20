@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 # SPDX-License-Identifier: MIT
 
 import sqlite3
@@ -55,276 +54,92 @@ class FleetScenariosDB:
                 )
             ''')
 
-            conn.execute('''
-                CREATE INDEX IF NOT EXISTS idx_scenarios_type ON scenarios(scenario_type)
-            ''')
-            conn.execute('''
-                CREATE INDEX IF NOT EXISTS idx_test_runs_scenario ON test_runs(scenario_id)
-            ''')
-            conn.execute('''
-                CREATE INDEX IF NOT EXISTS idx_false_positives_scenario ON false_positives(scenario_id)
-            ''')
+            conn.commit()
 
     def add_scenario(self, name: str, description: str, scenario_type: str,
-                    config: Dict[str, Any], is_malicious: bool = False) -> int:
+                    is_malicious: bool, config: Dict[str, Any]) -> int:
         """Add a new test scenario"""
         with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
+            cursor = conn.execute('''
                 INSERT INTO scenarios (name, description, scenario_type, is_malicious, created_at, config_json)
                 VALUES (?, ?, ?, ?, ?, ?)
-            ''', (name, description, scenario_type, int(is_malicious),
-                  int(time.time()), json.dumps(config)))
+            ''', (name, description, scenario_type, int(is_malicious), int(time.time()), json.dumps(config)))
             return cursor.lastrowid
 
-    def add_test_run(self, scenario_id: int, fleet_score: float, threshold: float,
-                    penalty_triggered: bool, results: Dict[str, Any]) -> int:
+    def add_test_run(self, scenario_id: int, fleet_score: float, penalty_triggered: bool,
+                    threshold_used: float, results: Dict[str, Any]) -> int:
         """Record a test run result"""
         with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO test_runs (scenario_id, fleet_score, penalty_triggered,
-                                     threshold_used, timestamp, results_json)
+            cursor = conn.execute('''
+                INSERT INTO test_runs (scenario_id, fleet_score, penalty_triggered, threshold_used, timestamp, results_json)
                 VALUES (?, ?, ?, ?, ?, ?)
-            ''', (scenario_id, fleet_score, int(penalty_triggered), threshold,
-                  int(time.time()), json.dumps(results)))
+            ''', (scenario_id, fleet_score, int(penalty_triggered), threshold_used, int(time.time()), json.dumps(results)))
             return cursor.lastrowid
 
     def add_false_positive(self, test_run_id: int, scenario_id: int, severity: str,
-                          impact_desc: str, proposed_fix: str = None) -> int:
+                          impact_description: str, proposed_fix: Optional[str] = None) -> int:
         """Record a false positive detection"""
         with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO false_positives (test_run_id, scenario_id, severity,
-                                           impact_description, proposed_fix, created_at)
+            cursor = conn.execute('''
+                INSERT INTO false_positives (test_run_id, scenario_id, severity, impact_description, proposed_fix, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
-            ''', (test_run_id, scenario_id, severity, impact_desc, proposed_fix, int(time.time())))
+            ''', (test_run_id, scenario_id, severity, impact_description, proposed_fix, int(time.time())))
             return cursor.lastrowid
 
-    def get_scenarios_by_type(self, scenario_type: str) -> List[Dict]:
-        """Get all scenarios of a specific type"""
+    def get_false_positives_by_severity(self, severity: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get false positives, optionally filtered by severity"""
         with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT id, name, description, scenario_type, is_malicious,
-                       created_at, config_json
+            if severity:
+                cursor = conn.execute('''
+                    SELECT fp.*, s.name as scenario_name, s.scenario_type
+                    FROM false_positives fp
+                    JOIN scenarios s ON fp.scenario_id = s.id
+                    WHERE fp.severity = ?
+                    ORDER BY fp.created_at DESC
+                ''', (severity,))
+            else:
+                cursor = conn.execute('''
+                    SELECT fp.*, s.name as scenario_name, s.scenario_type
+                    FROM false_positives fp
+                    JOIN scenarios s ON fp.scenario_id = s.id
+                    ORDER BY fp.created_at DESC
+                ''')
+
+            columns = [desc[0] for desc in cursor.description]
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+    def get_scenario_stats(self) -> Dict[str, Any]:
+        """Get comprehensive scenario testing statistics"""
+        with sqlite3.connect(DB_PATH) as conn:
+            # Total scenarios by type
+            cursor = conn.execute('''
+                SELECT scenario_type, COUNT(*) as count
                 FROM scenarios
-                WHERE scenario_type = ?
-                ORDER BY created_at DESC
-            ''', (scenario_type,))
+                GROUP BY scenario_type
+            ''')
+            scenario_counts = dict(cursor.fetchall())
 
-            results = []
-            for row in cursor.fetchall():
-                scenario = {
-                    'id': row[0],
-                    'name': row[1],
-                    'description': row[2],
-                    'scenario_type': row[3],
-                    'is_malicious': bool(row[4]),
-                    'created_at': row[5],
-                    'config': json.loads(row[6])
-                }
-                results.append(scenario)
-            return results
-
-    def get_false_positives_report(self) -> Dict[str, Any]:
-        """Generate comprehensive false positive report"""
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-
-            # Get false positives with scenario details
-            cursor.execute('''
-                SELECT fp.id, fp.severity, fp.impact_description, fp.proposed_fix,
-                       s.name as scenario_name, s.description as scenario_desc,
-                       tr.fleet_score, tr.threshold_used, tr.penalty_triggered,
-                       fp.created_at
-                FROM false_positives fp
-                JOIN scenarios s ON fp.scenario_id = s.id
-                JOIN test_runs tr ON fp.test_run_id = tr.id
+            # False positive rate by scenario type
+            cursor = conn.execute('''
+                SELECT s.scenario_type,
+                       COUNT(DISTINCT tr.id) as total_runs,
+                       COUNT(DISTINCT fp.id) as false_positives
+                FROM scenarios s
+                LEFT JOIN test_runs tr ON s.id = tr.scenario_id
+                LEFT JOIN false_positives fp ON tr.id = fp.test_run_id
                 WHERE s.is_malicious = 0
-                ORDER BY fp.created_at DESC
+                GROUP BY s.scenario_type
             ''')
 
-            false_positives = []
-            for row in cursor.fetchall():
-                fp = {
-                    'id': row[0],
-                    'severity': row[1],
-                    'impact_description': row[2],
-                    'proposed_fix': row[3],
-                    'scenario_name': row[4],
-                    'scenario_description': row[5],
-                    'fleet_score': row[6],
-                    'threshold_used': row[7],
-                    'penalty_triggered': bool(row[8]),
-                    'created_at': datetime.fromtimestamp(row[9]).isoformat()
-                }
-                false_positives.append(fp)
-
-            # Get summary statistics
-            cursor.execute('''
-                SELECT COUNT(*) as total_fps,
-                       COUNT(CASE WHEN severity = 'HIGH' THEN 1 END) as high_severity,
-                       COUNT(CASE WHEN severity = 'MEDIUM' THEN 1 END) as medium_severity,
-                       COUNT(CASE WHEN severity = 'LOW' THEN 1 END) as low_severity
-                FROM false_positives fp
-                JOIN scenarios s ON fp.scenario_id = s.id
-                WHERE s.is_malicious = 0
-            ''')
-
-            stats_row = cursor.fetchone()
-            stats = {
-                'total_false_positives': stats_row[0],
-                'high_severity': stats_row[1],
-                'medium_severity': stats_row[2],
-                'low_severity': stats_row[3]
-            }
+            fp_rates = {}
+            for scenario_type, total_runs, fps in cursor.fetchall():
+                if total_runs > 0:
+                    fp_rates[scenario_type] = fps / total_runs
+                else:
+                    fp_rates[scenario_type] = 0.0
 
             return {
-                'report_generated_at': datetime.now().isoformat(),
-                'summary_statistics': stats,
-                'false_positives': false_positives
+                'scenario_counts': scenario_counts,
+                'false_positive_rates': fp_rates,
+                'total_scenarios': sum(scenario_counts.values())
             }
-
-    def get_threshold_analysis(self) -> Dict[str, Any]:
-        """Analyze how different thresholds affect false positive rates"""
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-
-            cursor.execute('''
-                SELECT tr.threshold_used, tr.fleet_score, s.is_malicious,
-                       CASE WHEN tr.fleet_score >= tr.threshold_used THEN 1 ELSE 0 END as would_penalize
-                FROM test_runs tr
-                JOIN scenarios s ON tr.scenario_id = s.id
-                ORDER BY tr.threshold_used, tr.fleet_score
-            ''')
-
-            threshold_data = {}
-            for row in cursor.fetchall():
-                threshold = row[0]
-                fleet_score = row[1]
-                is_malicious = bool(row[2])
-                would_penalize = bool(row[3])
-
-                if threshold not in threshold_data:
-                    threshold_data[threshold] = {
-                        'legitimate_penalized': 0,
-                        'legitimate_total': 0,
-                        'malicious_caught': 0,
-                        'malicious_total': 0
-                    }
-
-                if is_malicious:
-                    threshold_data[threshold]['malicious_total'] += 1
-                    if would_penalize:
-                        threshold_data[threshold]['malicious_caught'] += 1
-                else:
-                    threshold_data[threshold]['legitimate_total'] += 1
-                    if would_penalize:
-                        threshold_data[threshold]['legitimate_penalized'] += 1
-
-            # Calculate rates
-            analysis = {}
-            for threshold, data in threshold_data.items():
-                false_positive_rate = 0
-                true_positive_rate = 0
-
-                if data['legitimate_total'] > 0:
-                    false_positive_rate = data['legitimate_penalized'] / data['legitimate_total']
-
-                if data['malicious_total'] > 0:
-                    true_positive_rate = data['malicious_caught'] / data['malicious_total']
-
-                analysis[threshold] = {
-                    'false_positive_rate': false_positive_rate,
-                    'true_positive_rate': true_positive_rate,
-                    'legitimate_scenarios_tested': data['legitimate_total'],
-                    'malicious_scenarios_tested': data['malicious_total']
-                }
-
-            return analysis
-
-    def create_default_scenarios(self):
-        """Create realistic test scenarios for fleet detection testing"""
-        scenarios = [
-            {
-                'name': 'Corporate Mining Farm',
-                'description': 'Large legitimate mining operation with 500+ miners in datacenter',
-                'scenario_type': 'legitimate_large_scale',
-                'is_malicious': False,
-                'config': {
-                    'miner_count': 500,
-                    'location_variance': 'single_datacenter',
-                    'timing_patterns': 'scheduled_maintenance',
-                    'hardware_diversity': 'uniform_asics',
-                    'network_topology': 'shared_gateway'
-                }
-            },
-            {
-                'name': 'Home Mining Pool',
-                'description': 'Residential miners using same pool configuration',
-                'scenario_type': 'legitimate_distributed',
-                'is_malicious': False,
-                'config': {
-                    'miner_count': 50,
-                    'location_variance': 'residential_distributed',
-                    'timing_patterns': 'power_cost_optimization',
-                    'hardware_diversity': 'mixed_consumer_gear',
-                    'network_topology': 'residential_isps'
-                }
-            },
-            {
-                'name': 'University Research Cluster',
-                'description': 'Academic institution with synchronized mining for research',
-                'scenario_type': 'legitimate_institutional',
-                'is_malicious': False,
-                'config': {
-                    'miner_count': 100,
-                    'location_variance': 'campus_network',
-                    'timing_patterns': 'research_schedule_aligned',
-                    'hardware_diversity': 'research_grade_mixed',
-                    'network_topology': 'institutional_gateway'
-                }
-            },
-            {
-                'name': 'Botnet Attack Simulation',
-                'description': 'Malicious coordinated mining from compromised devices',
-                'scenario_type': 'malicious_coordinated',
-                'is_malicious': True,
-                'config': {
-                    'miner_count': 1000,
-                    'location_variance': 'global_distributed',
-                    'timing_patterns': 'synchronized_attacks',
-                    'hardware_diversity': 'consumer_devices_varied',
-                    'network_topology': 'random_residential'
-                }
-            }
-        ]
-
-        for scenario in scenarios:
-            self.add_scenario(
-                name=scenario['name'],
-                description=scenario['description'],
-                scenario_type=scenario['scenario_type'],
-                config=scenario['config'],
-                is_malicious=scenario['is_malicious']
-            )
-
-def init_fleet_scenarios_db():
-    """Initialize database with default test scenarios"""
-    db = FleetScenariosDB()
-
-    # Check if scenarios already exist
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT COUNT(*) FROM scenarios')
-        if cursor.fetchone()[0] == 0:
-            db.create_default_scenarios()
-            print("Created default fleet detection test scenarios")
-
-    return db
-
-if __name__ == "__main__":
-    db = init_fleet_scenarios_db()
-    print("Fleet scenarios database initialized")
