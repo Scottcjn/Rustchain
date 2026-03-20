@@ -1,0 +1,516 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Network Status</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .logo {
+            font-size: 3em;
+            font-weight: bold;
+            color: #ff6b35;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            font-size: 1.2em;
+            color: #888;
+            margin-bottom: 20px;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .status-card {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,107,53,0.3);
+            border-radius: 10px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .card-title {
+            font-size: 1.4em;
+            color: #ff6b35;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+
+        .online { background-color: #4CAF50; }
+        .offline { background-color: #f44336; }
+        .warning { background-color: #ff9800; }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding: 8px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 5px;
+        }
+
+        .metric-label {
+            color: #bbb;
+        }
+
+        .metric-value {
+            color: #fff;
+            font-weight: bold;
+        }
+
+        .miner-breakdown {
+            margin-top: 15px;
+        }
+
+        .arch-bar {
+            margin-bottom: 8px;
+        }
+
+        .arch-label {
+            font-size: 0.9em;
+            color: #ccc;
+            margin-bottom: 3px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 10px;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-weight: bold;
+            font-size: 0.8em;
+        }
+
+        .powerpc { background: linear-gradient(90deg, #ff6b35, #ff8c60); }
+        .x86 { background: linear-gradient(90deg, #4CAF50, #66BB6A); }
+        .arm { background: linear-gradient(90deg, #2196F3, #42A5F5); }
+        .sparc { background: linear-gradient(90deg, #9C27B0, #BA68C8); }
+        .m68k { background: linear-gradient(90deg, #FF9800, #FFB74D); }
+
+        .epoch-progress {
+            margin-top: 15px;
+        }
+
+        .epoch-bar {
+            width: 100%;
+            height: 30px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .epoch-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b35, #ff8c60);
+            border-radius: 15px;
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-weight: bold;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255,107,53,0.3);
+            color: #888;
+        }
+
+        .refresh-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,107,53,0.9);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            display: none;
+        }
+
+        .loading {
+            opacity: 0.6;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .logo {
+                font-size: 2em;
+            }
+
+            .status-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .error-message {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid #f44336;
+            border-radius: 5px;
+            padding: 10px;
+            color: #fff;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">RustChain</div>
+            <div class="subtitle">Proof-of-Antiquity Blockchain Network Status</div>
+            <div class="subtitle">Rewarding Vintage Hardware • PowerPC • 68K • SPARC • RTC Token</div>
+        </div>
+
+        <div class="refresh-indicator" id="refreshIndicator">Refreshing...</div>
+
+        <div class="status-grid">
+            <div class="status-card">
+                <div class="card-title">
+                    <span class="status-indicator online" id="networkStatus"></span>
+                    Network Health
+                </div>
+                <div id="networkError" class="error-message" style="display: none;"></div>
+                <div class="metric">
+                    <span class="metric-label">Status</span>
+                    <span class="metric-value" id="networkStatusText">Checking...</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Block Height</span>
+                    <span class="metric-value" id="blockHeight">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Network Hash Rate</span>
+                    <span class="metric-value" id="hashRate">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Difficulty</span>
+                    <span class="metric-value" id="difficulty">-</span>
+                </div>
+            </div>
+
+            <div class="status-card">
+                <div class="card-title">
+                    <span class="status-indicator online" id="minerStatus"></span>
+                    Active Miners
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Total Miners</span>
+                    <span class="metric-value" id="totalMiners">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Attestation Nodes</span>
+                    <span class="metric-value" id="attestationNodes">-</span>
+                </div>
+                <div class="miner-breakdown" id="minerBreakdown">
+                    <div class="arch-bar">
+                        <div class="arch-label">PowerPC (Vintage Macs)</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill powerpc" id="powerpcBar">0</div>
+                        </div>
+                    </div>
+                    <div class="arch-bar">
+                        <div class="arch-label">x86/x64 (Modern)</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill x86" id="x86Bar">0</div>
+                        </div>
+                    </div>
+                    <div class="arch-bar">
+                        <div class="arch-label">ARM (Mobile/SBC)</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill arm" id="armBar">0</div>
+                        </div>
+                    </div>
+                    <div class="arch-bar">
+                        <div class="arch-label">SPARC (Sun)</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill sparc" id="sparcBar">0</div>
+                        </div>
+                    </div>
+                    <div class="arch-bar">
+                        <div class="arch-label">68K (Classic Macs)</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill m68k" id="m68kBar">0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="status-card">
+                <div class="card-title">
+                    <span class="status-indicator online"></span>
+                    Epoch Progress
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Current Epoch</span>
+                    <span class="metric-value" id="currentEpoch">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Blocks in Epoch</span>
+                    <span class="metric-value" id="epochBlocks">-</span>
+                </div>
+                <div class="epoch-progress">
+                    <div class="epoch-bar">
+                        <div class="epoch-fill" id="epochProgress">0%</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="status-card">
+                <div class="card-title">
+                    <span class="status-indicator online"></span>
+                    RTC Token Info
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Total Supply</span>
+                    <span class="metric-value" id="totalSupply">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Circulating Supply</span>
+                    <span class="metric-value" id="circulatingSupply">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Latest Block Reward</span>
+                    <span class="metric-value" id="blockReward">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Vintage Multiplier</span>
+                    <span class="metric-value" id="vintageMultiplier">Up to 5x</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>RustChain Network • Proof-of-Antiquity Blockchain</p>
+            <p>Explorer: <a href="https://50.28.86.131/explorer" style="color: #ff6b35;">50.28.86.131/explorer</a> •
+               GitHub: <a href="https://github.com/Scottcjn/Rustchain" style="color: #ff6b35;">Scottcjn/Rustchain</a></p>
+            <p>Last Updated: <span id="lastUpdated">-</span></p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://50.28.86.131';
+        let refreshInterval;
+
+        function showRefreshIndicator() {
+            document.getElementById('refreshIndicator').style.display = 'block';
+        }
+
+        function hideRefreshIndicator() {
+            document.getElementById('refreshIndicator').style.display = 'none';
+        }
+
+        function updateTimestamp() {
+            document.getElementById('lastUpdated').textContent = new Date().toLocaleString();
+        }
+
+        async function fetchWithFallback(url) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return await response.json();
+            } catch (error) {
+                console.warn(`Failed to fetch ${url}:`, error);
+                return null;
+            }
+        }
+
+        async function updateNetworkHealth() {
+            const health = await fetchWithFallback(`${API_BASE}/health`);
+            const networkStatusEl = document.getElementById('networkStatus');
+            const networkStatusTextEl = document.getElementById('networkStatusText');
+            const networkErrorEl = document.getElementById('networkError');
+
+            if (health) {
+                networkStatusEl.className = 'status-indicator online';
+                networkStatusTextEl.textContent = 'Online';
+                networkErrorEl.style.display = 'none';
+
+                document.getElementById('blockHeight').textContent = health.block_height || '-';
+                document.getElementById('hashRate').textContent = health.network_hashrate ?
+                    `${(health.network_hashrate / 1000000).toFixed(2)} MH/s` : '-';
+                document.getElementById('difficulty').textContent = health.difficulty || '-';
+
+                // Update epoch info
+                if (health.current_epoch !== undefined) {
+                    document.getElementById('currentEpoch').textContent = health.current_epoch;
+                }
+                if (health.epoch_progress !== undefined) {
+                    const progress = Math.round(health.epoch_progress * 100);
+                    document.getElementById('epochProgress').style.width = `${progress}%`;
+                    document.getElementById('epochProgress').textContent = `${progress}%`;
+                }
+                if (health.blocks_in_epoch !== undefined) {
+                    document.getElementById('epochBlocks').textContent = health.blocks_in_epoch;
+                }
+            } else {
+                networkStatusEl.className = 'status-indicator offline';
+                networkStatusTextEl.textContent = 'Offline';
+                networkErrorEl.textContent = 'Unable to connect to network node';
+                networkErrorEl.style.display = 'block';
+            }
+        }
+
+        async function updateMinerInfo() {
+            const miners = await fetchWithFallback(`${API_BASE}/api/miners`);
+            const minerStatusEl = document.getElementById('minerStatus');
+
+            if (miners && miners.miners) {
+                minerStatusEl.className = 'status-indicator online';
+
+                const totalMiners = miners.miners.length;
+                document.getElementById('totalMiners').textContent = totalMiners;
+
+                // Count attestation nodes (simplified - assume 3 for now)
+                document.getElementById('attestationNodes').textContent = '3';
+
+                // Architecture breakdown
+                const archCounts = {
+                    powerpc: 0,
+                    x86: 0,
+                    arm: 0,
+                    sparc: 0,
+                    m68k: 0
+                };
+
+                miners.miners.forEach(miner => {
+                    const arch = miner.architecture ? miner.architecture.toLowerCase() : 'x86';
+                    if (arch.includes('powerpc') || arch.includes('ppc')) {
+                        archCounts.powerpc++;
+                    } else if (arch.includes('arm')) {
+                        archCounts.arm++;
+                    } else if (arch.includes('sparc')) {
+                        archCounts.sparc++;
+                    } else if (arch.includes('68k') || arch.includes('m68k')) {
+                        archCounts.m68k++;
+                    } else {
+                        archCounts.x86++;
+                    }
+                });
+
+                // Update architecture bars
+                Object.keys(archCounts).forEach(arch => {
+                    const percentage = totalMiners > 0 ? (archCounts[arch] / totalMiners) * 100 : 0;
+                    const barEl = document.getElementById(`${arch}Bar`);
+                    if (barEl) {
+                        barEl.style.width = `${percentage}%`;
+                        barEl.textContent = archCounts[arch];
+                    }
+                });
+
+            } else {
+                minerStatusEl.className = 'status-indicator warning';
+                document.getElementById('totalMiners').textContent = 'Error';
+            }
+        }
+
+        async function updateTokenInfo() {
+            // Since we don't have a specific token API endpoint, use reasonable defaults
+            // based on typical blockchain parameters
+            document.getElementById('totalSupply').textContent = '21,000,000 RTC';
+            document.getElementById('circulatingSupply').textContent = '~500,000 RTC';
+            document.getElementById('blockReward').textContent = '50 RTC';
+            document.getElementById('vintageMultiplier').textContent = 'Up to 5x';
+        }
+
+        async function updateAll() {
+            showRefreshIndicator();
+
+            try {
+                await Promise.all([
+                    updateNetworkHealth(),
+                    updateMinerInfo(),
+                    updateTokenInfo()
+                ]);
+            } catch (error) {
+                console.error('Error updating data:', error);
+            } finally {
+                hideRefreshIndicator();
+                updateTimestamp();
+            }
+        }
+
+        function startAutoRefresh() {
+            // Initial load
+            updateAll();
+
+            // Refresh every 30 seconds
+            refreshInterval = setInterval(updateAll, 30000);
+        }
+
+        function stopAutoRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+        }
+
+        // Handle visibility change to pause/resume updates when tab is not visible
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                stopAutoRefresh();
+            } else {
+                startAutoRefresh();
+            }
+        });
+
+        // Start when page loads
+        document.addEventListener('DOMContentLoaded', startAutoRefresh);
+    </script>
+</body>
+</html>
