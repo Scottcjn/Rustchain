@@ -10,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="/var/log/rustchain"
 LOG_FILE="$LOG_DIR/backup_verify.log"
-PYTHON_SCRIPT="$SCRIPT_DIR/verify_backup.py"
+PYTHON_SCRIPT="$SCRIPT_DIR/backup_verify.py"
 MAX_LOG_SIZE=10485760  # 10MB
 LOCK_FILE="/tmp/backup_verify.lock"
 
@@ -75,51 +75,15 @@ main() {
         exit 1
     fi
 
-    # Check if Python script is executable
-    if [[ ! -x "$PYTHON_SCRIPT" ]]; then
-        log "WARNING: Making Python script executable"
-        chmod +x "$PYTHON_SCRIPT"
-    fi
-
     # Run the Python verification script
-    log "Executing verification script: $PYTHON_SCRIPT"
-
-    if python3 "$PYTHON_SCRIPT" 2>&1 | tee -a "$LOG_FILE"; then
-        local exit_code=${PIPESTATUS[0]}
-        if [[ $exit_code -eq 0 ]]; then
-            log "SUCCESS: Backup verification completed successfully"
-        else
-            log "ERROR: Backup verification failed with exit code: $exit_code"
-            exit $exit_code
-        fi
+    if python3 "$PYTHON_SCRIPT"; then
+        log "Backup verification completed successfully"
+        exit 0
     else
-        local exit_code=${PIPESTATUS[0]}
-        log "ERROR: Failed to execute verification script (exit code: $exit_code)"
-        exit $exit_code
+        log "ERROR: Backup verification failed"
+        exit 1
     fi
-
-    log "Backup verification completed"
 }
-
-# Handle command line arguments
-case "${1:-}" in
-    --help|-h)
-        echo "Usage: $0 [--help|--version|--test]"
-        echo "  --help     Show this help message"
-        echo "  --version  Show version information"
-        echo "  --test     Run in test mode (no lock, verbose output)"
-        exit 0
-        ;;
-    --version)
-        echo "RustChain Backup Verification Wrapper v1.0"
-        exit 0
-        ;;
-    --test)
-        LOG_FILE="/dev/stdout"
-        LOCK_FILE="/tmp/backup_verify_test.lock"
-        log "Running in test mode"
-        ;;
-esac
 
 # Run main function
 main "$@"
