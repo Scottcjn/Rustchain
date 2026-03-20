@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: MIT
+name: "Wallet / Payout Registration"
+description: "Register wallet address and setup payout preferences"
+title: "[WALLET] Wallet Registration: "
+labels: ["wallet", "payout", "registration"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Wallet Registration & Payout Setup
+
+        Use this form to register your wallet address and configure payout preferences for bounties, referrals, and other rewards.
+
+  - type: input
+    id: wallet_address
+    attributes:
+      label: "Wallet Address"
+      description: "Your cryptocurrency wallet address for receiving payouts"
+      placeholder: "0x... or bc1... or similar"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: wallet_type
+    attributes:
+      label: "Wallet Type"
+      description: "Select your wallet type"
+      options:
+        - Ethereum (ETH/ERC-20)
+        - Bitcoin (BTC)
+        - Polygon (MATIC)
+        - Other (specify in additional info)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: verification_method
+    attributes:
+      label: "Verification Method"
+      description: "How would you like to verify wallet ownership?"
+      options:
+        - Sign message with wallet
+        - Small test transaction
+        - GitHub profile verification
+        - Manual verification request
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: payout_types
+    attributes:
+      label: "Payout Preferences"
+      description: "Select which types of payouts you want to receive"
+      options:
+        - label: "Merged PR bounties"
+        - label: "Install report rewards"
+        - label: "Marketing campaign payouts"
+        - label: "Referral bonuses"
+        - label: "Star/follow rewards"
+
+  - type: input
+    id: minimum_payout
+    attributes:
+      label: "Minimum Payout Amount"
+      description: "Minimum amount before payout is triggered (optional)"
+      placeholder: "e.g., $10 USD equivalent"
+
+  - type: textarea
+    id: verification_proof
+    attributes:
+      label: "Verification Proof"
+      description: "Provide verification based on selected method (signed message, transaction hash, etc.)"
+      placeholder: "Paste signed message, transaction hash, or verification details here"
+
+  - type: textarea
+    id: additional_info
+    attributes:
+      label: "Additional Information"
+      description: "Any additional details about your wallet setup or payout preferences"
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: "Terms & Conditions"
+      description: "Please confirm your agreement"
+      options:
+        - label: "I confirm this wallet address belongs to me"
+          required: true
+        - label: "I understand payouts are subject to verification and approval"
+          required: true
+        - label: "I agree to provide additional verification if requested"
+          required: true
