@@ -58,69 +58,15 @@ def verify_ping_signature(data, db_path: str) -> bool:
     # Get agent from database
     agent = get_agent_by_id(agent_id, db_path)
     if not agent:
-        # Try to extract public key from agent_id for new agents
-        public_key_bytes = extract_public_key_from_agent_id(agent_id)
-        if not public_key_bytes:
-            return False
-    else:
-        # Use stored public key
-        try:
-            public_key_bytes = base64.b64decode(agent['public_key'])
-        except Exception:
-            return False
-
-    # Verify signature
-    try:
-        signature_bytes = bytes.fromhex(signature_hex)
-        message_data = {
-            'agent_id': agent_id,
-            'timestamp': timestamp
-        }
-        message_bytes = json.dumps(message_data, sort_keys=True).encode('utf-8')
-        return verify_ed25519_signature(message_bytes, signature_bytes, public_key_bytes)
-    except Exception:
         return False
 
-def require_signature(db_path: str):
-    """Decorator to require valid signature on relay endpoints"""
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            from flask import request, jsonify
+    try:
+        signature_bytes = bytes.fromhex(signature_hex)
+        public_key_bytes = base64.b64decode(agent['public_key'])
 
-            try:
-                data = request.get_json()
-                if not data:
-                    return jsonify({'error': 'Invalid JSON payload'}), 400
+        # Create canonical message for verification
+        message = f"{agent_id}:{timestamp}".encode('utf-8')
 
-                if not verify_ping_signature(data, db_path):
-                    return jsonify({'error': 'Invalid signature'}), 401
-
-                return f(*args, **kwargs)
-            except Exception as e:
-                return jsonify({'error': 'Signature verification failed'}), 500
-
-        return decorated_function
-    return decorator
-
-def update_agent_last_seen(agent_id: str, db_path: str):
-    """Update agent's last seen timestamp"""
-    current_time = int(time.time())
-    with sqlite3.connect(db_path) as conn:
-        # First try to update existing agent
-        cursor = conn.execute(
-            "UPDATE atlas_agents SET last_seen = ? WHERE agent_id = ?",
-            (current_time, agent_id)
-        )
-
-        # If no rows updated, insert new agent
-        if cursor.rowcount == 0:
-            public_key_bytes = extract_public_key_from_agent_id(agent_id)
-            if public_key_bytes:
-                public_key_b64 = base64.b64encode(public_key_bytes).decode('utf-8')
-                conn.execute(
-                    "INSERT INTO atlas_agents (agent_id, last_seen, public_key, status) VALUES (?, ?, ?, 'active')",
-                    (agent_id, current_time, public_key_b64)
-                )
-
-        conn.commit()
+        return verify_ed25519_signature(message, signature_bytes, public_key_bytes)
+    except (ValueError, TypeError, Exception):
+        return False
