@@ -1,330 +1,409 @@
-#!/usr/bin/env python3
+// SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: MIT
 """
-RustChain Testnet Faucet
-A simple Flask web application that dispenses test RTC tokens.
-
-Features:
-- IP-based rate limiting
-- SQLite backend for tracking
-- Simple HTML form for requesting tokens
+RustChain Testnet Faucet Service
+Provides free test RTC to developers with rate limiting and GitHub OAuth integration.
 """
 
+from flask import Flask, request, jsonify, render_template_string, redirect, url_for, session
 import sqlite3
 import time
-import os
+import hashlib
+import secrets
+import requests
+import json
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, render_template_string
+from contextlib import contextmanager
 
 app = Flask(__name__)
-DATABASE = 'faucet.db'
+app.secret_key = secrets.token_hex(32)
 
-# Rate limiting settings (per 24 hours)
-MAX_DRIP_AMOUNT = 0.5  # RTC
+DB_PATH = 'faucet.db'
+FAUCET_AMOUNT = 1.0
 RATE_LIMIT_HOURS = 24
+GITHUB_CLIENT_ID = None  # Set via environment or config
+GITHUB_CLIENT_SECRET = None  # Set via environment or config
 
+@contextmanager
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 def init_db():
-    """Initialize the SQLite database."""
-    conn = sqlite3.connect(DATABASE)
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS drip_requests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            wallet TEXT NOT NULL,
-            ip_address TEXT NOT NULL,
-            amount REAL NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS faucet_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet_address TEXT NOT NULL,
+                github_username TEXT,
+                ip_address TEXT NOT NULL,
+                amount REAL NOT NULL,
+                timestamp INTEGER NOT NULL,
+                tx_hash TEXT,
+                status TEXT DEFAULT 'pending'
+            )
+        ''')
+        conn.execute('''
+            CREATE INDEX IF NOT EXISTS idx_wallet_time ON faucet_requests(wallet_address, timestamp)
+        ''')
+        conn.execute('''
+            CREATE INDEX IF NOT EXISTS idx_github_time ON faucet_requests(github_username, timestamp)
+        ''')
+        conn.execute('''
+            CREATE INDEX IF NOT EXISTS idx_ip_time ON faucet_requests(ip_address, timestamp)
+        ''')
+        conn.commit()
 
+def check_rate_limit(wallet_address, github_username=None, ip_address=None):
+    cutoff_time = int(time.time()) - (RATE_LIMIT_HOURS * 3600)
 
-def get_client_ip():
-    """Get client IP address from request.
+    with get_db() as conn:
+        # Check wallet address rate limit
+        result = conn.execute(
+            'SELECT COUNT(*) as count FROM faucet_requests WHERE wallet_address = ? AND timestamp > ?',
+            (wallet_address, cutoff_time)
+        ).fetchone()
 
-    SECURITY: Only trust X-Forwarded-For from trusted reverse proxies.
-    Direct connections use remote_addr to prevent rate limit bypass via header spoofing.
-    """
-    remote = request.remote_addr or '127.0.0.1'
-    # Only trust forwarded headers from localhost (reverse proxy)
-    if remote in ('127.0.0.1', '::1') and request.headers.get('X-Forwarded-For'):
-        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
-    return remote
+        if result['count'] > 0:
+            return False, 'Wallet address already used within 24 hours'
 
+        # Check GitHub username if provided (more lenient)
+        if github_username:
+            result = conn.execute(
+                'SELECT COUNT(*) as count FROM faucet_requests WHERE github_username = ? AND timestamp > ?',
+                (github_username, cutoff_time)
+            ).fetchone()
 
-def get_last_drip_time(ip_address):
-    """Get the last time this IP requested a drip."""
-    conn = sqlite3.connect(DATABASE)
-    c = conn.cursor()
-    c.execute('''
-        SELECT timestamp FROM drip_requests
-        WHERE ip_address = ?
-        ORDER BY timestamp DESC
-        LIMIT 1
-    ''', (ip_address,))
-    result = c.fetchone()
-    conn.close()
-    return result[0] if result else None
+            if result['count'] > 0:
+                return False, 'GitHub account already used within 24 hours'
+        else:
+            # Stricter IP-based rate limiting for non-authenticated requests
+            result = conn.execute(
+                'SELECT COUNT(*) as count FROM faucet_requests WHERE ip_address = ? AND timestamp > ?',
+                (ip_address, cutoff_time)
+            ).fetchone()
 
+            if result['count'] >= 3:  # Allow 3 per IP without GitHub auth
+                return False, 'IP address rate limit exceeded (authenticate with GitHub for higher limits)'
 
-def can_drip(ip_address):
-    """Check if the IP can request a drip (rate limiting)."""
-    last_time = get_last_drip_time(ip_address)
-    if not last_time:
-        return True
-    
-    last_drip = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
-    now = datetime.now(last_drip.tzinfo)
-    hours_since = (now - last_drip).total_seconds() / 3600
-    
-    return hours_since >= RATE_LIMIT_HOURS
+    return True, None
 
+def verify_github_user(username, access_token=None):
+    """Verify GitHub username exists and optionally validate access token"""
+    try:
+        headers = {}
+        if access_token:
+            headers['Authorization'] = f'token {access_token}'
 
-def get_next_available(ip_address):
-    """Get the next available time for this IP."""
-    last_time = get_last_drip_time(ip_address)
-    if not last_time:
-        return None
-    
-    last_drip = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
-    next_available = last_drip + timedelta(hours=RATE_LIMIT_HOURS)
-    now = datetime.now(last_drip.tzinfo)
-    
-    if next_available > now:
-        return next_available.isoformat()
-    return None
+        response = requests.get(f'https://api.github.com/users/{username}', headers=headers, timeout=10)
 
+        if response.status_code == 200:
+            user_data = response.json()
+            return True, user_data
+        elif response.status_code == 404:
+            return False, 'GitHub user not found'
+        else:
+            return False, 'GitHub API error'
+    except Exception as e:
+        return False, f'Error verifying GitHub user: {str(e)}'
 
-def record_drip(wallet, ip_address, amount):
-    """Record a drip request to the database."""
-    conn = sqlite3.connect(DATABASE)
-    c = conn.cursor()
-    c.execute('''
-        INSERT INTO drip_requests (wallet, ip_address, amount)
-        VALUES (?, ?, ?)
-    ''', (wallet, ip_address, amount))
-    conn.commit()
-    conn.close()
-
-
-# HTML Template
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>RustChain Testnet Faucet</title>
-    <style>
-        body {
-            font-family: 'Courier New', monospace;
-            max-width: 600px;
-            margin: 50px auto;
-            padding: 20px;
-            background: #0a0a0a;
-            color: #00ff00;
-        }
-        h1 {
-            color: #00ff00;
-            border-bottom: 2px solid #00ff00;
-            padding-bottom: 10px;
-            text-align: center;
-        }
-        .form-section {
-            background: #1a1a1a;
-            border: 1px solid #00ff00;
-            padding: 20px;
-            margin: 20px 0;
-            border-radius: 5px;
-        }
-        input[type="text"] {
-            width: 100%;
-            padding: 12px;
-            margin: 10px 0;
-            background: #002200;
-            color: #00ff00;
-            border: 1px solid #00ff00;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
-            font-size: 16px;
-            box-sizing: border-box;
-        }
-        button {
-            width: 100%;
-            padding: 15px;
-            background: #00aa00;
-            color: #000;
-            border: none;
-            border-radius: 3px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        button:hover {
-            background: #00ff00;
-        }
-        button:disabled {
-            background: #333;
-            color: #666;
-            cursor: not-allowed;
-        }
-        .result {
-            padding: 15px;
-            margin: 15px 0;
-            border-radius: 3px;
-        }
-        .success {
-            background: #002200;
-            border: 1px solid #00ff00;
-            color: #00ff00;
-        }
-        .error {
-            background: #220000;
-            border: 1px solid #ff0000;
-            color: #ff0000;
-        }
-        .info {
-            background: #000022;
-            border: 1px solid #0000ff;
-            color: #6666ff;
-        }
-        .note {
-            color: #888;
-            font-size: 12px;
-            margin-top: 10px;
-        }
-    </style>
-</head>
-<body>
-    <h1>💧 RustChain Testnet Faucet</h1>
-    
-    <div class="form-section">
-        <p>Get free test RTC tokens for development.</p>
-        <form id="faucetForm">
-            <label for="wallet">Your RTC Wallet Address:</label>
-            <input type="text" id="wallet" name="wallet" placeholder="0x..." required>
-            <button type="submit" id="submitBtn">Get Test RTC</button>
-        </form>
-        
-        <div id="result"></div>
-    </div>
-    
-    <div class="note">
-        <p><strong>Rate Limit:</strong> {{ rate_limit }} RTC per {{ hours }} hours per IP</p>
-        <p><strong>Network:</strong> RustChain Testnet</p>
-    </div>
-
-    <script>
-        const form = document.getElementById('faucetForm');
-        const result = document.getElementById('result');
-        const submitBtn = document.getElementById('submitBtn');
-        
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Requesting...';
-            result.innerHTML = '';
-            
-            const wallet = document.getElementById('wallet').value;
-            
-            try {
-                const response = await fetch('/faucet/drip', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({wallet})
-                });
-                
-                const data = await response.json();
-                
-                if (data.ok) {
-                    result.innerHTML = '<div class="result success">✅ Success! Sent ' + data.amount + ' RTC to ' + wallet + '</div>';
-                    if (data.next_available) {
-                        result.innerHTML += '<div class="result info">Next available: ' + data.next_available + '</div>';
-                    }
-                } else {
-                    result.innerHTML = '<div class="result error">❌ ' + data.error + '</div>';
-                    if (data.next_available) {
-                        result.innerHTML += '<div class="result info">Next available: ' + data.next_available + '</div>';
-                    }
-                }
-            } catch (err) {
-                result.innerHTML = '<div class="result error">❌ Error: ' + err.message + '</div>';
-            }
-            
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Get Test RTC';
-        });
-    </script>
-</body>
-</html>
-"""
-
-
-@app.route('/')
-def index():
-    """Serve the faucet homepage."""
-    return render_template_string(HTML_TEMPLATE, rate_limit=MAX_DRIP_AMOUNT, hours=RATE_LIMIT_HOURS)
-
+def create_faucet_transaction(wallet_address, amount):
+    """Create a transaction sending test RTC to the wallet address"""
+    # This would integrate with the actual blockchain code
+    # For now, return a mock pending transaction
+    tx_id = hashlib.sha256(f"{wallet_address}{amount}{time.time()}".encode()).hexdigest()[:16]
+    return tx_id
 
 @app.route('/faucet')
 def faucet_page():
-    """Serve the faucet page (alias for index)."""
-    return render_template_string(HTML_TEMPLATE, rate_limit=MAX_DRIP_AMOUNT, hours=RATE_LIMIT_HOURS)
+    github_user = session.get('github_user')
+    error = request.args.get('error')
+    success = request.args.get('success')
 
+    template = '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>RustChain Testnet Faucet</title>
+        <style>
+            body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+            .form-group { margin-bottom: 20px; }
+            label { display: block; margin-bottom: 5px; font-weight: bold; }
+            input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+            button { background: #007cba; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; }
+            button:hover { background: #005a85; }
+            .github-auth { background: #24292e; color: white; text-decoration: none; padding: 10px 20px; border-radius: 4px; display: inline-block; margin: 10px 0; }
+            .github-auth:hover { background: #1a1e22; }
+            .error { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px; margin: 10px 0; }
+            .success { background: #d4edda; color: #155724; padding: 10px; border-radius: 4px; margin: 10px 0; }
+            .user-info { background: #e7f3ff; padding: 10px; border-radius: 4px; margin: 10px 0; }
+        </style>
+    </head>
+    <body>
+        <h1>🚰 RustChain Testnet Faucet</h1>
+        <p>Get <strong>1 free test RTC</strong> for development and testing.</p>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+
+        {% if success %}
+        <div class="success">{{ success }}</div>
+        {% endif %}
+
+        {% if github_user %}
+        <div class="user-info">
+            ✅ Authenticated as <strong>{{ github_user.login }}</strong>
+            <a href="{{ url_for('github_logout') }}" style="margin-left: 20px;">Logout</a>
+        </div>
+        {% else %}
+        <div>
+            <a href="{{ url_for('github_login') }}" class="github-auth">🔗 Login with GitHub (Higher Limits)</a>
+        </div>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('faucet_drip') }}">
+            <div class="form-group">
+                <label for="wallet">RTC Wallet Address:</label>
+                <input type="text" id="wallet" name="wallet" required
+                       placeholder="your-test-wallet-address" />
+            </div>
+
+            <button type="submit">💰 Request 1 Test RTC</button>
+        </form>
+
+        <hr style="margin: 40px 0;">
+        <h3>📋 Recent Requests</h3>
+        <div id="recent-requests">
+            {% for req in recent_requests %}
+            <div style="background: #f8f9fa; padding: 10px; margin: 5px 0; border-radius: 4px;">
+                <strong>{{ req.wallet_address[:20] }}...</strong>
+                - {{ req.amount }} RTC
+                - {{ req.status }}
+                {% if req.github_username %}
+                (via @{{ req.github_username }})
+                {% endif %}
+                <small>{{ req.time_ago }}</small>
+            </div>
+            {% endfor %}
+        </div>
+
+        <hr style="margin: 40px 0;">
+        <h3>📖 API Usage</h3>
+        <pre style="background: #f8f9fa; padding: 15px; border-radius: 4px; overflow-x: auto;">
+POST /faucet/drip
+{
+  "wallet": "your-wallet-address",
+  "github_username": "your-github-username"  // optional
+}
+
+Response:
+{
+  "ok": true,
+  "amount": 1.0,
+  "pending_id": 123,
+  "next_available": "2024-01-01T12:00:00Z"
+}
+        </pre>
+    </body>
+    </html>
+    '''
+
+    # Get recent requests for display
+    with get_db() as conn:
+        rows = conn.execute('''
+            SELECT wallet_address, github_username, amount, status, timestamp
+            FROM faucet_requests
+            ORDER BY timestamp DESC
+            LIMIT 10
+        ''').fetchall()
+
+        recent_requests = []
+        for row in rows:
+            time_ago = datetime.fromtimestamp(row['timestamp']).strftime('%Y-%m-%d %H:%M')
+            recent_requests.append({
+                'wallet_address': row['wallet_address'],
+                'github_username': row['github_username'],
+                'amount': row['amount'],
+                'status': row['status'],
+                'time_ago': time_ago
+            })
+
+    return render_template_string(template,
+                                github_user=github_user,
+                                error=error,
+                                success=success,
+                                recent_requests=recent_requests)
 
 @app.route('/faucet/drip', methods=['POST'])
-def drip():
-    """
-    Handle drip requests.
-    
-    Request body:
-        {"wallet": "0x..."}
-    
-    Response:
-        {"ok": true, "amount": 0.5, "next_available": "2026-03-08T12:00:00Z"}
-    """
-    data = request.get_json()
-    
-    if not data or 'wallet' not in data:
-        return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
-    
-    wallet = data['wallet'].strip()
-    
-    # Basic wallet validation (should start with 0x and be reasonably long)
-    if not wallet.startswith('0x') or len(wallet) < 10:
-        return jsonify({'ok': False, 'error': 'Invalid wallet address'}), 400
-    
-    ip = get_client_ip()
-    
-    # Check rate limit
-    if not can_drip(ip):
-        next_available = get_next_available(ip)
-        return jsonify({
-            'ok': False,
-            'error': 'Rate limit exceeded',
-            'next_available': next_available
-        }), 429
-    
-    # Record the drip (in production, this would actually transfer tokens)
-    # For now, we simulate the drip
-    amount = MAX_DRIP_AMOUNT
-    record_drip(wallet, ip, amount)
-    
+def faucet_drip():
+    client_ip = request.remote_addr
+
+    if request.is_json:
+        data = request.get_json()
+        wallet_address = data.get('wallet', '').strip()
+        github_username = data.get('github_username', '').strip() or None
+    else:
+        wallet_address = request.form.get('wallet', '').strip()
+        github_username = session.get('github_user', {}).get('login')
+
+    if not wallet_address:
+        if request.is_json:
+            return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
+        else:
+            return redirect(url_for('faucet_page', error='Wallet address required'))
+
+    # Basic wallet address validation
+    if len(wallet_address) < 10 or len(wallet_address) > 100:
+        error_msg = 'Invalid wallet address format'
+        if request.is_json:
+            return jsonify({'ok': False, 'error': error_msg}), 400
+        else:
+            return redirect(url_for('faucet_page', error=error_msg))
+
+    # Check rate limits
+    allowed, rate_error = check_rate_limit(wallet_address, github_username, client_ip)
+    if not allowed:
+        if request.is_json:
+            return jsonify({'ok': False, 'error': rate_error}), 429
+        else:
+            return redirect(url_for('faucet_page', error=rate_error))
+
+    # Verify GitHub username if provided
+    if github_username:
+        valid_github, github_error = verify_github_user(github_username)
+        if not valid_github:
+            error_msg = f'GitHub verification failed: {github_error}'
+            if request.is_json:
+                return jsonify({'ok': False, 'error': error_msg}), 400
+            else:
+                return redirect(url_for('faucet_page', error=error_msg))
+
+    # Create transaction
+    try:
+        tx_hash = create_faucet_transaction(wallet_address, FAUCET_AMOUNT)
+
+        # Record the request
+        with get_db() as conn:
+            cursor = conn.execute('''
+                INSERT INTO faucet_requests
+                (wallet_address, github_username, ip_address, amount, timestamp, tx_hash, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (wallet_address, github_username, client_ip, FAUCET_AMOUNT, int(time.time()), tx_hash, 'pending'))
+
+            request_id = cursor.lastrowid
+            conn.commit()
+
+        next_available = datetime.now() + timedelta(hours=RATE_LIMIT_HOURS)
+
+        if request.is_json:
+            return jsonify({
+                'ok': True,
+                'amount': FAUCET_AMOUNT,
+                'pending_id': request_id,
+                'tx_hash': tx_hash,
+                'next_available': next_available.isoformat()
+            })
+        else:
+            success_msg = f'Success! {FAUCET_AMOUNT} RTC sent to {wallet_address[:20]}... (TX: {tx_hash})'
+            return redirect(url_for('faucet_page', success=success_msg))
+
+    except Exception as e:
+        error_msg = f'Transaction failed: {str(e)}'
+        if request.is_json:
+            return jsonify({'ok': False, 'error': error_msg}), 500
+        else:
+            return redirect(url_for('faucet_page', error=error_msg))
+
+@app.route('/faucet/github/login')
+def github_login():
+    if not GITHUB_CLIENT_ID:
+        return redirect(url_for('faucet_page', error='GitHub OAuth not configured'))
+
+    state = secrets.token_urlsafe(32)
+    session['oauth_state'] = state
+
+    github_url = (f'https://github.com/login/oauth/authorize'
+                 f'?client_id={GITHUB_CLIENT_ID}'
+                 f'&redirect_uri={request.url_root}faucet/github/callback'
+                 f'&scope=user:email'
+                 f'&state={state}')
+
+    return redirect(github_url)
+
+@app.route('/faucet/github/callback')
+def github_callback():
+    code = request.args.get('code')
+    state = request.args.get('state')
+
+    if not code or state != session.get('oauth_state'):
+        return redirect(url_for('faucet_page', error='GitHub OAuth failed'))
+
+    # Exchange code for access token
+    try:
+        token_response = requests.post('https://github.com/login/oauth/access_token', {
+            'client_id': GITHUB_CLIENT_ID,
+            'client_secret': GITHUB_CLIENT_SECRET,
+            'code': code
+        }, headers={'Accept': 'application/json'}, timeout=10)
+
+        token_data = token_response.json()
+        access_token = token_data.get('access_token')
+
+        if not access_token:
+            return redirect(url_for('faucet_page', error='Failed to get GitHub access token'))
+
+        # Get user info
+        user_response = requests.get('https://api.github.com/user',
+                                   headers={'Authorization': f'token {access_token}'},
+                                   timeout=10)
+
+        if user_response.status_code != 200:
+            return redirect(url_for('faucet_page', error='Failed to get GitHub user info'))
+
+        user_data = user_response.json()
+        session['github_user'] = user_data
+        session['github_token'] = access_token
+
+        return redirect(url_for('faucet_page'))
+
+    except Exception as e:
+        return redirect(url_for('faucet_page', error=f'GitHub OAuth error: {str(e)}'))
+
+@app.route('/faucet/github/logout')
+def github_logout():
+    session.pop('github_user', None)
+    session.pop('github_token', None)
+    session.pop('oauth_state', None)
+    return redirect(url_for('faucet_page'))
+
+@app.route('/faucet/stats')
+def faucet_stats():
+    with get_db() as conn:
+        total_requests = conn.execute('SELECT COUNT(*) as count FROM faucet_requests').fetchone()['count']
+        total_amount = conn.execute('SELECT COALESCE(SUM(amount), 0) as total FROM faucet_requests').fetchone()['total']
+
+        recent_24h = conn.execute('''
+            SELECT COUNT(*) as count FROM faucet_requests
+            WHERE timestamp > ?
+        ''', (int(time.time()) - 86400,)).fetchone()['count']
+
+        unique_wallets = conn.execute('SELECT COUNT(DISTINCT wallet_address) as count FROM faucet_requests').fetchone()['count']
+
+        github_users = conn.execute('SELECT COUNT(DISTINCT github_username) as count FROM faucet_requests WHERE github_username IS NOT NULL').fetchone()['count']
+
     return jsonify({
-        'ok': True,
-        'amount': amount,
-        'wallet': wallet,
-        'next_available': (datetime.now() + timedelta(hours=RATE_LIMIT_HOURS)).isoformat()
+        'total_requests': total_requests,
+        'total_amount_distributed': float(total_amount),
+        'requests_last_24h': recent_24h,
+        'unique_wallets': unique_wallets,
+        'github_authenticated_users': github_users
     })
 
-
 if __name__ == '__main__':
-    # Initialize database
-    if not os.path.exists(DATABASE):
-        init_db()
-    else:
-        init_db()  # Ensure table exists
-    
-    # Run the server
-    print("Starting RustChain Faucet on http://0.0.0.0:8090/faucet")
-    app.run(host='0.0.0.0', port=8090, debug=False)
+    init_db()
+    app.run(host='0.0.0.0', port=5000, debug=False)
