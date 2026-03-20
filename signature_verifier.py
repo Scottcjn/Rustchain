@@ -60,8 +60,26 @@ def verify_ping_signature(payload: Dict[str, Any]) -> bool:
     # Create canonical message for signing
     message_data = {
         'agent_id': agent_id,
-        'timestamp': timestamp
+        'timestamp': timestamp,
+        'action': 'ping'
     }
     message = json.dumps(message_data, sort_keys=True).encode('utf-8')
 
     return verify_ed25519_signature(public_key_bytes, message, signature_bytes)
+
+def create_ping_signature_message(agent_id: str, timestamp: int, action: str = 'ping') -> bytes:
+    """Create the canonical message that should be signed for ping verification."""
+    message_data = {
+        'agent_id': agent_id,
+        'timestamp': timestamp,
+        'action': action
+    }
+    return json.dumps(message_data, sort_keys=True).encode('utf-8')
+
+def verify_hmac_signature(message: bytes, signature: str, secret_key: bytes) -> bool:
+    """Fallback HMAC verification for cases where Ed25519 is not available."""
+    try:
+        expected_signature = hmac.new(secret_key, message, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected_signature, signature)
+    except Exception:
+        return False
