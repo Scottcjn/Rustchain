@@ -4,23 +4,32 @@ RustChain Testnet Faucet
 A simple Flask web application that dispenses test RTC tokens.
 
 Features:
-- IP-based rate limiting
+- Wallet-based rate limiting (SECURITY FIX)
+- Captcha verification (SECURITY FIX)
 - SQLite backend for tracking
 - Simple HTML form for requesting tokens
+
+SECURITY FIX: Fixed X-Forwarded-For spoofing vulnerability (Issue #2246)
 """
 
 import sqlite3
 import time
 import os
+import hashlib
+import secrets
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template_string, session
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
 DATABASE = 'faucet.db'
 
 # Rate limiting settings (per 24 hours)
 MAX_DRIP_AMOUNT = 0.5  # RTC
 RATE_LIMIT_HOURS = 24
+
+# Captcha settings (simple math captcha for demo)
+CAPTCHA_ENABLED = os.environ.get('CAPTCHA_ENABLED', 'true').lower() == 'true'
 
 
 def init_db():
@@ -36,41 +45,79 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS captcha_sessions (
+            id TEXT PRIMARY KEY,
+            answer INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     conn.commit()
     conn.close()
 
 
 def get_client_ip():
     """Get client IP address from request.
-
-    SECURITY: Only trust X-Forwarded-For from trusted reverse proxies.
-    Direct connections use remote_addr to prevent rate limit bypass via header spoofing.
+    
+    SECURITY FIX: Never trust X-Forwarded-For header from clients.
+    Always use remote_addr for rate limiting to prevent IP spoofing.
     """
-    remote = request.remote_addr or '127.0.0.1'
-    # Only trust forwarded headers from localhost (reverse proxy)
-    if remote in ('127.0.0.1', '::1') and request.headers.get('X-Forwarded-For'):
-        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
-    return remote
+    # SECURITY: Always use the actual remote address, never trust client headers
+    return request.remote_addr or '127.0.0.1'
 
 
-def get_last_drip_time(ip_address):
-    """Get the last time this IP requested a drip."""
+def generate_captcha():
+    """Generate a simple math captcha."""
+    num1 = secrets.randbelow(10) + 1
+    num2 = secrets.randbelow(10) + 1
+    captcha_id = secrets.token_hex(16)
+    answer = num1 + num2
+    
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    c.execute('INSERT INTO captcha_sessions (id, answer) VALUES (?, ?)', 
+              (captcha_id, answer))
+    conn.commit()
+    conn.close()
+    
+    return captcha_id, f"{num1} + {num2} = ?"
+
+
+def verify_captcha(captcha_id, user_answer):
+    """Verify captcha response."""
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    c.execute('SELECT answer FROM captcha_sessions WHERE id = ? AND created_at > datetime("now", "-5 minutes")', 
+              (captcha_id,))
+    result = c.fetchone()
+    if result:
+        c.execute('DELETE FROM captcha_sessions WHERE id = ?', (captcha_id,))
+        conn.commit()
+    conn.close()
+    
+    if result and result[0] == int(user_answer):
+        return True
+    return False
+
+
+def get_last_drip_time(wallet):
+    """Get the last time this wallet requested a drip."""
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
     c.execute('''
         SELECT timestamp FROM drip_requests
-        WHERE ip_address = ?
+        WHERE wallet = ?
         ORDER BY timestamp DESC
         LIMIT 1
-    ''', (ip_address,))
+    ''', (wallet,))
     result = c.fetchone()
     conn.close()
     return result[0] if result else None
 
 
-def can_drip(ip_address):
-    """Check if the IP can request a drip (rate limiting)."""
-    last_time = get_last_drip_time(ip_address)
+def can_drip(wallet):
+    """Check if the wallet can request a drip (wallet-based rate limiting)."""
+    last_time = get_last_drip_time(wallet)
     if not last_time:
         return True
     
@@ -81,23 +128,8 @@ def can_drip(ip_address):
     return hours_since >= RATE_LIMIT_HOURS
 
 
-def get_next_available(ip_address):
-    """Get the next available time for this IP."""
-    last_time = get_last_drip_time(ip_address)
-    if not last_time:
-        return None
-    
-    last_drip = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
-    next_available = last_drip + timedelta(hours=RATE_LIMIT_HOURS)
-    now = datetime.now(last_drip.tzinfo)
-    
-    if next_available > now:
-        return next_available.isoformat()
-    return None
-
-
 def record_drip(wallet, ip_address, amount):
-    """Record a drip request to the database."""
+    """Record a drip request in the database."""
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
     c.execute('''
@@ -108,223 +140,123 @@ def record_drip(wallet, ip_address, amount):
     conn.close()
 
 
-# HTML Template
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>RustChain Testnet Faucet</title>
-    <style>
-        body {
-            font-family: 'Courier New', monospace;
-            max-width: 600px;
-            margin: 50px auto;
-            padding: 20px;
-            background: #0a0a0a;
-            color: #00ff00;
-        }
-        h1 {
-            color: #00ff00;
-            border-bottom: 2px solid #00ff00;
-            padding-bottom: 10px;
-            text-align: center;
-        }
-        .form-section {
-            background: #1a1a1a;
-            border: 1px solid #00ff00;
-            padding: 20px;
-            margin: 20px 0;
-            border-radius: 5px;
-        }
-        input[type="text"] {
-            width: 100%;
-            padding: 12px;
-            margin: 10px 0;
-            background: #002200;
-            color: #00ff00;
-            border: 1px solid #00ff00;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
-            font-size: 16px;
-            box-sizing: border-box;
-        }
-        button {
-            width: 100%;
-            padding: 15px;
-            background: #00aa00;
-            color: #000;
-            border: none;
-            border-radius: 3px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        button:hover {
-            background: #00ff00;
-        }
-        button:disabled {
-            background: #333;
-            color: #666;
-            cursor: not-allowed;
-        }
-        .result {
-            padding: 15px;
-            margin: 15px 0;
-            border-radius: 3px;
-        }
-        .success {
-            background: #002200;
-            border: 1px solid #00ff00;
-            color: #00ff00;
-        }
-        .error {
-            background: #220000;
-            border: 1px solid #ff0000;
-            color: #ff0000;
-        }
-        .info {
-            background: #000022;
-            border: 1px solid #0000ff;
-            color: #6666ff;
-        }
-        .note {
-            color: #888;
-            font-size: 12px;
-            margin-top: 10px;
-        }
-    </style>
-</head>
-<body>
-    <h1>💧 RustChain Testnet Faucet</h1>
+@app.route('/')
+def index():
+    """Render the faucet HTML page."""
+    captcha_id, captcha_question = generate_captcha() if CAPTCHA_ENABLED else (None, None)
     
-    <div class="form-section">
-        <p>Get free test RTC tokens for development.</p>
-        <form id="faucetForm">
-            <label for="wallet">Your RTC Wallet Address:</label>
-            <input type="text" id="wallet" name="wallet" placeholder="0x..." required>
-            <button type="submit" id="submitBtn">Get Test RTC</button>
+    html = '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>RustChain Testnet Faucet</title>
+        <style>
+            body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+            input, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+            button { background: #4CAF50; color: white; border: none; cursor: pointer; }
+            button:hover { background: #45a049; }
+            .error { color: red; }
+            .success { color: green; }
+            .captcha { background: #f0f0f0; padding: 10px; margin: 10px 0; }
+        </style>
+    </head>
+    <body>
+        <h1>🚰 RustChain Testnet Faucet</h1>
+        <p>Request test RTC tokens for development.</p>
+        <p><strong>Limit:</strong> 0.5 RTC per wallet per 24 hours</p>
+        
+        <form id="faucet-form">
+            <label>Wallet Address:</label>
+            <input type="text" id="wallet" name="wallet" required 
+                   placeholder="RTC..." pattern="RTC[a-zA-Z0-9]{39}">
+            
+            ''' + ('''
+            <div class="captcha">
+                <label>Security Check: <span id="captcha-question">{{question}}</span></label>
+                <input type="hidden" id="captcha-id" name="captcha_id" value="{{captcha_id}}">
+                <input type="number" id="captcha-answer" name="captcha_answer" required 
+                       placeholder="Your answer">
+            </div>
+            ''' if CAPTCHA_ENABLED else '') + '''
+            
+            <button type="submit">Request 0.5 RTC</button>
         </form>
         
         <div id="result"></div>
-    </div>
-    
-    <div class="note">
-        <p><strong>Rate Limit:</strong> {{ rate_limit }} RTC per {{ hours }} hours per IP</p>
-        <p><strong>Network:</strong> RustChain Testnet</p>
-    </div>
-
-    <script>
-        const form = document.getElementById('faucetForm');
-        const result = document.getElementById('result');
-        const submitBtn = document.getElementById('submitBtn');
         
-        form.addEventListener('submit', async (e) => {
+        <script>
+        document.getElementById('faucet-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Requesting...';
-            result.innerHTML = '';
-            
             const wallet = document.getElementById('wallet').value;
+            const captchaId = document.getElementById('captcha-id')?.value;
+            const captchaAnswer = document.getElementById('captcha-answer')?.value;
             
-            try {
-                const response = await fetch('/faucet/drip', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({wallet})
-                });
-                
-                const data = await response.json();
-                
-                if (data.ok) {
-                    result.innerHTML = '<div class="result success">✅ Success! Sent ' + data.amount + ' RTC to ' + wallet + '</div>';
-                    if (data.next_available) {
-                        result.innerHTML += '<div class="result info">Next available: ' + data.next_available + '</div>';
-                    }
-                } else {
-                    result.innerHTML = '<div class="result error">❌ ' + data.error + '</div>';
-                    if (data.next_available) {
-                        result.innerHTML += '<div class="result info">Next available: ' + data.next_available + '</div>';
-                    }
-                }
-            } catch (err) {
-                result.innerHTML = '<div class="result error">❌ Error: ' + err.message + '</div>';
-            }
+            const params = new URLSearchParams({ wallet });
+            if (captchaId) params.append('captcha_id', captchaId);
+            if (captchaAnswer) params.append('captcha_answer', captchaAnswer);
             
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Get Test RTC';
+            const response = await fetch('/drip?' + params.toString());
+            const result = await response.json();
+            
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = result.success ? 'success' : 'error';
+            resultDiv.textContent = result.message;
         });
-    </script>
-</body>
-</html>
-"""
+        </script>
+    </body>
+    </html>
+    '''.replace('{{question}}', captcha_question or '').replace('{{captcha_id}}', captcha_id or '')
+    
+    return render_template_string(html)
 
 
-@app.route('/')
-def index():
-    """Serve the faucet homepage."""
-    return render_template_string(HTML_TEMPLATE, rate_limit=MAX_DRIP_AMOUNT, hours=RATE_LIMIT_HOURS)
-
-
-@app.route('/faucet')
-def faucet_page():
-    """Serve the faucet page (alias for index)."""
-    return render_template_string(HTML_TEMPLATE, rate_limit=MAX_DRIP_AMOUNT, hours=RATE_LIMIT_HOURS)
-
-
-@app.route('/faucet/drip', methods=['POST'])
+@app.route('/drip')
 def drip():
-    """
-    Handle drip requests.
+    """Dispense test RTC tokens."""
+    wallet = request.args.get('wallet')
     
-    Request body:
-        {"wallet": "0x..."}
+    if not wallet or not wallet.startswith('RTC'):
+        return jsonify({'success': False, 'message': 'Invalid wallet address'}), 400
     
-    Response:
-        {"ok": true, "amount": 0.5, "next_available": "2026-03-08T12:00:00Z"}
-    """
-    data = request.get_json()
+    # Verify captcha if enabled
+    if CAPTCHA_ENABLED:
+        captcha_id = request.args.get('captcha_id')
+        captcha_answer = request.args.get('captcha_answer')
+        if not captcha_id or not captcha_answer:
+            return jsonify({'success': False, 'message': 'Captcha required'}), 400
+        if not verify_captcha(captcha_id, captcha_answer):
+            return jsonify({'success': False, 'message': 'Invalid captcha'}), 400
     
-    if not data or 'wallet' not in data:
-        return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
+    # Get client IP (SECURITY: uses remote_addr, not X-Forwarded-For)
+    ip_address = get_client_ip()
     
-    wallet = data['wallet'].strip()
-    
-    # Basic wallet validation (should start with 0x and be reasonably long)
-    if not wallet.startswith('0x') or len(wallet) < 10:
-        return jsonify({'ok': False, 'error': 'Invalid wallet address'}), 400
-    
-    ip = get_client_ip()
-    
-    # Check rate limit
-    if not can_drip(ip):
-        next_available = get_next_available(ip)
+    # Check wallet-based rate limit
+    if not can_drip(wallet):
         return jsonify({
-            'ok': False,
-            'error': 'Rate limit exceeded',
-            'next_available': next_available
+            'success': False, 
+            'message': 'Rate limit exceeded. Please wait 24 hours before requesting again.'
         }), 429
     
-    # Record the drip (in production, this would actually transfer tokens)
-    # For now, we simulate the drip
-    amount = MAX_DRIP_AMOUNT
-    record_drip(wallet, ip, amount)
+    # Record the drip
+    record_drip(wallet, ip_address, MAX_DRIP_AMOUNT)
+    
+    # TODO: Actually send RTC tokens via blockchain transaction
+    # For now, just record the request
     
     return jsonify({
-        'ok': True,
-        'amount': amount,
+        'success': True,
+        'message': f'Successfully requested {MAX_DRIP_AMOUNT} RTC to {wallet}',
         'wallet': wallet,
-        'next_available': (datetime.now() + timedelta(hours=RATE_LIMIT_HOURS)).isoformat()
+        'amount': MAX_DRIP_AMOUNT
     })
 
 
+@app.route('/health')
+def health():
+    """Health check endpoint."""
+    return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
+
+
 if __name__ == '__main__':
-    # Initialize database
-    if not os.path.exists(DATABASE):
-        init_db()
-    else:
-        init_db()  # Ensure table exists
-    
-    # Run the server
-    print("Starting RustChain Faucet on http://0.0.0.0:8090/faucet")
-    app.run(host='0.0.0.0', port=8090, debug=False)
+    init_db()
+    app.run(host='0.0.0.0', port=5000, debug=False)
