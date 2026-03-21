@@ -14,8 +14,10 @@ import time
 import os
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template_string
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 DATABASE = 'faucet.db'
 
 # Rate limiting settings (per 24 hours)
@@ -41,32 +43,35 @@ def init_db():
 
 
 def get_client_ip():
-    """Get client IP address from request.
+    """Get client IP address safely considering reverse proxies.
     
-    SECURITY: Fix X-Forwarded-For spoofing. Verify proxy IP securely.
+    SECURITY: Handled transparently by Werkzeug ProxyFix.
     """
     remote = request.remote_addr or '127.0.0.1'
-    # Do not blindly trust X-Forwarded-For even from localhost to prevent spoofing
-    # If proxy is used, it should be configured to override remote_addr natively
     return remote
-
-
 def get_last_drip_time(identifier, is_wallet=False):
     """Get the last time this IP or wallet requested a drip."""
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
-    column = "wallet" if is_wallet else "ip_address"
-    c.execute(f'''
-        SELECT timestamp FROM drip_requests
-        WHERE {column} = ?
-        ORDER BY timestamp DESC
-        LIMIT 1
-    ''', (identifier,))
+    
+    if is_wallet:
+        c.execute('''
+            SELECT timestamp FROM drip_requests
+            WHERE wallet = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+        ''', (identifier,))
+    else:
+        c.execute('''
+            SELECT timestamp FROM drip_requests
+            WHERE ip_address = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+        ''', (identifier,))
+        
     result = c.fetchone()
     conn.close()
     return result[0] if result else None
-
-
 def can_drip(identifier, is_wallet=False):
     """Check if the IP or Wallet can request a drip (rate limiting)."""
     last_time = get_last_drip_time(identifier, is_wallet)
@@ -80,9 +85,9 @@ def can_drip(identifier, is_wallet=False):
     return hours_since >= RATE_LIMIT_HOURS
 
 
-def get_next_available(ip_address):
-    """Get the next available time for this IP."""
-    last_time = get_last_drip_time(ip_address)
+def get_next_available(identifier, is_wallet=False):
+    """Get the next available time for this IP or wallet."""
+    last_time = get_last_drip_time(identifier, is_wallet)
     if not last_time:
         return None
     
@@ -294,16 +299,24 @@ def drip():
         return jsonify({'ok': False, 'error': 'Invalid wallet address'}), 400
     
     ip = get_client_ip()
-    
-    # Check rate limit
+
+    # Check rate limit for IP
     if not can_drip(ip):
         next_available = get_next_available(ip)
         return jsonify({
             'ok': False,
-            'error': 'Rate limit exceeded',
+            'error': 'IP rate limit exceeded',
             'next_available': next_available
         }), 429
-    
+
+    # Check rate limit for Wallet
+    if not can_drip(wallet, is_wallet=True):
+        next_available = get_next_available(wallet, is_wallet=True)
+        return jsonify({
+            'ok': False,
+            'error': 'Wallet rate limit exceeded',
+            'next_available': next_available
+        }), 429
     # Record the drip (in production, this would actually transfer tokens)
     # For now, we simulate the drip
     amount = MAX_DRIP_AMOUNT
