@@ -1107,6 +1107,13 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_beacon_anchored ON beacon_envelopes(anchored)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_beacon_agent ON beacon_envelopes(agent_id, created_at)")
 
+        # BCOS v2: Blockchain Certified Open Source attestations
+        try:
+            from bcos_routes import init_bcos_table
+            init_bcos_table(c)
+        except ImportError:
+            pass
+
         # Warthog dual-mining tables
         if HAVE_WARTHOG:
             init_warthog_tables(c)
@@ -6466,6 +6473,14 @@ if __name__ == "__main__":
         print("=" * 70, file=sys.stderr)
 
     init_db()
+
+    # BCOS v2: Register Blockchain Certified Open Source endpoints
+    try:
+        from bcos_routes import register_bcos_routes
+        register_bcos_routes(app, DB_PATH)
+        print("  - BCOS v2 (Blockchain Certified Open Source)")
+    except ImportError as e:
+        print(f"[BCOS] Not available: {e}")
 
     # P2P Initialization
     p2p_node = None
