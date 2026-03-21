@@ -6,12 +6,75 @@ Beacon envelopes (hello, heartbeat, want, bounty, mayday, accord, pushback)
 are stored in rustchain_v2.db and periodically committed to Ergo via the
 existing ergo_miner_anchor.py system.
 """
-import sqlite3, time, json
+import hashlib
+import json
+import sqlite3
+import time
 from hashlib import blake2b
+
+try:
+    from nacl.signing import VerifyKey
+    from nacl.exceptions import BadSignatureError
+    NACL_AVAILABLE = True
+except ImportError:
+    VerifyKey = None
+    BadSignatureError = Exception
+    NACL_AVAILABLE = False
 
 DB_PATH = "/root/rustchain/rustchain_v2.db"
 
 VALID_KINDS = {"hello", "heartbeat", "want", "bounty", "mayday", "accord", "pushback"}
+
+
+def _agent_id_from_pubkey(pubkey_bytes: bytes) -> str:
+    """Derive the canonical Beacon agent id from an Ed25519 public key."""
+    return f"bcn_{hashlib.sha256(pubkey_bytes).hexdigest()[:12]}"
+
+
+def _canonical_signing_payload(envelope: dict) -> bytes:
+    """Return the canonical Beacon signing payload (everything except the signature)."""
+    signing_payload = {
+        key: value
+        for key, value in envelope.items()
+        if key not in ("sig", "_beacon_version")
+    }
+    return json.dumps(signing_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def verify_envelope_signature(envelope: dict) -> tuple[bool, str]:
+    """
+    Verify an HTTP-submitted Beacon envelope.
+
+    Beacon v2 envelopes are signed with Ed25519 over the canonical JSON body
+    excluding the `sig` field. The claimed `agent_id` must also match the
+    submitted public key to prevent identity spoofing.
+    """
+    sig_hex = envelope.get("sig", "")
+    pubkey_hex = envelope.get("pubkey", "")
+    agent_id = envelope.get("agent_id", "")
+
+    if not all([sig_hex, pubkey_hex, agent_id]):
+        return False, "missing_signature_fields"
+
+    try:
+        pubkey_bytes = bytes.fromhex(pubkey_hex)
+        signature_bytes = bytes.fromhex(sig_hex)
+    except ValueError:
+        return False, "invalid_signature_or_pubkey_encoding"
+
+    expected_agent_id = _agent_id_from_pubkey(pubkey_bytes)
+    if agent_id != expected_agent_id:
+        return False, "agent_id_pubkey_mismatch"
+
+    if not NACL_AVAILABLE:
+        return False, "signature_verification_unavailable"
+
+    try:
+        verify_key = VerifyKey(pubkey_bytes)
+        verify_key.verify(_canonical_signing_payload(envelope), signature_bytes)
+        return True, ""
+    except (BadSignatureError, Exception):
+        return False, "invalid_signature"
 
 
 def init_beacon_table(db_path=DB_PATH):
@@ -63,6 +126,10 @@ def store_envelope(envelope: dict, db_path=DB_PATH) -> dict:
 
     if kind not in VALID_KINDS:
         return {"ok": False, "error": f"invalid_kind:{kind}"}
+
+    sig_ok, sig_err = verify_envelope_signature(envelope)
+    if not sig_ok:
+        return {"ok": False, "error": sig_err}
 
     payload_hash = hash_envelope(envelope)
     now = int(time.time())
