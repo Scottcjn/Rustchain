@@ -1,5 +1,0 @@
-# RustChain SDK Dependencies
-requests>=2.28.0
-
-# Optional: for async support
-aiohttp>=3.8.0

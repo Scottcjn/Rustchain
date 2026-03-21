@@ -1,3 +1,0 @@
-# Requirements for wRTC Price Ticker Bot
-requests>=2.28.0
-python-telegram-bot>=20.0
