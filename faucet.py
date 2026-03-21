@@ -42,35 +42,34 @@ def init_db():
 
 def get_client_ip():
     """Get client IP address from request.
-
-    SECURITY: Only trust X-Forwarded-For from trusted reverse proxies.
-    Direct connections use remote_addr to prevent rate limit bypass via header spoofing.
+    
+    SECURITY: Fix X-Forwarded-For spoofing. Verify proxy IP securely.
     """
     remote = request.remote_addr or '127.0.0.1'
-    # Only trust forwarded headers from localhost (reverse proxy)
-    if remote in ('127.0.0.1', '::1') and request.headers.get('X-Forwarded-For'):
-        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
+    # Do not blindly trust X-Forwarded-For even from localhost to prevent spoofing
+    # If proxy is used, it should be configured to override remote_addr natively
     return remote
 
 
-def get_last_drip_time(ip_address):
-    """Get the last time this IP requested a drip."""
+def get_last_drip_time(identifier, is_wallet=False):
+    """Get the last time this IP or wallet requested a drip."""
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
-    c.execute('''
+    column = "wallet" if is_wallet else "ip_address"
+    c.execute(f'''
         SELECT timestamp FROM drip_requests
-        WHERE ip_address = ?
+        WHERE {column} = ?
         ORDER BY timestamp DESC
         LIMIT 1
-    ''', (ip_address,))
+    ''', (identifier,))
     result = c.fetchone()
     conn.close()
     return result[0] if result else None
 
 
-def can_drip(ip_address):
-    """Check if the IP can request a drip (rate limiting)."""
-    last_time = get_last_drip_time(ip_address)
+def can_drip(identifier, is_wallet=False):
+    """Check if the IP or Wallet can request a drip (rate limiting)."""
+    last_time = get_last_drip_time(identifier, is_wallet)
     if not last_time:
         return True
     
