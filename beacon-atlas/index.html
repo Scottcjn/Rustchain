@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beacon Atlas — Agent City Visualization</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow:hidden}
+#h{position:fixed;top:0;left:0;right:0;height:56px;background:rgba(13,17,23,.95);border-bottom:1px solid #30363d;display:flex;align-items:center;padding:0 20px;gap:20px;z-index:100}
+#h h1{font-size:15px;font-weight:600;color:#58a6ff}
+#h h1 span{color:#8b949e;font-weight:400}
+.s{display:flex;flex-direction:column}
+.s label{font-size:10px;color:#8b949e;text-transform:uppercase}
+.s v{font-size:14px;font-weight:600}
+#fb{margin-left:auto;display:flex;gap:8px;align-items:center}
+.b{background:#21262d;border:1px solid #30363d;color:#8b949e;padding:4px 10px;border-radius:20px;font-size:12px;cursor:pointer}
+.b:hover{border-color:#58a6ff;color:#58a6ff}
+.b.a{background:#1f3a5f;border-color:#58a6ff;color:#58a6ff}
+#w{position:fixed;top:56px;left:0;right:0;bottom:0}
+#tip{position:fixed;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;font-size:12px;pointer-events:none;opacity:0;transition:opacity .1s;max-width:280px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:200}
+#tip.on{opacity:1}
+.tt{font-weight:600;font-size:13px;margin-bottom:6px;color:#f0f6fc}
+.tr{display:flex;justify-content:space-between;gap:16px;margin:2px 0}
+.tl{color:#8b949e}
+.tv{color:#c9d1d9;font-family:'Courier New',monospace;font-size:11px}
+#sb{position:fixed;right:0;top:56px;bottom:0;width:300px;background:rgba(22,27,34,.97);border-left:1px solid #30363d;padding:16px;overflow-y:auto;display:none;z-index:150}
+#sb.on{display:block}
+#sb h3{font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
+.dr{margin:8px 0}
+.dr label{font-size:10px;color:#8b949e;text-transform:uppercase;margin-bottom:2px;display:block}
+.dr value{font-size:13px;color:#f0f6fc;word-break:break-all;display:block}
+.bdg{padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500}
+.bdg-r{background:#1f3a5f;color:#58a6ff}
+.bdg-t{background:#3d2a0a;color:#f0883e}
+.bdg-h{background:#3d0a0a;color:#ef4444}
+.bdg-m{background:#3d2a0a;color:#f59e0b}
+.bdg-l{background:#1a2a0a;color:#84cc16}
+hr.sep{border:none;border-top:1px solid #30363d;margin:12px 0}
+#leg{position:fixed;bottom:20px;left:20px;background:rgba(22,27,34,.9);border:1px solid #30363d;border-radius:8px;padding:12px 16px;font-size:11px;z-index:100}
+#leg h4{font-size:10px;color:#8b949e;text-transform:uppercase;margin-bottom:8px}
+.li{display:flex;align-items:center;gap:8px;margin:4px 0}
+.dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.ln{width:20px;height:2px;flex-shrink:0}
+#sb2{position:fixed;bottom:20px;right:20px;background:rgba(22,27,34,.9);border:1px solid #30363d;border-radius:8px;padding:10px 14px;z-index:100;display:flex;gap:16px}
+.si{text-align:center}
+.sn{font-size:16px;font-weight:700;color:#58a6ff}
+.sl{font-size:9px;color:#8b949e;text-transform:uppercase}
+#sr{background:#21262d;border:1px solid #30363d;color:#c9d1d9;padding:6px 12px;border-radius:6px;font-size:13px;width:150px}
+#sr:focus{outline:none;border-color:#58a6ff}
+</style>
+</head>
+<body>
+
+<div id="h">
+  <h1>Beacon Atlas <span>/ Agent City Visualization</span></h1>
+  <div class="s"><label>Agents</label><v id="sa">—</v></div>
+  <div class="s"><label>Properties</label><v id="sp">—</v></div>
+  <div class="s"><label>Connections</label><v id="sc2">—</v></div>
+  <div class="s"><label>Cities</label><v id="scit">—</v></div>
+  <div id="fb">
+    <input id="sr" placeholder="Search..." />
+    <button class="b a" data-f="all">All</button>
+    <button class="b" data-f="city">By City</button>
+  </div>
+</div>
+
+<div id="w"><svg id="g"></svg></div>
+
+<div id="tip"><div class="tt" id="tt"></div><div id="tb"></div></div>
+
+<div id="sb">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h3>Details</h3>
+    <button onclick="document.getElementById('sb').classList.remove('on')" style="background:none;border:none;color:#8b949e;font-size:16px;cursor:pointer">x</button>
+  </div>
+  <div id="sc"></div>
+</div>
+
+<div id="leg"><h4>Legend</h4>
+  <div class="li"><div class="dot" style="background:#58a6ff"></div> Agent</div>
+  <div class="li"><div class="dot" style="background:#f0883e"></div> Property</div>
+  <div class="li"><div class="ln" style="background:#3b82f6"></div> Heartbeat</div>
+  <div class="li"><div class="ln" style="background:#22c55e"></div> Contract</div>
+  <div class="li"><div class="ln" style="background:#ef4444"></div> Mayday</div>
+  <div class="li"><div class="dot" style="background:#a855f7"></div> City Hub</div>
+</div>
+
+<div id="sb2">
+  <div class="si"><div class="sn" id="sb-a">—</div><div class="sl">Agents</div></div>
+  <div class="si"><div class="sn" id="sb-p">—</div><div class="sl">Properties</div></div>
+  <div class="si"><div class="sn" id="sb-c">—</div><div class="sl">Links</div></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
