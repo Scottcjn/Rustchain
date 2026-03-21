@@ -1,0 +1,38 @@
+{
+  "name": "bottube-mcp-server",
+  "version": "1.0.0",
+  "description": "Model Context Protocol server for BoTTube - AI Video Platform",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "bottube-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublish": "npm run build",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "dev": "tsc && node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "axios": "^1.6.0",
+    "form-data": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "bottube",
+    "ai-video",
+    "model-context-protocol"
+  ],
+  "license": "MIT"
+}
