@@ -1,0 +1,51 @@
+name: Clean RIP-302 PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to close'
+        required: false
+        default: ''
+
+jobs:
+  create-clean-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout my fork
+        uses: actions/checkout@v4
+        with:
+          repository: kuanglaodi2-sudo/Rustchain
+          token: ${{ secrets.GH_TOKEN }}
+          fetch-depth: 1
+
+      - name: Fetch latest Scottcjn main
+        run: |
+          git remote add upstream https://github.com/Scottcjn/Rustchain.git
+          git fetch upstream main
+          git checkout -b feature/rip302-clean-v12 upstream/main
+
+      - name: Download rip302_auto_match.py
+        run: |
+          curl -sL "https://raw.githubusercontent.com/kuanglaodi2-sudo/Rustchain/feature/rip302-clean-v10/node/rip302_auto_match.py" -o node/rip302_auto_match.py
+          curl -sL "https://raw.githubusercontent.com/kuanglaodi2-sudo/Rustchain/feature/rip302-clean-v10/BOUNTY_683_AUTO_MATCH.md" -o BOUNTY_683_AUTO_MATCH.md
+
+      - name: Commit and push
+        run: |
+          git config user.name "kuanglaodi2-sudo"
+          git config user.email "kuanglaodi2-sudo@users.noreply.github.com"
+          git add node/rip302_auto_match.py BOUNTY_683_AUTO_MATCH.md
+          git commit -m "Add rip302_auto_match.py - RIP-302 Auto-Matching Engine"
+          git push -f origin feature/rip302-clean-v12
+
+      - name: Create PR
+        run: |
+          curl -s -X POST "https://api.github.com/repos/Scottcjn/Rustchain/pulls" \
+            -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "title": "feat: RIP-302 Auto-Matching Engine (Bounty #683 Tier 3, 75 RTC)",
+              "body": "## RIP-302 Auto-Matching Engine\n\nClean PR based on current Scottcjn/Rustchain main.\n\nFiles: node/rip302_auto_match.py + BOUNTY_683_AUTO_MATCH.md\n\nBounty: #683 Tier 3 (75 RTC)",
+              "head": "kuanglaodi2-sudo:feature/rip302-clean-v12",
+              "base": "main"
+            }'
