@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: MIT
+# Full monitoring stack: Prometheus + Grafana + RustChain exporter
+# Cherry-picked from LaphoqueRC PR #1711, infra refs fixed.
+#
+# Usage:
+#   docker-compose -f docker-compose.monitoring.yml up -d
+
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.47.2
+    container_name: rustchain-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=168h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: rustchain-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=rustchain123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+
+  rustchain-exporter:
+    build:
+      context: ../../monitoring
+      dockerfile: Dockerfile.exporter
+    container_name: rustchain-exporter
+    ports:
+      - "8000:8000"
+    environment:
+      - RUSTCHAIN_NODE=https://50.28.86.131
+      - EXPORTER_PORT=8000
+      - SCRAPE_INTERVAL=30
+      - TLS_VERIFY=false
+    restart: unless-stopped
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  monitoring:
+    driver: bridge

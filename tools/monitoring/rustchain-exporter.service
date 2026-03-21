@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: MIT
+# systemd unit for the RustChain Prometheus Exporter
+# Cherry-picked from LaphoqueRC PR #1711, infra refs fixed.
+#
+# Install:
+#   sudo cp rustchain-exporter.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now rustchain-exporter
+
+[Unit]
+Description=RustChain Prometheus Exporter
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=rustchain
+Group=rustchain
+WorkingDirectory=/opt/rustchain-exporter
+ExecStart=/usr/bin/python3 /opt/rustchain-exporter/prometheus_exporter.py \
+    --node-url https://50.28.86.131 \
+    --listen-port 8000 \
+    --scrape-interval 30
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rustchain-exporter
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

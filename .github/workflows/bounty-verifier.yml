@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyyaml
+          pip install pyyaml requests beautifulsoup4 lxml
       
       - name: Run bounty verifier
         env:
