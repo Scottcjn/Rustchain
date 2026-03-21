@@ -325,6 +325,118 @@ def _normalize_attestation_report(report):
             normalized[field] = text
     return normalized
 
+
+ATTEST_NONCE_SKEW_SECONDS = int(os.getenv("ATTEST_NONCE_SKEW_SECONDS", "60"))
+_ATTEST_CHALLENGE_NONCE_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
+
+
+def attest_ensure_tables(conn):
+    """Create the attestation nonce tables expected by replay protection."""
+    conn.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS used_nonces (
+            nonce TEXT PRIMARY KEY,
+            miner_id TEXT NOT NULL,
+            first_seen INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_used_nonces_expires_at ON used_nonces(expires_at)")
+
+
+def attest_cleanup_expired(conn, now_ts: Optional[int] = None):
+    """Remove expired challenge and used-nonce rows."""
+    now_ts = int(time.time()) if now_ts is None else int(now_ts)
+    attest_ensure_tables(conn)
+    conn.execute("DELETE FROM nonces WHERE expires_at < ?", (now_ts,))
+    conn.execute("DELETE FROM used_nonces WHERE expires_at < ?", (now_ts,))
+    conn.commit()
+
+
+def extract_attestation_timestamp(data: dict, report: dict, nonce: Optional[str]) -> Optional[int]:
+    """Extract an optional attestation timestamp from request payload fields."""
+    for source in (report or {}, data or {}):
+        for field_name in ("nonce_ts", "nonce_timestamp", "timestamp", "server_time"):
+            raw_value = source.get(field_name)
+            if isinstance(raw_value, bool):
+                continue
+            if isinstance(raw_value, (int, float)):
+                if math.isfinite(raw_value):
+                    return int(raw_value)
+                continue
+            if isinstance(raw_value, str) and raw_value.strip().isdigit():
+                return int(raw_value.strip())
+    return None
+
+
+def _attest_nonce_requires_challenge(nonce: str, nonce_ts: Optional[int]) -> bool:
+    """Current challenge endpoint emits 64-hex nonces with no embedded timestamp."""
+    return nonce_ts is None and bool(_ATTEST_CHALLENGE_NONCE_RE.fullmatch(nonce))
+
+
+def attest_validate_challenge(conn, nonce: str, now_ts: Optional[int] = None):
+    """Validate and consume a one-time challenge nonce."""
+    now_ts = int(time.time()) if now_ts is None else int(now_ts)
+    attest_cleanup_expired(conn, now_ts=now_ts)
+    row = conn.execute(
+        "SELECT expires_at FROM nonces WHERE nonce = ? AND expires_at >= ?",
+        (nonce, now_ts),
+    ).fetchone()
+    if not row:
+        return False, "challenge_invalid", None
+
+    expires_at = int(row[0])
+    deleted = conn.execute(
+        "DELETE FROM nonces WHERE nonce = ? AND expires_at = ?",
+        (nonce, expires_at),
+    ).rowcount
+    conn.commit()
+    if deleted != 1:
+        return False, "challenge_invalid", None
+    return True, None, expires_at
+
+
+def attest_validate_and_store_nonce(
+    conn,
+    miner: str,
+    nonce: str,
+    now_ts: Optional[int] = None,
+    nonce_ts: Optional[int] = None,
+    skew_seconds: int = ATTEST_NONCE_SKEW_SECONDS,
+):
+    """Reject replayed or stale attestation nonces and persist accepted ones."""
+    now_ts = int(time.time()) if now_ts is None else int(now_ts)
+    nonce = _attest_text(nonce)
+    miner = _attest_valid_miner(miner) or _attest_text(miner) or ""
+    if nonce is None:
+        return False, "missing_nonce", None
+
+    attest_cleanup_expired(conn, now_ts=now_ts)
+    replay_row = conn.execute(
+        "SELECT 1 FROM used_nonces WHERE nonce = ?",
+        (nonce,),
+    ).fetchone()
+    if replay_row:
+        return False, "nonce_replay", None
+
+    challenge_expires_at = None
+    if _attest_nonce_requires_challenge(nonce, nonce_ts):
+        ok, err, challenge_expires_at = attest_validate_challenge(conn, nonce, now_ts=now_ts)
+        if not ok:
+            return False, err, None
+    elif nonce_ts is not None and abs(int(nonce_ts) - now_ts) > max(int(skew_seconds), 0):
+        return False, "nonce_stale", None
+
+    expires_at = challenge_expires_at or (now_ts + max(int(skew_seconds), 1))
+    conn.execute(
+        "INSERT INTO used_nonces (nonce, miner_id, first_seen, expires_at) VALUES (?, ?, ?, ?)",
+        (nonce, miner, now_ts, expires_at),
+    )
+    conn.commit()
+    return True, None, expires_at
+
 # Register Hall of Rust blueprint (tables initialized after DB_PATH is set)
 try:
     from hall_of_rust import hall_bp
@@ -910,7 +1022,7 @@ def init_db():
     """Initialize all database tables"""
     with sqlite3.connect(DB_PATH) as c:
         # Core tables
-        c.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
+        attest_ensure_tables(c)
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
 
         # Epoch tables
@@ -2460,6 +2572,52 @@ def _submit_attestation_impl():
             "message": "Too many unique miners from this IP address",
             "code": "IP_RATE_LIMIT"
         }), 429
+
+    if nonce is None:
+        return jsonify({
+            "ok": False,
+            "error": "missing_nonce",
+            "message": "Attestation nonce is required",
+            "code": "MISSING_NONCE"
+        }), 400
+
+    nonce_ts = extract_attestation_timestamp(data, report, nonce)
+    with sqlite3.connect(DB_PATH) as nonce_conn:
+        nonce_ok, nonce_err, _ = attest_validate_and_store_nonce(
+            nonce_conn,
+            miner=miner,
+            nonce=nonce,
+            now_ts=int(time.time()),
+            nonce_ts=nonce_ts,
+        )
+    if not nonce_ok:
+        nonce_messages = {
+            "challenge_invalid": (
+                "challenge_invalid",
+                "Attestation challenge is missing, expired, or already used",
+                "CHALLENGE_INVALID",
+            ),
+            "nonce_replay": (
+                "nonce_replay",
+                "Attestation nonce has already been used",
+                "NONCE_REPLAY",
+            ),
+            "nonce_stale": (
+                "nonce_stale",
+                "Attestation nonce timestamp is outside the allowed skew window",
+                "NONCE_STALE",
+            ),
+        }
+        error_name, message, code = nonce_messages.get(
+            nonce_err,
+            ("invalid_nonce", "Attestation nonce is invalid", "INVALID_NONCE"),
+        )
+        return jsonify({
+            "ok": False,
+            "error": error_name,
+            "message": message,
+            "code": code
+        }), 409
     signals = _normalize_attestation_signals(data.get('signals'))
     fingerprint = _attest_mapping(data.get('fingerprint'))  # NEW: Extract fingerprint
 
