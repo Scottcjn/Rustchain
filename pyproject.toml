@@ -1,16 +1,61 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rustchain"
+version = "0.1.0"
+description = "Async Python SDK for the RustChain blockchain network"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "RustChain Contributors" },
+]
+keywords = ["blockchain", "crypto", "rustchain", "rtc", "sdk"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "httpx>=0.25.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+cli = [
+    "websockets>=12.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-httpserver>=1.0.0",
+    "httpx>=0.25.0",
+    "pydantic>=2.0.0",
+    "websockets>=12.0",
+]
+
+[project.scripts]
+rustchain = "rustchain.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Scottcjn/Rustchain"
+Repository = "https://github.com/Scottcjn/Rustchain"
+Issues = "https://github.com/Scottcjn/Rustchain/issues"
+
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 testpaths = ["tests"]
-pythonpath = ["node", "."]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
 
-[tool.ruff]
-line-length = 120
-exclude = ["deprecated", "node_backups"]
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "B", "I"]
-ignore = ["E501"] # Ignore long lines for legacy code
-
-[tool.mypy]
-python_version = "3.11"
-ignore_missing_imports = true
-exclude = ["deprecated", "node_backups"]
+[tool.hatch.build.targets.wheel]
+packages = ["rustchain"]
