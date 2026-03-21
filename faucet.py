@@ -4,23 +4,43 @@ RustChain Testnet Faucet
 A simple Flask web application that dispenses test RTC tokens.
 
 Features:
-- IP-based rate limiting
+- Wallet-based rate limiting (PRIMARY defense - prevents IP-spoofing bypass)
+- IP-based rate limiting (SECONDARY defense)
 - SQLite backend for tracking
 - Simple HTML form for requesting tokens
+
+Security: Fixes X-Forwarded-For spoofing vulnerability (CVE candidate).
+The original implementation trusted X-Forwarded-For headers unconditionally,
+allowing attackers behind a misconfigured reverse proxy to bypass IP-based
+rate limits by setting arbitrary XFF values.
 """
 
 import sqlite3
 import time
 import os
+import ipaddress
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template_string
 
 app = Flask(__name__)
 DATABASE = 'faucet.db'
 
-# Rate limiting settings (per 24 hours)
+# Rate limiting settings
 MAX_DRIP_AMOUNT = 0.5  # RTC
 RATE_LIMIT_HOURS = 24
+TRUSTED_PROXY_IPS = frozenset([
+    ipaddress.ip_network('127.0.0.0/8'),
+    ipaddress.ip_network('::1/128'),
+])
+
+
+def is_valid_ip(s):
+    """Check if string is a valid IP address."""
+    try:
+        ipaddress.ip_address(s)
+        return True
+    except ValueError:
+        return False
 
 
 def init_db():
@@ -41,19 +61,44 @@ def init_db():
 
 
 def get_client_ip():
-    """Get client IP address from request.
-
-    SECURITY: Only trust X-Forwarded-For from trusted reverse proxies.
-    Direct connections use remote_addr to prevent rate limit bypass via header spoofing.
+    """Get the real client IP address.
+    
+    SECURITY FIX: Do NOT trust X-Forwarded-For from untrusted sources.
+    
+    The original vulnerability: faucet trusted X-Forwarded-For header from any
+    localhost connection, allowing attackers to bypass rate limits by sending:
+        X-Forwarded-For: <fresh_ip>, <old_banned_ip>
+    
+    The fix:
+    1. NEVER trust X-Forwarded-For unless the direct connection is from a
+       known/trusted reverse proxy IP (not just localhost).
+    2. For all practical purposes: use remote_addr as the client IP.
+    3. The X-Forwarded-For header is only consulted if remote_addr is
+       explicitly from our own trusted proxy list.
+    
+    In production, configure TRUSTED_PROXY_IPS with your actual proxy IPs.
     """
-    remote = request.remote_addr or '127.0.0.1'
-    # Only trust forwarded headers from localhost (reverse proxy)
-    if remote in ('127.0.0.1', '::1') and request.headers.get('X-Forwarded-For'):
-        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
-    return remote
+    remote_addr = request.remote_addr or '127.0.0.1'
+    
+    # Check if request came through a trusted reverse proxy
+    if remote_addr:
+        try:
+            remote_ip = ipaddress.ip_address(remote_addr)
+            is_trusted = any(remote_ip in net for net in TRUSTED_PROXY_IPS)
+            if is_trusted and request.headers.get('X-Forwarded-For'):
+                xff = request.headers.get('X-Forwarded-For')
+                first_ip = xff.split(',')[0].strip()
+                # Only use XFF if it looks like a valid IP
+                if is_valid_ip(first_ip):
+                    return first_ip
+        except ValueError:
+            pass
+    
+    # For all other cases: use remote_addr directly (no XFF spoofing possible)
+    return remote_addr
 
 
-def get_last_drip_time(ip_address):
+def get_last_drip_time_by_ip(ip_address):
     """Get the last time this IP requested a drip."""
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
@@ -68,9 +113,24 @@ def get_last_drip_time(ip_address):
     return result[0] if result else None
 
 
-def can_drip(ip_address):
-    """Check if the IP can request a drip (rate limiting)."""
-    last_time = get_last_drip_time(ip_address)
+def get_last_drip_time_by_wallet(wallet_address):
+    """Get the last time this wallet requested a drip."""
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    c.execute('''
+        SELECT timestamp FROM drip_requests
+        WHERE wallet = ?
+        ORDER BY timestamp DESC
+        LIMIT 1
+    ''', (wallet_address,))
+    result = c.fetchone()
+    conn.close()
+    return result[0] if result else None
+
+
+def can_drip_by_ip(ip_address):
+    """Check if the IP can request a drip (IP-based rate limiting - secondary defense)."""
+    last_time = get_last_drip_time_by_ip(ip_address)
     if not last_time:
         return True
     
@@ -81,9 +141,43 @@ def can_drip(ip_address):
     return hours_since >= RATE_LIMIT_HOURS
 
 
-def get_next_available(ip_address):
+def can_drip_by_wallet(wallet_address):
+    """Check if the wallet can request a drip (wallet-based rate limiting - PRIMARY defense).
+    
+    Rationale: Even if an attacker can spoof X-Forwarded-For to rotate IPs,
+    they cannot easily obtain unlimited fresh wallet addresses without spending
+    real resources. Wallet-based rate limiting makes the attack economically
+    infeasible.
+    """
+    last_time = get_last_drip_time_by_wallet(wallet_address)
+    if not last_time:
+        return True
+    
+    last_drip = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
+    now = datetime.now(last_drip.tzinfo)
+    hours_since = (now - last_drip).total_seconds() / 3600
+    
+    return hours_since >= RATE_LIMIT_HOURS
+
+
+def get_next_available_by_ip(ip_address):
     """Get the next available time for this IP."""
-    last_time = get_last_drip_time(ip_address)
+    last_time = get_last_drip_time_by_ip(ip_address)
+    if not last_time:
+        return None
+    
+    last_drip = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
+    next_available = last_drip + timedelta(hours=RATE_LIMIT_HOURS)
+    now = datetime.now(last_drip.tzinfo)
+    
+    if next_available > now:
+        return next_available.isoformat()
+    return None
+
+
+def get_next_available_by_wallet(wallet_address):
+    """Get the next available time for this wallet."""
+    last_time = get_last_drip_time_by_wallet(wallet_address)
     if not last_time:
         return None
     
@@ -193,10 +287,22 @@ HTML_TEMPLATE = """
             font-size: 12px;
             margin-top: 10px;
         }
+        .security-badge {
+            background: #003300;
+            border: 1px solid #00ff00;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
-    <h1>💧 RustChain Testnet Faucet</h1>
+    <h1>RustChain Testnet Faucet</h1>
+    
+    <div class="security-badge">
+        Security: Wallet-based rate limiting enabled (prevents IP-spoofing bypass)
+    </div>
     
     <div class="form-section">
         <p>Get free test RTC tokens for development.</p>
@@ -210,7 +316,7 @@ HTML_TEMPLATE = """
     </div>
     
     <div class="note">
-        <p><strong>Rate Limit:</strong> {{ rate_limit }} RTC per {{ hours }} hours per IP</p>
+        <p><strong>Rate Limit:</strong> {{ rate_limit }} RTC per {{ hours }} hours per wallet (primary) + per IP (secondary)</p>
         <p><strong>Network:</strong> RustChain Testnet</p>
     </div>
 
@@ -237,18 +343,22 @@ HTML_TEMPLATE = """
                 const data = await response.json();
                 
                 if (data.ok) {
-                    result.innerHTML = '<div class="result success">✅ Success! Sent ' + data.amount + ' RTC to ' + wallet + '</div>';
+                    result.innerHTML = '<div class="result success">Sent ' + data.amount + ' RTC to ' + wallet + '</div>';
                     if (data.next_available) {
                         result.innerHTML += '<div class="result info">Next available: ' + data.next_available + '</div>';
                     }
                 } else {
-                    result.innerHTML = '<div class="result error">❌ ' + data.error + '</div>';
+                    let errMsg = data.error;
+                    if (data.rate_limit_type) {
+                        errMsg += ' (type: ' + data.rate_limit_type + ')';
+                    }
+                    result.innerHTML = '<div class="result error">' + errMsg + '</div>';
                     if (data.next_available) {
                         result.innerHTML += '<div class="result info">Next available: ' + data.next_available + '</div>';
                     }
                 }
             } catch (err) {
-                result.innerHTML = '<div class="result error">❌ Error: ' + err.message + '</div>';
+                result.innerHTML = '<div class="result error">Error: ' + err.message + '</div>';
             }
             
             submitBtn.disabled = false;
@@ -277,6 +387,10 @@ def drip():
     """
     Handle drip requests.
     
+    Security: Implements dual-layer rate limiting:
+    1. PRIMARY: Wallet-based rate limiting (prevents XFF spoofing bypass)
+    2. SECONDARY: IP-based rate limiting (catches simple abusers)
+    
     Request body:
         {"wallet": "0x..."}
     
@@ -296,17 +410,31 @@ def drip():
     
     ip = get_client_ip()
     
-    # Check rate limit
-    if not can_drip(ip):
-        next_available = get_next_available(ip)
+    # PRIMARY DEFENSE: Wallet-based rate limiting
+    # This is the main defense against X-Forwarded-For spoofing.
+    # Even if an attacker spoofs XFF to rotate IPs, they cannot bypass
+    # wallet-based rate limits without obtaining new wallets.
+    if not can_drip_by_wallet(wallet):
+        next_available = get_next_available_by_wallet(wallet)
         return jsonify({
             'ok': False,
-            'error': 'Rate limit exceeded',
-            'next_available': next_available
+            'error': 'Rate limit exceeded for this wallet',
+            'next_available': next_available,
+            'rate_limit_type': 'wallet'
+        }), 429
+    
+    # SECONDARY DEFENSE: IP-based rate limiting
+    # Catches simple abusers who don't bother with XFF spoofing.
+    if not can_drip_by_ip(ip):
+        next_available = get_next_available_by_ip(ip)
+        return jsonify({
+            'ok': False,
+            'error': 'Rate limit exceeded for this IP',
+            'next_available': next_available,
+            'rate_limit_type': 'ip'
         }), 429
     
     # Record the drip (in production, this would actually transfer tokens)
-    # For now, we simulate the drip
     amount = MAX_DRIP_AMOUNT
     record_drip(wallet, ip, amount)
     

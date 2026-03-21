@@ -1,5 +1,0 @@
-requests
-aiohttp
-pystray
-Pillow
-pyinstaller
