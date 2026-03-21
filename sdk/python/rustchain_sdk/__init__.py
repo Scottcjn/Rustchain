@@ -1,23 +1,18 @@
-"""
-RustChain Python SDK
-A pip-installable API client for the RustChain blockchain network.
+"""RustChain Agent Economy Python SDK."""
 
-Author: sososonia-cyber (Atlas AI Agent)
-License: MIT
-"""
+from .rustchain_sdk import (
+    AgentEconomySDK,
+    SyncAgentEconomySDK,
+    Job,
+    Reputation,
+    MarketplaceStats,
+)
 
 __version__ = "0.1.0"
-
-from .client import RustChainClient
-from .exceptions import RustChainError, AuthenticationError, APIError
-from .bottube import BoTTubeClient, BoTTubeError, UploadError
-
 __all__ = [
-    "RustChainError",
-    "AuthenticationError",
-    "APIError",
-    "RustChainClient",
-    "BoTTubeClient",
-    "BoTTubeError",
-    "UploadError",
+    "AgentEconomySDK",
+    "SyncAgentEconomySDK", 
+    "Job",
+    "Reputation",
+    "MarketplaceStats",
 ]
