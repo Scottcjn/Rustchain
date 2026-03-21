@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: MIT
 import importlib.util
+import json
 import os
 import sqlite3
 import tempfile
 import unittest
+from hashlib import blake2b
 from pathlib import Path
 from typing import Optional
 
@@ -86,6 +88,33 @@ class BeaconAnchorSignatureTests(unittest.TestCase):
             self.assertEqual(row[1], "heartbeat")
             self.assertEqual(row[2], "beacon-nonce-123456")
             self.assertEqual(row[3], beacon_anchor.hash_envelope(envelope))
+        finally:
+            os.unlink(db_path)
+
+    def test_store_envelope_ignores_unsigned_beacon_version_metadata_in_hash(self):
+        db_path = _make_temp_db()
+        try:
+            beacon_anchor.init_beacon_table(db_path)
+            envelope, _ = _build_signed_envelope()
+            envelope["_beacon_version"] = 999
+
+            result = beacon_anchor.store_envelope(envelope, db_path)
+
+            self.assertTrue(result["ok"])
+            raw_hash = blake2b(
+                json.dumps(envelope, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+                digest_size=32,
+            ).hexdigest()
+            canonical_hash = beacon_anchor.hash_envelope(
+                {key: value for key, value in envelope.items() if key != "_beacon_version"}
+            )
+            self.assertEqual(result["payload_hash"], canonical_hash)
+            self.assertNotEqual(result["payload_hash"], raw_hash)
+            with sqlite3.connect(db_path) as conn:
+                stored_hash = conn.execute(
+                    "SELECT payload_hash FROM beacon_envelopes"
+                ).fetchone()[0]
+            self.assertEqual(stored_hash, canonical_hash)
         finally:
             os.unlink(db_path)
 

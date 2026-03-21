@@ -41,6 +41,15 @@ def _canonical_signing_payload(envelope: dict) -> bytes:
     return json.dumps(signing_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
+def _canonical_stored_envelope(envelope: dict) -> dict:
+    """Drop transport-only Beacon metadata before hashing for anchoring."""
+    return {
+        key: value
+        for key, value in envelope.items()
+        if key != "_beacon_version"
+    }
+
+
 def verify_envelope_signature(envelope: dict) -> tuple[bool, str]:
     """
     Verify an HTTP-submitted Beacon envelope.
@@ -105,8 +114,8 @@ def init_beacon_table(db_path=DB_PATH):
 
 
 def hash_envelope(envelope: dict) -> str:
-    """Compute blake2b hash of the full envelope JSON (canonical, sorted keys)."""
-    data = json.dumps(envelope, sort_keys=True, separators=(',', ':')).encode()
+    """Compute blake2b hash of the canonical stored envelope JSON."""
+    data = json.dumps(_canonical_stored_envelope(envelope), sort_keys=True, separators=(',', ':')).encode()
     return blake2b(data, digest_size=32).hexdigest()
 
 
