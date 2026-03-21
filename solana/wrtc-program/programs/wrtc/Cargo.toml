@@ -1,0 +1,14 @@
+[package]
+name = "wrtc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anchor-lang = "0.30.0"
+anchor-spl = "0.30.0"
+spl-token = "3.5.4"
+solana-program = "1.18"
+thiserror = "1.0"
+
+[lib]
+crate-type = ["cdylib", "lib"]
