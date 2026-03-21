@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fossil Record 鈥?Attestation Archaeology</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --bg: #0d0d0d;
+            --surface: #1a1a1a;
+            --text: #e2e8f0;
+            --text-muted: #718096;
+            --accent: #d4a017;
+            --border: #2d2d2d;
+        }
+        
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: "Courier New", monospace;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 1.5rem 2rem;
+        }
+        
+        h1 {
+            font-size: 1.4rem;
+            color: var(--accent);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+        }
+        
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            margin-top: 0.3rem;
+            letter-spacing: 0.1em;
+        }
+        
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            padding: 1rem 2rem;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        
+        .legend-swatch {
+            width: 14px;
+            height: 14px;
+            border-radius: 2px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 1rem;
+            padding: 1rem 2rem;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            align-items: center;
+        }
+        
+        .controls label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        
+        .controls input {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.3rem 0.6rem;
+            font-family: inherit;
+            font-size: 0.8rem;
+            width: 120px;
+        }
+        
+        .controls input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        
+        #chart {
+            width: 100%;
+            overflow-x: auto;
+        }
+        
+        .axis text {
+            fill: var(--text-muted);
+            font-family: "Courier New", monospace;
+            font-size: 11px;
+        }
+        
+        .axis line, .axis path {
+            stroke: var(--border);
+        }
+        
+        .tooltip {
+            position: absolute;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 0.8rem;
+            font-size: 0.75rem;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s;
+            min-width: 200px;
+            z-index: 100;
+        }
+        
+        .tooltip.visible { opacity: 1; }
+        
+        .tooltip h3 {
+            color: var(--accent);
+            font-size: 0.85rem;
+            margin-bottom: 0.4rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+        
+        .tooltip .row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.15rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .tooltip .row:last-child { border-bottom: none; }
+        .tooltip .key { color: var(--text-muted); }
+        .tooltip .val { color: var(--text); }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1px;
+            background: var(--border);
+            border-top: 1px solid var(--border);
+        }
+        
+        .stat {
+            background: var(--bg);
+            padding: 1rem 1.5rem;
+        }
+        
+        .stat .label {
+            color: var(--text-muted);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+        
+        .stat .value {
+            color: var(--accent);
+            font-size: 1.4rem;
+            margin-top: 0.2rem;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        
+        .loading::after {
+            content: "...";
+            animation: dots 1.5s infinite;
+        }
+        
+        @keyframes dots {
+            0%, 20% { content: "."; }
+            40% { content: ".."; }
+            60%, 100% { content: "..."; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>The Fossil Record</h1>
+        <p class="subtitle">Attestation Archaeology 鈥?Every silicon layer tells a story</p>
+    </header>
+    
+    <div class="legend" id="legend"></div>
+    
+    <div class="controls">
+        <label>Epoch Start: <input type="number" id="epochStart" value="0" min="0"></label>
+        <label>Epoch End: <input type="number" id="epochEnd" value="10000" min="0"></label>
+        <label>Scale: <input type="number" id="bucketSize" value="1" min="1" max="100"></label>
+        <button onclick="loadTimeline()" style="background: var(--accent); color: #000; border: none; padding: 0.4rem 1rem; cursor: pointer; font-family: inherit; font-size: 0.8rem;">Refresh</button>
+    </div>
+    
+    <div id="chart">
+        <div class="loading" id="loading">Loading attestation layers</div>
+    </div>
+    
+    <div class="stats" id="stats"></div>
+    
+    <div class="tooltip" id="tooltip"></div>
+    
+    <script>
+        const COLORS = {};
+        const LABELS = {};
+        let rawData = [];
+        
+        async function loadTimeline() {
+            const start = parseInt(document.getElementById("epochStart").value) || 0;
+            const end = parseInt(document.getElementById("epochEnd").value) || 10000;
+            const bucket = parseInt(document.getElementById("bucketSize").value) || 1;
+            
+            document.getElementById("loading").style.display = "block";
+            
+            try {
+                const resp = await fetch(`/api/timeline?start=${start}&end=${end}&limit=10000`);
+                const data = await resp.json();
+                Object.assign(COLORS, data.colors);
+                Object.assign(LABELS, data.labels);
+                rawData = data.layers;
+                renderLegend(data.arch_order);
+                renderChart(data.layers, bucket);
+                renderStats(data.layers);
+            } catch (e) {
+                document.getElementById("chart").innerHTML = `<div class="loading">Failed to load: ${e.message}</div>`;
+            }
+        }
+        
+        function renderLegend(archOrder) {
+            const legend = document.getElementById("legend");
+            legend.innerHTML = archOrder.map(arch => `
+                <div class="legend-item">
+                    <div class="legend-swatch" style="background: ${COLORS[arch] || '#888'}"></div>
+                    <span>${LABELS[arch] || arch}</span>
+                </div>
+            `).join("");
+        }
+        
+        function renderChart(layers, bucketSize) {
+            const container = document.getElementById("chart");
+            container.innerHTML = "";
+            
+            if (!layers.length) {
+                container.innerHTML = '<div class="loading">No attestation data found</div>';
+                return;
+            }
+            
+            // Bucket data by epoch and arch
+            const bucketed = {};
+            for (const l of layers) {
+                const bucket = Math.floor(l.epoch / bucketSize) * bucketSize;
+                const key = `${bucket}-${l.arch}`;
+                if (!bucketed[key] || l.count > bucketed[key].count) {
+                    bucketed[key] = { epoch: bucket, arch: l.arch, count: l.count, rtc: l.rtc, miner_count: l.miner_count, label: l.label, color: l.color };
+                }
+            }
+            
+            const bucketedData = Object.values(bucketed);
+            const epochs = [...new Set(bucketedData.map(d => d.epoch))].sort((a, b) => a - b);
+            const archs = [...new Set(bucketedData.map(d => d.arch))];
+            
+            const margin = { top: 20, right: 20, bottom: 40, left: 60 };
+            const width = Math.max(container.clientWidth, epochs.length * Math.max(2, 60 / Math.log(epochs.length))) - margin.left - margin.right;
+            const height = Math.max(400, archs.length * 35) - margin.top - margin.bottom;
+            
+            const svg = d3.select(container)
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom);
+            
+            const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+            
+            const x = d3.scaleLinear().domain([epochs[0], epochs[epochs.length - 1]]).range([0, width]);
+            const y = d3.scaleBand().domain(archs).range([0, height]).padding(0.05);
+            
+            // Grid lines
+            g.append("g")
+                .attr("class", "grid")
+                .selectAll("line")
+                .data(epochs.filter((_, i) => i % Math.ceil(epochs.length / 20) === 0))
+                .enter()
+                .append("line")
+                .attr("x1", d => x(d))
+                .attr("x2", d => x(d))
+                .attr("y1", 0)
+                .attr("y2", height)
+                .attr("stroke", "#1a1a1a")
+                .attr("stroke-width", 1);
+            
+            // Y-axis (architectures)
+            g.append("g")
+                .attr("class", "axis")
+                .call(d3.axisLeft(y).tickFormat(d => LABELS[d] || d))
+                .selectAll("text")
+                .attr("fill", d => COLORS[d] || "#888")
+                .style("font-size", "11px");
+            
+            // X-axis (epochs)
+            g.append("g")
+                .attr("class", "axis")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).ticks(10).tickFormat(d3.format(".0s")));
+            
+            // Blocks
+            const tooltip = document.getElementById("tooltip");
+            
+            g.selectAll("rect.block")
+                .data(bucketedData)
+                .enter()
+                .append("rect")
+                .attr("class", "block")
+                .attr("x", d => x(d.epoch))
+                .attr("y", d => y(d.arch))
+                .attr("width", Math.max(1, width / epochs.length - 1))
+                .attr("height", y.bandwidth())
+                .attr("fill", d => d.color)
+                .attr("opacity", d => 0.4 + (d.count / 50) * 0.6)
+                .style("cursor", "pointer")
+                .on("mousemove", (event, d) => {
+                    tooltip.innerHTML = `
+                        <h3>${d.label}</h3>
+                        <div class="row"><span class="key">Epoch</span><span class="val">${d.epoch}</span></div>
+                        <div class="row"><span class="key">Attestations</span><span class="val">${d.count}</span></div>
+                        <div class="row"><span class="key">RTC Earned</span><span class="val">${d.rtc.toLocaleString()}</span></div>
+                        <div class="row"><span class="key">Active Miners</span><span class="val">${d.miner_count}</span></div>
+                    `;
+                    tooltip.classList.add("visible");
+                    tooltip.style.left = (event.pageX + 15) + "px";
+                    tooltip.style.top = (event.pageY - 10) + "px";
+                })
+                .on("mouseleave", () => {
+                    tooltip.classList.remove("visible");
+                });
+            
+            // Height legend
+            svg.append("text")
+                .attr("x", width + margin.left + 10)
+                .attr("y", margin.top + 10)
+                .attr("fill", "#718096")
+                .attr("font-size", "10px")
+                .text("Opacity = density");
+        }
+        
+        function renderStats(layers) {
+            const stats = document.getElementById("stats");
+            const totalEpochs = new Set(layers.map(l => l.epoch)).size;
+            const totalAttestations = layers.reduce((sum, l) => sum + l.count, 0);
+            const totalRTC = layers.reduce((sum, l) => sum + l.rtc, 0);
+            const archCount = new Set(layers.map(l => l.arch)).size;
+            
+            stats.innerHTML = `
+                <div class="stat"><div class="label">Total Epochs</div><div class="value">${totalEpochs.toLocaleString()}</div></div>
+                <div class="stat"><div class="label">Total Attestations</div><div class="value">${totalAttestations.toLocaleString()}</div></div>
+                <div class="stat"><div class="label">Total RTC Distributed</div><div class="value">${totalRTC.toLocaleString()}</div></div>
+                <div class="stat"><div class="label">Architecture Families</div><div class="value">${archCount}</div></div>
+            `;
+        }
+        
+        loadTimeline();
+        window.addEventListener("resize", () => {
+            if (rawData.length) renderChart(rawData, parseInt(document.getElementById("bucketSize").value) || 1);
+        });
+    </script>
+</body>
+</html>
