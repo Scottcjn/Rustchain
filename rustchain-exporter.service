@@ -1,0 +1,40 @@
+[Unit]
+Description=RustChain Prometheus Exporter
+Documentation=https://github.com/Scottcjn/Rustchain
+After=network.target
+
+[Service]
+Type=simple
+User=rustchain
+Group=rustchain
+WorkingDirectory=/opt/rustchain-exporter
+ExecStart=/usr/bin/python3 /opt/rustchain-exporter/rustchain_exporter.py
+Restart=always
+RestartSec=10
+TimeoutStopSec=20
+
+# Environment configuration
+Environment="RUSTCHAIN_NODE_URL=http://localhost:8332"
+Environment="EXPORTER_PORT=9090"
+Environment="EXPORTER_HOST=0.0.0.0"
+Environment="METRICS_INTERVAL=30"
+Environment="LOG_LEVEL=INFO"
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/log/rustchain-exporter
+
+# Resource limits
+LimitNOFILE=8192
+MemoryMax=256M
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rustchain-exporter
+
+[Install]
+WantedBy=multi-user.target
