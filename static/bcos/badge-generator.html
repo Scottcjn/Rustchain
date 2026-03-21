@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BCOS Badge Generator | RustChain</title>
+    <style>
+        :root {
+            --cyan: #00ffff;
+            --bg: #0a0a0a;
+            --text: #c0c0c0;
+            --border: #333;
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Courier New', Courier, monospace;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            border: 1px solid var(--border);
+            padding: 30px;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.1);
+        }
+        h1 {
+            color: var(--cyan);
+            border-bottom: 2px solid var(--cyan);
+            padding-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        .form-group {
+            margin-bottom: 25px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--cyan);
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            background: #151515;
+            border: 1px solid var(--border);
+            color: white;
+            padding: 12px;
+            font-family: inherit;
+            box-sizing: border-box;
+        }
+        input:focus {
+            outline: none;
+            border-color: var(--cyan);
+        }
+        .preview-box {
+            margin-top: 30px;
+            border: 1px dashed var(--border);
+            padding: 20px;
+            text-align: center;
+            min-height: 100px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .preview-img {
+            margin-bottom: 15px;
+            max-width: 100%;
+        }
+        .code-box {
+            background: #000;
+            padding: 15px;
+            border: 1px solid #222;
+            position: relative;
+            margin-top: 15px;
+            text-align: left;
+        }
+        code {
+            color: #7df9ff;
+            word-break: break-all;
+            white-space: pre-wrap;
+        }
+        .copy-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: var(--cyan);
+            color: black;
+            border: none;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        .copy-btn:hover {
+            background: white;
+        }
+        .footer {
+            margin-top: 40px;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+        .hint {
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+        }
+        .btn-primary {
+            background: transparent;
+            color: var(--cyan);
+            border: 1px solid var(--cyan);
+            padding: 10px 20px;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .btn-primary:hover {
+            background: var(--cyan);
+            color: black;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>BCOS Badge Generator</h1>
+    <p>Generate a certified open-source badge for your RustChain-anchored repository.</p>
+
+    <div class="form-group">
+        <label for="certId">Certificate ID (e.g. BCOS-e9aae86d)</label>
+        <input type="text" id="certId" placeholder="Enter your BCOS ID..." oninput="updateBadge()">
+        <div class="hint">Find your ID at <a href="https://rustchain.org/bcos/" style="color:var(--cyan)">rustchain.org/bcos/</a></div>
+    </div>
+
+    <div class="form-group">
+        <label for="badgeStyle">Badge Style</label>
+        <select id="badgeStyle" onchange="updateBadge()">
+            <option value="flat">Flat (Default)</option>
+            <option value="flat-square">Flat Square</option>
+            <option value="for-the-badge">For the Badge</option>
+            <option value="plastic">Plastic</option>
+            <option value="social">Social</option>
+        </select>
+    </div>
+
+    <div id="previewContainer" style="display: none;">
+        <label>Preview</label>
+        <div class="preview-box">
+            <img id="badgePreview" class="preview-img" src="" alt="BCOS Badge">
+            <div id="statusText"></div>
+        </div>
+
+        <label style="margin-top:20px">Markdown</label>
+        <div class="code-box">
+            <button class="copy-btn" onclick="copyCode('markdownCode')">COPY</button>
+            <code id="markdownCode"></code>
+        </div>
+
+        <label style="margin-top:20px">HTML</label>
+        <div class="code-box">
+            <button class="copy-btn" onclick="copyCode('htmlCode')">COPY</button>
+            <code id="htmlCode"></code>
+        </div>
+    </div>
+</div>
+
+<div class="footer">
+    RUSTCHAIN | PROOF-OF-ANTIQUITY | ELYAN LABS
+</div>
+
+<script>
+    function updateBadge() {
+        const certId = document.getElementById('certId').value.trim();
+        const style = document.getElementById('badgeStyle').value;
+        const container = document.getElementById('previewContainer');
+        
+        if (!certId || certId.length < 5) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'block';
+        
+        // Construct URLs
+        // Note: Actual shield generation is typically proxied or uses specific params
+        // Based on the bounty description, we use the node's badge endpoint
+        const baseUrl = "https://50.28.86.131";
+        const badgeUrl = `${baseUrl}/bcos/badge/${certId}.svg?style=${style}`;
+        const verifyUrl = `https://rustchain.org/bcos/verify/${certId}`;
+
+        document.getElementById('badgePreview').src = badgeUrl;
+        
+        const md = `[![BCOS Certification](${badgeUrl})](${verifyUrl})`;
+        const html = `<a href="${verifyUrl}"><img src="${badgeUrl}" alt="BCOS Certification"></a>`;
+
+        document.getElementById('markdownCode').innerText = md;
+        document.getElementById('htmlCode').innerText = html;
+    }
+
+    function copyCode(elementId) {
+        const text = document.getElementById(elementId).innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            alert('Copied to clipboard!');
+        });
+    }
+
+    // Initial check if ID passed via URL
+    window.onload = () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const id = urlParams.get('id');
+        if (id) {
+            document.getElementById('certId').value = id;
+            updateBadge();
+        }
+    };
+</script>
+
+</body>
+</html>
