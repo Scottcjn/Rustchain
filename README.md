@@ -209,7 +209,7 @@ Linux (x86_64, ppc64le) · macOS (Intel, Apple Silicon, PowerPC) · IBM POWER8 �
 
 ## Why "RustChain"?
 
-Named after a 486 laptop with oxidized serial ports that still boots to DOS and mines RTC. "Rust" means iron oxide on 30-year-old silicon. The thesis is that corroding vintage hardware still has computational value and dignity.
+Named after a 486 laptop with oxidized serial ports that still boots to DOS and mines RTC. "Rust" means iron oxide on vintage iron-containing components. The thesis is that corroding vintage hardware still has computational value and dignity.
 
 ---
 
