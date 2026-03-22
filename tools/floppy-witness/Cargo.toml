@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: MIT
+
+[package]
+name = "rustchain-witness"
+version = "0.1.0"
+edition = "2021"
+authors = ["RustChain Contributors"]
+description = "Floppy Witness Kit — Epoch proofs on 1.44MB media (Bounty #2313)"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+hex = "0.4"
+anyhow = "1.0"
+thiserror = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+qrcode = "0.14"
+image = "0.25"
+fatfs = "0.3"
+bincode = "1.3"
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1.0", features = ["full"] }
+
+[[bin]]
+name = "rustchain-witness"
+path = "src/main.rs"
