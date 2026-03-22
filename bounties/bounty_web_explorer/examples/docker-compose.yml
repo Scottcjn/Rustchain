@@ -1,0 +1,16 @@
+# RustChain Web Explorer - Docker Compose Example
+# Usage: docker-compose up -d
+# Access: http://localhost:8080/explorer.html
+
+version: '3.8'
+
+services:
+  explorer:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ../src:/usr/share/nginx/html:ro
+    restart: unless-stopped
+    environment:
+      - NGINX_ENTRYPOINT_QUIET_LOGS=1

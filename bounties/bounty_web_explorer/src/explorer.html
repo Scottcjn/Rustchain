@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RustChain Explorer - Fossil-Punk Blockchain</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>RUSTCHAIN EXPLORER</h1>
+      <p class="subtitle">Fossil-Punk Blockchain | Proof of Antiquity</p>
+    </div>
+
+    <div class="status-bar">
+      <span>Status: <span id="status-connected">DISCONNECTED</span></span>
+      <span>Last Update: <span id="status-lastupdate">NEVER</span></span>
+    </div>
+
+    <div class="menu">
+      <button data-section="home">Home</button>
+      <button data-section="blocks">Blocks</button>
+      <button data-section="miners">Keepers</button>
+      <button data-section="badges">Badges</button>
+      <button data-section="faucet">Faucet</button>
+      <div class="spacer"></div>
+      <button data-theme="amber">Amber</button>
+      <button data-theme="green">Green</button>
+      <button data-theme="dos">DOS</button>
+      <div class="spacer"></div>
+      <button id="btn-refresh">Refresh</button>
+    </div>
+
+    <!-- Home Section -->
+    <div id="home" class="section active">
+      <div id="home-content" class="panel">
+        <div class="loading blinking"></div>
+      </div>
+    </div>
+
+    <!-- Blocks Section -->
+    <div id="blocks" class="section">
+      <div id="blocks-content" class="panel">
+        <div class="loading blinking"></div>
+      </div>
+
+      <div id="block-detail" class="section panel">
+        <div id="block-detail-content"></div>
+      </div>
+    </div>
+
+    <!-- Miners/Keepers Section -->
+    <div id="miners" class="section">
+      <div id="miners-content" class="panel">
+        <div class="loading blinking"></div>
+      </div>
+    </div>
+
+    <!-- Badges Section -->
+    <div id="badges" class="section">
+      <div id="badges-content" class="panel">
+        <div class="loading blinking"></div>
+      </div>
+    </div>
+
+    <!-- Faucet Section -->
+    <div id="faucet" class="section">
+      <div class="panel">
+        <h2>Keeper Faucet Claim</h2>
+        <p class="muted">Claim your RTC reward for running a legacy hardware validator. Upload your <code>proof_of_antiquity.json</code> file.</p>
+
+        <form onsubmit="return false;">
+          <div class="form-group">
+            <label for="faucet-wallet">Your Wallet Address (RTC...)</label>
+            <input type="text" id="faucet-wallet" placeholder="RTCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+          </div>
+
+          <div class="form-group">
+            <label for="faucet-file">Upload proof_of_antiquity.json</label>
+            <input type="file" id="faucet-file" accept=".json" />
+          </div>
+
+          <div class="form-group">
+            <label>Or paste JSON directly:</label>
+            <textarea id="faucet-proof-json" rows="8" placeholder="Paste your proof_of_antiquity.json content here"></textarea>
+          </div>
+
+          <div id="faucet-preview"></div>
+
+          <button id="faucet-submit" class="primary">Claim Reward</button>
+        </form>
+
+        <div id="faucet-status" class="faucet-status"></div>
+      </div>
+    </div>
+
+    <div class="footer">
+      RustChain Web Explorer &mdash; Bounty #bounty_web_explorer &mdash; Retro DOS/CRT Theme
+    </div>
+  </div>
+
+  <script src="explorer.js"></script>
+</body>
+</html>

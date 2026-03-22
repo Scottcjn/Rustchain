@@ -1,0 +1,516 @@
+/**
+ * RustChain Web Explorer - Retro DOS/CRT CSS
+ * Fossil-punk aesthetic for vintage hardware enthusiasts
+ */
+
+/* === Base Theme Variables === */
+
+:root {
+  /* Amber CRT (default) */
+  --bg-color: #000000;
+  --text-color: #ffb000;
+  --border-color: #ffb000;
+  --highlight-color: #ffffff;
+  --shadow-color: rgba(255, 176, 0, 0.3);
+  --link-color: #ffd266;
+  --button-bg: #ffb000;
+  --button-text: #000000;
+  --input-bg: #111111;
+  --crt-scanline: rgba(255, 176, 0, 0.1);
+}
+
+/* Green CRT theme */
+body.theme-green {
+  --bg-color: #000000;
+  --text-color: #00dd00;
+  --border-color: #00dd00;
+  --highlight-color: #ffffff;
+  --shadow-color: rgba(0, 221, 0, 0.3);
+  --link-color: #66ff66;
+  --button-bg: #00dd00;
+  --button-text: #000000;
+  --input-bg: #0a1a0a;
+  --crt-scanline: rgba(0, 221, 0, 0.1);
+}
+
+/* DOS Blue/White theme */
+body.theme-dos {
+  --bg-color: #0000aa;
+  --text-color: #ffffff;
+  --border-color: #ffffff;
+  --highlight-color: #ffff00;
+  --shadow-color: rgba(255, 255, 255, 0.5);
+  --link-color: #ffff00;
+  --button-bg: #ffffff;
+  --button-text: #0000aa;
+  --input-bg: #0000cc;
+  --crt-scanline: rgba(255, 255, 255, 0.1);
+}
+
+/* === Base Reset === */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* === CRT Scanline Effect === */
+
+body::before {
+  content: "";
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background:
+    linear-gradient(
+      to bottom,
+      transparent 50%,
+      var(--crt-scanline) 51%,
+      transparent 51%
+    );
+  background-size: 100% 4px;
+  pointer-events: none;
+  z-index: 1000;
+  animation: scanline 10s linear infinite;
+}
+
+@keyframes scanline {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(4px); }
+}
+
+/* === Base Typography === */
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: "Courier New", Courier, monospace;
+  font-size: 16px;
+  line-height: 1.4;
+  min-height: 100vh;
+  padding: 10px;
+  overflow-x: hidden;
+}
+
+/* === Blinking Cursor === */
+
+.blinking::after {
+  content: "_";
+  animation: blink 1s step-start infinite;
+  opacity: 1;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* === Container Layout === */
+
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+  border: 1px solid var(--border-color);
+  padding: 15px;
+  position: relative;
+  background-color: var(--bg-color);
+}
+
+/* === Header === */
+
+.header {
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 10px;
+  margin-bottom: 15px;
+}
+
+.header h1 {
+  font-size: 24px;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 5px;
+}
+
+.header .subtitle {
+  font-size: 12px;
+  text-align: center;
+  opacity: 0.8;
+}
+
+/* === Navigation Menu === */
+
+.menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 15px;
+  border: 1px solid var(--border-color);
+  padding: 8px;
+  background-color: var(--input-bg);
+}
+
+.menu button {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 4px 10px;
+  cursor: pointer;
+  outline: none;
+}
+
+.menu button:hover,
+.menu button.active {
+  background-color: var(--text-color);
+  color: var(--bg-color);
+}
+
+.menu .spacer {
+  flex: 1;
+}
+
+/* === Status Bar === */
+
+.status-bar {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 5px;
+  margin-bottom: 10px;
+  opacity: 0.8;
+}
+
+/* === Panel === */
+
+.panel {
+  border: 1px solid var(--border-color);
+  padding: 10px;
+  margin-bottom: 15px;
+}
+
+.panel h2 {
+  font-size: 18px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 5px;
+}
+
+/* === Stats Grid === */
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.stat-box {
+  border: 1px solid var(--border-color);
+  padding: 8px;
+  text-align: center;
+}
+
+.stat-box .label {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.stat-box .value {
+  font-size: 20px;
+  font-weight: bold;
+}
+
+/* === Block List === */
+
+.block-list {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.block-list th,
+.block-list td {
+  border: 1px solid var(--border-color);
+  padding: 4px 6px;
+  text-align: left;
+  font-size: 14px;
+}
+
+.block-list th {
+  background-color: var(--input-bg);
+  font-weight: bold;
+}
+
+.block-list tr:hover {
+  background-color: var(--input-bg);
+}
+
+/* === Miner Card === */
+
+.miner-card {
+  border: 1px solid var(--border-color);
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.miner-card .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: none;
+  padding: 0;
+  margin: 0 0 10px 0;
+}
+
+.miner-card .miner-id {
+  font-weight: bold;
+  word-break: break-all;
+}
+
+.miner-card .multiplier {
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.miner-card .details {
+  font-size: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 5px;
+}
+
+/* === Badge Card === */
+
+.badge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.badge-card {
+  border: 1px solid var(--border-color);
+  padding: 10px;
+  text-align: center;
+}
+
+.badge-card .badge-icon {
+  font-size: 40px;
+  margin-bottom: 5px;
+}
+
+.badge-card .badge-name {
+  font-weight: bold;
+  margin-bottom: 3px;
+}
+
+.badge-card .badge-desc {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* === Form Elements === */
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group label {
+  font-size: 14px;
+  margin-bottom: 3px;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="file"],
+textarea {
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  font-family: inherit;
+  font-size: 16px;
+  padding: 6px;
+  outline: none;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+textarea:focus {
+  box-shadow: 0 0 5px var(--shadow-color);
+}
+
+button,
+.button {
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  font-family: inherit;
+  font-size: 16px;
+  padding: 8px;
+  cursor: pointer;
+}
+
+button:hover,
+.button:hover {
+  background-color: var(--text-color);
+  color: var(--bg-color);
+}
+
+button.primary {
+  background-color: var(--button-bg);
+  color: var(--button-text);
+  font-weight: bold;
+}
+
+/* === Loading === */
+
+.loading {
+  text-align: center;
+  padding: 20px;
+  font-style: italic;
+}
+
+.loading.blinking::after {
+  content: " Loading";
+}
+
+/* === Error Message === */
+
+.error {
+  border: 1px solid var(--border-color);
+  padding: 10px;
+  background-color: rgba(255, 0, 0, 0.2);
+  color: var(--text-color);
+}
+
+/* === Success Message === */
+
+.success {
+  border: 1px solid var(--border-color);
+  padding: 10px;
+  background-color: rgba(0, 255, 0, 0.1);
+}
+
+/* === Hidden Sections === */
+
+.section {
+  display: none;
+}
+
+.section.active {
+  display: block;
+}
+
+/* === Faucet Claim Area === */
+
+.faucet-status {
+  border: 1px solid var(--border-color);
+  padding: 10px;
+  margin-top: 10px;
+  min-height: 50px;
+}
+
+.faucet-status pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 12px;
+}
+
+/* === Block Detail === */
+
+.block-detail .detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  border-bottom: 1px dotted var(--border-color);
+}
+
+.block-detail .detail-label {
+  opacity: 0.7;
+}
+
+.block-detail .tx-list {
+  margin-top: 10px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 10px;
+}
+
+.block-detail .tx-item {
+  font-size: 12px;
+  padding: 3px;
+  border-bottom: 1px dotted var(--border-color);
+  word-break: break-all;
+}
+
+/* === Footer === */
+
+.footer {
+  border-top: 1px solid var(--border-color);
+  padding-top: 10px;
+  margin-top: 15px;
+  font-size: 12px;
+  text-align: center;
+  opacity: 0.7;
+}
+
+/* === Links === */
+
+a {
+  color: var(--link-color);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* === Responsive === */
+
+@media (max-width: 600px) {
+  body {
+    padding: 5px;
+    font-size: 14px;
+  }
+
+  .container {
+    padding: 8px;
+  }
+
+  .menu {
+    flex-direction: column;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .badge-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .block-list {
+    font-size: 12px;
+  }
+
+  .block-list th,
+  .block-list td {
+    padding: 2px 3px;
+  }
+}
+
+/* === CRT Glow Effect === */
+
+.container {
+  box-shadow: 0 0 10px var(--shadow-color);
+}

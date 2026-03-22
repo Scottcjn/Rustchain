@@ -1,0 +1,35 @@
+{
+  "bounty_id": "bounty_web_explorer",
+  "status": "complete",
+  "files": [
+    "README.md",
+    "src/explorer.html",
+    "src/style.css",
+    "src/explorer.js",
+    "examples/docker-compose.yml",
+    "docs/IMPLEMENTATION.md"
+  ],
+  "features": [
+    "block_explorer",
+    "validator_info",
+    "nft_badges",
+    "faucet_interface",
+    "retro_theme",
+    "mobile_friendly"
+  ],
+  "themes": [
+    "amber",
+    "green",
+    "dos"
+  ],
+  "commit": "auto-submission",
+  "timestamp": "2026-03-23T06:15:00Z",
+  "requirements_met": [
+    "display_block_data",
+    "validator_scores",
+    "real-time_refresh",
+    "faucet_claim_form",
+    "retro_aesthetic",
+    "mobile_optional"
+  ]
+}
