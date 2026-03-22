@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Network Status</title>
+    <style>
+        :root {
+            --green: #00ff00;
+            --red: #ff0000;
+            --bg: #0a0a0a;
+            --text: #c0c0c0;
+            --panel: #151515;
+            --border: #333;
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 20px;
+        }
+        .header {
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+        h1 { margin: 0; color: white; letter-spacing: 2px; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 20px;
+            position: relative;
+        }
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .up { background: var(--green); box-shadow: 0 0 8px var(--green); }
+        .down { background: var(--red); box-shadow: 0 0 8px var(--red); }
+        
+        .node-name { font-size: 1.2em; font-weight: bold; color: white; }
+        .location { font-size: 0.8em; color: #888; margin-bottom: 15px; }
+        
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+        .stat-label { color: #666; }
+        
+        .uptime-bar {
+            margin-top: 20px;
+            display: flex;
+            gap: 2px;
+            height: 20px;
+        }
+        .uptime-tick {
+            flex: 1;
+            background: #222;
+        }
+        .uptime-tick.ok { background: var(--green); opacity: 0.6; }
+        .uptime-tick.fail { background: var(--red); }
+
+        .footer {
+            margin-top: 50px;
+            text-align: center;
+            font-size: 10px;
+            color: #444;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div>
+        <h1>RUSTCHAIN_STATUS</h1>
+        <div style="font-size: 0.8em; color: #666;">Multi-Node Attestation Network Monitor</div>
+    </div>
+    <div id="lastUpdate" style="font-size: 0.8em; color: #888;">POLLING...</div>
+</div>
+
+<div id="nodeGrid" class="grid">
+    <!-- Nodes will be injected here -->
+</div>
+
+<div class="footer">
+    System Time: <span id="sysTime"></span> | Elyan Labs Infrastructure
+</div>
+
+<script>
+    async function updateStatus() {
+        try {
+            const resp = await fetch('node_status.json');
+            const history = await resp.json();
+            const latest = history[history.length - 1];
+            
+            const grid = document.getElementById('nodeGrid');
+            grid.innerHTML = '';
+            
+            latest.nodes.forEach(node => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                
+                // Get node history for uptime bar
+                const nodeHistory = history.map(h => {
+                    const found = h.nodes.find(n => n.url === node.url);
+                    return found ? found.status === 'up' : false;
+                }).slice(-50); // Show last 50 checks
+                
+                let uptimeHtml = '<div class="uptime-bar">';
+                nodeHistory.forEach(isUp => {
+                    uptimeHtml += `<div class="uptime-tick ${isUp ? 'ok' : 'fail'}"></div>`;
+                });
+                uptimeHtml += '</div>';
+
+                card.innerHTML = `
+                    <div class="node-name">
+                        <span class="status-dot ${node.status === 'up' ? 'up' : 'down'}"></span>
+                        ${node.name}
+                    </div>
+                    <div class="location">${node.location}</div>
+                    
+                    <div class="stat-row">
+                        <span class="stat-label">STATUS</span>
+                        <span style="color: ${node.status === 'up' ? 'var(--green)' : 'var(--red)'}">${node.status.toUpperCase()}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">LATENCY</span>
+                        <span>${node.latency_ms || '--'}ms</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">VERSION</span>
+                        <span>${node.version || 'unknown'}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">EPOCH</span>
+                        <span>${node.epoch || '--'}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">MINERS</span>
+                        <span>${node.miners || 0}</span>
+                    </div>
+                    
+                    ${uptimeHtml}
+                `;
+                grid.appendChild(card);
+            });
+            
+            document.getElementById('lastUpdate').innerText = 'LAST_UPDATE: ' + new Date(latest.time).toLocaleTimeString();
+            document.getElementById('sysTime').innerText = new Date().toISOString();
+            
+        } catch (e) {
+            console.error('Failed to fetch status', e);
+        }
+    }
+
+    updateStatus();
+    setInterval(updateStatus, 30000);
+</script>
+
+</body>
+</html>
