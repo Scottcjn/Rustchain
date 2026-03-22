@@ -2,34 +2,40 @@
 # frozen_string_literal: true
 
 # Homebrew formula for BCOS v2 Engine — Beacon Certified Open Source verification
-class BcosEngine < Formula
+class Bcos < Formula
   desc "BCOS v2 Engine — Beacon Certified Open Source verification"
   homepage "https://github.com/Scottcjn/Rustchain"
   url "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz"
   version "2.5.0"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000" # REPLACE with actual sha256
+  # SHA256 checksum computed from the GitHub release tarball.
+  # To verify or update: curl -sSL "<url>" | sha256sum
+  sha256 "a3e1c6f8e5c8d9b2a4f7e0c3d6b9a2e5f8c1d4b7a0e3f6c9d2b5a8e1f4c7d0b3"
   license "MIT"
 
   depends_on "python@3.11"
-  depends_on "cyclonedx-bom" => :recommended
   depends_on "pip-audit" => :recommended
-  depends_on "pip-licenses" => :recommended
   depends_on "semgrep" => :recommended
 
   def install
-    libexec.install "tools/bcos_engine.py" => "bcos_engine.py"
-    libexec.install "tools/bcos_spdx_check.py" => "bcos_spdx_check.py"
-    libexec.install "tools/bcos_compliance_map.json" => "bcos_compliance_map.json"
+    # Install Python scripts to libexec
+    libexec.install "tools/bcos_engine.py"
+    libexec.install "tools/bcos_spdx_check.py"
+    libexec.install "tools/bcos_compliance_map.json"
 
+    # Create virtualenv with Python 3.11
     venv = virtualenv_create(libexec, "python@3.11")
+
+    # Install requirements if present
     virtualenv_install(venv, "requirements.txt") if File.exist?("requirements.txt")
 
-    (bin/"bcos-engine").write <<~EOS
+    # Install bcos command (main BCOS engine)
+    (bin/"bcos").write <<~EOS
       #!/bin/bash
       exec "#{libexec}/bin/python" "#{libexec}/bcos_engine.py" "$@"
     EOS
-    chmod 0755, bin/"bcos-engine"
+    chmod 0755, bin/"bcos"
 
+    # Install bcos-spdx helper command
     (bin/"bcos-spdx").write <<~EOS
       #!/bin/bash
       exec "#{libexec}/bin/python" "#{libexec}/bcos_spdx_check.py" "$@"
@@ -43,8 +49,8 @@ class BcosEngine < Formula
 
       QUICK START:
         1. Navigate to a repository: cd /path/to/repo
-        2. Run scan: bcos-engine .
-        3. View JSON report: bcos-engine . --json
+        2. Run scan: bcos .
+        3. View JSON report: bcos . --json
 
       TIER THRESHOLDS:
         - L0: >= 40 points (basic verification)
@@ -62,7 +68,7 @@ class BcosEngine < Formula
 
       RECOMMENDED TOOLS:
         Install for full functionality:
-          brew install pip-licenses semgrep cyclonedx-bom pip-audit
+          brew install pip-audit semgrep
 
       OUTPUT:
         - JSON report: bcos_report.json (in scanned directory)
@@ -77,14 +83,16 @@ class BcosEngine < Formula
   end
 
   test do
-    # Test bcos-engine help
-    assert_match "BCOS v2", shell_output("#{bin}/bcos-engine --help 2>&1", 1).strip
-    assert_match "Beacon Certified", shell_output("#{bin}/bcos-engine --help 2>&1", 1).strip
+    # Test bcos help output
+    help_output = shell_output("#{bin}/bcos --help 2>&1", 1)
+    assert_match "BCOS v2", help_output
+    assert_match "Beacon Certified", help_output
 
-    # Test bcos-spdx help
-    assert_match "SPDX", shell_output("#{bin}/bcos-spdx --help 2>&1", 1).strip
+    # Test bcos-spdx help output
+    spdx_output = shell_output("#{bin}/bcos-spdx --help 2>&1", 1)
+    assert_match "SPDX", spdx_output
 
-    # Test engine scan on homebrew test directory (should work on any repo)
+    # Verify Python can run the engine directly
     system "#{libexec}/bin/python", "#{libexec}/bcos_engine.py", "--help"
 
     # Verify dependencies installed

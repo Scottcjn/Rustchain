@@ -1,10 +1,12 @@
 # Homebrew Installation Guide - BCOS v2 Engine
 
-> **Issue #2293**: Create a Homebrew formula for bcos-engine standalone with install/test instructions and practical caveats.
+> **Issue #2293**: Create a Homebrew formula for `bcos` command with install/test instructions and practical caveats.
 
 ## Overview
 
 This Homebrew formula provides a production-safe, minimal installation method for the **BCOS v2 Engine** — Beacon Certified Open Source verification tool. BCOS scans repositories and produces trust scores (0-100), structured JSON reports, and BLAKE2b commitments suitable for on-chain anchoring via RustChain.
+
+**Command**: `bcos` (installed via Homebrew)
 
 ---
 
@@ -18,14 +20,14 @@ This Homebrew formula provides a production-safe, minimal installation method fo
 
 ## Installation
 
-### Option A: Install from Tap (Recommended)
+### Option A: Install from Tap (Recommended for Production)
 
 ```bash
 # Add the RustChain bounties tap
 brew tap rustchain-bounties/rustchain-bounties
 
 # Install the BCOS engine
-brew install bcos-engine
+brew install bcos
 ```
 
 ### Option B: Install from Local Formula
@@ -35,13 +37,13 @@ brew install bcos-engine
 cd /path/to/rustchain-bounties
 
 # Install from formula file
-brew install ./homebrew/bcos-engine.rb
+brew install ./homebrew/bcos.rb
 ```
 
-### Option C: Install from Raw URL
+### Option C: Install from Raw URL (Quick Testing)
 
 ```bash
-brew install https://raw.githubusercontent.com/Scottcjn/Rustchain/main/homebrew/bcos-engine.rb
+brew install https://raw.githubusercontent.com/Scottcjn/Rustchain/main/homebrew/bcos.rb
 ```
 
 ---
@@ -55,31 +57,31 @@ brew install https://raw.githubusercontent.com/Scottcjn/Rustchain/main/homebrew/
 cd /path/to/your/repo
 
 # Run BCOS scan (default L1 tier)
-bcos-engine .
+bcos .
 
 # Run with specific tier
-bcos-engine . --tier L0
-bcos-engine . --tier L1
-bcos-engine . --tier L2
+bcos . --tier L0
+bcos . --tier L1
+bcos . --tier L2
 
 # Output JSON report only
-bcos-engine . --json
+bcos . --json
 
 # Specify reviewer (required for L2)
-bcos-engine . --tier L2 --reviewer "@username"
+bcos . --tier L2 --reviewer "@username"
 ```
 
 ### Check Status & Help
 
 ```bash
 # View BCOS engine help
-bcos-engine --help
+bcos --help
 
 # View SPDX checker help
 bcos-spdx --help
 
-# Check version
-bcos-engine --version
+# Check version (via Python module)
+bcos --version
 ```
 
 ### Optional Tools Installation
@@ -88,14 +90,16 @@ For full functionality, install recommended dependencies:
 
 ```bash
 # Install all recommended tools
-brew install pip-licenses semgrep cyclonedx-bom pip-audit
+brew install pip-audit semgrep
 
 # Or install individually
-brew install pip-licenses      # License scanning
-brew install semgrep           # Static analysis
-brew install cyclonedx-bom     # SBOM generation
 brew install pip-audit         # Vulnerability scanning
+brew install semgrep           # Static analysis
 ```
+
+**Note**: The `bcos` command works without these tools, but some checks will be skipped:
+- Without `semgrep`: Static analysis score = 0
+- Without `pip-audit`: Vulnerability scan score = 0
 
 ---
 
@@ -128,7 +132,7 @@ brew install pip-audit         # Vulnerability scanning
 
 ### Generated Reports
 
-After running `bcos-engine .`, the following files are created:
+After running `bcos .`, the following files are created:
 
 | File | Description |
 |------|-------------|
@@ -168,32 +172,29 @@ After running `bcos-engine .`, the following files are created:
 
 ```bash
 # Verify installation
-brew test bcos-engine
+brew test bcos
 
 # Verify engine runs
-bcos-engine --help
+bcos --help
 
 # Test on a sample repository
 cd /tmp
 git clone https://github.com/example/sample-repo.git
 cd sample-repo
-bcos-engine .
+bcos .
 ```
 
 ### Formula Validation (For Maintainers)
 
 ```bash
 # Audit formula for issues
-brew audit --strict bcos-engine
+brew audit --strict bcos
 
 # Check formula style
-brew style bcos-engine
+brew style bcos
 
 # Run formula tests
-brew test bcos-engine
-
-# Verify checksums (before release)
-curl -sSL https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz | sha256sum
+brew test bcos
 ```
 
 ### Manual Verification Test
@@ -210,7 +211,7 @@ git add .
 git commit -m "Initial commit"
 
 # Run BCOS scan
-bcos-engine .
+bcos .
 
 # Check output
 cat bcos_report.json
@@ -222,13 +223,13 @@ cat bcos_report.json
 
 ```bash
 # Uninstall formula
-brew uninstall bcos-engine
+brew uninstall bcos
 
 # Remove tap (optional)
 brew untap rustchain-bounties/rustchain-bounties
 
 # Clean up residual files (optional)
-rm -f ~/Library/LaunchAgents/homebrew.mxcl.bcos-engine.plist
+rm -f ~/Library/LaunchAgents/homebrew.mxcl.bcos.plist
 rm -rf /tmp/bcos-*
 ```
 
@@ -259,24 +260,25 @@ rm -rf /tmp/bcos-*
 
 | Tool | Status | Purpose |
 |------|--------|---------|
-| `pip-licenses` | Recommended | License scanning |
-| `semgrep` | Recommended | Static analysis |
-| `cyclonedx-bom` | Recommended | SBOM generation |
 | `pip-audit` | Recommended | CVE scanning |
+| `semgrep` | Recommended | Static analysis |
 
 **Engine works without these tools**, but scores will be lower:
 - Without `semgrep`: Static analysis = 0 pts
 - Without `pip-audit`: Vulnerability scan = 0 pts
-- Without `cyclonedx-bom`: SBOM = 0 pts
 
 ### ⚠️ Production Deployment
 
 1. **Checksum Verification**: Before deploying, compute and update the SHA256 in the formula:
+
    ```bash
-   curl -sSL https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz | sha256sum
+   # Download the release archive and compute SHA256
+   curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz" | sha256sum
    ```
 
-2. **Version Pinning**: For production, pin to a specific version:
+   Update the `sha256` field in `bcos.rb` with the computed value.
+
+2. **Version Pinning**: For production, pin to a specific version (already done in formula):
    ```ruby
    url "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz"
    version "2.5.0"
@@ -285,10 +287,10 @@ rm -rf /tmp/bcos-*
 3. **CI/CD Integration**: Use in GitHub Actions for automated BCOS certification:
    ```yaml
    - name: Install BCOS Engine
-     run: brew install bcos-engine
-   
+     run: brew install bcos
+
    - name: Run BCOS Scan
-     run: bcos-engine . --json > bcos_report.json
+     run: bcos . --json > bcos_report.json
    ```
 
 4. **Monitoring**: Set up log monitoring for scan results:
@@ -301,7 +303,7 @@ rm -rf /tmp/bcos-*
 
 | Issue | Solution |
 |-------|----------|
-| `pip-licenses` not found | Install: `brew install pip-licenses` or run without |
+| `pip-audit` not found | Install: `brew install pip-audit` or run without |
 | `semgrep` not found | Install: `brew install semgrep` or run without |
 | Engine exits with code 1 | Tier threshold not met; check score breakdown |
 | JSON report not generated | Check write permissions in target directory |
@@ -315,28 +317,49 @@ rm -rf /tmp/bcos-*
 
 ```bash
 # 1. Download new release archive
-curl -sSL https://github.com/Scottcjn/Rustchain/archive/refs/tags/vX.Y.Z.tar.gz -o release.tar.gz
+curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/vX.Y.Z.tar.gz" -o release.tar.gz
 
-# 2. Compute new SHA256
+# 2. Compute new SHA256 (stable approach)
 sha256sum release.tar.gz
 
 # 3. Update formula with new version and checksum
-# Edit homebrew/bcos-engine.rb
+# Edit homebrew/bcos.rb
 
 # 4. Test locally
-brew install ./homebrew/bcos-engine.rb
-brew test bcos-engine
+brew install ./homebrew/bcos.rb
+brew test bcos
 
 # 5. Commit (do NOT push without approval)
-git add homebrew/bcos-engine.rb
-git commit -m "feat(homebrew): update bcos-engine to vX.Y.Z"
+git add homebrew/bcos.rb
+git commit -m "feat(homebrew): update bcos to vX.Y.Z"
 ```
+
+### SHA256 Checksum Acquisition
+
+The SHA256 checksum ensures the integrity of the downloaded archive. To obtain it:
+
+1. **Using curl and sha256sum** (Linux/macOS with coreutils):
+   ```bash
+   curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz" | sha256sum
+   ```
+
+2. **Using shasum** (macOS default):
+   ```bash
+   curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz" | shasum -a 256
+   ```
+
+3. **Using wget** (alternative):
+   ```bash
+   wget -qO- "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz" | sha256sum
+   ```
+
+Copy the resulting hash (64-character hex string) into the `sha256` field of `bcos.rb`.
 
 ### Formula Structure
 
 ```
 homebrew/
-└── bcos-engine.rb          # Homebrew formula
+└── bcos.rb                 # Homebrew formula
 tools/
 ├── bcos_engine.py          # Main BCOS verification engine
 ├── bcos_spdx_check.py      # SPDX license checker
@@ -377,13 +400,13 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install BCOS Engine
-        run: brew install ./homebrew/bcos-engine.rb
-      
+        run: brew install ./homebrew/bcos.rb
+
       - name: Run BCOS Scan
-        run: bcos-engine . --json > bcos_report.json
-      
+        run: bcos . --json > bcos_report.json
+
       - name: Upload Report
         uses: actions/upload-artifact@v4
         with:
@@ -402,4 +425,4 @@ jobs:
 
 ---
 
-*Last updated: March 2026 | Formula version: 2.5.0*
+*Last updated: March 2026 | Formula version: 2.5.0 | Command: `bcos`*
