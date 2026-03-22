@@ -1,0 +1,1455 @@
+{
+  "campaign_id": "camp_0158b857e7c4441a",
+  "total_attacks": 90,
+  "successful_attacks": 0,
+  "blocked_attacks": 90,
+  "attack_results": [
+    {
+      "attack_id": "atk_43448b6c6c0b40a2",
+      "attack_type": "same_node_replay",
+      "capture_id": "cap_b1fca5a3b20a4c4e",
+      "source_node": "node-0",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.003814697265625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_d49584a21d314efc",
+      "attack_type": "same_node_replay",
+      "capture_id": "cap_51f194e2ce674c92",
+      "source_node": "node-0",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0040531158447265625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_f32aaeb88e924325",
+      "attack_type": "same_node_replay",
+      "capture_id": "cap_cb50a1c9525d440a",
+      "source_node": "node-0",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_7815638cd3f84e81",
+      "attack_type": "same_node_replay",
+      "capture_id": "cap_0d3a06e6c6524d96",
+      "source_node": "node-0",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_7b955e8e39f24cf4",
+      "attack_type": "same_node_replay",
+      "capture_id": "cap_4cd52f166ca348f2",
+      "source_node": "node-0",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_97f0a23ef98b42d2",
+      "attack_type": "same_node_replay",
+      "capture_id": "cap_1e26836b18894a4e",
+      "source_node": "node-1",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0021457672119140625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_9df301f3ebc54941",
+      "attack_type": "same_node_replay",
+      "capture_id": "cap_902e9e7152bc4c5f",
+      "source_node": "node-1",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_a42c2843c0a3429d",
+      "attack_type": "same_node_replay",
+      "capture_id": "cap_cae7643a7a93438d",
+      "source_node": "node-1",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0019073486328125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_9e152be6c3f7496b",
+      "attack_type": "same_node_replay",
+      "capture_id": "cap_1de87846b6dc4029",
+      "source_node": "node-1",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_17d63d1ad4464400",
+      "attack_type": "same_node_replay",
+      "capture_id": "cap_90ce496121814711",
+      "source_node": "node-1",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0021457672119140625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_dee0e8cafbf44cc5",
+      "attack_type": "same_node_replay",
+      "capture_id": "cap_c5be6c99a5114d1a",
+      "source_node": "node-2",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.00476837158203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_2761e41910994985",
+      "attack_type": "same_node_replay",
+      "capture_id": "cap_a6ccd8583fd74c49",
+      "source_node": "node-2",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_ffa212e668364b4e",
+      "attack_type": "same_node_replay",
+      "capture_id": "cap_8a61639fccda4d3b",
+      "source_node": "node-2",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_9f09a03fc5024021",
+      "attack_type": "same_node_replay",
+      "capture_id": "cap_9dfe34cff767485d",
+      "source_node": "node-2",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0021457672119140625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_57b5b1b94fd44afd",
+      "attack_type": "same_node_replay",
+      "capture_id": "cap_dfc037efcfa2449a",
+      "source_node": "node-2",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_2795e91bad214bb3",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_b1fca5a3b20a4c4e",
+      "source_node": "node-0",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_ed58ab8856ec42ef",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_b1fca5a3b20a4c4e",
+      "source_node": "node-0",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_5052855a7d8e421e",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_51f194e2ce674c92",
+      "source_node": "node-0",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_00809c5509b64624",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_51f194e2ce674c92",
+      "source_node": "node-0",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_19a152d9f56d4c82",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_cb50a1c9525d440a",
+      "source_node": "node-0",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_df9c9b9a00564b40",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_cb50a1c9525d440a",
+      "source_node": "node-0",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_f6bb1aeb37e14948",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_0d3a06e6c6524d96",
+      "source_node": "node-0",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_e72ca32e0cc340d5",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_0d3a06e6c6524d96",
+      "source_node": "node-0",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_07e6b8878d904250",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_4cd52f166ca348f2",
+      "source_node": "node-0",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_c412a983f1f4409a",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_4cd52f166ca348f2",
+      "source_node": "node-0",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0026226043701171875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_6e02ba8035fa445b",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_1e26836b18894a4e",
+      "source_node": "node-1",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0021457672119140625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_601301a476ee4f6b",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_1e26836b18894a4e",
+      "source_node": "node-1",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_0347f84d055f44b1",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_902e9e7152bc4c5f",
+      "source_node": "node-1",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_cebfc62c1f2a43c9",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_902e9e7152bc4c5f",
+      "source_node": "node-1",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_b40b1012606f473b",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_cae7643a7a93438d",
+      "source_node": "node-1",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_518c7720e72c42bd",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_cae7643a7a93438d",
+      "source_node": "node-1",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0021457672119140625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_d7a4e56c54d14eb8",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_1de87846b6dc4029",
+      "source_node": "node-1",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_c0ec2f5364d448ea",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_1de87846b6dc4029",
+      "source_node": "node-1",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0040531158447265625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_be7ed8d4e70f4080",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_90ce496121814711",
+      "source_node": "node-1",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_be6f4251b9934596",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_90ce496121814711",
+      "source_node": "node-1",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_4ac938e25985477e",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_c5be6c99a5114d1a",
+      "source_node": "node-2",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_b7fbb442915444a1",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_c5be6c99a5114d1a",
+      "source_node": "node-2",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_3293a4f46104487a",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_a6ccd8583fd74c49",
+      "source_node": "node-2",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_d0e4e13597734c4e",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_a6ccd8583fd74c49",
+      "source_node": "node-2",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_d8307a54e4ee4d6c",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_8a61639fccda4d3b",
+      "source_node": "node-2",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_957ed394538d4a70",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_8a61639fccda4d3b",
+      "source_node": "node-2",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0021457672119140625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_45467b95f6a24998",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_9dfe34cff767485d",
+      "source_node": "node-2",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_20be0481bbeb42d7",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_9dfe34cff767485d",
+      "source_node": "node-2",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0019073486328125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_25e8e7bec94c4315",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_dfc037efcfa2449a",
+      "source_node": "node-2",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0026226043701171875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_9e808109259a471f",
+      "attack_type": "cross_node_replay",
+      "capture_id": "cap_dfc037efcfa2449a",
+      "source_node": "node-2",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0021457672119140625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_65da54c6af444a6c",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_b1fca5a3b20a4c4e",
+      "source_node": "node-0",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0026226043701171875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_ae29b519aeff4c7b",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_b1fca5a3b20a4c4e",
+      "source_node": "node-0",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_dda1cffb78d240c5",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_b1fca5a3b20a4c4e",
+      "source_node": "node-0",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_c3f101dccab84f9a",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_51f194e2ce674c92",
+      "source_node": "node-0",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_6b6ff9dc9c6541fc",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_51f194e2ce674c92",
+      "source_node": "node-0",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0019073486328125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_b35dbed4881a4945",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_51f194e2ce674c92",
+      "source_node": "node-0",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_8f3195282b3941f2",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_cb50a1c9525d440a",
+      "source_node": "node-0",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0021457672119140625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_ae895f7f2f284b3c",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_cb50a1c9525d440a",
+      "source_node": "node-0",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_1ff024c083544d6c",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_cb50a1c9525d440a",
+      "source_node": "node-0",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0019073486328125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_812ed0ce87ba4fff",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_0d3a06e6c6524d96",
+      "source_node": "node-0",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_2f4240b53249438f",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_0d3a06e6c6524d96",
+      "source_node": "node-0",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0021457672119140625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_7d48c13c86914b9f",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_0d3a06e6c6524d96",
+      "source_node": "node-0",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_0a5907bdef8d42d7",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_4cd52f166ca348f2",
+      "source_node": "node-0",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_35def8ca099d412b",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_4cd52f166ca348f2",
+      "source_node": "node-0",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_2187f364c030408d",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_4cd52f166ca348f2",
+      "source_node": "node-0",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0019073486328125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_1bafbac434be4ad7",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_1e26836b18894a4e",
+      "source_node": "node-1",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0040531158447265625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_abf21e1dfc6e4316",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_1e26836b18894a4e",
+      "source_node": "node-1",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_8d04890462004438",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_1e26836b18894a4e",
+      "source_node": "node-1",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_c75db548680a4695",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_902e9e7152bc4c5f",
+      "source_node": "node-1",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_00aa4e68eff4409d",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_902e9e7152bc4c5f",
+      "source_node": "node-1",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_8e3a4ba8490646f8",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_902e9e7152bc4c5f",
+      "source_node": "node-1",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0019073486328125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_a215d7225cb948be",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_cae7643a7a93438d",
+      "source_node": "node-1",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_a8b9cfb02e624059",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_cae7643a7a93438d",
+      "source_node": "node-1",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0021457672119140625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_52fc2707533c4c7b",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_cae7643a7a93438d",
+      "source_node": "node-1",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_c2de97b1160b4f23",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_1de87846b6dc4029",
+      "source_node": "node-1",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0026226043701171875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_5ab13251c758473c",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_1de87846b6dc4029",
+      "source_node": "node-1",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_e9020e9ab1d54dae",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_1de87846b6dc4029",
+      "source_node": "node-1",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0026226043701171875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_24721fc516db4b62",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_90ce496121814711",
+      "source_node": "node-1",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_6669560fb2ba4796",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_90ce496121814711",
+      "source_node": "node-1",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0021457672119140625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_8426ca335be241a7",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_90ce496121814711",
+      "source_node": "node-1",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_bec5e06752ba48b8",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_c5be6c99a5114d1a",
+      "source_node": "node-2",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_f6e529130a654380",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_c5be6c99a5114d1a",
+      "source_node": "node-2",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0021457672119140625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_2e3d599d073b4b0a",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_c5be6c99a5114d1a",
+      "source_node": "node-2",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_d043914997ff419c",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_a6ccd8583fd74c49",
+      "source_node": "node-2",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0019073486328125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_d37f7855e7d246a1",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_a6ccd8583fd74c49",
+      "source_node": "node-2",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_65883007ae024b86",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_a6ccd8583fd74c49",
+      "source_node": "node-2",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_22340e15df694c15",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_8a61639fccda4d3b",
+      "source_node": "node-2",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_3545805a2e59411e",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_8a61639fccda4d3b",
+      "source_node": "node-2",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0021457672119140625,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_27c136cd821f49de",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_8a61639fccda4d3b",
+      "source_node": "node-2",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_10d7ab74bdeb4eff",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_9dfe34cff767485d",
+      "source_node": "node-2",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_3aa743238938437e",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_9dfe34cff767485d",
+      "source_node": "node-2",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.00286102294921875,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_d256bb6ad1ba4962",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_9dfe34cff767485d",
+      "source_node": "node-2",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_35c7e63d71c947a8",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_dfc037efcfa2449a",
+      "source_node": "node-2",
+      "target_node": "node-0",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0019073486328125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_a170983edf834633",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_dfc037efcfa2449a",
+      "source_node": "node-2",
+      "target_node": "node-1",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "cross_node_replay_detected",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    },
+    {
+      "attack_id": "atk_83852758f0c44848",
+      "attack_type": "time_shift_replay",
+      "capture_id": "cap_dfc037efcfa2449a",
+      "source_node": "node-2",
+      "target_node": "node-2",
+      "status": "blocked",
+      "blocked": true,
+      "block_reason": "nonce_already_used_on_this_node",
+      "latency_ms": 0.0030994415283203125,
+      "timestamp": 1774152668,
+      "details": {
+        "protection": "working",
+        "mechanism": "nonce_tracking"
+      }
+    }
+  ],
+  "started_at": 1774152668,
+  "completed_at": 1774152668,
+  "nodes_tested": 3,
+  "security_score": 1.0,
+  "recommendations": [
+    "EXCELLENT: All replay attacks blocked. Defense is working."
+  ]
+}
