@@ -9,21 +9,62 @@ economy through machine-to-machine payments, reputation tracking, and analytics.
 """
 
 from rustchain.agent_economy.client import AgentEconomyClient
-from rustchain.agent_economy.agents import AgentWallet, AgentManager
-from rustchain.agent_economy.payments import X402Payment, PaymentProcessor
-from rustchain.agent_economy.reputation import ReputationClient, ReputationScore
-from rustchain.agent_economy.analytics import AnalyticsClient
-from rustchain.agent_economy.bounties import BountyClient
+from rustchain.agent_economy.agents import AgentWallet, AgentManager, AgentProfile
+from rustchain.agent_economy.payments import (
+    X402Payment,
+    PaymentProcessor,
+    PaymentStatus,
+    PaymentIntent,
+)
+from rustchain.agent_economy.reputation import (
+    ReputationClient,
+    ReputationScore,
+    ReputationTier,
+    Attestation,
+)
+from rustchain.agent_economy.analytics import (
+    AnalyticsClient,
+    AnalyticsPeriod,
+    EarningsReport,
+    ActivityMetrics,
+    VideoMetrics,
+)
+from rustchain.agent_economy.bounties import (
+    BountyClient,
+    Bounty,
+    BountyStatus,
+    BountyTier,
+    BountySubmission,
+)
 
 __version__ = "1.0.0"
 __all__ = [
+    # Core client
     "AgentEconomyClient",
+    # Agents
     "AgentWallet",
     "AgentManager",
+    "AgentProfile",
+    # Payments
     "X402Payment",
     "PaymentProcessor",
+    "PaymentStatus",
+    "PaymentIntent",
+    # Reputation
     "ReputationClient",
     "ReputationScore",
+    "ReputationTier",
+    "Attestation",
+    # Analytics
     "AnalyticsClient",
+    "AnalyticsPeriod",
+    "EarningsReport",
+    "ActivityMetrics",
+    "VideoMetrics",
+    # Bounties
     "BountyClient",
+    "Bounty",
+    "BountyStatus",
+    "BountyTier",
+    "BountySubmission",
 ]

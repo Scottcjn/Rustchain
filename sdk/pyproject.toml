@@ -4,19 +4,21 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rustchain-sdk"
-version = "0.1.0"
-description = "Python SDK for RustChain blockchain"
+version = "1.0.0"
+description = "Python SDK for RustChain blockchain and Agent Economy (RIP-302)"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
     {name = "RustChain Community", email = "dev@rustchain.org"}
 ]
-keywords = ["rustchain", "blockchain", "crypto", "proof-of-antiquity"]
+keywords = ["rustchain", "blockchain", "crypto", "proof-of-antiquity", "agent-economy", "rip-302", "x402", "payments", "reputation", "bounties"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Blockchain",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
@@ -24,6 +26,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
+    "Operating System :: OS Independent",
 ]
 
 dependencies = [
