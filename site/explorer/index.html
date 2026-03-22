@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Block Explorer</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">&#9670;</span>
+                <h1>RustChain Explorer</h1>
+                <span class="badge">LIVE</span>
+            </div>
+            <div class="connection-status" id="connectionStatus">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </header>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar" id="statsBar">
+            <div class="stat-card">
+                <div class="stat-label">Epoch</div>
+                <div class="stat-value" id="statEpoch">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Slot</div>
+                <div class="stat-value" id="statSlot">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Miners</div>
+                <div class="stat-value" id="statMiners">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Blocks Found</div>
+                <div class="stat-value" id="statBlocks">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Attestations</div>
+                <div class="stat-value" id="statAttestations">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Last Update</div>
+                <div class="stat-value" id="statLastUpdate">--</div>
+            </div>
+        </div>
+
+        <!-- Activity Sparkline -->
+        <div class="sparkline-container">
+            <div class="sparkline-header">
+                <span>Activity (last 30 events)</span>
+                <span id="activityRate">0 events/s</span>
+            </div>
+            <canvas id="sparklineCanvas" width="800" height="40"></canvas>
+        </div>
+
+        <!-- Epoch Notification -->
+        <div class="epoch-notification" id="epochNotification" style="display:none;">
+            <span class="epoch-icon">&#127881;</span>
+            <span>Epoch <span id="newEpochNum">--</span> Settled!</span>
+            <span class="epoch-icon">&#127881;</span>
+        </div>
+
+        <!-- Main Grid -->
+        <div class="main-grid">
+            <!-- Live Blocks Panel -->
+            <section class="panel blocks-panel">
+                <div class="panel-header">
+                    <h2>&#128992; Live Blocks</h2>
+                    <button class="btn-clear" onclick="clearBlocks()">Clear</button>
+                </div>
+                <div class="panel-content" id="blocksFeed">
+                    <div class="empty-state">Waiting for blocks...</div>
+                </div>
+            </section>
+
+            <!-- Live Attestations Panel -->
+            <section class="panel attestations-panel">
+                <div class="panel-header">
+                    <h2>&#128993; Live Attestations</h2>
+                    <button class="btn-clear" onclick="clearAttestations()">Clear</button>
+                </div>
+                <div class="panel-content" id="attestationsFeed">
+                    <div class="empty-state">Waiting for attestations...</div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Raw Event Log -->
+        <section class="panel log-panel">
+            <div class="panel-header">
+                <h2>&#128274; Raw Event Stream</h2>
+                <div class="log-controls">
+                    <label><input type="checkbox" id="showAllEvents" checked> Show all events</label>
+                    <button class="btn-clear" onclick="clearLog()">Clear</button>
+                </div>
+            </div>
+            <div class="panel-content log-content" id="eventLog">
+                <div class="empty-state">Connecting to WebSocket feed...</div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <span>RustChain Block Explorer &middot; WebSocket Real-Time Feed</span>
+            <span id="nodeUrl">--</span>
+        </footer>
+    </div>
+
+    <script src="explorer.js"></script>
+</body>
+</html>

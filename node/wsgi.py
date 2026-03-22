@@ -54,6 +54,35 @@ except ImportError as e:
 except Exception as e:
     print(f"[RIP-306] SophiaCore init failed: {e}")
 
+# RustChain Block Explorer Routes
+try:
+    from explorer_routes import register_explorer_routes
+    register_explorer_routes(app)
+    print("[EXPLORER] Block explorer available at /explorer")
+except ImportError as e:
+    print(f"[EXPLORER] explorer_routes not available: {e}")
+except Exception as e:
+    print(f"[EXPLORER] Explorer routes failed: {e}")
+
+# WebSocket Feed (Socket.IO real-time events)
+# Can run standalone or integrated. If running standalone on port 5001,
+# the explorer connects directly. If integrated, we try to init here.
+_websocket_integrated = False
+try:
+    # Try to import websocket_feed and integrate it
+    sys.path.insert(0, os.path.join(base_dir, '..'))
+    from websocket_feed import ws_bp, socketio, start_event_poller, HAVE_SOCKETIO
+    if HAVE_SOCKETIO:
+        socketio.init_app(app, cors_allowed_origins="*", async_mode="threading")
+        app.register_blueprint(ws_bp)
+        start_event_poller()
+        _websocket_integrated = True
+        print("[WS-FEED] Socket.IO WebSocket feed integrated at /ws/feed")
+except ImportError as e:
+    print(f"[WS-FEED] websocket_feed not available: {e}")
+except Exception as e:
+    print(f"[WS-FEED] WebSocket feed integration failed: {e}")
+
 # Expose the app for gunicorn
 application = app
 
