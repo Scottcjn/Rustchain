@@ -95,6 +95,7 @@ Architecture: {arch}
 Device: {device}
 Uptime: {years} years
 Blocks Validated: {epochs}
+RTC Mined: {rtc}
 Rewards Earned: {rtc} RTC
 Final Attestation: {end}
 Reason: {days} days inactive
