@@ -16,9 +16,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from pico_bridge_miner import (
     PicoSimulator,
+    PicoBridgeMiner,
     build_attestation_payload,
     CONSOLE_PROFILES,
 )
+import pico_bridge_miner
 
 
 def test_pico_simulator_connection():
@@ -235,6 +237,59 @@ def test_console_profiles_complete():
     print("✓ test_console_profiles_complete passed")
 
 
+def test_attestation_cycle_fails_closed_without_challenge():
+    """Test miner refuses insecure local nonce fallback when challenge fetch fails."""
+
+    class StubBridge:
+        def __init__(self):
+            self.send_called = False
+            self.read_called = False
+
+        def send_challenge(self, nonce):
+            self.send_called = True
+            return True
+
+        def read_attestation(self, timeout_sec=30.0):
+            self.read_called = True
+            return {"board_id": "should-not-be-read"}
+
+    miner = PicoBridgeMiner(
+        {
+            "console_type": "n64_mips",
+            "simulation_mode": True,
+            "node_url": "https://example.invalid",
+            "miner_name": "test-pico",
+            "wallet_id": "RTCtest123",
+        }
+    )
+    bridge = StubBridge()
+    miner.bridge = bridge
+
+    original_fetch = pico_bridge_miner.fetch_challenge
+    original_submit = pico_bridge_miner.submit_attestation
+    submit_called = {"value": False}
+
+    try:
+        pico_bridge_miner.fetch_challenge = lambda node_url, miner_name: None
+
+        def _unexpected_submit(node_url, payload):
+            submit_called["value"] = True
+            return True, "unexpected"
+
+        pico_bridge_miner.submit_attestation = _unexpected_submit
+
+        result = miner.run_attestation_cycle()
+
+        assert result is False
+        assert not bridge.send_called
+        assert not bridge.read_called
+        assert not submit_called["value"]
+        print("✓ test_attestation_cycle_fails_closed_without_challenge passed")
+    finally:
+        pico_bridge_miner.fetch_challenge = original_fetch
+        pico_bridge_miner.submit_attestation = original_submit
+
+
 def run_all_tests():
     """Run all Pico bridge miner tests."""
     print("=" * 60)
@@ -251,6 +306,7 @@ def run_all_tests():
         test_build_attestation_payload_checks,
         test_build_attestation_payload_emulation_detection,
         test_console_profiles_complete,
+        test_attestation_cycle_fails_closed_without_challenge,
     ]
 
     passed = 0
