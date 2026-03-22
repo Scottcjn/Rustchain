@@ -565,10 +565,10 @@ class PicoBridgeMiner:
         print(f"[INFO] Fetching challenge from {node_url}...")
         nonce = fetch_challenge(node_url, miner_name)
         if not nonce:
-            nonce = hashlib.sha256(f"{miner_name}_{time.time()}".encode()).hexdigest()
-            print(f"[WARN] Using locally generated nonce: {nonce[:16]}...")
-        else:
-            print(f"[INFO] Received nonce: {nonce[:16]}...")
+            print("[ERROR] Attestation challenge unavailable; refusing insecure local nonce fallback.")
+            return False
+
+        print(f"[INFO] Received nonce: {nonce[:16]}...")
 
         # Step 2: Send challenge to Pico/console
         print("[INFO] Sending challenge to Pico bridge...")
