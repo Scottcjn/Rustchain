@@ -5,6 +5,7 @@ Issue #1597
 
 A minimal, safe Telegram bot for querying RustChain API endpoints.
 Supports health, epoch, and balance queries via environment-configured API.
+With Parasocial Hooks: audience tracking and personalized greetings.
 
 Commands:
 - /start - Welcome message and help
@@ -13,6 +14,11 @@ Commands:
 - /epoch - Get current epoch information
 - /balance <wallet> - Check wallet balance
 - /stats - Get network statistics
+
+Parasocial Hooks (Bounty #2286):
+- Tracks commenters and identifies regulars, new viewers
+- Sends personalized greetings based on viewer history
+- Generates community shoutouts for video descriptions
 """
 
 import os
@@ -26,8 +32,20 @@ from telegram.ext import (
     Application,
     CommandHandler,
     ContextTypes,
+    MessageHandler,
+    filters,
 )
 from dotenv import load_dotenv
+
+# Parasocial Hooks: Audience Tracker
+from audience_tracker import (
+    AudienceTracker,
+    ViewerStats,
+    Sentiment,
+    generate_greeting,
+    generate_community_shoutout,
+    generate_inspired_credit
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -96,6 +114,14 @@ class RateLimiter:
 
 
 rate_limiter = RateLimiter()
+
+# =============================================================================
+# Parasocial Hooks: Audience Tracker
+# =============================================================================
+
+# Initialize audience tracker database
+AUDIENCE_DB_PATH = os.getenv("AUDIENCE_DB_PATH", "audience_tracker.db")
+audience_tracker = AudienceTracker(AUDIENCE_DB_PATH)
 
 # =============================================================================
 # RustChain API Client
@@ -390,6 +416,42 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle text messages (comments) for audience tracking and parasocial personalization.
+    Part of Parasocial Hooks (Bounty #2286)."""
+    user = update.effective_user
+    message = update.effective_message
+    text = message.text.strip()
+
+    if not text:
+        return
+
+    # Rate limiting
+    if not rate_limiter.is_allowed(user.id):
+        return
+
+    logger.info(f"Audience tracking: User {user.id} ({user.username}) commented: {text[:50]}...")
+
+    # Use default agent_id for single-agent bot
+    agent_id = "default"
+
+    # Record comment (default to neutral sentiment for now)
+    # Advanced sentiment analysis can be added later if needed
+    stats = audience_tracker.record_comment(
+        agent_id=agent_id,
+        user_id=user.id,
+        username=user.username,
+        comment_text=text,
+        sentiment=Sentiment.NEUTRAL
+    )
+
+    # Generate personalized greeting based on viewer history
+    # Only greet for new/returning OR 30% chance to keep it natural (not every comment)
+    if stats.is_new or stats.is_returning_after_absence or (stats.is_regular and random.random() < 0.3):
+        greeting = generate_greeting(stats)
+        await update.message.reply_text(greeting, parse_mode="Markdown")
+
+
 # =============================================================================
 # Bot Initialization
 # =============================================================================
@@ -458,6 +520,11 @@ def main():
     application.add_handler(CommandHandler("balance", cmd_balance))
     application.add_handler(CommandHandler("stats", cmd_stats))
 
+    # Parasocial Hooks: Handle text messages (comments) for audience tracking
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
+    )
+
     # Register error handler
     application.add_error_handler(error_handler)
 
@@ -469,6 +536,7 @@ def main():
     print(f"   API: {RUSTCHAIN_API_URL}")
     print(f"   Verify SSL: {RUSTCHAIN_VERIFY_SSL}")
     print(f"   Rate limit: {RATE_LIMIT_PER_MINUTE} req/min")
+    print(f"   Audience DB: {AUDIENCE_DB_PATH}")
     print("\nPress Ctrl+C to stop\n")
 
     # Run polling
