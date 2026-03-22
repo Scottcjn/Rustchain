@@ -1,0 +1,13 @@
+# Boot Chime Proof-of-Iron Dependencies
+
+# Core dependencies
+numpy>=1.21.0
+flask>=2.0.0
+flask-cors>=3.0.0
+
+# Optional: Real audio capture
+# sounddevice>=0.4.0
+# scipy>=1.7.0
+
+# Testing
+# pytest>=7.0.0
