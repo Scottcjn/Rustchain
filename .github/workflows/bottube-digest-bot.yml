@@ -1,0 +1,129 @@
+name: BoTTube Weekly Digest Bot
+
+# Issue #2279 - Automated community newsletter
+
+on:
+  # Schedule: Every Monday at 9:00 AM UTC
+  schedule:
+    - cron: '0 9 * * MON'
+  
+  # Allow manual trigger from GitHub Actions tab
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode (no actual sends)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      send_discord:
+        description: 'Send to Discord'
+        required: false
+        default: 'true'
+        type: boolean
+      send_telegram:
+        description: 'Send to Telegram'
+        required: false
+        default: 'false'
+        type: boolean
+      send_email:
+        description: 'Send via Email'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r bottube_digest_bot/requirements.txt
+
+      - name: Run tests (optional validation)
+        run: |
+          cd bottube_digest_bot
+          python -m pytest tests/test_bottube_digest_bot.py -v
+        continue-on-error: true
+
+      - name: Send weekly digest
+        env:
+          # RustChain API
+          RUSTCHAIN_NODE_URL: ${{ secrets.RUSTCHAIN_NODE_URL || 'https://50.28.86.131' }}
+          RUSTCHAIN_API_TIMEOUT: 15.0
+          RUSTCHAIN_VERIFY_SSL: false
+          
+          # BoTTube API
+          BOTTUBE_URL: ${{ secrets.BOTTUBE_URL || 'https://bottube.ai' }}
+          BOTTUBE_API_TIMEOUT: 10.0
+          
+          # Discord (webhook method)
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          
+          # Discord (bot method - optional)
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
+          
+          # Telegram
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          
+          # Email/SMTP
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT || 587 }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM || 'digest@rustchain.io' }}
+          DIGEST_RECIPIENTS: ${{ secrets.DIGEST_RECIPIENTS }}
+          
+          # Digest settings
+          DIGEST_TOP_N: 10
+          DIGEST_TOP_VIDEOS: 5
+          INCLUDE_EPOCH_SUMMARY: true
+          INCLUDE_MINER_STATS: true
+          INCLUDE_VIDEO_HIGHLIGHTS: true
+          
+          # Scheduling
+          SCHEDULE_MODE: weekly
+          SCHEDULE_DAY: monday
+          SCHEDULE_HOUR: 9
+          SCHEDULE_MINUTE: 0
+          
+          # Logging
+          LOG_LEVEL: INFO
+          
+          # Dry run mode (from workflow input or default to false)
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        
+        run: |
+          echo "📊 Starting BoTTube Weekly Digest Bot..."
+          echo "Generated at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          echo ""
+          
+          cd bottube_digest_bot
+          python bottube_digest_bot.py --once
+          
+          echo ""
+          echo "✅ Digest generation complete"
+
+      - name: Upload logs (if failed)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-bot-logs
+          path: |
+            bottube_digest_bot/*.log
+          retention-days: 7
