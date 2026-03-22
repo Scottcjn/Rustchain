@@ -1,0 +1,1 @@
+/root/.openclaw/workspace/rustchain-main/tools/floppy-witness/target/release/floppy-witness: /root/.openclaw/workspace/rustchain-main/tools/floppy-witness/src/cli.rs /root/.openclaw/workspace/rustchain-main/tools/floppy-witness/src/main.rs /root/.openclaw/workspace/rustchain-main/tools/floppy-witness/src/merkle.rs
