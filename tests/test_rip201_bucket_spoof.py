@@ -53,6 +53,16 @@ def _init_attestation_db(db_path: Path) -> None:
             miner_id TEXT PRIMARY KEY,
             pubkey_hex TEXT
         );
+        CREATE TABLE nonces (
+            nonce TEXT PRIMARY KEY,
+            expires_at INTEGER
+        );
+        CREATE TABLE used_nonces (
+            nonce TEXT PRIMARY KEY,
+            miner_id TEXT NOT NULL,
+            first_seen INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL
+        );
         CREATE TABLE tickets (
             ticket_id TEXT PRIMARY KEY,
             expires_at INTEGER NOT NULL,
@@ -157,6 +167,13 @@ def _spoofed_g4_payload(miner: str) -> dict:
     }
 
 
+def _attach_live_challenge(client, payload: dict) -> dict:
+    response = client.post("/attest/challenge", json={})
+    assert response.status_code == 200
+    payload["report"]["nonce"] = response.get_json()["nonce"]
+    return payload
+
+
 def _verified_g4_fingerprint() -> dict:
     return {
         "checks": {
@@ -225,7 +242,7 @@ def test_validate_fingerprint_data_accepts_verified_g4_claim():
 
 def test_attestation_downgrades_spoofed_g4_claim_to_non_vintage_weight(attest_client):
     client, db_path = attest_client
-    payload = _spoofed_g4_payload("spoof-g4-accepted")
+    payload = _attach_live_challenge(client, _spoofed_g4_payload("spoof-g4-accepted"))
 
     response = client.post(
         "/attest/submit",
@@ -256,7 +273,7 @@ def test_attestation_downgrades_spoofed_g4_claim_to_non_vintage_weight(attest_cl
 
 def test_public_apis_do_not_expose_spoofed_claim_as_vintage(attest_client):
     client, _db_path = attest_client
-    payload = _spoofed_g4_payload("spoof-g4-public-api")
+    payload = _attach_live_challenge(client, _spoofed_g4_payload("spoof-g4-public-api"))
 
     response = client.post(
         "/attest/submit",
