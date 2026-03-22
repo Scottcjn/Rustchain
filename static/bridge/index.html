@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>wRTC Solana Bridge Dashboard</title>
+    <style>
+        :root {
+            --solana: #14F195;
+            --rtc-gold: #FFD700;
+            --bg: #050505;
+            --panel: #111;
+            --text: #ddd;
+            --border: #222;
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        h1 { margin: 0; font-weight: 900; letter-spacing: -1px; }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 25px;
+            border-radius: 8px;
+        }
+        .stat-value { font-size: 2.2em; font-weight: bold; color: white; margin: 10px 0; }
+        .stat-label { font-size: 0.8em; color: #666; text-transform: uppercase; font-weight: bold; }
+        
+        .bridge-status {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .status-pill {
+            font-size: 0.7em;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: #222;
+        }
+        .status-pill.online { color: var(--solana); border: 1px solid var(--solana); }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; }
+        th { text-align: left; padding: 12px; color: #555; border-bottom: 1px solid var(--border); }
+        td { padding: 12px; border-bottom: 1px solid #1a1a1a; }
+        
+        .state-tag {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        .complete { background: rgba(20, 241, 149, 0.1); color: var(--solana); }
+        .pending { background: rgba(255, 215, 0, 0.1); color: var(--rtc-gold); }
+        
+        .footer { margin-top: 50px; text-align: center; color: #444; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>wRTC_BRIDGE_MONITOR</h1>
+        <div id="lastUpdate" style="font-size: 0.8em; color: #444;">SYNCING...</div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">Total RTC Locked</div>
+            <div id="lockedRtc" class="stat-value">0.00</div>
+            <div class="stat-label" style="color:var(--rtc-gold)">RustChain Side</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">wRTC Circulating</div>
+            <div id="circulatingWrtc" class="stat-value">0.00</div>
+            <div class="stat-label" style="color:var(--solana)">Solana Side</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Bridge Health</div>
+            <div id="nodeStatus" class="bridge-status">
+                <!-- Status pills -->
+            </div>
+        </div>
+    </div>
+
+    <h2>Recent Activity</h2>
+    <div class="stat-card" style="padding: 0;">
+        <table>
+            <thead>
+                <tr>
+                    <th>LOCK_ID</th>
+                    <th>SENDER</th>
+                    <th>AMOUNT</th>
+                    <th>TARGET_CHAIN</th>
+                    <th>STATE</th>
+                </tr>
+            </thead>
+            <tbody id="txBody">
+                <!-- Rows -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="footer">
+    ELyan Labs | RIP-305 Cross-Chain Protocol
+</div>
+
+<script>
+    async function refresh() {
+        try {
+            const resp = await fetch('bridge_status.json');
+            const data = await resp.json();
+            
+            document.getElementById('lockedRtc').innerText = data.total_locked_rtc.toLocaleString() + ' RTC';
+            document.getElementById('circulatingWrtc').innerText = (data.circulating_wrtc || 0).toLocaleString() + ' wRTC';
+            
+            // Update node status
+            const statusDiv = document.getElementById('nodeStatus');
+            statusDiv.innerHTML = '';
+            data.bridge_nodes.forEach(node => {
+                const pill = document.createElement('span');
+                pill.className = `status-pill ${node.status === 'up' ? 'online' : ''}`;
+                pill.innerText = `${node.name}: ${node.status.toUpperCase()}`;
+                statusDiv.appendChild(pill);
+            });
+
+            // Update transactions
+            const body = document.getElementById('txBody');
+            body.innerHTML = '';
+            data.recent_transactions.forEach(tx => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td style="font-family:monospace; color:#888">${tx.lock_id.substring(0,12)}...</td>
+                    <td>${tx.sender_wallet}</td>
+                    <td style="color:white; font-weight:bold">${tx.amount_rtc}</td>
+                    <td><span style="color:var(--solana)">${tx.target_chain.toUpperCase()}</span></td>
+                    <td><span class="state-tag ${tx.state}">${tx.state.toUpperCase()}</span></td>
+                `;
+                body.appendChild(row);
+            });
+
+            document.getElementById('lastUpdate').innerText = 'LAST_SYNC: ' + new Date(data.timestamp).toLocaleTimeString();
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    refresh();
+    setInterval(refresh, 30000);
+</script>
+
+</body>
+</html>
