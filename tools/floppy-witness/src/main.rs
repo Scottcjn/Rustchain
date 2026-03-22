@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn test_local_verify() {
-        let mut witness = EpochWitness {
+        let witness = EpochWitness {
             epoch_number: 123,
             timestamp: 1234,
             miners: vec![],
@@ -154,11 +154,12 @@ mod tests {
             commitment_hash: [0u8; 32],
         };
         let commitment = witness.compute_commitment();
+        let mut witness = witness;
         witness.commitment_hash = commitment;
         assert!(verify_witness_local(&witness));
     }
 }
 
 fn main() {
-    cli::main();
+    let _ = cli::main();
 }
