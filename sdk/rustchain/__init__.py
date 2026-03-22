@@ -5,6 +5,7 @@ A Python client library for interacting with the RustChain blockchain.
 
 Includes:
 - Core blockchain client (RustChainClient)
+- Async client (AsyncRustChainClient)
 - RIP-302 Agent Economy SDK (AgentEconomyClient)
 - x402 payment protocol support
 - Beacon Atlas reputation integration
@@ -13,6 +14,7 @@ Includes:
 """
 
 from rustchain.client import RustChainClient
+from rustchain.async_client import AsyncRustChainClient
 from rustchain.exceptions import (
     RustChainError,
     ConnectionError,
@@ -50,8 +52,9 @@ from rustchain.agent_economy import (
 
 __version__ = "1.0.0"
 __all__ = [
-    # Core client
+    # Core clients
     "RustChainClient",
+    "AsyncRustChainClient",
     # Exceptions
     "RustChainError",
     "ConnectionError",
