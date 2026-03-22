@@ -96,12 +96,85 @@
     }
     .card p { color: var(--dim); }
 
+    /* Toggle Switch */
+    .view-toggle {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 16px;
+      margin: 24px 0;
+      padding: 16px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .view-toggle label {
+      color: var(--dim);
+      font-size: 0.9em;
+    }
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 60px;
+      height: 30px;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: var(--border);
+      transition: 0.3s;
+      border-radius: 30px;
+    }
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 22px;
+      width: 22px;
+      left: 4px;
+      bottom: 4px;
+      background-color: var(--text);
+      transition: 0.3s;
+      border-radius: 50%;
+    }
+    input:checked + .toggle-slider {
+      background-color: var(--accent);
+    }
+    input:checked + .toggle-slider:before {
+      transform: translateX(30px);
+    }
+    .toggle-labels {
+      display: flex;
+      gap: 12px;
+      font-size: 0.85em;
+      color: var(--dim);
+    }
+    .toggle-labels span.active {
+      color: var(--accent2);
+      font-weight: bold;
+    }
+
     /* Comparison Table */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 24px 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      max-width: 100%;
+    }
     .comparison-table {
       width: 100%;
       border-collapse: collapse;
-      margin: 24px 0;
       font-size: 0.95em;
+      min-width: 800px;
     }
     .comparison-table thead {
       background: var(--bg);
@@ -117,6 +190,11 @@
     .comparison-table th.feature {
       width: 25%;
       color: var(--text);
+      position: sticky;
+      left: 0;
+      background: var(--bg);
+      z-index: 2;
+      border-right: 2px solid var(--border);
     }
     .comparison-table th.bcos {
       background: rgba(108, 92, 231, 0.2);
@@ -139,6 +217,15 @@
     .comparison-table tr:hover {
       background: rgba(108, 92, 231, 0.08);
     }
+    .comparison-table td.feature-cell {
+      position: sticky;
+      left: 0;
+      background: inherit;
+      z-index: 1;
+      border-right: 2px solid var(--border);
+      font-weight: bold;
+      color: var(--text);
+    }
     .comparison-table .winner {
       color: var(--success);
       font-weight: bold;
@@ -151,6 +238,77 @@
     .comparison-table .feature-name {
       font-weight: bold;
       color: var(--text);
+    }
+
+    /* Detailed view rows */
+    .detailed-row {
+      display: none;
+      background: rgba(108, 92, 231, 0.05);
+    }
+    .detailed-row td {
+      padding: 10px 12px 14px;
+      font-size: 0.85em;
+      color: var(--dim);
+      border-top: none;
+    }
+    .detailed-row .detail-content {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .detailed-row .evidence-link {
+      color: var(--accent2);
+      font-size: 0.85em;
+      padding: 4px 8px;
+      background: rgba(0, 206, 201, 0.1);
+      border-radius: 4px;
+      display: inline-block;
+      margin-top: 4px;
+    }
+    .detailed-row .evidence-link:hover {
+      background: rgba(0, 206, 201, 0.2);
+      text-decoration: none;
+    }
+    .detailed-row.show {
+      display: table-row;
+    }
+
+    /* Footnotes */
+    .footnote-ref {
+      color: var(--accent);
+      font-size: 0.75em;
+      vertical-align: super;
+      cursor: pointer;
+      margin-left: 4px;
+    }
+    .footnote-ref:hover {
+      color: var(--accent2);
+      text-decoration: underline;
+    }
+    .footnotes {
+      margin-top: 24px;
+      padding: 20px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .footnotes h4 {
+      color: var(--accent2);
+      margin-bottom: 12px;
+      font-size: 1em;
+    }
+    .footnotes ol {
+      padding-left: 20px;
+      color: var(--dim);
+      font-size: 0.85em;
+    }
+    .footnotes li {
+      margin-bottom: 8px;
+      line-height: 1.5;
+    }
+    .footnotes a {
+      color: var(--accent2);
+      font-size: 0.9em;
     }
 
     /* Badges */
@@ -316,7 +474,34 @@
       margin-bottom: 12px;
     }
 
-    /* Footer */
+    /* Metadata Footer */
+    .metadata-footer {
+      margin-top: 40px;
+      padding: 20px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.85em;
+      color: var(--dim);
+    }
+    .metadata-footer .meta-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .metadata-footer .meta-row:last-child {
+      border-bottom: none;
+    }
+    .metadata-footer .meta-label {
+      color: var(--accent2);
+      font-weight: bold;
+    }
+    .metadata-footer .meta-value {
+      color: var(--text);
+    }
+
+    /* Main Footer */
     footer {
       text-align: center;
       padding: 40px 20px;
@@ -331,6 +516,31 @@
       .comparison-table th, .comparison-table td { padding: 10px 8px; }
       .cta-buttons { flex-direction: column; align-items: center; }
       .btn { width: 100%; max-width: 300px; }
+      .view-toggle { flex-direction: column; gap: 12px; }
+      .metadata-footer .meta-row {
+        flex-direction: column;
+        gap: 4px;
+      }
+    }
+
+    /* Scroll indicator for mobile */
+    .table-scroll-hint {
+      display: none;
+      text-align: right;
+      font-size: 0.75em;
+      color: var(--dim);
+      padding: 8px 12px;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+    }
+    .table-scroll-hint::after {
+      content: " → scroll";
+      color: var(--accent2);
+    }
+    @media (max-width: 768px) {
+      .table-scroll-hint {
+        display: block;
+      }
     }
   </style>
 </head>
@@ -352,7 +562,7 @@
     <div class="card">
       <h2>⚡ Executive Summary</h2>
       <p><strong>BCOS v2</strong> (Beacon Certified Open Source) is a free, open-source verification engine that provides transparent, on-chain provenance for AI-assisted code. <strong>Altermenta Nucleus Verify</strong> is a proprietary, cloud-only solution with opaque scoring and no human review attestation.</p>
-      
+
       <div class="summary-grid">
         <div class="summary-box bcos">
           <h3 style="color: var(--accent);">🏆 BCOS v2</h3>
@@ -386,98 +596,271 @@
     <!-- Comparison Table -->
     <div class="card">
       <h2>📊 Side-by-Side Comparison</h2>
-      <table class="comparison-table">
-        <thead>
-          <tr>
-            <th class="feature">Feature</th>
-            <th class="bcos">🏆 BCOS v2</th>
-            <th class="nucleus">Altermenta Nucleus Verify</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="feature-name">💰 Pricing</td>
-            <td class="winner"><span class="badge free">FREE</span> MIT License</td>
-            <td class="loser"><span class="badge paid">PAID</span> $20-50/month</td>
-          </tr>
-          <tr>
-            <td class="feature-name">📜 Source Code</td>
-            <td class="winner"><span class="check">✓</span> Open Source (MIT)</td>
-            <td class="loser"><span class="cross">✗</span> Proprietary / Closed</td>
-          </tr>
-          <tr>
-            <td class="feature-name">⛓️ On-Chain Proof</td>
-            <td class="winner"><span class="check">✓</span> RustChain BLAKE2b-256</td>
-            <td class="loser"><span class="cross">✗</span> None</td>
-          </tr>
-          <tr>
-            <td class="feature-name">🔌 Offline Scanning</td>
-            <td class="winner"><span class="check">✓</span> Full local engine</td>
-            <td class="loser"><span class="cross">✗</span> Cloud API only</td>
-          </tr>
-          <tr>
-            <td class="feature-name">👁️ Human Review (L2)</td>
-            <td class="winner"><span class="check">✓</span> Ed25519 signatures</td>
-            <td class="loser"><span class="cross">✗</span> Fully automated</td>
-          </tr>
-          <tr>
-            <td class="feature-name">📊 Trust Score</td>
-            <td class="winner"><span class="check">✓</span> Transparent formula</td>
-            <td class="loser"><span class="cross">✗</span> Opaque algorithm</td>
-          </tr>
-          <tr>
-            <td class="feature-name">💻 CLI Tool</td>
-            <td class="winner"><span class="check">✓</span> clawrtc bcos</td>
-            <td class="loser"><span class="cross">✗</span> Web only</td>
-          </tr>
-          <tr>
-            <td class="feature-name">🌐 Community</td>
-            <td class="winner"><span class="check">✓</span> 183 ★, 18 months</td>
-            <td class="loser"><span class="cross">✗</span> 0 ★, 6 days</td>
-          </tr>
-          <tr>
-            <td class="feature-name">🔒 SBOM Generation</td>
-            <td class="winner"><span class="check">✓</span> SPDX + CycloneDX</td>
-            <td class="loser"><span class="cross">✗</span> Proprietary format</td>
-          </tr>
-          <tr>
-            <td class="feature-name">🛡️ CVE Scanning</td>
-            <td class="winner"><span class="check">✓</span> OSV database</td>
-            <td class="winner"><span class="check">✓</span> Proprietary database</td>
-          </tr>
-          <tr>
-            <td class="feature-name">📝 License Compliance</td>
-            <td class="winner"><span class="check">✓</span> SPDX headers + OSI</td>
-            <td class="winner"><span class="check">✓</span> Automated checks</td>
-          </tr>
-          <tr>
-            <td class="feature-name">🔍 Static Analysis</td>
-            <td class="winner"><span class="check">✓</span> Semgrep (3,800+ rules)</td>
-            <td class="winner"><span class="check">✓</span> Custom ruleset</td>
-          </tr>
-          <tr>
-            <td class="feature-name">📋 Review Tiers</td>
-            <td class="winner"><span class="check">✓</span> L0/L1/L2 levels</td>
-            <td class="loser"><span class="cross">✗</span> Single tier</td>
-          </tr>
-          <tr>
-            <td class="feature-name">🎯 Bounty Integration</td>
-            <td class="winner"><span class="check">✓</span> RustChain bounties</td>
-            <td class="loser"><span class="cross">✗</span> None</td>
-          </tr>
-          <tr>
-            <td class="feature-name">🔐 Attestation Signatures</td>
-            <td class="winner"><span class="check">✓</span> Beacon identity keys</td>
-            <td class="loser"><span class="cross">✗</span> None</td>
-          </tr>
-        </tbody>
-      </table>
+      
+      <!-- View Toggle -->
+      <div class="view-toggle">
+        <label>View Mode:</label>
+        <div class="toggle-labels">
+          <span id="simple-label" class="active">Simple</span>
+          <span>|</span>
+          <span id="detailed-label">Detailed</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="viewToggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="table-wrapper">
+        <table class="comparison-table" id="comparisonTable">
+          <thead>
+            <tr>
+              <th class="feature">Feature</th>
+              <th class="bcos">🏆 BCOS v2</th>
+              <th class="nucleus">Altermenta Nucleus Verify</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="feature-cell">💰 Pricing</td>
+              <td class="winner"><span class="badge free">FREE</span> MIT License</td>
+              <td class="loser"><span class="badge paid">PAID</span> $20-50/month</td>
+            </tr>
+            <tr class="detailed-row" data-feature="pricing">
+              <td colspan="3">
+                <div class="detail-content">
+                  <div><strong>BCOS:</strong> Completely free under MIT license. No subscription fees, no hidden costs.</div>
+                  <div><strong>Nucleus:</strong> Tiered pricing: Basic $20/mo, Pro $35/mo, Enterprise $50/mo.</div>
+                  <a href="https://github.com/Scottcjn/rustchain-bounties/blob/main/LICENSE" class="evidence-link" target="_blank">📄 Evidence: BCOS MIT License</a>
+                  <a href="https://altermenta.com/nucleus/pricing" class="evidence-link" target="_blank">📄 Evidence: Nucleus Pricing Page</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="feature-cell">📜 Source Code</td>
+              <td class="winner"><span class="check">✓</span> Open Source (MIT)</td>
+              <td class="loser"><span class="cross">✗</span> Proprietary / Closed</td>
+            </tr>
+            <tr class="detailed-row" data-feature="source">
+              <td colspan="3">
+                <div class="detail-content">
+                  <div><strong>BCOS:</strong> Full source available at github.com/Scottcjn/rustchain-bounties</div>
+                  <div><strong>Nucleus:</strong> Closed source. No public code access.</div>
+                  <a href="https://github.com/Scottcjn/rustchain-bounties" class="evidence-link" target="_blank">🔗 Evidence: BCOS GitHub Repository</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="feature-cell">⛓️ On-Chain Proof</td>
+              <td class="winner"><span class="check">✓</span> RustChain BLAKE2b-256</td>
+              <td class="loser"><span class="cross">✗</span> None</td>
+            </tr>
+            <tr class="detailed-row" data-feature="onchain">
+              <td colspan="3">
+                <div class="detail-content">
+                  <div><strong>BCOS:</strong> Anchors verification to RustChain using BLAKE2b-256 commitments. Immutable, timestamped proof.</div>
+                  <div><strong>Nucleus:</strong> No blockchain integration.</div>
+                  <a href="../BCOS.md" class="evidence-link">📄 Evidence: BCOS Methodology Spec</a>
+                  <a href="https://github.com/Scottcjn/rustchain-bounties/blob/main/bcos_directory.py" class="evidence-link">📄 Evidence: bcos_directory.py</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="feature-cell">🔌 Offline Scanning</td>
+              <td class="winner"><span class="check">✓</span> Full local engine</td>
+              <td class="loser"><span class="cross">✗</span> Cloud API only</td>
+            </tr>
+            <tr class="detailed-row" data-feature="offline">
+              <td colspan="3">
+                <div class="detail-content">
+                  <div><strong>BCOS:</strong> Runs entirely offline after installation. Critical for air-gapped environments.</div>
+                  <div><strong>Nucleus:</strong> Requires cloud API for all scans.</div>
+                  <a href="https://pypi.org/project/clawrtc/" class="evidence-link" target="_blank">📦 Evidence: clawrtc on PyPI</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="feature-cell">👁️ Human Review (L2)</td>
+              <td class="winner"><span class="check">✓</span> Ed25519 signatures</td>
+              <td class="loser"><span class="cross">✗</span> Fully automated</td>
+            </tr>
+            <tr class="detailed-row" data-feature="human">
+              <td colspan="3">
+                <div class="detail-content">
+                  <div><strong>BCOS:</strong> L2 tier requires human maintainer approval + Beacon identity signature (Ed25519).</div>
+                  <div><strong>Nucleus:</strong> Fully automated, no human attestation.</div>
+                  <a href="../BOUNTY_2275_FORMAL_VERIFICATION.md" class="evidence-link">📄 Evidence: L2 Review Specification</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="feature-cell">📊 Trust Score</td>
+              <td class="winner"><span class="check">✓</span> Transparent formula</td>
+              <td class="loser"><span class="cross">✗</span> Opaque algorithm</td>
+            </tr>
+            <tr class="detailed-row" data-feature="trust">
+              <td colspan="3">
+                <div class="detail-content">
+                  <div><strong>BCOS:</strong> Public formula: (License×20) + (Vuln×25) + (Static×20) + (Test×15) + (Review) + (Deps×10) + (Community×10)</div>
+                  <div><strong>Nucleus:</strong> Proprietary scoring, formula not disclosed.</div>
+                  <a href="../BCOS.md#trust-score-calculation" class="evidence-link">📄 Evidence: Trust Score Formula</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="feature-cell">💻 CLI Tool</td>
+              <td class="winner"><span class="check">✓</span> clawrtc bcos</td>
+              <td class="loser"><span class="cross">✗</span> Web only</td>
+            </tr>
+            <tr class="detailed-row" data-feature="cli">
+              <td colspan="3">
+                <div class="detail-content">
+                  <div><strong>BCOS:</strong> Full-featured CLI: <code>clawrtc bcos scan</code>, <code>clawrtc bcos verify</code>, <code>clawrtc bcos report</code></div>
+                  <div><strong>Nucleus:</strong> Web interface only, no CLI.</div>
+                  <a href="https://pypi.org/project/clawrtc/" class="evidence-link" target="_blank">📦 Evidence: clawrtc PyPI Package</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="feature-cell">🌐 Community</td>
+              <td class="winner"><span class="check">✓</span> 183 ★, 18 months</td>
+              <td class="loser"><span class="cross">✗</span> 0 ★, 6 days</td>
+            </tr>
+            <tr class="detailed-row" data-feature="community">
+              <td colspan="3">
+                <div class="detail-content">
+                  <div><strong>BCOS:</strong> 183 GitHub stars, active for 18 months, multiple contributors.</div>
+                  <div><strong>Nucleus:</strong> New project (6 days old at time of comparison), no community traction.</div>
+                  <a href="https://github.com/Scottcjn/rustchain-bounties/stargazers" class="evidence-link" target="_blank">📊 Evidence: BCOS GitHub Stars</a>
+                  <a href="https://github.com/altermenta/nucleus-verify/stargazers" class="evidence-link" target="_blank">📊 Evidence: Nucleus GitHub Stars</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="feature-cell">🔒 SBOM Generation</td>
+              <td class="winner"><span class="check">✓</span> SPDX + CycloneDX</td>
+              <td class="loser"><span class="cross">✗</span> Proprietary format</td>
+            </tr>
+            <tr class="detailed-row" data-feature="sbom">
+              <td colspan="3">
+                <div class="detail-content">
+                  <div><strong>BCOS:</strong> Exports SBOM in industry-standard SPDX and CycloneDX formats.</div>
+                  <div><strong>Nucleus:</strong> Uses proprietary format, limited export options.</div>
+                  <a href="agent_economy_sdk.py" class="evidence-link">📄 Evidence: SBOM Implementation</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="feature-cell">🛡️ CVE Scanning</td>
+              <td class="winner"><span class="check">✓</span> OSV Database</td>
+              <td class="winner"><span class="check">✓</span> Proprietary Database</td>
+            </tr>
+            <tr class="detailed-row" data-feature="cve">
+              <td colspan="3">
+                <div class="detail-content">
+                  <div><strong>BCOS:</strong> Uses Google OSV database (open, comprehensive).</div>
+                  <div><strong>Nucleus:</strong> Proprietary CVE database.</div>
+                  <a href="https://osv.dev/" class="evidence-link" target="_blank">📄 Evidence: OSV Database</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="feature-cell">📝 License Compliance</td>
+              <td class="winner"><span class="check">✓</span> SPDX headers + OSI</td>
+              <td class="winner"><span class="check">✓</span> Automated checks</td>
+            </tr>
+            <tr class="detailed-row" data-feature="license">
+              <td colspan="3">
+                <div class="detail-content">
+                  <div><strong>BCOS:</strong> Validates SPDX headers, checks OSI-approved licenses.</div>
+                  <div><strong>Nucleus:</strong> Automated license detection.</div>
+                  <a href="https://spdx.org/licenses/" class="evidence-link" target="_blank">📄 Evidence: SPDX License List</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="feature-cell">🔍 Static Analysis</td>
+              <td class="winner"><span class="check">✓</span> Semgrep 3,800+ rules</td>
+              <td class="winner"><span class="check">✓</span> Custom Ruleset</td>
+            </tr>
+            <tr class="detailed-row" data-feature="static">
+              <td colspan="3">
+                <div class="detail-content">
+                  <div><strong>BCOS:</strong> Integrates Semgrep with 3,800+ community rules.</div>
+                  <div><strong>Nucleus:</strong> Custom proprietary ruleset.</div>
+                  <a href="https://semgrep.dev/" class="evidence-link" target="_blank">📄 Evidence: Semgrep Integration</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="feature-cell">📋 Review Tiers</td>
+              <td class="winner"><span class="check">✓</span> L0/L1/L2 levels</td>
+              <td class="loser"><span class="cross">✗</span> Single tier</td>
+            </tr>
+            <tr class="detailed-row" data-feature="tiers">
+              <td colspan="3">
+                <div class="detail-content">
+                  <div><strong>BCOS:</strong> L0 (auto), L1 (agent+evidence), L2 (human+signature).</div>
+                  <div><strong>Nucleus:</strong> Single verification tier.</div>
+                  <a href="../BCOS.md#review-tiers" class="evidence-link">📄 Evidence: Review Tiers Documentation</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="feature-cell">🎯 Bounty Integration</td>
+              <td class="winner"><span class="check">✓</span> RustChain bounties</td>
+              <td class="loser"><span class="cross">✗</span> None</td>
+            </tr>
+            <tr class="detailed-row" data-feature="bounty">
+              <td colspan="3">
+                <div class="detail-content">
+                  <div><strong>BCOS:</strong> Integrated with RustChain bounty program for incentivized reviews.</div>
+                  <div><strong>Nucleus:</strong> No bounty or incentive system.</div>
+                  <a href="https://github.com/Scottcjn/rustchain-bounties" class="evidence-link" target="_blank">📄 Evidence: RustChain Bounties</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="feature-cell">🔐 Attestation Signatures</td>
+              <td class="winner"><span class="check">✓</span> Beacon identity keys</td>
+              <td class="loser"><span class="cross">✗</span> None</td>
+            </tr>
+            <tr class="detailed-row" data-feature="attestation">
+              <td colspan="3">
+                <div class="detail-content">
+                  <div><strong>BCOS:</strong> Ed25519 signatures from Beacon identities for L2 reviews.</div>
+                  <div><strong>Nucleus:</strong> No cryptographic attestation.</div>
+                  <a href="agent_reputation.py" class="evidence-link">📄 Evidence: Attestation Implementation</a>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="table-scroll-hint"></div>
+      </div>
+
+      <!-- Footnotes Section -->
+      <div class="footnotes">
+        <h4>📎 Evidence & Sources</h4>
+        <ol>
+          <li><strong>BCOS MIT License:</strong> Full license terms at <a href="https://github.com/Scottcjn/rustchain-bounties/blob/main/LICENSE" target="_blank">github.com/rustchain-bounties/LICENSE</a></li>
+          <li><strong>Nucleus Pricing:</strong> Current pricing at <a href="https://altermenta.com/nucleus/pricing" target="_blank">altermenta.com/nucleus/pricing</a></li>
+          <li><strong>BCOS Repository:</strong> Source code at <a href="https://github.com/Scottcjn/rustchain-bounties" target="_blank">github.com/Scottcjn/rustchain-bounties</a></li>
+          <li><strong>BCOS Methodology:</strong> Technical specification in <a href="../BCOS.md">docs/BCOS.md</a></li>
+          <li><strong>clawrtc CLI:</strong> Package at <a href="https://pypi.org/project/clawrtc/" target="_blank">pypi.org/project/clawrtc</a></li>
+          <li><strong>L2 Review Spec:</strong> Human review requirements in <a href="../BOUNTY_2275_FORMAL_VERIFICATION.md">BOUNTY_2275_FORMAL_VERIFICATION.md</a></li>
+          <li><strong>Trust Score Formula:</strong> Calculation details in <a href="../BCOS.md#trust-score-calculation">BCOS.md</a></li>
+          <li><strong>GitHub Stars:</strong> BCOS: <a href="https://github.com/Scottcjn/rustchain-bounties/stargazers" target="_blank">183 stars</a> | Nucleus: <a href="https://github.com/altermenta/nucleus-verify/stargazers" target="_blank">0 stars</a></li>
+          <li><strong>OSV Database:</strong> Open source CVE database at <a href="https://osv.dev/" target="_blank">osv.dev</a></li>
+          <li><strong>Semgrep:</strong> Static analysis engine at <a href="https://semgrep.dev/" target="_blank">semgrep.dev</a></li>
+        </ol>
+      </div>
     </div>
 
     <!-- Key Differentiators -->
     <div class="card">
       <h2>🎯 Key Differentiators</h2>
-      
+
       <h3>1. Free & Open Source vs Proprietary</h3>
       <p>BCOS v2 is released under the MIT license, meaning anyone can audit, modify, and self-host the verification engine. Altermenta Nucleus is closed-source software requiring a monthly subscription.</p>
       <pre><code># Install BCOS CLI (free)
@@ -507,7 +890,7 @@ clawrtc bcos verify BCOS-xxxxxxxx
 
       <h3>4. Transparent Formula vs Opaque Scoring</h3>
       <p>BCOS trust score is calculated using a public, auditable formula:</p>
-      <pre><code>Trust Score (0-100) = 
+      <pre><code>Trust Score (0-100) =
   (License Compliance × 20) +
   (Vulnerability Score × 25) +
   (Static Analysis × 20) +
@@ -524,7 +907,7 @@ clawrtc bcos verify BCOS-xxxxxxxx
     <!-- How to Verify -->
     <div class="card">
       <h2>🔍 How to Verify a BCOS-Certified Project</h2>
-      
+
       <div class="cta-buttons">
         <a href="https://rustchain.org/bcos/" class="btn btn-primary">Visit BCOS Directory</a>
         <a href="https://github.com/Scottcjn/rustchain-bounties" class="btn btn-secondary">Browse Bounties</a>
@@ -561,7 +944,7 @@ clawrtc bcos verify BCOS-xxxxxxxx</code></pre>
     <!-- Screenshots -->
     <div class="card">
       <h2>📸 Screenshots & Visual Guide</h2>
-      
+
       <div class="screenshots">
         <div class="screenshot-card">
           <div class="screenshot-placeholder">
@@ -570,7 +953,7 @@ clawrtc bcos verify BCOS-xxxxxxxx</code></pre>
           </div>
           <p><strong>Figure 1:</strong> Trust Score breakdown with transparent formula visualization</p>
         </div>
-        
+
         <div class="screenshot-card">
           <div class="screenshot-placeholder">
             <p>🔍 CLI Scan Output</p>
@@ -578,7 +961,7 @@ clawrtc bcos verify BCOS-xxxxxxxx</code></pre>
           </div>
           <p><strong>Figure 2:</strong> CLI tool showing real-time scan progress</p>
         </div>
-        
+
         <div class="screenshot-card">
           <div class="screenshot-placeholder">
             <p>📜 Attestation JSON</p>
@@ -586,7 +969,7 @@ clawrtc bcos verify BCOS-xxxxxxxx</code></pre>
           </div>
           <p><strong>Figure 3:</strong> Sample attestation with Beacon signatures</p>
         </div>
-        
+
         <div class="screenshot-card">
           <div class="screenshot-placeholder">
             <p>🏆 Directory Listing</p>
@@ -613,7 +996,7 @@ clawrtc bcos report --format html --output report.html</code></pre>
     <!-- Documentation Links -->
     <div class="card">
       <h2>📚 Documentation & Resources</h2>
-      
+
       <h3>Official Documentation</h3>
       <ul>
         <li><a href="https://github.com/Scottcjn/rustchain-bounties/issues/2294" target="_blank">Bounty #2294 Specification</a></li>
@@ -639,7 +1022,7 @@ clawrtc bcos report --format html --output report.html</code></pre>
     <!-- FAQ -->
     <div class="card">
       <h2>❓ Frequently Asked Questions</h2>
-      
+
       <h3>Is BCOS really free?</h3>
       <p>Yes! BCOS v2 is released under the MIT license. You can self-host, modify, and use it commercially at no cost.</p>
 
@@ -676,6 +1059,26 @@ pip install clawrtc
 clawrtc bcos scan /your/project
 clawrtc bcos verify</code></pre>
     </div>
+
+    <!-- Page Metadata Footer -->
+    <div class="metadata-footer">
+      <div class="meta-row">
+        <span class="meta-label">Page Version:</span>
+        <span class="meta-value">v2.1.0 (Issue #2294)</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Last Updated:</span>
+        <span class="meta-value" id="lastUpdated">-</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Generated:</span>
+        <span class="meta-value" id="generatedTime">-</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Build Commit:</span>
+        <span class="meta-value">chore: polish issue #2294 comparison page for production quality</span>
+      </div>
+    </div>
   </div>
 
   <footer>
@@ -687,5 +1090,49 @@ clawrtc bcos verify</code></pre>
       <a href="https://rustchain.org/">RustChain</a>
     </p>
   </footer>
+
+  <script>
+    // View Toggle Functionality
+    const viewToggle = document.getElementById('viewToggle');
+    const simpleLabel = document.getElementById('simple-label');
+    const detailedLabel = document.getElementById('detailed-label');
+    const detailedRows = document.querySelectorAll('.detailed-row');
+
+    function updateView() {
+      const isDetailed = viewToggle.checked;
+      
+      // Update labels
+      simpleLabel.classList.toggle('active', !isDetailed);
+      detailedLabel.classList.toggle('active', isDetailed);
+      
+      // Show/hide detailed rows
+      detailedRows.forEach(row => {
+        row.classList.toggle('show', isDetailed);
+      });
+    }
+
+    viewToggle.addEventListener('change', updateView);
+    
+    // Initialize view
+    updateView();
+
+    // Set timestamps
+    function setTimestamps() {
+      const now = new Date();
+      const options = { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZoneName: 'short'
+      };
+      
+      document.getElementById('generatedTime').textContent = now.toLocaleString('en-US', options);
+      document.getElementById('lastUpdated').textContent = '2026-03-22';
+    }
+
+    setTimestamps();
+  </script>
 </body>
 </html>
