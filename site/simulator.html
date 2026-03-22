@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Mining Simulator | Try Before You Mine</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #2d3748;
+            background: #f7fafc;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        h1 {
+            color: #2d3748;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #718096;
+            margin-bottom: 2rem;
+            font-size: 1.1rem;
+        }
+
+        .step {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        }
+
+        h2 {
+            color: #2b6cb0;
+            margin-bottom: 1rem;
+            font-size: 1.3rem;
+        }
+
+        .hardware-selector {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .hardware-card {
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .hardware-card:hover {
+            border-color: #2b6cb0;
+            transform: translateY(-2px);
+        }
+
+        .hardware-card.selected {
+            border-color: #2b6cb0;
+            background: #ebf8ff;
+        }
+
+        .hardware-card h3 {
+            margin-bottom: 0.5rem;
+        }
+
+        .multiplier {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #2f855a;
+        }
+
+        .multiplier.vm {
+            color: #c53030;
+        }
+
+        .result-box {
+            background: #f0fff4;
+            border-radius: 6px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+
+        .result-box h3 {
+            margin-bottom: 0.5rem;
+        }
+
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+
+        .comparison-table th,
+        .comparison-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .comparison-table th {
+            background: #f7fafc;
+            font-weight: 600;
+        }
+
+        .animation-container {
+            background: #1a202c;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            overflow: hidden;
+        }
+
+        #fingerprint-canvas {
+            width: 100%;
+            height: 200px;
+            background: #2d3748;
+            border-radius: 4px;
+        }
+
+        .btn {
+            background: #2b6cb0;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background: #2c5282;
+        }
+
+        .cta {
+            text-align: center;
+            margin-top: 2rem;
+            padding: 2rem;
+            background: #ebf8ff;
+            border-radius: 8px;
+        }
+
+        .cta h2 {
+            color: #2b6cb0;
+        }
+
+        .cta p {
+            margin: 1rem 0;
+        }
+
+        .cta .btn {
+            font-size: 1.1rem;
+            padding: 1rem 2rem;
+        }
+
+        .cta a {
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>⛓️ RustChain Mining Simulator</h1>
+    <p class="subtitle">Try Before You Mine — Interactive demo of how Proof of Antiquity works</p>
+
+    <!-- Step 1: Hardware Selection -->
+    <div class="step">
+        <h2>1️⃣ Select Your Hardware</h2>
+        <p>RustChain gives higher mining multipliers to older hardware. Choose your architecture below:</p>
+
+        <div class="hardware-selector">
+            <div class="hardware-card" data-multiplier="2.5" data-name="PowerBook G4 (12\" G4)">
+                <h3>PowerBook G4</h3>
+                <div class="multiplier">2.5x multiplier</div>
+                <p>Vintage Apple laptop (2005)</p>
+            </div>
+            <div class="hardware-card" data-multiplier="2.0" data-name="Power Mac G5">
+                <h3>Power Mac G5</h3>
+                <div class="multiplier">2.0x multiplier</div>
+                <p>Apple desktop (2003-2005)</p>
+            </div>
+            <div class="hardware-card" data-multiplier="1.0" data-name="Modern x86-64">
+                <h3>Modern x86-64</h3>
+                <div class="multiplier">1.0x multiplier</div>
+                <p>Any modern PC</p>
+            </div>
+            <div class="hardware-card" data-multiplier="0.000000001" data-name="Virtual Machine (VM)">
+                <h3>Virtual Machine</h3>
+                <div class="multiplier vm">0.000000001x multiplier</div>
+                <p>VM fingerprinting is blocked → almost zero rewards</p>
+            </div>
+        </div>
+
+        <div id="hardware-selection-result"></div>
+    </div>
+
+    <!-- Step 2: Mining Process Simulation -->
+    <div class="step">
+        <h2>2️⃣ Mining Process Walkthrough</h2>
+
+        <div id="process-step-1">
+            <h3>Step 1: Hardware Fingerprint Detection</h3>
+            <p>RustChain creates a unique fingerprint from your CPU instruction timing. This proves you're running on the hardware you claim.</p>
+
+            <div class="animation-container">
+                <canvas id="fingerprint-canvas"></canvas>
+            </div>
+            <button class="btn" id="start-fingerprint-btn">Start Fingerprint Animation</button>
+        </div>
+
+        <div style="margin-top: 1.5rem;" id="process-step-2">
+            <h3>Step 2: Attestation Submission</h3>
+            <p>After fingerprinting, you submit your attestation to the network. The payload includes:</p>
+            <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+                <li>Your hardware fingerprint signature</li>
+                <li>Your miner ID (RustChain wallet address)</li>
+                <li>The current epoch challenge</li>
+            </ul>
+            <div class="result-box">
+                <pre>Example payload:
+{
+  "miner_id": "your-rtc-wallet-id",
+  "fingerprint": "abc123...def456",
+  "epoch": 1234,
+  "nonce": 789
+}
+                </pre>
+            </div>
+        </div>
+
+        <div style="margin-top: 1.5rem;" id="process-step-3">
+            <h3>Step 3: Epoch Participation</h3>
+            <p>RustChain uses round-robin selection where each miner gets selected proportional to their antiquity multiplier. Older hardware = higher chance to be selected to mint a block.</p>
+            <div class="result-box">
+                <p><strong>Your chance per epoch:</strong> <span id="selection-chance">Select hardware above</span></p>
+                <p><strong>Network total weight:</strong> ~1,000 total units</p>
+            </div>
+        </div>
+
+        <div style="margin-top: 1.5rem;" id="process-step-4">
+            <h3>Step 4: Reward Calculation</h3>
+            <p>Your reward = base reward × antiquity multiplier</p>
+            <div class="result-box">
+                <p>Base reward per block: <strong>50 RTC</strong></p>
+                <p>Your multiplier: <span id="your-multiplier">Select hardware above</span></p>
+                <p style="font-size: 1.2rem; margin-top: 0.5rem;"><strong>Your expected reward per block: <span id="expected-reward">—</span> RTC</strong></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 3: Reward Comparison -->
+    <div class="step">
+        <h2>3️⃣ Reward Comparison</h2>
+        <p>See how different hardware compares in expected daily rewards:</p>
+        <table class="comparison-table">
+            <thead>
+                <tr>
+                    <th>Hardware</th>
+                    <th>Multiplier</th>
+                    <th>Reward / Block</th>
+                    <th>Est. Daily RTC</th>
+                </tr>
+            </thead>
+            <tbody id="comparison-body">
+                <tr>
+                    <td colspan="4">Select hardware above to update</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Step 4: "What Would You Earn" Calculator (Bonus) -->
+    <div class="step">
+        <h2>💰 Bonus: What Would You Earn?</h2>
+        <p>Calculate your expected earnings based on your hardware:</p>
+
+        <div class="result-box">
+            <p><label>Blocks per day: <input type="number" id="blocks-per-day" min="0" max="10" value="1" style="width: 80px; padding: 0.25rem; margin-left: 0.5rem;"></label></p>
+            <p style="margin-top: 0.5rem;"><strong>Estimated monthly earnings: <span id="monthly-estimate">—</span> RTC</strong></p>
+            <p style="margin-top: 0.5rem;"><strong>Estimated yearly earnings: <span id="yearly-estimate">—</span> RTC</strong></p>
+        </div>
+    </div>
+
+    <!-- CTA -->
+    <div class="cta">
+        <h2>Ready to start mining for real?</h2>
+        <p>Now that you've tried the simulator, get started with real mining on RustChain!</p>
+        <a href="https://github.com/Scottcjn/RustChain/blob/main/README.md" target="_blank"><button class="btn">Get Started Mining →</button></a>
+    </div>
+
+    <script>
+        // Hardware selection
+        const hardwareCards = document.querySelectorAll('.hardware-card');
+        let selectedHardware = null;
+
+        const comparisonData = [
+            { name: 'PowerBook G4', multiplier: 2.5 },
+            { name: 'Power Mac G5', multiplier: 2.0 },
+            { name: 'Modern x86-64', multiplier: 1.0 },
+            { name: 'Virtual Machine', multiplier: 0.000000001 }
+        ];
+
+        hardwareCards.forEach(card => {
+            card.addEventListener('click', () => {
+                // Remove previous selection
+                hardwareCards.forEach(c => c.classList.remove('selected'));
+                // Add new selection
+                card.classList.add('selected');
+                selectedHardware = {
+                    name: card.dataset.name,
+                    multiplier: parseFloat(card.dataset.multiplier)
+                };
+                updateResults();
+            });
+        });
+
+        function updateResults() {
+            if (!selectedHardware) return;
+
+            // Update selection result
+            document.getElementById('hardware-selection-result').innerHTML = `
+                <div class="result-box">
+                    <strong>Selected:</strong> ${selectedHardware.name} with <strong>${selectedHardware.multiplier}x</strong> multiplier
+                </div>
+            `;
+
+            // Update process steps
+            document.getElementById('selection-chance').textContent =
+                `${(selectedHardware.multiplier / 1000 * 100).toFixed(3)}% per epoch`;
+            document.getElementById('your-multiplier').textContent = `${selectedHardware.multiplier}x`;
+
+            const baseReward = 50;
+            const expected = baseReward * selectedHardware.multiplier;
+            document.getElementById('expected-reward').textContent = expected.toFixed(2);
+
+            // Update comparison table
+            const tbody = document.getElementById('comparison-body');
+            tbody.innerHTML = '';
+            comparisonData.forEach(row => {
+                const tr = document.createElement('tr');
+                const dailyBlocks = 1;
+                const reward = 50 * row.multiplier;
+                const daily = reward * dailyBlocks;
+                tr.innerHTML = `
+                    <td>${row.name}</td>
+                    <td>${row.multiplier}x</td>
+                    <td>${(50 * row.multiplier).toFixed(2)} RTC</td>
+                    <td>${(50 * row.multiplier * 1).toFixed(2)} RTC</td>
+                `;
+                if (selectedHardware.name === row.name) {
+                    tr.style.backgroundColor = '#ebf8ff';
+                    tr.style.fontWeight = 'bold';
+                }
+                tbody.appendChild(tr);
+            });
+
+            // Update calculator
+            updateCalculator();
+        }
+
+        // Calculator update (Bonus)
+        const blocksInput = document.getElementById('blocks-per-day');
+        blocksInput.addEventListener('input', updateCalculator);
+
+        function updateCalculator() {
+            if (!selectedHardware) return;
+            const blocks = parseFloat(blocksInput.value) || 1;
+            const base = 50;
+            const monthly = base * selectedHardware.multiplier * blocks * 30;
+            const yearly = base * selectedHardware.multiplier * blocks * 365;
+            document.getElementById('monthly-estimate').textContent = monthly.toFixed(2);
+            document.getElementById('yearly-estimate').textContent = yearly.toFixed(2);
+        }
+
+        // Fingerprint animation (Bonus)
+        const canvas = document.getElementById('fingerprint-canvas');
+        const ctx = canvas.getContext('2d');
+        let animationFrame = null;
+
+        // Resize canvas to display size
+        function resizeCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        document.getElementById('start-fingerprint-btn').addEventListener('click', () => {
+            if (animationFrame) {
+                cancelAnimationFrame(animationFrame);
+            }
+            startFingerprintAnimation();
+        });
+
+        function startFingerprintAnimation() {
+            // Draw random noise to simulate fingerprint measurement
+            const width = canvas.width;
+            const height = canvas.height;
+            ctx.fillStyle = '#2d3748';
+            ctx.fillRect(0, 0, width, height);
+
+            function draw() {
+                // Add random dots to simulate measurement samples
+                for (let i = 0; i < 50; i++) {
+                    const x = Math.random() * width;
+                    const y = Math.random() * height;
+                    const brightness = Math.floor(Math.random() * 100);
+                    ctx.fillStyle = `rgb(${brightness}, ${brightness + 50}, ${brightness + 100})`;
+                    ctx.fillRect(x - 1, y - 1, 3, 3);
+                }
+                animationFrame = requestAnimationFrame(draw);
+            }
+            draw();
+        }
+
+        // Initialize with empty state
+        updateResults();
+    </script>
+</body>
+</html>
