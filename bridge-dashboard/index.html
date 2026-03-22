@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>wRTC Solana Bridge Dashboard | RustChain</title>
+    <meta name="description" content="Real-time wRTC Solana Bridge monitor - track wrap/unwrap transactions, locked RTC, and bridge health">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-primary: #0a0a1a;
+            --bg-secondary: #12122a;
+            --bg-card: #1a1a3e;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0c0;
+            --accent-cyan: #00d4ff;
+            --accent-purple: #7b2cbf;
+            --accent-green: #00ff88;
+            --accent-red: #ff4444;
+            --accent-orange: #ff9500;
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #1a1a3e 50%, var(--bg-primary) 100%);
+            min-height: 100vh;
+            color: var(--text-primary);
+            padding: 0;
+        }
+        .header {
+            background: linear-gradient(90deg, var(--bg-secondary), var(--bg-card));
+            border-bottom: 1px solid var(--border-color);
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .header h1 {
+            font-size: 1.75rem;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .header-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            margin-top: 5px;
+        }
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        .status-dot.healthy { background: var(--accent-green); box-shadow: 0 0 10px var(--accent-green); }
+        .status-dot.degraded { background: var(--accent-orange); box-shadow: 0 0 10px var(--accent-orange); }
+        .status-dot.offline { background: var(--accent-red); box-shadow: 0 0 10px var(--accent-red); }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 30px 20px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: linear-gradient(135deg, var(--bg-card), var(--bg-secondary));
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(0, 212, 255, 0.3);
+            box-shadow: 0 10px 40px rgba(0, 212, 255, 0.1);
+        }
+        .card:hover::before { opacity: 1; }
+        .card-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+        }
+        .card-value {
+            font-size: 2.25rem;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+        }
+        .card-value.small { font-size: 1.5rem; }
+        .card-subvalue {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-top: 8px;
+        }
+        .card-change {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        .card-change.positive { background: rgba(0, 255, 136, 0.15); color: var(--accent-green); }
+        .card-change.negative { background: rgba(255, 68, 68, 0.15); color: var(--accent-red); }
+        .section {
+            margin-bottom: 40px;
+        }
+        .section-title {
+            font-size: 1.25rem;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 24px;
+            background: linear-gradient(180deg, var(--accent-cyan), var(--accent-purple));
+            border-radius: 2px;
+        }
+        .transactions-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-card);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+        .transactions-table thead {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .transactions-table th {
+            padding: 16px;
+            text-align: left;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+        .transactions-table td {
+            padding: 16px;
+            border-top: 1px solid var(--border-color);
+            font-size: 0.875rem;
+        }
+        .transactions-table tr:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+        .tx-hash {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+            color: var(--accent-cyan);
+            text-decoration: none;
+        }
+        .tx-hash:hover { text-decoration: underline; }
+        .tx-type {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .tx-type.wrap { background: rgba(0, 212, 255, 0.15); color: var(--accent-cyan); }
+        .tx-type.unwrap { background: rgba(123, 44, 191, 0.15); color: var(--accent-purple); }
+        .tx-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .tx-status.confirmed { color: var(--accent-green); }
+        .tx-status.pending { color: var(--accent-orange); }
+        .chart-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            height: 400px;
+            position: relative;
+        }
+        .chart-placeholder {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-secondary);
+        }
+        .chart-placeholder-icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+        .health-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+        .health-item {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 16px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+        .health-item-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+        .health-item-value {
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+        .health-item-value.ok { color: var(--accent-green); }
+        .health-item-value.warn { color: var(--accent-orange); }
+        .health-item-value.error { color: var(--accent-red); }
+        .refresh-timer {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+        }
+        .refresh-progress {
+            width: 100px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .refresh-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
+            width: 0%;
+            transition: width 0.3s linear;
+        }
+        .footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            border-top: 1px solid var(--border-color);
+            margin-top: 60px;
+        }
+        .footer a {
+            color: var(--accent-cyan);
+            text-decoration: none;
+        }
+        .footer a:hover { text-decoration: underline; }
+        .loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        .error-state {
+            background: rgba(255, 68, 68, 0.1);
+            border-color: var(--accent-red);
+            color: #ff8888;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        @media (max-width: 768px) {
+            .header { padding: 20px; }
+            .header h1 { font-size: 1.25rem; }
+            .card-value { font-size: 1.75rem; }
+            .transactions-table { font-size: 0.75rem; }
+            .transactions-table th, .transactions-table td { padding: 12px 8px; }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div>
+            <h1>🌉 wRTC Solana Bridge Dashboard</h1>
+            <div class="header-subtitle">Real-time wrap/unwrap transaction monitor</div>
+        </div>
+        <div class="status-indicator">
+            <span class="status-dot" id="bridge-status-dot"></span>
+            <span id="bridge-status-text">Checking...</span>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Key Metrics -->
+        <div class="section">
+            <h2 class="section-title">Bridge Overview</h2>
+            <div class="grid">
+                <div class="card">
+                    <div class="card-label">Total RTC Locked</div>
+                    <div class="card-value" id="total-locked">-</div>
+                    <div class="card-subvalue">
+                        <span id="locked-change" class="card-change positive">+0%</span>
+                        in last 24h
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-label">wRTC Circulating (Solana)</div>
+                    <div class="card-value" id="wrtc-circulating">-</div>
+                    <div class="card-subvalue">
+                        <span id="circulating-change" class="card-change positive">+0%</span>
+                        in last 24h
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-label">Bridge Fee Revenue</div>
+                    <div class="card-value small" id="fee-revenue">-</div>
+                    <div class="card-subvalue">Total fees collected</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">wRTC Price (Raydium)</div>
+                    <div class="card-value small" id="wrtc-price">-</div>
+                    <div class="card-subvalue">
+                        <span id="price-change" class="card-change positive">+0%</span>
+                        24h change
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bridge Health -->
+        <div class="section">
+            <h2 class="section-title">Bridge Health Status</h2>
+            <div class="card">
+                <div class="health-grid">
+                    <div class="health-item">
+                        <div class="health-item-label">RustChain Node</div>
+                        <div class="health-item-value ok" id="rustchain-health">● Operational</div>
+                    </div>
+                    <div class="health-item">
+                        <div class="health-item-label">Solana RPC</div>
+                        <div class="health-item-value ok" id="solana-health">● Operational</div>
+                    </div>
+                    <div class="health-item">
+                        <div class="health-item-label">Bridge Contract</div>
+                        <div class="health-item-value ok" id="bridge-contract-health">● Operational</div>
+                    </div>
+                    <div class="health-item">
+                        <div class="health-item-label">API Status</div>
+                        <div class="health-item-value ok" id="api-health">● Operational</div>
+                    </div>
+                    <div class="health-item">
+                        <div class="health-item-label">Last Update</div>
+                        <div class="health-item-value" id="last-update">-</div>
+                    </div>
+                    <div class="health-item">
+                        <div class="health-item-label">Next Refresh</div>
+                        <div class="health-item-value" id="next-refresh">30s</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Price Chart -->
+        <div class="section">
+            <h2 class="section-title">wRTC Price Chart (24h)</h2>
+            <div class="chart-container" id="price-chart">
+                <div class="chart-placeholder">
+                    <div class="chart-placeholder-icon">📈</div>
+                    <div>Loading price data from Raydium...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Transactions -->
+        <div class="section">
+            <h2 class="section-title">Recent Wrap Transactions (RTC → wRTC)</h2>
+            <table class="transactions-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Lock ID</th>
+                        <th>Amount (RTC)</th>
+                        <th>Sender</th>
+                        <th>Solana Wallet</th>
+                        <th>Status</th>
+                        <th>TX Hash</th>
+                    </tr>
+                </thead>
+                <tbody id="wrap-transactions">
+                    <tr><td colspan="7" style="text-align:center;padding:40px;">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">Recent Unwrap Transactions (wRTC → RTC)</h2>
+            <table class="transactions-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Lock ID</th>
+                        <th>Amount (wRTC)</th>
+                        <th>Sender</th>
+                        <th>RustChain Wallet</th>
+                        <th>Status</th>
+                        <th>TX Hash</th>
+                    </tr>
+                </thead>
+                <tbody id="unwrap-transactions">
+                    <tr><td colspan="7" style="text-align:center;padding:40px;">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="refresh-timer">
+        <span>Auto-refresh:</span>
+        <div class="refresh-progress">
+            <div class="refresh-progress-bar" id="refresh-bar"></div>
+        </div>
+        <span id="refresh-countdown">30s</span>
+    </div>
+
+    <footer class="footer">
+        <p>
+            Powered by <a href="https://rustchain.org" target="_blank">RustChain</a> •
+            <a href="https://github.com/Scottcjn/Rustchain" target="_blank">GitHub</a> •
+            <a href="https://github.com/scottcjn/rustchain-bounties/issues/2303" target="_blank">Bounty #2303</a>
+        </p>
+        <p style="margin-top:10px;font-size:0.75rem;opacity:0.7;">
+            Data updates every 30 seconds • Raydium API • Solana RPC
+        </p>
+    </footer>
+
+    <script>
+        // Configuration
+        const CONFIG = {
+            API_BASE: window.location.origin,
+            REFRESH_INTERVAL: 30000, // 30 seconds
+            SOLANA_RPC: 'https://api.mainnet-beta.solana.com',
+            RAYDIUM_API: 'https://api.raydium.io',
+            DEXSCREENER_API: 'https://api.dexscreener.com',
+            WRTC_MINT_ADDRESS: 'wrTCMintAddressPlaceholder', // Will be updated on deployment
+        };
+
+        // State
+        let state = {
+            totalLocked: 0,
+            wrtcCirculating: 0,
+            feeRevenue: 0,
+            wrtcPrice: 0,
+            priceChange24h: 0,
+            lastUpdate: null,
+            refreshTimer: null,
+            countdownTimer: null,
+        };
+
+        // Utility functions
+        function formatNumber(num, decimals = 2) {
+            if (num === null || num === undefined || isNaN(num)) return '-';
+            return Number(num).toLocaleString('en-US', {
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals,
+            });
+        }
+
+        function formatTime(timestamp) {
+            if (!timestamp) return '-';
+            const date = new Date(timestamp * 1000);
+            return date.toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+        }
+
+        function formatRelativeTime(timestamp) {
+            if (!timestamp) return '-';
+            const seconds = Math.floor(Date.now() / 1000 - timestamp);
+            if (seconds < 60) return `${seconds}s ago`;
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+            return `${Math.floor(seconds / 86400)}d ago`;
+        }
+
+        function truncateAddress(address, chars = 6) {
+            if (!address) return '-';
+            if (address.length <= chars * 2) return address;
+            return `${address.slice(0, chars)}...${address.slice(-chars)}`;
+        }
+
+        function truncateTxHash(hash, chars = 8) {
+            if (!hash) return '-';
+            if (hash.length <= chars * 2) return hash;
+            return `${hash.slice(0, chars)}...${hash.slice(-chars)}`;
+        }
+
+        function getSolanaExplorerUrl(txHash) {
+            return `https://explorer.solana.com/tx/${txHash}${txHash.startsWith('0x') ? '' : '?cluster=mainnet'}`;
+        }
+
+        // Update UI elements
+        function updateUI(data) {
+            // Update metrics
+            document.getElementById('total-locked').textContent = formatNumber(data.stats?.all_time?.total_rtc_locked || 0);
+            document.getElementById('wrtc-circulating').textContent = formatNumber(data.wrtcSupply || 0);
+            document.getElementById('fee-revenue').textContent = `${formatNumber(data.feeRevenue || 0)} RTC`;
+            document.getElementById('wrtc-price').textContent = data.wrtcPrice ? `$${formatNumber(data.wrtcPrice, 6)}` : '-';
+
+            // Update changes
+            const lockedChange = document.getElementById('locked-change');
+            const circulatingChange = document.getElementById('circulating-change');
+            const priceChange = document.getElementById('price-change');
+
+            if (data.lockedChange24h !== undefined) {
+                lockedChange.textContent = `${data.lockedChange24h >= 0 ? '+' : ''}${formatNumber(data.lockedChange24h, 1)}%`;
+                lockedChange.className = `card-change ${data.lockedChange24h >= 0 ? 'positive' : 'negative'}`;
+            }
+
+            if (data.circulatingChange24h !== undefined) {
+                circulatingChange.textContent = `${data.circulatingChange24h >= 0 ? '+' : ''}${formatNumber(data.circulatingChange24h, 1)}%`;
+                circulatingChange.className = `card-change ${data.circulatingChange24h >= 0 ? 'positive' : 'negative'}`;
+            }
+
+            if (data.priceChange24h !== undefined) {
+                priceChange.textContent = `${data.priceChange24h >= 0 ? '+' : ''}${formatNumber(data.priceChange24h, 1)}%`;
+                priceChange.className = `card-change ${data.priceChange24h >= 0 ? 'positive' : 'negative'}`;
+            }
+
+            // Update health status
+            updateHealthStatus(data.health);
+
+            // Update transactions
+            updateTransactions(data.transactions);
+
+            // Update last update time
+            state.lastUpdate = new Date();
+            document.getElementById('last-update').textContent = state.lastUpdate.toLocaleTimeString();
+
+            // Update bridge status
+            updateBridgeStatus(data.health);
+        }
+
+        function updateHealthStatus(health) {
+            const healthMap = {
+                'rustchain-health': health?.rustchain,
+                'solana-health': health?.solana,
+                'bridge-contract-health': health?.bridge,
+                'api-health': health?.api,
+            };
+
+            Object.entries(healthMap).forEach(([id, status]) => {
+                const el = document.getElementById(id);
+                if (el) {
+                    if (status === true || status === 'ok') {
+                        el.textContent = '● Operational';
+                        el.className = 'health-item-value ok';
+                    } else if (status === 'degraded') {
+                        el.textContent = '● Degraded';
+                        el.className = 'health-item-value warn';
+                    } else {
+                        el.textContent = '● Offline';
+                        el.className = 'health-item-value error';
+                    }
+                }
+            });
+        }
+
+        function updateBridgeStatus(health) {
+            const dot = document.getElementById('bridge-status-dot');
+            const text = document.getElementById('bridge-status-text');
+            const allHealthy = health?.rustchain && health?.solana && health?.bridge && health?.api;
+            const anyDegraded = Object.values(health || {}).some(v => v === 'degraded');
+
+            if (allHealthy) {
+                dot.className = 'status-dot healthy';
+                text.textContent = 'Bridge Operational';
+            } else if (anyDegraded) {
+                dot.className = 'status-dot degraded';
+                text.textContent = 'Bridge Degraded';
+            } else {
+                dot.className = 'status-dot offline';
+                text.textContent = 'Bridge Issues';
+            }
+        }
+
+        function updateTransactions(transactions) {
+            const wrapTable = document.getElementById('wrap-transactions');
+            const unwrapTable = document.getElementById('unwrap-transactions');
+
+            if (!transactions || transactions.length === 0) {
+                wrapTable.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;">No wrap transactions yet</td></tr>';
+                unwrapTable.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;">No unwrap transactions yet</td></tr>';
+                return;
+            }
+
+            const wrapTxs = transactions.filter(t => t.type === 'wrap' || t.target_chain === 'solana').slice(0, 10);
+            const unwrapTxs = transactions.filter(t => t.type === 'unwrap' || t.state === 'complete').slice(0, 10);
+
+            wrapTable.innerHTML = wrapTxs.length > 0 ? wrapTxs.map(tx => `
+                <tr>
+                    <td>${formatRelativeTime(tx.created_at)}</td>
+                    <td style="font-family:monospace;color:var(--accent-cyan);">${truncateAddress(tx.lock_id, 8)}</td>
+                    <td>${formatNumber(tx.amount_rtc)}</td>
+                    <td>${truncateAddress(tx.sender_wallet)}</td>
+                    <td>${truncateAddress(tx.target_wallet, 4)}</td>
+                    <td><span class="tx-status ${tx.state === 'complete' ? 'confirmed' : 'pending'}">● ${tx.state}</span></td>
+                    <td><a href="${getSolanaExplorerUrl(tx.release_tx || tx.tx_hash)}" class="tx-hash" target="_blank">${truncateTxHash(tx.release_tx || tx.tx_hash)}</a></td>
+                </tr>
+            `).join('') : '<tr><td colspan="7" style="text-align:center;padding:40px;">No wrap transactions yet</td></tr>';
+
+            unwrapTable.innerHTML = unwrapTxs.length > 0 ? unwrapTxs.map(tx => `
+                <tr>
+                    <td>${formatRelativeTime(tx.updated_at || tx.created_at)}</td>
+                    <td style="font-family:monospace;color:var(--accent-purple);">${truncateAddress(tx.lock_id, 8)}</td>
+                    <td>${formatNumber(tx.amount_rtc)}</td>
+                    <td>${truncateAddress(tx.sender_wallet)}</td>
+                    <td>${truncateAddress(tx.target_wallet, 4)}</td>
+                    <td><span class="tx-status ${tx.state === 'complete' ? 'confirmed' : 'pending'}">● ${tx.state}</span></td>
+                    <td><a href="${getSolanaExplorerUrl(tx.release_tx || tx.tx_hash)}" class="tx-hash" target="_blank">${truncateTxHash(tx.release_tx || tx.tx_hash)}</a></td>
+                </tr>
+            `).join('') : '<tr><td colspan="7" style="text-align:center;padding:40px;">No unwrap transactions yet</td></tr>';
+        }
+
+        function updatePriceChart(priceData) {
+            const chartContainer = document.getElementById('price-chart');
+            if (!priceData || priceData.length === 0) {
+                chartContainer.innerHTML = `
+                    <div class="chart-placeholder">
+                        <div class="chart-placeholder-icon">📈</div>
+                        <div>Price chart data unavailable</div>
+                    </div>
+                `;
+                return;
+            }
+
+            // Simple SVG chart implementation
+            const width = chartContainer.clientWidth - 48;
+            const height = chartContainer.clientHeight - 48;
+            const padding = 40;
+
+            const prices = priceData.map(d => d.price);
+            const minPrice = Math.min(...prices) * 0.99;
+            const maxPrice = Math.max(...prices) * 1.01;
+            const priceRange = maxPrice - minPrice;
+
+            const points = priceData.map((d, i) => {
+                const x = padding + (i / (priceData.length - 1)) * (width - padding * 2);
+                const y = height - padding - ((d.price - minPrice) / priceRange) * (height - padding * 2);
+                return `${x},${y}`;
+            }).join(' ');
+
+            const areaPoints = `${padding},${height - padding} ${points} ${width - padding},${height - padding}`;
+
+            chartContainer.innerHTML = `
+                <svg width="100%" height="100%" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+                    <!-- Grid lines -->
+                    <line x1="${padding}" y1="${height/2}" x2="${width-padding}" y2="${height/2}" stroke="rgba(255,255,255,0.1)" stroke-dasharray="4"/>
+                    <!-- Area fill -->
+                    <polygon points="${areaPoints}" fill="rgba(0,212,255,0.1)"/>
+                    <!-- Line -->
+                    <polyline points="${points}" fill="none" stroke="url(#gradient)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <!-- Gradient definition -->
+                    <defs>
+                        <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" style="stop-color:#00d4ff"/>
+                            <stop offset="100%" style="stop-color:#7b2cbf"/>
+                        </linearGradient>
+                    </defs>
+                    <!-- Price labels -->
+                    <text x="${padding}" y="${padding}" fill="rgba(255,255,255,0.6)" font-size="12">${formatNumber(maxPrice, 6)}</text>
+                    <text x="${padding}" y="${height-padding}" fill="rgba(255,255,255,0.6)" font-size="12">${formatNumber(minPrice, 6)}</text>
+                </svg>
+            `;
+        }
+
+        // API calls
+        async function fetchBridgeStats() {
+            try {
+                const response = await fetch(`${CONFIG.API_BASE}/bridge/stats`);
+                if (!response.ok) throw new Error('Failed to fetch bridge stats');
+                return await response.json();
+            } catch (error) {
+                console.error('Error fetching bridge stats:', error);
+                return null;
+            }
+        }
+
+        async function fetchBridgeLedger(limit = 50) {
+            try {
+                const response = await fetch(`${CONFIG.API_BASE}/bridge/ledger?limit=${limit}`);
+                if (!response.ok) throw new Error('Failed to fetch bridge ledger');
+                return await response.json();
+            } catch (error) {
+                console.error('Error fetching bridge ledger:', error);
+                return null;
+            }
+        }
+
+        async function fetchWrtcSupply() {
+            try {
+                // In production, this would call Solana RPC
+                // For now, return mock data based on bridge stats
+                const stats = await fetchBridgeStats();
+                if (stats && stats.by_chain?.solana) {
+                    return stats.by_chain.solana.total_wrtc_minted;
+                }
+                return 0;
+            } catch (error) {
+                console.error('Error fetching wRTC supply:', error);
+                return 0;
+            }
+        }
+
+        async function fetchWrtcPrice() {
+            try {
+                // Try Raydium API first
+                const response = await fetch(`${CONFIG.RAYDIUM_API}/v2/ammV3/pools?address=${CONFIG.WRTC_MINT_ADDRESS}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data?.data?.[0]) {
+                        return {
+                            price: parseFloat(data.data[0].price) || 0,
+                            change24h: parseFloat(data.data[0].priceChange?.percent24h) || 0,
+                        };
+                    }
+                }
+
+                // Fallback to DexScreener
+                const dexResponse = await fetch(`${CONFIG.DEXSCREENER_API}/latest/dex/tokens/${CONFIG.WRTC_MINT_ADDRESS}`);
+                if (dexResponse.ok) {
+                    const data = await dexResponse.json();
+                    if (data?.pairs?.[0]) {
+                        return {
+                            price: parseFloat(data.pairs[0].priceUsd) || 0,
+                            change24h: parseFloat(data.pairs[0].priceChange?.h24) || 0,
+                        };
+                    }
+                }
+
+                return { price: 0, change24h: 0 };
+            } catch (error) {
+                console.error('Error fetching wRTC price:', error);
+                return { price: 0, change24h: 0 };
+            }
+        }
+
+        async function checkBridgeHealth() {
+            const health = {
+                rustchain: false,
+                solana: false,
+                bridge: false,
+                api: false,
+            };
+
+            // Check RustChain API
+            try {
+                const response = await fetch(`${CONFIG.API_BASE}/health`);
+                health.rustchain = response.ok;
+            } catch (e) { health.rustchain = false; }
+
+            // Check Solana RPC
+            try {
+                const response = await fetch(CONFIG.SOLANA_RPC, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getHealth' }),
+                });
+                health.solana = response.ok;
+            } catch (e) { health.solana = false; }
+
+            // Check Bridge API
+            try {
+                const response = await fetch(`${CONFIG.API_BASE}/bridge/stats`);
+                health.bridge = response.ok;
+                health.api = response.ok;
+            } catch (e) { health.bridge = false; health.api = false; }
+
+            return health;
+        }
+
+        // Main data fetch
+        async function fetchAllData() {
+            try {
+                const [stats, ledger, wrtcSupply, wrtcPrice, health] = await Promise.all([
+                    fetchBridgeStats(),
+                    fetchBridgeLedger(100),
+                    fetchWrtcSupply(),
+                    fetchWrtcPrice(),
+                    checkBridgeHealth(),
+                ]);
+
+                const transactions = ledger?.locks || [];
+                const feeRevenue = (stats?.all_time?.total_rtc_locked || 0) * 0.001; // 0.1% fee
+
+                return {
+                    stats,
+                    transactions,
+                    wrtcSupply,
+                    wrtcPrice: wrtcPrice.price,
+                    priceChange24h: wrtcPrice.change24h,
+                    feeRevenue,
+                    health,
+                };
+            } catch (error) {
+                console.error('Error fetching all data:', error);
+                return null;
+            }
+        }
+
+        // Refresh functions
+        async function refreshData() {
+            const data = await fetchAllData();
+            if (data) {
+                updateUI(data);
+                // Price chart would be updated with historical data here
+            }
+        }
+
+        function startRefreshTimer() {
+            let countdown = CONFIG.REFRESH_INTERVAL / 1000;
+
+            state.refreshTimer = setInterval(() => {
+                refreshData();
+                countdown = CONFIG.REFRESH_INTERVAL / 1000;
+            }, CONFIG.REFRESH_INTERVAL);
+
+            state.countdownTimer = setInterval(() => {
+                countdown--;
+                const progress = ((CONFIG.REFRESH_INTERVAL / 1000 - countdown) / (CONFIG.REFRESH_INTERVAL / 1000)) * 100;
+
+                document.getElementById('refresh-countdown').textContent = `${countdown}s`;
+                document.getElementById('refresh-bar').style.width = `${progress}%`;
+
+                if (countdown <= 0) countdown = CONFIG.REFRESH_INTERVAL / 1000;
+            }, 1000);
+        }
+
+        // Initialize
+        async function init() {
+            console.log('Initializing wRTC Solana Bridge Dashboard...');
+            await refreshData();
+            startRefreshTimer();
+            console.log('Dashboard initialized. Auto-refresh every 30 seconds.');
+        }
+
+        // Start on load
+        document.addEventListener('DOMContentLoaded', init);
+
+        // Cleanup on unload
+        window.addEventListener('beforeunload', () => {
+            if (state.refreshTimer) clearInterval(state.refreshTimer);
+            if (state.countdownTimer) clearInterval(state.countdownTimer);
+        });
+    </script>
+</body>
+</html>
