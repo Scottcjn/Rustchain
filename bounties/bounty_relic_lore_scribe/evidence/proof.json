@@ -1,0 +1,39 @@
+{
+  "bounty_id": "bounty_relic_lore_scribe",
+  "status": "complete",
+  "lore_entries": [
+    {
+      "file": "lore/01-intel-486.md",
+      "title": "The 486's Last Breath",
+      "hardware": "Intel 80486"
+    },
+    {
+      "file": "lore/02-powerpc-g3.md",
+      "title": "The PowerPC Dream",
+      "hardware": "PowerPC G3"
+    },
+    {
+      "file": "lore/03-ibm-pcxt.md",
+      "title": "The XT's Long March",
+      "hardware": "IBM PC/XT 8088"
+    },
+    {
+      "file": "lore/04-beos-haiku.md",
+      "title": "The BeOS Rebirth",
+      "hardware": "BeOS / Haiku"
+    },
+    {
+      "file": "lore/05-motorola-68k.md",
+      "title": "The 68k Mac Legacy",
+      "hardware": "Motorola 68000 Mac"
+    }
+  ],
+  "count": 5,
+  "requirements_met": [
+    "five_original_entries",
+    "emotional_resonance",
+    "symbolic_metaphors",
+    "historical_callbacks"
+  ],
+  "timestamp": "2026-03-23T07:20:00Z"
+}
