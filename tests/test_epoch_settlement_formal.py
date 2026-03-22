@@ -46,8 +46,8 @@ _TEST_EPOCH_END_TS = _TEST_EPOCH_START_TS + (143 * BLOCK_TIME)
 
 
 def create_test_db(miners):
-    fd, db_path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
+    db_fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(db_fd)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("""
