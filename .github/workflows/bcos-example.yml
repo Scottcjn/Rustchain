@@ -1,0 +1,53 @@
+# BCOS v2 Scan - Example Workflow for External Repos
+# 
+# Copy this workflow to your repository to enable BCOS scanning.
+# Make sure your repo has the BCOS action available or reference the public version.
+
+name: BCOS v2 Scan
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: 'Certification tier (L0, L1, L2)'
+        required: false
+        default: 'L1'
+        type: choice
+        options:
+          - L0
+          - L1
+          - L2
+
+jobs:
+  bcos-scan:
+    name: BCOS Trust Score
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run BCOS Scan
+        uses: Scottcjn/bcos-action@v1
+        id: bcos
+        with:
+          tier: ${{ inputs.tier || 'L1' }}
+          reviewer: ${{ github.event.pull_request.requested_reviewers[0].login || '' }}
+          post-comment: true
+          anchor-on-merge: true
+
+      - name: Summary
+        run: |
+          echo "### 🛡️ BCOS Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Trust Score | ${{ steps.bcos.outputs.trust_score }}/100 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Cert ID | \`${{ steps.bcos.outputs.cert_id }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tier Met | \`${{ steps.bcos.outputs.tier_met }}\` |" >> $GITHUB_STEP_SUMMARY
