@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Fossil Record — RustChain Attestation Archaeology</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0908;
+    color: #e8dcc8;
+    font-family: 'IBM Plex Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  header {
+    text-align: center;
+    padding: 40px 20px 20px;
+    border-bottom: 1px solid #2a2218;
+    background: linear-gradient(180deg, #0f0d0a 0%, #0a0908 100%);
+  }
+
+  header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.4rem;
+    font-weight: 700;
+    color: #c9a86c;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+  }
+
+  header .subtitle {
+    font-size: 0.8rem;
+    color: #7a6a52;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+
+  .controls {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    padding: 16px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid #1e1a14;
+    background: #0d0b09;
+  }
+
+  .controls label {
+    font-size: 0.75rem;
+    color: #7a6a52;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .controls select, .controls input {
+    background: #1a1612;
+    border: 1px solid #3a3020;
+    color: #c9a86c;
+    padding: 6px 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.8rem;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .controls select:focus, .controls input:focus {
+    outline: none;
+    border-color: #c9a86c;
+  }
+
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    padding: 12px;
+    flex-wrap: wrap;
+    background: #0d0b09;
+    border-bottom: 1px solid #1e1a14;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    color: #9a8a6a;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 3px;
+    transition: background 0.2s;
+  }
+
+  .legend-item:hover { background: #1e1a14; }
+  .legend-item.inactive { opacity: 0.3; }
+
+  .legend-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  #chart-container {
+    width: 100%;
+    overflow-x: auto;
+    padding: 20px;
+  }
+
+  #chart {
+    display: block;
+    margin: 0 auto;
+  }
+
+  .tooltip {
+    position: fixed;
+    background: #141210;
+    border: 1px solid #3a3020;
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-size: 0.75rem;
+    color: #e8dcc8;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 1000;
+    max-width: 320px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  }
+
+  .tooltip.visible { opacity: 1; }
+
+  .tooltip-header {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.95rem;
+    color: #c9a86c;
+    margin-bottom: 8px;
+    font-weight: 700;
+  }
+
+  .tooltip-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 2px 0;
+    border-bottom: 1px solid #1e1a14;
+  }
+
+  .tooltip-row:last-child { border-bottom: none; }
+
+  .tooltip-key { color: #7a6a52; }
+  .tooltip-value { color: #c9a86c; font-weight: 500; }
+
+  .epoch-marker { stroke: #4a4030; stroke-width: 1; stroke-dasharray: 4,4; }
+  .arch-label { font-size: 10px; fill: #7a6a52; font-family: 'IBM Plex Mono', monospace; }
+
+  .axis-label {
+    font-size: 11px;
+    fill: #7a6a52;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .settlement-line { stroke: #5a4a30; stroke-width: 1.5; stroke-dasharray: 6,3; }
+
+  .first-appearance {
+    font-size: 9px;
+    fill: #c9a86c;
+    font-family: 'IBM Plex Mono', monospace;
+    font-style: italic;
+  }
+
+  .stat-bar {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    padding: 16px;
+    flex-wrap: wrap;
+    background: #0d0b09;
+    border-top: 1px solid #1e1a14;
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat-value {
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: #c9a86c;
+    font-family: 'Playfair Display', serif;
+  }
+
+  .stat-label {
+    font-size: 0.65rem;
+    color: #7a6a52;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    margin-top: 4px;
+  }
+
+  .info-panel {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 24px 20px;
+    font-size: 0.78rem;
+    color: #7a6a52;
+    line-height: 1.7;
+    text-align: center;
+    border-top: 1px solid #1e1a14;
+  }
+
+  .info-panel strong { color: #c9a86c; }
+
+  .loading {
+    text-align: center;
+    padding: 60px;
+    font-size: 0.85rem;
+    color: #7a6a52;
+    letter-spacing: 0.1em;
+  }
+
+  .loading::after {
+    content: '';
+    animation: dots 1.5s infinite;
+  }
+
+  @keyframes dots {
+    0% { content: ''; }
+    33% { content: '.'; }
+    66% { content: '..'; }
+    100% { content: '...'; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>The Fossil Record</h1>
+  <div class="subtitle">Attestation Archaeology — RustChain Proof of Antiquity</div>
+</header>
+
+<div class="controls">
+  <label>View:
+    <select id="viewMode">
+      <option value="stratigraphy">Stratigraphy</option>
+      <option value="timeline">Timeline</option>
+      <option value="heatmap">Heatmap</option>
+    </select>
+  </label>
+  <label>Scale:
+    <select id="scaleMode">
+      <option value="linear">Linear</option>
+      <option value="sqrt">Square Root (mining weight)</option>
+    </select>
+  </label>
+  <label>Epochs:
+    <input type="range" id="epochRange" min="10" max="500" value="200" style="width:120px">
+    <span id="epochRangeVal">200</span>
+  </label>
+</div>
+
+<div class="legend" id="legend"></div>
+
+<div class="stat-bar">
+  <div class="stat"><div class="stat-value" id="totalMiners">—</div><div class="stat-label">Total Miners</div></div>
+  <div class="stat"><div class="stat-value" id="totalEpochs">—</div><div class="stat-label">Epochs</div></div>
+  <div class="stat"><div class="stat-value" id="totalArchs">—</div><div class="stat-label">Architectures</div></div>
+  <div class="stat"><div class="stat-value" id="totalRTC">—</div><div class="stat-label">Total RTC Earned</div></div>
+</div>
+
+<div id="chart-container">
+  <div class="loading" id="loading">Loading attestation fossils</div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<div class="info-panel">
+  Each horizontal band represents an <strong>architecture family</strong> — older architectures are deeper (older strata).
+  The <strong>width</strong> of each layer reflects the number of active miners for that architecture.
+  <strong>Vertical markers</strong> indicate epoch settlement events.
+  Hover over any layer to see miner details, fingerprint quality, and RTC earned.
+  <br><br>
+  Click an architecture in the legend to toggle visibility.
+</div>
+
+<script>
+// ─── Architecture definitions ───────────────────────────────────────────────
+const ARCHITECTURES = [
+  { id: '68K',    name: '68K / Motorola 68000', era: 1,  color: '#7B3F00', cssColor: '#7B3F00', first: 'Genesis', desc: 'Original Motorola CISC — the deepest stratum' },
+  { id: 'G3G4',   name: 'G3 / G4 (PowerPC 7xx)', era: 2, color: '#B87333', cssColor: '#B87333', first: 'Epoch 12', desc: 'PowerPC G3/G4 — warm copper layers' },
+  { id: 'G5',     name: 'G5 (PowerPC 970)', era: 3,    color: '#CD7F32', cssColor: '#CD7F32', first: 'Epoch 47', desc: 'PowerPC G5 — bronze stratum' },
+  { id: 'SPARC',  name: 'SPARC (UltraSPARC)', era: 4,   color: '#DC143C', cssColor: '#DC143C', first: 'Epoch 83', desc: 'Sun SPARC — crimson layer' },
+  { id: 'MIPS',   name: 'MIPS (R-series)', era: 5,     color: '#008B8B', cssColor: '#008B8B', first: 'Epoch 120', desc: 'MIPS R-series — jade stratum' },
+  { id: 'POWER8', name: 'IBM POWER8', era: 6,          color: '#1E3A8A', cssColor: '#1E3A8A', first: 'Epoch 195', desc: 'IBM POWER8 — deep blue band' },
+  { id: 'ARM',    name: 'ARM (v8-A)', era: 7,           color: '#9CA3AF', cssColor: '#9CA3AF', first: 'Epoch 260', desc: 'ARM v8-A — silver layer' },
+  { id: 'X86',    name: 'Modern x86-64', era: 8,        color: '#D1D5DB', cssColor: '#D1D5DB', first: 'Epoch 310', desc: 'Modern x86-64 — pale recent sediment' },
+];
+
+const ARCH_MAP = {};
+ARCHITECTURES.forEach(a => ARCH_MAP[a.id] = a);
+
+// ─── Seeded random for reproducible sample data ──────────────────────────
+function seededRandom(seed) {
+  let s = seed;
+  return function() {
+    s = (s * 1664525 + 1013904223) & 0xffffffff;
+    return (s >>> 0) / 4294967296;
+  };
+}
+
+// ─── Generate realistic attestation history ────────────────────────────────
+function generateFossilData(numEpochs) {
+  const rng = seededRandom(0xDEADBEEF);
+  const epochs = [];
+
+  // Architecture adoption curves (realistic entry/exit)
+  const archLifecycle = {
+    '68K':    { start: 0,   peak: 50,  end: 180, peakCount: 8 },
+    'G3G4':   { start: 12, peak: 120, end: 280, peakCount: 45 },
+    'G5':     { start: 47, peak: 150, end: 350, peakCount: 38 },
+    'SPARC':  { start: 83, peak: 180, end: 380, peakCount: 22 },
+    'MIPS':   { start: 120, peak: 220, end: 420, peakCount: 30 },
+    'POWER8': { start: 195, peak: 300, end: 480, peakCount: 55 },
+    'ARM':    { start: 260, peak: 380, end: 500, peakCount: 70 },
+    'X86':    { start: 310, peak: 450, end: 500, peakCount: 120 },
+  };
+
+  const deviceNames = {
+    '68K':    ['Macintosh II', 'Amiga 500', 'Atari ST', 'Sharp X68000'],
+    'G3G4':   ['PowerBook G3', 'iMac G3', 'Blue & White G3', 'Power Mac G4'],
+    'G5':     ['Power Mac G5', 'iMac G5', 'Xserve G5', 'PowerBook G5'],
+    'SPARC':  ['UltraSPARC II', 'SunBlade 1000', 'Sun Fire V480', 'SPARCstation 20'],
+    'MIPS':   ['SGI Indy', 'DECstation 5000', 'MIPS Magnum', 'Nintendo 64'],
+    'POWER8': ['IBM S812L', 'Talospace S824', 'Raptor Computing', 'OpenPOWER'],
+    'ARM':    ['Apple M1', 'Raspberry Pi 4', 'Graviton 2', 'Apple M2'],
+    'X86':    ['AMD EPYC', 'Intel Xeon', 'Core i9-13900K', 'Ryzen 9 7950X'],
+  };
+
+  for (let e = 0; e < numEpochs; e++) {
+    const layerData = [];
+
+    ARCHITECTURES.forEach(arch => {
+      const life = archLifecycle[arch.id];
+      if (e < life.start || e > life.end) return;
+
+      const progress = (e - life.start) / (life.end - life.start);
+      const archProgress = (e - life.start) / (life.peak - life.start);
+
+      // Bell curve adoption
+      let count;
+      if (e <= life.peak) {
+        count = Math.round(life.peakCount * archProgress * (1 + rng() * 0.3));
+      } else {
+        const decline = 1 - (e - life.peak) / (life.end - life.peak);
+        count = Math.round(life.peakCount * decline * (1 + rng() * 0.3));
+      }
+      count = Math.max(0, Math.min(count, life.peakCount * 2));
+
+      for (let m = 0; m < count; m++) {
+        const fpq = Math.round(60 + rng() * 40 * (1 - Math.abs(progress - 0.5)));
+        const rtcEarned = Math.round(fpq * (1 + rng() * 3) * (arch.era * 0.5 + 0.5));
+        const devices = deviceNames[arch.id];
+        const minerId = arch.id + '-' + e.toString(16).toUpperCase() + '-' + m.toString(16).toUpperCase();
+
+        layerData.push({
+          archId: arch.id,
+          archName: arch.name,
+          epoch: e,
+          minerId,
+          device: devices[Math.floor(rng() * devices.length)],
+          fingerprintQuality: fpq,
+          rtcEarned,
+          appeared: e === life.start,
+        });
+      }
+    });
+
+    epochs.push({ epoch: e, miners: layerData });
+  }
+
+  return epochs;
+}
+
+// ─── Build miner counts per arch per epoch ─────────────────────────────────
+function buildMinerCounts(epochs) {
+  const counts = {};
+  ARCHITECTURES.forEach(a => { counts[a.id] = []; });
+
+  epochs.forEach(({ epoch, miners }) => {
+    ARCHITECTURES.forEach(a => {
+      const count = miners.filter(m => m.archId === a.id).length;
+      counts[a.id].push({ epoch, count });
+    });
+  });
+
+  return counts;
+}
+
+// ─── Chart rendering ───────────────────────────────────────────────────────
+let currentData = null;
+let visibleArches = new Set(ARCHITECTURES.map(a => a.id));
+let svg = null;
+
+function renderChart(epochs, viewMode, scaleMode) {
+  const container = document.getElementById('chart-container');
+  d3.select('#chart-container').selectAll('#chart, .loading').remove();
+
+  const width = Math.max(1200, epochs.length * 6);
+  const height = 520;
+  const margin = { top: 30, right: 40, bottom: 50, left: 90 };
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+
+  // Update stats
+  const allMiners = epochs.flatMap(e => e.miners);
+  document.getElementById('totalMiners').textContent = allMiners.length;
+  document.getElementById('totalEpochs').textContent = epochs.length;
+  document.getElementById('totalArchs').textContent = new Set(allMiners.map(m => m.archId)).size;
+  document.getElementById('totalRTC').textContent = d3.format(',')(d3.sum(allMiners, m => m.rtcEarned));
+
+  const svgEl = d3.select('#chart-container')
+    .append('svg')
+    .attr('id', 'chart')
+    .attr('width', width)
+    .attr('height', height)
+    .style('display', 'block');
+
+  svg = svgEl;
+
+  const g = svgEl.append('g')
+    .attr('transform', `translate(${margin.left},${margin.top})`);
+
+  const xScale = d3.scaleLinear()
+    .domain([0, epochs.length - 1])
+    .range([0, innerW]);
+
+  const minerCounts = buildMinerCounts(epochs);
+  const visibleArchList = ARCHITECTURES.filter(a => visibleArches.has(a.id));
+
+  // Y: stack architectures
+  const archHeights = {};
+  let cumHeight = 0;
+  visibleArchList.forEach(a => {
+    archHeights[a.id] = cumHeight;
+    cumHeight += 50; // fixed band height per arch
+  });
+
+  const yScale = d3.scaleLinear()
+    .domain([0, cumHeight])
+    .range([0, innerH]);
+
+  // Settlement epoch markers (every 50 epochs)
+  const settlementEpochs = d3.range(50, epochs.length, 50);
+  settlementEpochs.forEach(se => {
+    g.append('line')
+      .attr('class', 'settlement-line')
+      .attr('x1', xScale(se))
+      .attr('x2', xScale(se))
+      .attr('y1', 0)
+      .attr('y2', innerH);
+
+    g.append('text')
+      .attr('class', 'axis-label')
+      .attr('x', xScale(se))
+      .attr('y', -8)
+      .attr('text-anchor', 'middle')
+      .text(`Settle #${se}`);
+  });
+
+  // Draw architecture bands
+  if (viewMode === 'stratigraphy') {
+    visibleArchList.forEach(arch => {
+      const bandY = yScale(archHeights[arch.id]);
+      const bandH = yScale(archHeights[arch.id] + 50) - bandY;
+
+      // Background band
+      g.append('rect')
+        .attr('x', 0).attr('y', bandY)
+        .attr('width', innerW).attr('height', bandH)
+        .attr('fill', arch.color + '22');
+
+      // Arch label on left
+      g.append('text')
+        .attr('class', 'arch-label')
+        .attr('x', -8)
+        .attr('y', bandY + bandH / 2 + 4)
+        .attr('text-anchor', 'end')
+        .attr('fill', arch.color)
+        .style('font-weight', '500')
+        .text(arch.id);
+
+      // Draw miner layers
+      const archEpochData = minerCounts[arch.id];
+      const maxCount = d3.max(archEpochData, d => d.count) || 1;
+
+      const xScaleForCount = scaleMode === 'sqrt'
+        ? d3.scaleSqrt().domain([0, maxCount]).range([0, innerW / (epochs.length / 50)])
+        : d3.scaleLinear().domain([0, maxCount]).range([0, innerW / (epochs.length / 50)]);
+
+      archEpochData.forEach(({ epoch, count }) => {
+        if (count === 0) return;
+        const x = xScale(epoch);
+        const barW = Math.max(1, xScaleForCount(count));
+        const barH = bandH * 0.7;
+        const barY = bandY + (bandH - barH) / 2;
+
+        // Find first-appearance miner for this arch at this epoch
+        const firstMiner = epochs[epoch]?.miners.find(
+          m => m.archId === arch.id && m.appeared
+        );
+
+        const rect = g.append('rect')
+          .datum({ archId: arch.id, epoch, count, arch, firstMiner })
+          .attr('x', x)
+          .attr('y', barY)
+          .attr('width', barW)
+          .attr('height', barH)
+          .attr('fill', arch.color + 'bb')
+          .attr('stroke', arch.color)
+          .attr('stroke-width', 0.5)
+          .attr('rx', 1)
+          .style('cursor', 'pointer')
+          .on('mouseover', handleMouseOver)
+          .on('mousemove', handleMouseMove)
+          .on('mouseout', handleMouseOut);
+
+        // First appearance marker
+        if (firstMiner) {
+          g.append('text')
+            .attr('class', 'first-appearance')
+            .attr('x', x + barW / 2)
+            .attr('y', barY - 3)
+            .attr('text-anchor', 'middle')
+            .text('◆ ' + arch.first);
+        }
+      });
+    });
+  } else if (viewMode === 'timeline') {
+    // Timeline view: dots per miner
+    const allM = epochs.flatMap(e => e.miners.filter(m => visibleArches.has(m.archId)));
+    const xS = d3.scaleLinear().domain([0, epochs.length - 1]).range([0, innerW]);
+    const yS = d3.scaleLinear().domain([0, visibleArchList.length]).range([0, innerH]);
+
+    g.selectAll('circle.miner')
+      .data(allM)
+      .enter()
+      .append('circle')
+      .attr('cx', d => xS(d.epoch))
+      .attr('cy', d => yS(ARCHITECTURES.findIndex(a => a.id === d.archId)) + 0.5)
+      .attr('r', d => Math.sqrt(d.fingerprintQuality) / 4)
+      .attr('fill', d => ARCH_MAP[d.archId].color + 'aa')
+      .attr('stroke', d => ARCH_MAP[d.archId].color)
+      .attr('stroke-width', 0.5)
+      .style('cursor', 'pointer')
+      .on('mouseover', handleMouseOver)
+      .on('mousemove', handleMouseMove)
+      .on('mouseout', handleMouseOut);
+  } else if (viewMode === 'heatmap') {
+    // Heatmap view
+    const xS = d3.scaleLinear().domain([0, epochs.length - 1]).range([0, innerW]);
+    const yS = d3.scaleLinear().domain([0, visibleArchList.length]).range([0, innerH]);
+
+    visibleArchList.forEach((arch, ai) => {
+      minerCounts[arch.id].forEach(({ epoch, count }) => {
+        if (count === 0) return;
+        const opacity = Math.min(0.9, 0.1 + (count / 100) * 0.8);
+        g.append('rect')
+          .datum({ archId: arch.id, epoch, count, arch })
+          .attr('x', xS(epoch))
+          .attr('y', yS(ai))
+          .attr('width', Math.max(1, innerW / epochs.length * 2))
+          .attr('height', yS(1) - yS(0) - 1)
+          .attr('fill', arch.color)
+          .attr('opacity', opacity)
+          .attr('rx', 1)
+          .style('cursor', 'pointer')
+          .on('mouseover', handleMouseOver)
+          .on('mousemove', handleMouseMove)
+          .on('mouseout', handleMouseOut);
+      });
+    });
+  }
+
+  // X axis
+  const xAxis = d3.axisBottom(xScale)
+    .tickValues(d3.range(0, epochs.length, Math.max(1, Math.floor(epochs.length / 15))))
+    .tickFormat(d => `Epoch ${d}`);
+
+  g.append('g')
+    .attr('transform', `translate(0,${innerH + 10})`)
+    .call(xAxis)
+    .selectAll('text')
+    .attr('class', 'axis-label')
+    .attr('dy', '1em');
+
+  g.append('text')
+    .attr('class', 'axis-label')
+    .attr('x', innerW / 2)
+    .attr('y', innerH + 38)
+    .attr('text-anchor', 'middle')
+    .text('Time (Epochs) — older epochs left, newer right');
+
+  // Y axis label
+  g.append('text')
+    .attr('class', 'axis-label')
+    .attr('transform', 'rotate(-90)')
+    .attr('x', -innerH / 2)
+    .attr('y', -70)
+    .attr('text-anchor', 'middle')
+    .text('Architecture Strata (older → newer)');
+}
+
+// ─── Tooltip handlers ───────────────────────────────────────────────────────
+const tooltip = document.getElementById('tooltip');
+
+function handleMouseOver(event, d) {
+  tooltip.innerHTML = '';
+  tooltip.classList.add('visible');
+
+  if (d.count !== undefined) {
+    // stratigraphy / heatmap cell
+    const arch = d.arch;
+    const header = document.createElement('div');
+    header.className = 'tooltip-header';
+    header.textContent = `Architecture: ${arch.name}`;
+    tooltip.appendChild(header);
+
+    const rows = [
+      ['Epoch', `#${d.epoch}`],
+      ['Active Miners', d.count],
+      ['Fingerprint Quality', `${Math.round(70 + d.count * 0.7)}/100 (avg)`],
+      ['Era', `Stratum ${arch.era}`],
+      ['First Appeared', arch.first],
+      ['Color', arch.color],
+      ['Description', arch.desc],
+    ];
+    rows.forEach(([k, v]) => {
+      const row = document.createElement('div');
+      row.className = 'tooltip-row';
+      row.innerHTML = `<span class="tooltip-key">${k}</span><span class="tooltip-value">${v}</span>`;
+      tooltip.appendChild(row);
+    });
+  } else {
+    // individual miner
+    const header = document.createElement('div');
+    header.className = 'tooltip-header';
+    header.textContent = d.minerId || d.archId;
+    tooltip.appendChild(header);
+
+    const rows = [
+      ['Architecture', d.archName],
+      ['Device', d.device],
+      ['Epoch', `#${d.epoch}`],
+      ['Fingerprint Quality', `${d.fingerprintQuality}/100`],
+      ['RTC Earned', d.rtcEarned.toLocaleString()],
+    ];
+    if (d.appeared) rows.push(['Status', '✨ First appearance!']);
+    rows.forEach(([k, v]) => {
+      const row = document.createElement('div');
+      row.className = 'tooltip-row';
+      row.innerHTML = `<span class="tooltip-key">${k}</span><span class="tooltip-value">${v}</span>`;
+      tooltip.appendChild(row);
+    });
+  }
+}
+
+function handleMouseMove(event) {
+  const x = event.clientX + 16;
+  const y = event.clientY + 16;
+  const rect = tooltip.getBoundingClientRect();
+  const maxX = window.innerWidth - rect.width - 8;
+  const maxY = window.innerHeight - rect.height - 8;
+  tooltip.style.left = Math.min(x, maxX) + 'px';
+  tooltip.style.top = Math.min(y, maxY) + 'px';
+}
+
+function handleMouseOut() {
+  tooltip.classList.remove('visible');
+}
+
+// ─── Legend ─────────────────────────────────────────────────────────────────
+function buildLegend() {
+  const legend = document.getElementById('legend');
+  legend.innerHTML = '';
+
+  ARCHITECTURES.forEach(arch => {
+    const item = document.createElement('div');
+    item.className = 'legend-item' + (visibleArches.has(arch.id) ? '' : ' inactive');
+    item.innerHTML = `<div class="legend-swatch" style="background:${arch.color}"></div>${arch.id} — ${arch.name}`;
+    item.addEventListener('click', () => {
+      if (visibleArches.has(arch.id)) {
+        visibleArches.delete(arch.id);
+        item.classList.add('inactive');
+      } else {
+        visibleArches.add(arch.id);
+        item.classList.remove('inactive');
+      }
+      const numE = parseInt(document.getElementById('epochRange').value);
+      const view = document.getElementById('viewMode').value;
+      const scale = document.getElementById('scaleMode').value;
+      renderChart(currentData.slice(0, numE), view, scale);
+    });
+    legend.appendChild(item);
+  });
+}
+
+// ─── Init ───────────────────────────────────────────────────────────────────
+function init() {
+  const numEpochs = parseInt(document.getElementById('epochRange').value);
+  currentData = generateFossilData(500);
+  buildLegend();
+  renderChart(currentData.slice(0, numE || numEpochs), 'stratigraphy', 'sqrt');
+}
+
+// Event listeners
+document.getElementById('viewMode').addEventListener('change', () => {
+  const numE = parseInt(document.getElementById('epochRange').value);
+  const view = document.getElementById('viewMode').value;
+  const scale = document.getElementById('scaleMode').value;
+  renderChart(currentData.slice(0, numE), view, scale);
+});
+
+document.getElementById('scaleMode').addEventListener('change', () => {
+  const numE = parseInt(document.getElementById('epochRange').value);
+  const view = document.getElementById('viewMode').value;
+  const scale = document.getElementById('scaleMode').value;
+  renderChart(currentData.slice(0, numE), view, scale);
+});
+
+document.getElementById('epochRange').addEventListener('input', function() {
+  document.getElementById('epochRangeVal').textContent = this.value;
+});
+
+document.getElementById('epochRange').addEventListener('change', function() {
+  const numE = parseInt(this.value);
+  const view = document.getElementById('viewMode').value;
+  const scale = document.getElementById('scaleMode').value;
+  renderChart(currentData.slice(0, numE), view, scale);
+});
+
+// Start
+init();
+</script>
+</body>
+</html>
