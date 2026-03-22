@@ -89,9 +89,10 @@ Average Multiplier: {avg_mult}x
 Status: Retired (inactive {days} days)
 Cause: Hardware retirement
 Survived by: {survivor}""",
-            
+
             """END OF LIFE NOTICE
-Device: {device} ({arch})
+Architecture: {arch}
+Device: {device}
 Uptime: {years} years
 Blocks Validated: {epochs}
 Rewards Earned: {rtc} RTC

@@ -31,13 +31,13 @@ from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
 
-# Add parent path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Add src directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent))
 
-from src.eulogy_generator import EulogyGenerator, EulogyData
-from src.video_creator import BoTTubeVideoCreator, VideoConfig
-from src.discord_notifier import DiscordNotifier
-from src.miner_scanner import MinerScanner, MinerStatus
+from eulogy_generator import EulogyGenerator, EulogyData
+from video_creator import BoTTubeVideoCreator, VideoConfig
+from discord_notifier import DiscordNotifier
+from miner_scanner import MinerScanner, MinerStatus
 
 # Configuration
 DEFAULT_DB_PATH = os.path.expanduser("~/.rustchain/rustchain.db")
