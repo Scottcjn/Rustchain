@@ -135,6 +135,24 @@ except ImportError as _e:
     HAVE_BOTTUBE_FEED = False
     print(f"[BoTTube Feed] Feed module not available: {_e}")
 
+# Issue #2276: Hardware Fingerprint Replay Attack Defense
+try:
+    from hardware_fingerprint_replay import (
+        compute_fingerprint_hash,
+        compute_entropy_profile_hash,
+        check_fingerprint_replay,
+        check_entropy_collision,
+        check_fingerprint_rate_limit,
+        record_fingerprint_submission,
+        detect_fingerprint_anomalies,
+        init_replay_defense_schema
+    )
+    HAVE_REPLAY_DEFENSE = True
+    print("[ISSUE #2276] Hardware fingerprint replay defense loaded")
+except ImportError as _e:
+    HAVE_REPLAY_DEFENSE = False
+    print(f"[ISSUE #2276] Replay defense module not available: {_e}")
+
 app = Flask(__name__)
 # Supports running from repo `node/` dir or a flat deployment directory (e.g. /root/rustchain).
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1436,7 +1454,7 @@ def _detect_arm_evidence(device: dict, fingerprint: dict) -> bool:
     return False
 
 
-def _detect_exotic_arch(device: dict) -> dict | None:
+def _detect_exotic_arch(device: dict) -> Optional[dict]:
     """Detect exotic/vintage architectures from machine field and CPU brand.
     Returns {"device_family": ..., "device_arch": ...} or None if not exotic.
     Covers: SPARC, MIPS, RISC-V, Hitachi SH, Motorola 68K, Cell BE,
@@ -2667,6 +2685,98 @@ def _submit_attestation_impl():
         oui_ok, oui_info = _check_oui_gate(macs)
         if not oui_ok:
             return jsonify(oui_info), 412
+
+    # Issue #2276: Hardware Fingerprint Replay Attack Defense
+    # Check for replay attacks BEFORE validating fingerprint data
+    replay_blocked = False
+    replay_reason = "not_checked"
+    replay_details = None
+    
+    if HAVE_REPLAY_DEFENSE and fingerprint:
+        # Compute fingerprint and entropy hashes
+        fp_hash = compute_fingerprint_hash(fingerprint)
+        entropy_hash = compute_entropy_profile_hash(fingerprint)
+        hw_id = _compute_hardware_id(device, signals, source_ip=client_ip) if device and signals else None
+        
+        # Check 1: Fingerprint replay detection
+        is_replay, replay_msg, replay_info = check_fingerprint_replay(
+            fingerprint_hash=fp_hash,
+            nonce=nonce,
+            wallet_address=miner,
+            miner_id=miner
+        )
+        
+        if is_replay:
+            replay_blocked = True
+            replay_reason = replay_msg
+            replay_details = replay_info
+            print(f"[REPLAY_DEFENSE #2276] BLOCKED: {miner[:20]}... - {replay_msg}")
+            if replay_info:
+                print(f"[REPLAY_DEFENSE #2276] Details: {replay_info}")
+        
+        # Check 2: Entropy collision detection (if not already blocked)
+        if not replay_blocked:
+            is_collision, coll_msg, coll_info = check_entropy_collision(
+                entropy_profile_hash=entropy_hash,
+                wallet_address=miner,
+                miner_id=miner
+            )
+            
+            if is_collision:
+                replay_blocked = True
+                replay_reason = coll_msg
+                replay_details = coll_info
+                print(f"[REPLAY_DEFENSE #2276] BLOCKED: {miner[:20]}... - entropy collision detected")
+                if coll_info:
+                    print(f"[REPLAY_DEFENSE #2276] Collision: {coll_info}")
+        
+        # Check 3: Rate limiting (if not already blocked)
+        if not replay_blocked:
+            rate_ok, rate_msg, rate_info = check_fingerprint_rate_limit(
+                hardware_id=hw_id,
+                wallet_address=miner
+            )
+            
+            if not rate_ok:
+                replay_blocked = True
+                replay_reason = rate_msg
+                replay_details = rate_info
+                print(f"[REPLAY_DEFENSE #2276] RATE LIMITED: {miner[:20]}... - {rate_msg}")
+        
+        # Check 4: Anomaly detection (logging only, doesn't block)
+        if fingerprint_passed and not replay_blocked:
+            has_anomalies, anomalies = detect_fingerprint_anomalies(
+                miner_id=miner,
+                wallet_address=miner,
+                fingerprint_hash=fp_hash
+            )
+            
+            if has_anomalies:
+                print(f"[REPLAY_DEFENSE #2276] ANOMALY DETECTED: {miner[:20]}...")
+                for anomaly in anomalies:
+                    print(f"[REPLAY_DEFENSE #2276]   - {anomaly.get('type')}: {anomaly.get('description', '')}")
+                # Record anomaly for monitoring (doesn't block attestation)
+        
+        # Record submission for future replay detection (if not blocked)
+        if not replay_blocked:
+            record_fingerprint_submission(
+                fingerprint=fingerprint,
+                nonce=nonce,
+                wallet_address=miner,
+                miner_id=miner,
+                hardware_id=hw_id,
+                attestation_valid=fingerprint_passed
+            )
+    
+    # Return error if replay detected
+    if replay_blocked:
+        return jsonify({
+            "ok": False,
+            "error": replay_reason,
+            "message": "Hardware fingerprint replay attack detected",
+            "details": replay_details,
+            "code": "REPLAY_ATTACK_BLOCKED"
+        }), 409
 
     # NEW: Validate fingerprint data (RIP-PoA)
     # FIX #305: Default to False - must pass validation to earn rewards
