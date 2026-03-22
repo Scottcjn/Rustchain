@@ -79,7 +79,12 @@ Examples:
         choices=['P1', 'P4', 'P22', 'P31', 'P43', 'P45'],
         help='Phosphor type'
     )
-    
+    gen_parser.add_argument(
+        '--output', '-o',
+        type=str,
+        help='Output file path'
+    )
+
     # Capture command
     cap_parser = subparsers.add_parser(
         'capture',
@@ -110,7 +115,12 @@ Examples:
         default=0,
         help='Device index (for webcam/photodiode)'
     )
-    
+    cap_parser.add_argument(
+        '--output', '-o',
+        type=str,
+        help='Output file path'
+    )
+
     # Analyze command
     ana_parser = subparsers.add_parser(
         'analyze',

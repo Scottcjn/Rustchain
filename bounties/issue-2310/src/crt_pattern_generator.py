@@ -88,27 +88,25 @@ class CRTPatternGenerator:
                                  start: int = 0, end: int = 255) -> np.ndarray:
         """
         Generate a gradient sweep for brightness nonlinearity analysis.
-        
+
         Args:
             direction: 'horizontal' or 'vertical'
             start: Starting intensity (0-255)
             end: Ending intensity (0-255)
-            
+
         Returns:
             RGB frame as numpy array (uint8)
         """
-        frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
-        
         if direction == 'horizontal':
             gradient = np.linspace(start, end, self.width, dtype=np.uint8)
-            frame[:, :] = gradient
+            frame = np.stack([gradient] * self.height, axis=0)
         else:  # vertical
             gradient = np.linspace(start, end, self.height, dtype=np.uint8)
-            frame[:, :] = gradient.reshape(-1, 1)
-        
+            frame = np.stack([gradient] * self.width, axis=1)
+
         # Replicate across RGB channels
-        frame = np.stack([frame[:, :, 0], frame[:, :, 0], frame[:, :, 0]], axis=2)
-        
+        frame = np.stack([frame, frame, frame], axis=2)
+
         return frame
     
     def generate_timing_bars(self, num_bars: int = 10,
@@ -189,17 +187,17 @@ class CRTPatternGenerator:
         
         for y in range(self.height):
             for x in range(self.width):
-                dist = np.sqrt((x - center_x)**2 + **(y - center_y)2)
+                dist = np.sqrt((x - center_x)**2 + (y - center_y)**2)
                 if dist < radius:
                     intensity = int(255 * (1 - dist / radius))
                     frame[y, x] = [intensity, intensity, intensity]
         
-        # Timing marks on edges
-        frame[0:10, :] = [255, 255, 255]  # Top white line
-        frame[-10:, :] = [255, 255, 255]  # Bottom white line
+        # Timing marks on edges (draw vertical first, then horizontal to overlap corners)
         frame[:, 0:10] = [255, 0, 0]      # Left red line
         frame[:, -10:] = [0, 255, 0]      # Right green line
-        
+        frame[0:10, :] = [255, 255, 255]  # Top white line
+        frame[-10:, :] = [255, 255, 255]  # Bottom white line
+
         return frame
     
     def generate_sequence(self, duration_seconds: float = 5.0,

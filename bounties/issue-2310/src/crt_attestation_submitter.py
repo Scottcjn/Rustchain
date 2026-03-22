@@ -263,11 +263,11 @@ class CRTAttestationIntegration:
                                   capture_config: Optional[Dict] = None) -> Dict[str, Any]:
         """
         Perform complete CRT attestation flow.
-        
+
         Args:
             pattern_config: Pattern generator configuration
             capture_config: Capture configuration
-            
+
         Returns:
             Full attestation result
         """
@@ -275,38 +275,41 @@ class CRTAttestationIntegration:
         from crt_pattern_generator import CRTPatternGenerator
         from crt_capture import CRTCapture, CaptureConfig, CaptureMethod
         from crt_analyzer import CRTAnalyzer
-        
+
         result = {
             'success': False,
             'stages': {},
             'crt_fingerprint': None,
             'submission_result': None,
         }
-        
+
         try:
             # Stage 1: Generate pattern
             result['stages']['pattern_generation'] = self._generate_pattern(pattern_config)
             pattern_gen = CRTPatternGenerator(
                 **pattern_config if pattern_config else {}
             )
-            
+            self.last_result = result  # Update for subsequent stages
+
             # Stage 2: Capture CRT response
             result['stages']['capture'] = self._capture_response(capture_config)
-            
+            self.last_result = result  # Update for subsequent stages
+
             # Stage 3: Analyze fingerprint
             result['stages']['analysis'] = self._analyze_fingerprint()
-            
+            self.last_result = result  # Update for subsequent stages
+
             # Stage 4: Create and submit attestation
             result['stages']['submission'] = self._submit_attestation()
-            
+
             result['success'] = True
             result['crt_fingerprint'] = self.submitter.last_attestation.crt_fingerprint if self.submitter.last_attestation else None
             result['submission_result'] = result['stages'].get('submission')
-            
+
         except Exception as e:
             result['error'] = str(e)
             result['success'] = False
-        
+
         self.last_result = result
         return result
     

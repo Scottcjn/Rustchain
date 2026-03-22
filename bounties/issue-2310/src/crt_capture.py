@@ -115,7 +115,7 @@ class CRTCapture:
             # Simulate slight vignetting
             y, x = np.ogrid[:self.config.height, :self.config.width]
             center_y, center_x = self.config.height / 2, self.config.width / 2
-            r = np.sqrt((x - center_x)**2 + **(y - center_y)2)
+            r = np.sqrt((x - center_x)**2 + (y - center_y)**2)
             max_r = np.sqrt(center_x**2 + center_y**2)
             
             flat = 1.0 - 0.3 * (r / max_r)
@@ -260,23 +260,29 @@ class CRTCapture:
     def capture_sequence(self, duration_s: Optional[float] = None) -> List[CapturedFrame]:
         """
         Capture a sequence of frames.
-        
+
         Args:
             duration_s: Capture duration (uses config default if None)
-            
+
         Returns:
             List of captured frames
         """
         duration = duration_s or self.config.capture_duration_s
         frame_interval = 1.0 / self.config.fps
-        
+
         self.start_capture()
         start_time = time.time()
-        
-        while time.time() - start_time < duration:
-            self.capture_frame()
-            time.sleep(frame_interval)
-        
+
+        # In simulated mode, capture frames without sleep for accurate fps
+        if self.config.method == CaptureMethod.SIMULATED:
+            num_frames = int(duration * self.config.fps)
+            for i in range(num_frames):
+                self.capture_frame()
+        else:
+            while time.time() - start_time < duration:
+                self.capture_frame()
+                time.sleep(frame_interval)
+
         self.is_capturing = False
         return self.captured_frames
     
