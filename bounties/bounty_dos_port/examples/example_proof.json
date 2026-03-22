@@ -1,0 +1,10 @@
+{
+  "wallet": "227fa20c24e7ed1286f9bef6d0050e18e38b2fbbf645cfe846b6febc7a37a48e",
+  "bios_timestamp": "1990-05-12T00:00:00Z",
+  "cpu_model": "Intel 80386",
+  "cpu_mhz": 33,
+  "entropy_score": 2.75,
+  "entropy_loop_cycles": 1000000,
+  "timestamp": "2025-04-21 14:12:00",
+  "rarity_bonus": 1.10
+}

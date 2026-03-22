@@ -1,0 +1,35 @@
+{
+  "bounty_id": "bounty_dos_port",
+  "status": "complete",
+  "files": [
+    "README.md",
+    "src/dos_validator.c",
+    "src/dos_validator.h",
+    "src/makefile.wat",
+    "docs/COMPILING.md",
+    "examples/example_proof.json"
+  ],
+  "compatible": [
+    "MS-DOS 6.x",
+    "PC-DOS 7",
+    "FreeDOS 1.0+"
+  ],
+  "compiler": [
+    "Open Watcom",
+    "Turbo C 2.0+"
+  ],
+  "features": [
+    "real_mode_dos",
+    "bios_date_reading",
+    "entropy_loop",
+    "fat_output",
+    "com_executable"
+  ],
+  "requirements_met": [
+    "compatible_msdos_6x",
+    "outputs_proof_of_antiquity",
+    "entropy_generation_loop",
+    "reads_bios_date"
+  ],
+  "timestamp": "2026-03-23T06:58:00Z"
+}
