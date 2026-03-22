@@ -1,0 +1,11 @@
+{
+  "wallet": "RTCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "bios_timestamp": "1994-03-22T00:00:00Z",
+  "cpu_model": "PowerPC 601",
+  "cpu_mhz": 66,
+  "system_version": "7.5.3",
+  "machine_name": "PowerMac 6100",
+  "entropy_score": 2.7,
+  "timestamp": "2025-04-21 14:12:00",
+  "rarity_bonus": 1.08
+}

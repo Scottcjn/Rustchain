@@ -1,0 +1,41 @@
+{
+  "bounty_id": "bounty_macos_75",
+  "status": "complete",
+  "files": [
+    "README.md",
+    "src/macos_validator.c",
+    "src/macos_validator.h",
+    "src/CMakeLists.txt",
+    "docs/COMPILING.md",
+    "examples/example_proof.json"
+  ],
+  "compatible": [
+    "System 7.5",
+    "System 7.6",
+    "Mac OS 8",
+    "Mac OS 9"
+  ],
+  "architectures": [
+    "Motorola 68k",
+    "PowerPC"
+  ],
+  "compilers": [
+    "THINK C 7.5",
+    "Retro68",
+    "CodeWarrior"
+  ],
+  "features": [
+    "cpu_detection",
+    "system_folder_timestamp",
+    "json_output",
+    "rarity_bonus",
+    "gestalt_detection"
+  ],
+  "requirements_met": [
+    "runs_under_75_to_91",
+    "captures_system_folder_timestamp",
+    "reports_cpu_type",
+    "writes_reward_log"
+  ],
+  "timestamp": "2026-03-23T06:35:00Z"
+}
