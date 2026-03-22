@@ -1214,11 +1214,6 @@ def init_db():
                   (int(time.time()),))
         c.execute("INSERT OR IGNORE INTO gov_threshold(id, threshold) VALUES(1, 3)")
         c.execute("INSERT OR IGNORE INTO checkpoints_meta(k, v) VALUES('chain_id', 'rustchain-mainnet-candidate')")
-        # Beacon protocol table
-        c.execute("CREATE TABLE IF NOT EXISTS beacon_envelopes (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL, kind TEXT NOT NULL, nonce TEXT UNIQUE NOT NULL, sig TEXT NOT NULL, pubkey TEXT NOT NULL, payload_hash TEXT NOT NULL, anchored INTEGER DEFAULT 0, created_at INTEGER NOT NULL)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_beacon_anchored ON beacon_envelopes(anchored)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_beacon_agent ON beacon_envelopes(agent_id, created_at)")
-
         # BCOS v2: Blockchain Certified Open Source attestations
         try:
             from bcos_routes import init_bcos_table
@@ -1236,6 +1231,10 @@ def init_db():
             init_lock_ledger_schema(c)
 
         c.commit()
+
+    # Keep Beacon schema migration logic centralized in beacon_anchor.py so
+    # legacy payload hashes are versioned consistently across startup paths.
+    init_beacon_table(DB_PATH)
 
 # Hardware multipliers
 HARDWARE_WEIGHTS = {
@@ -6603,7 +6602,14 @@ def beacon_submit():
 @app.route("/beacon/digest", methods=["GET"])
 def beacon_digest():
     d = compute_beacon_digest(DB_PATH)
-    return jsonify({"ok": True, "digest": d["digest"], "count": d["count"], "latest_ts": d["latest_ts"]})
+    return jsonify({
+        "ok": True,
+        "digest": d["digest"],
+        "count": d["count"],
+        "latest_ts": d["latest_ts"],
+        "payload_hash_versions": d.get("payload_hash_versions", []),
+        "mixed_payload_hash_versions": d.get("mixed_payload_hash_versions", False),
+    })
 
 @app.route("/beacon/envelopes", methods=["GET"])
 def beacon_envelopes_list():
