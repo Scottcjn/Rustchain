@@ -35,6 +35,16 @@ def _init_attestation_db(db_path: Path) -> None:
             miner_id TEXT PRIMARY KEY,
             pubkey_hex TEXT
         );
+        CREATE TABLE nonces (
+            nonce TEXT PRIMARY KEY,
+            expires_at INTEGER
+        );
+        CREATE TABLE used_nonces (
+            nonce TEXT PRIMARY KEY,
+            miner_id TEXT NOT NULL,
+            first_seen INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL
+        );
         CREATE TABLE tickets (
             ticket_id TEXT PRIMARY KEY,
             expires_at INTEGER NOT NULL,
@@ -90,6 +100,13 @@ def _base_payload() -> dict:
             }
         },
     }
+
+
+def _attach_live_challenge(client, payload: dict) -> dict:
+    response = client.post("/attest/challenge", json={})
+    assert response.status_code == 200
+    payload["report"]["nonce"] = response.get_json()["nonce"]
+    return payload
 
 
 def _client_fixture(monkeypatch, *, strict_security_path=False):
@@ -221,8 +238,8 @@ def test_attest_submit_strict_fixture_rejects_malformed_fingerprint(strict_clien
 
 
 def test_attest_submit_strict_fixture_enforces_hardware_binding(strict_client):
-    first = _base_payload()
-    second = _base_payload()
+    first = _attach_live_challenge(strict_client, _base_payload())
+    second = _attach_live_challenge(strict_client, _base_payload())
     second["miner"] = "different-miner"
 
     first_response = strict_client.post("/attest/submit", json=first)
