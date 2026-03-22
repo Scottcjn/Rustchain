@@ -206,8 +206,8 @@ def compute_beacon_digest(db_path=DB_PATH) -> dict:
     or {"digest": None, "count": 0} if no pending envelopes.
 
     During the transition from legacy payload hashes to explicit signed-field
-    hashes, the digest includes a version prefix per entry and reports whether
-    multiple hash versions are still pending.
+    hashes, the digest preserves the original payload-hash concatenation and
+    reports whether multiple hash versions are still pending.
     """
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(
@@ -226,7 +226,9 @@ def compute_beacon_digest(db_path=DB_PATH) -> dict:
         }
 
     ids = [r[0] for r in rows]
-    hashes = [f"v{r[2]}:{r[1]}" for r in rows]
+    # Preserve the historic digest input for pending rows so a rollout does not
+    # retroactively change the digest of an unchanged legacy-only backlog.
+    hashes = [r[1] for r in rows]
     versions = sorted({r[2] for r in rows})
     latest_ts = max(r[3] for r in rows)
 

@@ -4,6 +4,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from hashlib import blake2b
 from pathlib import Path
 from copy import deepcopy
 from typing import Optional
@@ -175,6 +176,55 @@ class BeaconAnchorSignatureTests(unittest.TestCase):
                     ("legacy-nonce",),
                 ).fetchone()[0]
             self.assertEqual(version, beacon_anchor.LEGACY_PAYLOAD_HASH_VERSION)
+        finally:
+            os.unlink(db_path)
+
+    def test_compute_beacon_digest_preserves_legacy_digest_for_legacy_only_rows(self):
+        db_path = _make_temp_db()
+        try:
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE beacon_envelopes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        agent_id TEXT NOT NULL,
+                        kind TEXT NOT NULL,
+                        nonce TEXT UNIQUE NOT NULL,
+                        sig TEXT NOT NULL,
+                        pubkey TEXT NOT NULL,
+                        payload_hash TEXT NOT NULL,
+                        anchored INTEGER DEFAULT 0,
+                        created_at INTEGER NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO beacon_envelopes
+                    (agent_id, kind, nonce, sig, pubkey, payload_hash, anchored, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+                    """,
+                    (
+                        "bcn_legacy123456",
+                        "heartbeat",
+                        "legacy-nonce",
+                        "ab" * 64,
+                        "cd" * 32,
+                        "legacy-hash",
+                        1234567890,
+                    ),
+                )
+                conn.commit()
+
+            beacon_anchor.init_beacon_table(db_path)
+            digest = beacon_anchor.compute_beacon_digest(db_path)
+
+            self.assertEqual(
+                digest["digest"],
+                blake2b(b"legacy-hash", digest_size=32).hexdigest(),
+            )
+            self.assertEqual(digest["payload_hash_versions"], [1])
+            self.assertFalse(digest["mixed_payload_hash_versions"])
         finally:
             os.unlink(db_path)
 
