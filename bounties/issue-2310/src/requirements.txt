@@ -1,0 +1,19 @@
+# CRT Light Attestation - Python Dependencies
+
+# Core dependencies
+numpy>=1.21.0
+scipy>=1.7.0
+
+# Optional: For webcam capture
+# opencv-python>=4.5.0
+
+# Optional: For Raspberry Pi GPIO (photodiode)
+# RPi.GPIO>=0.7.0
+# spidev>=3.5
+
+# Testing
+pytest>=7.0.0
+pytest-cov>=3.0.0
+
+# Documentation
+# sphinx>=4.0.0
