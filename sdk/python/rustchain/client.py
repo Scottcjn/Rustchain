@@ -19,6 +19,27 @@ from .explorer import ExplorerClient
 
 _DEFAULT_NODE = "https://50.28.86.131"
 
+# Hardware antiquity multipliers — mirrors rustchain-miner/src/hardware/arch.rs.
+# Used by callers to compute weighted epoch rewards before submitting attestations.
+ARCH_MULTIPLIERS: Dict[str, float] = {
+    # Apple PowerPC (high antiquity)
+    "g4":            2.5,
+    "g5":            2.0,
+    "g3":            1.8,
+    # SPARC (Sun/Oracle workstation heritage)
+    "sparc":         2.4,
+    # MIPS (SGI, embedded systems heritage)
+    "mips":          2.2,
+    # ARM (early Cortex-A / pre-v8 era)
+    "arm":           1.6,
+    # IBM POWER8 (high-core RISC heritage)
+    "power8":        2.3,
+    # Other known architectures
+    "apple_silicon": 1.2,
+    "core2duo":      1.3,
+    "modern":        1.0,
+}
+
 
 def _build_ssl_context(verify: bool) -> ssl.SSLContext | bool:
     """Return an SSLContext that skips verification, or True for normal TLS."""
@@ -170,39 +191,47 @@ class RustChainClient:
 
     async def transfer(
         self,
-        from_wallet: str,
-        to_wallet: str,
-        amount: float,
+        from_address: str,
+        to_address: str,
+        amount_rtc: float,
+        nonce: str,
         signature: str,
+        public_key: str,
     ) -> Dict[str, Any]:
         """Submit a signed RTC transfer.
 
         Parameters
         ----------
-        from_wallet:
-            Source wallet identifier.
-        to_wallet:
-            Destination wallet identifier.
-        amount:
-            Amount in RTC (must be positive).
+        from_address:
+            Sender's wallet address.
+        to_address:
+            Recipient's wallet address.
+        amount_rtc:
+            Transfer amount in RTC (must be positive).
+        nonce:
+            Unique nonce preventing replay attacks (UUID v4 recommended).
         signature:
-            Cryptographic signature authorising the transfer.
+            Cryptographic signature over the canonical payload bytes.
+        public_key:
+            Hex-encoded public key corresponding to *from_address*.
 
         Returns:
             dict: Transfer result payload.
 
         Raises:
-            ValueError: If *amount* is not positive.
+            ValueError: If *amount_rtc* is not positive.
         """
-        if amount <= 0:
-            raise ValueError(f"amount must be positive, got {amount}")
+        if amount_rtc <= 0:
+            raise ValueError(f"amount_rtc must be positive, got {amount_rtc}")
         payload = {
-            "from": from_wallet,
-            "to": to_wallet,
-            "amount": amount,
+            "from_address": from_address,
+            "to_address": to_address,
+            "amount_rtc": amount_rtc,
+            "nonce": nonce,
             "signature": signature,
+            "public_key": public_key,
         }
-        return await self._post("/wallet/transfer", json=payload)
+        return await self._post("/wallet/transfer/signed", json=payload)
 
     async def attestation_status(self, miner_id: str) -> Dict[str, Any]:
         """Check the attestation status for *miner_id*.
