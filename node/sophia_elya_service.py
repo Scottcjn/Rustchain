@@ -2,12 +2,24 @@
 """
 RustChain v2 - RIP-0005 Epoch Pro-Rata Rewards
 Production Anti-Spoof System with Fair Distribution
+Issue #2295: Added WebSocket real-time feed for Block Explorer
 """
 import os, time, json, secrets, hashlib, sqlite3
 from flask import Flask, request, jsonify
 from datetime import datetime
 
 app = Flask(__name__)
+
+# WebSocket Feed Integration (Issue #2295)
+try:
+    from websocket_feed import init_websocket, broadcast_block, broadcast_attestation, broadcast_epoch_settlement, get_ws_feed
+    WS_ENABLED = True
+    ws_feed = init_websocket(app)
+    print("[WebSocket] Real-time feed enabled for Block Explorer")
+except ImportError:
+    WS_ENABLED = False
+    print("[WebSocket] Flask-SocketIO not installed. Real-time features disabled.")
+    ws_feed = None
 
 # Configuration
 BLOCK_TIME = 600  # 10 minutes
@@ -262,15 +274,34 @@ def attest_submit():
 
     # Create ticket
     ticket_id = secrets.token_hex(8)
+    device = report.get("device", {})
+    hw_weight = get_hardware_weight(device)
     ticket = {
         "ticket_id": ticket_id,
         "commitment": report["commitment"],
         "expires_at": int(time.time()) + 3600,
-        "device": report.get("device", {}),
-        "weight": get_hardware_weight(report.get("device", {}))
+        "device": device,
+        "weight": hw_weight
     }
 
     tickets_db[ticket_id] = ticket
+    
+    # Broadcast attestation event via WebSocket (Issue #2295)
+    if WS_ENABLED and report.get("miner_id"):
+        try:
+            current_slot = int(time.time() // BLOCK_TIME)
+            current_epoch = slot_to_epoch(current_slot)
+            broadcast_attestation(
+                miner_id=report.get("miner_id", "unknown"),
+                device_arch=device.get("arch", "unknown"),
+                multiplier=hw_weight,
+                epoch=current_epoch,
+                weight=hw_weight,
+                ticket_id=ticket_id
+            )
+        except Exception as e:
+            print(f"[WebSocket] Failed to broadcast attestation: {e}")
+    
     return jsonify(ticket)
 
 @app.post("/api/submit_block")
@@ -304,6 +335,19 @@ def api_submit_block():
         # Finalize previous epoch
         result = finalize_epoch(LAST_EPOCH, PER_BLOCK_RTC)
         print(f"Finalized epoch {LAST_EPOCH}: {result}")
+        
+        # Broadcast epoch settlement event via WebSocket (Issue #2295)
+        if WS_ENABLED and result.get("ok"):
+            try:
+                broadcast_epoch_settlement(
+                    epoch=LAST_EPOCH,
+                    total_blocks=result.get("blocks", 0),
+                    total_reward=result.get("total_reward", 0.0),
+                    miners_count=len(result.get("payouts", []))
+                )
+            except Exception as e:
+                print(f"[WebSocket] Failed to broadcast epoch settlement: {e}")
+        
         LAST_EPOCH = epoch
 
     # Add block to current epoch
@@ -311,7 +355,28 @@ def api_submit_block():
 
     # Update block hash
     payload = json.dumps({"header": header, "ext": ext}, sort_keys=True).encode()
-    LAST_HASH_B3 = hashlib.sha256(payload).hexdigest()
+    new_hash = hashlib.sha256(payload).hexdigest()
+    LAST_HASH_B3 = new_hash
+    
+    # Broadcast block event via WebSocket (Issue #2295)
+    if WS_ENABLED:
+        try:
+            # Count miners from ticket if available
+            miners_count = 1
+            if ticket_id and ticket_id in tickets_db:
+                miners_count = 1  # Could be expanded for multi-miner blocks
+            
+            broadcast_block(
+                height=slot,  # Use slot as height approximation
+                hash=new_hash,
+                timestamp=time.time(),
+                miners_count=miners_count,
+                reward=PER_BLOCK_RTC,
+                epoch=epoch,
+                slot=slot
+            )
+        except Exception as e:
+            print(f"[WebSocket] Failed to broadcast block: {e}")
 
     return jsonify({
         "ok": True,
