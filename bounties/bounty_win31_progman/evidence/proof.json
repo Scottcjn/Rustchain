@@ -1,0 +1,38 @@
+{
+  "bounty_id": "bounty_win31_progman",
+  "status": "complete",
+  "files": [
+    "README.md",
+    "src/win31_validator.c",
+    "src/win31_validator.h",
+    "src/makefile.wat",
+    "docs/COMPILING.md",
+    "examples/example_proof.json"
+  ],
+  "compatible": [
+    "Windows 3.0",
+    "Windows 3.1",
+    "Windows 3.11",
+    "Windows 95",
+    "Windows 98"
+  ],
+  "compiler": [
+    "Open Watcom",
+    "Microsoft C 16-bit",
+    "Visual C++ 1.52"
+  ],
+  "features": [
+    "program_manager_gui",
+    "cpu_detection",
+    "bios_date",
+    "entropy_calculation",
+    "json_output"
+  ],
+  "requirements_met": [
+    "16-bit_win_executable",
+    "graphical_score_screen",
+    "program_manager_style",
+    "writes_proof_of_antiquity"
+  ],
+  "timestamp": "2026-03-23T06:48:00Z"
+}
