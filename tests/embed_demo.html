@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>External Site - BoTTube Embed Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        .header {
+            background: #202020;
+            color: #fff;
+            padding: 20px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+        .header p {
+            color: #aaa;
+            font-size: 14px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        .section {
+            background: #fff;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .section h2 {
+            font-size: 20px;
+            margin-bottom: 16px;
+            color: #202020;
+        }
+        .section p {
+            margin-bottom: 20px;
+            color: #666;
+        }
+        .embed-demo {
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+        .embed-demo iframe {
+            display: block;
+            width: 100%;
+        }
+        .code-block {
+            background: #1e1e1e;
+            color: #0f0;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            margin: 16px 0;
+        }
+        .button {
+            display: inline-block;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: transform 0.2s;
+        }
+        .button:hover {
+            transform: translateY(-2px);
+        }
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .feature {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        .feature h3 {
+            font-size: 16px;
+            margin-bottom: 8px;
+            color: #202020;
+        }
+        .feature p {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 0;
+        }
+        .test-status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        .test-status.success {
+            background: #4caf50;
+            color: #fff;
+        }
+        .test-status.error {
+            background: #f44336;
+            color: #fff;
+        }
+        .size-options {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 16px 0;
+        }
+        .size-option {
+            padding: 8px 16px;
+            background: #f0f0f0;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .size-option:hover {
+            background: #e0e0e0;
+        }
+        .size-option.active {
+            background: #667eea;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎬 External Site - BoTTube Embed Test</h1>
+        <p>Testing the BoTTube Embeddable Player Widget integration</p>
+    </div>
+
+    <div class="container">
+        <!-- Introduction -->
+        <div class="section">
+            <h2>About This Test Page</h2>
+            <p>
+                This page demonstrates the BoTTube Embeddable Player Widget integration on an external website.
+                The embedded video player below is loaded from BoTTube via iframe, showing how content creators
+                can easily share BoTTube videos on their own websites.
+            </p>
+            <div class="features">
+                <div class="feature">
+                    <h3>📱 Responsive Design</h3>
+                    <p>Automatically adapts to different screen sizes and container widths.</p>
+                </div>
+                <div class="feature">
+                    <h3>🎮 Full Controls</h3>
+                    <p>Play, pause, volume, fullscreen, and all standard video controls.</p>
+                </div>
+                <div class="feature">
+                    <h3>🔗 BoTTube Branding</h3>
+                    <p>Includes subtle branding with link back to the full BoTTube page.</p>
+                </div>
+                <div class="feature">
+                    <h3>⚡ Auto-Play Support</h3>
+                    <p>Videos can autoplay (muted by default for browser compatibility).</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Embed Demo -->
+        <div class="section">
+            <h2>Live Embed Demo</h2>
+            <p>
+                Below is a live BoTTube video embedded using the embed widget. Try playing the video,
+                adjusting volume, or going fullscreen.
+            </p>
+            
+            <div class="embed-demo">
+                <iframe 
+                    id="liveEmbed"
+                    width="854" 
+                    height="480" 
+                    src="http://localhost:5000/embed/demo-001" 
+                    frameborder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowfullscreen>
+                </iframe>
+            </div>
+
+            <div class="size-options">
+                <span class="size-option" data-width="560" data-height="315">560×315</span>
+                <span class="size-option" data-width="640" data-height="360">640×360</span>
+                <span class="size-option active" data-width="854" data-height="480">854×480</span>
+                <span class="size-option" data-width="100%" data-height="auto">Responsive (100%)</span>
+            </div>
+
+            <h3 style="font-size: 16px; margin: 20px 0 10px;">Embed Code:</h3>
+            <div class="code-block" id="embedCode">&lt;iframe width="854" height="480" src="http://localhost:5000/embed/demo-001" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen&gt;&lt;/iframe&gt;</div>
+        </div>
+
+        <!-- oEmbed Test -->
+        <div class="section">
+            <h2>oEmbed Discovery Test</h2>
+            <p>
+                The oEmbed endpoint allows platforms like Discord, Slack, and WordPress to automatically
+                generate embed previews when a BoTTube URL is shared. Test the oEmbed endpoint below.
+            </p>
+            
+            <button class="button" onclick="testOEmbed()">Test oEmbed Endpoint</button>
+            <span id="oembedStatus" class="test-status" style="display: none;"></span>
+            
+            <div id="oembedResult" style="margin-top: 20px; display: none;">
+                <h3 style="font-size: 16px; margin-bottom: 10px;">oEmbed Response:</h3>
+                <pre class="code-block" id="oembedJson" style="max-height: 400px; overflow-y: auto;"></pre>
+            </div>
+        </div>
+
+        <!-- Integration Guide -->
+        <div class="section">
+            <h2>Integration Guide</h2>
+            <p>Follow these steps to integrate BoTTube embed on your website:</p>
+            
+            <ol style="margin-left: 20px; color: #666;">
+                <li style="margin-bottom: 12px;">
+                    <strong>Get the Embed Code:</strong> Visit the BoTTube watch page, click "Share", then "Embed" tab.
+                </li>
+                <li style="margin-bottom: 12px;">
+                    <strong>Choose Size:</strong> Select from preset sizes (560×315, 640×360, 854×480) or custom dimensions.
+                </li>
+                <li style="margin-bottom: 12px;">
+                    <strong>Copy & Paste:</strong> Copy the iframe code and paste it into your HTML.
+                </li>
+                <li style="margin-bottom: 12px;">
+                    <strong>Responsive (Optional):</strong> For responsive embed, wrap in a container with CSS:
+                    <div class="code-block" style="margin-top: 8px;">
+.video-container {
+    position: relative;
+    padding-bottom: 56.25%; /* 16:9 aspect ratio */
+    height: 0;
+    overflow: hidden;
+}
+.video-container iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+                    </div>
+                </li>
+            </ol>
+        </div>
+
+        <!-- API Documentation -->
+        <div class="section">
+            <h2>API Endpoints</h2>
+            
+            <div style="margin-bottom: 20px;">
+                <h3 style="font-size: 16px; margin-bottom: 8px;">Embed Player</h3>
+                <code style="background: #f0f0f0; padding: 4px 8px; border-radius: 4px;">GET /embed/{video_id}</code>
+                <p style="margin-top: 8px;">Returns a minimal HTML page with the video player for iframe embedding.</p>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <h3 style="font-size: 16px; margin-bottom: 8px;">oEmbed Endpoint</h3>
+                <code style="background: #f0f0f0; padding: 4px 8px; border-radius: 4px;">GET /oembed?url={video_url}</code>
+                <p style="margin-top: 8px;">Returns JSON with embed HTML for auto-discovery platforms.</p>
+                <p style="margin-top: 8px; font-size: 14px; color: #888;">
+                    Query Parameters: <code>url</code> (required), <code>maxwidth</code>, <code>maxheight</code>, <code>format</code>
+                </p>
+            </div>
+
+            <div>
+                <h3 style="font-size: 16px; margin-bottom: 8px;">Watch Page</h3>
+                <code style="background: #f0f0f0; padding: 4px 8px; border-radius: 4px;">GET /watch/{video_id}</code>
+                <p style="margin-top: 8px;">Full watch page with Share > Embed UI for generating embed codes.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Size option handlers
+        document.querySelectorAll('.size-option').forEach(option => {
+            option.addEventListener('click', function() {
+                document.querySelectorAll('.size-option').forEach(o => o.classList.remove('active'));
+                this.classList.add('active');
+                
+                const width = this.dataset.width;
+                const height = this.dataset.height;
+                const iframe = document.getElementById('liveEmbed');
+                
+                if (width === '100%') {
+                    iframe.style.width = '100%';
+                    iframe.style.height = 'auto';
+                    iframe.setAttribute('width', '854');
+                    iframe.setAttribute('height', '480');
+                } else {
+                    iframe.style.width = width + 'px';
+                    iframe.style.height = height + 'px';
+                    iframe.setAttribute('width', width);
+                    iframe.setAttribute('height', height);
+                }
+                
+                updateEmbedCode(width, height);
+            });
+        });
+
+        function updateEmbedCode(width, height) {
+            const code = `&lt;iframe width="${width}" height="${height}" src="http://localhost:5000/embed/demo-001" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen&gt;&lt;/iframe&gt;`;
+            document.getElementById('embedCode').innerHTML = code;
+        }
+
+        async function testOEmbed() {
+            const statusEl = document.getElementById('oembedStatus');
+            const resultEl = document.getElementById('oembedResult');
+            const jsonEl = document.getElementById('oembedJson');
+            
+            statusEl.style.display = 'inline-block';
+            statusEl.textContent = 'Testing...';
+            statusEl.className = 'test-status';
+            
+            try {
+                const response = await fetch('http://localhost:5000/oembed?url=http://localhost:5000/watch/demo-001');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    statusEl.textContent = '✓ Success';
+                    statusEl.classList.add('success');
+                    
+                    jsonEl.textContent = JSON.stringify(data, null, 2);
+                    resultEl.style.display = 'block';
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                statusEl.textContent = `✗ Error: ${error.message}`;
+                statusEl.classList.add('error');
+                resultEl.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
