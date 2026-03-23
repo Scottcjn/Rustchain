@@ -1,0 +1,101 @@
+{
+  "preset_name": "x86 Dual-Socket",
+  "preset_id": "x86_dual_socket_v1",
+  "version": "1.0.0",
+  "description": "NUMA sharding configuration for dual-socket x86_64 systems (Intel/AMD)",
+  
+  "hardware_target": {
+    "architecture": "x86_64",
+    "cpu_family": "Intel Xeon / AMD EPYC",
+    "model": "Dual-Socket",
+    "numa_nodes": 2,
+    "notes": "Typical dual-socket server with 2 NUMA domains"
+  },
+  
+  "memory_topology": {
+    "node_0": {
+      "description": "CPU socket 0",
+      "recommended_for": "Layers 0-15 (first half of model)"
+    },
+    "node_1": {
+      "description": "CPU socket 1",
+      "recommended_for": "Layers 16-31 (second half of model)"
+    }
+  },
+  
+  "numa_shard_config": {
+    "environment_variable": "GGML_NUMA_SHARD_MAP",
+    "value": "0-15:0,16-31:1",
+    "rules": [
+      {
+        "layer_range": [0, 15],
+        "node": 0,
+        "rationale": "First half of model on socket 0"
+      },
+      {
+        "layer_range": [16, 31],
+        "node": 1,
+        "rationale": "Second half of model on socket 1"
+      }
+    ],
+    "notes": "Adjust layer split based on actual model layer count"
+  },
+  
+  "thread_configuration": {
+    "recommended_threads": "num_physical_cores",
+    "affinity": "numactl --cpunodebind=all",
+    "warning": "On dual-socket systems, avoid crossing socket boundaries for latency-critical operations"
+  },
+  
+  "compiler_flags": {
+    "cc": "gcc",
+    "cflags": "-march=native -O3 -DNDEBUG",
+    "ldflags": "-lnuma"
+  },
+  
+  "runtime_configuration": {
+    "environment": {
+      "GGML_NUMA_SHARD_MAP": "0-15:0,16-31:1",
+      "OMP_NUM_THREADS": "auto"
+    },
+    "numactl_command": "numactl --cpunodebind=all --membind=all"
+  },
+  
+  "model_specific_overrides": {
+    "7b_model": {
+      "layers": 32,
+      "config": "0-15:0,16-31:1"
+    },
+    "13b_model": {
+      "layers": 40,
+      "config": "0-19:0,20-39:1"
+    },
+    "33b_model": {
+      "layers": 60,
+      "config": "0-29:0,30-59:1"
+    },
+    "70b_model": {
+      "layers": 80,
+      "config": "0-39:0,40-79:1"
+    }
+  },
+  
+  "performance_expectations": {
+    "pp512_improvement_pct": "15-25%",
+    "tg128_improvement_pct": "20-30%",
+    "notes": "Lower gains than POWER8 due to better x86 memory interconnect (UPI/Infinity Fabric)"
+  },
+  
+  "platform_notes": {
+    "intel_xeon": {
+      "interconnect": "UPI (Ultra Path Interconnect)",
+      "remote_latency": "~30% higher than local",
+      "recommendation": "NUMA sharding beneficial for large models"
+    },
+    "amd_epyc": {
+      "interconnect": "Infinity Fabric",
+      "remote_latency": "~20% higher than local",
+      "recommendation": "NUMA sharding moderately beneficial"
+    }
+  }
+}

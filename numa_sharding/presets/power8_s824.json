@@ -1,0 +1,184 @@
+{
+  "preset_name": "POWER8 S824 Optimal",
+  "preset_id": "power8_s824_v1",
+  "version": "1.0.0",
+  "description": "Optimized NUMA sharding configuration for IBM POWER8 S824 with 4 NUMA nodes and 512GB RAM",
+  
+  "hardware_target": {
+    "architecture": "ppc64le",
+    "cpu_family": "POWER8",
+    "model": "S824",
+    "numa_nodes": 4,
+    "total_memory_gb": 512,
+    "cores_per_node": 16,
+    "threads_per_core": 8
+  },
+  
+  "memory_topology": {
+    "node_0": {
+      "bandwidth_mbs": 220,
+      "latency_ns": 100,
+      "classification": "slow",
+      "recommended_for": "I/O, non-critical data"
+    },
+    "node_1": {
+      "bandwidth_mbs": 350,
+      "latency_ns": 80,
+      "classification": "moderate",
+      "recommended_for": "Early layers, embeddings"
+    },
+    "node_2": {
+      "bandwidth_mbs": 425,
+      "latency_ns": 60,
+      "classification": "fast",
+      "recommended_for": "FFN layers, matrix operations"
+    },
+    "node_3": {
+      "bandwidth_mbs": 425,
+      "latency_ns": 60,
+      "classification": "fast",
+      "recommended_for": "Attention layers, KV cache"
+    }
+  },
+  
+  "numa_shard_config": {
+    "environment_variable": "GGML_NUMA_SHARD_MAP",
+    "value": "0-8:1,9-20:3,21-31:2",
+    "rules": [
+      {
+        "layer_range": [0, 8],
+        "node": 1,
+        "rationale": "Early embedding layers have sequential access pattern; Node 1 provides adequate bandwidth"
+      },
+      {
+        "layer_range": [9, 20],
+        "node": 3,
+        "rationale": "Attention layers benefit from highest bandwidth; KV cache residency critical"
+      },
+      {
+        "layer_range": [21, 31],
+        "node": 2,
+        "rationale": "FFN layers are compute-intensive; Node 2 provides highest bandwidth for matrix ops"
+      }
+    ]
+  },
+  
+  "thread_configuration": {
+    "recommended_threads": 64,
+    "warning": "Do NOT use 128 threads - causes contention and reduces performance",
+    "thread_affinity": "numactl --cpunodebind=0,1,2,3",
+    "rationale": "POWER8 S824 achieves optimal throughput with 64 threads due to memory subsystem limitations"
+  },
+  
+  "compiler_flags": {
+    "cc": "gcc",
+    "cflags": "-mcpu=power8 -mvsx -maltivec -O3 -DNDEBUG",
+    "ldflags": "-lnuma",
+    "cmake_args": "-DCMAKE_C_FLAGS='-mcpu=power8 -mvsx -maltivec -O3' -DCMAKE_BUILD_TYPE=Release"
+  },
+  
+  "runtime_configuration": {
+    "environment": {
+      "GGML_NUMA_SHARD_MAP": "0-8:1,9-20:3,21-31:2",
+      "GGML_NUMA_POLICY": "bind",
+      "OMP_NUM_THREADS": "64",
+      "KMP_AFFINITY": "granularity=fine,compact,1,0"
+    },
+    "numactl_command": "numactl --cpunodebind=0,1,2,3 --membind=0,1,2,3"
+  },
+  
+  "model_specific_overrides": {
+    "tinyllama_1.1b": {
+      "layers": 22,
+      "config": "0-7:1,8-14:3,15-21:2",
+      "notes": "Adjusted for 22-layer architecture"
+    },
+    "llama_2_7b": {
+      "layers": 32,
+      "config": "0-8:1,9-20:3,21-31:2",
+      "notes": "Default configuration works well"
+    },
+    "llama_2_13b": {
+      "layers": 40,
+      "config": "0-10:1,11-26:3,27-39:2",
+      "notes": "Scaled for 40 layers"
+    },
+    "llama_2_33b": {
+      "layers": 60,
+      "config": "0-15:1,16-40:3,41-59:2",
+      "notes": "Scaled for 60 layers"
+    },
+    "llama_2_70b": {
+      "layers": 80,
+      "config": "0-20:1,21-53:3,54-79:2",
+      "notes": "Scaled for 80 layers; consider splitting across multiple nodes"
+    }
+  },
+  
+  "performance_targets": {
+    "pp512_improvement_min_pct": 40,
+    "tg128_improvement_min_pct": 45,
+    "memory_bandwidth_utilization_min_pct": 85,
+    "cross_numa_access_max_pct": 10
+  },
+  
+  "validation_commands": {
+    "check_numa": "numactl --hardware",
+    "check_memory": "numactl --show",
+    "baseline_benchmark": "numactl --cpunodebind=0 --membind=0 ./build/bin/llama-bench -m model.gguf -t 64 -b 512 -n 128 -r 3",
+    "numa_benchmark": "export GGML_NUMA_SHARD_MAP=\"0-8:1,9-20:3,21-31:2\" && ./build/bin/llama-bench -m model.gguf -t 64 -b 512 -n 128 -r 3",
+    "quick_test": "export GGML_NUMA_SHARD_MAP=\"0-8:1,9-20:3,21-31:2\" && ./build/bin/llama-cli -m model.gguf -n 10 -p \"Hello\""
+  },
+  
+  "troubleshooting": {
+    "issue_no_improvement": {
+      "symptom": "NUMA-sharded performance similar to baseline",
+      "diagnosis": [
+        "Check if system actually has multiple NUMA nodes",
+        "Verify NUMA is not disabled in BIOS",
+        "Ensure model is large enough to benefit from sharding"
+      ],
+      "commands": [
+        "numactl --hardware",
+        "cat /sys/devices/system/node/online"
+      ]
+    },
+    "issue_mbind_errors": {
+      "symptom": "mbind() system call fails",
+      "diagnosis": [
+        "Check if libnuma is installed",
+        "Verify process has sufficient permissions",
+        "Ensure target NUMA node exists"
+      ],
+      "commands": [
+        "ldd ./build/bin/llama-cli | grep numa",
+        "numactl --show"
+      ]
+    },
+    "issue_performance_regression": {
+      "symptom": "NUMA-sharded slower than baseline",
+      "diagnosis": [
+        "Thread count may be too high",
+        "Layer mapping may be suboptimal for this model",
+        "Other processes may be contending for memory bandwidth"
+      ],
+      "solutions": [
+        "Reduce thread count to 64 or lower",
+        "Try alternative GGML_NUMA_SHARD_MAP configurations",
+        "Run during low system utilization"
+      ]
+    }
+  },
+  
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "date": "2026-03-23",
+      "changes": [
+        "Initial preset for POWER8 S824",
+        "Based on memory bandwidth measurements: Node 2/3 = 425 MB/s, Node 1 = 350 MB/s, Node 0 = 220 MB/s",
+        "Optimal thread count: 64 (not 128)"
+      ]
+    }
+  ]
+}
