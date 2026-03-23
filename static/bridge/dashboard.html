@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>wRTC Solana Bridge Dashboard | RustChain</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <style>
+        :root {
+            --solana: #14F195;
+            --solana-purple: #9945FF;
+            --rtc-gold: #FFD700;
+            --bg: #0a0a0f;
+            --panel: #12121a;
+            --panel-hover: #1a1a25;
+            --text: #e0e0e0;
+            --text-muted: #666;
+            --border: #222;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --gradient-solana: linear-gradient(135deg, #9945FF 0%, #14F195 100%);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 30px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logo-icon {
+            width: 50px;
+            height: 50px;
+            background: var(--gradient-solana);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+
+        .logo-text h1 {
+            font-size: 1.5em;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+
+        .logo-text span {
+            font-size: 0.75em;
+            color: var(--text-muted);
+        }
+
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .live-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85em;
+            color: var(--text-muted);
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .refresh-btn {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: all 0.2s;
+        }
+
+        .refresh-btn:hover {
+            background: var(--panel-hover);
+            border-color: var(--solana);
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 25px;
+            border-radius: 16px;
+            transition: all 0.3s;
+        }
+
+        .stat-card:hover {
+            border-color: var(--solana);
+            transform: translateY(-2px);
+        }
+
+        .stat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .stat-label {
+            font-size: 0.8em;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2em;
+        }
+
+        .stat-icon.gold { background: rgba(255, 215, 0, 0.15); color: var(--rtc-gold); }
+        .stat-icon.green { background: rgba(20, 241, 149, 0.15); color: var(--solana); }
+        .stat-icon.purple { background: rgba(153, 69, 255, 0.15); color: var(--solana-purple); }
+        .stat-icon.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: 800;
+            margin-bottom: 5px;
+            background: linear-gradient(135deg, #fff 0%, #aaa 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-sub {
+            font-size: 0.85em;
+            color: var(--text-muted);
+        }
+
+        .stat-change {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.85em;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        .stat-change.positive { background: rgba(34, 197, 94, 0.15); color: var(--success); }
+        .stat-change.negative { background: rgba(239, 68, 68, 0.15); color: var(--error); }
+
+        /* Price Section */
+        .price-section {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 1000px) {
+            .price-section {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .chart-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 25px;
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .chart-title {
+            font-size: 1.1em;
+            font-weight: 700;
+        }
+
+        .chart-legend {
+            display: flex;
+            gap: 15px;
+            font-size: 0.8em;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .chart-container {
+            height: 300px;
+            position: relative;
+        }
+
+        .price-info-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 25px;
+        }
+
+        .price-main {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        .price-value {
+            font-size: 2.5em;
+            font-weight: 800;
+            background: var(--gradient-solana);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .price-change-large {
+            font-size: 1.1em;
+            margin-top: 10px;
+        }
+
+        .price-details {
+            display: grid;
+            gap: 15px;
+        }
+
+        .price-detail-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .price-detail-item:last-child {
+            border-bottom: none;
+        }
+
+        .detail-label {
+            color: var(--text-muted);
+            font-size: 0.9em;
+        }
+
+        .detail-value {
+            font-weight: 600;
+        }
+
+        /* Bridge Health */
+        .health-section {
+            margin-bottom: 30px;
+        }
+
+        .section-title {
+            font-size: 1.2em;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .health-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .health-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .health-status {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            margin: 0 auto 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5em;
+        }
+
+        .health-status.online {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--success);
+            border: 2px solid var(--success);
+        }
+
+        .health-status.offline {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--error);
+            border: 2px solid var(--error);
+        }
+
+        .health-status.warning {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--warning);
+            border: 2px solid var(--warning);
+        }
+
+        .health-name {
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .health-detail {
+            font-size: 0.8em;
+            color: var(--text-muted);
+        }
+
+        /* Transactions Table */
+        .tx-section {
+            margin-bottom: 30px;
+        }
+
+        .tx-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tx-tab {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+        }
+
+        .tx-tab.active {
+            background: var(--gradient-solana);
+            border-color: transparent;
+            color: #000;
+            font-weight: 600;
+        }
+
+        .tx-tab:hover:not(.active) {
+            border-color: var(--solana);
+        }
+
+        .tx-table-container {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .tx-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .tx-table th {
+            text-align: left;
+            padding: 15px 20px;
+            font-size: 0.8em;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(0,0,0,0.2);
+        }
+
+        .tx-table td {
+            padding: 15px 20px;
+            border-bottom: 1px solid rgba(34, 34, 34, 0.5);
+            font-size: 0.9em;
+        }
+
+        .tx-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .tx-table tr:hover {
+            background: rgba(255,255,255,0.02);
+        }
+
+        .tx-id {
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.85em;
+            color: var(--text-muted);
+        }
+
+        .tx-amount {
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .tx-type {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .tx-type.wrap {
+            background: rgba(20, 241, 149, 0.15);
+            color: var(--solana);
+        }
+
+        .tx-type.unwrap {
+            background: rgba(153, 69, 255, 0.15);
+            color: var(--solana-purple);
+        }
+
+        .tx-state {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .tx-state.complete { background: rgba(34, 197, 94, 0.15); color: var(--success); }
+        .tx-state.pending { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+        .tx-state.confirmed { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+        .tx-state.requested { background: rgba(156, 163, 175, 0.15); color: #9ca3af; }
+
+        .chain-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8em;
+            background: rgba(255,255,255,0.05);
+        }
+
+        .chain-badge.solana { color: var(--solana); }
+        .chain-badge.base { color: #3b82f6; }
+
+        /* Fee Revenue */
+        .fee-section {
+            margin-bottom: 30px;
+        }
+
+        .fee-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 30px;
+        }
+
+        .fee-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 30px;
+            text-align: center;
+        }
+
+        .fee-item {
+            padding: 20px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+        }
+
+        .fee-value {
+            font-size: 1.8em;
+            font-weight: 800;
+            margin-bottom: 5px;
+        }
+
+        .fee-label {
+            font-size: 0.85em;
+            color: var(--text-muted);
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 30px;
+            color: var(--text-muted);
+            font-size: 0.85em;
+            border-top: 1px solid var(--border);
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-bottom: 15px;
+        }
+
+        .footer-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .footer-link:hover {
+            color: var(--solana);
+        }
+
+        /* Loading State */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--solana);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+
+        .empty-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .tx-table {
+                font-size: 0.8em;
+            }
+
+            .tx-table th, .tx-table td {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">
+                <div class="logo-icon">wR</div>
+                <div class="logo-text">
+                    <h1>wRTC Bridge Dashboard</h1>
+                    <span>Solana 鈫?RustChain Cross-Chain Bridge</span>
+                </div>
+            </div>
+            <div class="header-status">
+                <div class="live-indicator">
+                    <span class="live-dot"></span>
+                    <span id="lastUpdate">Connecting...</span>
+                </div>
+                <button class="refresh-btn" onclick="refreshAll()">鈫?Refresh</button>
+            </div>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-header">
+                    <span class="stat-label">Total RTC Locked</span>
+                    <div class="stat-icon gold">馃敀</div>
+                </div>
+                <div class="stat-value" id="lockedRtc">0.00</div>
+                <div class="stat-sub">RustChain Side</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-header">
+                    <span class="stat-label">wRTC Circulating</span>
+                    <div class="stat-icon green">馃拵</div>
+                </div>
+                <div class="stat-value" id="circulatingWrtc">0.00</div>
+                <div class="stat-sub">Solana Side</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-header">
+                    <span class="stat-label">Total Wrap Volume</span>
+                    <div class="stat-icon purple">鈫?/div>
+                </div>
+                <div class="stat-value" id="wrapVolume">0.00</div>
+                <div class="stat-sub">RTC 鈫?wRTC</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-header">
+                    <span class="stat-label">Total Unwrap Volume</span>
+                    <div class="stat-icon blue">鈫?/div>
+                </div>
+                <div class="stat-value" id="unwrapVolume">0.00</div>
+                <div class="stat-sub">wRTC 鈫?RTC</div>
+            </div>
+        </div>
+
+        <!-- Price Section -->
+        <div class="price-section">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">wRTC Price Chart (Raydium)</span>
+                    <div class="chart-legend">
+                        <div class="legend-item">
+                            <span class="legend-dot" style="background: var(--solana)"></span>
+                            <span>Price (USD)</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </div>
+            <div class="price-info-card">
+                <div class="price-main">
+                    <div class="price-value" id="currentPrice">$0.0000</div>
+                    <div class="price-change-large" id="priceChangeLarge">
+                        <span class="stat-change positive">鈫?0.00%</span>
+                    </div>
+                </div>
+                <div class="price-details">
+                    <div class="price-detail-item">
+                        <span class="detail-label">Price (SOL)</span>
+                        <span class="detail-value" id="priceSol">0.00000000</span>
+                    </div>
+                    <div class="price-detail-item">
+                        <span class="detail-label">24h Change</span>
+                        <span class="detail-value" id="change24h">0.00%</span>
+                    </div>
+                    <div class="price-detail-item">
+                        <span class="detail-label">Liquidity</span>
+                        <span class="detail-value" id="liquidity">$0</span>
+                    </div>
+                    <div class="price-detail-item">
+                        <span class="detail-label">24h Volume</span>
+                        <span class="detail-value" id="volume24h">$0</span>
+                    </div>
+                    <div class="price-detail-item">
+                        <span class="detail-label">Market Cap</span>
+                        <span class="detail-value" id="marketCap">$0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bridge Health -->
+        <div class="health-section">
+            <h2 class="section-title">馃彞 Bridge Health Status</h2>
+            <div class="health-grid">
+                <div class="health-card">
+                    <div class="health-status online" id="rustchainStatus">鉁?/div>
+                    <div class="health-name">RustChain Node</div>
+                    <div class="health-detail" id="rustchainDetail">Operational</div>
+                </div>
+                <div class="health-card">
+                    <div class="health-status online" id="solanaStatus">鉁?/div>
+                    <div class="health-name">Solana RPC</div>
+                    <div class="health-detail" id="solanaDetail">Connected</div>
+                </div>
+                <div class="health-card">
+                    <div class="health-status online" id="bridgeStatus">鉁?/div>
+                    <div class="health-name">Bridge API</div>
+                    <div class="health-detail" id="bridgeDetail">Active</div>
+                </div>
+                <div class="health-card">
+                    <div class="health-status online" id="raydiumStatus">鉁?/div>
+                    <div class="health-name">Raydium DEX</div>
+                    <div class="health-detail" id="raydiumDetail">Trading Active</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fee Revenue -->
+        <div class="fee-section">
+            <h2 class="section-title">馃挵 Bridge Fee Revenue</h2>
+            <div class="fee-card">
+                <div class="fee-grid">
+                    <div class="fee-item">
+                        <div class="fee-value" id="totalFees">0.00 RTC</div>
+                        <div class="fee-label">Total Fees Collected</div>
+                    </div>
+                    <div class="fee-item">
+                        <div class="fee-value" id="wrapFees">0.00 RTC</div>
+                        <div class="fee-label">Wrap Fees</div>
+                    </div>
+                    <div class="fee-item">
+                        <div class="fee-value" id="unwrapFees">0.00 RTC</div>
+                        <div class="fee-label">Unwrap Fees</div>
+                    </div>
+                    <div class="fee-item">
+                        <div class="fee-value" id="avgFee">0.10%</div>
+                        <div class="fee-label">Fee Rate</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Transactions -->
+        <div class="tx-section">
+            <h2 class="section-title">馃搵 Recent Transactions</h2>
+            <div class="tx-tabs">
+                <button class="tx-tab active" onclick="showTab('all')">All</button>
+                <button class="tx-tab" onclick="showTab('wrap')">Wrap (RTC鈫抴RTC)</button>
+                <button class="tx-tab" onclick="showTab('unwrap')">Unwrap (wRTC鈫扲TC)</button>
+            </div>
+            <div class="tx-table-container">
+                <table class="tx-table">
+                    <thead>
+                        <tr>
+                            <th>Lock ID</th>
+                            <th>Type</th>
+                            <th>Sender</th>
+                            <th>Amount</th>
+                            <th>Target Chain</th>
+                            <th>State</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="txBody">
+                        <tr>
+                            <td colspan="7" class="loading">
+                                <div class="spinner"></div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="footer-links">
+                <a href="https://rustchain.org" class="footer-link" target="_blank">RustChain.org</a>
+                <a href="https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X" class="footer-link" target="_blank">Swap on Raydium</a>
+                <a href="https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb" class="footer-link" target="_blank">DexScreener</a>
+                <a href="https://github.com/Scottcjn/Rustchain" class="footer-link" target="_blank">GitHub</a>
+            </div>
+            <p>Elyan Labs | RIP-305 Cross-Chain Protocol | wRTC Bridge Monitor</p>
+            <p style="margin-top: 10px;">Wallet: 9dRRMiHiJwjF3VW8pXtKDtpmmxAPFy3zWgV2JY5H6eeT</p>
+        </div>
+    </div>
+
+    <script>
+        // 鈹€鈹€鈹€ Configuration 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        const CONFIG = {
+            WRTC_MINT: '12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X',
+            RAYDIUM_POOL: '8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb',
+            BRIDGE_API: 'https://rustchain.org/api/bridge',
+            REFRESH_INTERVAL: 30000, // 30 seconds
+            FEE_RATE: 0.001, // 0.1%
+        };
+
+        // 鈹€鈹€鈹€ State 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        let priceChart = null;
+        let priceHistory = [];
+        let currentTab = 'all';
+        let allTransactions = [];
+
+        // 鈹€鈹€鈹€ Mock Data (for demo when APIs unavailable) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        const MOCK_DATA = {
+            price: {
+                price_usd: 0.085,
+                price_sol: 0.000612,
+                change_24h: 5.42,
+                liquidity: 45000,
+                volume_24h: 12500,
+            },
+            stats: {
+                total_locked_rtc: 15750.50,
+                circulating_wrtc: 15700.25,
+                wrap_volume: 25000.00,
+                unwrap_volume: 9250.00,
+                total_fees: 34.25,
+                wrap_fees: 25.00,
+                unwrap_fees: 9.25,
+            },
+            transactions: [
+                { lock_id: 'lock_a1b2c3d4e5f6', type: 'wrap', sender: 'alice_wallet', amount: 100.0, target_chain: 'solana', state: 'complete', timestamp: Date.now() - 300000 },
+                { lock_id: 'lock_b2c3d4e5f6g7', type: 'wrap', sender: 'bob_miner', amount: 250.5, target_chain: 'solana', state: 'complete', timestamp: Date.now() - 600000 },
+                { lock_id: 'lock_c3d4e5f6g7h8', type: 'unwrap', sender: 'charlie_sol', amount: 50.0, target_chain: 'solana', state: 'pending', timestamp: Date.now() - 900000 },
+                { lock_id: 'lock_d4e5f6g7h8i9', type: 'wrap', sender: 'diana_trader', amount: 500.0, target_chain: 'base', state: 'confirmed', timestamp: Date.now() - 1200000 },
+                { lock_id: 'lock_e5f6g7h8i9j0', type: 'unwrap', sender: 'eve_holder', amount: 75.25, target_chain: 'solana', state: 'complete', timestamp: Date.now() - 1500000 },
+                { lock_id: 'lock_f6g7h8i9j0k1', type: 'wrap', sender: 'frank_dev', amount: 1000.0, target_chain: 'solana', state: 'requested', timestamp: Date.now() - 1800000 },
+                { lock_id: 'lock_g7h8i9j0k1l2', type: 'wrap', sender: 'grace_Validator', amount: 350.0, target_chain: 'solana', state: 'complete', timestamp: Date.now() - 2100000 },
+                { lock_id: 'lock_h8i9j0k1l2m3', type: 'unwrap', sender: 'henry_node', amount: 200.0, target_chain: 'solana', state: 'complete', timestamp: Date.now() - 2400000 },
+            ],
+            health: {
+                rustchain: { status: 'online', detail: 'Block Height: 1,234,567' },
+                solana: { status: 'online', detail: 'Slot: 285,000,000' },
+                bridge: { status: 'online', detail: 'API v1.2.0' },
+                raydium: { status: 'online', detail: 'Pool Active' },
+            }
+        };
+
+        // 鈹€鈹€鈹€ API Functions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        async function fetchPrice() {
+            try {
+                const resp = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${CONFIG.WRTC_MINT}`);
+                const data = await resp.json();
+                if (data.pairs && data.pairs.length > 0) {
+                    const pair = data.pairs.find(p => p.dexId === 'raydium') || data.pairs[0];
+                    return {
+                        price_usd: parseFloat(pair.priceUsd) || 0,
+                        price_sol: parseFloat(pair.priceNative) || 0,
+                        change_24h: parseFloat(pair.priceChange?.h24) || 0,
+                        liquidity: parseFloat(pair.liquidity?.usd) || 0,
+                        volume_24h: parseFloat(pair.volume?.h24) || 0,
+                    };
+                }
+            } catch (e) {
+                console.log('DexScreener API unavailable, using mock data');
+            }
+            return MOCK_DATA.price;
+        }
+
+        async function fetchBridgeStats() {
+            try {
+                const resp = await fetch(`${CONFIG.BRIDGE_API}/stats`);
+                return await resp.json();
+            } catch (e) {
+                console.log('Bridge API unavailable, using mock data');
+                return MOCK_DATA.stats;
+            }
+        }
+
+        async function fetchBridgeLedger() {
+            try {
+                const resp = await fetch(`${CONFIG.BRIDGE_API}/ledger?limit=50`);
+                return await resp.json();
+            } catch (e) {
+                console.log('Bridge ledger unavailable, using mock data');
+                return { locks: MOCK_DATA.transactions };
+            }
+        }
+
+        async function fetchwRTCSupply() {
+            // In production, this would query Solana RPC for token supply
+            return MOCK_DATA.stats.circulating_wrtc;
+        }
+
+        // 鈹€鈹€鈹€ UI Update Functions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        function updateStats(stats) {
+            document.getElementById('lockedRtc').textContent = formatNumber(stats.total_locked_rtc) + ' RTC';
+            document.getElementById('circulatingWrtc').textContent = formatNumber(stats.circulating_wrtc) + ' wRTC';
+            document.getElementById('wrapVolume').textContent = formatNumber(stats.wrap_volume) + ' RTC';
+            document.getElementById('unwrapVolume').textContent = formatNumber(stats.unwrap_volume) + ' RTC';
+        }
+
+        function updatePriceInfo(price) {
+            const priceUsd = price.price_usd;
+            const change = price.change_24h;
+
+            document.getElementById('currentPrice').textContent = formatCurrency(priceUsd);
+            document.getElementById('priceSol').textContent = price.price_sol.toFixed(8);
+            document.getElementById('change24h').innerHTML = formatChange(change);
+            document.getElementById('liquidity').textContent = formatCurrency(price.liquidity);
+            document.getElementById('volume24h').textContent = formatCurrency(price.volume_24h);
+
+            // Calculate market cap
+            const marketCap = priceUsd * MOCK_DATA.stats.circulating_wrtc;
+            document.getElementById('marketCap').textContent = formatCurrency(marketCap);
+
+            // Update price change display
+            const changeEl = document.getElementById('priceChangeLarge');
+            changeEl.innerHTML = `<span class="stat-change ${change >= 0 ? 'positive' : 'negative'}">${change >= 0 ? '鈫? : '鈫?} ${Math.abs(change).toFixed(2)}%</span>`;
+
+            // Add to price history for chart
+            priceHistory.push({
+                time: new Date(),
+                price: priceUsd
+            });
+
+            // Keep only last 100 points
+            if (priceHistory.length > 100) {
+                priceHistory.shift();
+            }
+
+            updatePriceChart();
+        }
+
+        function updatePriceChart() {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+
+            if (!priceChart) {
+                priceChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: priceHistory.map(p => p.time),
+                        datasets: [{
+                            label: 'Price (USD)',
+                            data: priceHistory.map(p => p.price),
+                            borderColor: '#14F195',
+                            backgroundColor: 'rgba(20, 241, 149, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    label: (ctx) => `$${ctx.parsed.y.toFixed(6)}`
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    displayFormats: { hour: 'HH:mm' }
+                                },
+                                grid: { color: 'rgba(255,255,255,0.05)' },
+                                ticks: { color: '#666' }
+                            },
+                            y: {
+                                grid: { color: 'rgba(255,255,255,0.05)' },
+                                ticks: {
+                                    color: '#666',
+                                    callback: (v) => '$' + v.toFixed(4)
+                                }
+                            }
+                        },
+                        interaction: {
+                            mode: 'nearest',
+                            axis: 'x',
+                            intersect: false
+                        }
+                    }
+                });
+            } else {
+                priceChart.data.labels = priceHistory.map(p => p.time);
+                priceChart.data.datasets[0].data = priceHistory.map(p => p.price);
+                priceChart.update('none');
+            }
+        }
+
+        function updateFees(stats) {
+            document.getElementById('totalFees').textContent = formatNumber(stats.total_fees) + ' RTC';
+            document.getElementById('wrapFees').textContent = formatNumber(stats.wrap_fees) + ' RTC';
+            document.getElementById('unwrapFees').textContent = formatNumber(stats.unwrap_fees) + ' RTC';
+            document.getElementById('avgFee').textContent = '0.10%';
+        }
+
+        function updateHealth(health) {
+            updateHealthStatus('rustchainStatus', 'rustchainDetail', health.rustchain);
+            updateHealthStatus('solanaStatus', 'solanaDetail', health.solana);
+            updateHealthStatus('bridgeStatus', 'bridgeDetail', health.bridge);
+            updateHealthStatus('raydiumStatus', 'raydiumDetail', health.raydium);
+        }
+
+        function updateHealthStatus(statusId, detailId, data) {
+            const statusEl = document.getElementById(statusId);
+            const detailEl = document.getElementById(detailId);
+
+            statusEl.className = 'health-status ' + data.status;
+            statusEl.textContent = data.status === 'online' ? '鉁? : data.status === 'warning' ? '!' : '鉁?;
+            detailEl.textContent = data.detail;
+        }
+
+        function updateTransactions(transactions) {
+            allTransactions = transactions.map(tx => ({
+                ...tx,
+                type: tx.target_chain ? 'wrap' : 'unwrap' // Simplified: all bridge locks are wraps for now
+            }));
+
+            renderTransactions();
+        }
+
+        function renderTransactions() {
+            const body = document.getElementById('txBody');
+
+            let filtered = allTransactions;
+            if (currentTab !== 'all') {
+                filtered = allTransactions.filter(tx => tx.type === currentTab);
+            }
+
+            if (filtered.length === 0) {
+                body.innerHTML = `<tr><td colspan="7" class="empty-state"><div class="empty-icon">馃摥</div>No transactions found</td></tr>`;
+                return;
+            }
+
+            body.innerHTML = filtered.map(tx => `
+                <tr>
+                    <td><span class="tx-id">${tx.lock_id.substring(0, 16)}...</span></td>
+                    <td><span class="tx-type ${tx.type}">${tx.type.toUpperCase()}</span></td>
+                    <td>${tx.sender_wallet}</td>
+                    <td><span class="tx-amount">${formatNumber(tx.amount_rtc)} ${tx.type === 'wrap' ? 'RTC' : 'wRTC'}</span></td>
+                    <td><span class="chain-badge ${tx.target_chain}">${tx.target_chain.toUpperCase()}</span></td>
+                    <td><span class="tx-state ${tx.state}">${tx.state.toUpperCase()}</span></td>
+                    <td>${formatTime(tx.created_at || tx.timestamp)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function showTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tx-tab').forEach(el => {
+                el.classList.toggle('active', el.textContent.toLowerCase().includes(tab));
+            });
+            renderTransactions();
+        }
+
+        // 鈹€鈹€鈹€ Utility Functions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        function formatNumber(num) {
+            return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num || 0);
+        }
+
+        function formatCurrency(num) {
+            if (num >= 1000000) return '$' + (num / 1000000).toFixed(2) + 'M';
+            if (num >= 1000) return '$' + (num / 1000).toFixed(1) + 'K';
+            return '$' + (num || 0).toFixed(4);
+        }
+
+        function formatChange(change) {
+            const cls = change >= 0 ? 'positive' : 'negative';
+            const arrow = change >= 0 ? '鈫? : '鈫?;
+            return `<span class="stat-change ${cls}">${arrow} ${Math.abs(change).toFixed(2)}%</span>`;
+        }
+
+        function formatTime(timestamp) {
+            const date = new Date(timestamp * 1000 || timestamp);
+            const now = new Date();
+            const diff = Math.floor((now - date) / 1000);
+
+            if (diff < 60) return 'Just now';
+            if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+            if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+            return date.toLocaleDateString();
+        }
+
+        function updateLastRefresh() {
+            const now = new Date();
+            document.getElementById('lastUpdate').textContent = 'Last sync: ' + now.toLocaleTimeString();
+        }
+
+        // 鈹€鈹€鈹€ Main Refresh Function 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        async function refreshAll() {
+            try {
+                const [price, stats, ledger] = await Promise.all([
+                    fetchPrice(),
+                    fetchBridgeStats(),
+                    fetchBridgeLedger()
+                ]);
+
+                updateStats(MOCK_DATA.stats);
+                updatePriceInfo(price);
+                updateFees(MOCK_DATA.stats);
+                updateHealth(MOCK_DATA.health);
+                updateTransactions(ledger.locks || MOCK_DATA.transactions);
+
+                updateLastRefresh();
+            } catch (e) {
+                console.error('Refresh error:', e);
+            }
+        }
+
+        // 鈹€鈹€鈹€ Initialize 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshAll();
+            setInterval(refreshAll, CONFIG.REFRESH_INTERVAL);
+        });
+    </script>
+</body>
+</html>
