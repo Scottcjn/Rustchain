@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Node Status</title>
+    <style>
+        :root {
+            --navy: #003366;
+            --crimson: #990000;
+            --gold: #C4A000;
+            --silver: #8E8E8E;
+            --bg: #F8F7F4;
+            --up: #1a7a1a;
+            --down: #cc0000;
+            --warn: #b8860b;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: #222;
+            min-height: 100vh;
+        }
+        header {
+            background: var(--navy);
+            color: white;
+            padding: 20px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        header h1 {
+            font-size: 1.4rem;
+            font-weight: 600;
+        }
+        header .badge {
+            background: var(--gold);
+            color: var(--navy);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 24px 16px;
+        }
+        .updated {
+            color: var(--silver);
+            font-size: 0.8rem;
+            margin-bottom: 16px;
+        }
+        .nodes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .node-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border-top: 4px solid var(--silver);
+        }
+        .node-card.up { border-top-color: var(--up); }
+        .node-card.down { border-top-color: var(--down); }
+        .node-card .node-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .node-card .node-name {
+            font-weight: 700;
+            font-size: 1rem;
+            color: var(--navy);
+        }
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot.up { background: var(--up); box-shadow: 0 0 6px var(--up); }
+        .status-dot.down { background: var(--down); }
+        .node-card .location {
+            font-size: 0.75rem;
+            color: var(--silver);
+            margin-bottom: 10px;
+        }
+        .node-card .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 0.82rem;
+        }
+        .node-card .metric:last-child { border-bottom: none; }
+        .node-card .metric-label { color: var(--silver); }
+        .node-card .metric-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+        .up .metric-value { color: var(--up); }
+        .down .metric-value { color: var(--down); }
+        .uptime-block { font-size: 0.8rem; color: var(--silver); margin-top: 8px; }
+        .section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .section h2 {
+            font-size: 1rem;
+            color: var(--navy);
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--gold);
+        }
+        .incident-list { list-style: none; }
+        .incident-list li {
+            padding: 8px 0;
+            border-bottom: 1px solid #f5f5f5;
+            font-size: 0.85rem;
+            display: flex;
+            gap: 10px;
+        }
+        .incident-list li:last-child { border-bottom: none; }
+        .incident-time { color: var(--silver); min-width: 160px; font-size: 0.78rem; }
+        .incident-type { font-weight: 700; min-width: 50px; }
+        .incident-type.down { color: var(--down); }
+        .incident-type.up { color: var(--up); }
+        .no-incidents { color: var(--silver); font-size: 0.85rem; padding: 8px 0; }
+        .chart-container { height: 200px; margin-top: 10px; }
+        .chart-placeholder {
+            height: 160px;
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            padding: 4px 0;
+        }
+        .bar {
+            flex: 1;
+            background: var(--navy);
+            opacity: 0.6;
+            border-radius: 2px 2px 0 0;
+            min-height: 2px;
+            transition: height 0.3s;
+        }
+        .bar.slow { background: var(--warn); }
+        .bar.down { background: var(--down); opacity: 0.4; }
+        .legend {
+            display: flex;
+            gap: 16px;
+            font-size: 0.75rem;
+            color: var(--silver);
+            margin-top: 6px;
+        }
+        .legend span { display: flex; align-items: center; gap: 4px; }
+        .legend .dot { width: 10px; height: 10px; border-radius: 2px; }
+        @media (max-width: 600px) {
+            header { padding: 16px; }
+            .nodes-grid { grid-template-columns: 1fr 1fr; }
+            .incident-time { min-width: 120px; }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>🔗 RustChain Node Status</h1>
+    <span class="badge" id="overall-status">Loading...</span>
+</header>
+
+<div class="container">
+    <p class="updated" id="updated">Last updated: —</p>
+    
+    <div class="nodes-grid" id="nodes-grid">Loading...</div>
+
+    <div class="section">
+        <h2>⚡ Response Time (Last 24h)</h2>
+        <div class="chart-container" id="response-chart"></div>
+        <div class="legend">
+            <span><span class="dot" style="background:#003366"></span> &lt;500ms</span>
+            <span><span class="dot" style="background:#b8860b"></span> 500-2000ms</span>
+            <span><span class="dot" style="background:#cc0000;opacity:0.4"></span> Down</span>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📋 Incident Log</h2>
+        <ul class="incident-list" id="incident-list">
+            <li class="no-incidents">Loading incidents...</li>
+        </ul>
+    </div>
+</div>
+
+<script>
+const NODE_NAMES = {
+    node1: "Node 1", node2: "Node 2", node3: "Node 3", node4: "Node 4"
+};
+
+function fmtUptime(s) {
+    if (!s) return "—";
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+}
+
+function colorForMs(ms) {
+    if (!ms) return 'down';
+    if (ms < 500) return '';
+    if (ms < 2000) return 'slow';
+    return 'down';
+}
+
+async function loadStatus() {
+    try {
+        const r = await fetch('/api/status');
+        const nodes = await r.json();
+        renderNodes(nodes);
+        const up = nodes.filter(n => n.ok).length;
+        document.getElementById('overall-status').textContent = 
+            up === 4 ? `All ${up}/4 Up` : `${up}/4 Up`;
+        document.getElementById('updated').textContent = 
+            `Last updated: ${new Date().toLocaleTimeString()}`;
+    } catch(e) { console.error(e); }
+}
+
+function renderNodes(nodes) {
+    const grid = document.getElementById('nodes-grid');
+    grid.innerHTML = nodes.map(n => `
+        <div class="node-card ${n.ok ? 'up' : 'down'}">
+            <div class="node-header">
+                <span class="node-name"><span class="status-dot ${n.ok?'up':'down'}"></span> ${NODE_NAMES[n.node_id]||n.node_id}</span>
+            </div>
+            <div class="location">📍 ${n.location || '—'}</div>
+            ${n.ok ? `
+                <div class="metric"><span class="metric-label">Response</span><span class="metric-value">${n.response_ms}ms</span></div>
+                <div class="metric"><span class="metric-label">Version</span><span class="metric-value">${n.version||'—'}</span></div>
+                <div class="metric"><span class="metric-label">DB R/W</span><span class="metric-value">${n.db_rw===1?'✅':'⚠️'}</span></div>
+                <div class="metric"><span class="metric-label">Uptime</span><span class="metric-value">${fmtUptime(n.uptime_s)}</span></div>
+                <div class="uptime-block">⏱️ Current epoch: ${n.tip_age_slots ?? '—'} slots</div>
+            ` : `
+                <div class="metric"><span class="metric-label">Error</span><span class="metric-value" style="color:var(--down)">❌ Offline</span></div>
+                ${n.error ? `<div class="uptime-block">${n.error.substring(0,80)}</div>` : ''}
+            `}
+        </div>
+    `).join('');
+}
+
+async function loadIncidents() {
+    try {
+        const r = await fetch('/api/incidents');
+        const incidents = await r.json();
+        const list = document.getElementById('incident-list');
+        if (!incidents.length) {
+            list.innerHTML = '<li class="no-incidents">✅ No incidents in the last 50 events</li>';
+            return;
+        }
+        list.innerHTML = incidents.map(i => `
+            <li>
+                <span class="incident-time">${new Date(i.timestamp).toLocaleString()}</span>
+                <span class="incident-type ${i.event_type.toLowerCase()}">${i.event_type}</span>
+                <span>${i.node_id}: ${i.description}</span>
+            </li>
+        `).join('');
+    } catch(e) { console.error(e); }
+}
+
+async function loadHistory() {
+    try {
+        const allData = {};
+        for (const node of ['node1','node2','node3','node4']) {
+            const r = await fetch(`/api/history/${node}`);
+            allData[node] = await r.json();
+        }
+        renderChart(allData);
+    } catch(e) { console.error(e); }
+}
+
+function renderChart(allData) {
+    const container = document.getElementById('response-chart');
+    const maxBars = 48; // 24h / 30min intervals
+    let html = '<div class="chart-placeholder">';
+    
+    for (const nodeId of ['node1','node2','node3','node4']) {
+        const data = allData[nodeId] || [];
+        const step = Math.max(1, Math.floor(data.length / maxBars));
+        const sampled = data.filter((_, i) => i % step === 0).slice(-maxBars);
+        
+        html += `<div style="flex:1;display:flex;align-items:flex-end;gap:1px">`;
+        sampled.forEach(d => {
+            const cls = d.ok ? colorForMs(d.response_ms) : 'down';
+            const h = d.ok ? Math.max(4, Math.min(100, d.response_ms / 50)) : 4;
+            html += `<div class="bar ${cls}" style="height:${h}px" title="${d.timestamp} ${d.response_ms}ms ${d.ok?'up':'down'}"></div>`;
+        });
+        html += `</div>`;
+    }
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+// Refresh every 30 seconds
+loadStatus();
+loadIncidents();
+loadHistory();
+setInterval(loadStatus, 30000);
+setInterval(loadIncidents, 60000);
+</script>
+</body>
+</html>
