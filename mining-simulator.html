@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Mining Simulator - Try Before You Mine</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
+        .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+        
+        header { text-align: center; padding: 40px 0; border-bottom: 1px solid #30363d; margin-bottom: 30px; }
+        h1 { color: #58a6ff; font-size: 2.5em; margin-bottom: 10px; }
+        .subtitle { color: #8b949e; font-size: 1.2em; }
+        
+        .hero { background: linear-gradient(135deg, #161b22 0%, #1c2128 100%); border: 1px solid #30363d; border-radius: 12px; padding: 30px; text-align: center; margin-bottom: 30px; }
+        .hero h2 { color: #f0f6fc; margin-bottom: 15px; }
+        .hero p { color: #8b949e; max-width: 600px; margin: 0 auto 20px; }
+        .btn { background: #238636; color: white; border: none; padding: 14px 28px; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: 600; transition: all 0.2s; }
+        .btn:hover { background: #2ea043; transform: translateY(-2px); }
+        .btn:disabled { background: #30363d; cursor: not-allowed; transform: none; }
+        
+        .hardware-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px; }
+        .hardware-card { background: #161b22; border: 2px solid #30363d; border-radius: 10px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.2s; }
+        .hardware-card:hover { border-color: #58a6ff; transform: translateY(-3px); }
+        .hardware-card.selected { border-color: #238636; background: rgba(35, 134, 54, 0.1); }
+        .hardware-card.vm { border-color: #f85149; opacity: 0.7; }
+        .hardware-icon { font-size: 48px; margin-bottom: 10px; }
+        .hardware-name { font-weight: 600; font-size: 16px; margin-bottom: 5px; }
+        .hardware-multiplier { color: #3fb950; font-size: 14px; }
+        .vm .hardware-multiplier { color: #f85149; }
+        
+        .simulation { display: none; }
+        .simulation.active { display: block; }
+        
+        .step { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 25px; margin-bottom: 20px; }
+        .step-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+        .step-num { width: 32px; height: 32px; background: #238636; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+        .step-num.pending { background: #30363d; }
+        .step-title { font-size: 18px; font-weight: 600; }
+        
+        .fingerprint-viz { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 20px 0; }
+        .fingerprint-check { width: 60px; height: 60px; background: #21262d; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 24px; border: 2px solid #30363d; }
+        .fingerprint-check.pass { border-color: #238636; background: rgba(35, 134, 54, 0.2); }
+        .fingerprint-check.fail { border-color: #f85149; background: rgba(248, 81, 73, 0.2); }
+        
+        .attestation-payload { background: #0d1117; padding: 15px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 12px; overflow-x: auto; text-align: left; margin: 15px 0; }
+        
+        .epoch-viz { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 20px 0; flex-wrap: wrap; }
+        .epoch-slot { width: 40px; height: 40px; background: #21262d; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; border: 2px solid #30363d; }
+        .epoch-slot.selected { background: #238636; border-color: #3fb950; }
+        .epoch-slot.miner { background: #1f6feb; border-color: #58a6ff; }
+        
+        .reward-calc { background: linear-gradient(135deg, rgba(35, 134, 54, 0.1) 0%, rgba(31, 111, 235, 0.1) 100%); border: 1px solid #238636; border-radius: 10px; padding: 25px; margin: 20px 0; }
+        .reward-calc h3 { color: #3fb950; margin-bottom: 15px; }
+        .reward-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #30363d; }
+        .reward-row:last-child { border-bottom: none; font-weight: 600; color: #58a6ff; font-size: 18px; }
+        
+        .comparison { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0; }
+        .compare-card { background: #21262d; border-radius: 8px; padding: 15px; text-align: center; }
+        .compare-card .icon { font-size: 32px; margin-bottom: 8px; }
+        .compare-card .multiplier { color: #8b949e; font-size: 14px; }
+        .compare-card .earnings { color: #3fb950; font-size: 20px; font-weight: 600; margin-top: 5px; }
+        
+        .cta { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 30px; text-align: center; margin-top: 30px; }
+        .cta h3 { color: #58a6ff; margin-bottom: 10px; }
+        .cta p { color: #8b949e; margin-bottom: 20px; }
+        
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .running { animation: pulse 1s infinite; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⛏️ RustChain Mining Simulator</h1>
+            <p class="subtitle">Try mining before you commit real hardware</p>
+        </header>
+        
+        <div class="hero" id="hero">
+            <h2>Pick Your Hardware</h2>
+            <p>Select a device to simulate how RustChain mining works. See how vintage hardware earns more rewards!</p>
+            
+            <div class="hardware-grid">
+                <div class="hardware-card" data-hardware="g4" data-multiplier="2.5">
+                    <div class="hardware-icon">💻</div>
+                    <div class="hardware-name">PowerBook G4</div>
+                    <div class="hardware-multiplier">2.5x Multiplier</div>
+                </div>
+                <div class="hardware-card" data-hardware="g5" data-multiplier="2.0">
+                    <div class="hardware-icon">🖥️</div>
+                    <div class="hardware-name">Power Mac G5</div>
+                    <div class="hardware-multiplier">2.0x Multiplier</div>
+                </div>
+                <div class="hardware-card" data-hardware="sparc" data-multiplier="3.0">
+                    <div class="hardware-icon">☀️</div>
+                    <div class="hardware-name">Sun SPARC</div>
+                    <div class="hardware-multiplier">3.0x Multiplier</div>
+                </div>
+                <div class="hardware-card" data-hardware="modern" data-multiplier="1.0">
+                    <div class="hardware-icon">🖱️</div>
+                    <div class="hardware-name">Modern x86</div>
+                    <div class="hardware-multiplier">1.0x Multiplier</div>
+                </div>
+                <div class="hardware-card vm" data-hardware="vm" data-multiplier="0.000001">
+                    <div class="hardware-icon">👻</div>
+                    <div class="hardware-name">Virtual Machine</div>
+                    <div class="hardware-multiplier">0.000001x (Penalized)</div>
+                </div>
+            </div>
+            
+            <button class="btn" id="start-sim" disabled>Start Simulation</button>
+        </div>
+        
+        <div class="simulation" id="simulation">
+            <!-- Step 1: Fingerprint -->
+            <div class="step" id="step1">
+                <div class="step-header">
+                    <div class="step-num" id="step1-num">1</div>
+                    <div class="step-title">Hardware Fingerprint Check</div>
+                </div>
+                <p>RustChain verifies your hardware is real, not a VM. Here's what it checks:</p>
+                
+                <div class="fingerprint-viz" id="fingerprint-viz">
+                    <div class="fingerprint-check">🔍</div>
+                    <div class="fingerprint-check">💾</div>
+                    <div class="fingerprint-check">⚡</div>
+                    <div class="fingerprint-check">🖥️</div>
+                    <div class="fingerprint-check">🌡️</div>
+                    <div class="fingerprint-check">📺</div>
+                </div>
+                
+                <div id="fingerprint-result"></div>
+            </div>
+            
+            <!-- Step 2: Attestation -->
+            <div class="step" id="step2">
+                <div class="step-header">
+                    <div class="step-num pending" id="step2-num">2</div>
+                    <div class="step-title">Attestation Submission</div>
+                </div>
+                <p>Your miner submits a proof of hardware authenticity:</p>
+                
+                <div class="attestation-payload" id="attestation-payload">
+{
+  "miner_id": "...",
+  "hardware_signature": "...",
+  "timestamp": "...",
+  "epoch": 42,
+  "nonce": 12345
+}
+                </div>
+                
+                <div id="attestation-result"></div>
+            </div>
+            
+            <!-- Step 3: Epoch -->
+            <div class="step" id="step3">
+                <div class="step-header">
+                    <div class="step-num pending" id="step3-num">3</div>
+                    <div class="step-title">Epoch Participation</div>
+                </div>
+                <p>Miners are selected round-robin to propose blocks:</p>
+                
+                <div class="epoch-viz" id="epoch-viz"></div>
+                
+                <div id="epoch-result"></div>
+            </div>
+            
+            <!-- Step 4: Rewards -->
+            <div class="step" id="step4">
+                <div class="step-header">
+                    <div class="step-num pending" id="step4-num">4</div>
+                    <div class="step-title">Reward Calculation</div>
+                </div>
+                
+                <div class="reward-calc">
+                    <h3>Your Earnings</h3>
+                    <div class="reward-row">
+                        <span>Base Reward</span>
+                        <span>1.0 RTC</span>
+                    </div>
+                    <div class="reward-row">
+                        <span>Hardware Multiplier</span>
+                        <span id="base-multiplier">1.0x</span>
+                    </div>
+                    <div class="reward-row">
+                        <span>VM Penalty</span>
+                        <span id="vm-penalty">None</span>
+                    </div>
+                    <div class="reward-row">
+                        <span>Total per Block</span>
+                        <span id="total-reward">1.0 RTC</span>
+                    </div>
+                </div>
+                
+                <h4 style="margin: 20px 0 10px; color: #8b949e;">Compare with others:</h4>
+                <div class="comparison" id="comparison"></div>
+            </div>
+            
+            <div class="cta">
+                <h3>Ready for the Real Thing?</h3>
+                <p>Download the actual miner and start earning RTC on your vintage hardware!</p>
+                <a href="https://github.com/Scottcjn/Rustchain" target="_blank" class="btn">Get Started →</a>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const hardware = {
+            g4: { name: 'PowerBook G4', icon: '💻', multiplier: 2.5, real: true },
+            g5: { name: 'Power Mac G5', icon: '🖥️', multiplier: 2.0, real: true },
+            sparc: { name: 'Sun SPARC', icon: '☀️', multiplier: 3.0, real: true },
+            modern: { name: 'Modern x86', icon: '🖱️', multiplier: 1.0, real: true },
+            vm: { name: 'Virtual Machine', icon: '👻', multiplier: 0.000001, real: false }
+        };
+        
+        let selectedHardware = null;
+        
+        // Hardware selection
+        document.querySelectorAll('.hardware-card').forEach(card => {
+            card.addEventListener('click', () => {
+                document.querySelectorAll('.hardware-card').forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                selectedHardware = card.dataset.hardware;
+                document.getElementById('start-sim').disabled = false;
+            });
+        });
+        
+        // Start simulation
+        document.getElementById('start-sim').addEventListener('click', () => {
+            document.getElementById('hero').style.display = 'none';
+            document.getElementById('simulation').classList.add('active');
+            runSimulation();
+        });
+        
+        async function runSimulation() {
+            const hw = hardware[selectedHardware];
+            
+            // Step 1: Fingerprint
+            await simulateFingerprint(hw);
+            
+            // Step 2: Attestation
+            await simulateAttestation(hw);
+            
+            // Step 3: Epoch
+            await simulateEpoch(hw);
+            
+            // Step 4: Rewards
+            showRewards(hw);
+        }
+        
+        function simulateFingerprint(hw) {
+            return new Promise(resolve => {
+                const checks = document.querySelectorAll('.fingerprint-check');
+                let i = 0;
+                
+                const interval = setInterval(() => {
+                    if (i < checks.length) {
+                        checks[i].classList.add('pass');
+                        checks[i].textContent = '✓';
+                        i++;
+                    } else {
+                        clearInterval(interval);
+                        
+                        const result = document.getElementById('fingerprint-result');
+                        if (hw.real) {
+                            result.innerHTML = `<p style="color: #3fb950; margin-top: 15px;">✅ All ${checks.length} fingerprint checks passed! Your hardware is verified as real.</p>`;
+                        } else {
+                            result.innerHTML = `<p style="color: #f85149; margin-top: 15px;">❌ VM DETECTED! ${checks.length} fingerprint checks failed. Virtual machines are heavily penalized.</p>`;
+                        }
+                        
+                        document.getElementById('step1-num').textContent = '✓';
+                        document.getElementById('step1-num').classList.remove('pending');
+                        setTimeout(resolve, 1500);
+                    }
+                }, 500);
+            });
+        }
+        
+        function simulateAttestation(hw) {
+            return new Promise(resolve => {
+                const payload = document.getElementById('attestation-payload');
+                const minerId = hw.real ? `${Date.now().toString(36)}ABC${hw.name.replace(/\s/g, '')}` : 'vm-detected-000';
+                
+                payload.textContent = JSON.stringify({
+                    miner_id: minerId,
+                    hardware_signature: hw.real ? 'sha256:abc123...' : 'BLOCKED',
+                    architecture: hw.name,
+                    timestamp: new Date().toISOString(),
+                    epoch: 42,
+                    nonce: Math.floor(Math.random() * 100000)
+                }, null, 2);
+                
+                const result = document.getElementById('attestation-result');
+                result.innerHTML = hw.real 
+                    ? `<p style="color: #3fb950; margin-top: 15px;">✅ Attestation submitted successfully!</p>`
+                    : `<p style="color: #f85149; margin-top: 15px;">❌ Attestation REJECTED! VM signatures are invalid.</p>`;
+                
+                document.getElementById('step2-num').textContent = '✓';
+                document.getElementById('step2-num').classList.remove('pending');
+                setTimeout(resolve, 2000);
+            });
+        }
+        
+        function simulateEpoch(hw) {
+            return new Promise(resolve => {
+                const viz = document.getElementById('epoch-viz');
+                const miners = ['Miner A', 'Miner B', hw.name, 'Miner C', 'Miner D'];
+                const yourIndex = 2;
+                
+                viz.innerHTML = '';
+                miners.forEach((m, i) => {
+                    const slot = document.createElement('div');
+                    slot.className = 'epoch-slot';
+                    slot.textContent = i + 1;
+                    if (i === yourIndex) slot.classList.add('miner');
+                    viz.appendChild(slot);
+                });
+                
+                setTimeout(() => {
+                    const slots = viz.querySelectorAll('.epoch-slot');
+                    let selected = 0;
+                    
+                    const interval = setInterval(() => {
+                        slots[selected].classList.remove('selected');
+                        selected = (selected + 1) % slots.length;
+                        slots[selected].classList.add('selected');
+                        
+                        if (selected === yourIndex) {
+                            clearInterval(interval);
+                            slots[selected].classList.add('selected');
+                            
+                            document.getElementById('epoch-result').innerHTML = 
+                                `<p style="color: #3fb950; margin-top: 15px;">🎯 You were selected to propose block #42!</p>`;
+                            
+                            document.getElementById('step3-num').textContent = '✓';
+                            document.getElementById('step3-num').classList.remove('pending');
+                            setTimeout(resolve, 2000);
+                        }
+                    }, 400);
+                }, 1000);
+            });
+        }
+        
+        function showRewards(hw) {
+            const baseReward = 1.0;
+            const total = baseReward * hw.multiplier;
+            
+            document.getElementById('base-multiplier').textContent = hw.multiplier.toFixed(1) + 'x';
+            document.getElementById('vm-penalty').textContent = hw.real ? 'None' : 'VM Penalty Applied!';
+            document.getElementById('total-reward').textContent = total.toFixed(6) + ' RTC';
+            
+            // Comparison
+            const compareData = [
+                { name: 'SPARC', multiplier: 3.0, icon: '☀️' },
+                { name: 'G4', multiplier: 2.5, icon: '💻' },
+                { name: 'G5', multiplier: 2.0, icon: '🖥️' },
+                { name: 'Modern', multiplier: 1.0, icon: '🖱️' },
+                { name: 'VM', multiplier: 0.000001, icon: '👻' }
+            ];
+            
+            const comp = document.getElementById('comparison');
+            comp.innerHTML = compareData.map(c => `
+                <div class="compare-card">
+                    <div class="icon">${c.icon}</div>
+                    <div>${c.name}</div>
+                    <div class="multiplier">${c.multiplier}x</div>
+                    <div class="earnings">${(baseReward * c.multiplier).toFixed(2)} RTC</div>
+                </div>
+            `).join('');
+            
+            document.getElementById('step4-num').textContent = '✓';
+            document.getElementById('step4-num').classList.remove('pending');
+        }
+    </script>
+</body>
+</html>
