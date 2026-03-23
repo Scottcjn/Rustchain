@@ -30,6 +30,16 @@ def _init_attestation_db(db_path: Path) -> None:
             miner_id TEXT PRIMARY KEY,
             pubkey_hex TEXT
         );
+        CREATE TABLE nonces (
+            nonce TEXT PRIMARY KEY,
+            expires_at INTEGER
+        );
+        CREATE TABLE used_nonces (
+            nonce TEXT PRIMARY KEY,
+            miner_id TEXT NOT NULL,
+            first_seen INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL
+        );
         CREATE TABLE tickets (
             ticket_id TEXT PRIMARY KEY,
             expires_at INTEGER NOT NULL,
@@ -99,6 +109,13 @@ def _base_payload(miner: str = "review-miner") -> dict:
     }
 
 
+def _attach_live_challenge(test_client, payload: dict) -> dict:
+    response = test_client.post("/attest/challenge", json={})
+    assert response.status_code == 200
+    payload["report"]["nonce"] = response.get_json()["nonce"]
+    return payload
+
+
 @pytest.fixture
 def client(monkeypatch):
     local_tmp_dir = Path(__file__).parent / ".tmp_attestation"
@@ -141,7 +158,7 @@ def test_wallet_review_hold_returns_coaching_response(client):
         )
         conn.commit()
 
-    response = test_client.post("/attest/submit", json=_base_payload())
+    response = test_client.post("/attest/submit", json=_attach_live_challenge(test_client, _base_payload()))
 
     assert response.status_code == 409
     body = response.get_json()
@@ -169,7 +186,7 @@ def test_wallet_review_release_restores_attestation_flow(client):
     assert response.status_code == 200
     assert response.get_json()["status"] == "released"
 
-    response = test_client.post("/attest/submit", json=_base_payload())
+    response = test_client.post("/attest/submit", json=_attach_live_challenge(test_client, _base_payload()))
     assert response.status_code == 200
     assert response.get_json()["ok"] is True
 
@@ -187,7 +204,7 @@ def test_wallet_review_escalation_hard_blocks_attestation(client):
         )
         conn.commit()
 
-    response = test_client.post("/attest/submit", json=_base_payload())
+    response = test_client.post("/attest/submit", json=_attach_live_challenge(test_client, _base_payload()))
 
     assert response.status_code == 403
     body = response.get_json()

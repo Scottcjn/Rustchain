@@ -27,6 +27,7 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
     def setUpClass(cls):
         cls._tmp = tempfile.TemporaryDirectory()
         cls._prev_admin_key = os.environ.get("RC_ADMIN_KEY")
+        cls._prev_db_path = os.environ.get("RUSTCHAIN_DB_PATH")
         os.environ["RC_ADMIN_KEY"] = "0123456789abcdef0123456789abcdef"
 
         if NODE_DIR not in sys.path:
@@ -38,6 +39,10 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
             os.environ.pop("RC_ADMIN_KEY", None)
         else:
             os.environ["RC_ADMIN_KEY"] = cls._prev_admin_key
+        if cls._prev_db_path is None:
+            os.environ.pop("RUSTCHAIN_DB_PATH", None)
+        else:
+            os.environ["RUSTCHAIN_DB_PATH"] = cls._prev_db_path
         cls._tmp.cleanup()
 
     def _db_path(self, name: str) -> str:
@@ -121,6 +126,50 @@ class TestAttestSubmitChallengeBinding(unittest.TestCase):
         with sqlite3.connect(db_path) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM used_nonces").fetchone()[0], 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM nonces").fetchone()[0], 0)
+
+    def test_client_timestamp_cannot_bypass_challenge_validation(self):
+        mod, db_path = self._load_module("rustchain_attest_node_bypass", "bypass.db")
+
+        payload = {
+            "miner": "RTC_REPLAY_POC_MINER",
+            "report": {
+                "nonce": "b" * 64,
+                "commitment": "deadbeef",
+                "server_time": 1700000000,
+            },
+            "device": {"family": "x86_64", "arch": "default", "model": "poc-box", "cores": 4},
+            "signals": {"hostname": "poc-host", "macs": []},
+            "fingerprint": {},
+        }
+
+        status, body = self._submit(mod, payload)
+
+        self.assertEqual(status, 409)
+        self.assertEqual(body["code"], "CHALLENGE_INVALID")
+
+        with sqlite3.connect(db_path) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM nonces").fetchone()[0], 0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM used_nonces").fetchone()[0], 0)
+
+    def test_submit_rejects_arbitrary_nonce_without_server_challenge(self):
+        mod, db_path = self._load_module("rustchain_attest_node_plain", "plain.db")
+
+        payload = {
+            "miner": "RTC_REPLAY_POC_MINER",
+            "report": {"nonce": "legacy-local-nonce", "commitment": "deadbeef"},
+            "device": {"family": "x86_64", "arch": "default", "model": "poc-box", "cores": 4},
+            "signals": {"hostname": "poc-host", "macs": []},
+            "fingerprint": {},
+        }
+
+        status, body = self._submit(mod, payload)
+
+        self.assertEqual(status, 409)
+        self.assertEqual(body["code"], "CHALLENGE_INVALID")
+
+        with sqlite3.connect(db_path) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM nonces").fetchone()[0], 0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM used_nonces").fetchone()[0], 0)
 
 
 if __name__ == "__main__":

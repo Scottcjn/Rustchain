@@ -326,10 +326,6 @@ def _normalize_attestation_report(report):
     return normalized
 
 
-ATTEST_NONCE_SKEW_SECONDS = int(os.getenv("ATTEST_NONCE_SKEW_SECONDS", "60"))
-_ATTEST_CHALLENGE_NONCE_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
-
-
 def attest_ensure_tables(conn):
     """Create the attestation nonce tables expected by replay protection."""
     conn.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
@@ -355,29 +351,8 @@ def attest_cleanup_expired(conn, now_ts: Optional[int] = None):
     conn.commit()
 
 
-def extract_attestation_timestamp(data: dict, report: dict, nonce: Optional[str]) -> Optional[int]:
-    """Extract an optional attestation timestamp from request payload fields."""
-    for source in (report or {}, data or {}):
-        for field_name in ("nonce_ts", "nonce_timestamp", "timestamp", "server_time"):
-            raw_value = source.get(field_name)
-            if isinstance(raw_value, bool):
-                continue
-            if isinstance(raw_value, (int, float)):
-                if math.isfinite(raw_value):
-                    return int(raw_value)
-                continue
-            if isinstance(raw_value, str) and raw_value.strip().isdigit():
-                return int(raw_value.strip())
-    return None
-
-
-def _attest_nonce_requires_challenge(nonce: str, nonce_ts: Optional[int]) -> bool:
-    """Current challenge endpoint emits 64-hex nonces with no embedded timestamp."""
-    return nonce_ts is None and bool(_ATTEST_CHALLENGE_NONCE_RE.fullmatch(nonce))
-
-
 def attest_validate_challenge(conn, nonce: str, now_ts: Optional[int] = None):
-    """Validate and consume a one-time challenge nonce."""
+    """Validate and consume a one-time challenge nonce from the active node store."""
     now_ts = int(time.time()) if now_ts is None else int(now_ts)
     attest_cleanup_expired(conn, now_ts=now_ts)
     row = conn.execute(
@@ -403,10 +378,8 @@ def attest_validate_and_store_nonce(
     miner: str,
     nonce: str,
     now_ts: Optional[int] = None,
-    nonce_ts: Optional[int] = None,
-    skew_seconds: int = ATTEST_NONCE_SKEW_SECONDS,
 ):
-    """Reject replayed or stale attestation nonces and persist accepted ones."""
+    """Require a live server-issued challenge and persist accepted attestation nonces."""
     now_ts = int(time.time()) if now_ts is None else int(now_ts)
     nonce = _attest_text(nonce)
     miner = _attest_valid_miner(miner) or _attest_text(miner) or ""
@@ -421,15 +394,11 @@ def attest_validate_and_store_nonce(
     if replay_row:
         return False, "nonce_replay", None
 
-    challenge_expires_at = None
-    if _attest_nonce_requires_challenge(nonce, nonce_ts):
-        ok, err, challenge_expires_at = attest_validate_challenge(conn, nonce, now_ts=now_ts)
-        if not ok:
-            return False, err, None
-    elif nonce_ts is not None and abs(int(nonce_ts) - now_ts) > max(int(skew_seconds), 0):
-        return False, "nonce_stale", None
+    ok, err, challenge_expires_at = attest_validate_challenge(conn, nonce, now_ts=now_ts)
+    if not ok:
+        return False, err, None
 
-    expires_at = challenge_expires_at or (now_ts + max(int(skew_seconds), 1))
+    expires_at = int(challenge_expires_at)
     conn.execute(
         "INSERT INTO used_nonces (nonce, miner_id, first_seen, expires_at) VALUES (?, ?, ?, ?)",
         (nonce, miner, now_ts, expires_at),
@@ -2433,7 +2402,11 @@ def miner_dashboard_page():
 
 @app.route('/attest/challenge', methods=['POST'])
 def get_challenge():
-    """Issue challenge for hardware attestation"""
+    """Issue challenge for hardware attestation.
+
+    Deployments with multiple attestation backends should keep submit traffic
+    sticky to the issuing node or share the nonce store across nodes.
+    """
     nonce = secrets.token_hex(32)
     expires = int(time.time()) + 300  # 5 minutes
 
@@ -2581,14 +2554,12 @@ def _submit_attestation_impl():
             "code": "MISSING_NONCE"
         }), 400
 
-    nonce_ts = extract_attestation_timestamp(data, report, nonce)
     with sqlite3.connect(DB_PATH) as nonce_conn:
         nonce_ok, nonce_err, _ = attest_validate_and_store_nonce(
             nonce_conn,
             miner=miner,
             nonce=nonce,
             now_ts=int(time.time()),
-            nonce_ts=nonce_ts,
         )
     if not nonce_ok:
         nonce_messages = {
@@ -2601,11 +2572,6 @@ def _submit_attestation_impl():
                 "nonce_replay",
                 "Attestation nonce has already been used",
                 "NONCE_REPLAY",
-            ),
-            "nonce_stale": (
-                "nonce_stale",
-                "Attestation nonce timestamp is outside the allowed skew window",
-                "NONCE_STALE",
             ),
         }
         error_name, message, code = nonce_messages.get(
