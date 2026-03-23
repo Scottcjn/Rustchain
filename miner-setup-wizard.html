@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Miner Setup Wizard</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 10px; color: #58a6ff; }
+        .subtitle { text-align: center; color: #8b949e; margin-bottom: 30px; }
+        .step { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 15px; }
+        .step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+        .step-number { background: #238636; color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; }
+        .step-number.pending { background: #30363d; }
+        .step-number.done { background: #238636; }
+        .step-title { font-size: 18px; font-weight: 600; }
+        .step-content { padding-left: 38px; }
+        .btn { background: #238636; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; margin-right: 10px; }
+        .btn:hover { background: #2ea043; }
+        .btn:disabled { background: #30363d; cursor: not-allowed; }
+        .code { background: #0d1117; padding: 15px; border-radius: 6px; font-family: 'Courier New', monospace; font-size: 13px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+        .result { margin-top: 10px; padding: 10px; border-radius: 6px; }
+        .result.success { background: rgba(35, 134, 54, 0.2); border: 1px solid #238636; }
+        .result.error { background: rgba(248, 81, 73, 0.2); border: 1px solid #f85149; }
+        .result.info { background: rgba(56, 139, 253, 0.2); border: 1px solid #238636; }
+        input, select { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 10px; border-radius: 6px; width: 100%; font-size: 14px; margin-bottom: 10px; }
+        .progress-bar { background: #30363d; height: 8px; border-radius: 4px; margin: 20px 0; overflow: hidden; }
+        .progress-fill { background: linear-gradient(90deg, #238636, #2ea043); height: 100%; transition: width 0.3s; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin-right: 5px; }
+        .badge.success { background: rgba(35, 134, 54, 0.3); color: #3fb950; }
+        .badge.warning { background: rgba(187, 128, 9, 0.3); color: #d29922; }
+        .hidden { display: none; }
+        .copy-btn { background: #30363d; color: #c9d1d9; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .copy-btn:hover { background: #484f58; }
+        .wallet-display { background: #0d1117; padding: 15px; border-radius: 6px; margin-top: 10px; font-family: monospace; word-break: break-all; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⛏️ RustChain Miner Setup Wizard</h1>
+        <p class="subtitle">Follow the steps below to start mining RTC on your vintage hardware</p>
+        
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress" style="width: 0%"></div>
+        </div>
+
+        <!-- Step 1: Platform Detection -->
+        <div class="step" id="step1">
+            <div class="step-header">
+                <div class="step-number" id="num1">1</div>
+                <div class="step-title">Platform Detection</div>
+            </div>
+            <div class="step-content">
+                <p>Detecting your system...</p>
+                <div id="platform-result" class="result info hidden"></div>
+            </div>
+        </div>
+
+        <!-- Step 2: Python Check -->
+        <div class="step" id="step2">
+            <div class="step-header">
+                <div class="step-number pending" id="num2">2</div>
+                <div class="step-title">Python Installation</div>
+            </div>
+            <div class="step-content">
+                <div id="python-check">
+                    <p>Checking for Python...</p>
+                    <div id="python-result" class="result hidden"></div>
+                </div>
+                <div id="python-install" class="hidden">
+                    <p>Python is required. Install from <a href="https://python.org" style="color: #58a6ff;">python.org</a> or use your package manager:</p>
+                    <div class="code"># macOS
+brew install python3
+
+# Debian/Ubuntu
+sudo apt install python3 python3-pip
+
+# Fedora
+sudo dnf install python3 python3-pip</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Wallet Setup -->
+        <div class="step" id="step3">
+            <div class="step-header">
+                <div class="step-number pending" id="num3">3</div>
+                <div class="step-title">Wallet Setup</div>
+            </div>
+            <div class="step-content">
+                <p>Create your RTC wallet address:</p>
+                <div class="code">pip install clawrtc
+clawrtc wallet create</div>
+                <p style="margin-top: 10px;">Or use an existing wallet address:</p>
+                <input type="text" id="wallet-address" placeholder="Enter your RTC wallet address (starts with RTC...)">
+                <button class="btn" onclick="saveWallet()">Save Wallet</button>
+                <div id="wallet-result" class="result hidden"></div>
+            </div>
+        </div>
+
+        <!-- Step 4: Install Miner -->
+        <div class="step" id="step4">
+            <div class="step-header">
+                <div class="step-number pending" id="num4">4</div>
+                <div class="step-title">Install Miner</div>
+            </div>
+            <div class="step-content">
+                <p>Run these commands to install and configure the miner:</p>
+                <div class="code" id="install-commands">
+# Install clawrtc
+pip install clawrtc
+
+# Install miner with your wallet
+clawrtc install --wallet YOUR_WALLET_ADDRESS
+
+# Start mining
+clawrtc start</div>
+                <button class="copy-btn" onclick="copyToClipboard('install-commands')">Copy</button>
+            </div>
+        </div>
+
+        <!-- Step 5: Test Connection -->
+        <div class="step" id="step5">
+            <div class="step-header">
+                <div class="step-number pending" id="num5">5</div>
+                <div class="step-title">Test Connection</div>
+            </div>
+            <div class="step-content">
+                <p>Verify your miner is connected to the network:</p>
+                <div class="code">curl -s https://50.28.86.131/api/miners | grep YOUR_WALLET_ADDRESS</div>
+                <p style="margin-top: 10px;">Or check the network status:</p>
+                <div class="code">curl -s https://50.28.86.131/health</div>
+                <button class="btn" onclick="testConnection()" style="margin-top: 10px;">Test Now</button>
+                <div id="connection-result" class="result hidden"></div>
+            </div>
+        </div>
+
+        <!-- Step 6: View Stats -->
+        <div class="step" id="step6">
+            <div class="step-header">
+                <div class="step-number pending" id="num6">6</div>
+                <div class="step-title">View Your Miner</div>
+            </div>
+            <div class="step-content">
+                <p>Your miner should appear on the network. View all miners:</p>
+                <div class="code"><a href="https://50.28.86.131/api/miners" style="color: #58a6ff;">https://50.28.86.131/api/miners</a></div>
+                <p style="margin-top: 10px;">Live Explorer:</p>
+                <div class="code"><a href="https://explorer.rustchain.org" style="color: #58a6ff;">https://explorer.rustchain.org</a></div>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px; padding: 20px; background: #161b22; border-radius: 8px;">
+            <h3 style="color: #58a6ff;">🎉 Setup Complete!</h3>
+            <p>Your miner is now running. Earn RTC tokens based on your hardware's antiquity!</p>
+            <p style="margin-top: 10px; color: #8b949e;">
+                <span class="badge success">G4/G5 PowerPC</span>
+                <span class="badge success">SPARC</span>
+                <span class="badge success">68K Mac</span>
+                <span class="badge warning">Modern Hardware (1x)</span>
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Platform detection
+        const platform = {
+            os: navigator.platform,
+            userAgent: navigator.userAgent,
+            arch: navigator.platform.toLowerCase()
+        };
+
+        let walletAddress = '';
+        const stepsCompleted = new Set();
+
+        function detectPlatform() {
+            let os = 'Unknown';
+            let arch = 'Unknown';
+            
+            const ua = navigator.userAgent.toLowerCase();
+            if (ua.includes('mac')) { os = 'macOS'; }
+            else if (ua.includes('linux')) { os = 'Linux'; }
+            else if (ua.includes('win')) { os = 'Windows'; }
+            
+            if (ua.includes('arm') || ua.includes('aarch64')) { arch = 'ARM'; }
+            else if (ua.includes('x64') || ua.includes('x86_64')) { arch = 'x86_64'; }
+            else if (ua.includes('ppc') || ua.includes('powerpc')) { arch = 'PowerPC'; }
+
+            const result = document.getElementById('platform-result');
+            result.classList.remove('hidden', 'success', 'error');
+            result.classList.add('info');
+            result.innerHTML = `
+                <strong>Detected:</strong> ${os} (${arch})<br>
+                <strong>User Agent:</strong> ${navigator.userAgent.substring(0, 50)}...
+            `;
+            completeStep(1);
+        }
+
+        function checkPython() {
+            // Since we can't actually run commands, show instructions
+            const result = document.getElementById('python-result');
+            result.classList.remove('hidden', 'success', 'error');
+            result.classList.add('info');
+            result.innerHTML = `
+                <strong>Python Check:</strong> Run <code>python3 --version</code> in your terminal.<br>
+                Requires Python 3.7+.<br><br>
+                If you see a version number, click "Python Ready" below.
+            `;
+            
+            const btn = document.createElement('button');
+            btn.className = 'btn';
+            btn.textContent = 'Python Ready';
+            btn.onclick = () => {
+                result.classList.remove('info');
+                result.classList.add('success');
+                result.innerHTML = '<strong>✓ Python is installed!</strong>';
+                completeStep(2);
+            };
+            result.appendChild(document.createElement('br'));
+            result.appendChild(document.createElement('br'));
+            result.appendChild(btn);
+        }
+
+        function saveWallet() {
+            const input = document.getElementById('wallet-address');
+            const addr = input.value.trim();
+            
+            if (!addr) {
+                alert('Please enter a wallet address');
+                return;
+            }
+            
+            walletAddress = addr;
+            const result = document.getElementById('wallet-result');
+            result.classList.remove('hidden', 'success', 'error');
+            result.classList.add('success');
+            result.innerHTML = `<strong>✓ Wallet saved:</strong> <span class="wallet-display">${addr}</span>`;
+            
+            // Update install commands with wallet
+            const cmds = document.getElementById('install-commands');
+            cmds.textContent = cmds.textContent.replace('YOUR_WALLET_ADDRESS', addr);
+            
+            completeStep(3);
+        }
+
+        async function testConnection() {
+            const result = document.getElementById('connection-result');
+            result.classList.remove('hidden', 'success', 'error');
+            result.classList.add('info');
+            result.innerHTML = 'Testing connection to RustChain network...';
+            
+            try {
+                const response = await fetch('https://50.28.86.131/health', { 
+                    method: 'GET',
+                    mode: 'cors'
+                });
+                const data = await response.json();
+                
+                result.classList.remove('info');
+                result.classList.add('success');
+                result.innerHTML = `
+                    <strong>✓ Network Connected!</strong><br>
+                    Version: ${data.version}<br>
+                    Uptime: ${Math.floor(data.uptime_s / 3600)} hours<br>
+                    Epoch: ${data.epoch || 'N/A'}
+                `;
+                completeStep(5);
+            } catch (e) {
+                result.classList.remove('info');
+                result.classList.add('error');
+                result.innerHTML = `<strong>⚠ Connection failed:</strong> ${e.message}<br>
+                The network may be unreachable. Check your internet connection.`;
+            }
+        }
+
+        function completeStep(stepNum) {
+            if (stepsCompleted.has(stepNum)) return;
+            stepsCompleted.add(stepNum);
+            
+            // Update step number
+            const num = document.getElementById('num' + stepNum);
+            num.classList.remove('pending');
+            num.classList.add('done');
+            num.textContent = '✓';
+            
+            // Update progress
+            const progress = (stepsCompleted.size / 6) * 100;
+            document.getElementById('progress').style.width = progress + '%';
+        }
+
+        function copyToClipboard(elementId) {
+            const text = document.getElementById(elementId).textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Copied to clipboard!');
+            });
+        }
+
+        // Initialize
+        window.onload = function() {
+            detectPlatform();
+            checkPython();
+        };
+    </script>
+</body>
+</html>
