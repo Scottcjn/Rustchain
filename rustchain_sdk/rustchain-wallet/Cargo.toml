@@ -1,0 +1,79 @@
+[package]
+name = "rustchain-wallet"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+authors = ["RustChain Contributors"]
+description = "A robust native Rust wallet for RustChain with CLI tools, key management, and signing capabilities"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Scottcjn/Rustchain"
+keywords = ["rustchain", "wallet", "crypto", "blockchain", "cli"]
+categories = ["cryptography", "command-line-utilities"]
+readme = "README.md"
+documentation = "https://docs.rs/rustchain-wallet"
+homepage = "https://rustchain.org"
+
+[dependencies]
+# Cryptography
+ed25519-dalek = { version = "2.1", features = ["rand_core", "serde"] }
+sha2 = "0.10"
+hex = "0.4"
+bs58 = "0.5"
+aes-gcm = "0.10"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.22"
+
+# CLI
+clap = { version = "4.4", features = ["derive", "env"] }
+rpassword = "7.3"
+
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+reqwest = { version = "0.13", features = ["json", "rustls-tls"], default-features = false }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Secure memory
+zeroize = { version = "1.7", features = ["derive"] }
+secrecy = "0.10"
+
+# Key derivation
+hmac = "0.12"
+pbkdf2 = "0.12"
+
+# Random number generation
+rand = "0.10"
+getrandom = "0.2"
+
+# Filesystem
+dirs = "5.0"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+tempfile = "3.9"
+assert_cmd = "2.0"
+predicates = "3.0"
+
+[[bin]]
+name = "rtc-wallet"
+path = "src/bin/rtc_wallet.rs"
+
+[lib]
+name = "rustchain_wallet"
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

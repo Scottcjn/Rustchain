@@ -1,0 +1,98 @@
+{
+    "benchmark_version": "1.0.0",
+    "timestamp": "2026-03-15T12:00:00Z",
+    "model": "tinyllama_1.1b",
+    "model_file": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+    "system": {
+        "arch": "ppc64le",
+        "os": "Ubuntu 20.04.6 LTS",
+        "kernel": "5.4.0-150-generic",
+        "hostname": "power8-s824"
+    },
+    "config": {
+        "warmup_runs": 2,
+        "bench_runs": 5,
+        "pp_sizes": [128, 512, 1024],
+        "tg_sizes": [32, 128]
+    },
+    "results": [
+        {
+            "build_mode": "stock",
+            "prompt_processing": {
+                "pp128": {"mean": 245.3, "stddev": 8.2, "cv_pct": 3.34},
+                "pp512": {"mean": 198.7, "stddev": 6.1, "cv_pct": 3.07},
+                "pp1024": {"mean": 162.4, "stddev": 5.8, "cv_pct": 3.57}
+            },
+            "token_generation": {
+                "tg32": {"mean": 38.2, "stddev": 1.1, "cv_pct": 2.88},
+                "tg128": {"mean": 35.6, "stddev": 1.4, "cv_pct": 3.93}
+            },
+            "cache_metrics": {
+                "l1_dcache_loads": 4823901234,
+                "l1_dcache_misses": 241195062,
+                "l1_hit_rate_pct": 95.0,
+                "llc_loads": 241195062,
+                "llc_misses": 36179259,
+                "llc_hit_rate_pct": 85.0
+            },
+            "pse_markers": {
+                "noi": 0,
+                "divergence_ratio": 0,
+                "altivec_cycle_share": 0,
+                "memory_coffer_index": 0
+            }
+        },
+        {
+            "build_mode": "pse_mass",
+            "prompt_processing": {
+                "pp128": {"mean": 312.8, "stddev": 9.4, "cv_pct": 3.0},
+                "pp512": {"mean": 268.1, "stddev": 7.5, "cv_pct": 2.8},
+                "pp1024": {"mean": 221.6, "stddev": 8.1, "cv_pct": 3.66}
+            },
+            "token_generation": {
+                "tg32": {"mean": 44.1, "stddev": 1.3, "cv_pct": 2.95},
+                "tg128": {"mean": 41.8, "stddev": 1.6, "cv_pct": 3.83}
+            },
+            "cache_metrics": {
+                "l1_dcache_loads": 4912345678,
+                "l1_dcache_misses": 196493827,
+                "l1_hit_rate_pct": 96.0,
+                "llc_loads": 196493827,
+                "llc_misses": 25544197,
+                "llc_hit_rate_pct": 87.0
+            },
+            "pse_markers": {
+                "noi": 48720,
+                "divergence_ratio": 0.0012,
+                "altivec_cycle_share": 34.2,
+                "memory_coffer_index": 1
+            }
+        },
+        {
+            "build_mode": "pse_coffers",
+            "prompt_processing": {
+                "pp128": {"mean": 341.5, "stddev": 10.2, "cv_pct": 2.99},
+                "pp512": {"mean": 295.3, "stddev": 8.8, "cv_pct": 2.98},
+                "pp1024": {"mean": 248.9, "stddev": 9.3, "cv_pct": 3.74}
+            },
+            "token_generation": {
+                "tg32": {"mean": 46.8, "stddev": 1.2, "cv_pct": 2.56},
+                "tg128": {"mean": 44.2, "stddev": 1.5, "cv_pct": 3.39}
+            },
+            "cache_metrics": {
+                "l1_dcache_loads": 5001234567,
+                "l1_dcache_misses": 175043310,
+                "l1_hit_rate_pct": 96.5,
+                "llc_loads": 175043310,
+                "llc_misses": 19254764,
+                "llc_hit_rate_pct": 89.0
+            },
+            "pse_markers": {
+                "noi": 52340,
+                "divergence_ratio": 0.0018,
+                "altivec_cycle_share": 41.7,
+                "memory_coffer_index": 3
+            }
+        }
+    ]
+}

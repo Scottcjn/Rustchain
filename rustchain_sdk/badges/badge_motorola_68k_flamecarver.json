@@ -1,0 +1,19 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_motorola_68k_flamecarver",
+            "title": "68K Flamecarver",
+            "class": "Legendary",
+            "description": "Awarded for validating a RustChain block on Motorola 68000-series hardware. The same chips that fueled the Amiga, early Macs, and arcade glory \u2014 now reclaim the ledger.",
+            "emotional_resonance": {
+                "state": "electronic memory",
+                "trigger": "Detected Motorola 68000-series validation (68k architecture)",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\ud83e\udde0\ud83d\udd79\ufe0f\ud83d\udd25",
+            "visual_anchor": "Glowing DIP-package 68000 with faint traces of arcade trails and system beeps pulsing in flamefont",
+            "rarity": "Legendary",
+            "soulbound": true
+        }
+    ]
+}

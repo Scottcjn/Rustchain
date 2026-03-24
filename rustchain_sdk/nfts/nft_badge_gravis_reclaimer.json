@@ -1,0 +1,24 @@
+{
+    "nft_id": "badge_gravis_reclaimer",
+    "name": "Gravis Reclaimer",
+    "description": "For running a RustChain node on a system with a Gravis Ultrasound or similar vintage sound hardware.",
+    "image": "ipfs://placeholder_gravis_reclaimer.png",
+    "attributes": [
+        {
+            "trait_type": "Hardware",
+            "value": "Gravis Ultrasound"
+        },
+        {
+            "trait_type": "Flame State",
+            "value": "Waveform Awakened"
+        },
+        {
+            "trait_type": "Rarity",
+            "value": "Rare"
+        },
+        {
+            "trait_type": "Soulbound",
+            "value": "Yes"
+        }
+    ]
+}

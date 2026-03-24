@@ -1,0 +1,38 @@
+# Test artifacts
+*.db
+*.sha256
+*.json
+!test_*.json
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Evidence (keep directory, ignore contents)
+evidence/*
+!evidence/.gitkeep
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Logs
+*.log

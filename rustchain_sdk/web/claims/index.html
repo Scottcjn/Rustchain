@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RustChain Reward Claims | Claim Your RTC Rewards</title>
+  <meta name="description" content="Claim your RustChain mining rewards. Check eligibility, submit claims, and track settlement status for RTC rewards.">
+  <meta name="keywords" content="RustChain, RTC rewards, claim rewards, mining rewards, Proof of Antiquity">
+  <meta name="author" content="Elyan Labs">
+  <meta name="robots" content="index, follow">
+
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://rustchain.org/claims/index.html">
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://rustchain.org/claims/index.html">
+  <meta property="og:title" content="RustChain Reward Claims | Claim Your RTC Rewards">
+  <meta property="og:description" content="Claim your RustChain mining rewards. Check eligibility and track settlement status.">
+  <meta property="og:image" content="https://rustchain.org/elyan_logo.png">
+  <meta property="og:site_name" content="RustChain">
+
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image">
+  <meta property="twitter:url" content="https://rustchain.org/claims/index.html">
+  <meta property="twitter:title" content="RustChain Reward Claims | Claim Your RTC Rewards">
+  <meta property="twitter:description" content="Claim your RustChain mining rewards. Check eligibility and track settlement status.">
+  <meta property="twitter:image" content="https://rustchain.org/elyan_logo.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/claims/claims.css" />
+</head>
+<body>
+  <div class="bg"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="sigil">RC</div>
+      <div>
+        <div class="brand-title">RustChain Reward Claims</div>
+        <div class="brand-sub">Claim your mining rewards securely</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <a class="nav-link" href="/explorer">Explorer</a>
+      <a class="nav-link" href="/museum">Museum</a>
+      <a class="nav-link is-active" href="/claims">Claims</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <div class="hero-left">
+        <h1 class="h1">Claim Your Rewards</h1>
+        <p class="lead">Secure, transparent reward claims for RustChain miners. Check eligibility, submit claims, and track settlement in real-time.</p>
+        <div class="cta-row">
+          <button id="refreshBtn" class="btn">Refresh Status</button>
+          <a class="btn btn-ghost" href="/docs/CLAIMS_GUIDE.md" target="_blank" rel="noopener">Documentation</a>
+        </div>
+      </div>
+      <div class="hero-right">
+        <div class="stat-grid" id="stats">
+          <div class="stat">
+            <div class="stat-label">Total Claimed</div>
+            <div class="stat-value" id="totalClaimed">--</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Pending Claims</div>
+            <div class="stat-value" id="pendingClaims">--</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Settlement Time</div>
+            <div class="stat-value" id="settlementTime">--</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 1: Enter Miner ID -->
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Step 1: Identify Your Miner</div>
+          <div class="panel-sub">Enter your miner ID to check eligibility and view claimable rewards</div>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="form-row">
+          <label for="minerIdInput" class="form-label">Miner ID</label>
+          <div class="input-group">
+            <input 
+              id="minerIdInput" 
+              class="input" 
+              type="text" 
+              placeholder="e.g., n64-scott-unit1"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button id="checkEligibilityBtn" class="btn">Check Eligibility</button>
+          </div>
+          <div class="form-note">Your miner ID is shown in your mining software logs and attestation records.</div>
+        </div>
+        
+        <div id="minerIdError" class="error-message" style="display: none;"></div>
+      </div>
+    </section>
+
+    <!-- Step 2: Eligibility & Epoch Selection -->
+    <section class="panel" id="eligibilityPanel" style="display: none;">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Step 2: Select Epoch to Claim</div>
+          <div class="panel-sub" id="eligibilitySubtitle">Loading eligible epochs...</div>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="eligibilityResult" class="eligibility-card">
+          <!-- Populated dynamically -->
+        </div>
+
+        <div class="form-row" style="margin-top: 1.5rem;">
+          <label for="epochSelect" class="form-label">Select Epoch</label>
+          <select id="epochSelect" class="select">
+            <option value="">-- Select an epoch --</option>
+          </select>
+          <div class="form-note">Only settled epochs with unclaimed rewards are shown.</div>
+        </div>
+
+        <div id="epochError" class="error-message" style="display: none;"></div>
+      </div>
+    </section>
+
+    <!-- Step 3: Wallet Address -->
+    <section class="panel" id="walletPanel" style="display: none;">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Step 3: Confirm Wallet Address</div>
+          <div class="panel-sub">Rewards will be sent to this wallet address</div>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="form-row">
+          <label for="walletAddressInput" class="form-label">RTC Wallet Address</label>
+          <input 
+            id="walletAddressInput" 
+            class="input" 
+            type="text" 
+            placeholder="RTC1..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <div class="form-note">
+            Don't have a wallet? <a href="/wallet" target="_blank" rel="noopener">Create one here</a>.
+          </div>
+        </div>
+
+        <div id="walletError" class="error-message" style="display: none;"></div>
+      </div>
+    </section>
+
+    <!-- Step 4: Submit Claim -->
+    <section class="panel" id="submitPanel" style="display: none;">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Step 4: Submit Claim</div>
+          <div class="panel-sub">Review and submit your claim</div>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="claim-summary" id="claimSummary">
+          <!-- Populated dynamically -->
+        </div>
+
+        <div class="form-row" style="margin-top: 1.5rem;">
+          <div class="checkbox-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="confirmCheckbox" />
+              <span>I confirm that I am the owner of this miner and the wallet address provided.</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="cta-row" style="margin-top: 1.5rem;">
+          <button id="submitClaimBtn" class="btn btn-primary" disabled>Submit Claim</button>
+          <button id="cancelBtn" class="btn btn-ghost">Cancel</button>
+        </div>
+
+        <div id="submitError" class="error-message" style="display: none;"></div>
+        <div id="submitSuccess" class="success-message" style="display: none;"></div>
+      </div>
+    </section>
+
+    <!-- Claim Status Dashboard -->
+    <section class="panel" id="statusPanel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Claim Status</div>
+          <div class="panel-sub">Track your current and past claims</div>
+        </div>
+        <div class="cta-row">
+          <button id="exportHistoryBtn" class="btn btn-ghost">Export CSV</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="currentClaimStatus" class="status-card" style="display: none;">
+          <!-- Current claim status -->
+        </div>
+
+        <div class="table-container">
+          <table class="data-table" id="claimsHistoryTable">
+            <thead>
+              <tr>
+                <th>Claim ID</th>
+                <th>Epoch</th>
+                <th>Status</th>
+                <th>Reward (RTC)</th>
+                <th>Submitted</th>
+                <th>Settled</th>
+              </tr>
+            </thead>
+            <tbody id="claimsHistoryBody">
+              <tr>
+                <td colspan="6" class="empty-state">No claims yet. Check your eligibility to get started.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-content">
+      <div class="footer-left">
+        <div class="footer-logo">RustChain</div>
+        <div class="footer-text">Proof of Antiquity consensus for sustainable blockchain.</div>
+      </div>
+      <div class="footer-links">
+        <a href="/explorer" class="footer-link">Explorer</a>
+        <a href="/museum" class="footer-link">Museum</a>
+        <a href="/docs" class="footer-link">Docs</a>
+        <a href="https://github.com/Scottcjn/RustChain" class="footer-link" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Loading Modal -->
+  <div id="loadingModal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="spinner"></div>
+      <div class="modal-text" id="loadingText">Processing...</div>
+    </div>
+  </div>
+
+  <script src="/claims/claims.js"></script>
+</body>
+</html>

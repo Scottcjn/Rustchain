@@ -1,0 +1,2187 @@
+{
+  "info": {
+    "_postman_id": "rustchain-api-v2.2.1",
+    "name": "RustChain API v2.2.1",
+    "description": "Complete API collection for RustChain v2.2.1 (Security Hardened, Mainnet Candidate).\n\nThis collection covers all endpoints exposed by the integrated node at `node/rustchain_v2_integrated_v2.2.1_rip200.py`.\n\nFeatures covered:\n- RIP-0005 (Epochs)\n- RIP-0008 (Withdrawals + Replay Protection)\n- RIP-0009 (Finality)\n- RIP-0142 (Multisig Governance)\n- RIP-0143 (Readiness Aggregator)\n- RIP-0144 (Genesis Freeze)\n- RIP-0146/147 (Attestation & OUI enforcement)\n- RIP-0173 (Lottery/Eligibility Oracle)\n- RIP-0200 (Round-Robin 1CPU1Vote)\n- RIP-0200b (Deflationary Bounty Decay)\n- RIP-0301 (Fee Pool)\n- Beacon Protocol (OpenClaw envelope anchoring)\n- Signed Wallet Transfers (Ed25519)\n- 2-Phase Commit Pending Ledger\n- P2P Sync\n\nAdmin endpoints require the `X-API-Key` or `X-Admin-Key` header set to the value of the `RC_ADMIN_KEY` environment variable.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://50.28.86.131:8099",
+      "type": "string",
+      "description": "Base URL for the RustChain node"
+    },
+    {
+      "key": "adminKey",
+      "value": "YOUR_ADMIN_KEY_HERE",
+      "type": "string",
+      "description": "RC_ADMIN_KEY for admin-protected endpoints"
+    },
+    {
+      "key": "minerId",
+      "value": "g4-powerbook-01",
+      "type": "string",
+      "description": "Example miner ID"
+    },
+    {
+      "key": "minerPk",
+      "value": "RTCabcdef1234567890abcdef1234567890abcdef12",
+      "type": "string",
+      "description": "Example miner public key / wallet address"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Status",
+      "description": "Health checks, readiness probes, and system status endpoints.",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Returns node health status including DB read/write status, backup age, tip age, and uptime."
+          },
+          "response": [
+            {
+              "name": "200 - Healthy",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"version\": \"2.2.1-security-hardened\",\n  \"uptime_s\": 86400,\n  \"db_rw\": true,\n  \"backup_age_hours\": 2.5,\n  \"tip_age_slots\": 0\n}"
+            }
+          ]
+        },
+        {
+          "name": "Readiness Probe",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ready",
+              "host": ["{{baseUrl}}"],
+              "path": ["ready"]
+            },
+            "description": "Returns whether the DB is reachable and migrations have been applied."
+          },
+          "response": [
+            {
+              "name": "200 - Ready",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ready\": true,\n  \"version\": \"2.2.1-security-hardened\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Ops Readiness Aggregator (RIP-0143)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}",
+                "description": "Admin key for detailed check output (optional - unauthenticated returns only ok/fail)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/ops/readiness",
+              "host": ["{{baseUrl}}"],
+              "path": ["ops", "readiness"]
+            },
+            "description": "Single PASS/FAIL aggregator for all go/no-go checks. Unauthenticated callers receive only the boolean result. Admin callers see detailed per-check output."
+          },
+          "response": [
+            {
+              "name": "200 - All checks pass (admin view)",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"checks\": [\n    {\"name\": \"health\", \"ok\": true},\n    {\"name\": \"tip_age_s\", \"ok\": true, \"val\": 120},\n    {\"name\": \"headers_count\", \"ok\": true, \"val\": 5000},\n    {\"name\": \"metrics_keys\", \"ok\": true, \"keys\": [\"rustchain_header_count\", \"rustchain_ticket_rejects_total\", \"rustchain_mem_remember_total\"]}\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "System Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "stats"]
+            },
+            "description": "Returns system-wide statistics: version, chain ID, current epoch, total miners, total balance, pending withdrawals, and feature/security flags."
+          },
+          "response": [
+            {
+              "name": "200 - Stats",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"version\": \"2.2.1-security-hardened\",\n  \"chain_id\": \"rustchain-mainnet-candidate\",\n  \"epoch\": 42,\n  \"block_time\": 600,\n  \"total_miners\": 150,\n  \"total_balance\": 96673.0,\n  \"pending_withdrawals\": 3,\n  \"features\": [\"RIP-0005\", \"RIP-0008\", \"RIP-0009\", \"RIP-0142\", \"RIP-0143\", \"RIP-0144\"],\n  \"security\": [\"no_mock_sigs\", \"mandatory_admin_key\", \"replay_protection\", \"validated_json\"]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/metrics",
+              "host": ["{{baseUrl}}"],
+              "path": ["metrics"]
+            },
+            "description": "Prometheus-format metrics endpoint for monitoring."
+          },
+          "response": []
+        },
+        {
+          "name": "MAC / Attestation / Enrollment Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/metrics_mac",
+              "host": ["{{baseUrl}}"],
+              "path": ["metrics_mac"]
+            },
+            "description": "Prometheus-format metrics for MAC OUI seen/denied, unique MACs in 24h, stale/active attestations, and enrollment ok/reject counters."
+          },
+          "response": []
+        },
+        {
+          "name": "OpenAPI Spec",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/openapi.json",
+              "host": ["{{baseUrl}}"],
+              "path": ["openapi.json"]
+            },
+            "description": "Returns the OpenAPI 3.0.3 specification for the node."
+          },
+          "response": []
+        },
+        {
+          "name": "OUI Enforcement Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ops/oui/enforce",
+              "host": ["{{baseUrl}}"],
+              "path": ["ops", "oui", "enforce"]
+            },
+            "description": "Get the current OUI enforcement toggle state."
+          },
+          "response": [
+            {
+              "name": "200 - Enforcement status",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"enforce\": 0\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Attestation",
+      "description": "Hardware attestation endpoints for Proof of Antiquity. Miners must attest their hardware to participate in epoch enrollment.",
+      "item": [
+        {
+          "name": "Get Attestation Challenge",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/attest/challenge",
+              "host": ["{{baseUrl}}"],
+              "path": ["attest", "challenge"]
+            },
+            "description": "Issues a challenge nonce for hardware attestation. The nonce expires after 5 minutes."
+          },
+          "response": [
+            {
+              "name": "200 - Challenge issued",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"nonce\": \"a1b2c3d4e5f6...64_hex_chars\",\n  \"expires_at\": 1710000300,\n  \"server_time\": 1710000000\n}"
+            }
+          ]
+        },
+        {
+          "name": "Submit Attestation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"miner\": \"{{minerId}}\",\n  \"nonce\": \"<nonce_from_challenge>\",\n  \"report\": {\n    \"nonce\": \"<nonce_from_challenge>\",\n    \"device_model\": \"PowerBook G4\",\n    \"device_arch\": \"g4\",\n    \"device_family\": \"powerpc\",\n    \"cores\": 1,\n    \"cpu_serial\": \"XJ4500123\",\n    \"entropy_sources\": [\"cpu_jitter\", \"disk_latency\"],\n    \"entropy_score\": 0.85\n  },\n  \"device\": {\n    \"device_model\": \"PowerBook G4\",\n    \"device_arch\": \"g4\",\n    \"device_family\": \"powerpc\",\n    \"cores\": 1\n  },\n  \"signals\": {\n    \"macs\": [\"00:11:22:33:44:55\"]\n  },\n  \"fingerprint\": {\n    \"cpu_flags\": \"altivec\",\n    \"boot_id\": \"abc123\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/attest/submit",
+              "host": ["{{baseUrl}}"],
+              "path": ["attest", "submit"]
+            },
+            "description": "Submit hardware attestation with fingerprint and entropy validation. Includes hardware binding (one machine = one wallet), IP rate limiting, OUI enforcement, and temporal review."
+          },
+          "response": [
+            {
+              "name": "200 - Attestation accepted",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"miner\": \"g4-powerbook-01\",\n  \"accepted\": true,\n  \"entropy_score\": 0.85,\n  \"fingerprint_passed\": true,\n  \"temporal_review_flag\": false,\n  \"macs_recorded\": 1,\n  \"warthog_bonus\": 0\n}"
+            },
+            {
+              "name": "429 - Rate limited",
+              "status": "Too Many Requests",
+              "code": 429,
+              "body": "{\n  \"ok\": false,\n  \"error\": \"rate_limited\",\n  \"message\": \"Too many unique miners from this IP address\",\n  \"code\": \"IP_RATE_LIMIT\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Ops Attestation Debug (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"miner\": \"{{minerId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ops/attest/debug",
+              "host": ["{{baseUrl}}"],
+              "path": ["ops", "attest", "debug"]
+            },
+            "description": "Admin debug endpoint: shows miner's enrollment eligibility, attestation status, MAC data, and enrollment check config. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Debug info",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"miner\": \"g4-powerbook-01\",\n  \"timestamp\": 1710000000,\n  \"config\": {\n    \"ENROLL_REQUIRE_TICKET\": true,\n    \"ENROLL_TICKET_TTL_S\": 600,\n    \"ENROLL_REQUIRE_MAC\": true,\n    \"MAC_MAX_UNIQUE_PER_DAY\": 5\n  },\n  \"attestation\": {\n    \"found\": true,\n    \"ts_ok\": 1709999800,\n    \"age_seconds\": 200,\n    \"is_fresh\": true,\n    \"device_family\": \"powerpc\",\n    \"device_arch\": \"g4\",\n    \"entropy_score\": 0.85\n  },\n  \"macs\": {\n    \"unique_24h\": 1,\n    \"entries\": []\n  },\n  \"would_pass_enrollment\": true,\n  \"check_result\": {}\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Epochs & Enrollment",
+      "description": "Epoch lifecycle, miner enrollment, and lottery eligibility (RIP-0005, RIP-0173, RIP-0200).",
+      "item": [
+        {
+          "name": "Get Current Epoch",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/epoch",
+              "host": ["{{baseUrl}}"],
+              "path": ["epoch"]
+            },
+            "description": "Returns current epoch info: epoch number, slot, pot size, enrolled miners count, blocks per epoch, and total supply."
+          },
+          "response": [
+            {
+              "name": "200 - Epoch info",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"epoch\": 42,\n  \"slot\": 25200,\n  \"epoch_pot\": 1.5,\n  \"enrolled_miners\": 12,\n  \"blocks_per_epoch\": 600,\n  \"total_supply_rtc\": 21000000\n}"
+            }
+          ]
+        },
+        {
+          "name": "Enroll in Epoch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"miner_pubkey\": \"{{minerPk}}\",\n  \"miner_id\": \"{{minerId}}\",\n  \"device\": {\n    \"family\": \"powerpc\",\n    \"arch\": \"g4\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/epoch/enroll",
+              "host": ["{{baseUrl}}"],
+              "path": ["epoch", "enroll"]
+            },
+            "description": "Enroll a miner in the current epoch. Requires prior attestation and MAC validation. Weight is calculated from hardware family/arch. VM-detected miners receive negligible weight (1e-9)."
+          },
+          "response": [
+            {
+              "name": "200 - Enrolled",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"epoch\": 42,\n  \"weight\": 2.0,\n  \"hw_weight\": 2.0,\n  \"fingerprint_failed\": false,\n  \"miner_pk\": \"RTCabcdef1234567890abcdef1234567890abcdef12\",\n  \"miner_id\": \"g4-powerbook-01\"\n}"
+            },
+            {
+              "name": "412 - Precondition failed",
+              "status": "Precondition Failed",
+              "code": 412,
+              "body": "{\n  \"error\": \"attestation_required\",\n  \"message\": \"Fresh attestation required before enrollment\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Lottery Eligibility (RIP-0200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lottery/eligibility?miner_id={{minerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["lottery", "eligibility"],
+              "query": [
+                {
+                  "key": "miner_id",
+                  "value": "{{minerId}}"
+                }
+              ]
+            },
+            "description": "RIP-200 round-robin eligibility check. Returns whether the miner is eligible for the current slot."
+          },
+          "response": [
+            {
+              "name": "200 - Eligibility result",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"eligible\": true,\n  \"miner_id\": \"g4-powerbook-01\",\n  \"slot\": 25200,\n  \"reason\": \"round_robin_selected\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Epoch Rewards",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rewards/epoch/42",
+              "host": ["{{baseUrl}}"],
+              "path": ["rewards", "epoch", "42"]
+            },
+            "description": "Get the reward distribution for a specific epoch."
+          },
+          "response": [
+            {
+              "name": "200 - Epoch rewards",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"epoch\": 42,\n  \"rewards\": [\n    {\n      \"miner_id\": \"g4-powerbook-01\",\n      \"share_i64\": 250000,\n      \"share_rtc\": 0.25\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Settle Epoch Rewards (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"epoch\": 42\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/rewards/settle",
+              "host": ["{{baseUrl}}"],
+              "path": ["rewards", "settle"]
+            },
+            "description": "Settle (distribute) rewards for a specific epoch. Admin/cron callable. Requires admin key."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Block Headers",
+      "description": "Signed block header ingestion and chain tip queries.",
+      "item": [
+        {
+          "name": "Set Miner Header Key (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"miner_id\": \"{{minerId}}\",\n  \"pubkey_hex\": \"abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/miner/headerkey",
+              "host": ["{{baseUrl}}"],
+              "path": ["miner", "headerkey"]
+            },
+            "description": "Admin-set or update the header-signing Ed25519 public key for a miner. The pubkey_hex must be exactly 64 hex characters. Requires admin API key."
+          },
+          "response": [
+            {
+              "name": "200 - Key set",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"miner_id\": \"g4-powerbook-01\",\n  \"pubkey_hex\": \"abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Ingest Signed Header",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"miner_id\": \"{{minerId}}\",\n  \"header\": {\n    \"slot\": 25200,\n    \"parent_hash\": \"0000000000000000000000000000000000000000000000000000000000000000\",\n    \"state_root\": \"0000000000000000000000000000000000000000000000000000000000000000\"\n  },\n  \"message\": \"<hex_encoded_message>\",\n  \"signature\": \"<128_hex_char_ed25519_signature>\",\n  \"pubkey\": \"<64_hex_char_public_key_testnet_only>\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/headers/ingest_signed",
+              "host": ["{{baseUrl}}"],
+              "path": ["headers", "ingest_signed"]
+            },
+            "description": "Ingest a signed block header from a v2 miner. Verifies Ed25519 signature, validates header continuity, persists, and updates tip. On testnet with RC_TESTNET_ALLOW_INLINE_PUBKEY=1, the pubkey can be provided inline. Automatically settles epoch rewards when enough blocks are mined."
+          },
+          "response": [
+            {
+              "name": "200 - Header accepted",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"slot\": 25200,\n  \"miner\": \"g4-powerbook-01\",\n  \"ms\": 12\n}"
+            },
+            {
+              "name": "400 - Missing fields",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"ok\": false,\n  \"error\": \"missing fields\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Chain Tip",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/headers/tip",
+              "host": ["{{baseUrl}}"],
+              "path": ["headers", "tip"]
+            },
+            "description": "Returns the current chain tip: latest slot, miner who produced it, tip age in seconds, and signature prefix."
+          },
+          "response": [
+            {
+              "name": "200 - Chain tip",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"slot\": 25200,\n  \"miner\": \"g4-powerbook-01\",\n  \"tip_age\": 120,\n  \"signature_prefix\": \"a1b2c3d4e5f6a7b8c9d0\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Wallet & Balance",
+      "description": "Balance queries, transfer history, signed transfers, and the 2-phase commit pending ledger.",
+      "item": [
+        {
+          "name": "Get Balance by Miner PK",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/balance/{{minerPk}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["balance", "{{minerPk}}"]
+            },
+            "description": "Get miner balance. Checks both miner_pk and miner_id columns for backwards compatibility. Returns balance in RTC and micro-units (i64)."
+          },
+          "response": [
+            {
+              "name": "200 - Balance",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"miner_pk\": \"RTCabcdef1234567890abcdef1234567890abcdef12\",\n  \"balance_rtc\": 42.5,\n  \"amount_i64\": 42500000\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Wallet Balance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/wallet/balance?miner_id={{minerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["wallet", "balance"],
+              "query": [
+                {
+                  "key": "miner_id",
+                  "value": "{{minerId}}"
+                }
+              ]
+            },
+            "description": "Get balance for a specific miner by miner_id or address query parameter."
+          },
+          "response": [
+            {
+              "name": "200 - Wallet balance",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"miner_id\": \"g4-powerbook-01\",\n  \"amount_i64\": 42500000,\n  \"amount_rtc\": 42.5\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Wallet History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/wallet/history?miner_id={{minerId}}&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["wallet", "history"],
+              "query": [
+                {
+                  "key": "miner_id",
+                  "value": "{{minerId}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Get public transfer history for a wallet. Returns sent/received transfers with status, amounts, memos, and confirmation timestamps."
+          },
+          "response": [
+            {
+              "name": "200 - Transfer history",
+              "status": "OK",
+              "code": 200,
+              "body": "[\n  {\n    \"id\": 1,\n    \"tx_id\": \"abc123def456\",\n    \"tx_hash\": \"abc123def456\",\n    \"from_addr\": \"RTCsender...\",\n    \"to_addr\": \"RTCreceiver...\",\n    \"amount\": 10.0,\n    \"amount_i64\": 10000000,\n    \"amount_rtc\": 10.0,\n    \"timestamp\": 1710000000,\n    \"created_at\": 1710000000,\n    \"confirmed_at\": 1710086400,\n    \"confirms_at\": 1710086400,\n    \"status\": \"confirmed\",\n    \"direction\": \"sent\",\n    \"counterparty\": \"RTCreceiver...\",\n    \"reason\": \"signed_transfer:payment for services\",\n    \"memo\": \"payment for services\",\n    \"confirmations\": 1\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Signed Transfer (Ed25519)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from_address\": \"RTCabcdef1234567890abcdef1234567890abcdef12\",\n  \"to_address\": \"RTCrecipient1234567890abcdef1234567890abcd12\",\n  \"amount_rtc\": 10.0,\n  \"nonce\": \"1710000000\",\n  \"signature\": \"<128_hex_ed25519_signature>\",\n  \"public_key\": \"<64_hex_ed25519_public_key>\",\n  \"memo\": \"Payment for bounty work\",\n  \"chain_id\": \"rustchain-mainnet-candidate\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/wallet/transfer/signed",
+              "host": ["{{baseUrl}}"],
+              "path": ["wallet", "transfer", "signed"]
+            },
+            "description": "Transfer RTC with Ed25519 signature verification. Supports both regular RTC addresses and bcn_ beacon addresses. Uses 2-phase commit: transfer enters pending state and confirms after 24 hours. Includes replay protection via nonce tracking."
+          },
+          "response": [
+            {
+              "name": "200 - Transfer pending",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"verified\": true,\n  \"signature_type\": \"Ed25519\",\n  \"replay_protected\": true,\n  \"phase\": \"pending\",\n  \"pending_id\": 42,\n  \"tx_hash\": \"abc123def456789012345678\",\n  \"from_address\": \"RTCabcdef...\",\n  \"to_address\": \"RTCrecipient...\",\n  \"amount_rtc\": 10.0,\n  \"chain_id\": \"rustchain-mainnet-candidate\",\n  \"confirms_at\": 1710086400,\n  \"confirms_in_hours\": 24.0,\n  \"message\": \"Transfer pending. Will confirm in 24 hours unless voided.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Admin Transfer (2-Phase Commit)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from_miner\": \"founder_community\",\n  \"to_miner\": \"{{minerId}}\",\n  \"amount_rtc\": 5.0,\n  \"reason\": \"bounty_payout\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/wallet/transfer",
+              "host": ["{{baseUrl}}"],
+              "path": ["wallet", "transfer"]
+            },
+            "description": "Admin-initiated transfer with 2-phase commit. Transfer enters pending state and confirms after 24 hours unless voided. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Transfer pending",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"phase\": \"pending\",\n  \"pending_id\": 42,\n  \"tx_hash\": \"abc123def456789012345678\",\n  \"from_miner\": \"founder_community\",\n  \"to_miner\": \"g4-powerbook-01\",\n  \"amount_rtc\": 5.0,\n  \"confirms_at\": 1710086400,\n  \"confirms_in_hours\": 24.0,\n  \"message\": \"Transfer pending. Will confirm in 24 hours unless voided.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Resolve Beacon Wallet",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/wallet/resolve?address=bcn_agent123",
+              "host": ["{{baseUrl}}"],
+              "path": ["wallet", "resolve"],
+              "query": [
+                {
+                  "key": "address",
+                  "value": "bcn_agent123"
+                }
+              ]
+            },
+            "description": "Resolve a bcn_ beacon ID to its RTC wallet address and Ed25519 public key from the Beacon Atlas."
+          },
+          "response": [
+            {
+              "name": "200 - Resolved",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"beacon_id\": \"bcn_agent123\",\n  \"pubkey_hex\": \"abcdef1234567890...\",\n  \"rtc_address\": \"RTCabcdef...\",\n  \"name\": \"My Agent\",\n  \"status\": \"active\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get All Balances (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/balances?limit=100",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "balances"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "Return all wallet balances sorted by amount descending. Requires admin key. Supports limit parameter (max 5000)."
+          },
+          "response": [
+            {
+              "name": "200 - All balances",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"count\": 2,\n  \"balances\": [\n    {\"miner_id\": \"founder_community\", \"amount_i64\": 96673000000, \"amount_rtc\": 96673.0},\n    {\"miner_id\": \"g4-powerbook-01\", \"amount_i64\": 42500000, \"amount_rtc\": 42.5}\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get All Wallet Balances (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/wallet/balances/all",
+              "host": ["{{baseUrl}}"],
+              "path": ["wallet", "balances", "all"]
+            },
+            "description": "Export all miner balances with grand total. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - All balances",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"balances\": [\n    {\"miner_id\": \"founder_community\", \"amount_i64\": 96673000000, \"amount_rtc\": 96673.0}\n  ],\n  \"total_i64\": 96673000000,\n  \"total_rtc\": 96673.0\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Transaction Ledger (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/wallet/ledger?miner_id={{minerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["wallet", "ledger"],
+              "query": [
+                {
+                  "key": "miner_id",
+                  "value": "{{minerId}}",
+                  "description": "Optional - omit to get all ledger entries"
+                }
+              ]
+            },
+            "description": "Get immutable transaction ledger entries (optionally filtered by miner). Returns last 200 entries. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Ledger entries",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"items\": [\n    {\n      \"ts\": 1710000000,\n      \"epoch\": 42,\n      \"miner_id\": \"g4-powerbook-01\",\n      \"delta_i64\": 250000,\n      \"delta_rtc\": 0.25,\n      \"reason\": \"epoch_reward\"\n    }\n  ]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Pending Ledger (2-Phase Commit)",
+      "description": "Manage the 2-phase commit pending ledger for transfers. Pending transfers confirm after 24 hours unless voided.",
+      "item": [
+        {
+          "name": "List Pending Transfers (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pending/list?status=pending&limit=100",
+              "host": ["{{baseUrl}}"],
+              "path": ["pending", "list"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "pending",
+                  "description": "Filter by status: pending, confirmed, voided, or 'all'"
+                },
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "List pending (or all) transfers in the 2-phase commit ledger. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Pending list",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"count\": 1,\n  \"pending\": [\n    {\n      \"id\": 1,\n      \"ts\": 1710000000,\n      \"from_miner\": \"founder_community\",\n      \"to_miner\": \"g4-powerbook-01\",\n      \"amount_rtc\": 5.0,\n      \"reason\": \"bounty_payout\",\n      \"status\": \"pending\",\n      \"confirms_at\": 1710086400,\n      \"voided_by\": null,\n      \"voided_reason\": null,\n      \"tx_hash\": \"abc123def456789012345678\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Void Pending Transfer (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pending_id\": 1,\n  \"reason\": \"suspicious_transfer\",\n  \"voided_by\": \"admin\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pending/void",
+              "host": ["{{baseUrl}}"],
+              "path": ["pending", "void"]
+            },
+            "description": "Void a pending transfer before it confirms. Can identify the transfer by pending_id or tx_hash. Only pending-status transfers can be voided. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Voided",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"voided_id\": 1,\n  \"from_miner\": \"founder_community\",\n  \"to_miner\": \"g4-powerbook-01\",\n  \"amount_rtc\": 5.0,\n  \"voided_by\": \"admin\",\n  \"reason\": \"suspicious_transfer\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Confirm Pending Transfers (Admin/Cron)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pending/confirm",
+              "host": ["{{baseUrl}}"],
+              "path": ["pending", "confirm"]
+            },
+            "description": "Worker endpoint: confirms all pending transfers whose 24-hour delay has elapsed. Checks sender balance at confirmation time. Logs to immutable ledger. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Confirmed",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"confirmed_count\": 3,\n  \"confirmed_ids\": [1, 2, 3],\n  \"errors\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Balance Integrity Check (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pending/integrity",
+              "host": ["{{baseUrl}}"],
+              "path": ["pending", "integrity"]
+            },
+            "description": "Check balance integrity: verifies that the sum of all ledger deltas matches the balance table for every miner. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Integrity OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"total_miners_checked\": 150,\n  \"mismatches\": null,\n  \"pending_transfers\": 2\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Withdrawals",
+      "description": "Register withdrawal keys, request withdrawals, and check withdrawal status (RIP-0008).",
+      "item": [
+        {
+          "name": "Register Withdrawal Key (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Admin-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"miner_pk\": \"{{minerPk}}\",\n  \"pubkey_sr25519\": \"abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/withdraw/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["withdraw", "register"]
+            },
+            "description": "Register an sr25519 public key for withdrawals. First-time registration is allowed; key rotation requires admin key. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Key registered",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"miner_pk\": \"RTCabcdef...\",\n  \"pubkey_registered\": true,\n  \"can_withdraw\": true\n}"
+            }
+          ]
+        },
+        {
+          "name": "Request Withdrawal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"miner_pk\": \"{{minerPk}}\",\n  \"amount\": 10.0,\n  \"destination\": \"5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY\",\n  \"signature\": \"<base64_or_hex_sr25519_signature>\",\n  \"nonce\": \"unique_nonce_12345\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/withdraw/request",
+              "host": ["{{baseUrl}}"],
+              "path": ["withdraw", "request"]
+            },
+            "description": "Request an RTC withdrawal. Requires registered sr25519 key, sufficient balance, valid signature, and unique nonce (replay protection). Subject to daily limits. A withdrawal fee is deducted and routed to the community mining pool (RIP-301)."
+          },
+          "response": [
+            {
+              "name": "200 - Withdrawal created",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"withdrawal_id\": \"WD_1710000000000000_abc123de\",\n  \"status\": \"pending\",\n  \"amount\": 10.0,\n  \"fee\": 0.01,\n  \"net_amount\": 9.99\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Withdrawal Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/withdraw/status/WD_1710000000000000_abc123de",
+              "host": ["{{baseUrl}}"],
+              "path": ["withdraw", "status", "WD_1710000000000000_abc123de"]
+            },
+            "description": "Get the status of a specific withdrawal by its withdrawal_id."
+          },
+          "response": [
+            {
+              "name": "200 - Withdrawal status",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"withdrawal_id\": \"WD_1710000000000000_abc123de\",\n  \"miner_pk\": \"RTCabcdef...\",\n  \"amount\": 10.0,\n  \"fee\": 0.01,\n  \"destination\": \"5Grwva...\",\n  \"status\": \"pending\",\n  \"created_at\": 1710000000,\n  \"processed_at\": null,\n  \"tx_hash\": null,\n  \"error_msg\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Withdrawal History (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/withdraw/history/{{minerPk}}?limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["withdraw", "history", "{{minerPk}}"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Get withdrawal history for a specific miner. Includes current balance. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Withdrawal history",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"miner_pk\": \"RTCabcdef...\",\n  \"current_balance\": 32.5,\n  \"withdrawals\": [\n    {\n      \"withdrawal_id\": \"WD_1710000000000000_abc123de\",\n      \"amount\": 10.0,\n      \"fee\": 0.01,\n      \"destination\": \"5Grwva...\",\n      \"status\": \"completed\",\n      \"created_at\": 1710000000,\n      \"processed_at\": 1710003600,\n      \"tx_hash\": \"0xabc123...\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Fee Pool Statistics (RIP-301)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/fee_pool",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "fee_pool"]
+            },
+            "description": "RIP-301: Fee pool statistics showing total fees collected, fees by source, community fund balance, and recent fee events. Fees are recycled to the mining pool."
+          },
+          "response": [
+            {
+              "name": "200 - Fee pool stats",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"rip\": 301,\n  \"description\": \"Fee Pool Statistics (fees recycled to mining pool)\",\n  \"total_fees_collected_rtc\": 1.5,\n  \"total_fee_events\": 150,\n  \"fees_by_source\": {\n    \"withdrawal\": {\"total_rtc\": 1.5, \"count\": 150}\n  },\n  \"destination\": \"founder_community\",\n  \"destination_balance_rtc\": 96671.5,\n  \"withdrawal_fee_rtc\": 0.01,\n  \"recent_events\": []\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Governance (RIP-0142)",
+      "description": "Multisig governance rotation and on-chain proposal/voting system.",
+      "item": [
+        {
+          "name": "Stage Governance Rotation (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"epoch_effective\": 50,\n  \"threshold\": 3,\n  \"members\": [\n    {\"signer_id\": 1, \"pubkey_hex\": \"aabbccdd11223344aabbccdd11223344aabbccdd11223344aabbccdd11223344\"},\n    {\"signer_id\": 2, \"pubkey_hex\": \"11223344aabbccdd11223344aabbccdd11223344aabbccdd11223344aabbccdd\"},\n    {\"signer_id\": 3, \"pubkey_hex\": \"aabb11223344ccddaabb11223344ccddaabb11223344ccddaabb11223344ccdd\"}\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/gov/rotate/stage",
+              "host": ["{{baseUrl}}"],
+              "path": ["gov", "rotate", "stage"]
+            },
+            "description": "Stage a governance rotation proposal. Returns the canonical message that signers must sign for approval. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Staged",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"staged_epoch\": 50,\n  \"members\": 3,\n  \"threshold\": 3,\n  \"message\": \"ROTATE|50|3|sha256hash...\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Rotation Message",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/gov/rotate/message/50",
+              "host": ["{{baseUrl}}"],
+              "path": ["gov", "rotate", "message", "50"]
+            },
+            "description": "Get the canonical rotation message for a staged epoch, which signers must sign."
+          },
+          "response": [
+            {
+              "name": "200 - Message",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"epoch_effective\": 50,\n  \"message\": \"ROTATE|50|3|sha256hash...\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Approve Governance Rotation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"epoch_effective\": 50,\n  \"signer_id\": 1,\n  \"sig_hex\": \"<128_hex_ed25519_signature_of_rotation_message>\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/gov/rotate/approve",
+              "host": ["{{baseUrl}}"],
+              "path": ["gov", "rotate", "approve"]
+            },
+            "description": "Submit an approval signature for a staged governance rotation. Verifies Ed25519 signature against the current active gov_signers table."
+          },
+          "response": [
+            {
+              "name": "200 - Approved",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"epoch_effective\": 50,\n  \"approvals\": 2,\n  \"threshold\": 3,\n  \"ready\": false\n}"
+            }
+          ]
+        },
+        {
+          "name": "Commit Governance Rotation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"epoch_effective\": 50\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/gov/rotate/commit",
+              "host": ["{{baseUrl}}"],
+              "path": ["gov", "rotate", "commit"]
+            },
+            "description": "Commit a governance rotation. Requires that the threshold number of approvals has been reached."
+          },
+          "response": [
+            {
+              "name": "200 - Committed",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"epoch_effective\": 50,\n  \"committed\": 1,\n  \"approvals\": 3,\n  \"threshold\": 3\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create Governance Proposal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet\": \"RTCproposer1234567890abcdef1234567890abcd12\",\n  \"title\": \"Increase block reward to 2.0 RTC\",\n  \"description\": \"This proposal increases the per-epoch block reward from 1.5 to 2.0 RTC to incentivize more miners.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/governance/propose",
+              "host": ["{{baseUrl}}"],
+              "path": ["governance", "propose"]
+            },
+            "description": "Create a new governance proposal. Proposer must have a minimum RTC balance. Proposals are active for 7 days, then pass/fail based on weighted voting."
+          },
+          "response": [
+            {
+              "name": "201 - Proposal created",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"ok\": true,\n  \"proposal\": {\n    \"id\": 1,\n    \"wallet\": \"RTCproposer...\",\n    \"title\": \"Increase block reward to 2.0 RTC\",\n    \"description\": \"This proposal increases...\",\n    \"status\": \"active\",\n    \"created_at\": 1710000000,\n    \"activated_at\": 1710000000,\n    \"ends_at\": 1710604800,\n    \"rules\": {\n      \"lifecycle\": \"Draft -> Active (7 days) -> Passed/Failed\",\n      \"pass_condition\": \"yes_weight > no_weight at close\"\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "List Governance Proposals",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/governance/proposals",
+              "host": ["{{baseUrl}}"],
+              "path": ["governance", "proposals"]
+            },
+            "description": "List all governance proposals with their status, vote weights, and timestamps."
+          },
+          "response": [
+            {
+              "name": "200 - Proposals",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"count\": 1,\n  \"proposals\": [\n    {\n      \"id\": 1,\n      \"proposer_wallet\": \"RTCproposer...\",\n      \"title\": \"Increase block reward\",\n      \"description\": \"...\",\n      \"created_at\": 1710000000,\n      \"activated_at\": 1710000000,\n      \"ends_at\": 1710604800,\n      \"status\": \"active\",\n      \"yes_weight\": 100.5,\n      \"no_weight\": 20.0\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Proposal Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/governance/proposal/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["governance", "proposal", "1"]
+            },
+            "description": "Get detailed info for a specific governance proposal including all individual votes."
+          },
+          "response": [
+            {
+              "name": "200 - Proposal detail",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"proposal\": {\n    \"id\": 1,\n    \"proposer_wallet\": \"RTCproposer...\",\n    \"title\": \"Increase block reward\",\n    \"description\": \"...\",\n    \"created_at\": 1710000000,\n    \"activated_at\": 1710000000,\n    \"ends_at\": 1710604800,\n    \"status\": \"active\",\n    \"yes_weight\": 100.5,\n    \"no_weight\": 20.0,\n    \"total_weight\": 120.5,\n    \"result\": \"pending\"\n  },\n  \"votes\": [\n    {\n      \"voter_wallet\": \"RTCvoter...\",\n      \"vote\": \"yes\",\n      \"weight\": 50.25,\n      \"multiplier\": 2.0,\n      \"base_balance_rtc\": 25.125,\n      \"created_at\": 1710001000\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Cast Governance Vote",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"proposal_id\": 1,\n  \"wallet\": \"RTCvoter1234567890abcdef1234567890abcdef12\",\n  \"vote\": \"yes\",\n  \"nonce\": \"unique_vote_nonce_123\",\n  \"signature\": \"<128_hex_ed25519_signature>\",\n  \"public_key\": \"<64_hex_ed25519_public_key>\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/governance/vote",
+              "host": ["{{baseUrl}}"],
+              "path": ["governance", "vote"]
+            },
+            "description": "Cast a vote on an active governance proposal. Requires Ed25519 signature verification. Vote weight = balance * antiquity multiplier (vintage hardware gets higher weight). Each wallet can vote once per proposal."
+          },
+          "response": [
+            {
+              "name": "200 - Vote cast",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"proposal_id\": 1,\n  \"voter_wallet\": \"RTCvoter...\",\n  \"vote\": \"yes\",\n  \"base_balance_rtc\": 25.125,\n  \"antiquity_multiplier\": 2.0,\n  \"vote_weight\": 50.25,\n  \"status\": \"active\",\n  \"yes_weight\": 100.5,\n  \"no_weight\": 20.0,\n  \"result\": \"pending\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Genesis & Chain Config",
+      "description": "Genesis export and chain configuration (RIP-0144).",
+      "item": [
+        {
+          "name": "Export Genesis (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/genesis/export",
+              "host": ["{{baseUrl}}"],
+              "path": ["genesis", "export"]
+            },
+            "description": "Export deterministic genesis.json with SHA256 hash in X-SHA256 response header. Contains chain_id, signers, threshold, and chain params. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Genesis JSON",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"chain_id\": \"rustchain-mainnet-candidate\",\n  \"created_ts\": 1710000000,\n  \"threshold\": 3,\n  \"signers\": [\n    {\"signer_id\": 1, \"pubkey_hex\": \"aabbccdd...\"}\n  ],\n  \"params\": {\n    \"block_time_s\": 600,\n    \"reward_rtc_per_block\": 1.5,\n    \"sortition\": \"vrf_weighted\",\n    \"heritage_max_multiplier\": 2.5\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Miners & Network",
+      "description": "Miner info, node registry, badges, dashboards, and bounty multiplier.",
+      "item": [
+        {
+          "name": "List Active Miners",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/miners",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "miners"]
+            },
+            "description": "Returns list of miners attested in the last hour with hardware type classification, entropy score, and antiquity multiplier."
+          },
+          "response": [
+            {
+              "name": "200 - Active miners",
+              "status": "OK",
+              "code": 200,
+              "body": "[\n  {\n    \"miner\": \"g4-powerbook-01\",\n    \"last_attest\": 1710000000,\n    \"first_attest\": 1700000000,\n    \"device_family\": \"powerpc\",\n    \"device_arch\": \"g4\",\n    \"hardware_type\": \"PowerPC G4 (Vintage)\",\n    \"entropy_score\": 0.85,\n    \"antiquity_multiplier\": 2.0\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "List Nodes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/nodes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "nodes"]
+            },
+            "description": "Return list of all registered attestation nodes with live health check. Private/VPN URLs are redacted for unauthenticated callers."
+          },
+          "response": [
+            {
+              "name": "200 - Nodes",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"nodes\": [\n    {\n      \"node_id\": \"node-1\",\n      \"wallet\": \"RTCnode...\",\n      \"url\": \"https://node1.rustchain.org\",\n      \"name\": \"Primary Node\",\n      \"registered_at\": 1700000000,\n      \"is_active\": true,\n      \"online\": true\n    }\n  ],\n  \"count\": 1\n}"
+            }
+          ]
+        },
+        {
+          "name": "Miner Badge (Shields.io)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/badge/{{minerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "badge", "{{minerId}}"]
+            },
+            "description": "Shields.io-compatible JSON badge endpoint showing miner status (Active/Idle/Inactive) and antiquity multiplier."
+          },
+          "response": [
+            {
+              "name": "200 - Badge JSON",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"schemaVersion\": 1,\n  \"label\": \"RustChain g4-powerbook-01\",\n  \"message\": \"Active (2.0x)\",\n  \"color\": \"brightgreen\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Miner Dashboard Data",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/miner_dashboard/{{minerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "miner_dashboard", "{{minerId}}"]
+            },
+            "description": "Aggregated miner dashboard data: balance, total earned, reward history (last 20 epochs), epoch participation, and 24h attestation timeline."
+          },
+          "response": [
+            {
+              "name": "200 - Dashboard data",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"miner_id\": \"g4-powerbook-01\",\n  \"balance_rtc\": 42.5,\n  \"total_earned_rtc\": 100.0,\n  \"reward_events\": 50,\n  \"epoch_participation\": 30,\n  \"reward_history\": [\n    {\"epoch\": 42, \"amount_rtc\": 0.25, \"tx_hash\": \"abc123\", \"confirmed_at\": 1710000000}\n  ],\n  \"attest_timeline_24h\": [\n    {\"hour_bucket\": 475000, \"count\": 5}\n  ],\n  \"generated_at\": 1710000000\n}"
+            }
+          ]
+        },
+        {
+          "name": "Miner Attestation History (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/miner/{{minerId}}/attestations?limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "miner", "{{minerId}}", "attestations"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Best-effort attestation history for a single miner (museum detail view). Limit 1-500. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Attestation history",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"miner\": \"g4-powerbook-01\",\n  \"count\": 2,\n  \"attestations\": [\n    {\"ts_ok\": 1710000000, \"device_family\": \"powerpc\", \"device_arch\": \"g4\"},\n    {\"ts_ok\": 1709999400, \"device_family\": \"powerpc\", \"device_arch\": \"g4\"}\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Bounty Decay Multiplier (RIP-0200b)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bounty-multiplier",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "bounty-multiplier"]
+            },
+            "description": "Get the current bounty decay multiplier. Uses a half-life model: as more RTC is paid out from the community fund, bounties shrink. Includes milestones and an example calculation."
+          },
+          "response": [
+            {
+              "name": "200 - Bounty multiplier",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"decay_model\": \"half-life\",\n  \"half_life_rtc\": 25000.0,\n  \"initial_fund_rtc\": 96673.0,\n  \"total_paid_rtc\": 5000.0,\n  \"remaining_rtc\": 91673.0,\n  \"current_multiplier\": 0.8706,\n  \"current_multiplier_pct\": \"87.1%\",\n  \"example\": {\n    \"face_value\": 100.0,\n    \"actual_payout\": 87.06,\n    \"note\": \"A 100 RTC bounty currently pays 87.06 RTC\"\n  },\n  \"milestones\": [\n    {\"multiplier\": 0.75, \"rtc_paid_threshold\": 10355, \"status\": \"upcoming\"},\n    {\"multiplier\": 0.5, \"rtc_paid_threshold\": 25000, \"status\": \"upcoming\"},\n    {\"multiplier\": 0.25, \"rtc_paid_threshold\": 50000, \"status\": \"upcoming\"},\n    {\"multiplier\": 0.1, \"rtc_paid_threshold\": 83048, \"status\": \"upcoming\"}\n  ]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Admin - OUI Denylist",
+      "description": "Manage the OUI (MAC address vendor prefix) denylist for anti-VM attestation enforcement.",
+      "item": [
+        {
+          "name": "Toggle OUI Enforcement (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enforce\": \"1\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/oui_deny/enforce",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "oui_deny", "enforce"]
+            },
+            "description": "Toggle OUI enforcement on/off. Values: 1/true/yes to enable, 0/false/no to disable. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Enforcement toggled",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"enforce\": 1\n}"
+            }
+          ]
+        },
+        {
+          "name": "List Denied OUIs (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/oui_deny/list",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "oui_deny", "list"]
+            },
+            "description": "List all OUIs in the denylist. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - OUI list",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"count\": 2,\n  \"entries\": [\n    {\"oui\": \"005056\", \"vendor\": \"VMware\", \"added_ts\": 1710000000, \"enforce\": 1},\n    {\"oui\": \"080027\", \"vendor\": \"VirtualBox\", \"added_ts\": 1710000000, \"enforce\": 1}\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Add OUI to Denylist (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"oui\": \"00:50:56\",\n  \"vendor\": \"VMware\",\n  \"enforce\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/oui_deny/add",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "oui_deny", "add"]
+            },
+            "description": "Add an OUI to the denylist. OUI must be 6 hex chars (colons/dashes stripped automatically). Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - OUI added",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"oui\": \"005056\",\n  \"vendor\": \"VMware\",\n  \"enforce\": 1\n}"
+            }
+          ]
+        },
+        {
+          "name": "Remove OUI from Denylist (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"oui\": \"005056\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/oui_deny/remove",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "oui_deny", "remove"]
+            },
+            "description": "Remove an OUI from the denylist. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - OUI removed",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"removed\": \"005056\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Admin - Wallet Review",
+      "description": "Wallet review holds and escalation system for coaching miners and managing suspicious wallets.",
+      "item": [
+        {
+          "name": "List Wallet Review Holds (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/wallet-review-holds?status=needs_review",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "wallet-review-holds"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "needs_review",
+                  "description": "Optional filter: needs_review, held, escalated, blocked, released, dismissed"
+                }
+              ]
+            },
+            "description": "List wallet review holds and escalations. Optionally filter by status. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Review holds",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"count\": 1,\n  \"entries\": [\n    {\n      \"id\": 1,\n      \"wallet\": \"RTCsuspicious...\",\n      \"status\": \"needs_review\",\n      \"reason\": \"multiple_wallets_same_ip\",\n      \"coach_note\": \"Please verify your hardware setup\",\n      \"reviewer_note\": \"\",\n      \"created_at\": 1710000000,\n      \"reviewed_at\": 0\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create Wallet Review Hold (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet\": \"RTCsuspicious1234567890abcdef1234567890abcd\",\n  \"status\": \"needs_review\",\n  \"reason\": \"multiple_wallets_same_ip\",\n  \"coach_note\": \"Your miner appears to be running multiple wallets from the same machine. Please use only one wallet per physical device.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/wallet-review-holds",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "wallet-review-holds"]
+            },
+            "description": "Create a wallet review hold. Status must be one of: needs_review, held, escalated, blocked. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Hold created",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"id\": 1,\n  \"wallet\": \"RTCsuspicious...\",\n  \"status\": \"needs_review\",\n  \"reason\": \"multiple_wallets_same_ip\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Resolve Wallet Review Hold (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"release\",\n  \"reviewer_note\": \"Verified - separate physical machines behind same NAT\",\n  \"coach_note\": \"Issue resolved. Mining privileges restored.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/wallet-review-holds/1/resolve",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "wallet-review-holds", "1", "resolve"]
+            },
+            "description": "Resolve a wallet review hold. Actions: release, dismiss, escalate, block. Requires admin key."
+          },
+          "response": [
+            {
+              "name": "200 - Resolved",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"id\": 1,\n  \"wallet\": \"RTCsuspicious...\",\n  \"status\": \"released\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Beacon Protocol",
+      "description": "Beacon (OpenClaw) envelope anchoring endpoints for agent-economy attestation.",
+      "item": [
+        {
+          "name": "Submit Beacon Envelope",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agent_id\": \"bcn_agent123\",\n  \"kind\": \"heartbeat\",\n  \"nonce\": \"unique_nonce_abc123\",\n  \"sig\": \"<ed25519_signature_hex_64_to_256_chars>\",\n  \"pubkey\": \"<ed25519_pubkey_hex>\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/beacon/submit",
+              "host": ["{{baseUrl}}"],
+              "path": ["beacon", "submit"]
+            },
+            "description": "Submit a beacon envelope for anchoring. Rate limited to 60 submissions per 60 seconds per agent. Requires valid agent_id (5-64 chars), kind, nonce (6-64 chars), sig (64-256 chars), and pubkey."
+          },
+          "response": [
+            {
+              "name": "201 - Envelope stored",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"ok\": true,\n  \"envelope_id\": 42\n}"
+            },
+            {
+              "name": "429 - Rate limited",
+              "status": "Too Many Requests",
+              "code": 429,
+              "body": "{\n  \"ok\": false,\n  \"error\": \"rate_limited\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Beacon Digest",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/beacon/digest",
+              "host": ["{{baseUrl}}"],
+              "path": ["beacon", "digest"]
+            },
+            "description": "Get the current beacon digest (hash of all stored envelopes), count, and latest timestamp."
+          },
+          "response": [
+            {
+              "name": "200 - Digest",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"digest\": \"sha256hexdigest...\",\n  \"count\": 1000,\n  \"latest_ts\": 1710000000\n}"
+            }
+          ]
+        },
+        {
+          "name": "List Beacon Envelopes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/beacon/envelopes?limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["beacon", "envelopes"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Max 50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "List recent beacon envelopes with pagination. Max limit is 50."
+          },
+          "response": [
+            {
+              "name": "200 - Envelopes",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"count\": 10,\n  \"envelopes\": []\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "P2P Sync",
+      "description": "Peer-to-peer network sync endpoints (available when rustchain_p2p_sync_secure module is loaded).",
+      "item": [
+        {
+          "name": "P2P Network Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/p2p/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["p2p", "stats"]
+            },
+            "description": "Get P2P network status including connected peers and sync state."
+          },
+          "response": []
+        },
+        {
+          "name": "P2P Ping",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/p2p/ping",
+              "host": ["{{baseUrl}}"],
+              "path": ["p2p", "ping"]
+            },
+            "description": "Peer health check. Requires peer authentication."
+          },
+          "response": [
+            {
+              "name": "200 - Pong",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"timestamp\": 1710000000\n}"
+            }
+          ]
+        },
+        {
+          "name": "P2P Get Blocks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/p2p/blocks?start=0&limit=100",
+              "host": ["{{baseUrl}}"],
+              "path": ["p2p", "blocks"],
+              "query": [
+                {
+                  "key": "start",
+                  "value": "0",
+                  "description": "Start height"
+                },
+                {
+                  "key": "limit",
+                  "value": "100",
+                  "description": "Max 1000"
+                }
+              ]
+            },
+            "description": "Get blocks for P2P sync starting from a given height. Requires peer authentication."
+          },
+          "response": [
+            {
+              "name": "200 - Blocks",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true,\n  \"blocks\": []\n}"
+            }
+          ]
+        },
+        {
+          "name": "P2P Add Peer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"peer_url\": \"http://peer-node:8099\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/p2p/add_peer",
+              "host": ["{{baseUrl}}"],
+              "path": ["p2p", "add_peer"]
+            },
+            "description": "Add a new peer to the network. Requires peer authentication."
+          },
+          "response": [
+            {
+              "name": "200 - Peer added",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"ok\": true\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Downloads",
+      "description": "File download endpoints for Windows miner installer, miner script, and uninstaller.",
+      "item": [
+        {
+          "name": "Downloads Page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/downloads",
+              "host": ["{{baseUrl}}"],
+              "path": ["downloads"]
+            },
+            "description": "Simple HTML downloads page with links to installer, miner, and uninstaller."
+          },
+          "response": []
+        },
+        {
+          "name": "Download Windows Installer",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/download/installer",
+              "host": ["{{baseUrl}}"],
+              "path": ["download", "installer"]
+            },
+            "description": "Download the Windows installer batch file (install_rustchain_windows.bat)."
+          },
+          "response": []
+        },
+        {
+          "name": "Download Windows Miner",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/download/miner",
+              "host": ["{{baseUrl}}"],
+              "path": ["download", "miner"]
+            },
+            "description": "Download the Windows miner Python file (rustchain_windows_miner.py)."
+          },
+          "response": []
+        },
+        {
+          "name": "Download Uninstaller",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/download/uninstaller",
+              "host": ["{{baseUrl}}"],
+              "path": ["download", "uninstaller"]
+            },
+            "description": "Download the Windows uninstaller batch file."
+          },
+          "response": []
+        },
+        {
+          "name": "Download Test Script",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/download/test",
+              "host": ["{{baseUrl}}"],
+              "path": ["download", "test"]
+            },
+            "description": "Download the minimal miner diagnostic test Python script."
+          },
+          "response": []
+        },
+        {
+          "name": "Download Test Runner BAT",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/download/test-bat",
+              "host": ["{{baseUrl}}"],
+              "path": ["download", "test-bat"]
+            },
+            "description": "Download the diagnostic test runner .bat file with SHA256 integrity verification."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "V1 Compatibility (Deprecated)",
+      "description": "Legacy v1 API endpoints that return 410 Gone with migration guidance.",
+      "item": [
+        {
+          "name": "Mine (v1 - DEPRECATED)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mine",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mine"]
+            },
+            "description": "DEPRECATED: Returns 410 Gone. V1 mining API has been removed. Use POST /epoch/enroll and VRF ticket submission on :8099 instead."
+          },
+          "response": [
+            {
+              "name": "410 - API v1 removed",
+              "status": "Gone",
+              "code": 410,
+              "body": "{\n  \"error\": \"API v1 removed\",\n  \"use\": \"POST /epoch/enroll and VRF ticket submission on :8099\",\n  \"version\": \"v2.2.1\",\n  \"migration_guide\": \"See SPEC_LOCK.md for v2.2.x architecture\",\n  \"new_endpoints\": {\n    \"enroll\": \"POST /epoch/enroll\",\n    \"eligibility\": \"GET /lottery/eligibility?miner_id=YOUR_ID\",\n    \"submit\": \"POST /headers/ingest_signed (when implemented)\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Mine (v1 compat path - DEPRECATED)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/compat/v1/api/mine",
+              "host": ["{{baseUrl}}"],
+              "path": ["compat", "v1", "api", "mine"]
+            },
+            "description": "DEPRECATED: Compatibility alias for /api/mine. Returns 410 Gone."
+          },
+          "response": [
+            {
+              "name": "410 - API v1 removed",
+              "status": "Gone",
+              "code": 410,
+              "body": "{\n  \"error\": \"API v1 removed\",\n  \"use\": \"POST /epoch/enroll and VRF ticket submission on :8099\",\n  \"version\": \"v2.2.1\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "UI Pages (HTML)",
+      "description": "HTML UI pages served by the node for browsers.",
+      "item": [
+        {
+          "name": "Block Explorer",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/explorer",
+              "host": ["{{baseUrl}}"],
+              "path": ["explorer"]
+            },
+            "description": "Real-time block explorer dashboard (Tier 1 + Tier 2 views). Serves HTML."
+          },
+          "response": []
+        },
+        {
+          "name": "Hardware Museum (2D)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/museum",
+              "host": ["{{baseUrl}}"],
+              "path": ["museum"]
+            },
+            "description": "2D hardware museum UI showing vintage hardware used in the network."
+          },
+          "response": []
+        },
+        {
+          "name": "Hardware Museum (3D)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/museum/3d",
+              "host": ["{{baseUrl}}"],
+              "path": ["museum", "3d"]
+            },
+            "description": "3D hardware museum UI."
+          },
+          "response": []
+        },
+        {
+          "name": "Hall of Fame Machine Page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/hall-of-fame/machine.html",
+              "host": ["{{baseUrl}}"],
+              "path": ["hall-of-fame", "machine.html"]
+            },
+            "description": "Hall of Fame machine detail page."
+          },
+          "response": []
+        },
+        {
+          "name": "Miner Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["dashboard"]
+            },
+            "description": "Personal miner dashboard single-page UI."
+          },
+          "response": []
+        },
+        {
+          "name": "Governance UI",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/governance/ui",
+              "host": ["{{baseUrl}}"],
+              "path": ["governance", "ui"]
+            },
+            "description": "Governance proposal and voting UI page."
+          },
+          "response": []
+        },
+        {
+          "name": "Admin UI",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/ui?admin_key={{adminKey}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "ui"],
+              "query": [
+                {
+                  "key": "admin_key",
+                  "value": "{{adminKey}}"
+                }
+              ]
+            },
+            "description": "Minimal operator landing page for admin surfaces. Requires admin key."
+          },
+          "response": []
+        },
+        {
+          "name": "Wallet Review Holds UI",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/wallet-review-holds/ui?admin_key={{adminKey}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "wallet-review-holds", "ui"],
+              "query": [
+                {
+                  "key": "admin_key",
+                  "value": "{{adminKey}}"
+                }
+              ]
+            },
+            "description": "Small operator UI for wallet review holds. Create holds, coach miners, release, dismiss, escalate, or block."
+          },
+          "response": []
+        },
+        {
+          "name": "Light Client",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/light",
+              "host": ["{{baseUrl}}"],
+              "path": ["light"]
+            },
+            "description": "Light client UI entry point."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

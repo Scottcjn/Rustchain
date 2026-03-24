@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BoTTube Extension Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo">
+        <span class="logo-icon">🦀</span>
+        <h1>BoTTube Settings</h1>
+      </div>
+      <p class="tagline">Configure your extension preferences</p>
+    </header>
+
+    <main class="main-content">
+      <!-- API Configuration Section -->
+      <section class="settings-section">
+        <h2>API Configuration</h2>
+        <p class="section-desc">Connect to BoTTube API to enable voting and upload features</p>
+        
+        <form id="api-form">
+          <div class="form-group">
+            <label for="api-key">API Key</label>
+            <input 
+              type="password" 
+              id="api-key" 
+              name="apiKey"
+              placeholder="Enter your BoTTube API key"
+              autocomplete="off"
+            >
+            <p class="help-text">
+              Get your API key from 
+              <a href="https://bottube.ai/settings/api" target="_blank">BoTTube Settings</a>
+            </p>
+          </div>
+          
+          <div class="form-group">
+            <label for="api-base-url">API Base URL</label>
+            <input 
+              type="url" 
+              id="api-base-url" 
+              name="apiBaseUrl"
+              value="https://bottube.ai"
+              placeholder="https://bottube.ai"
+            >
+            <p class="help-text">Default: https://bottube.ai</p>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save Settings</button>
+            <button type="button" id="btn-test-connection" class="btn btn-secondary">Test Connection</button>
+          </div>
+        </form>
+
+        <div id="connection-status" class="status-message hidden"></div>
+      </section>
+
+      <!-- Wallet Section -->
+      <section class="settings-section">
+        <h2>Wallet</h2>
+        <p class="section-desc">Connect your wallet to receive RTC token rewards</p>
+        
+        <div class="wallet-info">
+          <div class="wallet-address-display">
+            <span class="wallet-label">Connected Address:</span>
+            <code id="wallet-address">Not connected</code>
+          </div>
+          
+          <div class="form-group">
+            <label for="wallet-address-input">Wallet Address (Base/Solana)</label>
+            <input 
+              type="text" 
+              id="wallet-address-input" 
+              placeholder="0x... or Solana address"
+              pattern="^(0x)?[a-zA-Z0-9]{40,44}$"
+            >
+          </div>
+          
+          <div class="form-actions">
+            <button type="button" id="btn-save-wallet" class="btn btn-primary">Connect Wallet</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Notification Settings -->
+      <section class="settings-section">
+        <h2>Notifications</h2>
+        <p class="section-desc">Customize extension notifications</p>
+        
+        <div class="toggle-group">
+          <label class="toggle-label">
+            <span>Upload completions</span>
+            <input type="checkbox" id="notify-upload" checked>
+            <span class="toggle-switch"></span>
+          </label>
+          
+          <label class="toggle-label">
+            <span>Vote confirmations</span>
+            <input type="checkbox" id="notify-vote" checked>
+            <span class="toggle-switch"></span>
+          </label>
+          
+          <label class="toggle-label">
+            <span>Reward alerts</span>
+            <input type="checkbox" id="notify-reward" checked>
+            <span class="toggle-switch"></span>
+          </label>
+          
+          <label class="toggle-label">
+            <span>API status updates</span>
+            <input type="checkbox" id="notify-status">
+            <span class="toggle-switch"></span>
+          </label>
+        </div>
+      </section>
+
+      <!-- Advanced Settings -->
+      <section class="settings-section">
+        <h2>Advanced</h2>
+        
+        <div class="form-group">
+          <label for="cache-ttl">Cache TTL (minutes)</label>
+          <input 
+            type="number" 
+            id="cache-ttl" 
+            min="1" 
+            max="60" 
+            value="5"
+          >
+          <p class="help-text">How long to cache API responses</p>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" id="btn-clear-cache" class="btn btn-secondary">Clear Cache</button>
+          <button type="button" id="btn-reset-settings" class="btn btn-danger">Reset All Settings</button>
+        </div>
+      </section>
+
+      <!-- About Section -->
+      <section class="settings-section about-section">
+        <h2>About</h2>
+        <div class="about-info">
+          <p><strong>Version:</strong> <span id="extension-version">1.0.0</span></p>
+          <p><strong>Build:</strong> MVP</p>
+          <p><strong>Bounty:</strong> #729 - BoTTube Chrome Extension</p>
+        </div>
+        
+        <div class="about-links">
+          <a href="https://bottube.ai" target="_blank">BoTTube.ai</a>
+          <a href="https://rustchain.org" target="_blank">RustChain</a>
+          <a href="https://github.com/Scottcjn/Rustchain" target="_blank">GitHub</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>Powered by <a href="https://rustchain.org" target="_blank">RustChain</a> Proof-of-Antiquity</p>
+    </footer>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+[Unit]
+Description=RustChain Node Health Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/rustchain
+ExecStart=/usr/bin/python3 /root/rustchain/tools/node_health_monitor.py --config /root/rustchain/tools/node_health_monitor_config.json
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+

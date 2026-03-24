@@ -1,0 +1,40 @@
+# RustChain Miner Alert System — Configuration
+# Copy to config.yaml and fill in your values.
+
+rustchain:
+  base_url: "https://50.28.86.131"   # RustChain node URL
+  verify_ssl: false                   # Set true if node has a valid cert
+  poll_interval_seconds: 60           # How often to poll (seconds)
+
+thresholds:
+  offline_minutes: 10                 # Alert if no attestation for this many minutes
+  large_transfer_rtc: 10.0           # Alert if balance drops by this much RTC
+  reward_min_rtc: 0.01               # Minimum reward increase to trigger alert
+
+miners:
+  watch_all: true                     # Monitor all enrolled miners
+  watch_ids: []                       # Or specify specific miner IDs:
+  # watch_ids:
+  #   - "my-miner-abc123"
+  #   - "another-miner-xyz"
+
+email:
+  enabled: false                      # Set true to enable email alerts
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  smtp_user: "your@gmail.com"        # Or set SMTP_USER env var
+  smtp_password: ""                   # Set SMTP_PASSWORD env var (don't put here)
+  from_addr: "your@gmail.com"
+  to_addrs:
+    - "alerts@example.com"
+  use_tls: true
+
+sms:
+  enabled: false                      # Set true to enable SMS via Twilio
+  account_sid: ""                     # Or set TWILIO_ACCOUNT_SID env var
+  auth_token: ""                      # Set TWILIO_AUTH_TOKEN env var (don't put here)
+  from_number: "+15551234567"        # Your Twilio number
+  to_numbers:
+    - "+15559876543"
+
+db_path: "alerts.db"                  # SQLite database file path

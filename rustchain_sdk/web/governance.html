@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RustChain Governance</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    h1,h2 { margin-bottom: 0.5rem; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    input, textarea, button, select { width: 100%; margin: 0.25rem 0 0.75rem; padding: 0.5rem; }
+    button { cursor: pointer; }
+    .muted { color: #666; font-size: 0.9rem; }
+    pre { background: #f6f6f6; padding: 0.75rem; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>RustChain Governance</h1>
+  <p class="muted">Lifecycle: Draft → Active (7 days) → Passed/Failed. Voting uses signed Ed25519 payloads.</p>
+
+  <div class="card">
+    <h2>Create Proposal</h2>
+    <input id="p_wallet" placeholder="Proposer wallet (RTC...)" />
+    <input id="p_title" placeholder="Title" />
+    <textarea id="p_desc" rows="4" placeholder="Description"></textarea>
+    <button onclick="createProposal()">Submit Proposal</button>
+  </div>
+
+  <div class="card">
+    <h2>Vote</h2>
+    <input id="v_proposal" placeholder="Proposal ID" />
+    <input id="v_wallet" placeholder="Wallet (RTC...)" />
+    <select id="v_vote"><option value="yes">yes</option><option value="no">no</option></select>
+    <input id="v_nonce" placeholder="Nonce (any unique string)" />
+    <input id="v_pub" placeholder="Public key hex" />
+    <textarea id="v_sig" rows="3" placeholder="Signature hex"></textarea>
+    <button onclick="submitVote()">Submit Vote</button>
+  </div>
+
+  <div class="card">
+    <h2>Proposals</h2>
+    <button onclick="loadProposals()">Refresh</button>
+    <div id="list"></div>
+  </div>
+
+  <h2>Response</h2>
+  <pre id="out"></pre>
+
+<script>
+const out = document.getElementById('out');
+function show(v){ out.textContent = JSON.stringify(v, null, 2); }
+
+async function api(path, method='GET', body=null){
+  const res = await fetch(path, {
+    method,
+    headers: {'Content-Type': 'application/json'},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  show(data);
+  return data;
+}
+
+async function createProposal(){
+  await api('/governance/propose', 'POST', {
+    wallet: document.getElementById('p_wallet').value.trim(),
+    title: document.getElementById('p_title').value.trim(),
+    description: document.getElementById('p_desc').value.trim()
+  });
+  await loadProposals();
+}
+
+async function submitVote(){
+  await api('/governance/vote', 'POST', {
+    proposal_id: Number(document.getElementById('v_proposal').value.trim()),
+    wallet: document.getElementById('v_wallet').value.trim(),
+    vote: document.getElementById('v_vote').value,
+    nonce: document.getElementById('v_nonce').value.trim(),
+    public_key: document.getElementById('v_pub').value.trim(),
+    signature: document.getElementById('v_sig').value.trim()
+  });
+  await loadProposals();
+}
+
+async function loadProposals(){
+  const data = await api('/governance/proposals');
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  for (const p of (data.proposals || [])) {
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = `<b>#${p.id} ${p.title}</b><br>
+      <span class="muted">${p.proposer_wallet} • ${p.status}</span><br>
+      ${p.description}<br>
+      yes=${(p.yes_weight||0).toFixed(4)} no=${(p.no_weight||0).toFixed(4)}`;
+    list.appendChild(div);
+  }
+}
+loadProposals();
+</script>
+</body>
+</html>

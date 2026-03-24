@@ -1,0 +1,24 @@
+[Unit]
+Description=RustChain Prometheus Exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rustchain
+Group=rustchain
+WorkingDirectory=/opt/rustchain-exporter
+Environment=NODE_URL=https://rustchain.org
+Environment=EXPORTER_PORT=9100
+Environment=SCRAPE_INTERVAL=60
+ExecStart=/usr/bin/python3 /opt/rustchain-exporter/rustchain_exporter.py
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

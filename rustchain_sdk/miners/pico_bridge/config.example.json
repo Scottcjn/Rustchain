@@ -1,0 +1,10 @@
+{
+  "wallet_id": "RTC<your_wallet_address>",
+  "node_url": "https://rustchain.org",
+  "miner_name": "n64-scott-unit1",
+  "console_type": "n64_mips",
+  "pico_port": "",
+  "pico_baud": 115200,
+  "simulation_mode": false,
+  "attestation_interval_sec": 300
+}

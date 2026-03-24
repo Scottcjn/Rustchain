@@ -1,0 +1,19 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_if_it_runs_doom_it_mines_rust",
+            "title": "If It Runs Doom... It Mines Rust",
+            "class": "Mythic",
+            "description": "Awarded to validators who prove PoA block mining capability on any device capable of running Doom. Includes calculators, pregnancy tests, toasters, and other digital miracles.",
+            "emotional_resonance": {
+                "state": "prophetic madness",
+                "trigger": "RustChain validation run on Doom-capable device",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\ud83e\ude7b\ud83d\udca5\ud83d\udd6f\ufe0f",
+            "visual_anchor": "Doom HUD overlay with validator glyphs glowing on a grayscale CRT",
+            "rarity": "Mythic",
+            "soulbound": true
+        }
+    ]
+}

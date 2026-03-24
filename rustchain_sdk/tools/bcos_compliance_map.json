@@ -1,0 +1,352 @@
+{
+  "version": "1.0.0",
+  "description": "BCOS compliance framework mapping: Semgrep rule categories and OSV severities to OWASP Top 10 2021, CWE Top 25 2023, and NIST AI RMF",
+  "frameworks": {
+    "owasp_top10_2021": {
+      "A01:2021-Broken Access Control": {
+        "description": "Restrictions on authenticated users not properly enforced",
+        "cwe_related": ["CWE-200", "CWE-22", "CWE-276", "CWE-284", "CWE-285", "CWE-352", "CWE-425", "CWE-862", "CWE-863"]
+      },
+      "A02:2021-Cryptographic Failures": {
+        "description": "Failures related to cryptography leading to sensitive data exposure",
+        "cwe_related": ["CWE-261", "CWE-296", "CWE-310", "CWE-319", "CWE-321", "CWE-327", "CWE-328", "CWE-330", "CWE-347", "CWE-759", "CWE-760", "CWE-916"]
+      },
+      "A03:2021-Injection": {
+        "description": "User-supplied data not validated, filtered, or sanitized",
+        "cwe_related": ["CWE-20", "CWE-74", "CWE-75", "CWE-77", "CWE-78", "CWE-79", "CWE-80", "CWE-89", "CWE-90", "CWE-91", "CWE-93", "CWE-94", "CWE-95", "CWE-96", "CWE-97", "CWE-98", "CWE-99", "CWE-100", "CWE-113", "CWE-116", "CWE-138", "CWE-564"]
+      },
+      "A04:2021-Insecure Design": {
+        "description": "Missing or ineffective control design; distinct from implementation bugs",
+        "cwe_related": ["CWE-73", "CWE-183", "CWE-209", "CWE-213", "CWE-235", "CWE-256", "CWE-257", "CWE-266", "CWE-269", "CWE-280", "CWE-311", "CWE-312", "CWE-522", "CWE-602", "CWE-642", "CWE-732", "CWE-799", "CWE-807", "CWE-840", "CWE-841", "CWE-927"]
+      },
+      "A05:2021-Security Misconfiguration": {
+        "description": "Missing hardening, default configs, open cloud storage, verbose errors",
+        "cwe_related": ["CWE-2", "CWE-11", "CWE-13", "CWE-15", "CWE-16", "CWE-260", "CWE-315", "CWE-520", "CWE-526", "CWE-537", "CWE-541", "CWE-547", "CWE-611", "CWE-614", "CWE-756", "CWE-776", "CWE-942", "CWE-1004", "CWE-1032"]
+      },
+      "A06:2021-Vulnerable and Outdated Components": {
+        "description": "Using components with known vulnerabilities",
+        "cwe_related": ["CWE-937", "CWE-1035", "CWE-1104", "CWE-1395"]
+      },
+      "A07:2021-Identification and Authentication Failures": {
+        "description": "Confirmation of identity, authentication, and session management failures",
+        "cwe_related": ["CWE-255", "CWE-259", "CWE-287", "CWE-288", "CWE-290", "CWE-294", "CWE-295", "CWE-297", "CWE-300", "CWE-302", "CWE-304", "CWE-306", "CWE-307", "CWE-346", "CWE-384", "CWE-521", "CWE-613", "CWE-620", "CWE-640", "CWE-798"]
+      },
+      "A08:2021-Software and Data Integrity Failures": {
+        "description": "Code and infrastructure that does not protect against integrity violations",
+        "cwe_related": ["CWE-345", "CWE-353", "CWE-426", "CWE-494", "CWE-502", "CWE-565", "CWE-784", "CWE-829", "CWE-830", "CWE-915"]
+      },
+      "A09:2021-Security Logging and Monitoring Failures": {
+        "description": "Insufficient logging, detection, monitoring, and active response",
+        "cwe_related": ["CWE-117", "CWE-223", "CWE-532", "CWE-778"]
+      },
+      "A10:2021-Server-Side Request Forgery": {
+        "description": "Fetching a remote resource without validating the user-supplied URL",
+        "cwe_related": ["CWE-918"]
+      }
+    },
+    "cwe_top25_2023": {
+      "CWE-787": { "rank": 1, "name": "Out-of-bounds Write" },
+      "CWE-79": { "rank": 2, "name": "Cross-site Scripting (XSS)" },
+      "CWE-89": { "rank": 3, "name": "SQL Injection" },
+      "CWE-416": { "rank": 4, "name": "Use After Free" },
+      "CWE-78": { "rank": 5, "name": "OS Command Injection" },
+      "CWE-20": { "rank": 6, "name": "Improper Input Validation" },
+      "CWE-125": { "rank": 7, "name": "Out-of-bounds Read" },
+      "CWE-22": { "rank": 8, "name": "Path Traversal" },
+      "CWE-352": { "rank": 9, "name": "Cross-Site Request Forgery (CSRF)" },
+      "CWE-434": { "rank": 10, "name": "Unrestricted Upload of File with Dangerous Type" },
+      "CWE-862": { "rank": 11, "name": "Missing Authorization" },
+      "CWE-476": { "rank": 12, "name": "NULL Pointer Dereference" },
+      "CWE-287": { "rank": 13, "name": "Improper Authentication" },
+      "CWE-190": { "rank": 14, "name": "Integer Overflow or Wraparound" },
+      "CWE-502": { "rank": 15, "name": "Deserialization of Untrusted Data" },
+      "CWE-77": { "rank": 16, "name": "Command Injection" },
+      "CWE-119": { "rank": 17, "name": "Improper Restriction of Operations within Memory Buffer" },
+      "CWE-798": { "rank": 18, "name": "Use of Hard-coded Credentials" },
+      "CWE-918": { "rank": 19, "name": "Server-Side Request Forgery (SSRF)" },
+      "CWE-306": { "rank": 20, "name": "Missing Authentication for Critical Function" },
+      "CWE-362": { "rank": 21, "name": "Concurrent Execution Using Shared Resource with Improper Synchronization" },
+      "CWE-269": { "rank": 22, "name": "Improper Privilege Management" },
+      "CWE-94": { "rank": 23, "name": "Improper Control of Generation of Code (Code Injection)" },
+      "CWE-863": { "rank": 24, "name": "Incorrect Authorization" },
+      "CWE-276": { "rank": 25, "name": "Incorrect Default Permissions" }
+    },
+    "nist_ai_rmf": {
+      "GOVERN": {
+        "description": "Governance structures for AI risk management",
+        "categories": {
+          "GV-1": "Policies for responsible AI design, development, deployment",
+          "GV-2": "Accountability structures in place",
+          "GV-3": "Workforce diversity and domain expertise",
+          "GV-4": "Organizational practices aligned with AI principles",
+          "GV-5": "Ongoing monitoring processes for deployed AI",
+          "GV-6": "Stakeholder feedback mechanisms"
+        }
+      },
+      "MAP": {
+        "description": "Mapping context and risks of AI systems",
+        "categories": {
+          "MAP-1": "Intended purposes, context of use, and known limitations documented",
+          "MAP-2": "AI system classified for risk and impact",
+          "MAP-3": "AI benefits and costs assessed across stakeholders",
+          "MAP-4": "Risks from third-party components identified",
+          "MAP-5": "Impacts to individuals, groups, communities assessed"
+        }
+      },
+      "MEASURE": {
+        "description": "Measuring identified AI risks",
+        "categories": {
+          "MS-1": "Appropriate metrics identified and applied",
+          "MS-2": "AI systems evaluated for trustworthy characteristics",
+          "MS-3": "Mechanisms for tracking identified risks over time",
+          "MS-4": "Feedback from deployment incorporated into measurements"
+        }
+      },
+      "MANAGE": {
+        "description": "Managing AI risks to acceptable levels",
+        "categories": {
+          "MG-1": "Risks prioritized based on assessment",
+          "MG-2": "Risk treatment strategies selected and implemented",
+          "MG-3": "Risk management of third-party AI resources",
+          "MG-4": "Risk treatments continuously monitored"
+        }
+      }
+    }
+  },
+  "semgrep_categories": {
+    "security.injection": {
+      "owasp": "A03:2021-Injection",
+      "cwe": ["CWE-89", "CWE-78", "CWE-79", "CWE-94"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Generic injection flaws: SQL, OS command, XSS, code injection"
+    },
+    "security.audit.exec": {
+      "owasp": "A03:2021-Injection",
+      "cwe": ["CWE-78", "CWE-77"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Dangerous exec/system/popen calls with user input"
+    },
+    "security.audit.subprocess": {
+      "owasp": "A03:2021-Injection",
+      "cwe": ["CWE-78", "CWE-77", "CWE-88"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Subprocess calls with shell=True or unsanitized arguments"
+    },
+    "security.sqli": {
+      "owasp": "A03:2021-Injection",
+      "cwe": ["CWE-89", "CWE-564"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "SQL injection via string formatting or concatenation"
+    },
+    "security.xss": {
+      "owasp": "A03:2021-Injection",
+      "cwe": ["CWE-79", "CWE-80"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Cross-site scripting through unescaped output"
+    },
+    "security.xxe": {
+      "owasp": "A05:2021-Security Misconfiguration",
+      "cwe": ["CWE-611", "CWE-776"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "XML External Entity processing vulnerabilities"
+    },
+    "security.ssrf": {
+      "owasp": "A10:2021-Server-Side Request Forgery",
+      "cwe": ["CWE-918"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Server-side request forgery via user-controlled URLs"
+    },
+    "security.deserialization": {
+      "owasp": "A08:2021-Software and Data Integrity Failures",
+      "cwe": ["CWE-502"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Insecure deserialization of untrusted data (pickle, yaml.load, etc.)"
+    },
+    "security.crypto": {
+      "owasp": "A02:2021-Cryptographic Failures",
+      "cwe": ["CWE-327", "CWE-328", "CWE-330"],
+      "nist_ai_rmf": ["MAP-4", "MG-2", "MS-2"],
+      "description": "Weak or broken cryptographic algorithms (MD5, SHA1, DES, RC4)"
+    },
+    "security.crypto.weak-hash": {
+      "owasp": "A02:2021-Cryptographic Failures",
+      "cwe": ["CWE-328", "CWE-916"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Use of weak hash functions for password storage or integrity"
+    },
+    "security.crypto.weak-random": {
+      "owasp": "A02:2021-Cryptographic Failures",
+      "cwe": ["CWE-330", "CWE-338"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Non-cryptographic PRNG used for security-sensitive operations"
+    },
+    "security.crypto.hardcoded-secret": {
+      "owasp": "A07:2021-Identification and Authentication Failures",
+      "cwe": ["CWE-798", "CWE-259", "CWE-321"],
+      "nist_ai_rmf": ["GV-1", "MAP-4", "MG-2"],
+      "description": "Hard-coded credentials, API keys, or secrets in source code"
+    },
+    "security.crypto.insecure-tls": {
+      "owasp": "A02:2021-Cryptographic Failures",
+      "cwe": ["CWE-319", "CWE-295", "CWE-297"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Disabled TLS verification, insecure protocol versions, weak cipher suites"
+    },
+    "security.auth": {
+      "owasp": "A07:2021-Identification and Authentication Failures",
+      "cwe": ["CWE-287", "CWE-306", "CWE-521"],
+      "nist_ai_rmf": ["GV-1", "MAP-4", "MG-2"],
+      "description": "Authentication bypass, missing authentication, weak password policies"
+    },
+    "security.auth.jwt": {
+      "owasp": "A07:2021-Identification and Authentication Failures",
+      "cwe": ["CWE-287", "CWE-345", "CWE-347"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "JWT algorithm confusion, missing verification, none algorithm"
+    },
+    "security.auth.session": {
+      "owasp": "A07:2021-Identification and Authentication Failures",
+      "cwe": ["CWE-384", "CWE-613"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Session fixation, missing session expiry, insecure session handling"
+    },
+    "security.access-control": {
+      "owasp": "A01:2021-Broken Access Control",
+      "cwe": ["CWE-284", "CWE-862", "CWE-863", "CWE-269"],
+      "nist_ai_rmf": ["GV-1", "GV-2", "MAP-4", "MG-2"],
+      "description": "Missing or improper authorization checks, privilege escalation"
+    },
+    "security.csrf": {
+      "owasp": "A01:2021-Broken Access Control",
+      "cwe": ["CWE-352"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Missing CSRF protection on state-changing endpoints"
+    },
+    "security.path-traversal": {
+      "owasp": "A01:2021-Broken Access Control",
+      "cwe": ["CWE-22", "CWE-23", "CWE-36"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Directory traversal via user-controlled file paths"
+    },
+    "security.open-redirect": {
+      "owasp": "A01:2021-Broken Access Control",
+      "cwe": ["CWE-601"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Unvalidated redirects using user-supplied URLs"
+    },
+    "security.cors": {
+      "owasp": "A05:2021-Security Misconfiguration",
+      "cwe": ["CWE-942", "CWE-346"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Overly permissive CORS configuration (wildcard origins, credentials)"
+    },
+    "security.audit.dangerous-call": {
+      "owasp": "A03:2021-Injection",
+      "cwe": ["CWE-94", "CWE-95"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Use of eval(), exec(), Function() with dynamic input"
+    },
+    "security.audit.file-upload": {
+      "owasp": "A04:2021-Insecure Design",
+      "cwe": ["CWE-434"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Unrestricted file upload without type/size validation"
+    },
+    "security.information-disclosure": {
+      "owasp": "A04:2021-Insecure Design",
+      "cwe": ["CWE-200", "CWE-209", "CWE-532"],
+      "nist_ai_rmf": ["MAP-5", "MG-2"],
+      "description": "Sensitive data in error messages, logs, or debug output"
+    },
+    "security.header-injection": {
+      "owasp": "A03:2021-Injection",
+      "cwe": ["CWE-113", "CWE-93"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "HTTP header injection via CRLF or unvalidated header values"
+    },
+    "security.template-injection": {
+      "owasp": "A03:2021-Injection",
+      "cwe": ["CWE-94", "CWE-1336"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Server-side template injection (SSTI) via user-controlled templates"
+    },
+    "security.regex-dos": {
+      "owasp": "A04:2021-Insecure Design",
+      "cwe": ["CWE-1333", "CWE-400"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Regular expression denial of service (ReDoS) via catastrophic backtracking"
+    },
+    "security.race-condition": {
+      "owasp": "A04:2021-Insecure Design",
+      "cwe": ["CWE-362", "CWE-367"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "TOCTOU and other race conditions leading to security bypass"
+    },
+    "security.memory": {
+      "owasp": "A04:2021-Insecure Design",
+      "cwe": ["CWE-787", "CWE-125", "CWE-416", "CWE-119", "CWE-476"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Memory safety issues: buffer overflow, use-after-free, null dereference"
+    },
+    "security.integer-overflow": {
+      "owasp": "A04:2021-Insecure Design",
+      "cwe": ["CWE-190", "CWE-191"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Integer overflow or underflow leading to unexpected behavior"
+    },
+    "security.logging": {
+      "owasp": "A09:2021-Security Logging and Monitoring Failures",
+      "cwe": ["CWE-778", "CWE-117", "CWE-223"],
+      "nist_ai_rmf": ["GV-5", "MS-3", "MG-4"],
+      "description": "Insufficient logging, log injection, or missing audit trails"
+    },
+    "security.secrets": {
+      "owasp": "A07:2021-Identification and Authentication Failures",
+      "cwe": ["CWE-798", "CWE-259", "CWE-522"],
+      "nist_ai_rmf": ["GV-1", "MAP-4", "MG-2"],
+      "description": "Secrets, tokens, passwords exposed in source code or config"
+    },
+    "security.misconfiguration.debug": {
+      "owasp": "A05:2021-Security Misconfiguration",
+      "cwe": ["CWE-489", "CWE-215"],
+      "nist_ai_rmf": ["GV-5", "MG-4"],
+      "description": "Debug mode enabled in production (Flask DEBUG, Django DEBUG, etc.)"
+    },
+    "security.misconfiguration.permissions": {
+      "owasp": "A01:2021-Broken Access Control",
+      "cwe": ["CWE-276", "CWE-732"],
+      "nist_ai_rmf": ["GV-1", "MAP-4", "MG-2"],
+      "description": "Incorrect file or resource permissions"
+    }
+  },
+  "osv_severity_mapping": {
+    "CRITICAL": {
+      "cvss_range": "9.0-10.0",
+      "owasp": "A06:2021-Vulnerable and Outdated Components",
+      "cwe": ["CWE-1395", "CWE-937", "CWE-1035", "CWE-1104"],
+      "nist_ai_rmf": ["MAP-4", "MG-1", "MG-2", "MG-3"],
+      "description": "Critical severity CVE in a dependency; immediate remediation required"
+    },
+    "HIGH": {
+      "cvss_range": "7.0-8.9",
+      "owasp": "A06:2021-Vulnerable and Outdated Components",
+      "cwe": ["CWE-1395", "CWE-937", "CWE-1035", "CWE-1104"],
+      "nist_ai_rmf": ["MAP-4", "MG-1", "MG-2", "MG-3"],
+      "description": "High severity CVE in a dependency; remediate within days"
+    },
+    "MEDIUM": {
+      "cvss_range": "4.0-6.9",
+      "owasp": "A06:2021-Vulnerable and Outdated Components",
+      "cwe": ["CWE-1395", "CWE-937", "CWE-1035"],
+      "nist_ai_rmf": ["MAP-4", "MG-2", "MG-3"],
+      "description": "Medium severity CVE in a dependency; remediate within weeks"
+    },
+    "LOW": {
+      "cvss_range": "0.1-3.9",
+      "owasp": "A06:2021-Vulnerable and Outdated Components",
+      "cwe": ["CWE-1395"],
+      "nist_ai_rmf": ["MAP-4", "MG-2"],
+      "description": "Low severity CVE in a dependency; track and remediate at next update cycle"
+    }
+  }
+}

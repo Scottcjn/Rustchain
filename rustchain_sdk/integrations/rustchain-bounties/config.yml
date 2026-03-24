@@ -1,0 +1,24 @@
+tip_bot:
+  # GitHub usernames allowed to issue /tip commands
+  maintainers:
+    - Scottcjn
+
+  # Token symbol accepted in tip commands (case-insensitive)
+  token_symbol: RTC
+
+  # Minimum and maximum tip amounts
+  min_amount: 1
+  max_amount: 10000
+
+  # Rate limiting: max tips per maintainer per hour
+  rate_limit:
+    max_per_hour: 20
+
+  # RustChain node for balance checks (set RUSTCHAIN_NODE_URL secret to override)
+  rustchain_node_url: "https://bulbous-bouffant.metalseed.net"
+
+  # Payout mode: "log_only" (v1 — maintainer manually sends RTC) or "auto" (future)
+  payout_mode: log_only
+
+  # State file path (relative to repo root) — committed to repo for persistence across runs
+  state_file: "tip_state.json"

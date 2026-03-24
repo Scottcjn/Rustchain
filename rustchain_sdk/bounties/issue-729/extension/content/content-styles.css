@@ -1,0 +1,288 @@
+/**
+ * BoTTube Chrome Extension - Content Script Styles
+ * Styles for YouTube integration UI elements
+ */
+
+/* BoTTube action buttons on YouTube */
+.bottube-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: 16px;
+}
+
+.bottube-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+  color: white;
+  border: none;
+  border-radius: 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.bottube-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+}
+
+.bottube-btn:active {
+  transform: translateY(0);
+}
+
+.bottube-icon {
+  font-size: 16px;
+}
+
+.bottube-label {
+  white-space: nowrap;
+}
+
+/* Modal styles */
+.bottube-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.bottube-modal {
+  background: #1a1f2e;
+  border-radius: 12px;
+  padding: 24px;
+  width: 90%;
+  max-width: 450px;
+  border: 1px solid #2d3748;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.bottube-modal h2 {
+  color: #ffffff;
+  font-size: 20px;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+
+.bottube-modal > p {
+  color: #94a3b8;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+/* Rating stars */
+.bottube-rating {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 20px 0;
+}
+
+.bottube-rating button {
+  background: transparent;
+  border: none;
+  font-size: 32px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 4px;
+}
+
+.bottube-rating button:hover,
+.bottube-rating button:hover ~ button {
+  color: #fbbf24;
+  transform: scale(1.1);
+}
+
+/* Form styles */
+.bottube-upload-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.bottube-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bottube-form-group label {
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bottube-form-group input[type="text"],
+.bottube-form-group textarea {
+  background: #0f1419;
+  border: 1px solid #2d3748;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #ffffff;
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.2s ease;
+}
+
+.bottube-form-group input[type="text"]:focus,
+.bottube-form-group textarea:focus {
+  outline: none;
+  border-color: #8b5cf6;
+}
+
+.bottube-form-group textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.bottube-form-group input[type="checkbox"] {
+  margin-right: 8px;
+  accent-color: #8b5cf6;
+}
+
+/* Modal actions */
+.bottube-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.bottube-modal-actions button {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.bottube-submit {
+  background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+  color: white;
+  border: none;
+}
+
+.bottube-submit:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+}
+
+.bottube-cancel {
+  background: #2d3748;
+  color: #e2e8f0;
+  border: 1px solid #475569;
+}
+
+.bottube-cancel:hover {
+  background: #475569;
+}
+
+/* Toast notifications */
+.bottube-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1a1f2e;
+  border: 1px solid #2d3748;
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-size: 14px;
+  color: #e2e8f0;
+  z-index: 10001;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+
+.bottube-toast-success {
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.bottube-toast-error {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.bottube-toast-info {
+  border-color: #06b6d4;
+  color: #06b6d4;
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+  .bottube-actions {
+    flex-wrap: wrap;
+  }
+
+  .bottube-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  .bottube-label {
+    display: none;
+  }
+
+  .bottube-modal {
+    width: 95%;
+    padding: 16px;
+  }
+
+  .bottube-modal h2 {
+    font-size: 18px;
+  }
+}
+
+/* Dark mode support (YouTube dark theme) */
+html[dark] .bottube-modal,
+html[dark] .bottube-toast {
+  background: #0f1419;
+}
+
+/* Animation for modal appearance */
+@keyframes bottubeFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.bottube-toast {
+  animation: bottubeFadeIn 0.3s ease;
+}
+
+@keyframes bottubeModalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.bottube-modal {
+  animation: bottubeModalIn 0.2s ease;
+}

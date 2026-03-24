@@ -1,0 +1,191 @@
+# Docker Compose for RustChain Prometheus Exporter - Bounty #765
+#
+# This docker-compose file sets up a complete monitoring stack:
+# - RustChain Prometheus Exporter
+# - Prometheus
+# - Grafana (optional)
+#
+# Usage:
+#   docker-compose up -d
+#
+# Access:
+#   - Exporter: http://localhost:9100/metrics
+#   - Prometheus: http://localhost:9090
+#   - Grafana: http://localhost:3000 (admin/rustchain)
+
+version: '3.8'
+
+services:
+  # RustChain Prometheus Exporter
+  rustchain-exporter:
+    image: rustchain-exporter:latest
+    build:
+      context: ../src
+      dockerfile: Dockerfile
+    container_name: rustchain-exporter
+    restart: unless-stopped
+    
+    environment:
+      # RustChain node URL
+      - RUSTCHAIN_NODE=https://rustchain.org
+      
+      # Exporter configuration
+      - EXPORTER_PORT=9100
+      - SCRAPE_INTERVAL=30
+      
+      # TLS settings
+      - TLS_VERIFY=true
+      # - TLS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+      
+      # Optional: Admin key for additional metrics
+      # - RUSTCHAIN_ADMIN_KEY=${RUSTCHAIN_ADMIN_KEY:-}
+    
+    ports:
+      - "9100:9100"
+    
+    networks:
+      - monitoring
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: rustchain-prometheus
+    restart: unless-stopped
+    
+    volumes:
+      # Prometheus configuration
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./rustchain_alerts.yml:/etc/prometheus/rules/rustchain_alerts.yml:ro
+      
+      # Prometheus data
+      - prometheus-data:/prometheus
+    
+    ports:
+      - "9090:9090"
+    
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.retention.size=5GB'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'  # Allow config reload via API
+      - '--web.enable-admin-api'  # Enable admin API
+    
+    networks:
+      - monitoring
+    
+    depends_on:
+      rustchain-exporter:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Grafana (optional visualization)
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: rustchain-grafana
+    restart: unless-stopped
+    
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+    
+    ports:
+      - "3000:3000"
+    
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=rustchain
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    
+    networks:
+      - monitoring
+    
+    depends_on:
+      - prometheus
+    
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Alertmanager (optional alerting)
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: rustchain-alertmanager
+    restart: unless-stopped
+    
+    volumes:
+      - ./alertmanager:/etc/alertmanager:ro
+      - alertmanager-data:/alertmanager
+    
+    ports:
+      - "9093:9093"
+    
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+      - '--cluster.listen-address='
+    
+    networks:
+      - monitoring
+    
+    depends_on:
+      - prometheus
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  alertmanager-data:
+    driver: local
+
+networks:
+  monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

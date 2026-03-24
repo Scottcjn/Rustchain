@@ -1,0 +1,15 @@
+# RustChain Prometheus Exporter Dependencies - Bounty #765
+#
+# Install with: pip install -r requirements.txt
+
+# HTTP client for fetching node metrics
+requests>=2.31.0
+
+# Prometheus client library (optional, for reference)
+# The exporter uses custom implementation for full control
+# prometheus_client>=0.19.0
+
+# Testing dependencies (development only)
+# pytest>=7.4.0
+# pytest-cov>=4.1.0
+# responses>=0.23.0

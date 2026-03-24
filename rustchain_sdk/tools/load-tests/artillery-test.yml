@@ -1,0 +1,74 @@
+# RustChain API Load Test Suite — Artillery
+# ============================================
+# Install:  npm install -g artillery
+# Run:      artillery run artillery-test.yml
+# Report:   artillery run --output results/artillery_report.json artillery-test.yml
+#           artillery report results/artillery_report.json --output results/artillery_report.html
+
+config:
+  target: "https://50.28.86.131"
+  tls:
+    rejectUnauthorized: false
+  phases:
+    - name: "Warm-up"
+      duration: 20
+      arrivalRate: 2
+    - name: "Ramp-up"
+      duration: 30
+      arrivalRate: 2
+      rampTo: 20
+    - name: "Sustained load"
+      duration: 60
+      arrivalRate: 20
+    - name: "Cool-down"
+      duration: 15
+      arrivalRate: 20
+      rampTo: 1
+  defaults:
+    headers:
+      Accept: "application/json"
+  ensure:
+    p95: 3000
+    maxErrorRate: 5
+
+scenarios:
+  - name: "Core API sweep"
+    flow:
+      - get:
+          url: "/health"
+          capture:
+            - json: "$.ok"
+              as: "health_ok"
+          expect:
+            - statusCode: 200
+            - hasProperty: "ok"
+
+      - think: 0.5
+
+      - get:
+          url: "/epoch"
+          expect:
+            - statusCode: 200
+            - hasProperty: "epoch"
+
+      - think: 0.5
+
+      - get:
+          url: "/headers/tip"
+          expect:
+            - statusCode: 200
+
+      - think: 0.5
+
+      - get:
+          url: "/api/miners"
+          expect:
+            - statusCode: 200
+
+      - think: 0.5
+
+      - get:
+          url: "/wallet/balance?miner_id=Ivan-houzhiwen"
+          expect:
+            - statusCode: 200
+            - hasProperty: "amount_rtc"

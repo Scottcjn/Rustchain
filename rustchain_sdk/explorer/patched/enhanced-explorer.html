@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Block Explorer</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card: #1f2940;
+            --accent: #f39c12;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0b0;
+            --success: #27ae60;
+            --danger: #e74c3c;
+            --border: #2d3748;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: var(--bg-secondary);
+            border-bottom: 2px solid var(--accent);
+            padding: 20px 0;
+            margin-bottom: 30px;
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .logo-icon {
+            font-size: 32px;
+        }
+
+        nav {
+            display: flex;
+            gap: 10px;
+        }
+
+        .nav-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .nav-btn:hover, .nav-btn.active {
+            background: var(--accent);
+            color: var(--bg-primary);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--accent);
+        }
+
+        .stat-icon {
+            font-size: 32px;
+            margin-bottom: 12px;
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: var(--accent);
+        }
+
+        .stat-subvalue {
+            color: var(--text-secondary);
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        .section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 30px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 24px;
+            background: var(--accent);
+            border-radius: 2px;
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 14px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            background: var(--bg-secondary);
+            color: var(--accent);
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+        }
+
+        tr:hover {
+            background: var(--bg-secondary);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-success {
+            background: rgba(39, 174, 96, 0.2);
+            color: var(--success);
+        }
+
+        .badge-warning {
+            background: rgba(243, 156, 18, 0.2);
+            color: var(--accent);
+        }
+
+        .badge-danger {
+            background: rgba(231, 76, 60, 0.2);
+            color: var(--danger);
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 12px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .refresh-btn {
+            background: var(--accent);
+            color: var(--bg-primary);
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .refresh-btn:hover {
+            opacity: 0.9;
+        }
+
+        .arch-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .multiplier {
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .search-input {
+            flex: 1;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .btn {
+            background: var(--accent);
+            color: var(--bg-primary);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .view {
+            display: none;
+        }
+
+        .view.active {
+            display: block;
+        }
+
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: 16px;
+            }
+
+            nav {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <a href="/" class="logo">
+                    <span class="logo-icon">🦀</span>
+                    <span>RustChain Block Explorer</span>
+                </a>
+                <nav>
+                    <button class="nav-btn active" onclick="switchView('overview')">Overview</button>
+                    <button class="nav-btn" onclick="switchView('miners')">Miners</button>
+                    <button class="nav-btn" onclick="switchView('epochs')">Epochs</button>
+                    <button class="nav-btn" onclick="switchView('transactions')">Transactions</button>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <div id="overview" class="view active">
+            <button class="refresh-btn" onclick="refreshAll()">🔄 Refresh All</button>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-label">Network Status</div>
+                    <div id="network-status" class="stat-value">Loading...</div>
+                    <div id="network-uptime" class="stat-subvalue"></div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">⛏️</div>
+                    <div class="stat-label">Active Miners</div>
+                    <div id="active-miners" class="stat-value">Loading...</div>
+                    <div id="total-hashrate" class="stat-subvalue"></div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">🕐</div>
+                    <div class="stat-label">Current Epoch</div>
+                    <div id="current-epoch" class="stat-value">Loading...</div>
+                    <div id="epoch-slot" class="stat-subvalue"></div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">💰</div>
+                    <div class="stat-label">Epoch Pot</div>
+                    <div id="epoch-pot" class="stat-value">Loading...</div>
+                    <div class="stat-subvalue">RTC</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2 class="section-title">Recent Miners</h2>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Miner ID</th>
+                                <th>Architecture</th>
+                                <th>Multiplier</th>
+                                <th>Status</th>
+                                <th>Last Attestation</th>
+                                <th>Earnings</th>
+                            </tr>
+                        </thead>
+                        <tbody id="miners-table">
+                            <tr>
+                                <td colspan="6" class="loading">
+                                    <div class="spinner"></div> Loading miners...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="miners" class="view">
+            <button class="refresh-btn" onclick="loadMiners()">🔄 Refresh Miners</button>
+            
+            <div class="search-box">
+                <input type="text" class="search-input" id="miner-search" placeholder="Search miners by ID, architecture, or wallet...">
+                <button class="btn" onclick="searchMiners()">🔍 Search</button>
+            </div>
+
+            <div class="section">
+                <h2 class="section-title">All Miners</h2>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Miner ID</th>
+                                <th>Architecture</th>
+                                <th>Multiplier</th>
+                                <th>Status</th>
+                                <th>Last Attestation</th>
+                                <th>Wallet</th>
+                                <th>Earnings</th>
+                            </tr>
+                        </thead>
+                        <tbody id="all-miners-table">
+                            <tr>
+                                <td colspan="7" class="loading">
+                                    <div class="spinner"></div> Loading miners...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="epochs" class="view">
+            <button class="refresh-btn" onclick="loadEpoch()">🔄 Refresh Epoch</button>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">🔢</div>
+                    <div class="stat-label">Epoch Number</div>
+                    <div id="epoch-number" class="stat-value">Loading...</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">📏</div>
+                    <div class="stat-label">Slot</div>
+                    <div id="epoch-slot-num" class="stat-value">Loading...</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">📐</div>
+                    <div class="stat-label">Height</div>
+                    <div id="epoch-height" class="stat-value">Loading...</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">⏱️</div>
+                    <div class="stat-label">Timestamp</div>
+                    <div id="epoch-timestamp" class="stat-value">Loading...</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="transactions" class="view">
+            <button class="refresh-btn" onclick="loadTransactions()">🔄 Refresh Transactions</button>
+
+            <div class="section">
+                <h2 class="section-title">Recent Transactions</h2>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Hash</th>
+                                <th>From</th>
+                                <th>To</th>
+                                <th>Amount</th>
+                                <th>Fee</th>
+                                <th>Timestamp</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transactions-table">
+                            <tr>
+                                <td colspan="7" class="loading">
+                                    <div class="spinner"></div> Loading transactions...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const API_BASE = 'https://50.28.86.131';
+
+        // SECURITY: HTML escape to prevent XSS via innerHTML injection
+        function escapeHtml(str) {
+            if (str == null) return '';
+            const s = String(str);
+            return s
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        // SECURITY: Block framing to prevent clickjacking
+        try { if (window !== top) top.location.location = self.location; } catch(e) {}
+
+        function switchView(viewName) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            
+            document.getElementById(viewName).classList.add('active');
+            event.target.classList.add('active');
+            
+            if (viewName === 'overview') refreshAll();
+            if (viewName === 'miners') loadMiners();
+            if (viewName === 'epochs') loadEpoch();
+            if (viewName === 'transactions') loadTransactions();
+        }
+
+        async function fetchAPI(endpoint) {
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return await response.json();
+            } catch (error) {
+                console.error(`Error fetching ${endpoint}:`, error);
+                return null;
+            }
+        }
+
+        async function loadHealth() {
+            const health = await fetchAPI('/health');
+            if (health) {
+                document.getElementById('network-status').textContent = health.ok ? '✅ Online' : '❌ Offline';
+                if (health.uptime_s) {
+                    const hours = Math.floor(health.uptime_s / 3600);
+                    document.getElementById('network-uptime').textContent = `Uptime: ${hours}h`;
+                }
+            }
+        }
+
+        async function loadMiners() {
+            const miners = await fetchAPI('/api/miners');
+            if (miners && miners.miners) {
+                const minerList = miners.miners;
+                document.getElementById('active-miners').textContent = minerList.length;
+                
+                const overviewTable = document.getElementById('miners-table');
+                // SECURITY FIX: escapeHtml added for miner_id and architecture
+                overviewTable.innerHTML = minerList.slice(0, 10).map(miner => `
+                    <tr>
+                        <td><strong>${escapeHtml(miner.miner_id || 'Unknown')}</strong></td>
+                        <td><span class="arch-badge">${escapeHtml(miner.architecture || miner.device_arch || 'Unknown')}</span></td>
+                        <td><span class="multiplier">x${miner.multiplier || miner.antiquity_multiplier || '1.0'}</span></td>
+                        <td><span class="badge badge-success">Online</span></td>
+                        <td>${formatTime(miner.last_attestation || miner.last_seen)}</td>
+                        <td>${(miner.earnings || miner.total_earned || 0).toFixed(2)} RTC</td>
+                    </tr>
+                `).join('');
+
+                const allMinersTable = document.getElementById('all-miners-table');
+                // SECURITY FIX: escapeHtml added for miner_id and wallet
+                allMinersTable.innerHTML = minerList.map(miner => `
+                    <tr>
+                        <td><strong>${escapeHtml(miner.miner_id || 'Unknown')}</strong></td>
+                        <td><span class="arch-badge">${escapeHtml(miner.architecture || miner.device_arch || 'Unknown')}</span></td>
+                        <td><span class="multiplier">x${miner.multiplier || miner.antiquity_multiplier || '1.0'}</span></td>
+                        <td><span class="badge badge-success">Online</span></td>
+                        <td>${formatTime(miner.last_attestation || miner.last_seen)}</td>
+                        <td><code>${escapeHtml(miner.wallet || miner.wallet_address || 'N/A')}</code></td>
+                        <td>${(miner.earnings || miner.total_earned || 0).toFixed(2)} RTC</td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        async function loadEpoch() {
+            const epoch = await fetchAPI('/epoch');
+            if (epoch) {
+                document.getElementById('current-epoch').textContent = epoch.epoch || 'N/A';
+                document.getElementById('epoch-slot').textContent = `Slot: ${epoch.slot || 'N/A'}`;
+                
+                document.getElementById('epoch-number').textContent = epoch.epoch || 'N/A';
+                document.getElementById('epoch-slot-num').textContent = epoch.slot || 'N/A';
+                document.getElementById('epoch-height').textContent = epoch.height || 'N/A';
+                document.getElementById('epoch-timestamp').textContent = epoch.timestamp ? new Date(epoch.timestamp).toLocaleString() : 'N/A';
+            }
+        }
+
+        async function loadTransactions() {
+            const transactions = await fetchAPI('/api/transactions') || { transactions: [] };
+            
+            const table = document.getElementById('transactions-table');
+            if (transactions.transactions && transactions.transactions.length > 0) {
+                // SECURITY FIX: escapeHtml added for tx.hash, tx.from, tx.to
+                table.innerHTML = transactions.transactions.slice(0, 20).map(tx => `
+                    <tr>
+                        <td><code>${escapeHtml(tx.hash || tx.tx_hash || 'N/A')}</code></td>
+                        <td><code>${escapeHtml(tx.from || 'N/A')}</code></td>
+                        <td><code>${escapeHtml(tx.to || 'N/A')}</code></td>
+                        <td>${(tx.amount / 1000000 || 0).toFixed(2)} RTC</td>
+                        <td>${(tx.fee / 1000000 || 0).toFixed(4)} RTC</td>
+                        <td>${formatTime(tx.timestamp)}</td>
+                        <td><span class="badge badge-success">Confirmed</span></td>
+                    </tr>
+                `).join('');
+            } else {
+                table.innerHTML = `
+                    <tr>
+                        <td colspan="7" style="text-align: center; color: var(--text-secondary);">
+                            No recent transactions or API endpoint not available
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        function formatTime(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = Math.floor((now - date) / 1000);
+            
+            if (diff < 60) return `${diff}s ago`;
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+            return date.toLocaleString();
+        }
+
+        function searchMiners() {
+            const query = document.getElementById('miner-search').value.toLowerCase();
+            const rows = document.querySelectorAll('#all-miners-table tr');
+            
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(query) ? '' : 'none';
+            });
+        }
+
+        async function refreshAll() {
+            await Promise.all([
+                loadHealth(),
+                loadMiners(),
+                loadEpoch()
+            ]);
+        }
+
+        refreshAll();
+        setInterval(refreshAll, 30000);
+    </script>
+</body>
+</html>

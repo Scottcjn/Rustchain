@@ -1,0 +1,20 @@
+{
+  "name": "Edge Case Scenario",
+  "description": "Tests edge cases: single miner, zero stake, maximum antiquity",
+  "seed": 12345,
+  "epochs": 2,
+  "miners": [
+    {
+      "id": "single-miner",
+      "public_key": "pk_single_000000000000000000000000000000000",
+      "stake": 1000,
+      "cpu_model": "Intel 4004",
+      "release_year": 1971,
+      "uptime_days": 10000
+    }
+  ],
+  "expected_behavior": {
+    "single_producer": "Single miner should produce all blocks",
+    "no_competition": "No contention for block production"
+  }
+}

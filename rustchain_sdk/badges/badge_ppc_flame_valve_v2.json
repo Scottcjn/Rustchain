@@ -1,0 +1,19 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_ppc_flame_valve_v2",
+            "title": "PowerPC Flame Valve",
+            "class": "Legendary",
+            "description": "Awarded for running a RustChain validator on any PowerPC system. From beige G3 to RS/6000 towers, the RISC burned righteous.",
+            "emotional_resonance": {
+                "state": "righteous instruction",
+                "trigger": "PowerPC architecture detected in validator proof",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\ud83c\udf00\ud83d\udcbe\ud83d\udd6f\ufe0f",
+            "visual_anchor": "Burned-in CRT with copper-colored validator glyphs flickering beside the PowerPC logo",
+            "rarity": "Legendary",
+            "soulbound": true
+        }
+    ]
+}

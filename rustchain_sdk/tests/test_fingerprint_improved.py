@@ -1,0 +1,422 @@
+"""
+Test suite for hardware fingerprint validation in RustChain.
+
+This module tests the hardware fingerprinting system which ensures
+miners are running on genuine hardware.
+
+Original author: Atlas (AI Bounty Hunter)
+Fixed: 2026-02-28 — aligned with hardened validate_fingerprint_data
+"""
+
+import hashlib
+import pytest
+import sys
+import os
+from pathlib import Path
+from typing import Dict, Any, Optional, Tuple
+
+# Modules are pre-loaded in conftest.py
+integrated_node = sys.modules["integrated_node"]
+_compute_hardware_id = integrated_node._compute_hardware_id
+validate_fingerprint_data = integrated_node.validate_fingerprint_data
+
+# ── Reusable valid check payloads ──
+# The hardened validate_fingerprint_data requires BOTH anti_emulation AND
+# clock_drift for modern hardware. Tests focusing on one check must still
+# include the other with valid data to pass the required-checks gate.
+
+VALID_ANTI_EMULATION = {
+    "passed": True,
+    "data": {"vm_indicators": [], "paths_checked": ["/proc/cpuinfo"]}
+}
+
+VALID_CLOCK_DRIFT = {
+    "passed": True,
+    "data": {"cv": 0.05, "samples": 50}
+}
+
+
+class TestHardwareIDUniqueness:
+    """Test that hardware IDs are unique for different inputs."""
+
+    def test_different_serial_numbers_produce_different_ids(self):
+        """Verify that different CPU serials produce different hardware IDs."""
+        device1 = {
+            "device_model": "G4",
+            "device_arch": "ppc",
+            "device_family": "7447",
+            "cores": 1,
+            "cpu_serial": "1234567890"
+        }
+        device2 = {
+            "device_model": "G4",
+            "device_arch": "ppc",
+            "device_family": "7447",
+            "cores": 1,
+            "cpu_serial": "0987654321"
+        }
+
+        id1 = _compute_hardware_id(device1, source_ip="1.1.1.1")
+        id2 = _compute_hardware_id(device2, source_ip="1.1.1.1")
+
+        assert id1 != id2, "Different serial numbers should produce different IDs"
+        assert len(id1) == 32, "Hardware ID should be 32 characters"
+
+    def test_different_core_counts_produce_different_ids(self):
+        """Verify that different core counts produce different hardware IDs."""
+        device1 = {
+            "device_model": "G5",
+            "device_arch": "ppc64",
+            "device_family": "970",
+            "cores": 1,
+            "cpu_serial": "ABC123"
+        }
+        device2 = {
+            "device_model": "G5",
+            "device_arch": "ppc64",
+            "device_family": "970",
+            "cores": 2,
+            "cpu_serial": "ABC123"
+        }
+
+        id1 = _compute_hardware_id(device1, source_ip="1.1.1.1")
+        id2 = _compute_hardware_id(device2, source_ip="1.1.1.1")
+
+        assert id1 != id2, "Different core counts should produce different IDs"
+
+    def test_different_architectures_produce_different_ids(self):
+        """Verify that different architectures produce different hardware IDs."""
+        device1 = {
+            "device_model": "G4",
+            "device_arch": "ppc",
+            "device_family": "7447",
+            "cores": 2,
+            "cpu_serial": "SERIAL1"
+        }
+        device2 = {
+            "device_model": "G5",
+            "device_arch": "ppc64",
+            "device_family": "970",
+            "cores": 2,
+            "cpu_serial": "SERIAL2"
+        }
+
+        id1 = _compute_hardware_id(device1, source_ip="1.1.1.1")
+        id2 = _compute_hardware_id(device2, source_ip="1.1.1.1")
+
+        assert id1 != id2, "Different architectures should produce different IDs"
+
+
+class TestHardwareIDConsistency:
+    """Test that hardware IDs are consistent for same inputs."""
+
+    def test_same_device_same_ip_produces_same_id(self):
+        """Verify that identical inputs with same IP produce identical IDs."""
+        device = {
+            "device_model": "G5",
+            "device_arch": "ppc64",
+            "device_family": "970",
+            "cores": 2,
+            "cpu_serial": "ABC123"
+        }
+        signals = {"macs": ["00:11:22:33:44:55"]}
+
+        id1 = _compute_hardware_id(device, signals, source_ip="2.2.2.2")
+        id2 = _compute_hardware_id(device, signals, source_ip="2.2.2.2")
+
+        assert id1 == id2, "Same device with same IP should produce same ID"
+
+    def test_same_device_different_ip_produces_different_id(self):
+        """Verify that same device with different IP produces different ID."""
+        device = {
+            "device_model": "G4",
+            "device_arch": "ppc",
+            "device_family": "7447",
+            "cores": 1,
+            "cpu_serial": "TEST123"
+        }
+        signals = {"macs": ["AA:BB:CC:DD:EE:FF"]}
+
+        id1 = _compute_hardware_id(device, signals, source_ip="192.168.1.1")
+        id2 = _compute_hardware_id(device, signals, source_ip="10.0.0.1")
+
+        assert id1 != id2, "Same device with different IP should produce different ID"
+
+
+class TestFingerprintValidation:
+    """Test fingerprint validation logic."""
+
+    def test_validate_fingerprint_data_no_data(self):
+        """Missing fingerprint payload must fail validation."""
+        passed, reason = validate_fingerprint_data(None)
+        assert passed is False, "None data should fail validation"
+        assert reason == "no_fingerprint_data", "Error should indicate no fingerprint data"
+
+    def test_validate_fingerprint_data_empty_dict(self):
+        """Empty dictionary should fail validation."""
+        passed, reason = validate_fingerprint_data({})
+        assert passed is False, "Empty dict should fail validation"
+
+    def test_validate_fingerprint_data_valid_data(self):
+        """Valid fingerprint data with both required checks should pass."""
+        fingerprint = {
+            "checks": {
+                "anti_emulation": VALID_ANTI_EMULATION,
+                "clock_drift": VALID_CLOCK_DRIFT,
+            }
+        }
+        passed, reason = validate_fingerprint_data(fingerprint)
+        assert passed is True, "Valid fingerprint should pass"
+
+
+class TestAntiEmulationDetection:
+    """Test VM detection and anti-emulation checks."""
+
+    def test_vm_detection_with_vboxguest(self):
+        """Verify detection of VirtualBox guest indicators."""
+        fingerprint = {
+            "checks": {
+                "anti_emulation": {
+                    "passed": False,
+                    "data": {
+                        "vm_indicators": ["vboxguest"],
+                        "passed": False
+                    }
+                },
+                "clock_drift": VALID_CLOCK_DRIFT,
+            }
+        }
+        passed, reason = validate_fingerprint_data(fingerprint)
+        assert passed is False, "VM detection should fail with vboxguest"
+        assert "vm_detected" in reason, "Reason should mention VM detection"
+
+    def test_vm_detection_with_no_indicators(self):
+        """Verify no false positives when real hardware reports no VM indicators."""
+        fingerprint = {
+            "checks": {
+                "anti_emulation": VALID_ANTI_EMULATION,
+                "clock_drift": VALID_CLOCK_DRIFT,
+            }
+        }
+        passed, reason = validate_fingerprint_data(fingerprint)
+        assert passed is True, "No VM indicators should pass validation"
+
+    def test_vm_detection_with_multiple_indicators(self):
+        """Verify detection with multiple VM indicators."""
+        fingerprint = {
+            "checks": {
+                "anti_emulation": {
+                    "passed": False,
+                    "data": {
+                        "vm_indicators": ["vboxguest", "vmware", "parallels"],
+                        "passed": False
+                    }
+                },
+                "clock_drift": VALID_CLOCK_DRIFT,
+            }
+        }
+        passed, reason = validate_fingerprint_data(fingerprint)
+        assert passed is False, "Multiple VM indicators should fail"
+
+
+class TestEvidenceRequirements:
+    """Test that evidence is required for all checks."""
+
+    def test_no_evidence_fails(self):
+        """Verify rejection if check data has no recognized evidence fields."""
+        fingerprint = {
+            "checks": {
+                "anti_emulation": {
+                    "passed": True,
+                    "data": {"irrelevant_field": True}  # No vm_indicators/dmesg/paths
+                },
+                "clock_drift": VALID_CLOCK_DRIFT,
+            }
+        }
+        passed, reason = validate_fingerprint_data(fingerprint)
+        assert passed is False, "Checks with no evidence should fail"
+        assert reason == "anti_emulation_no_evidence", "Error should indicate missing evidence"
+
+    def test_empty_check_data_fails(self):
+        """Verify rejection if check data dict is empty."""
+        fingerprint = {
+            "checks": {
+                "anti_emulation": {
+                    "passed": True,
+                    "data": {}  # Empty data triggers empty_check_data guard
+                },
+                "clock_drift": VALID_CLOCK_DRIFT,
+            }
+        }
+        passed, reason = validate_fingerprint_data(fingerprint)
+        assert passed is False, "Empty check data should fail"
+        assert "empty_check_data" in reason, "Error should indicate empty check data"
+
+
+class TestClockDriftDetection:
+    """Test clock drift detection and timing validation."""
+
+    def test_timing_too_uniform_fails(self):
+        """Verify rejection of too uniform timing (clock drift check)."""
+        fingerprint = {
+            "checks": {
+                "anti_emulation": VALID_ANTI_EMULATION,
+                "clock_drift": {
+                    "passed": True,
+                    "data": {
+                        "cv": 0.000001,  # Too stable
+                        "samples": 100
+                    }
+                }
+            }
+        }
+        passed, reason = validate_fingerprint_data(fingerprint)
+        assert passed is False, "Too uniform timing should fail"
+        assert "timing_too_uniform" in reason, "Reason should mention timing issue"
+
+    def test_clock_drift_no_evidence(self):
+        """Clock drift with zero samples and zero cv is rejected."""
+        fingerprint = {
+            "checks": {
+                "anti_emulation": VALID_ANTI_EMULATION,
+                "clock_drift": {
+                    "passed": True,
+                    "data": {
+                        "cv": 0,
+                        "samples": 0
+                    }
+                }
+            }
+        }
+        passed, reason = validate_fingerprint_data(fingerprint)
+        assert passed is False, "Zero samples/cv should fail"
+        assert "clock_drift_no_evidence" in reason, "Error should mention no evidence"
+
+    def test_valid_clock_drift_passes(self):
+        """Valid clock drift data should pass."""
+        fingerprint = {
+            "checks": {
+                "anti_emulation": VALID_ANTI_EMULATION,
+                "clock_drift": {
+                    "passed": True,
+                    "data": {
+                        "cv": 0.15,  # Reasonable variation
+                        "samples": 50
+                    }
+                }
+            }
+        }
+        passed, reason = validate_fingerprint_data(fingerprint)
+        assert passed is True, "Valid clock drift should pass"
+
+
+class TestVintageHardwareTiming:
+    """Test vintage hardware-specific timing requirements."""
+
+    @staticmethod
+    def _verified_g4_checks(cv: float) -> dict:
+        return {
+            "anti_emulation": VALID_ANTI_EMULATION,
+            "clock_drift": {
+                "passed": True,
+                "data": {
+                    "cv": cv,
+                    "samples": 100,
+                },
+            },
+            "simd_identity": {
+                "passed": True,
+                "data": {
+                    "has_altivec": True,
+                    "has_sse": False,
+                    "has_avx": False,
+                    "vec_perm": True,
+                },
+            },
+            "cache_timing": {
+                "passed": True,
+                "data": {
+                    "arch": "powerpc",
+                    "l2_l1_ratio": 1.4,
+                    "l3_l2_ratio": 1.15,
+                },
+            },
+        }
+
+    def test_vintage_stability_too_high(self):
+        """Verify rejection of suspicious stability on vintage hardware."""
+        claimed_device = {
+            "device_arch": "G4",
+            "cpu": "PowerPC G4 7447A",
+        }
+        fingerprint = {
+            "checks": self._verified_g4_checks(0.001)
+        }
+        passed, reason = validate_fingerprint_data(fingerprint, claimed_device)
+        assert passed is False, "Suspiciously stable vintage timing should fail"
+        assert "vintage_timing_too_stable" in reason, "Reason should mention vintage timing"
+
+    def test_vintage_normal_variation_passes(self):
+        """Normal variation for vintage hardware should pass."""
+        claimed_device = {
+            "device_arch": "G4",
+            "cpu": "PowerPC G4 7447A",
+        }
+        fingerprint = {
+            "checks": self._verified_g4_checks(0.05)
+        }
+        passed, reason = validate_fingerprint_data(fingerprint, claimed_device)
+        assert passed is True, "Normal vintage timing should pass"
+
+
+class TestEdgeCases:
+    """Test edge cases and boundary conditions."""
+
+    def test_unicode_serial_number(self):
+        """Verify handling of Unicode serial numbers."""
+        device = {
+            "device_model": "G5",
+            "device_arch": "ppc64",
+            "device_family": "970",
+            "cores": 2,
+            "cpu_serial": "ABC123_測試"
+        }
+        id1 = _compute_hardware_id(device, source_ip="1.1.1.1")
+        id2 = _compute_hardware_id(device, source_ip="1.1.1.1")
+        assert id1 == id2, "Unicode serial should be handled consistently"
+
+    def test_empty_signals(self):
+        """Verify handling of empty signals dictionary."""
+        device = {
+            "device_model": "G4",
+            "device_arch": "ppc",
+            "device_family": "7447",
+            "cores": 1,
+            "cpu_serial": "SERIAL"
+        }
+        signals = {}
+        id1 = _compute_hardware_id(device, signals, source_ip="1.1.1.1")
+        assert len(id1) == 32, "Empty signals should still produce valid ID"
+
+    def test_multiple_mac_addresses(self):
+        """Verify handling of multiple MAC addresses."""
+        device = {
+            "device_model": "G5",
+            "device_arch": "ppc64",
+            "device_family": "970",
+            "cores": 2,
+            "cpu_serial": "MAC123"
+        }
+        signals = {
+            "macs": [
+                "00:11:22:33:44:55",
+                "AA:BB:CC:DD:EE:FF",
+                "11:22:33:44:55:66"
+            ]
+        }
+        id1 = _compute_hardware_id(device, signals, source_ip="1.1.1.1")
+        assert len(id1) == 32, "Multiple MACs should produce valid ID"
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v", "--tb=short"])

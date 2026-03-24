@@ -1,0 +1,22 @@
+{
+  "Kickstart 1.2": {
+    "checksum": 8321324,
+    "version": "33.180",
+    "notes": "Original A500 ROM, 1987"
+  },
+  "Kickstart 1.3": {
+    "checksum": 8589954,
+    "version": "34.5",
+    "notes": "Most common A500/A2000 ROM"
+  },
+  "Kickstart 2.04": {
+    "checksum": 8984572,
+    "version": "37.175",
+    "notes": "Used in A600/A3000"
+  },
+  "Kickstart 3.1": {
+    "checksum": 9432468,
+    "version": "40.68",
+    "notes": "A1200 / A4000 class"
+  }
+}

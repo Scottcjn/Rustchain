@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="RustChain Block Explorer - Real-time blockchain explorer for Proof-of-Antiquity network">
+    <meta name="theme-color" content="#8b5cf6">
+    
+    <title>RustChain Explorer - Proof of Antiquity</title>
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="RustChain">
+    
+    <!-- Static Stylesheets -->
+    <link rel="stylesheet" href="static/css/explorer.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦀</text></svg>">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦀</text></svg>">
+    
+    <!-- Preconnect to API -->
+    <link rel="preconnect" href="https://rustchain.org">
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <a href="/" class="logo">
+                    <span class="logo-icon" aria-hidden="true">🦀</span>
+                    <span>RustChain Explorer</span>
+                </a>
+                <nav class="nav" aria-label="Main navigation">
+                    <button class="nav-btn active" data-view="overview" aria-current="page" onclick="switchView('overview')">Overview</button>
+                    <button class="nav-btn" data-view="blocks" onclick="switchView('blocks')">Blocks</button>
+                    <button class="nav-btn" data-view="transactions" onclick="switchView('transactions')">Transactions</button>
+                    <button class="nav-btn" data-view="miners" onclick="switchView('miners')">Miners</button>
+                    <button class="nav-btn" data-view="hall" onclick="switchView('hall')">Hall of Rust</button>
+                </nav>
+            </div>
+        </div>
+    </header>
+    
+    <!-- Status Bar -->
+    <div class="status-bar" role="status" aria-live="polite">
+        <div class="container">
+            <div id="status-bar-content" class="status-content">
+                <div class="loading"><div class="spinner" aria-hidden="true"></div>Connecting...</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Content -->
+    <main class="main" id="main-content">
+        <div class="container">
+            <!-- Search Box -->
+            <div class="search-box" role="search">
+                <label for="search-input" class="sr-only">Search by miner ID, wallet address, or architecture</label>
+                <input
+                    type="text"
+                    id="search-input"
+                    class="search-input"
+                    placeholder="Search by miner ID, wallet address, or architecture..."
+                    autocomplete="off"
+                >
+                <button class="btn btn-primary" onclick="handleSearch(document.getElementById('search-input').value)">
+                    <span aria-hidden="true">🔍</span> Search
+                </button>
+                <button id="refresh-btn" class="btn btn-secondary" aria-label="Refresh data">
+                    <span aria-hidden="true">🔄</span> Refresh
+                </button>
+            </div>
+            
+            <!-- Search Results -->
+            <div id="search-results" class="section" style="display: none;" aria-live="polite" role="region" aria-label="Search results"></div>
+            
+            <!-- Overview View -->
+            <div id="view-overview" class="view-content">
+                <!-- Epoch Stats -->
+                <div id="epoch-stats" class="stats-grid">
+                    <div class="card"><div class="skeleton" style="height: 80px;"></div></div>
+                    <div class="card"><div class="skeleton" style="height: 80px;"></div></div>
+                    <div class="card"><div class="skeleton" style="height: 80px;"></div></div>
+                    <div class="card"><div class="skeleton" style="height: 80px;"></div></div>
+                </div>
+                
+                <!-- Stats Cards -->
+                <div class="cards-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title"><span aria-hidden="true">📊</span> Network Stats</span>
+                        </div>
+                        <div id="network-stats" aria-live="polite">
+                            <div class="loading"><div class="spinner" aria-hidden="true"></div>Loading...</div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title"><span aria-hidden="true">⚙️</span> Hardware Breakdown</span>
+                        </div>
+                        <div id="hardware-breakdown" aria-live="polite">
+                            <div class="loading"><div class="spinner" aria-hidden="true"></div>Loading...</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Recent Blocks -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title"><span aria-hidden="true">📦</span> Recent Blocks</h2>
+                        <button class="btn btn-secondary btn-sm" onclick="switchView('blocks')">View All</button>
+                    </div>
+                    <div class="table-container" role="region" aria-label="Recent blocks" tabindex="0">
+                        <table>
+                            <caption class="sr-only">Recent blocks on the RustChain network</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Height</th>
+                                    <th scope="col">Hash</th>
+                                    <th scope="col">Timestamp</th>
+                                    <th scope="col">Miners</th>
+                                    <th scope="col">Reward</th>
+                                </tr>
+                            </thead>
+                            <tbody id="blocks-tbody">
+                                <tr><td colspan="5" class="loading"><div class="spinner" aria-hidden="true"></div>Loading blocks...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Recent Transactions -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title"><span aria-hidden="true">💸</span> Recent Transactions</h2>
+                        <button class="btn btn-secondary btn-sm" onclick="switchView('transactions')">View All</button>
+                    </div>
+                    <div class="table-container" role="region" aria-label="Recent transactions" tabindex="0">
+                        <table>
+                            <caption class="sr-only">Recent transactions on the RustChain network</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Hash</th>
+                                    <th scope="col">Type</th>
+                                    <th scope="col">From</th>
+                                    <th scope="col">To</th>
+                                    <th scope="col">Amount</th>
+                                    <th scope="col">Time</th>
+                                </tr>
+                            </thead>
+                            <tbody id="transactions-tbody">
+                                <tr><td colspan="6" class="loading"><div class="spinner" aria-hidden="true"></div>Loading transactions...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Blocks View -->
+            <div id="view-blocks" class="view-content" style="display: none;" role="tabpanel" aria-label="All blocks">
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title"><span aria-hidden="true">📦</span> All Blocks</h2>
+                        <button class="btn btn-secondary btn-sm" onclick="RustChainExplorer.refresh()" aria-label="Refresh blocks">
+                            <span aria-hidden="true">🔄</span> Refresh
+                        </button>
+                    </div>
+                    <div class="table-container" role="region" aria-label="All blocks" tabindex="0">
+                        <table>
+                            <caption class="sr-only">Complete list of blocks on the RustChain network</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Height</th>
+                                    <th scope="col">Hash</th>
+                                    <th scope="col">Timestamp</th>
+                                    <th scope="col">Miners</th>
+                                    <th scope="col">Reward</th>
+                                </tr>
+                            </thead>
+                            <tbody id="blocks-tbody-full">
+                                <tr><td colspan="5" class="loading"><div class="spinner" aria-hidden="true"></div>Loading blocks...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Transactions View -->
+            <div id="view-transactions" class="view-content" style="display: none;" role="tabpanel" aria-label="All transactions">
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title"><span aria-hidden="true">💸</span> All Transactions</h2>
+                        <button class="btn btn-secondary btn-sm" onclick="RustChainExplorer.refresh()" aria-label="Refresh transactions">
+                            <span aria-hidden="true">🔄</span> Refresh
+                        </button>
+                    </div>
+                    <div class="table-container" role="region" aria-label="All transactions" tabindex="0">
+                        <table>
+                            <caption class="sr-only">Complete list of transactions on the RustChain network</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Hash</th>
+                                    <th scope="col">Type</th>
+                                    <th scope="col">From</th>
+                                    <th scope="col">To</th>
+                                    <th scope="col">Amount</th>
+                                    <th scope="col">Time</th>
+                                </tr>
+                            </thead>
+                            <tbody id="transactions-tbody-full">
+                                <tr><td colspan="6" class="loading"><div class="spinner" aria-hidden="true"></div>Loading transactions...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Miners View -->
+            <div id="view-miners" class="view-content" style="display: none;" role="tabpanel" aria-label="Active miners">
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title"><span aria-hidden="true">⛏️</span> Active Miners</h2>
+                        <span class="badge badge-active" id="miners-count" aria-live="polite">0 Active</span>
+                    </div>
+                    <div class="table-container" role="region" aria-label="Active miners" tabindex="0">
+                        <table>
+                            <caption class="sr-only">List of active miners on the RustChain network</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Miner ID</th>
+                                    <th scope="col">Architecture</th>
+                                    <th scope="col">Tier</th>
+                                    <th scope="col">Multiplier</th>
+                                    <th scope="col">Balance</th>
+                                    <th scope="col">Last Seen</th>
+                                    <th scope="col">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="miners-tbody-full">
+                                <tr><td colspan="7" class="loading"><div class="spinner" aria-hidden="true"></div>Loading miners...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Hall of Rust View -->
+            <div id="view-hall" class="view-content" style="display: none;" role="tabpanel" aria-label="Hall of Rust">
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title"><span aria-hidden="true">🏛️</span> Hall of Rust</h2>
+                        <span class="text-muted">Immortal registry for dying hardware</span>
+                    </div>
+                    <div id="hall-of-rust" aria-live="polite">
+                        <div class="loading"><div class="spinner" aria-hidden="true"></div>Loading Hall of Rust...</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">
+                        <h2 class="section-title"><span aria-hidden="true">📜</span> About Hall of Rust</h2>
+                    </div>
+                    <div style="line-height: 1.8; color: var(--text-secondary);">
+                        <p style="margin-bottom: 16px;">
+                            The <strong>Hall of Rust</strong> is the emotional core of RustChain. Every machine that ever attests 
+                            gets a permanent on-chain memorial. It's where dying hardware achieves immortality.
+                        </p>
+                        <div class="cards-grid" style="margin-top: 24px;">
+                            <div class="card">
+                                <div class="card-value rust-score">Rust Score</div>
+                                <div class="card-label">Calculated from age, attestations, and thermal events</div>
+                            </div>
+                            <div class="card">
+                                <div class="card-value text-accent">Badges</div>
+                                <div class="card-label">From "Fresh Metal" to "Oxidized Legend"</div>
+                            </div>
+                            <div class="card">
+                                <div class="card-value text-success">Memorials</div>
+                                <div class="card-label">Eulogies and nicknames for departed machines</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-links">
+                <a href="https://rustchain.org" class="footer-link" target="_blank" rel="noopener">Official Site</a>
+                <a href="https://github.com/Scottcjn/Rustchain" class="footer-link" target="_blank" rel="noopener">GitHub</a>
+                <a href="https://rustchain.org/api/miners" class="footer-link" target="_blank" rel="noopener">API: Miners</a>
+                <a href="https://rustchain.org/epoch" class="footer-link" target="_blank" rel="noopener">API: Epoch</a>
+                <a href="https://rustchain.org/health" class="footer-link" target="_blank" rel="noopener">API: Health</a>
+            </div>
+            <div>
+                <p>RustChain Explorer v1.0.0 | Proof of Antiquity | Block Time: 10 minutes</p>
+                <p class="text-muted">Last update: <span id="last-update" class="mono">-</span></p>
+            </div>
+        </div>
+    </footer>
+    
+    <!-- Main Application Script -->
+    <script src="static/js/explorer.js"></script>
+    
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('static/js/sw.js')
+                    .then((registration) => {
+                        console.log('[SW] Service Worker registered:', registration.scope);
+                    })
+                    .catch((error) => {
+                        console.log('[SW] Service Worker registration failed:', error);
+                    });
+            });
+        }
+    </script>
+    
+    <!-- View Switcher -->
+    <script>
+        function switchView(viewName) {
+            // Hide all views
+            document.querySelectorAll('.view-content').forEach(view => {
+                view.style.display = 'none';
+            });
+            
+            // Update nav buttons
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('active');
+                btn.removeAttribute('aria-current');
+            });
+            
+            // Show selected view
+            const targetView = document.getElementById(`view-${viewName}`);
+            if (targetView) {
+                targetView.style.display = 'block';
+                targetView.classList.add('fade-in');
+            }
+            
+            // Activate nav button
+            const activeBtn = document.querySelector(`.nav-btn[data-view="${viewName}"]`);
+            if (activeBtn) {
+                activeBtn.classList.add('active');
+                activeBtn.setAttribute('aria-current', 'page');
+            }
+            
+            // Update search results visibility
+            const searchResults = document.getElementById('search-results');
+            if (searchResults && viewName !== 'overview') {
+                searchResults.style.display = 'none';
+            }
+            
+            // Sync miners table
+            if (viewName === 'miners') {
+                const minersTbody = document.getElementById('miners-tbody-full');
+                const minersTbodyOverview = document.getElementById('miners-tbody');
+                if (minersTbody && minersTbodyOverview) {
+                    minersTbody.innerHTML = minersTbodyOverview.innerHTML;
+                }
+                updateMinersCount();
+            }
+            
+            // Sync blocks table
+            if (viewName === 'blocks') {
+                const blocksTbody = document.getElementById('blocks-tbody-full');
+                const blocksTbodyOverview = document.getElementById('blocks-tbody');
+                if (blocksTbody && blocksTbodyOverview) {
+                    blocksTbody.innerHTML = blocksTbodyOverview.innerHTML;
+                }
+            }
+            
+            // Sync transactions table
+            if (viewName === 'transactions') {
+                const txsTbody = document.getElementById('transactions-tbody-full');
+                const txsTbodyOverview = document.getElementById('transactions-tbody');
+                if (txsTbody && txsTbodyOverview) {
+                    txsTbody.innerHTML = txsTbodyOverview.innerHTML;
+                }
+            }
+            
+            console.log('[Explorer] Switched to view:', viewName);
+        }
+        
+        function updateMinersCount() {
+            const countEl = document.getElementById('miners-count');
+            if (countEl && RustChainExplorer && RustChainExplorer.state) {
+                const count = RustChainExplorer.state.miners.length;
+                countEl.textContent = `${count} Active`;
+            }
+        }
+        
+        // Update last update timestamp
+        function updateLastUpdateTime() {
+            const el = document.getElementById('last-update');
+            if (el && RustChainExplorer && RustChainExplorer.state) {
+                const lastUpdate = RustChainExplorer.state.lastUpdate;
+                if (lastUpdate) {
+                    el.textContent = new Date(lastUpdate).toLocaleString();
+                }
+            }
+        }
+        
+        // Update time every second
+        setInterval(updateLastUpdateTime, 1000);
+        
+        // Handle search results display
+        const originalHandleSearch = window.handleSearch;
+        window.handleSearch = function(query) {
+            const resultsDiv = document.getElementById('search-results');
+            if (resultsDiv) {
+                resultsDiv.style.display = query.trim() ? 'block' : 'none';
+            }
+            if (originalHandleSearch) {
+                originalHandleSearch(query);
+            }
+        };
+        
+        // Listen for state updates
+        const originalFetchMiners = window.fetchMiners;
+        window.fetchMiners = function() {
+            if (originalFetchMiners) return originalFetchMiners();
+            return Promise.resolve();
+        };
+    </script>
+</body>
+</html>

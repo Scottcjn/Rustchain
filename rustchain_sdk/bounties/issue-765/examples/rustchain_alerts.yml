@@ -1,0 +1,188 @@
+# RustChain Prometheus Alerting Rules - Bounty #765
+# 
+# This file contains Prometheus alerting rules for monitoring RustChain nodes.
+# Load this file in your prometheus.yml under rule_files.
+#
+# Usage:
+#   rule_files:
+#     - '/etc/prometheus/rustchain_alerts.yml'
+
+groups:
+  - name: rustchain_node_health
+    interval: 30s
+    rules:
+      # Node is down
+      - alert: RustChainNodeDown
+        expr: rustchain_node_health == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: infrastructure
+        annotations:
+          summary: "RustChain node is down"
+          description: "Node health check has been failing for more than 2 minutes. Node URL: {{ $externalLabels.node_url }}"
+          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#node-down"
+
+      # Database issues
+      - alert: RustChainDatabaseError
+        expr: rustchain_node_db_status == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: infrastructure
+        annotations:
+          summary: "RustChain node database error"
+          description: "Database read/write status is unhealthy. This may indicate disk issues or database corruption."
+          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#database-error"
+
+      # Chain tip is stale
+      - alert: RustChainTipStale
+        expr: rustchain_tip_age_slots > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: "RustChain tip is stale"
+          description: "Chain tip is {{ $value }} slots behind, indicating sync issues."
+          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#stale-tip"
+
+      # Backup is too old
+      - alert: RustChainBackupOld
+        expr: rustchain_backup_age_hours > 24
+        for: 1h
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: "RustChain backup is outdated"
+          description: "Last backup is {{ $value }} hours old. Consider checking backup jobs."
+          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#backup-old"
+
+  - name: rustchain_miner_health
+    interval: 30s
+    rules:
+      # Significant miner drop
+      - alert: RustChainMinerDrop
+        expr: |
+          (
+            rustchain_active_miners - 
+            avg_over_time(rustchain_active_miners[1h])
+          ) / avg_over_time(rustchain_active_miners[1h]) < -0.2
+        for: 5m
+        labels:
+          severity: warning
+          team: mining
+        annotations:
+          summary: "Significant drop in active miners"
+          description: "Active miners decreased by more than 20% compared to 1-hour average. Current: {{ $value | humanizePercentage }} drop."
+          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#miner-drop"
+
+      # No active miners
+      - alert: RustChainNoActiveMiners
+        expr: rustchain_active_miners == 0
+        for: 10m
+        labels:
+          severity: critical
+          team: mining
+        annotations:
+          summary: "No active miners detected"
+          description: "There are no active miners in the RustChain network. This is a critical issue."
+          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#no-miners"
+
+      # Low antiquity multiplier (potential attack)
+      - alert: RustChainLowAntiquityMultiplier
+        expr: rustchain_antiquity_multiplier_avg < 1.0
+        for: 15m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Average antiquity multiplier is below expected"
+          description: "Average antiquity multiplier is {{ $value }}, which may indicate VM/emulator usage or hardware spoofing."
+          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#low-antiquity"
+
+  - name: rustchain_epoch_health
+    interval: 30s
+    rules:
+      # Epoch not progressing
+      - alert: RustChainEpochStuck
+        expr: |
+          changes(rustchain_epoch_number[1h]) == 0
+        for: 2h
+        labels:
+          severity: critical
+          team: infrastructure
+        annotations:
+          summary: "RustChain epoch is not progressing"
+          description: "Epoch number has not changed in 2 hours. Block production may be stalled."
+          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#epoch-stuck"
+
+      # Epoch pot not growing
+      - alert: RustChainEpochPotStagnant
+        expr: |
+          changes(rustchain_epoch_pot_rtc[6h]) == 0
+        for: 12h
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: "Epoch reward pot is stagnant"
+          description: "Epoch pot has not changed in 12 hours. This may indicate no block rewards are being distributed."
+
+  - name: rustchain_exporter_health
+    interval: 30s
+    rules:
+      # Exporter scrape errors
+      - alert: RustChainExporterErrors
+        expr: |
+          rate(rustchain_scrape_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: "RustChain exporter experiencing scrape errors"
+          description: "Exporter is failing to collect metrics. Error rate: {{ $value | humanize }} errors/s."
+          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#exporter-errors"
+
+      # Slow scrape performance
+      - alert: RustChainSlowScrape
+        expr: rustchain_scrape_duration_seconds > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: "RustChain exporter scrape is slow"
+          description: "Metrics collection is taking {{ $value }} seconds, which may indicate node performance issues."
+
+      # Exporter down (scraped by Prometheus)
+      - alert: RustChainExporterDown
+        expr: up{job="rustchain"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: infrastructure
+        annotations:
+          summary: "RustChain Prometheus exporter is down"
+          description: "Prometheus cannot scrape the RustChain exporter. Check if the exporter process is running."
+          runbook_url: "https://github.com/Scottcjcn/RustChain/blob/main/bounties/issue-765/docs/RUNBOOK.md#exporter-down"
+
+  - name: rustchain_supply_health
+    interval: 60s
+    rules:
+      # Supply anomaly detection
+      - alert: RustChainSupplyAnomaly
+        expr: |
+          abs(
+            rustchain_total_supply_rtc - 
+            avg_over_time(rustchain_total_supply_rtc[24h])
+          ) / avg_over_time(rustchain_total_supply_rtc[24h]) > 0.01
+        for: 30m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "RustChain total supply anomaly detected"
+          description: "Total supply has changed by more than 1% compared to 24h average. This may indicate an issue with token economics."

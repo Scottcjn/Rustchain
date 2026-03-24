@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Explorer - API Test Page</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f1419;
+            color: #e8eaed;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 { color: #8b5cf6; }
+        .test-card {
+            background: #242b3d;
+            border: 1px solid #374151;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        .test-card h3 { margin-top: 0; color: #6366f1; }
+        .endpoint {
+            background: #1a1f2e;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin: 8px 0;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        .status.success { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+        .status.error { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+        .status.loading { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+        pre {
+            background: #1a1f2e;
+            padding: 12px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 0.85rem;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        button {
+            background: #8b5cf6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            margin: 10px 5px 10px 0;
+        }
+        button:hover { background: #6366f1; }
+        .btn-secondary {
+            background: #374151;
+        }
+        .btn-secondary:hover { background: #4b5563; }
+    </style>
+</head>
+<body>
+    <h1><span aria-hidden="true">🦀</span> RustChain Explorer - API Test Page</h1>
+    <p>Test all API endpoints and verify explorer functionality</p>
+    
+    <div style="margin: 20px 0;">
+        <button onclick="runAllTests()"><span aria-hidden="true">▶️</span> Run All Tests</button>
+        <button class="btn-secondary" onclick="clearResults()"><span aria-hidden="true">🗑️</span> Clear Results</button>
+    </div>
+    
+    <div id="tests">
+        <!-- Test cards will be inserted here -->
+    </div>
+    
+    <script>
+        const API_BASE = 'https://rustchain.org';
+        
+        const tests = [
+            {
+                name: 'Health Check',
+                endpoint: '/health',
+                tier: 1,
+                validate: (data) => data.status || data.version
+            },
+            {
+                name: 'Current Epoch',
+                endpoint: '/epoch',
+                tier: 1,
+                validate: (data) => data.epoch !== undefined
+            },
+            {
+                name: 'Active Miners',
+                endpoint: '/api/miners',
+                tier: 1,
+                validate: (data) => Array.isArray(data)
+            },
+            {
+                name: 'Recent Blocks',
+                endpoint: '/blocks',
+                tier: 1,
+                validate: (data) => Array.isArray(data)
+            },
+            {
+                name: 'Transactions',
+                endpoint: '/api/transactions',
+                tier: 2,
+                validate: (data) => Array.isArray(data)
+            },
+            {
+                name: 'Hall of Rust Leaderboard',
+                endpoint: '/hall/leaderboard?limit=5',
+                tier: 3,
+                validate: (data) => data.leaderboard && Array.isArray(data.leaderboard)
+            },
+            {
+                name: 'Hall of Rust Stats',
+                endpoint: '/hall/stats',
+                tier: 3,
+                validate: (data) => data.total_machines !== undefined
+            },
+            {
+                name: 'Hardware Fingerprint',
+                endpoint: '/api/hardware/fingerprint',
+                tier: 2,
+                validate: (data) => true  // May require POST
+            }
+        ];
+        
+        function createTestCard(test) {
+            return `
+                <div class="test-card" id="test-${test.endpoint.replace(/\//g, '-')}">
+                    <h3>${test.name} <span style="font-size: 0.8rem; color: #6b7280;">(Tier ${test.tier})</span></h3>
+                    <div class="endpoint">
+                        GET ${API_BASE}${test.endpoint}
+                        <span class="status loading" id="status-${test.endpoint.replace(/\//g, '-')}">PENDING</span>
+                    </div>
+                    <div id="result-${test.endpoint.replace(/\//g, '-')}" style="display: none;">
+                        <pre></pre>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function initTests() {
+            const container = document.getElementById('tests');
+            container.innerHTML = tests.map(createTestCard).join('');
+        }
+        
+        async function runTest(test) {
+            const statusEl = document.getElementById(`status-${test.endpoint.replace(/\//g, '-')}`);
+            const resultEl = document.getElementById(`result-${test.endpoint.replace(/\//g, '-')}`);
+            const preEl = resultEl.querySelector('pre');
+            
+            statusEl.textContent = 'LOADING';
+            statusEl.className = 'status loading';
+            
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 8000);
+                
+                const response = await fetch(`${API_BASE}${test.endpoint}`, {
+                    signal: controller.signal
+                });
+                clearTimeout(timeout);
+                
+                const data = await response.json();
+                
+                // Validate response
+                const isValid = test.validate(data);
+                
+                statusEl.textContent = isValid ? 'SUCCESS' : 'INVALID';
+                statusEl.className = `status ${isValid ? 'success' : 'error'}`;
+                
+                preEl.textContent = JSON.stringify(data, null, 2);
+                resultEl.style.display = 'block';
+                
+                return { success: isValid, data };
+            } catch (error) {
+                statusEl.textContent = 'ERROR';
+                statusEl.className = 'status error';
+                preEl.textContent = `Error: ${error.message}\n\nThis endpoint may be unavailable or require authentication.`;
+                resultEl.style.display = 'block';
+                
+                return { success: false, error: error.message };
+            }
+        }
+        
+        async function runAllTests() {
+            for (const test of tests) {
+                await runTest(test);
+                await new Promise(resolve => setTimeout(resolve, 500)); // Delay between tests
+            }
+        }
+        
+        function clearResults() {
+            document.querySelectorAll('.status').forEach(el => {
+                el.textContent = 'PENDING';
+                el.className = 'status loading';
+            });
+            document.querySelectorAll('[id^="result-"]').forEach(el => {
+                el.style.display = 'none';
+            });
+        }
+        
+        // Initialize on load
+        initTests();
+    </script>
+</body>
+</html>

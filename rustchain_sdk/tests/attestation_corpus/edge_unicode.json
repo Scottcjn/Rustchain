@@ -1,0 +1,15 @@
+{
+  "miner": "unicode-miner",
+  "device": {
+    "model": "💀💀💀",
+    "arch": "x86_64",
+    "cores": 8
+  },
+  "signals": {
+    "macs": ["aa:bb:cc:dd:ee:04"],
+    "hostname": "café-日本語"
+  },
+  "report": {
+    "commitment": "unicode-commitment"
+  }
+}

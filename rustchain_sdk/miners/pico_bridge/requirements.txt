@@ -1,0 +1,8 @@
+# Pico Serial Bridge Miner Requirements
+# RIP-304: Retro Console Mining via Pico Serial Bridge
+
+# Core dependencies
+pyserial>=3.5
+
+# Optional: for enhanced logging
+colorama>=0.4.6; platform_system == "Windows"

@@ -1,0 +1,19 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_cryix_saint_of_softmath",
+            "title": "Cyrix \u2013 Saint of Soft Math",
+            "class": "CPU Relic",
+            "description": "Awarded to validators running Cyrix 5x86/6x86 series CPUs. Revered for paper specs, remembered for floating point tragedy.",
+            "emotional_resonance": {
+                "state": "honored imperfection",
+                "trigger": "Cyrix or Cx6x86 CPU detected",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\ud83d\udcd0\ud83d\udd73\ufe0f",
+            "visual_anchor": "chip labeled Cx6x86 with ghostly math symbols fading behind it",
+            "rarity": "Legendary",
+            "soulbound": true
+        }
+    ]
+}

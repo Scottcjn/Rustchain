@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Miner Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦀</text></svg>">
+    <style>
+        :root {
+            --bg: #0f0f1a;
+            --surface: #1a1a2e;
+            --surface-2: #232340;
+            --border: #2d2d4a;
+            --text: #e4e4f0;
+            --text-dim: #9898bb;
+            --accent: #8b5cf6;
+            --accent-glow: rgba(139, 92, 246, 0.15);
+            --green: #22c55e;
+            --red: #ef4444;
+            --yellow: #eab308;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        .header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        .logo { font-size: 1.2rem; font-weight: 700; color: var(--accent); text-decoration: none; }
+        .logo span { margin-right: 0.5rem; }
+        .miner-input {
+            display: flex;
+            gap: 0.5rem;
+            flex: 1;
+            max-width: 600px;
+        }
+        .miner-input input {
+            flex: 1;
+            padding: 0.5rem 1rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 0.85rem;
+        }
+        .miner-input input:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+        .skip-link {
+            position: absolute;
+            top: -100%;
+            left: 0;
+            background: var(--accent);
+            color: white;
+            padding: 0.5rem 1rem;
+            z-index: 1000;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .skip-link:focus { top: 0; }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .miner-input input::placeholder { color: var(--text-dim); }
+        .btn {
+            padding: 0.5rem 1.2rem;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.85; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1.2rem;
+        }
+        .card-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); margin-bottom: 0.5rem; }
+        .card-value { font-size: 1.8rem; font-weight: 700; }
+        .card-value.accent { color: var(--accent); }
+        .card-value.green { color: var(--green); }
+        .card-sub { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.3rem; }
+        .section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); }
+        td { padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+        tr:hover { background: var(--accent-glow); }
+        .badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        .badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+        .badge-yellow { background: rgba(234,179,8,0.15); color: var(--yellow); }
+        .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-dim);
+        }
+        .empty-state .icon { font-size: 3rem; margin-bottom: 1rem; }
+        .loading { animation: pulse 1.5s ease-in-out infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.4rem; }
+        .status-dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
+        .status-dot.offline { background: var(--red); }
+        .share-link { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.5rem; word-break: break-all; }
+        .share-link a { color: var(--accent); text-decoration: none; }
+        @media (max-width: 768px) {
+            .header { padding: 0.8rem 1rem; }
+            .miner-input { max-width: 100%; }
+            .container { padding: 1rem; }
+            .card-value { font-size: 1.4rem; }
+        }
+    </style>
+</head>
+<body>
+    <a href="#dashboard-content" class="skip-link">Skip to main content</a>
+
+    <header class="header">
+        <a href="/explorer" class="logo"><span aria-hidden="true">🦀</span> Miner Dashboard</a>
+        <div class="miner-input" role="search">
+            <label for="miner-id" class="sr-only">Enter your miner ID (public key)</label>
+            <input type="text" id="miner-id" placeholder="Enter your miner ID (public key)" />
+            <button class="btn" id="load-btn" onclick="loadMiner()">Load</button>
+        </div>
+    </header>
+
+    <div class="container" id="dashboard-content">
+        <div id="empty-state" class="empty-state">
+            <div class="icon" aria-hidden="true">⛏️</div>
+            <h2>Enter Your Miner ID</h2>
+            <p>Paste your miner public key above to view your personal stats, balance, and reward history.</p>
+        </div>
+
+        <div id="dashboard" style="display:none;">
+            <div class="grid">
+                <div class="card">
+                    <div class="card-title">Balance</div>
+                    <div class="card-value accent" id="balance">--</div>
+                    <div class="card-sub">RTC tokens</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Status</div>
+                    <div class="card-value" id="miner-status">
+                        <span class="status-dot" id="status-dot"></span>
+                        <span id="status-text">--</span>
+                    </div>
+                    <div class="card-sub" id="last-seen">--</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Blocks Mined</div>
+                    <div class="card-value green" id="blocks-mined">--</div>
+                    <div class="card-sub" id="mining-rate">--</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Hardware</div>
+                    <div class="card-value" id="hardware" style="font-size:1.1rem;">--</div>
+                    <div class="card-sub" id="multiplier">--</div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-bottom:1.5rem;">
+                <h2 class="section-title">Reward History</h2>
+                <div id="rewards-table-container">
+                    <table>
+                        <caption class="sr-only">Miner reward history</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Epoch</th>
+                                <th scope="col">Reward</th>
+                                <th scope="col">Type</th>
+                                <th scope="col">Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rewards-body">
+                            <tr><td colspan="4" style="text-align:center;color:var(--text-dim);">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card" style="margin-bottom:1.5rem;">
+                <h2 class="section-title">Recent Activity</h2>
+                <div id="activity-table-container">
+                    <table>
+                        <caption class="sr-only">Miner recent activity</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Action</th>
+                                <th scope="col">Details</th>
+                                <th scope="col">Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="activity-body">
+                            <tr><td colspan="3" style="text-align:center;color:var(--text-dim);">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2 class="section-title">Withdrawal History</h2>
+                <div id="withdrawals-table-container">
+                    <table>
+                        <caption class="sr-only">Miner withdrawal history</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">ID</th>
+                                <th scope="col">Amount</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Requested</th>
+                            </tr>
+                        </thead>
+                        <tbody id="withdrawals-body">
+                            <tr><td colspan="4" style="text-align:center;color:var(--text-dim);">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="share-link" id="share-link"></div>
+        </div>
+    </div>
+
+    <script>
+    const API_BASE = window.location.origin;
+    let currentMiner = null;
+
+    // Check URL params on load
+    (function() {
+        const params = new URLSearchParams(window.location.search);
+        const minerId = params.get('miner') || params.get('id');
+        if (minerId) {
+            document.getElementById('miner-id').value = minerId;
+            loadMiner();
+        }
+    })();
+
+    async function api(path) {
+        try {
+            const res = await fetch(`${API_BASE}${path}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return await res.json();
+        } catch (e) {
+            console.warn(`API error (${path}):`, e.message);
+            return null;
+        }
+    }
+
+    function timeAgo(ts) {
+        if (!ts) return '--';
+        const d = typeof ts === 'number' ? ts * 1000 : Date.parse(ts);
+        if (isNaN(d)) return ts;
+        const diff = (Date.now() - d) / 1000;
+        if (diff < 60) return `${Math.floor(diff)}s ago`;
+        if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+        return `${Math.floor(diff / 86400)}d ago`;
+    }
+
+    function escapeHtml(s) {
+        const el = document.createElement('span');
+        el.textContent = s;
+        return el.innerHTML;
+    }
+
+    async function loadMiner() {
+        const input = document.getElementById('miner-id');
+        const minerId = input.value.trim();
+        if (!minerId) return;
+
+        currentMiner = minerId;
+        document.getElementById('empty-state').style.display = 'none';
+        document.getElementById('dashboard').style.display = 'block';
+        document.getElementById('load-btn').disabled = true;
+        document.getElementById('load-btn').textContent = 'Loading...';
+
+        // Update URL without reload
+        const url = new URL(window.location);
+        url.searchParams.set('miner', minerId);
+        history.replaceState({}, '', url);
+
+        // Show share link
+        document.getElementById('share-link').innerHTML =
+            `Share this dashboard: <a href="${url.href}">${url.href}</a>`;
+
+        // Fetch all data in parallel
+        const [balanceData, epochData, historyData, activityData] = await Promise.all([
+            api(`/wallet/balance?miner_id=${encodeURIComponent(minerId)}`),
+            api(`/epoch`),
+            api(`/withdraw/history/${encodeURIComponent(minerId)}`),
+            api(`/headers/tip`),
+        ]);
+
+        // Balance
+        const bal = balanceData?.balance ?? balanceData?.rtc_balance ?? balanceData?.available ?? '--';
+        document.getElementById('balance').textContent = typeof bal === 'number' ? bal.toLocaleString() : bal;
+
+        // Status
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        if (balanceData && !balanceData.error) {
+            statusDot.className = 'status-dot online';
+            statusText.textContent = 'Active';
+        } else {
+            statusDot.className = 'status-dot offline';
+            statusText.textContent = 'Unknown';
+        }
+
+        // Hardware detection
+        const hw = balanceData?.hardware || balanceData?.cpu_arch || '--';
+        document.getElementById('hardware').textContent = hw;
+        const mult = balanceData?.multiplier || balanceData?.vintage_multiplier;
+        document.getElementById('multiplier').textContent = mult ? `${mult}x mining multiplier` : '--';
+
+        // Blocks mined
+        const blocks = balanceData?.blocks_mined ?? balanceData?.total_blocks ?? '--';
+        document.getElementById('blocks-mined').textContent = blocks;
+        document.getElementById('mining-rate').textContent =
+            typeof blocks === 'number' ? `Lifetime total` : '--';
+
+        // Last seen
+        const lastSeen = balanceData?.last_seen || balanceData?.last_active;
+        document.getElementById('last-seen').textContent = lastSeen ? `Last seen: ${timeAgo(lastSeen)}` : '--';
+
+        // Epoch / Rewards
+        const rewardsBody = document.getElementById('rewards-body');
+        if (epochData && !epochData.error) {
+            const epoch = epochData.epoch || epochData.current_epoch || epochData;
+            const rewards = balanceData?.rewards || balanceData?.reward_history || [];
+            if (Array.isArray(rewards) && rewards.length > 0) {
+                rewardsBody.innerHTML = rewards.slice(0, 20).map(r => `
+                    <tr>
+                        <td>${escapeHtml(String(r.epoch ?? r.block ?? '--'))}</td>
+                        <td style="color:var(--green);">+${r.amount ?? r.reward ?? r.value ?? '?'} RTC</td>
+                        <td><span class="badge badge-green">${escapeHtml(r.type || 'mining')}</span></td>
+                        <td>${timeAgo(r.timestamp || r.time || r.created_at)}</td>
+                    </tr>
+                `).join('');
+            } else {
+                rewardsBody.innerHTML = `
+                    <tr><td colspan="4" style="text-align:center;color:var(--text-dim);">
+                        No reward data yet. Current epoch: ${epoch.number ?? epoch.id ?? JSON.stringify(epoch).substring(0, 50)}
+                    </td></tr>`;
+            }
+        } else {
+            rewardsBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-dim);">Could not load reward data</td></tr>';
+        }
+
+        // Activity - use tip/recent blocks
+        const activityBody = document.getElementById('activity-body');
+        if (activityData && !activityData.error) {
+            activityBody.innerHTML = `
+                <tr>
+                    <td><span class="badge badge-green">Chain Tip</span></td>
+                    <td>Block ${activityData.height ?? activityData.block_height ?? '--'}</td>
+                    <td>${timeAgo(activityData.timestamp)}</td>
+                </tr>`;
+        } else {
+            activityBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-dim);">No recent activity</td></tr>';
+        }
+
+        // Withdrawal history
+        const wBody = document.getElementById('withdrawals-body');
+        if (historyData && Array.isArray(historyData) && historyData.length > 0) {
+            wBody.innerHTML = historyData.slice(0, 10).map(w => `
+                <tr>
+                    <td style="font-size:0.75rem;">${escapeHtml(String(w.withdrawal_id || w.id || '--').substring(0, 12))}...</td>
+                    <td>${w.amount ?? '?'} RTC</td>
+                    <td><span class="badge ${w.status === 'completed' ? 'badge-green' : w.status === 'pending' ? 'badge-yellow' : 'badge-red'}">${escapeHtml(w.status || 'unknown')}</span></td>
+                    <td>${timeAgo(w.requested_at || w.created_at || w.timestamp)}</td>
+                </tr>
+            `).join('');
+        } else if (historyData?.withdrawals && historyData.withdrawals.length > 0) {
+            wBody.innerHTML = historyData.withdrawals.slice(0, 10).map(w => `
+                <tr>
+                    <td style="font-size:0.75rem;">${escapeHtml(String(w.withdrawal_id || w.id || '--').substring(0, 12))}...</td>
+                    <td>${w.amount ?? '?'} RTC</td>
+                    <td><span class="badge ${w.status === 'completed' ? 'badge-green' : w.status === 'pending' ? 'badge-yellow' : 'badge-red'}">${escapeHtml(w.status || 'unknown')}</span></td>
+                    <td>${timeAgo(w.requested_at || w.created_at || w.timestamp)}</td>
+                </tr>
+            `).join('');
+        } else {
+            wBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-dim);">No withdrawals</td></tr>';
+        }
+
+        document.getElementById('load-btn').disabled = false;
+        document.getElementById('load-btn').textContent = 'Load';
+    }
+
+    // Auto-refresh every 30 seconds if miner is loaded
+    setInterval(() => {
+        if (currentMiner) loadMiner();
+    }, 30000);
+    </script>
+</body>
+</html>

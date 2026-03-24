@@ -1,0 +1,39 @@
+User-agent: *
+Allow: /
+Allow: /docs/
+Allow: /light-client/
+Allow: /museum/
+Allow: /explorer
+Allow: /api/
+
+# Block common non-content paths
+Disallow: /node/
+Disallow: /validator/
+Disallow: /tests/
+Disallow: /tools/
+Disallow: /scripts/
+Disallow: /deprecated/
+Disallow: /integrations/
+Disallow: /monitoring/
+Disallow: /wallet-tracker/
+Disallow: /wrtc_holders/
+Disallow: /wrtc_price_bot/
+Disallow: /nfts/
+Disallow: /bounties/
+Disallow: /rips/
+Disallow: /rustchain-poa/
+Disallow: /schemas/
+Disallow: /sdk/
+Disallow: /wallet/
+
+# Block file types
+Disallow: /*.sh$
+Disallow: /*.py$
+Disallow: /*.json$
+Disallow: /*.md$
+Disallow: /*.txt$
+Disallow: /*.log$
+Disallow: /*.cfg$
+Disallow: /*.conf$
+
+Sitemap: https://rustchain.org/sitemap.xml

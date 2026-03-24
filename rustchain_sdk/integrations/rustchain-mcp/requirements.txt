@@ -1,0 +1,11 @@
+# RustChain MCP - Core Dependencies
+aiohttp>=3.9.0
+
+# MCP SDK (optional, required for running as MCP server)
+# mcp>=1.0.0
+
+# Development Dependencies (optional)
+# pytest>=7.0.0
+# pytest-asyncio>=0.21.0
+# black>=23.0.0
+# ruff>=0.1.0

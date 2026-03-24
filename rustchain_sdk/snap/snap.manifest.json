@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "description": "RustChain Snap - Enable MetaMask to interact with RustChain blockchain",
+  "proposedName": "RustChain",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Scottcjn/rustchain-bounties.git"
+  },
+  "source": {
+    "shasum": "d74edc641ed673ac21f496cc656c52114f1bdaac66eca4ea13de10e3da8e9bd0",
+    "location": {
+      "npm": {
+        "filePath": "dist/bundle.js",
+        "iconPath": "images/icon.svg",
+        "packageName": "rustchain-snap",
+        "registry": "https://registry.npmjs.org"
+      }
+    }
+  },
+  "initialPermissions": {
+    "endowment:rpc": {
+      "dapps": true,
+      "snaps": true
+    },
+    "endowment:network-access": {},
+    "snap_manageState": {},
+    "snap_notify": {}
+  },
+  "manifestVersion": "0.1"
+}

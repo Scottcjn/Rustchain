@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RustChain Balance</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <img src="icons/icon48.svg" alt="RTC" class="logo">
+      <h1>RustChain</h1>
+    </header>
+
+    <section id="wallet-section">
+      <label for="miner-id">Wallet / Miner ID</label>
+      <div class="input-row">
+        <input type="text" id="miner-id" placeholder="e.g. Ivan-houzhiwen" spellcheck="false">
+        <button id="btn-refresh" title="Refresh">&#x21bb;</button>
+      </div>
+      <div id="balance-display" class="card hidden">
+        <span class="label">RTC Balance</span>
+        <span id="balance-value" class="value">--</span>
+      </div>
+      <p id="balance-error" class="error hidden"></p>
+    </section>
+
+    <section id="network-section">
+      <h2>Network</h2>
+      <div class="grid">
+        <div class="card">
+          <span class="label">Status</span>
+          <span id="net-status" class="value">--</span>
+        </div>
+        <div class="card">
+          <span class="label">Version</span>
+          <span id="net-version" class="value">--</span>
+        </div>
+        <div class="card">
+          <span class="label">Uptime</span>
+          <span id="net-uptime" class="value">--</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="block-section">
+      <h2>Latest Block</h2>
+      <div class="grid">
+        <div class="card">
+          <span class="label">Epoch</span>
+          <span id="block-epoch" class="value">--</span>
+        </div>
+        <div class="card">
+          <span class="label">Slot</span>
+          <span id="block-slot" class="value">--</span>
+        </div>
+        <div class="card">
+          <span class="label">Height</span>
+          <span id="block-height" class="value">--</span>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <a href="https://rustchain.org" target="_blank" rel="noopener">rustchain.org</a>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+[package]
+name = "rustchain-miner"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+authors = ["RustChain Contributors"]
+description = "Production-ready Rust miner for RustChain with hardware attestation and RIP-PoA"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Scottcjn/Rustchain"
+keywords = ["rustchain", "miner", "blockchain", "proof-of-antiquity"]
+categories = ["command-line-utilities"]
+readme = "README.md"
+
+[dependencies]
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI
+clap = { version = "4.4", features = ["derive", "env"] }
+
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# HTTP/HTTPS (reqwest with rustls TLS)
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Random number generation
+rand = "0.8"
+uuid = { version = "1.6", features = ["v4"] }
+
+# Hashing
+sha2 = "0.10"
+hex = "0.4"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Config
+dotenvy = "0.15"
+
+# Hostname
+hostname = "0.3"
+
+# System info
+sysinfo = "0.30"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+
+[[bin]]
+name = "rustchain-miner"
+path = "src/main.rs"
+
+[lib]
+name = "rustchain_miner"
+path = "src/lib.rs"

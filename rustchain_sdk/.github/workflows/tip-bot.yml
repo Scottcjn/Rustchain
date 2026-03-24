@@ -1,0 +1,31 @@
+name: RustChain Tip Bot
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  process-tip:
+    runs-on: ubuntu-latest
+    if: contains(github.event.comment.body, '/tip')
+    steps:
+      - uses: actions/checkout@v6
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests PyYAML
+      
+      - name: Process tip command
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TIP_BOT_WALLET: ${{ secrets.TIP_BOT_WALLET }}
+          TIP_BOT_ADMINS: ${{ secrets.TIP_BOT_ADMINS }}
+        run: |
+          python integrations/rustchain-bounties/tip_bot_action.py
+        continue-on-error: true

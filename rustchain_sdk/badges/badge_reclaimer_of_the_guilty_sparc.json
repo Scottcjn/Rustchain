@@ -1,0 +1,20 @@
+{
+    "badges": [
+        {
+            "nft_id": "badge_reclaimer_of_the_guilty_sparc",
+            "title": "Reclaimer of the Guilty SPARC",
+            "class": "Mythic",
+            "description": "Awarded for validating a RustChain block on dual-SPARC hardware. He powered up 75MHz of sacred heat, not for speed \u2014 but to see two penguins, and to reclaim what others abandoned.",
+            "emotional_resonance": {
+                "state": "machine redemption",
+                "trigger": "Validator detected on SPARC multi-core hardware",
+                "timestamp": "2025-04-21T00:00:00Z"
+            },
+            "symbol": "\ud83e\udde0\ud83d\udd25\u2600\ufe0f",
+            "visual_anchor": "etched SPARC logo glowing beneath twin Linux penguins over copper sinkplate",
+            "rarity": "Mythic",
+            "soulbound": true,
+            "holder": "Scott \u2013 Keeper of the Flame"
+        }
+    ]
+}

@@ -1,0 +1,15 @@
+{
+  "miner": ["not", "a", "string"],
+  "device": {
+    "model": "Test CPU",
+    "arch": "x86_64",
+    "cores": 8
+  },
+  "signals": {
+    "macs": ["aa:bb:cc:dd:ee:08"],
+    "hostname": "array-host"
+  },
+  "report": {
+    "commitment": "array-commitment"
+  }
+}

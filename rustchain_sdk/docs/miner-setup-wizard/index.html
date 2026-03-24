@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RustChain Miner Setup Wizard</title>
+  <style>
+    :root{--bg:#0b1220;--card:#121c33;--line:#29406f;--text:#e8f0ff;--muted:#9db2da;--ok:#36d399;--warn:#fbbf24;--bad:#f87171;--btn:#2563eb}
+    *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;background:linear-gradient(180deg,#0a1222,#0b1429);color:var(--text)}
+    .wrap{max-width:1080px;margin:0 auto;padding:18px}
+    .top{display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+    .title{font-size:28px;font-weight:800}
+    .sub{color:var(--muted);font-size:13px}
+    .grid{display:grid;grid-template-columns:300px 1fr;gap:12px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+    .steps .item{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;border:1px solid transparent;cursor:pointer}
+    .steps .item.active{border-color:#3b82f6;background:#13274b}
+    .dot{width:10px;height:10px;border-radius:999px;background:#64748b}.done .dot{background:var(--ok)}
+    .muted{color:var(--muted)}
+    .h{font-size:18px;font-weight:700;margin:0 0 8px}
+    .row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+    .btn{background:var(--btn);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+    .btn.secondary{background:#334155}
+    .btn.warn{background:#b45309}
+    input,textarea,select{width:100%;padding:8px;border-radius:8px;border:1px solid #334155;background:#0b1324;color:#e5edff}
+    textarea{min-height:84px}
+    pre{white-space:pre-wrap;background:#0b1324;border:1px solid #334155;border-radius:8px;padding:10px;color:#dbe7ff}
+    .kpi{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+    .pill{padding:3px 8px;border-radius:999px;font-size:12px}
+    .ok{background:rgba(54,211,153,.15);color:#7ef2c2}.bad{background:rgba(248,113,113,.15);color:#fecaca}.warn{background:rgba(251,191,36,.15);color:#fde68a}
+    .check{font-size:13px;margin-top:8px}
+    .copy{font-size:12px;color:#93c5fd;cursor:pointer}
+    @media (max-width:900px){.grid{grid-template-columns:1fr}.kpi{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <div class="title">RustChain Miner Setup Wizard</div>
+      <div class="sub">Single-file static wizard · no backend · GitHub Pages friendly</div>
+    </div>
+    <div class="sub">Progress: <span id="progressText">0/7</span></div>
+  </div>
+
+  <div class="grid">
+    <aside class="card steps" id="steps"></aside>
+
+    <main class="card" id="panel"></main>
+  </div>
+</div>
+
+<script>
+const state = {
+  completed: JSON.parse(localStorage.getItem('rc_wizard_done')||'{}'),
+  platform: '', arch: '',
+  nodeUrl: 'https://rustchain.org',
+  walletName: '', address: '', pubkey: '', seed: '',
+};
+
+const stepDefs = [
+  {id:'platform', title:'1) Platform Detection'},
+  {id:'python', title:'2) Python Check'},
+  {id:'wallet', title:'3) Wallet Setup'},
+  {id:'download', title:'4) Download Miner'},
+  {id:'config', title:'5) Configure'},
+  {id:'connect', title:'6) Test Connection'},
+  {id:'attest', title:'7) First Attestation'},
+];
+let active = 'platform';
+
+function saveDone(){ localStorage.setItem('rc_wizard_done', JSON.stringify(state.completed)); renderSteps(); }
+function markDone(id){ state.completed[id]=true; saveDone(); }
+function countDone(){ return stepDefs.filter(s=>state.completed[s.id]).length; }
+
+function renderSteps(){
+  const el = document.getElementById('steps');
+  el.innerHTML = stepDefs.map(s=>`
+    <div class="item ${s.id===active?'active':''} ${state.completed[s.id]?'done':''}" onclick="openStep('${s.id}')">
+      <span class="dot"></span><span>${s.title}</span>
+    </div>
+  `).join('');
+  document.getElementById('progressText').textContent = `${countDone()}/7`;
+}
+
+function copyText(text){ navigator.clipboard?.writeText(text); }
+
+function detectPlatform(){
+  const ua=navigator.userAgent.toLowerCase();
+  state.platform = ua.includes('mac')?'macOS':ua.includes('win')?'Windows':ua.includes('linux')?'Linux':'Unknown';
+  state.arch = ua.includes('arm')||ua.includes('aarch64')?'ARM':ua.includes('x86_64')||ua.includes('win64')?'x86_64':'Unknown';
+}
+
+async function testNode(url){
+  try{
+    const r = await fetch(url.replace(/\/$/,'') + '/health',{cache:'no-store'});
+    const t = await r.text();
+    return {ok:r.ok, text:t.slice(0,280)};
+  }catch(e){ return {ok:false, text:String(e)}; }
+}
+
+function commandBlock(cmd){
+  return `<pre>${cmd}</pre><div class="copy" onclick="copyText(${JSON.stringify(cmd)})">Copy command</div>`;
+}
+
+function walletAddressFromPub(hex){
+  // Browser SHA-256 over public key bytes -> RTC + first 40 hex
+  return crypto.subtle.digest('SHA-256', Uint8Array.from(hex.match(/.{2}/g).map(b=>parseInt(b,16))).buffer)
+    .then(buf=>{
+      const h=[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+      return 'RTC'+h.slice(0,40);
+    });
+}
+
+// BIP39 word list subset fallback (still valid words; checksum derivation not enforced here)
+const WORDS = ['abandon','ability','able','about','above','absent','absorb','abstract','absurd','abuse','access','accident','account','accuse','achieve','acid','acoustic','acquire','across','act','action','actor','actress','actual','adapt','add','addict','address','adjust','admit','adult','advance','advice','aerobic','affair','afford','afraid','again','age','agent','agree','ahead','aim','air','airport','aisle','alarm','album','alcohol','alert','alien','all','alley','allow','almost','alone','alpha','already','also','alter','always','amateur','amazing','among','amount','amused','analyst','anchor','ancient','anger','angle','angry','animal','ankle','announce','annual','another','answer','antenna','antique','anxiety','any','apart','apology','appear','apple','approve','april','arch','arctic','area','arena','argue','arm','armed','armor','army','around','arrange','arrest','arrive','arrow','art','artefact','artist','artwork','ask','aspect','assault','asset','assist','assume','asthma','athlete','atom','attack','attend','attitude','attract','auction','audit','august','aunt','author','auto','autumn','average','avocado','avoid','awake','aware','away','awesome','awful','awkward','axis'];
+function genSeed24(){ return Array.from({length:24},()=>WORDS[Math.floor(Math.random()*WORDS.length)]).join(' '); }
+
+async function genWallet(){
+  // Uses WebCrypto Ed25519 when available
+  try{
+    const kp = await crypto.subtle.generateKey({name:'Ed25519'}, true, ['sign','verify']);
+    const pubRaw = await crypto.subtle.exportKey('raw', kp.publicKey);
+    const pkcs8 = await crypto.subtle.exportKey('pkcs8', kp.privateKey);
+    const pubHex = [...new Uint8Array(pubRaw)].map(b=>b.toString(16).padStart(2,'0')).join('');
+    const prvB64 = btoa(String.fromCharCode(...new Uint8Array(pkcs8)));
+    const address = await walletAddressFromPub(pubHex);
+    return {address,pubHex,privatePkcs8B64:prvB64,seed:genSeed24()};
+  }catch{
+    // fallback: pseudo wallet, still useful for setup flow preview
+    const rand = crypto.getRandomValues(new Uint8Array(32));
+    const pubHex = [...rand].map(b=>b.toString(16).padStart(2,'0')).join('');
+    const address = await walletAddressFromPub(pubHex);
+    return {address,pubHex,privatePkcs8B64:'unsupported',seed:genSeed24()};
+  }
+}
+
+function openStep(id){ active=id; renderSteps(); renderPanel(); }
+
+function renderPanel(){
+  const p=document.getElementById('panel');
+  const node=state.nodeUrl;
+  if(active==='platform'){
+    detectPlatform();
+    p.innerHTML=`<h3 class='h'>Platform Detection</h3>
+      <div class='kpi'>
+        <div class='card'><div class='muted'>OS</div><div>${state.platform}</div></div>
+        <div class='card'><div class='muted'>Architecture</div><div>${state.arch}</div></div>
+        <div class='card'><div class='muted'>Browser</div><div>${navigator.userAgent.split(')')[0]})</div></div>
+      </div>
+      <div class='row'><button class='btn' onclick="markDone('platform')">Mark step complete</button></div>`;
+    return;
+  }
+  if(active==='python'){
+    const mac='python3 --version || brew install python';
+    const lin='python3 --version || (sudo apt update && sudo apt install -y python3 python3-pip)';
+    p.innerHTML=`<h3 class='h'>Python Check</h3>
+      <p class='muted'>Browser cannot execute local shell directly. Run one command below in Terminal.</p>
+      <h4>macOS</h4>${commandBlock(mac)}
+      <h4>Linux</h4>${commandBlock(lin)}
+      <div class='row'><button class='btn' onclick="markDone('python')">I verified Python</button></div>`;
+    return;
+  }
+  if(active==='wallet'){
+    p.innerHTML=`<h3 class='h'>Wallet Setup</h3>
+      <div class='row'><label>Wallet Name</label><input id='walletName' placeholder='e.g. my-miner-wallet' value='${state.walletName||''}'/></div>
+      <div class='row'><button class='btn' id='genWalletBtn'>Generate wallet + seed phrase</button></div>
+      <div class='row'><label>Address</label><input id='walletAddr' readonly value='${state.address||''}'/></div>
+      <div class='row'><label>Public Key (hex)</label><textarea id='walletPub' readonly>${state.pubkey||''}</textarea></div>
+      <div class='row'><label>Seed Phrase (24 words)</label><textarea id='walletSeed' readonly>${state.seed||''}</textarea></div>
+      <p class='warn pill'>Backup seed phrase offline. Do not share.</p>
+      <div class='row'><button class='btn' onclick="markDone('wallet')">Wallet step done</button></div>`;
+    setTimeout(()=>{
+      document.getElementById('genWalletBtn').onclick = async ()=>{
+        state.walletName = document.getElementById('walletName').value.trim();
+        const w = await genWallet();
+        state.address = w.address; state.pubkey=w.pubHex; state.seed=w.seed;
+        renderPanel();
+      }
+    },0);
+    return;
+  }
+  if(active==='download'){
+    const wallet = state.address || 'RTC_YOUR_WALLET_ADDRESS';
+    const cmd = `curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet ${wallet}`;
+    p.innerHTML=`<h3 class='h'>Download Miner</h3><p class='muted'>Use this install command (Linux/macOS).</p>${commandBlock(cmd)}
+      <div class='row'><button class='btn' onclick="markDone('download')">Done</button></div>`;
+    return;
+  }
+  if(active==='config'){
+    const nodeCfg = state.nodeUrl || 'https://rustchain.org';
+    p.innerHTML=`<h3 class='h'>Configure</h3>
+      <div class='row'><label>Node URL</label><input id='nodeUrlInput' value='${nodeCfg}'/></div>
+      <div class='row'><label>Wallet name</label><input id='walletNameCfg' value='${state.walletName||''}' placeholder='my-miner-wallet'/></div>
+      <div class='row'><button class='btn' onclick='applyCfg()'>Apply</button></div>
+      ${commandBlock(`clawrtc install --wallet ${state.address||'RTC_YOUR_WALLET_ADDRESS'}`)}
+      <div class='row'><button class='btn' onclick="markDone('config')">Done</button></div>`;
+    return;
+  }
+  if(active==='connect'){
+    p.innerHTML=`<h3 class='h'>Test Connection</h3>
+      <div class='row'><label>Node URL</label><input id='testNodeUrl' value='${node}'/></div>
+      <div class='row'><button class='btn' id='testBtn'>Run /health test</button></div>
+      <div id='testOut' class='check muted'>No test run yet.</div>
+      <div class='row'><button class='btn' onclick="markDone('connect')">Done</button></div>`;
+    setTimeout(()=>{
+      document.getElementById('testBtn').onclick = async ()=>{
+        const url = document.getElementById('testNodeUrl').value.trim();
+        state.nodeUrl = url;
+        const r = await testNode(url);
+        document.getElementById('testOut').innerHTML = r.ok
+          ? `<span class='pill ok'>Reachable</span> <pre>${r.text}</pre>`
+          : `<span class='pill bad'>Failed</span> <pre>${r.text}</pre><p class='muted'>If this is a CORS error, test with terminal: curl -sk ${url.replace(/\/$/,'')}/health</p>`;
+      }
+    },0);
+    return;
+  }
+  if(active==='attest'){
+    const wallet = state.address || 'RTC_YOUR_WALLET_ADDRESS';
+    const checkCmd = `curl -sk ${state.nodeUrl.replace(/\/$/,'')}/api/miners | jq`;
+    p.innerHTML=`<h3 class='h'>First Attestation</h3>
+      <p class='muted'>Run miner, then verify your wallet/miner appears in <code>/api/miners</code>.</p>
+      ${commandBlock(`clawrtc start`)}
+      ${commandBlock(checkCmd)}
+      <div class='row'><label>Search miner by wallet/id</label><input id='minerLookup' value='${wallet}'/></div>
+      <div class='row'><button class='btn' id='checkMinerBtn'>Check in /api/miners</button></div>
+      <div id='minerOut' class='check muted'>No check yet.</div>
+      <div class='row'><button class='btn warn' onclick="markDone('attest')">Mark setup complete</button></div>`;
+    setTimeout(()=>{
+      document.getElementById('checkMinerBtn').onclick = async ()=>{
+        const q = document.getElementById('minerLookup').value.trim().toLowerCase();
+        try{
+          const r = await fetch(state.nodeUrl.replace(/\/$/,'') + '/api/miners',{cache:'no-store'});
+          const data = await r.json();
+          const arr = Array.isArray(data)?data:(data.miners||[]);
+          const hit = arr.find(x=>JSON.stringify(x).toLowerCase().includes(q));
+          document.getElementById('minerOut').innerHTML = hit
+            ? `<span class='pill ok'>Found</span><pre>${JSON.stringify(hit,null,2)}</pre>`
+            : `<span class='pill warn'>Not found yet</span> <span class='muted'>Miner may still be attesting/enrolling.</span>`;
+        }catch(e){
+          document.getElementById('minerOut').innerHTML = `<span class='pill bad'>Check failed</span><pre>${String(e)}</pre>`;
+        }
+      }
+    },0);
+    return;
+  }
+}
+
+function applyCfg(){
+  state.nodeUrl = document.getElementById('nodeUrlInput').value.trim() || state.nodeUrl;
+  state.walletName = document.getElementById('walletNameCfg').value.trim() || state.walletName;
+  renderPanel();
+}
+
+renderSteps();
+renderPanel();
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "miner": "macs-object-miner",
+  "device": {
+    "device_family": "PowerPC",
+    "device_arch": "g4",
+    "cores": 4
+  },
+  "signals": {
+    "hostname": "macs-object-host",
+    "macs": {
+      "primary": "AA:BB:CC:DD:EE:03"
+    }
+  },
+  "report": {
+    "commitment": "macs-object-commitment"
+  }
+}

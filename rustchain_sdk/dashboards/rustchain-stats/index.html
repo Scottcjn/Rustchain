@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Stats Dashboard</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-card: #21262d;
+            --text-primary: #f0f6fc;
+            --text-secondary: #8b949e;
+            --accent: #58a6ff;
+            --success: #3fb950;
+            --warning: #d29922;
+            --border: #30363d;
+            --gradient-1: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --gradient-2: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            --gradient-3: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            --gradient-4: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 25px;
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            color: var(--accent);
+            font-size: 2.5rem;
+            margin-bottom: 8px;
+            background: linear-gradient(90deg, #58a6ff, #3fb950);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.error {
+            background: var(--warning);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 24px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 28px;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+        }
+
+        .stat-card.epoch::before { background: var(--gradient-1); }
+        .stat-card.miners::before { background: var(--gradient-2); }
+        .stat-card.supply::before { background: var(--gradient-3); }
+        .stat-card.transactions::before { background: var(--gradient-4); }
+
+        .stat-icon {
+            font-size: 2.5rem;
+            margin-bottom: 12px;
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 2.8rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .stat-card.epoch .stat-value { color: #667eea; }
+        .stat-card.miners .stat-value { color: #f5576c; }
+        .stat-card.supply .stat-value { color: #4facfe; }
+        .stat-card.transactions .stat-value { color: #43e97b; }
+
+        .stat-unit {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            margin-left: 4px;
+        }
+
+        .stat-change {
+            font-size: 0.85rem;
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .stat-change.positive { color: var(--success); }
+        .stat-change.negative { color: var(--warning); }
+
+        .details-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 28px;
+            margin-bottom: 30px;
+        }
+
+        .details-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .details-title {
+            font-size: 1.3rem;
+            color: var(--accent);
+        }
+
+        .refresh-btn {
+            padding: 10px 20px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .refresh-btn:hover {
+            opacity: 0.9;
+        }
+
+        .refresh-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .info-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+        }
+
+        .info-label {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-bottom: 6px;
+        }
+
+        .info-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: rgba(210, 153, 34, 0.1);
+            border: 1px solid var(--warning);
+            color: var(--warning);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .last-updated {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-top: 30px;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            body {
+                padding: 12px;
+            }
+
+            header {
+                padding: 20px;
+                margin-bottom: 24px;
+            }
+
+            h1 {
+                font-size: 1.8rem;
+            }
+
+            .subtitle {
+                font-size: 0.9rem;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+
+            .stat-card {
+                padding: 20px;
+            }
+
+            .stat-value {
+                font-size: 2.2rem;
+            }
+
+            .details-section {
+                padding: 20px;
+            }
+
+            .details-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .refresh-btn {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 480px) {
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            .stat-value {
+                font-size: 1.8rem;
+            }
+
+            .stat-icon {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⛓️ RustChain Stats</h1>
+            <p class="subtitle">Live network statistics and metrics</p>
+            <div class="status-bar">
+                <div class="status-indicator">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">Connecting...</span>
+                </div>
+                <span>•</span>
+                <span>Auto-refresh: <strong id="refreshInterval">30s</strong></span>
+            </div>
+        </header>
+
+        <div id="loading" class="loading">
+            <div class="loading-spinner"></div>
+            <p>Loading network statistics...</p>
+        </div>
+
+        <div id="error" class="error-message" style="display: none;"></div>
+
+        <div id="dashboard" style="display: none;">
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <!-- Epoch Card -->
+                <div class="stat-card epoch">
+                    <div class="stat-icon">📅</div>
+                    <div class="stat-label">Current Epoch</div>
+                    <div class="stat-value" id="epochValue">--<span class="stat-unit"></span></div>
+                    <div class="stat-change" id="epochChange"></div>
+                </div>
+
+                <!-- Miners Card -->
+                <div class="stat-card miners">
+                    <div class="stat-icon">⛏️</div>
+                    <div class="stat-label">Active Miners</div>
+                    <div class="stat-value" id="minersValue">--<span class="stat-unit"></span></div>
+                    <div class="stat-change" id="minersChange"></div>
+                </div>
+
+                <!-- Supply Card -->
+                <div class="stat-card supply">
+                    <div class="stat-icon">💰</div>
+                    <div class="stat-label">Circulating Supply</div>
+                    <div class="stat-value" id="supplyValue">--<span class="stat-unit">RTC</span></div>
+                    <div class="stat-change" id="supplyChange"></div>
+                </div>
+
+                <!-- Transactions Card -->
+                <div class="stat-card transactions">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-label">Total Transactions</div>
+                    <div class="stat-value" id="txValue">--<span class="stat-unit"></span></div>
+                    <div class="stat-change" id="txChange"></div>
+                </div>
+            </div>
+
+            <!-- Network Details -->
+            <div class="details-section">
+                <div class="details-header">
+                    <h2 class="details-title">🔍 Network Details</h2>
+                    <button class="refresh-btn" onclick="loadStats()" id="refreshBtn">
+                        <span>🔄</span> Refresh Now
+                    </button>
+                </div>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-label">Current Slot</div>
+                        <div class="info-value" id="slotValue">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Epoch POT</div>
+                        <div class="info-value" id="potValue">-- RTC</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Block Height</div>
+                        <div class="info-value" id="heightValue">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Node Version</div>
+                        <div class="info-value" id="versionValue">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Node Uptime</div>
+                        <div class="info-value" id="uptimeValue">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Max Supply</div>
+                        <div class="info-value" id="maxSupplyValue">8,388,608 RTC</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="last-updated">
+                Last updated: <span id="lastUpdated">--</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE = 'https://rustchain.org';
+        const REFRESH_INTERVAL = 30000; // 30 seconds
+        const MAX_SUPPLY = 8388608;
+
+        // State
+        let previousStats = null;
+        let refreshTimer = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            startAutoRefresh();
+        });
+
+        function startAutoRefresh() {
+            refreshTimer = setInterval(loadStats, REFRESH_INTERVAL);
+        }
+
+        function stopAutoRefresh() {
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
+                refreshTimer = null;
+            }
+        }
+
+        async function loadStats() {
+            const refreshBtn = document.getElementById('refreshBtn');
+            refreshBtn.disabled = true;
+
+            try {
+                // Fetch all data in parallel
+                const [epochData, healthData, minersData] = await Promise.all([
+                    fetchEpoch(),
+                    fetchHealth(),
+                    fetchMiners()
+                ]);
+
+                // Calculate transactions (estimate from epoch data or use default)
+                const txData = { total: epochData.height || 0 };
+
+                updateDashboard({
+                    epoch: epochData,
+                    health: healthData,
+                    miners: minersData,
+                    transactions: txData
+                });
+
+                setStatus('connected', 'Live');
+                hideError();
+            } catch (error) {
+                console.error('Dashboard error:', error);
+                setStatus('error', 'Connection Error');
+                showError(`Failed to load stats: ${error.message}`);
+            } finally {
+                refreshBtn.disabled = false;
+                updateLastUpdated();
+            }
+        }
+
+        async function fetchEpoch() {
+            const response = await fetch(`${API_BASE}/epoch`, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            });
+            if (!response.ok) throw new Error('Failed to fetch epoch data');
+            return await response.json();
+        }
+
+        async function fetchHealth() {
+            const response = await fetch(`${API_BASE}/health`, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            });
+            if (!response.ok) throw new Error('Failed to fetch health data');
+            return await response.json();
+        }
+
+        async function fetchMiners() {
+            const response = await fetch(`${API_BASE}/api/miners`, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            });
+            if (!response.ok) throw new Error('Failed to fetch miners data');
+            return await response.json();
+        }
+
+        function updateDashboard(data) {
+            const { epoch, health, miners, transactions } = data;
+
+            // Update main stats
+            updateStat('epochValue', epoch.epoch || 0, '', previousStats?.epoch?.epoch);
+            updateStat('minersValue', epoch.enrolled_miners || 0, '', previousStats?.epoch?.enrolled_miners);
+            
+            // Calculate circulating supply
+            const supply = calculateSupply(epoch);
+            updateStat('supplyValue', supply.toFixed(0), '', previousStats?.supply);
+            
+            updateStat('txValue', transactions.total || 0, '', previousStats?.transactions?.total);
+
+            // Update details
+            document.getElementById('slotValue').textContent = formatNumber(epoch.slot || 0);
+            document.getElementById('potValue').textContent = formatNumber(epoch.epoch_pot || 0) + ' RTC';
+            document.getElementById('heightValue').textContent = formatNumber(epoch.height || 0);
+            document.getElementById('versionValue').textContent = health.version || '--';
+            document.getElementById('uptimeValue').textContent = formatUptime(health.uptime_s || 0);
+
+            // Store for next comparison
+            previousStats = {
+                epoch: epoch,
+                supply: supply,
+                transactions: transactions
+            };
+
+            // Show dashboard
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+        }
+
+        function updateStat(elementId, value, unit, previousValue) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = formatNumber(value) + (unit ? `<span class="stat-unit">${unit}</span>` : '');
+
+            // Show change indicator
+            const changeElement = document.getElementById(elementId.replace('Value', 'Change'));
+            if (previousValue !== undefined && previousValue !== null) {
+                const diff = value - previousValue;
+                if (diff > 0) {
+                    changeElement.innerHTML = `<span>▲</span> +${formatNumber(diff)}`;
+                    changeElement.className = 'stat-change positive';
+                } else if (diff < 0) {
+                    changeElement.innerHTML = `<span>▼</span> ${formatNumber(diff)}`;
+                    changeElement.className = 'stat-change negative';
+                } else {
+                    changeElement.innerHTML = '<span>▬</span> No change';
+                    changeElement.className = 'stat-change';
+                }
+            } else {
+                changeElement.innerHTML = '';
+            }
+        }
+
+        function calculateSupply(epochData) {
+            // Calculate based on epoch POT and block height
+            // This is an estimate based on available data
+            const epochPot = epochData.epoch_pot || 0;
+            const height = epochData.height || 0;
+            
+            // Use height as a proxy for total minted (simplified)
+            // In production, this would come from a dedicated supply endpoint
+            return Math.min(height * 0.5, MAX_SUPPLY);
+        }
+
+        function formatNumber(num) {
+            if (typeof num !== 'number') return '--';
+            return num.toLocaleString('en-US', { maximumFractionDigits: 2 });
+        }
+
+        function formatUptime(seconds) {
+            if (!seconds) return '--';
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            
+            if (days > 0) return `${days}d ${hours}h`;
+            if (hours > 0) return `${hours}h ${mins}m`;
+            return `${mins}m`;
+        }
+
+        function updateLastUpdated() {
+            const now = new Date();
+            document.getElementById('lastUpdated').textContent = now.toLocaleString();
+        }
+
+        function setStatus(status, text) {
+            const dot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            
+            if (status === 'connected') {
+                dot.className = 'status-dot';
+                dot.style.background = 'var(--success)';
+            } else {
+                dot.className = 'status-dot error';
+                dot.style.background = 'var(--warning)';
+            }
+            
+            statusText.textContent = text;
+        }
+
+        function showError(message) {
+            const errorEl = document.getElementById('error');
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+        }
+
+        function hideError() {
+            document.getElementById('error').style.display = 'none';
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', stopAutoRefresh);
+    </script>
+</body>
+</html>

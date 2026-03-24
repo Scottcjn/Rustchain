@@ -1,0 +1,202 @@
+name: BCOS v2 Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label-gate:
+    name: Review Tier Label Gate
+    runs-on: ubuntu-latest
+    outputs:
+      tier: ${{ steps.detect.outputs.tier }}
+    steps:
+      - name: Detect BCOS tier
+        id: detect
+        uses: actions/github-script@v8
+        with:
+          script: |
+            if (context.eventName === 'push') {
+              core.setOutput('tier', 'L1');
+              return;
+            }
+
+            const pr = context.payload.pull_request;
+            const labels = (pr.labels || []).map(l => l.name);
+            const tier =
+              labels.includes('BCOS-L2') || labels.includes('bcos:l2') ? 'L2' :
+              labels.includes('BCOS-L1') || labels.includes('bcos:l1') ? 'L1' :
+              'L1';
+
+            // Check if doc-only PR
+            const files = [];
+            for await (const resp of github.paginate.iterator(
+              github.rest.pulls.listFiles,
+              { owner: context.repo.owner, repo: context.repo.repo, pull_number: pr.number, per_page: 100 }
+            )) {
+              for (const f of resp.data) files.push(f.filename);
+            }
+
+            function isDocOnly(path) {
+              const p = path.toLowerCase();
+              return p.startsWith("docs/") || p.endsWith(".md") ||
+                     p.endsWith(".png") || p.endsWith(".jpg") || p.endsWith(".svg") || p.endsWith(".pdf");
+            }
+
+            const nonDoc = files.filter(f => !isDocOnly(f));
+            if (nonDoc.length === 0) {
+              core.info("Doc-only PR: BCOS scan skipped.");
+              core.setOutput('tier', 'skip');
+              return;
+            }
+
+            if (!labels.some(l => ["BCOS-L1","BCOS-L2","bcos:l1","bcos:l2"].includes(l))) {
+              core.warning("No BCOS tier label - defaulting to L1.");
+            }
+
+            core.setOutput('tier', tier);
+            core.info(`BCOS tier: ${tier}`);
+
+  bcos-scan:
+    name: BCOS v2 Engine Scan
+    needs: label-gate
+    if: needs.label-gate.outputs.tier != 'skip'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install BCOS v2 tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install cyclonedx-bom pip-licenses pip-audit fpdf2
+          # Semgrep is optional but recommended
+          python -m pip install semgrep || echo "Semgrep install failed (non-blocking)"
+
+      - name: Run BCOS v2 Engine
+        id: scan
+        env:
+          BCOS_TIER: ${{ needs.label-gate.outputs.tier }}
+        run: |
+          python -c "
+          import json, sys, os
+          sys.path.insert(0, 'tools')
+          from bcos_engine import scan_repo
+          tier = os.environ.get('BCOS_TIER', 'L1')
+          result = scan_repo('.', tier=tier, commit_sha='${{ github.sha }}')
+          # Save report
+          os.makedirs('artifacts', exist_ok=True)
+          with open('artifacts/bcos-report.json', 'w') as f:
+              json.dump(result, f, indent=2)
+          # Set outputs
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'score={result[\"trust_score\"]}\n')
+              f.write(f'cert_id={result[\"cert_id\"]}\n')
+              f.write(f'tier_met={result[\"tier_met\"]}\n')
+          # Print summary
+          print(f'Trust Score: {result[\"trust_score\"]}/100')
+          print(f'Cert ID: {result[\"cert_id\"]}')
+          print(f'Tier {tier} met: {result[\"tier_met\"]}')
+          "
+
+      - name: Comment trust score on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const score = '${{ steps.scan.outputs.score }}';
+            const certId = '${{ steps.scan.outputs.cert_id }}';
+            const tierMet = '${{ steps.scan.outputs.tier_met }}' === 'True';
+            const tier = '${{ needs.label-gate.outputs.tier }}';
+
+            const icon = tierMet ? ':white_check_mark:' : ':warning:';
+            const color = score >= 80 ? '4c1' : score >= 60 ? 'yellow' : 'red';
+
+            const body = [
+              `## ${icon} BCOS v2 Scan Results`,
+              '',
+              `| Metric | Value |`,
+              `|--------|-------|`,
+              `| **Trust Score** | **${score}/100** |`,
+              `| Certificate ID | \`${certId}\` |`,
+              `| Tier | ${tier} (${tierMet ? 'met' : 'not met'}) |`,
+              '',
+              `![BCOS Badge](https://img.shields.io/badge/BCOS-${tier}%20${score}%2F100-${color})`,
+              '',
+              '<details><summary>What does this mean?</summary>',
+              '',
+              'The BCOS (Beacon Certified Open Source) engine scans for:',
+              '- SPDX license header compliance',
+              '- Known CVE vulnerabilities (OSV database)',
+              '- Static analysis findings (Semgrep)',
+              '- SBOM completeness',
+              '- Dependency freshness',
+              '- Test infrastructure evidence',
+              '- Review attestation tier',
+              '',
+              `[Full report](https://rustchain.org/bcos/verify/${certId}) | [What is BCOS?](https://github.com/Scottcjn/Rustchain/blob/main/docs/BEACON_CERTIFIED_OPEN_SOURCE.md)`,
+              '</details>',
+              '',
+              '---',
+              '*BCOS v2 Engine - Free & Open Source (MIT) - [Elyan Labs](https://elyanlabs.ai)*',
+            ].join('\n');
+
+            // Find existing BCOS comment to update
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.data.find(c =>
+              c.body && c.body.includes('BCOS v2 Scan Results')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+            }
+
+      - name: Anchor on merge to main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          RC_ADMIN_KEY: ${{ secrets.RC_ADMIN_KEY }}
+        run: |
+          if [ -n "$RC_ADMIN_KEY" ] && [ -f artifacts/bcos-report.json ]; then
+            curl -sk -X POST https://50.28.86.131/bcos/attest \
+              -H "Content-Type: application/json" \
+              -H "X-Admin-Key: $RC_ADMIN_KEY" \
+              -d @artifacts/bcos-report.json \
+              && echo "BCOS attestation anchored on-chain" \
+              || echo "Warning: on-chain anchoring failed (non-blocking)"
+          else
+            echo "Skipping on-chain anchor (no admin key or no report)"
+          fi
+
+      - name: Upload BCOS artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: bcos-v2-report
+          path: artifacts/
