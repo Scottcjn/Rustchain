@@ -9,7 +9,8 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 # Set test DB before importing
-TEST_DB = tempfile.mktemp(suffix=".db")
+_fd, TEST_DB = tempfile.mkstemp(suffix=".db")
+os.close(_fd)
 os.environ["OTC_DB_PATH"] = TEST_DB
 
 from otc_bridge import app, init_db
