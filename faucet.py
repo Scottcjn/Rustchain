@@ -241,18 +241,36 @@ HTML_TEMPLATE = """
                 const data = await response.json();
                 
                 if (data.ok) {
-                    result.innerHTML = '<div class="result success">✅ Success! Sent ' + data.amount + ' RTC to ' + wallet + '</div>';
+                    result.textContent = '';
+                    const successDiv = document.createElement('div');
+                    successDiv.className = 'result success';
+                    successDiv.textContent = '✅ Success! Sent ' + data.amount + ' RTC to ' + wallet;
+                    result.appendChild(successDiv);
                     if (data.next_available) {
-                        result.innerHTML += '<div class="result info">Next available: ' + data.next_available + '</div>';
+                        const infoDiv = document.createElement('div');
+                        infoDiv.className = 'result info';
+                        infoDiv.textContent = 'Next available: ' + data.next_available;
+                        result.appendChild(infoDiv);
                     }
                 } else {
-                    result.innerHTML = '<div class="result error">❌ ' + data.error + '</div>';
+                    result.textContent = '';
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'result error';
+                    errorDiv.textContent = '❌ ' + data.error;
+                    result.appendChild(errorDiv);
                     if (data.next_available) {
-                        result.innerHTML += '<div class="result info">Next available: ' + data.next_available + '</div>';
+                        const infoDiv = document.createElement('div');
+                        infoDiv.className = 'result info';
+                        infoDiv.textContent = 'Next available: ' + data.next_available;
+                        result.appendChild(infoDiv);
                     }
                 }
             } catch (err) {
-                result.innerHTML = '<div class="result error">❌ Error: ' + err.message + '</div>';
+                result.textContent = '';
+                const errDiv = document.createElement('div');
+                errDiv.className = 'result error';
+                errDiv.textContent = '❌ Error: ' + err.message;
+                result.appendChild(errDiv);
             }
             
             submitBtn.disabled = false;

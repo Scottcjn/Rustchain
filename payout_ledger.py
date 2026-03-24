@@ -254,12 +254,12 @@ LEDGER_HTML = """<!DOCTYPE html>
 <tr><th>Bounty</th><th>Contributor</th><th>RTC</th><th>Status</th><th>PR</th><th>TX</th><th>Date</th></tr>
 {% for r in records %}
 <tr>
-  <td>{{ r.bounty_id }} {{ r.bounty_title }}</td>
-  <td>{{ r.contributor }}</td>
+  <td>{{ r.bounty_id|e }} {{ r.bounty_title|e }}</td>
+  <td>{{ r.contributor|e }}</td>
   <td>{{ "%.1f"|format(r.amount_rtc) }}</td>
-  <td class="status-{{ r.status }}">{{ r.status }}</td>
-  <td>{% if r.pr_url %}<a href="{{ r.pr_url }}" target="_blank">PR</a>{% endif %}</td>
-  <td>{{ r.tx_hash[:12] if r.tx_hash else '' }}</td>
+  <td class="status-{{ r.status|e }}">{{ r.status|e }}</td>
+  <td>{% if r.pr_url %}<a href="{{ r.pr_url|e }}" target="_blank">PR</a>{% endif %}</td>
+  <td>{{ r.tx_hash[:12]|e if r.tx_hash else '' }}</td>
   <td>{{ r.created_at }}</td>
 </tr>
 {% endfor %}

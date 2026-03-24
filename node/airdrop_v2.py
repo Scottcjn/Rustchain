@@ -1234,7 +1234,8 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         wallet_address = data.get("wallet_address", "").strip()
         chain = data.get("chain", "").strip()
         github_token = data.get("github_token")
-        skip_antisybil = data.get("skip_antisybil", False)
+        # SECURITY: skip_antisybil must NEVER be settable from API requests.
+        # It exists only for internal testing via direct Python calls.
 
         if not github_username:
             return jsonify({"ok": False, "error": "missing_github_username"}), 400
@@ -1244,7 +1245,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
             return jsonify({"ok": False, "error": "missing_chain"}), 400
 
         result = airdrop.check_eligibility(
-            github_username, wallet_address, chain, github_token, skip_antisybil
+            github_username, wallet_address, chain, github_token, skip_antisybil=False
         )
 
         return jsonify({"ok": result.eligible, **result.to_dict()})
