@@ -49,7 +49,8 @@ FOUNDER_WALLETS = [
 # Consensus Parameters
 # =============================================================================
 
-CURRENT_YEAR: int = 2025
+import datetime as _dt
+CURRENT_YEAR: int = _dt.datetime.now(_dt.timezone.utc).year
 
 # Antiquity Score parameters
 AS_MAX: float = 100.0  # Maximum for reward capping

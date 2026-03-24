@@ -407,11 +407,30 @@ class ProofOfAntiquity:
         if block.total_reward > max_reward * 1.01:  # 1% tolerance for rounding
             return False
 
+        # Verify merkle root matches miners data
+        expected_merkle = Block(
+            height=block.height,
+            timestamp=block.timestamp,
+            previous_hash=block.previous_hash,
+            miners=block.miners,
+            total_reward=block.total_reward,
+        ).merkle_root
+        if block.merkle_root != expected_merkle:
+            return False
+
+        # Verify block hash matches header data
+        expected_hash = hashlib.sha256(
+            f"{block.height}:{block.timestamp}:{block.previous_hash}:{block.merkle_root}".encode()
+        ).hexdigest()
+        if block.hash != expected_hash:
+            return False
+
         return True
 
     def _reset_block(self):
         """Reset state for next block"""
         self.pending_proofs.clear()
+        self.known_hardware.clear()
         self.block_start_time = int(time.time())
 
     def get_status(self) -> Dict[str, Any]:
