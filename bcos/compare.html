@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BCOS v2 vs Altermenta Nucleus Verify | RustChain</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #0a0a0a;
+            color: #00ff41;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Terminal Header */
+        .terminal-header {
+            background: linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 100%);
+            border: 2px solid #00ff41;
+            border-radius: 8px 8px 0 0;
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .terminal-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #ff5f56;
+        }
+
+        .terminal-dot:nth-child(2) {
+            background-color: #ffbd2e;
+        }
+
+        .terminal-dot:nth-child(3) {
+            background-color: #27c93f;
+        }
+
+        .terminal-title {
+            margin-left: auto;
+            color: #888;
+            font-size: 14px;
+        }
+
+        /* Main Content */
+        .terminal-body {
+            background-color: #0d1117;
+            border: 2px solid #00ff41;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            padding: 40px;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
+        }
+
+        .subtitle {
+            color: #888;
+            font-size: 1.1em;
+            margin-bottom: 40px;
+        }
+
+        .subtitle::before {
+            content: "> ";
+            color: #00ff41;
+        }
+
+        /* Winner Banner */
+        .winner-banner {
+            background: linear-gradient(135deg, #00ff41 0%, #00cc33 100%);
+            color: #0a0a0a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 40px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+
+        .winner-banner::before {
+            content: "★ ";
+        }
+
+        /* Comparison Table */
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 40px;
+            background-color: #161b22;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .comparison-table th,
+        .comparison-table td {
+            padding: 20px;
+            text-align: left;
+            border-bottom: 1px solid #30363d;
+        }
+
+        .comparison-table th {
+            background-color: #21262d;
+            color: #00ff41;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .comparison-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .comparison-table tr:hover {
+            background-color: #1c2128;
+        }
+
+        .feature-name {
+            font-weight: bold;
+            color: #c9d1d9;
+        }
+
+        .bcos-cell {
+            color: #00ff41;
+        }
+
+        .bcos-cell::before {
+            content: "✓ ";
+        }
+
+        .nucleus-cell {
+            color: #ff6b6b;
+        }
+
+        .nucleus-cell::before {
+            content: "✗ ";
+        }
+
+        .nucleus-cell.partial {
+            color: #ffd93d;
+        }
+
+        .nucleus-cell.partial::before {
+            content: "~ ";
+        }
+
+        /* Stats Section */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 25px;
+            text-align: center;
+        }
+
+        .stat-card.bcos {
+            border-color: #00ff41;
+        }
+
+        .stat-card.nucleus {
+            border-color: #ff6b6b;
+        }
+
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .stat-card.bcos .stat-value {
+            color: #00ff41;
+        }
+
+        .stat-card.nucleus .stat-value {
+            color: #ff6b6b;
+        }
+
+        .stat-label {
+            color: #888;
+            font-size: 0.9em;
+        }
+
+        /* CTA Section */
+        .cta-section {
+            background: linear-gradient(135deg, #161b22 0%, #1c2128 100%);
+            border: 2px solid #00ff41;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin-top: 40px;
+        }
+
+        .cta-section h2 {
+            color: #00ff41;
+            margin-bottom: 20px;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 15px 30px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-primary {
+            background-color: #00ff41;
+            color: #0a0a0a;
+        }
+
+        .btn-primary:hover {
+            background-color: #00cc33;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 255, 65, 0.4);
+        }
+
+        .btn-secondary {
+            background-color: transparent;
+            color: #00ff41;
+            border: 2px solid #00ff41;
+        }
+
+        .btn-secondary:hover {
+            background-color: #00ff41;
+            color: #0a0a0a;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 60px;
+            padding-top: 40px;
+            border-top: 1px solid #30363d;
+            text-align: center;
+            color: #888;
+        }
+
+        .footer a {
+            color: #00ff41;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Blinking cursor */
+        .cursor {
+            display: inline-block;
+            width: 10px;
+            height: 20px;
+            background-color: #00ff41;
+            animation: blink 1s infinite;
+            margin-left: 5px;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.8em;
+            }
+
+            .terminal-body {
+                padding: 20px;
+            }
+
+            .comparison-table th,
+            .comparison-table td {
+                padding: 12px;
+                font-size: 0.9em;
+            }
+
+            .cta-buttons {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="terminal-header">
+            <div class="terminal-dot"></div>
+            <div class="terminal-dot"></div>
+            <div class="terminal-dot"></div>
+            <div class="terminal-title">rustchain.org/bcos/compare.html</div>
+        </div>
+
+        <div class="terminal-body">
+            <h1>BCOS v2 vs Nucleus Verify</h1>
+            <p class="subtitle">Beacon Certified Open Source - The Transparent Choice</p>
+
+            <div class="winner-banner">
+                BCOS v2 Wins on Every Metric - Open Source, Free, and On-Chain Verified
+            </div>
+
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Feature</th>
+                        <th>BCOS v2</th>
+                        <th>Nucleus Verify</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="feature-name">Price</td>
+                        <td class="bcos-cell">Free (MIT License)</td>
+                        <td class="nucleus-cell">$20-50/month</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">Source Code</td>
+                        <td class="bcos-cell">100% Open Source</td>
+                        <td class="nucleus-cell">Proprietary/Closed</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">On-Chain Proof</td>
+                        <td class="bcos-cell">RustChain BLAKE2b Anchored</td>
+                        <td class="nucleus-cell">None</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">Offline Scanning</td>
+                        <td class="bcos-cell">Full Local Engine</td>
+                        <td class="nucleus-cell">Cloud API Only</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">Human Review</td>
+                        <td class="bcos-cell">L2 Ed25519 Signatures</td>
+                        <td class="nucleus-cell">Fully Automated</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">Trust Score</td>
+                        <td class="bcos-cell">Transparent Formula</td>
+                        <td class="nucleus-cell">Opaque/Black Box</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">CLI Tool</td>
+                        <td class="bcos-cell">clawrtc bcos</td>
+                        <td class="nucleus-cell">Web Interface Only</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">Community</td>
+                        <td class="bcos-cell">183+ Stars, 18 Months Active</td>
+                        <td class="nucleus-cell">0 Stars, 6 Days Old</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">Self-Hostable</td>
+                        <td class="bcos-cell">Yes - Full Control</td>
+                        <td class="nucleus-cell">No - SaaS Only</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">Audit Trail</td>
+                        <td class="bcos-cell">Immutable Blockchain Record</td>
+                        <td class="nucleus-cell">Centralized Database</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="stats-grid">
+                <div class="stat-card bcos">
+                    <div class="stat-value">$0</div>
+                    <div class="stat-label">BCOS v2 Cost</div>
+                </div>
+                <div class="stat-card nucleus">
+                    <div class="stat-value">$240-600</div>
+                    <div class="stat-label">Nucleus Annual Cost</div>
+                </div>
+                <div class="stat-card bcos">
+                    <div class="stat-value">183+</div>
+                    <div class="stat-label">GitHub Stars</div>
+                </div>
+                <div class="stat-card nucleus">
+                    <div class="stat-value">0</div>
+                    <div class="stat-label">GitHub Stars</div>
+                </div>
+            </div>
+
+            <div class="cta-section">
+                <h2>Ready to Go Open Source?</h2>
+                <p>Join the community of developers who trust BCOS v2 for transparent,<br>on-chain verified open source certification.</p>
+                <div class="cta-buttons">
+                    <a href="https://rustchain.org/bcos/verify" class="btn btn-primary">Verify Your Repo</a>
+                    <a href="https://github.com/Scottcjn/Rustchain/blob/main/docs/BEACON_CERTIFIED_OPEN_SOURCE.md" class="btn btn-secondary">Read Documentation</a>
+                </div>
+            </div>
+
+            <div class="footer">
+                <p>BCOS v2 is part of the <a href="https://rustchain.org">RustChain</a> ecosystem</p>
+                <p>Built with transparency. Verified on-chain. Forever free.</p>
+                <p style="margin-top: 20px;"><span class="cursor"></span></p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
