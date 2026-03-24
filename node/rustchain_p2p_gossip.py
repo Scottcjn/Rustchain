@@ -21,6 +21,7 @@ import threading
 import time
 from dataclasses import dataclass, asdict, field
 from enum import Enum
+import os
 from typing import Dict, List, Optional, Set, Tuple, Any
 from collections import defaultdict
 import logging
@@ -349,7 +350,7 @@ class GossipLayer:
                 f"{peer_url}/p2p/gossip",
                 json=msg.to_dict(),
                 timeout=10,
-                verify=False
+                verify=os.getenv("RUSTCHAIN_TLS_VERIFY", "true").lower() != "false"
             )
             if resp.status_code != 200:
                 logger.warning(f"Peer {peer_url} returned {resp.status_code}")
@@ -549,7 +550,7 @@ class GossipLayer:
                 f"{peer_url}/p2p/gossip",
                 json=msg.to_dict(),
                 timeout=30,
-                verify=False
+                verify=os.getenv("RUSTCHAIN_TLS_VERIFY", "true").lower() != "false"
             )
             if resp.status_code == 200:
                 data = resp.json()

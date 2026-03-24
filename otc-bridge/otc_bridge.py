@@ -214,7 +214,7 @@ def rtc_get_balance(wallet_id):
         r = requests.get(
             f"{RUSTCHAIN_NODE}/wallet/balance",
             params={"miner_id": wallet_id},
-            verify=False, timeout=10
+            verify=os.getenv("RUSTCHAIN_TLS_VERIFY", "true").lower() != "false", timeout=10
         )
         if r.ok:
             data = r.json()
@@ -238,7 +238,7 @@ def rtc_create_escrow_job(poster_wallet, amount_rtc, title, description):
                 "ttl_seconds": ORDER_TTL_DEFAULT,
                 "tags": ["otc_bridge", "escrow"]
             },
-            verify=False, timeout=15
+            verify=os.getenv("RUSTCHAIN_TLS_VERIFY", "true").lower() != "false", timeout=15
         )
         if r.ok:
             data = r.json()
@@ -257,7 +257,7 @@ def rtc_release_escrow(job_id, poster_wallet):
         r = requests.post(
             f"{RUSTCHAIN_NODE}/agent/jobs/{job_id}/accept",
             json={"poster_wallet": poster_wallet},
-            verify=False, timeout=15
+            verify=os.getenv("RUSTCHAIN_TLS_VERIFY", "true").lower() != "false", timeout=15
         )
         return r.ok
     except Exception as e:
@@ -271,7 +271,7 @@ def rtc_cancel_escrow(job_id, poster_wallet):
         r = requests.post(
             f"{RUSTCHAIN_NODE}/agent/jobs/{job_id}/cancel",
             json={"poster_wallet": poster_wallet},
-            verify=False, timeout=15
+            verify=os.getenv("RUSTCHAIN_TLS_VERIFY", "true").lower() != "false", timeout=15
         )
         return r.ok
     except Exception as e:
@@ -638,7 +638,7 @@ def confirm_order(order_id):
             claim_r = requests.post(
                 f"{RUSTCHAIN_NODE}/agent/jobs/{order['escrow_job_id']}/claim",
                 json={"worker_wallet": "otc_bridge_worker"},
-                verify=False, timeout=15
+                verify=os.getenv("RUSTCHAIN_TLS_VERIFY", "true").lower() != "false", timeout=15
             )
 
             if claim_r.ok or "not open" in claim_r.text.lower():
@@ -649,7 +649,7 @@ def confirm_order(order_id):
                         "worker_wallet": "otc_bridge_worker",
                         "result_summary": f"OTC trade confirmed. Order: {order_id}. Quote TX: {quote_tx}"
                     },
-                    verify=False, timeout=15
+                    verify=os.getenv("RUSTCHAIN_TLS_VERIFY", "true").lower() != "false", timeout=15
                 )
 
                 # Accept (releases funds to otc_bridge_worker, then we transfer to actual recipient)
@@ -657,7 +657,7 @@ def confirm_order(order_id):
                     accept_r = requests.post(
                         f"{RUSTCHAIN_NODE}/agent/jobs/{order['escrow_job_id']}/accept",
                         json={"poster_wallet": escrow_poster, "rating": 5},
-                        verify=False, timeout=15
+                        verify=os.getenv("RUSTCHAIN_TLS_VERIFY", "true").lower() != "false", timeout=15
                     )
                     if not accept_r.ok:
                         log.error(f"Escrow accept failed: {accept_r.text}")
