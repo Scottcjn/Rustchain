@@ -224,6 +224,7 @@ class RustChainNode:
         wallet: WalletAddress,
         hardware: HardwareInfo,
         entropy_proof: Optional[EntropyProof] = None,
+        challenge_nonce: Optional[str] = None,
     ) -> Dict[str, Any]:
         """POST /api/mine - Submit mining proof"""
         with self.lock:
@@ -248,6 +249,7 @@ class RustChainNode:
                     wallet=wallet,
                     hardware=hardware,
                     anti_emulation_hash=anti_emulation_hash,
+                    challenge_nonce=challenge_nonce,
                 )
             except Exception as e:
                 return {"success": False, "error": str(e)}
@@ -381,6 +383,11 @@ def create_api_server(node: RustChainNode):
             return jsonify(result)
         return jsonify({"error": "Block not found"}), 404
 
+    @app.route("/api/challenge")
+    def challenge():
+        """GET /api/challenge - Get a node-specific attestation challenge"""
+        return jsonify(node.poa.issue_challenge())
+
     @app.route("/api/mine", methods=["POST"])
     def mine():
         data = request.json
@@ -390,7 +397,10 @@ def create_api_server(node: RustChainNode):
             release_year=data.get("release_year", 2000),
             uptime_days=data.get("uptime_days", 0),
         )
-        result = node.submit_mining_proof(wallet, hardware)
+        result = node.submit_mining_proof(
+            wallet, hardware,
+            challenge_nonce=data.get("challenge_nonce"),
+        )
         return jsonify(result)
 
     @app.route("/api/node/antiquity", methods=["POST"])

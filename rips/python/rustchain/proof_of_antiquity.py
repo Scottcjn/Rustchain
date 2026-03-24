@@ -14,6 +14,7 @@ Formula: AS = (current_year - release_year) * log10(uptime_days + 1)
 
 import hashlib
 import math
+import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -182,12 +183,63 @@ class ProofOfAntiquity:
     Block selection uses weighted lottery based on Antiquity Score.
     """
 
-    def __init__(self):
+    def __init__(self, node_id: Optional[str] = None):
+        self.node_id: str = node_id or secrets.token_hex(8)
         self.pending_proofs: List[ValidatedProof] = []
         self.block_start_time: int = int(time.time())
         self.known_hardware: Dict[str, WalletAddress] = {}  # hash -> wallet
         self.drifted_nodes: set = set()  # Quarantined nodes (RIP-0003)
         self.current_block_height: int = 0
+        # Challenge-response: node-specific nonces to prevent replay attacks
+        self._active_challenges: Dict[str, float] = {}  # nonce -> expiry timestamp
+
+    def issue_challenge(self) -> Dict:
+        """
+        Issue a node-specific, time-bound challenge for attestation.
+
+        Miners must include the challenge nonce in their proof submission.
+        This prevents cross-node replay attacks since each node issues unique
+        challenges that are only valid for the current block window.
+
+        Returns:
+            Challenge dict with node_id, block_height, nonce, and expiry.
+        """
+        nonce = secrets.token_hex(16)
+        expiry = time.time() + BLOCK_TIME_SECONDS
+        self._active_challenges[nonce] = expiry
+
+        # Prune expired challenges
+        now = time.time()
+        self._active_challenges = {
+            n: e for n, e in self._active_challenges.items() if e > now
+        }
+
+        return {
+            "node_id": self.node_id,
+            "block_height": self.current_block_height,
+            "nonce": nonce,
+            "expires_at": int(expiry),
+        }
+
+    def verify_challenge(self, nonce: str) -> bool:
+        """
+        Verify that a challenge nonce is valid and not expired.
+
+        Args:
+            nonce: The challenge nonce to verify.
+
+        Returns:
+            True if valid, False otherwise.
+        """
+        expiry = self._active_challenges.get(nonce)
+        if expiry is None:
+            return False
+        if time.time() > expiry:
+            del self._active_challenges[nonce]
+            return False
+        # Consume the nonce (one-time use)
+        del self._active_challenges[nonce]
+        return True
 
     def submit_proof(
         self,
@@ -195,6 +247,7 @@ class ProofOfAntiquity:
         hardware: HardwareInfo,
         anti_emulation_hash: str,
         entropy_proof: Optional[bytes] = None,
+        challenge_nonce: Optional[str] = None,
     ) -> Dict:
         """
         Submit a mining proof for the current block.
@@ -225,6 +278,15 @@ class ProofOfAntiquity:
             raise DriftLockViolationError(
                 f"Node {wallet.address} is quarantined due to drift lock"
             )
+
+        # Verify challenge nonce (anti-replay defense)
+        if challenge_nonce is not None:
+            if not self.verify_challenge(challenge_nonce):
+                return {
+                    "success": False,
+                    "error": "Invalid or expired challenge nonce. "
+                             "Request a new challenge via GET /api/challenge.",
+                }
 
         # Check for duplicate wallet submission
         existing = [p for p in self.pending_proofs if p.wallet == wallet]
@@ -343,6 +405,7 @@ class ProofOfAntiquity:
     def _reset_block(self):
         """Reset state for next block"""
         self.pending_proofs.clear()
+        self.known_hardware.clear()  # Fix: clear hardware registry to prevent memory leak
         self.block_start_time = int(time.time())
 
     def get_status(self) -> Dict:
