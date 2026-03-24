@@ -606,13 +606,13 @@ class BFTConsensus:
         with sqlite3.connect(self.db_path) as conn:
             for miner_id, reward in distribution.items():
                 # Update balance
+                # Store as integer micro-RTC (1 RTC = 1,000,000 uRTC) to avoid
+                # floating-point drift accumulating across many ledger entries.
                 conn.execute("""
                     INSERT INTO balances (miner_id, amount_i64)
                     VALUES (?, ?)
                     ON CONFLICT(miner_id) DO UPDATE SET
                     amount_i64 = amount_i64 + excluded.amount_i64
-                # Store as integer micro-RTC (1 RTC = 1,000,000 uRTC) to avoid
-                # floating-point drift accumulating across many ledger entries.
                 """, (miner_id, int(reward * 1_000_000)))
 
                 # Log in ledger
