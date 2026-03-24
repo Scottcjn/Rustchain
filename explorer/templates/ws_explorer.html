@@ -1,0 +1,218 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RustChain Explorer — Live</title>
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --green: #3fb950;
+          --red: #f85149; --blue: #58a6ff; --text: #e6edf3; --muted: #8b949e; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+         background: var(--bg); color: var(--text); padding: 16px; }
+  .container { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 1.4em; margin-bottom: 4px; }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .conn-status { display: flex; align-items: center; gap: 8px; font-size: 0.85em; }
+  .conn-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .conn-dot.connected { background: var(--green); }
+  .conn-dot.disconnected { background: var(--red); }
+  .conn-dot.reconnecting { background: #d29922; animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 600px) { .metrics { grid-template-columns: 1fr 1fr; } }
+  .metric { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .metric-label { color: var(--muted); font-size: 0.8em; }
+  .metric-value { font-size: 1.3em; font-weight: 600; }
+  .feed-section { margin-bottom: 16px; }
+  .feed-title { font-size: 1em; margin-bottom: 8px; color: var(--muted); }
+  .feed { background: var(--card); border: 1px solid var(--border); border-radius: 8px; max-height: 300px; overflow-y: auto; }
+  .feed-item { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 0.85em;
+               animation: fadeIn 0.3s ease-in; }
+  .feed-item:last-child { border-bottom: none; }
+  .feed-item.new { background: rgba(88,166,255,0.08); }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; } }
+  .feed-item .time { color: var(--muted); }
+  .feed-item .hash { color: var(--blue); font-family: monospace; font-size: 0.9em; }
+  .miner-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+  .miner-card { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 10px; font-size: 0.82em; }
+  .miner-id { font-weight: 600; word-break: break-all; }
+  .miner-hw { color: var(--muted); }
+  .miner-multi { color: var(--green); font-weight: 600; }
+  .sparkline { height: 30px; display: flex; align-items: flex-end; gap: 2px; margin-top: 4px; }
+  .sparkline .bar { flex: 1; background: var(--blue); border-radius: 1px 1px 0 0; min-width: 3px; }
+  .empty { padding: 16px; text-align: center; color: var(--muted); }
+  .sound-toggle { background: none; border: 1px solid var(--border); color: var(--text); padding: 4px 10px;
+                  border-radius: 4px; cursor: pointer; font-size: 0.8em; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div>
+      <h1>⛓️ RustChain Explorer — Live</h1>
+      <div class="conn-status">
+        <div id="conn-dot" class="conn-dot disconnected"></div>
+        <span id="conn-text">Connecting...</span>
+      </div>
+    </div>
+    <button class="sound-toggle" id="sound-btn" onclick="toggleSound()">🔔 Sound</button>
+  </div>
+
+  <div class="metrics">
+    <div class="metric">
+      <div class="metric-label">Current Epoch</div>
+      <div class="metric-value" id="epoch">—</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Active Miners</div>
+      <div class="metric-value" id="miners">—</div>
+      <div class="sparkline" id="miner-sparkline"></div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Updates</div>
+      <div class="metric-value" id="updates">0</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Clients</div>
+      <div class="metric-value" id="clients">—</div>
+    </div>
+  </div>
+
+  <div class="feed-section">
+    <div class="feed-title">📦 Live Block Feed</div>
+    <div class="feed" id="block-feed"><div class="empty">Waiting for blocks...</div></div>
+  </div>
+
+  <div class="feed-section">
+    <div class="feed-title">🔍 Live Attestation Feed</div>
+    <div class="feed" id="attest-feed"><div class="empty">Waiting for attestations...</div></div>
+  </div>
+
+  <div class="feed-section">
+    <div class="feed-title">⛏️ Active Miners</div>
+    <div class="miner-grid" id="miner-grid"><div class="empty">Loading...</div></div>
+  </div>
+</div>
+
+<script>
+let updateCount = 0;
+let soundEnabled = false;
+let minerHistory = [];
+const socket = io({ reconnection: true, reconnectionDelay: 2000, reconnectionAttempts: Infinity });
+
+// Connection status
+socket.on('connect', () => {
+  document.getElementById('conn-dot').className = 'conn-dot connected';
+  document.getElementById('conn-text').textContent = 'Connected';
+  socket.emit('request_snapshot');
+});
+socket.on('disconnect', () => {
+  document.getElementById('conn-dot').className = 'conn-dot disconnected';
+  document.getElementById('conn-text').textContent = 'Disconnected — reconnecting...';
+});
+socket.on('reconnecting', () => {
+  document.getElementById('conn-dot').className = 'conn-dot reconnecting';
+  document.getElementById('conn-text').textContent = 'Reconnecting...';
+});
+
+// Welcome
+socket.on('welcome', data => {
+  document.getElementById('clients').textContent = data.connected_clients;
+});
+
+// Snapshot (full state on connect)
+socket.on('snapshot', data => {
+  if (data.epoch) updateEpoch(data.epoch);
+  if (data.miners) updateMiners(data.miners);
+});
+
+// Live updates
+socket.on('explorer_update', data => {
+  updateCount++;
+  document.getElementById('updates').textContent = updateCount;
+
+  if (data.epoch) updateEpoch(data.epoch);
+  if (data.new_block) addBlockFeed(data.new_block);
+  if (data.miners) updateMiners(data.miners);
+  if (data.attestations) updateAttestations(data.attestations);
+});
+
+function updateEpoch(d) {
+  const epoch = d.epoch || d.current_epoch;
+  if (epoch) document.getElementById('epoch').textContent = epoch;
+}
+
+function addBlockFeed(block) {
+  const feed = document.getElementById('block-feed');
+  if (feed.querySelector('.empty')) feed.innerHTML = '';
+  const hash = block.hash ? block.hash.substring(0, 16) + '...' : '—';
+  const item = document.createElement('div');
+  item.className = 'feed-item new';
+  item.innerHTML = `<span class="time">${new Date().toLocaleTimeString()}</span> · 
+    Epoch ${block.epoch||'?'} · <span class="hash">${hash}</span>`;
+  feed.insertBefore(item, feed.firstChild);
+  if (feed.children.length > 50) feed.removeChild(feed.lastChild);
+  setTimeout(() => item.classList.remove('new'), 2000);
+  if (soundEnabled) playNotif();
+}
+
+function updateMiners(d) {
+  const count = d.count || (d.miners ? d.miners.length : 0);
+  document.getElementById('miners').textContent = count;
+  minerHistory.push(count);
+  if (minerHistory.length > 30) minerHistory.shift();
+  renderSparkline();
+
+  // Miner grid
+  if (d.miners && d.miners.length > 0) {
+    const grid = document.getElementById('miner-grid');
+    grid.innerHTML = d.miners.slice(0, 12).map(m => `
+      <div class="miner-card">
+        <div class="miner-id">${m.miner_id || m.id || '?'}</div>
+        <div class="miner-hw">${m.hardware || m.architecture || '?'}</div>
+        <div class="miner-multi">${m.multiplier || 1.0}x</div>
+      </div>
+    `).join('');
+  }
+}
+
+function updateAttestations(list) {
+  const feed = document.getElementById('attest-feed');
+  if (feed.querySelector('.empty')) feed.innerHTML = '';
+  for (const a of list.slice(0, 5)) {
+    const item = document.createElement('div');
+    item.className = 'feed-item new';
+    item.innerHTML = `<span class="time">${new Date().toLocaleTimeString()}</span> · 
+      ${a.miner_id} · ${a.hardware} · <span class="miner-multi">${a.multiplier}x</span>`;
+    feed.insertBefore(item, feed.firstChild);
+    if (feed.children.length > 50) feed.removeChild(feed.lastChild);
+    setTimeout(() => item.classList.remove('new'), 2000);
+  }
+}
+
+function renderSparkline() {
+  const el = document.getElementById('miner-sparkline');
+  const max = Math.max(...minerHistory, 1);
+  el.innerHTML = minerHistory.map(v => `<div class="bar" style="height:${(v/max)*100}%"></div>`).join('');
+}
+
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  document.getElementById('sound-btn').textContent = soundEnabled ? '🔔 Sound ON' : '🔕 Sound OFF';
+}
+
+function playNotif() {
+  try {
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 800;
+    const g = ctx.createGain(); g.gain.value = 0.1;
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + 0.1);
+  } catch(e) {}
+}
+</script>
+</body>
+</html>
