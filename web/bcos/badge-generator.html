@@ -1,0 +1,240 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BCOS Badge Generator — RustChain</title>
+  <style>
+    :root {
+      --green: #33ff33;
+      --dim: #1a9f1a;
+      --bg: #0a0a0a;
+      --card-bg: #111;
+      --border: #2a2a2a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Courier New', monospace;
+      background: var(--bg);
+      color: var(--green);
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 2rem 1rem;
+      line-height: 1.6;
+    }
+    h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+    .subtitle { color: var(--dim); font-size: 0.85rem; margin-bottom: 2rem; }
+    .card {
+      border: 1px solid var(--border);
+      background: var(--card-bg);
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+      border-radius: 4px;
+    }
+    label { display: block; color: var(--dim); font-size: 0.8rem; margin-bottom: 0.25rem; }
+    input, select, textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--green);
+      font-family: 'Courier New', monospace;
+      padding: 0.5rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+      border-radius: 2px;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--green);
+    }
+    textarea { resize: vertical; min-height: 60px; }
+    button {
+      background: var(--green);
+      color: var(--bg);
+      border: none;
+      padding: 0.6rem 1.5rem;
+      font-family: 'Courier New', monospace;
+      font-weight: bold;
+      font-size: 0.9rem;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    button:hover { background: #66ff66; }
+    .preview-area {
+      text-align: center;
+      padding: 1.5rem;
+      border: 1px dashed var(--border);
+      margin-bottom: 1rem;
+      min-height: 60px;
+    }
+    .preview-area img { max-width: 100%; }
+    .copy-btn {
+      background: transparent;
+      color: var(--dim);
+      border: 1px solid var(--border);
+      padding: 0.3rem 0.8rem;
+      font-size: 0.75rem;
+      margin-left: 0.5rem;
+    }
+    .copy-btn:hover { color: var(--green); border-color: var(--green); }
+    .copied { color: var(--green) !important; }
+    .code-block {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 0.75rem;
+      margin-bottom: 0.75rem;
+      overflow-x: auto;
+      font-size: 0.8rem;
+      position: relative;
+      word-break: break-all;
+    }
+    .code-block .copy-btn { position: absolute; top: 0.25rem; right: 0.25rem; }
+    .error { color: #ff4444; font-size: 0.85rem; }
+    .muted { color: var(--dim); font-size: 0.8rem; }
+    a { color: var(--green); }
+    .tabs { display: flex; gap: 0; margin-bottom: 0; }
+    .tab {
+      background: transparent;
+      color: var(--dim);
+      border: 1px solid var(--border);
+      border-bottom: none;
+      padding: 0.4rem 1rem;
+      font-size: 0.8rem;
+      border-radius: 2px 2px 0 0;
+      cursor: pointer;
+    }
+    .tab.active { color: var(--green); background: var(--card-bg); border-color: var(--green); }
+  </style>
+</head>
+<body>
+  <h1>▸ BCOS Badge Generator</h1>
+  <p class="subtitle">Beacon Certified Open Source — embed your trust badge</p>
+
+  <div class="card">
+    <label>REPO URL or CERT ID</label>
+    <input type="text" id="input" placeholder="e.g. github.com/user/repo or BCOS-abc123" />
+
+    <label>BADGE STYLE</label>
+    <select id="style">
+      <option value="flat">flat</option>
+      <option value="flat-square">flat-square</option>
+      <option value="for-the-badge">for-the-badge</option>
+    </select>
+
+    <button onclick="generate()">GENERATE</button>
+    <p id="error" class="error" style="margin-top:0.5rem"></p>
+  </div>
+
+  <div class="card" id="result" style="display:none">
+    <label>PREVIEW</label>
+    <div class="preview-area" id="preview"></div>
+
+    <div class="tabs">
+      <span class="tab active" data-tab="md" onclick="switchTab(this)">Markdown</span>
+      <span class="tab" data-tab="html" onclick="switchTab(this)">HTML</span>
+      <span class="tab" data-tab="url" onclick="switchTab(this)">URL</span>
+    </div>
+
+    <div class="code-block" id="code-md"></div>
+    <div class="code-block" id="code-html" style="display:none"></div>
+    <div class="code-block" id="code-url" style="display:none"></div>
+  </div>
+
+  <p class="muted" style="margin-top:2rem">
+    Powered by <a href="https://rustchain.org/bcos/">RustChain BCOS</a> •
+    Verify at <a href="https://rustchain.org/bcos/">rustchain.org/bcos</a>
+  </p>
+
+  <script>
+    const API = 'https://50.28.86.131/bcos';
+    const VERIFY = 'https://rustchain.org/bcos/verify';
+
+    function extractCertId(input) {
+      input = input.trim();
+      // Direct cert ID
+      if (/^BCOS-/i.test(input)) return input;
+      // URL with cert id
+      const m = input.match(/BCOS-[a-zA-Z0-9]+/i);
+      if (m) return m[0];
+      return null;
+    }
+
+    async function lookupRepo(repoUrl) {
+      // Normalize to owner/repo
+      let repo = repoUrl.replace(/^https?:\/\/(www\.)?github\.com\/?/, '').replace(/\/$/, '');
+      if (!repo.includes('/')) return null;
+      try {
+        const res = await fetch(`${API}/verify?repo=${encodeURIComponent(repo)}`);
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data.cert_id || null;
+      } catch { return null; }
+    }
+
+    async function generate() {
+      const input = document.getElementById('input').value.trim();
+      const style = document.getElementById('style').value;
+      const errEl = document.getElementById('error');
+      const resultEl = document.getElementById('result');
+      errEl.textContent = '';
+      resultEl.style.display = 'none';
+
+      if (!input) { errEl.textContent = 'Enter a repo URL or cert ID'; return; }
+
+      let certId = extractCertId(input);
+
+      if (!certId) {
+        // Try repo lookup
+        errEl.textContent = 'Looking up repo...';
+        certId = await lookupRepo(input);
+        errEl.textContent = '';
+        if (!certId) {
+          errEl.textContent = 'No BCOS certification found. Verify your repo is certified at rustchain.org/bcos/';
+          return;
+        }
+      }
+
+      const badgeUrl = `${API}/badge/${certId}.svg?style=${style}`;
+      const verifyUrl = `${VERIFY}/${certId}`;
+
+      // Markdown
+      const md = `[![BCOS Certified](${badgeUrl})](${verifyUrl})`;
+      // HTML
+      const html = `<a href="${verifyUrl}"><img src="${badgeUrl}" alt="BCOS Certified" /></a>`;
+
+      document.getElementById('preview').innerHTML =
+        `<a href="${verifyUrl}" target="_blank"><img src="${badgeUrl}" alt="BCOS Badge" onerror="this.alt='[badge loading — verify API may be offline]'" /></a>`;
+
+      setCode('code-md', md);
+      setCode('code-html', html);
+      setCode('code-url', badgeUrl);
+
+      resultEl.style.display = 'block';
+    }
+
+    function setCode(id, text) {
+      const el = document.getElementById(id);
+      el.textContent = text;
+      const btn = document.createElement('button');
+      btn.className = 'copy-btn';
+      btn.textContent = 'copy';
+      btn.onclick = () => {
+        navigator.clipboard.writeText(text).then(() => {
+          btn.textContent = 'copied!';
+          btn.classList.add('copied');
+          setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('copied'); }, 1500);
+        });
+      };
+      el.appendChild(btn);
+    }
+
+    function switchTab(el) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      el.classList.add('active');
+      ['md', 'html', 'url'].forEach(t => {
+        document.getElementById('code-' + t).style.display = (t === el.dataset.tab) ? 'block' : 'none';
+      });
+    }
+  </script>
+</body>
+</html>

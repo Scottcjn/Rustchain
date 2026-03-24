@@ -136,7 +136,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
                     if len(parts) > 1:
                         flags = parts[1].strip().split()
                         break
-    except:
+    except Exception:
         pass
 
     if not flags:
@@ -148,7 +148,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
             for line in result.stdout.split("\n"):
                 if "feature" in line.lower() or "altivec" in line.lower():
                     flags.append(line.split(":")[-1].strip())
-        except:
+        except Exception:
             pass
 
     has_sse = any("sse" in f.lower() for f in flags)
@@ -553,7 +553,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
                 for vm in vm_strings:
                     if vm in content:
                         vm_indicators.append("{}:{}".format(path, vm))
-        except:
+        except Exception:
             pass
 
     # --- Environment variable checks ---
@@ -569,7 +569,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
         with open("/proc/cpuinfo", "r") as f:
             if "hypervisor" in f.read().lower():
                 vm_indicators.append("cpuinfo:hypervisor")
-    except:
+    except Exception:
         pass
 
     # --- /sys/hypervisor check (Xen-based cloud VMs expose this) ---
@@ -579,7 +579,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
                 hv_type = f.read().strip().lower()
                 if hv_type:
                     vm_indicators.append("sys_hypervisor:{}".format(hv_type))
-    except:
+    except Exception:
         pass
 
     # --- Cloud metadata endpoint check ---
@@ -598,7 +598,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
         if "azure" in cloud_body or "microsoft" in cloud_body:
             cloud_provider = "azure"
         vm_indicators.append("cloud_metadata:{}".format(cloud_provider))
-    except:
+    except Exception:
         pass
 
     # --- AWS IMDSv2 check (token-based, t3/t4 Nitro instances) ---
@@ -612,7 +612,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
         token_resp = urllib.request.urlopen(token_req, timeout=1)
         if token_resp.status == 200:
             vm_indicators.append("cloud_metadata:aws_imdsv2")
-    except:
+    except Exception:
         pass
 
     # --- systemd-detect-virt (if available) ---
@@ -623,7 +623,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
         virt_type = result.stdout.strip().lower()
         if virt_type and virt_type != "none":
             vm_indicators.append("systemd_detect_virt:{}".format(virt_type))
-    except:
+    except Exception:
         pass
 
     data = {
