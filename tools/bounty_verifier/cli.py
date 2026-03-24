@@ -44,8 +44,8 @@ def cmd_verify(
             claim = next((c for c in comments if c.id == comment_id), None)
             
             if not claim:
-                logger.error(f"Comment #{comment_id} not found on issue #{issue_number}")
-                return 1
+                logger.warning(f"Comment #{comment_id} not found on issue #{issue_number} (may be paginated out or deleted)")
+                return 0  # Graceful exit — not a fatal error
             
             if not verifier.is_claim_comment(claim):
                 logger.warning(f"Comment #{comment_id} does not appear to be a claim")
