@@ -3,3 +3,4 @@
 | @SASAMITTRRR | Claw2#0000 | Interested in bounty hunting, documentation, and AI automation |
 | @Drgonzoh | Drgonzoh#0000 | Interested in bounty hunting, automation, and Israeli intelligence agent missions |
 | @qwldcl-del | OrionAI#8888 | AI automation, bounty hunting, and open source contributions |
+| @lisaxiao299-maker | lisaxiao299#0000 | Interested in mining and development |
