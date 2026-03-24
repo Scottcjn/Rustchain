@@ -1,0 +1,119 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Machine Passport</title>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --amber: #d4a574;
+          --copper: #b87333; --text: #e6edf3; --muted: #8b949e; --green: #3fb950; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Georgia', 'Times New Roman', serif; background: var(--bg);
+         color: var(--text); padding: 20px; }
+  .container { max-width: 700px; margin: 0 auto; }
+  .back { color: var(--muted); text-decoration: none; font-size: 0.85em; }
+  .passport { background: var(--card); border: 2px solid var(--amber); border-radius: 12px;
+              padding: 24px; margin-top: 12px; }
+  .passport-header { text-align: center; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 16px; }
+  .machine-name { font-size: 1.6em; color: var(--amber); }
+  .machine-id { font-family: monospace; font-size: 0.8em; color: var(--muted); word-break: break-all; }
+  .tier-badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 0.8em;
+                font-weight: 600; text-transform: uppercase; margin-top: 8px; }
+  .tier-ancient { background: rgba(212,165,116,0.25); color: #d4a574; border: 1px solid #d4a574; }
+  .tier-sacred { background: rgba(192,140,80,0.25); color: #c08c50; border: 1px solid #c08c50; }
+  .tier-vintage { background: rgba(184,115,51,0.25); color: #b87333; border: 1px solid #b87333; }
+  .tier-classic { background: rgba(100,149,237,0.25); color: #6495ed; border: 1px solid #6495ed; }
+  .tier-retro { background: rgba(63,185,80,0.25); color: #3fb950; border: 1px solid #3fb950; }
+  .tier-modern { background: rgba(139,148,158,0.25); color: #8b949e; border: 1px solid #8b949e; }
+  .section { margin-bottom: 20px; }
+  .section-title { font-size: 1em; color: var(--copper); margin-bottom: 8px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+  .field { display: flex; justify-content: space-between; padding: 4px 0; font-size: 0.9em; }
+  .field-label { color: var(--muted); }
+  .field-value { font-weight: 500; }
+  .repair-entry { background: rgba(212,165,116,0.05); border-left: 3px solid var(--amber);
+                  padding: 8px 12px; margin-bottom: 8px; border-radius: 0 6px 6px 0; }
+  .repair-date { color: var(--amber); font-weight: 600; font-size: 0.85em; }
+  .repair-desc { font-size: 0.9em; }
+  .hash { font-family: monospace; font-size: 0.75em; color: var(--muted); word-break: break-all;
+          background: rgba(0,0,0,0.3); padding: 6px 10px; border-radius: 4px; margin-top: 8px; }
+  .provenance { font-style: italic; color: var(--amber); }
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .stat { text-align: center; }
+  .stat-value { font-size: 1.3em; font-weight: 600; color: var(--amber); }
+  .stat-label { font-size: 0.75em; color: var(--muted); }
+  .empty { color: var(--muted); font-style: italic; font-size: 0.85em; }
+  .qr-section { text-align: center; margin-top: 16px; }
+  .notes { white-space: pre-wrap; font-size: 0.9em; color: var(--muted); }
+  @media print {
+    body { background: white; color: black; }
+    .passport { border-color: #333; }
+    .machine-name, .section-title, .repair-date, .stat-value { color: #333; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <a class="back" href="/">← All Passports</a>
+  <div class="passport" id="passport"><div class="empty">Loading passport...</div></div>
+</div>
+<script>
+const machineId = '{{ machine_id }}';
+async function load() {
+  const resp = await fetch('/api/passport/' + machineId);
+  if (!resp.ok) { document.getElementById('passport').innerHTML = '<div class="empty">Passport not found</div>'; return; }
+  const p = await resp.json();
+  document.title = `${p.name || machineId} — Machine Passport`;
+  const el = document.getElementById('passport');
+  el.innerHTML = `
+    <div class="passport-header">
+      <div class="machine-name">${p.name || 'Unnamed Machine'}</div>
+      <div class="machine-id">${p.machine_id}</div>
+      <div class="tier-badge tier-${p.tier}">${p.tier} · ${p.hardware_age} years old</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">⚙️ Identity</div>
+      <div class="field"><span class="field-label">Architecture</span><span class="field-value">${p.architecture || '—'}</span></div>
+      <div class="field"><span class="field-label">CPU Model</span><span class="field-value">${p.cpu_model || '—'}</span></div>
+      <div class="field"><span class="field-label">Manufacture Year</span><span class="field-value">${p.manufacture_year || '—'}</span></div>
+      <div class="field"><span class="field-label">ROM Hash</span><span class="field-value" style="font-family:monospace;font-size:0.8em">${p.rom_hash || '—'}</span></div>
+      ${p.provenance ? `<div class="field"><span class="field-label">Provenance</span><span class="provenance">"${p.provenance}"</span></div>` : ''}
+    </div>
+
+    <div class="section">
+      <div class="section-title">📊 Attestation Record</div>
+      <div class="stats-grid">
+        <div class="stat"><div class="stat-value">${p.attestation_history?.total_epochs || 0}</div><div class="stat-label">Epochs</div></div>
+        <div class="stat"><div class="stat-value">${p.attestation_history?.total_rtc_earned || 0}</div><div class="stat-label">RTC Earned</div></div>
+        <div class="stat"><div class="stat-value">${p.attestation_history?.multiplier || 1.0}x</div><div class="stat-label">Multiplier</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">🔧 Repair Log</div>
+      ${(p.repair_log && p.repair_log.length) ? p.repair_log.map(r => `
+        <div class="repair-entry">
+          <div class="repair-date">${r.date}</div>
+          <div class="repair-desc">${r.description}</div>
+          ${r.parts && r.parts.length ? `<div style="font-size:0.8em;color:var(--muted)">Parts: ${r.parts.join(', ')}</div>` : ''}
+        </div>
+      `).join('') : '<div class="empty">No repairs logged yet</div>'}
+    </div>
+
+    ${p.notes ? `<div class="section"><div class="section-title">📝 Notes</div><div class="notes">${p.notes}</div></div>` : ''}
+
+    <div class="hash">
+      🔗 Passport Hash: ${p.passport_hash}
+    </div>
+
+    <div class="qr-section">
+      <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(location.href)}" alt="QR" style="margin-top:12px;border-radius:4px;">
+      <div style="font-size:0.75em;color:var(--muted);margin-top:4px">Scan to view on-chain passport</div>
+    </div>
+  `;
+}
+load();
+</script>
+</body>
+</html>
