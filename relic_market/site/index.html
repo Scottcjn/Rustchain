@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain — Rent-a-Relic Market</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: #1a2332;
+            --border: #2a3a50;
+            --text-primary: #e8dcc8;
+            --text-secondary: #9ca3af;
+            --accent: #c8a45a;
+            --accent-glow: rgba(200, 164, 90, 0.15);
+            --success: #6b9b6b;
+            --warning: #c4913a;
+            --danger: #a65a5a;
+            --arch-power8: #3a5a8a;
+            --arch-g5: #8a6a3a;
+            --arch-sparc: #7a3a5a;
+            --arch-mips: #3a7a5a;
+            --arch-arm: #5a5a8a;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Georgia', serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        .hero {
+            text-align: center;
+            padding: 80px 24px 40px;
+            background: linear-gradient(180deg, #0d1520 0%, var(--bg-primary) 100%);
+            border-bottom: 1px solid var(--border);
+        }
+        .hero h1 {
+            font-size: 3rem;
+            letter-spacing: -1px;
+            background: linear-gradient(135deg, var(--accent), #e8dcc8, var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 16px;
+        }
+        .hero p {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin: 0 auto 32px;
+            line-height: 1.7;
+        }
+        .hero .stats {
+            display: flex;
+            justify-content: center;
+            gap: 48px;
+            margin-top: 32px;
+        }
+        .hero .stat { text-align: center; }
+        .hero .stat-value { font-size: 2rem; color: var(--accent); font-weight: bold; }
+        .hero .stat-label { font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; text-transform: uppercase; letter-spacing: 1px; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 40px 24px; }
+        .toolbar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 32px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .search-box {
+            flex: 1;
+            min-width: 200px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 16px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+        .filter-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 20px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+        .filter-btn:hover, .filter-btn.active {
+            background: var(--accent-glow);
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+        .machines-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 24px;
+        }
+        .machine-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .machine-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+            border-color: var(--accent);
+        }
+        .machine-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .machine-name { font-size: 1.2rem; font-weight: bold; color: var(--text-primary); }
+        .machine-arch {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 6px;
+        }
+        .arch-POWER8 { background: rgba(58,90,138,0.3); color: #7ab; border: 1px solid var(--arch-power8); }
+        .arch-G5 { background: rgba(138,106,58,0.3); color: #ca8; border: 1px solid var(--arch-g5); }
+        .arch-SPARC64 { background: rgba(122,58,90,0.3); color: #c8a; border: 1px solid var(--arch-sparc); }
+        .arch-MIPS { background: rgba(58,122,90,0.3); color: #8c9; border: 1px solid var(--arch-mips); }
+        .arch-ARM64 { background: rgba(90,90,138,0.3); color: #aac; border: 1px solid var(--arch-arm); }
+        .arch-x86 { background: rgba(90,90,90,0.3); color: #aaa; border: 1px solid #555; }
+        .machine-body { padding: 20px; }
+        .specs-list { list-style: none; margin-bottom: 16px; }
+        .specs-list li {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            font-size: 0.85rem;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .specs-list li:last-child { border-bottom: none; }
+        .spec-key { color: var(--text-secondary); }
+        .spec-val { color: var(--text-primary); font-weight: 600; }
+        .machine-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .price { font-size: 1.3rem; color: var(--accent); font-weight: bold; }
+        .price span { font-size: 0.8rem; color: var(--text-secondary); font-weight: normal; }
+        .book-btn {
+            background: linear-gradient(135deg, var(--accent), #a07830);
+            border: none;
+            border-radius: 8px;
+            padding: 10px 24px;
+            color: #0a0e17;
+            font-weight: bold;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .book-btn:hover { opacity: 0.85; }
+        .book-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .attestation-bar {
+            height: 4px;
+            background: var(--bg-secondary);
+            border-radius: 2px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+        .attestation-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--danger), var(--warning), var(--success));
+            border-radius: 2px;
+        }
+        .attestation-label { font-size: 0.75rem; color: var(--text-secondary); display: flex; justify-content: space-between; margin-top: 4px; }
+        .detail-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+        .detail-modal.open { display: flex; }
+        .modal-content {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            max-width: 700px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal-header { padding: 24px; border-bottom: 1px solid var(--border); }
+        .modal-body { padding: 24px; }
+        .duration-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 20px 0; }
+        .duration-option {
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .duration-option:hover, .duration-option.selected {
+            border-color: var(--accent);
+            background: var(--accent-glow);
+        }
+        .duration-option h4 { color: var(--accent); font-size: 1.3rem; }
+        .duration-option p { font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; }
+        .duration-option .cost { color: var(--text-primary); font-weight: bold; margin-top: 8px; }
+        .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 12px; }
+        .cancel-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 24px;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+        .confirm-book-btn {
+            background: linear-gradient(135deg, var(--accent), #a07830);
+            border: none;
+            border-radius: 8px;
+            padding: 10px 32px;
+            color: #0a0e17;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .receipt-section { margin-top: 24px; padding: 20px; background: var(--bg-secondary); border-radius: 12px; border: 1px solid var(--border); }
+        .receipt-section h4 { color: var(--accent); margin-bottom: 12px; font-size: 1rem; }
+        .receipt-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+        .receipt-row:last-child { border-bottom: none; }
+        .receipt-key { color: var(--text-secondary); }
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .status-available { background: rgba(107,155,107,0.2); color: var(--success); }
+        .status-booked { background: rgba(196,145,58,0.2); color: var(--warning); }
+        .status-offline { background: rgba(166,90,90,0.2); color: var(--danger); }
+        .loading { text-align: center; padding: 60px; color: var(--text-secondary); }
+        .footer {
+            text-align: center;
+            padding: 40px 24px;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            border-top: 1px solid var(--border);
+            margin-top: 60px;
+        }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <h1>Rent-a-Relic Market</h1>
+        <p>Book authenticated time on vintage machines. Every session produces a provenance receipt — a cryptographic proof that your computation ran on a specific piece of hardware history.</p>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value" id="stat-machines">—</div>
+                <div class="stat-label">Machines</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="stat-sessions">—</div>
+                <div class="stat-label">Total Sessions</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="stat-archs">—</div>
+                <div class="stat-label">Architectures</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="toolbar">
+            <input type="text" class="search-box" id="search" placeholder="Search machines, architectures...">
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="POWER8">POWER8</button>
+            <button class="filter-btn" data-filter="G5">G5</button>
+            <button class="filter-btn" data-filter="SPARC64">SPARC</button>
+            <button class="filter-btn" data-filter="MIPS">MIPS</button>
+            <button class="filter-btn" data-filter="ARM64">ARM</button>
+        </div>
+        <div class="machines-grid" id="machines-grid">
+            <div class="loading">Loading machines...</div>
+        </div>
+    </div>
+
+    <!-- Booking Modal -->
+    <div class="detail-modal" id="booking-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-machine-name">Machine Name</h2>
+                <p id="modal-machine-arch" style="color: var(--text-secondary); margin-top: 4px;"></p>
+            </div>
+            <div class="modal-body">
+                <p style="color: var(--text-secondary); margin-bottom: 16px;">Select booking duration. Payment in RTC will be locked in escrow for the duration of the session.</p>
+                <div class="duration-grid">
+                    <div class="duration-option" data-duration="1" data-cost="0">
+                        <h4>1 Hour</h4>
+                        <p>Quick benchmark</p>
+                        <div class="cost" id="cost-1h">— RTC</div>
+                    </div>
+                    <div class="duration-option" data-duration="4" data-cost="0">
+                        <h4>4 Hours</h4>
+                        <p>Standard session</p>
+                        <div class="cost" id="cost-4h">— RTC</div>
+                    </div>
+                    <div class="duration-option" data-duration="24" data-cost="0">
+                        <h4>24 Hours</h4>
+                        <p>Extended workload</p>
+                        <div class="cost" id="cost-24h">— RTC</div>
+                    </div>
+                </div>
+                <div class="receipt-section">
+                    <h4>Provenance Receipt Includes</h4>
+                    <div class="receipt-row"><span class="receipt-key">Machine passport ID</span><span id="receipt-machine-id">—</span></div>
+                    <div class="receipt-row"><span class="receipt-key">Hardware attestation proof</span><span style="color: var(--success);">Included</span></div>
+                    <div class="receipt-row"><span class="receipt-key">Ed25519 signature</span><span style="color: var(--success);">Included</span></div>
+                    <div class="receipt-row"><span class="receipt-key">Output hash</span><span style="color: var(--success);">Included</span></div>
+                    <div class="receipt-row"><span class="receipt-key">Session duration</span><span id="receipt-duration">—</span></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="cancel-btn" onclick="closeModal()">Cancel</button>
+                <button class="confirm-book-btn" id="confirm-book-btn" onclick="confirmBooking()">Book Now</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        RustChain Rent-a-Relic Market &middot; Powered by wRTC &middot; MCP-compatible
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+        let machines = [];
+        let selectedMachine = null;
+        let selectedDuration = null;
+
+        // Machine architecture metadata
+        const archColors = {
+            'POWER8': '#3a5a8a', 'G5': '#8a6a3a', 'SPARC64': '#7a3a5a',
+            'MIPS': '#3a7a5a', 'ARM64': '#5a5a8a', 'x86': '#5a5a5a'
+        };
+
+        async function loadMachines() {
+            try {
+                const res = await fetch(API_BASE + '/relic/machines');
+                const data = await res.json();
+                machines = data.machines || [];
+                renderStats();
+                renderMachines();
+            } catch (e) {
+                document.getElementById('machines-grid').innerHTML =
+                    '<div class="loading">API not available. Run relic_market.py first.</div>';
+            }
+        }
+
+        function renderStats() {
+            document.getElementById('stat-machines').textContent = machines.length;
+            const totalSessions = machines.reduce((s, m) => s + (m.total_sessions || 0), 0);
+            document.getElementById('stat-sessions').textContent = totalSessions;
+            const archs = [...new Set(machines.map(m => m.architecture))];
+            document.getElementById('stat-archs').textContent = archs.length;
+        }
+
+        function renderMachines(filter = 'all', search = '') {
+            let filtered = machines;
+            if (filter !== 'all') {
+                filtered = filtered.filter(m => m.architecture === filter);
+            }
+            if (search) {
+                const q = search.toLowerCase();
+                filtered = filtered.filter(m =>
+                    m.name.toLowerCase().includes(q) ||
+                    m.architecture.toLowerCase().includes(q) ||
+                    m.description.toLowerCase().includes(q)
+                );
+            }
+            const grid = document.getElementById('machines-grid');
+            if (!filtered.length) {
+                grid.innerHTML = '<div class="loading">No machines found.</div>';
+                return;
+            }
+            grid.innerHTML = filtered.map(m => machineCard(m)).join('');
+        }
+
+        function machineCard(m) {
+            const archClass = 'arch-' + m.architecture.replace(/[^a-zA-Z0-9]/g, '');
+            const score = Math.round((m.attestation_score || 0) * 100);
+            const archColor = archColors[m.architecture] || '#5a5a5a';
+            return `
+            <div class="machine-card">
+                <div class="machine-header">
+                    <div>
+                        <div class="machine-name">${m.name}</div>
+                        <div class="machine-arch ${archClass}">${m.architecture}</div>
+                    </div>
+                    <div class="status-badge status-${m.status}">${m.status}</div>
+                </div>
+                <div class="machine-body">
+                    <ul class="specs-list">
+                        <li><span class="spec-key">CPU</span><span class="spec-val">${m.specs?.cpu || m.specs?.cpu || '—'}</span></li>
+                        <li><span class="spec-key">RAM</span><span class="spec-val">${m.specs?.ram_gb || '—'} GB</span></li>
+                        <li><span class="spec-key">Storage</span><span class="spec-val">${m.specs?.storage_tb ? m.specs.storage_tb + ' TB' : m.specs?.storage_gb ? m.specs.storage_gb + ' GB' : '—'}</span></li>
+                        <li><span class="spec-key">Sessions</span><span class="spec-val">${m.total_sessions || 0}</span></li>
+                    </ul>
+                    <div class="attestation-label">
+                        <span>Attestation Score</span>
+                        <span>${score}%</span>
+                    </div>
+                    <div class="attestation-bar">
+                        <div class="attestation-fill" style="width: ${score}%; background: linear-gradient(90deg, #a65a5a, #c4913a 50%, #6b9b6b)"></div>
+                    </div>
+                </div>
+                <div class="machine-footer">
+                    <div class="price">${m.hourly_rate} <span>RTC/hr</span></div>
+                    <button class="book-btn" onclick="openBooking('${m.id}')" ${m.status !== 'available' ? 'disabled' : ''}>
+                        ${m.status === 'available' ? 'Book' : 'Unavailable'}
+                    </button>
+                </div>
+            </div>`;
+        }
+
+        function openBooking(machineId) {
+            selectedMachine = machines.find(m => m.id === machineId);
+            if (!selectedMachine) return;
+            document.getElementById('modal-machine-name').textContent = selectedMachine.name;
+            document.getElementById('modal-machine-arch').textContent = selectedMachine.architecture + ' — ' + selectedMachine.description;
+            document.getElementById('receipt-machine-id').textContent = selectedMachine.id;
+            document.getElementById('cost-1h').textContent = selectedMachine.hourly_rate * 1 + ' RTC';
+            document.getElementById('cost-4h').textContent = selectedMachine.hourly_rate * 4 + ' RTC';
+            document.getElementById('cost-24h').textContent = selectedMachine.hourly_rate * 24 + ' RTC';
+            document.querySelectorAll('.duration-option').forEach(o => o.classList.remove('selected'));
+            selectedDuration = null;
+            document.getElementById('confirm-book-btn').disabled = true;
+            document.getElementById('booking-modal').classList.add('open');
+        }
+
+        document.querySelectorAll('.duration-option').forEach(opt => {
+            opt.addEventListener('click', () => {
+                document.querySelectorAll('.duration-option').forEach(o => o.classList.remove('selected'));
+                opt.classList.add('selected');
+                selectedDuration = parseInt(opt.dataset.duration);
+                document.getElementById('receipt-duration').textContent = selectedDuration + ' hour(s)';
+                document.getElementById('confirm-book-btn').disabled = false;
+            });
+        });
+
+        function closeModal() {
+            document.getElementById('booking-modal').classList.remove('open');
+            selectedMachine = null;
+            selectedDuration = null;
+        }
+
+        async function confirmBooking() {
+            if (!selectedMachine || !selectedDuration) return;
+            const btn = document.getElementById('confirm-book-btn');
+            btn.textContent = 'Processing...';
+            btn.disabled = true;
+            try {
+                const res = await fetch(API_BASE + '/relic/reserve', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        machine_id: selectedMachine.id,
+                        agent_id: 'agent-' + Math.random().toString(36).substr(2, 9),
+                        duration_hours: selectedDuration
+                    })
+                });
+                const data = await res.json();
+                if (data.reservation) {
+                    alert(`Booked! Reservation ID: ${data.reservation.id}\nCost: ${data.reservation.cost_rtc} RTC\n\nSSH: ${data.reservation.ssh_credential || 'Pending activation'}`);
+                    closeModal();
+                    loadMachines();
+                }
+            } catch (e) {
+                alert('Booking failed: ' + e.message);
+            }
+            btn.textContent = 'Book Now';
+            btn.disabled = false;
+        }
+
+        // Filter buttons
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                renderMachines(btn.dataset.filter, document.getElementById('search').value);
+            });
+        });
+
+        document.getElementById('search').addEventListener('input', (e) => {
+            const active = document.querySelector('.filter-btn.active').dataset.filter;
+            renderMachines(active, e.target.value);
+        });
+
+        // Load on start
+        loadMachines();
+    </script>
+</body>
+</html>
