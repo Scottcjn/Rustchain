@@ -89,7 +89,7 @@ POST /wallet/transfer/signed
 
 ### Important Notes
 
-1. **Wallet IDs are NOT external addresses** - RustChain uses its own wallet system (e.g., `Ivan-houzhiiwen`), not Ethereum or Solana addresses.
+1. **Wallet IDs are NOT external addresses** - RustChain uses its own wallet system (e.g., `Ivan-houzhiwen`), not Ethereum or Solana addresses.
 
 2. **Self-signed certificates** - Use `curl -k` or `verify=False` in Python.
 
