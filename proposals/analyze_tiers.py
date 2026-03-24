@@ -199,7 +199,7 @@ def main():
     print("=" * 78)
     print("  RustChain Contributor Tier Analysis (RIP-306)")
     print(f"  Data snapshot: 2026-03-24 | Total contributors: {len(CONTRIBUTORS)}")
-    print(f"  Total RTC in ledger: 24,884.5 | Known wallets analyzed: {len(CONTRIBUTORS)}")
+    print(f"  Total RTC in ledger: 31,710 | Known wallets analyzed: {len(CONTRIBUTORS)}")
     print("=" * 78)
     print()
 

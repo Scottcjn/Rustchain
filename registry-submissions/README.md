@@ -36,7 +36,7 @@ Prepared 2026-03-24. Ready-to-submit content for DePIN directories and MCP regis
 > RustChain is a DePIN blockchain that rewards real physical hardware through
 > Proof-of-Antiquity (RIP-PoA). 7 hardware fingerprint checks verify authentic
 > vintage and modern compute — G4 PowerBooks, SPARC workstations, POWER8 servers,
-> and more. 4 attestation nodes, Ergo cross-chain anchoring, 24,884+ RTC
+> and more. 4 attestation nodes, Ergo cross-chain anchoring, 31,710+ RTC
 > distributed to 248+ contributors.
 
 ## Shared Blockers

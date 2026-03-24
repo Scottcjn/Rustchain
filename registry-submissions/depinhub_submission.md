@@ -24,7 +24,7 @@ Hi DePINHub team! I'd like to submit RustChain for your project listing.
 **Website**: https://rustchain.org
 **GitHub**: https://github.com/Scottcjn/rustchain
 
-**Description**: RustChain is a DePIN blockchain that rewards real physical hardware through Proof-of-Antiquity (RIP-PoA). 7 hardware fingerprint checks verify authentic vintage and modern compute — G4 PowerBooks, SPARC workstations, POWER8 servers, and more. 4 attestation nodes across 3 continents, Ergo cross-chain anchoring, 24,884+ RTC distributed to 248+ contributors.
+**Description**: RustChain is a DePIN blockchain that rewards real physical hardware through Proof-of-Antiquity (RIP-PoA). 7 hardware fingerprint checks verify authentic vintage and modern compute — G4 PowerBooks, SPARC workstations, POWER8 servers, and more. 4 attestation nodes across 3 continents, Ergo cross-chain anchoring, 31,710+ RTC distributed to 248+ contributors.
 
 **Category**: Compute / Hardware Infrastructure
 
@@ -37,7 +37,7 @@ Hi DePINHub team! I'd like to submit RustChain for your project listing.
 
 **Token**: RTC (RustChain Token)
 - Reference rate: $0.10 USD
-- 24,884+ RTC distributed
+- 31,710+ RTC distributed
 - 248+ contributors
 
 **Infrastructure**:
