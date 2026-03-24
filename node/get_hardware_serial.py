@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import shlex
 """
 Universal Hardware Serial Detection
 Works on: Mac (PPC/Intel/ARM), Linux, Windows
@@ -11,11 +12,11 @@ import hashlib
 def run_cmd(cmd):
     try:
         if isinstance(cmd, str):
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=5)
+            result = subprocess.run(shlex.split(cmd) if isinstance(cmd, str) else cmd, capture_output=True, text=True, timeout=5)
         else:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
         return result.stdout.strip()
-    except:
+    except Exception:
         return ''
 
 def get_mac_serial():
@@ -53,7 +54,7 @@ def get_linux_serial():
                     serial = f.read().strip()
                     if serial and serial not in ['', 'None', 'To Be Filled']:
                         return serial
-            except:
+            except Exception:
                 pass
     
     # Method 2: dmidecode (requires root)
@@ -68,7 +69,7 @@ def get_linux_serial():
                 serial = f.read().decode('utf-8', errors='ignore').strip('\x00')
                 if serial:
                     return serial
-        except:
+        except Exception:
             pass
     
     return None
@@ -131,7 +132,7 @@ def get_serial_with_fallback():
                         mac = parts[i+1]
                         if mac != '00:00:00:00:00:00':
                             macs.append(mac)
-    except:
+    except Exception:
         pass
     
     if macs:

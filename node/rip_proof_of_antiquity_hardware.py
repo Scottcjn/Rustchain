@@ -158,7 +158,7 @@ def calculate_entropy_score(signals: Dict) -> float:
                 entropy_data = bytes.fromhex(entropy_data.replace(":", ""))
             shannon = calculate_shannon_entropy(entropy_data)
             score += (shannon / 8.0) * 0.4
-        except:
+        except Exception:
             pass
 
     # 2. CPU timing profile match (30%)
