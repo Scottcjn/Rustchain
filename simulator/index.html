@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RustChain Mining Simulator — Proof of Antiquity</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0e17;--card:#131a2b;--border:#1e2d4a;--accent:#f59e0b;--green:#22c55e;--red:#ef4444;--text:#e2e8f0;--muted:#64748b;--blue:#3b82f6}
+body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;min-height:100vh;padding:20px}
+h1{text-align:center;color:var(--accent);font-size:1.8em;margin-bottom:4px}
+.subtitle{text-align:center;color:var(--muted);margin-bottom:24px;font-size:.9em}
+.container{max-width:900px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px}
+.card h2{color:var(--accent);font-size:1.1em;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.hw-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.hw-btn{background:var(--bg);border:2px solid var(--border);border-radius:8px;padding:14px 10px;cursor:pointer;color:var(--text);text-align:center;transition:.2s}
+.hw-btn:hover{border-color:var(--accent);transform:translateY(-2px)}
+.hw-btn.active{border-color:var(--accent);background:#1a1f2e;box-shadow:0 0 20px rgba(245,158,11,.15)}
+.hw-name{font-weight:bold;font-size:1em;margin-bottom:4px}
+.hw-mult{color:var(--accent);font-size:1.3em;font-weight:bold}
+.hw-desc{color:var(--muted);font-size:.75em;margin-top:4px}
+button.start{display:block;margin:16px auto;background:var(--accent);color:#000;border:none;padding:12px 40px;border-radius:8px;font-size:1.1em;font-weight:bold;cursor:pointer;font-family:inherit;transition:.2s}
+button.start:hover{transform:scale(1.05);box-shadow:0 0 30px rgba(245,158,11,.3)}
+button.start:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.log{background:#050810;border:1px solid var(--border);border-radius:8px;padding:12px;height:260px;overflow-y:auto;font-size:.82em;line-height:1.6}
+.log .ts{color:var(--muted)}
+.log .ok{color:var(--green)}
+.log .warn{color:var(--accent)}
+.log .err{color:var(--red)}
+.log .info{color:var(--blue)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:12px}
+.stat{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center}
+.stat .val{font-size:1.5em;font-weight:bold;color:var(--accent)}
+.stat .label{color:var(--muted);font-size:.75em;margin-top:2px}
+.fingerprint-viz{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0}
+.fp-bar{width:8px;height:30px;background:var(--border);border-radius:2px;transition:height .3s,background .3s}
+.fp-bar.active{background:var(--green)}
+.fp-bar.fail{background:var(--red)}
+.comparison{margin-top:12px}
+.comp-row{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:.85em}
+.comp-bar{height:16px;border-radius:4px;transition:width 1s;min-width:2px}
+.comp-label{min-width:120px;color:var(--muted)}
+.comp-val{min-width:60px;text-align:right;font-weight:bold}
+.calc-section{margin-top:16px;padding-top:16px;border-top:1px solid var(--border)}
+.calc-row{display:flex;justify-content:space-between;margin:6px 0;font-size:.9em}
+.calc-row .calc-val{color:var(--accent);font-weight:bold}
+a.dl{display:inline-block;margin-top:16px;color:var(--accent);text-decoration:none;border:1px solid var(--accent);padding:8px 20px;border-radius:6px;transition:.2s}
+a.dl:hover{background:var(--accent);color:#000}
+#phase-indicator{text-align:center;font-size:1em;color:var(--accent);margin:8px 0;min-height:1.5em}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>⛏️ RustChain Mining Simulator</h1>
+<p class="subtitle">Experience Proof of Antiquity — no hardware required</p>
+
+<div class="card" id="hw-select">
+<h2>🖥️ Step 1: Choose Your Hardware</h2>
+<div class="hw-grid">
+<div class="hw-btn" data-hw="g4" onclick="selectHW(this)">
+<div class="hw-name">PowerBook G4</div>
+<div class="hw-mult">2.5×</div>
+<div class="hw-desc">2003 PowerPC • Peak antiquity</div>
+</div>
+<div class="hw-btn" data-hw="g5" onclick="selectHW(this)">
+<div class="hw-name">Power Mac G5</div>
+<div class="hw-mult">2.0×</div>
+<div class="hw-desc">2005 Dual PPC970 • Server-class</div>
+</div>
+<div class="hw-btn" data-hw="x86" onclick="selectHW(this)">
+<div class="hw-name">Modern x86</div>
+<div class="hw-mult">1.0×</div>
+<div class="hw-desc">2024 Intel/AMD • Baseline</div>
+</div>
+<div class="hw-btn" data-hw="vm" onclick="selectHW(this)">
+<div class="hw-name">Virtual Machine</div>
+<div class="hw-mult">0.000000001×</div>
+<div class="hw-desc">Hypervisor detected • 🚫</div>
+</div>
+</div>
+</div>
+
+<div class="card">
+<h2>🔬 Step 2: Hardware Fingerprint Check</h2>
+<div id="phase-indicator"></div>
+<div class="fingerprint-viz" id="fp-viz"></div>
+<div id="fp-status" style="font-size:.85em;color:var(--muted);margin-top:4px"></div>
+</div>
+
+<button class="start" id="startBtn" onclick="startSim()" disabled>Select hardware to begin</button>
+
+<div class="card">
+<h2>📊 Mining Dashboard</h2>
+<div class="stats">
+<div class="stat"><div class="val" id="s-epoch">—</div><div class="label">Epoch</div></div>
+<div class="stat"><div class="val" id="s-rtc">0.00</div><div class="label">RTC Earned</div></div>
+<div class="stat"><div class="val" id="s-att">0</div><div class="label">Attestations</div></div>
+<div class="stat"><div class="val" id="s-rank">—</div><div class="label">Miner Rank</div></div>
+</div>
+<div class="log" id="log"></div>
+</div>
+
+<div class="card">
+<h2>📈 Architecture Reward Comparison</h2>
+<div id="comparison" class="comparison"></div>
+<div class="calc-section">
+<h2 style="color:var(--accent);font-size:1em">💰 What Would You Earn?</h2>
+<div class="calc-row"><span>Base reward per epoch:</span><span class="calc-val">5.0 RTC</span></div>
+<div class="calc-row"><span>Your multiplier:</span><span class="calc-val" id="c-mult">—</span></div>
+<div class="calc-row"><span>Per epoch (yours):</span><span class="calc-val" id="c-epoch">—</span></div>
+<div class="calc-row"><span>Daily (24 epochs):</span><span class="calc-val" id="c-daily">—</span></div>
+<div class="calc-row"><span>Monthly estimate:</span><span class="calc-val" id="c-monthly">—</span></div>
+</div>
+</div>
+
+<div class="card" style="text-align:center">
+<h2>🚀 Ready to Mine for Real?</h2>
+<p style="color:var(--muted);margin-bottom:12px">Download the RustChain miner and start earning RTC with real vintage hardware.</p>
+<a class="dl" href="https://github.com/Scottcjn/Rustchain" target="_blank">⬇️ Download RustChain Miner</a>
+<a class="dl" href="https://rustchain.org" target="_blank" style="margin-left:8px">🌐 rustchain.org</a>
+</div>
+</div>
+
+<script>
+const HW={
+  g4:{name:'PowerBook G4',mult:2.5,arch:'PowerPC G4 7447A',year:2003,cache:'512KB L2',bus:'167MHz',checks:['CPU: PowerPC G4 7447A @ 1.67GHz','Cache timing: 512KB L2, 14ns latency','Bus: 167MHz front-side bus','TDP: 18W measured via PMU','Instruction set: AltiVec SIMD confirmed','Manufacturing: IBM 130nm SOI','Die ID: G4-7447A-2003Q4-batch22','Boot ROM: OpenFirmware 4.8.7']},
+  g5:{name:'Power Mac G5',mult:2.0,arch:'PowerPC 970FX Dual',year:2005,cache:'512KB L2 per core',bus:'1.15GHz HT',checks:['CPU: Dual PPC970FX @ 2.7GHz','Cache timing: 512KB L2/core, 9ns latency','HyperTransport: 1.15GHz full-duplex','TDP: 130W measured (liquid-cooled)','Instruction set: VMX (AltiVec) confirmed','Manufacturing: IBM 90nm SOI','Die ID: PPC970FX-2005Q1-dual-unit7','Boot ROM: OpenFirmware 5.2.1']},
+  x86:{name:'Modern x86',mult:1.0,arch:'Intel Core i7-14700K',year:2024,cache:'33MB L3',bus:'DDR5-5600',checks:['CPU: Intel Core i7-14700K @ 5.6GHz','Cache timing: 33MB L3, 35ns latency','Memory: DDR5-5600 dual-channel','TDP: 253W PBP measured','Instruction set: AVX-512 confirmed','Manufacturing: Intel 7 (10nm)','Die ID: RKL-14700K-2024Q1-lot445','UEFI: AMI BIOS 2.20']},
+  vm:{name:'Virtual Machine',mult:0.000000001,arch:'QEMU Virtual CPU',year:2024,cache:'Emulated',bus:'VirtIO',checks:['CPU: QEMU Virtual CPU v2.5+','⚠️ CPUID hypervisor bit SET','⚠️ Cache timing: FLAT — no L1/L2/L3 variance','⚠️ RDTSC: constant rate (no thermal drift)','⚠️ SMBIOS: "QEMU" in vendor string','⚠️ DMI: Virtual Machine detected','⚠️ PCI: VirtIO devices found','❌ FINGERPRINT FAILED: VM DETECTED']}
+};
+
+let selected=null,running=false,simInterval=null;
+let epoch=0,rtcTotal=0,attestations=0;
+
+function selectHW(el){
+  document.querySelectorAll('.hw-btn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  selected=el.dataset.hw;
+  const btn=document.getElementById('startBtn');
+  btn.disabled=false;
+  btn.textContent='▶ Start Mining Simulation';
+  resetSim();
+  updateCalc();
+}
+
+function updateCalc(){
+  if(!selected) return;
+  const m=HW[selected].mult;
+  document.getElementById('c-mult').textContent=m+'×';
+  document.getElementById('c-epoch').textContent=(5*m).toFixed(6)+' RTC';
+  document.getElementById('c-daily').textContent=(5*m*24).toFixed(2)+' RTC';
+  document.getElementById('c-monthly').textContent=(5*m*24*30).toFixed(2)+' RTC';
+  renderComparison();
+}
+
+function renderComparison(){
+  const el=document.getElementById('comparison');
+  const maxVal=2.5*5;
+  const colors={g4:'#f59e0b',g5:'#3b82f6',x86:'#22c55e',vm:'#ef4444'};
+  el.innerHTML='';
+  for(const[k,v]of Object.entries(HW)){
+    const reward=v.mult*5;
+    const pct=Math.max((reward/maxVal)*100,0.5);
+    const highlight=k===selected?' ◀ YOU':'';
+    el.innerHTML+=`<div class="comp-row">
+      <span class="comp-label">${v.name}</span>
+      <div style="flex:1"><div class="comp-bar" style="width:${pct}%;background:${colors[k]}"></div></div>
+      <span class="comp-val" style="color:${colors[k]}">${reward.toFixed(6)} RTC${highlight}</span>
+    </div>`;
+  }
+}
+
+function resetSim(){
+  epoch=0;rtcTotal=0;attestations=0;
+  document.getElementById('log').innerHTML='';
+  document.getElementById('s-epoch').textContent='—';
+  document.getElementById('s-rtc').textContent='0.00';
+  document.getElementById('s-att').textContent='0';
+  document.getElementById('s-rank').textContent='—';
+  document.getElementById('fp-viz').innerHTML='';
+  document.getElementById('fp-status').textContent='';
+  document.getElementById('phase-indicator').textContent='';
+  if(simInterval){clearInterval(simInterval);simInterval=null;running=false}
+}
+
+function log(msg,cls=''){
+  const el=document.getElementById('log');
+  const t=new Date().toLocaleTimeString();
+  el.innerHTML+=`<div><span class="ts">[${t}]</span> <span class="${cls}">${msg}</span></div>`;
+  el.scrollTop=el.scrollHeight;
+}
+
+async function startSim(){
+  if(running)return;
+  running=true;
+  const btn=document.getElementById('startBtn');
+  btn.disabled=true;
+  btn.textContent='⏳ Simulating...';
+  resetSim();
+
+  const hw=HW[selected];
+  log(`Initializing RustChain miner on ${hw.name} (${hw.arch})...`,'info');
+  await delay(500);
+
+  // Phase 1: Fingerprint
+  document.getElementById('phase-indicator').textContent='Phase 1: Hardware Fingerprint Detection';
+  log('── Phase 1: Hardware Fingerprint ──','warn');
+  const fpViz=document.getElementById('fp-viz');
+  fpViz.innerHTML='';
+  for(let i=0;i<32;i++){
+    const bar=document.createElement('div');
+    bar.className='fp-bar';
+    bar.style.height=(10+Math.random()*30)+'px';
+    fpViz.appendChild(bar);
+  }
+  
+  for(let i=0;i<hw.checks.length;i++){
+    await delay(300);
+    const isWarn=hw.checks[i].startsWith('⚠️')||hw.checks[i].startsWith('❌');
+    log(hw.checks[i],isWarn?'err':'ok');
+    const bars=fpViz.querySelectorAll('.fp-bar');
+    const idx=Math.floor(i*32/hw.checks.length);
+    for(let j=idx;j<Math.min(idx+4,32);j++){
+      bars[j].classList.add(isWarn?'fail':'active');
+      bars[j].style.height=(15+Math.random()*35)+'px';
+    }
+  }
+  
+  await delay(400);
+  if(selected==='vm'){
+    log('❌ ATTESTATION REJECTED — Virtual machines earn 0.000000005 RTC/epoch','err');
+    document.getElementById('fp-status').innerHTML='<span style="color:var(--red)">❌ Fingerprint FAILED — Hypervisor detected. Antiquity Score: 0.000000001×</span>';
+  }else{
+    log(`✅ Fingerprint verified! Antiquity Score: ${hw.mult}× (${hw.year} hardware)`,'ok');
+    document.getElementById('fp-status').innerHTML=`<span style="color:var(--green)">✅ Verified: ${hw.arch} • Year: ${hw.year} • Score: ${hw.mult}×</span>`;
+  }
+
+  // Phase 2: Attestation
+  await delay(600);
+  document.getElementById('phase-indicator').textContent='Phase 2: Attestation Submission';
+  log('── Phase 2: Submitting Attestation ──','warn');
+  await delay(300);
+  const payload={miner_id:'sim-'+Math.random().toString(36).slice(2,8),arch:hw.arch,year:hw.year,cache_timing_ns:selected==='vm'?'FLAT':Math.floor(9+Math.random()*30)+'ns',antiquity_score:hw.mult,signature:'0x'+[...Array(16)].map(()=>Math.floor(Math.random()*16).toString(16)).join('')};
+  log(`Payload: ${JSON.stringify(payload,null,0).substring(0,120)}...`,'info');
+  await delay(500);
+  log('Attestation accepted by validator node-3.rustchain.org','ok');
+  attestations=1;
+  document.getElementById('s-att').textContent=attestations;
+
+  // Phase 3: Mining loop
+  await delay(500);
+  document.getElementById('phase-indicator').textContent='Phase 3: Epoch Mining (live)';
+  log('── Phase 3: Epoch Mining Loop ──','warn');
+  log('Entering round-robin epoch selection...','info');
+  
+  btn.textContent='⏹ Stop Simulation';
+  btn.disabled=false;
+  btn.onclick=stopSim;
+
+  simInterval=setInterval(()=>{
+    epoch++;
+    const baseReward=5;
+    const reward=baseReward*hw.mult;
+    rtcTotal+=reward;
+    attestations++;
+    const rank=selected==='vm'?'#9999':selected==='x86'?'#'+Math.floor(40+Math.random()*20):selected==='g5'?'#'+Math.floor(5+Math.random()*10):'#'+Math.floor(1+Math.random()*5);
+    
+    document.getElementById('s-epoch').textContent=epoch;
+    document.getElementById('s-rtc').textContent=rtcTotal.toFixed(6);
+    document.getElementById('s-att').textContent=attestations;
+    document.getElementById('s-rank').textContent=rank;
+
+    const msgs=[
+      `Epoch ${epoch}: Selected for block validation (slot ${Math.floor(Math.random()*32)})`,
+      `Reward: ${reward.toFixed(6)} RTC (base ${baseReward} × ${hw.mult} antiquity)`,
+    ];
+    if(selected==='vm'&&epoch===1) msgs.push('💀 At this rate, 1 RTC takes ~5,479 years');
+    if(selected==='g4'&&epoch%3===0) msgs.push('🏆 Top earner this epoch — vintage hardware pays!');
+    if(epoch%5===0) msgs.push(`📦 Block #${10000+epoch} mined. ${Math.floor(3+Math.random()*8)} txns included.`);
+    
+    msgs.forEach(m=>log(m,m.includes('💀')||m.includes('⚠')?'err':m.includes('🏆')?'ok':'info'));
+  },2000);
+}
+
+function stopSim(){
+  if(simInterval){clearInterval(simInterval);simInterval=null}
+  running=false;
+  const btn=document.getElementById('startBtn');
+  btn.textContent='▶ Restart Simulation';
+  btn.onclick=()=>{resetSim();startSim()};
+  btn.disabled=false;
+  log('── Simulation stopped ──','warn');
+  log(`Final: ${epoch} epochs, ${rtcTotal.toFixed(6)} RTC earned, ${attestations} attestations`,'ok');
+  document.getElementById('phase-indicator').textContent='Simulation complete';
+}
+
+function delay(ms){return new Promise(r=>setTimeout(r,ms))}
+
+// Init comparison
+renderComparison();
+</script>
+</body>
+</html>
