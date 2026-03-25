@@ -791,3 +791,240 @@ tbody tr:hover {
 .arch-apple-silicon { color: var(--tier-classic); }
 .arch-m1 { color: var(--tier-classic); }
 .arch-m2 { color: var(--tier-classic); }
+
+/* ============================================
+   WebSocket Styles (Issue #2295 - 75 RTC)
+   Real-time connection indicator & notifications
+   ============================================ */
+
+/* WebSocket Connection Status */
+.ws-connection-status {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-left: auto;
+    padding-left: var(--spacing-md);
+    border-left: 1px solid var(--border-color);
+}
+
+.ws-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    transition: all var(--transition-normal);
+}
+
+.ws-indicator.connected {
+    background: var(--success);
+    box-shadow: 0 0 8px var(--success);
+    animation: pulse-ws 2s infinite;
+}
+
+.ws-indicator.disconnected {
+    background: var(--error);
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+}
+
+.ws-indicator.connecting {
+    background: var(--warning);
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+    animation: blink 1s infinite;
+}
+
+.ws-status-text {
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ws-status-text.connected {
+    color: var(--success);
+}
+
+.ws-status-text.disconnected {
+    color: var(--error);
+}
+
+@keyframes pulse-ws {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.7;
+        transform: scale(1.1);
+    }
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* WebSocket Notifications Container */
+.ws-notifications-container {
+    position: fixed;
+    top: 80px;
+    right: var(--spacing-lg);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    max-width: 350px;
+    pointer-events: none;
+}
+
+/* WebSocket Notification Card */
+.ws-notification {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    box-shadow: var(--shadow-lg);
+    animation: slideInRight 0.3s ease;
+    pointer-events: auto;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.ws-notification-fade-out {
+    opacity: 0;
+    transform: translateX(100%);
+}
+
+.ws-notification-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-xs);
+}
+
+.ws-notification-icon {
+    font-size: 1.2rem;
+}
+
+.ws-notification-title {
+    flex: 1;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
+.ws-notification-close {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    transition: background var(--transition-fast);
+}
+
+.ws-notification-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.ws-notification-body {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+/* Notification Types */
+.ws-notification-block {
+    border-left: 3px solid var(--accent-primary);
+}
+
+.ws-notification-attestation {
+    border-left: 3px solid var(--success);
+}
+
+.ws-notification-settlement {
+    border-left: 3px solid var(--tier-vintage);
+    background: linear-gradient(135deg, var(--bg-card), rgba(245, 158, 11, 0.05));
+}
+
+.ws-notification-error {
+    border-left: 3px solid var(--error);
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(100px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Live Data Badge */
+.live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: rgba(16, 185, 129, 0.2);
+    border: 1px solid var(--success);
+    border-radius: var(--radius-sm);
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--success);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.live-badge::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: var(--success);
+    border-radius: 50%;
+    animation: pulse-ws 1.5s infinite;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .ws-connection-status {
+        padding-left: var(--spacing-sm);
+        margin-left: var(--spacing-sm);
+    }
+    
+    .ws-status-text {
+        display: none;
+    }
+    
+    .ws-notifications-container {
+        right: var(--spacing-sm);
+        left: var(--spacing-sm);
+        max-width: none;
+        top: 70px;
+    }
+}
+
+/* Dark Mode Enhancements for WebSocket */
+@media (prefers-color-scheme: dark) {
+    .ws-notification {
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    }
+    
+    .ws-indicator.connected {
+        box-shadow: 0 0 12px var(--success), 0 0 24px rgba(16, 185, 129, 0.3);
+    }
+}
+
+/* Print Styles - Hide WebSocket elements */
+@media print {
+    .ws-connection-status,
+    .ws-notifications-container {
+        display: none !important;
+    }
+}

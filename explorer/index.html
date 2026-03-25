@@ -46,14 +46,22 @@
         </div>
     </header>
     
-    <!-- Status Bar -->
+    <!-- Status Bar with WebSocket Connection Indicator -->
     <div class="status-bar" role="status" aria-live="polite">
         <div class="container">
             <div id="status-bar-content" class="status-content">
                 <div class="loading"><div class="spinner" aria-hidden="true"></div>Connecting...</div>
             </div>
+            <!-- WebSocket Connection Indicator (Issue #2295) -->
+            <div class="ws-connection-status">
+                <div id="ws-connection-indicator" class="ws-indicator disconnected" title="WebSocket Status"></div>
+                <span id="ws-status-text" class="ws-status-text disconnected">Offline</span>
+            </div>
         </div>
     </div>
+    
+    <!-- WebSocket Notifications Container (Issue #2295) -->
+    <div id="ws-notifications" class="ws-notifications-container" aria-live="polite"></div>
     
     <!-- Main Content -->
     <main class="main" id="main-content">
@@ -310,6 +318,9 @@
     
     <!-- Main Application Script -->
     <script src="static/js/explorer.js"></script>
+    
+    <!-- WebSocket Client (Issue #2295 - Real-time Feed) -->
+    <script src="static/js/websocket-client.js"></script>
     
     <!-- Service Worker Registration -->
     <script>
