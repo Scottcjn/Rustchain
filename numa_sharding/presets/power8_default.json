@@ -1,0 +1,68 @@
+{
+  "preset_name": "POWER8 Generic",
+  "preset_id": "power8_generic_v1",
+  "version": "1.0.0",
+  "description": "Generic NUMA sharding configuration for IBM POWER8/POWER9 systems",
+  
+  "hardware_target": {
+    "architecture": "ppc64le",
+    "cpu_family": "POWER8/POWER9",
+    "model": "Generic",
+    "numa_nodes": "auto-detect",
+    "notes": "Auto-detects NUMA topology at runtime"
+  },
+  
+  "numa_shard_config": {
+    "environment_variable": "GGML_NUMA_SHARD_MAP",
+    "value": "0-8:0,9-20:1,21-31:2",
+    "rules": [
+      {
+        "layer_range": [0, 8],
+        "node": 0,
+        "rationale": "Early layers on first NUMA node"
+      },
+      {
+        "layer_range": [9, 20],
+        "node": 1,
+        "rationale": "Attention layers on second node"
+      },
+      {
+        "layer_range": [21, 31],
+        "node": 2,
+        "rationale": "FFN layers on third node"
+      }
+    ]
+  },
+  
+  "thread_configuration": {
+    "recommended_threads": "auto",
+    "formula": "num_cores * 0.75",
+    "warning": "Avoid using all hardware threads; leave headroom for memory subsystem"
+  },
+  
+  "compiler_flags": {
+    "cc": "gcc",
+    "cflags": "-mcpu=native -mvsx -maltivec -O3 -DNDEBUG",
+    "ldflags": "-lnuma"
+  },
+  
+  "runtime_configuration": {
+    "environment": {
+      "GGML_NUMA_SHARD_MAP": "0-8:0,9-20:1,21-31:2",
+      "OMP_NUM_THREADS": "auto"
+    }
+  },
+  
+  "auto_tuning": {
+    "enabled": true,
+    "method": "benchmark_sweep",
+    "parameters": {
+      "thread_counts": [32, 48, 64, 80, 96],
+      "node_mappings": [
+        "0-8:0,9-20:1,21-31:2",
+        "0-8:1,9-20:2,21-31:3",
+        "0-10:0,11-20:1,21-31:2"
+      ]
+    }
+  }
+}

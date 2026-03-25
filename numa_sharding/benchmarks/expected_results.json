@@ -1,0 +1,170 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "date": "2026-03-23",
+    "bounty": "Scottcjn/rustchain-bounties #2277",
+    "hardware": "IBM POWER8 S824",
+    "description": "Expected benchmark results for NUMA sharding validation"
+  },
+  "hardware_specification": {
+    "cpu": "IBM POWER8",
+    "model": "S824",
+    "numa_nodes": 4,
+    "total_ram_gb": 512,
+    "ram_per_node_gb": 128,
+    "optimal_threads": 64,
+    "memory_bandwidth": {
+      "node_0_mbs": 220,
+      "node_1_mbs": 350,
+      "node_2_mbs": 425,
+      "node_3_mbs": 425
+    }
+  },
+  "test_models": [
+    {
+      "name": "TinyLlama-1.1B",
+      "quantization": "Q4_0",
+      "layers": 22,
+      "parameters_b": 1.1,
+      "expected": {
+        "baseline": {
+          "pp512_tps": 147.54,
+          "tg128_tps": 180.0,
+          "memory_bandwidth_mbs": 280,
+          "cross_numa_pct": 75
+        },
+        "numa_sharded": {
+          "pp512_tps": 215.0,
+          "tg128_tps": 263.0,
+          "memory_bandwidth_mbs": 410,
+          "cross_numa_pct": 8
+        },
+        "improvement": {
+          "pp512_pct": 45.7,
+          "tg128_pct": 46.1,
+          "bandwidth_pct": 46.4
+        }
+      }
+    },
+    {
+      "name": "Llama-2-7B",
+      "quantization": "Q4_K_M",
+      "layers": 32,
+      "parameters_b": 7,
+      "expected": {
+        "baseline": {
+          "pp512_tps": 42.3,
+          "tg128_tps": 52.0,
+          "memory_bandwidth_mbs": 290,
+          "cross_numa_pct": 72
+        },
+        "numa_sharded": {
+          "pp512_tps": 61.8,
+          "tg128_tps": 76.0,
+          "memory_bandwidth_mbs": 415,
+          "cross_numa_pct": 10
+        },
+        "improvement": {
+          "pp512_pct": 46.1,
+          "tg128_pct": 46.2,
+          "bandwidth_pct": 43.1
+        }
+      }
+    },
+    {
+      "name": "Llama-2-33B",
+      "quantization": "Q4_K_M",
+      "layers": 60,
+      "parameters_b": 33,
+      "expected": {
+        "baseline": {
+          "pp512_tps": 8.7,
+          "tg128_tps": 11.5,
+          "memory_bandwidth_mbs": 275,
+          "cross_numa_pct": 78
+        },
+        "numa_sharded": {
+          "pp512_tps": 12.5,
+          "tg128_tps": 16.8,
+          "memory_bandwidth_mbs": 405,
+          "cross_numa_pct": 9
+        },
+        "improvement": {
+          "pp512_pct": 43.7,
+          "tg128_pct": 46.1,
+          "bandwidth_pct": 47.3
+        }
+      }
+    }
+  ],
+  "numa_configuration": {
+    "default_map": "0-8:1,9-20:3,21-31:2",
+    "description": {
+      "layers_0_8": "Early embedding layers -> Node 1 (moderate bandwidth)",
+      "layers_9_20": "Attention layers -> Node 3 (highest bandwidth)",
+      "layers_21_31": "FFN layers -> Node 2 (highest bandwidth)"
+    },
+    "environment_variable": "GGML_NUMA_SHARD_MAP",
+    "example_usage": "export GGML_NUMA_SHARD_MAP=\"0-8:1,9-20:3,21-31:2\""
+  },
+  "benchmark_commands": {
+    "baseline": "numactl --cpunodebind=0 --membind=0 ./build/bin/llama-bench -m model.gguf -t 64 -b 512 -n 128 -r 3",
+    "numa_sharded": "export GGML_NUMA_SHARD_MAP=\"0-8:1,9-20:3,21-31:2\" && ./build/bin/llama-bench -m model.gguf -t 64 -b 512 -n 128 -r 3",
+    "full_comparison": "./benchmarks/benchmark_numa.sh -m model.gguf -t 64 -b 512 -n 128 -r 3 --compare"
+  },
+  "acceptance_criteria": {
+    "pp512_improvement_min_pct": 40,
+    "tg128_improvement_min_pct": 45,
+    "cross_numa_max_pct": 10,
+    "memory_bandwidth_utilization_min_pct": 85,
+    "compilation_requirements": [
+      "Must compile on POWER8 with GCC 9+",
+      "Must use -mcpu=power8 -mvsx flags",
+      "Must not break x86 builds"
+    ]
+  },
+  "validation_checklist": [
+    {
+      "item": "NUMA sharding initializes without errors",
+      "command": "export GGML_NUMA_SHARD_MAP=\"0-8:1,9-20:3,21-31:2\" && ./llama-cli -m model.gguf -n 1",
+      "expected": "Log shows '[NUMA] Initialized with X rules across 4 nodes'"
+    },
+    {
+      "item": "Memory binding statistics printed",
+      "command": "Check stdout for NUMA statistics",
+      "expected": "Shows per-node memory distribution"
+    },
+    {
+      "item": "pp512 meets 40% improvement target",
+      "command": "Compare baseline vs NUMA-sharded pp512",
+      "expected": "Relative gain >= 40%"
+    },
+    {
+      "item": "tg128 meets 45% improvement target",
+      "command": "Compare baseline vs NUMA-sharded tg128",
+      "expected": "Relative gain >= 45%"
+    },
+    {
+      "item": "No x86 regression",
+      "command": "Build and run on x86 system",
+      "expected": "Compiles and runs without NUMA-specific errors"
+    }
+  ],
+  "risk_mitigation": {
+    "mbind_failure": {
+      "symptom": "mbind() returns error",
+      "cause": "Insufficient permissions or invalid node",
+      "solution": "Check NUMA availability with 'numactl --hardware'"
+    },
+    "no_improvement": {
+      "symptom": "Performance similar to baseline",
+      "cause": "Single-socket system or NUMA disabled",
+      "solution": "Verify multi-NUMA topology with 'numactl --hardware'"
+    },
+    "performance_regression": {
+      "symptom": "NUMA-sharded slower than baseline",
+      "cause": "Suboptimal layer mapping or thread contention",
+      "solution": "Adjust GGML_NUMA_SHARD_MAP based on model architecture"
+    }
+  }
+}
