@@ -1,0 +1,156 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RustChain Node Status</title>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --green: #3fb950;
+          --red: #f85149; --yellow: #d29922; --text: #e6edf3; --muted: #8b949e; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: var(--bg); color: var(--text); min-height: 100vh; padding: 20px; }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 1.6em; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); margin-bottom: 24px; font-size: 0.9em; }
+  .overall { padding: 12px 20px; border-radius: 8px; margin-bottom: 24px;
+             font-weight: 600; font-size: 1.1em; text-align: center; }
+  .overall.operational { background: rgba(63,185,80,0.15); border: 1px solid var(--green); color: var(--green); }
+  .overall.degraded { background: rgba(248,81,73,0.15); border: 1px solid var(--red); color: var(--red); }
+  .node-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  @media (max-width: 600px) { .node-grid { grid-template-columns: 1fr; } }
+  .node-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .node-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .node-name { font-weight: 600; }
+  .status-badge { padding: 2px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; }
+  .status-badge.up { background: rgba(63,185,80,0.2); color: var(--green); }
+  .status-badge.down { background: rgba(248,81,73,0.2); color: var(--red); }
+  .node-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85em; }
+  .stat-label { color: var(--muted); }
+  .stat-value { font-weight: 500; }
+  .uptime-bar { height: 24px; display: flex; gap: 1px; margin-top: 8px; border-radius: 4px; overflow: hidden; }
+  .uptime-bar .tick { flex: 1; min-width: 2px; }
+  .uptime-bar .tick.up { background: var(--green); }
+  .uptime-bar .tick.down { background: var(--red); }
+  .uptime-bar .tick.unknown { background: var(--border); }
+  .uptime-pct { text-align: right; font-size: 0.8em; color: var(--muted); margin-top: 4px; }
+  .section-title { font-size: 1.1em; margin: 24px 0 12px; }
+  .incidents { background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+  .incident { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 0.85em;
+              display: flex; justify-content: space-between; }
+  .incident:last-child { border-bottom: none; }
+  .incident .event-down { color: var(--red); }
+  .incident .event-recovered { color: var(--green); }
+  .incident .time { color: var(--muted); }
+  .empty { padding: 20px; text-align: center; color: var(--muted); }
+  .response-graph { height: 60px; display: flex; align-items: flex-end; gap: 1px; margin-top: 8px; }
+  .response-graph .bar { flex: 1; min-width: 2px; background: #58a6ff; border-radius: 1px 1px 0 0; }
+  .footer { text-align: center; color: var(--muted); font-size: 0.8em; margin-top: 24px; padding: 12px; }
+  .refresh-note { color: var(--muted); font-size: 0.8em; text-align: center; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>⚙️ RustChain Node Status</h1>
+  <p class="subtitle">Real-time monitoring of all attestation nodes</p>
+  <div id="overall" class="overall">Loading...</div>
+  <p class="refresh-note">Auto-refreshes every 60 seconds</p>
+  <div id="nodes" class="node-grid"></div>
+  <h2 class="section-title">📋 Recent Incidents</h2>
+  <div id="incidents" class="incidents"><div class="empty">Loading...</div></div>
+  <div class="footer">
+    RustChain Status Dashboard · <a href="/feed.xml" style="color:var(--muted)">RSS Feed</a> · Polls every 60s
+  </div>
+</div>
+<script>
+function formatTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+function formatUptime(sec) {
+  if (!sec) return '—';
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+async function refresh() {
+  try {
+    const [statusRes, incRes, uptimeRes] = await Promise.all([
+      fetch('/api/status'), fetch('/api/incidents'), fetch('/api/uptime')
+    ]);
+    const status = await statusRes.json();
+    const incidents = await incRes.json();
+    const uptime = await uptimeRes.json();
+    // Overall
+    const ov = document.getElementById('overall');
+    if (status.overall === 'operational') {
+      ov.className = 'overall operational';
+      ov.textContent = '✅ All Systems Operational';
+    } else {
+      ov.className = 'overall degraded';
+      ov.textContent = '⚠️ Some Systems Degraded';
+    }
+    // Nodes
+    const container = document.getElementById('nodes');
+    container.innerHTML = '';
+    for (const node of status.nodes) {
+      const nid = node.name.toLowerCase().replace(/\s+/g, '-').replace('node-','node-');
+      const nodeId = Object.keys(uptime).find(k => uptime[k].name === node.name) || '';
+      const u = uptime[nodeId] || {};
+      const card = document.createElement('div');
+      card.className = 'node-card';
+      card.innerHTML = `
+        <div class="node-header">
+          <span class="node-name">${node.name}</span>
+          <span class="status-badge ${node.up?'up':'down'}">${node.up?'Operational':'Down'}</span>
+        </div>
+        <div class="node-stats">
+          <div><span class="stat-label">Location</span><br><span class="stat-value">${node.location||'—'}</span></div>
+          <div><span class="stat-label">Response</span><br><span class="stat-value">${node.response_ms||0}ms</span></div>
+          <div><span class="stat-label">Miners</span><br><span class="stat-value">${node.active_miners||'—'}</span></div>
+          <div><span class="stat-label">Epoch</span><br><span class="stat-value">${node.current_epoch||'—'}</span></div>
+          <div><span class="stat-label">Version</span><br><span class="stat-value">${node.version||'—'}</span></div>
+          <div><span class="stat-label">Uptime</span><br><span class="stat-value">${formatUptime(node.uptime)}</span></div>
+        </div>
+        <div class="uptime-pct">${u.uptime_pct!==undefined?u.uptime_pct+'% uptime (24h)':'—'}</div>
+        <div class="uptime-bar" id="bar-${nodeId}"></div>
+      `;
+      container.appendChild(card);
+      // Load history for uptime bar
+      if (nodeId) {
+        fetch('/api/history/'+nodeId).then(r=>r.json()).then(hist=>{
+          const bar = document.getElementById('bar-'+nodeId);
+          if(!bar) return;
+          // Show last 48 ticks (every 30 min summary)
+          const buckets = [];
+          const step = Math.max(1, Math.floor(hist.length/48));
+          for(let i=0;i<hist.length;i+=step){
+            const slice = hist.slice(i,i+step);
+            const anyDown = slice.some(h=>!h.up);
+            buckets.push(anyDown?'down':'up');
+          }
+          bar.innerHTML = buckets.map(s=>`<div class="tick ${s}"></div>`).join('');
+        });
+      }
+    }
+    // Incidents
+    const incEl = document.getElementById('incidents');
+    if(incidents.length===0){
+      incEl.innerHTML='<div class="empty">No incidents recorded</div>';
+    } else {
+      incEl.innerHTML=incidents.slice(0,20).map(i=>`
+        <div class="incident">
+          <span><span class="event-${i.event}">${i.event==='down'?'🔴':'🟢'} ${i.node} — ${i.event}</span>
+          ${i.detail?' · '+i.detail:''}</span>
+          <span class="time">${formatTime(i.time)}</span>
+        </div>
+      `).join('');
+    }
+  } catch(e) { console.error('Refresh failed:', e); }
+}
+refresh();
+setInterval(refresh, 60000);
+</script>
+</body>
+</html>
