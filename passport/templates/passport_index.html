@@ -1,0 +1,82 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RustChain Machine Passports</title>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --amber: #d4a574;
+          --copper: #b87333; --text: #e6edf3; --muted: #8b949e; --green: #3fb950; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Georgia', 'Times New Roman', serif; background: var(--bg);
+         color: var(--text); padding: 20px; }
+  .container { max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 1.5em; color: var(--amber); margin-bottom: 4px; }
+  .subtitle { color: var(--muted); margin-bottom: 24px; font-style: italic; }
+  .search { margin-bottom: 16px; }
+  .search input { background: var(--card); border: 1px solid var(--border); color: var(--text);
+                  padding: 8px 12px; border-radius: 6px; width: 100%; font-size: 0.9em; }
+  .passport-list { display: grid; gap: 12px; }
+  .passport-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+                   padding: 16px; cursor: pointer; transition: border-color 0.2s; }
+  .passport-card:hover { border-color: var(--amber); }
+  .passport-card .name { font-size: 1.1em; font-weight: 600; color: var(--amber); }
+  .passport-card .arch { color: var(--copper); }
+  .passport-card .meta { color: var(--muted); font-size: 0.85em; margin-top: 6px; }
+  .tier-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.75em;
+                font-weight: 600; text-transform: uppercase; }
+  .tier-ancient { background: rgba(212,165,116,0.2); color: #d4a574; }
+  .tier-sacred { background: rgba(192,140,80,0.2); color: #c08c50; }
+  .tier-vintage { background: rgba(184,115,51,0.2); color: #b87333; }
+  .tier-classic { background: rgba(100,149,237,0.2); color: #6495ed; }
+  .tier-retro { background: rgba(63,185,80,0.2); color: #3fb950; }
+  .tier-modern { background: rgba(139,148,158,0.2); color: #8b949e; }
+  .empty { text-align: center; color: var(--muted); padding: 40px; font-style: italic; }
+  .count { color: var(--muted); font-size: 0.85em; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>📜 Machine Passport Ledger</h1>
+  <p class="subtitle">Every relic has a story. These are theirs.</p>
+  <div class="search">
+    <input type="text" id="search" placeholder="Search by name or architecture..." oninput="filterList()">
+  </div>
+  <div class="count" id="count"></div>
+  <div class="passport-list" id="list"><div class="empty">Loading passports...</div></div>
+</div>
+<script>
+let passports = [];
+async function load() {
+  const resp = await fetch('/api/passports');
+  passports = await resp.json();
+  render(passports);
+}
+function render(list) {
+  const el = document.getElementById('list');
+  document.getElementById('count').textContent = `${list.length} machines documented`;
+  if (!list.length) { el.innerHTML = '<div class="empty">No passports yet. Miners can register at POST /api/passport</div>'; return; }
+  el.innerHTML = list.map(p => `
+    <div class="passport-card" onclick="location.href='/passport/${p.machine_id}'">
+      <div class="name">${p.name || p.machine_id.substring(0,12)+'...'}</div>
+      <div class="arch">${p.architecture || 'Unknown'} · ${p.manufacture_year || '?'}</div>
+      <div class="meta">
+        <span class="tier-badge tier-${p.tier}">${p.tier}</span>
+        · ${p.total_epochs || 0} epochs · ${p.total_rtc || 0} RTC earned
+      </div>
+    </div>
+  `).join('');
+}
+function filterList() {
+  const q = document.getElementById('search').value.toLowerCase();
+  render(passports.filter(p =>
+    (p.name||'').toLowerCase().includes(q) ||
+    (p.architecture||'').toLowerCase().includes(q) ||
+    p.machine_id.includes(q)
+  ));
+}
+load();
+</script>
+</body>
+</html>
