@@ -64,6 +64,19 @@
             <span class="epoch-icon">&#127881;</span>
             <span>Epoch <span id="newEpochNum">--</span> Settled!</span>
             <span class="epoch-icon">&#127881;</span>
+            <label class="sound-toggle" title="Toggle sound notification">
+                <input type="checkbox" id="soundToggle" checked>
+                <span>&#128266;</span>
+            </label>
+        </div>
+
+        <!-- Miner Count Sparkline -->
+        <div class="sparkline-container miner-sparkline">
+            <div class="sparkline-header">
+                <span>Miner Count (last 60 readings)</span>
+                <span id="minerCountLabel">-- miners</span>
+            </div>
+            <canvas id="minerSparklineCanvas" width="800" height="40"></canvas>
         </div>
 
         <!-- Main Grid -->

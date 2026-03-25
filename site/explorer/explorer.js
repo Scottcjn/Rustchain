@@ -45,6 +45,9 @@
     const newEpochNum = $('newEpochNum');
     const activityRate = $('activityRate');
     const showAllEventsChk = $('showAllEvents');
+    const soundToggle = $('soundToggle');
+    const minerSparklineCanvas = $('minerSparklineCanvas');
+    const minerCountLabel = $('minerCountLabel');
 
     // ─── Utilities ────────────────────────────────────────────────────────────
     function getQueryParam(key) {
@@ -273,12 +276,23 @@
             statEpoch.textContent = formatNumber(newEpoch);
         }
 
+        // Update miner count from epoch data
+        if (data.miners !== undefined) {
+            statMiners.textContent = formatNumber(data.miners);
+            pushMinerCount(data.miners);
+        }
+
         // Show notification
         newEpochNum.textContent = newEpoch;
         epochNotification.style.display = 'flex';
         setTimeout(() => {
             epochNotification.style.display = 'none';
         }, 8000);
+
+        // Play sound notification if enabled
+        if (soundToggle && soundToggle.checked) {
+            playEpochSound();
+        }
 
         if (data.total_rtc) {
             addLogEntry('epoch', `Epoch ${newEpoch} settled! Total RTC: ${formatNumber(data.total_rtc)}, Miners: ${formatNumber(data.miners)}`);
@@ -411,6 +425,135 @@
             showAllEvents = e.target.checked;
         });
     }
+
+    // ─── Sound Notification ───────────────────────────────────────────────────
+    let audioCtx = null;
+
+    function getAudioContext() {
+        if (!audioCtx) {
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (e) {
+                console.warn('[Explorer] Web Audio API not supported');
+            }
+        }
+        return audioCtx;
+    }
+
+    function playEpochSound() {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+
+        // Resume context if suspended (required after user gesture)
+        if (ctx.state === 'suspended') {
+            ctx.resume();
+        }
+
+        try {
+            // First beep - high pitch
+            const osc1 = ctx.createOscillator();
+            const gain1 = ctx.createGain();
+            osc1.connect(gain1);
+            gain1.connect(ctx.destination);
+            osc1.type = 'sine';
+            osc1.frequency.setValueAtTime(880, ctx.currentTime); // A5
+            gain1.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+            osc1.start(ctx.currentTime);
+            osc1.stop(ctx.currentTime + 0.3);
+
+            // Second beep - higher pitch, slightly delayed
+            const osc2 = ctx.createOscillator();
+            const gain2 = ctx.createGain();
+            osc2.connect(gain2);
+            gain2.connect(ctx.destination);
+            osc2.type = 'sine';
+            osc2.frequency.setValueAtTime(1319, ctx.currentTime + 0.15); // E6
+            gain2.gain.setValueAtTime(0, ctx.currentTime);
+            gain2.gain.setValueAtTime(0.3, ctx.currentTime + 0.15);
+            gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+            osc2.start(ctx.currentTime + 0.15);
+            osc2.stop(ctx.currentTime + 0.5);
+        } catch (e) {
+            console.warn('[Explorer] Could not play epoch sound:', e);
+        }
+    }
+
+    // ─── Miner Count Sparkline ────────────────────────────────────────────────
+    const minerSparklineData = new Array(60).fill(0);
+    let minerSparklineIdx = 0;
+    let currentMinerCount = null;
+
+    function pushMinerCount(count) {
+        currentMinerCount = count;
+        minerSparklineData[minerSparklineIdx % minerSparklineData.length] = count;
+        minerSparklineIdx++;
+        drawMinerSparkline();
+        if (minerCountLabel) {
+            minerCountLabel.textContent = formatNumber(count) + ' miners';
+        }
+    }
+
+    function drawMinerSparkline() {
+        if (!minerSparklineCanvas) return;
+        const ctx2 = minerSparklineCanvas.getContext('2d');
+        const w = minerSparklineCanvas.width;
+        const h = minerSparklineCanvas.height;
+        ctx2.clearRect(0, 0, w, h);
+
+        // Background grid
+        ctx2.strokeStyle = '#1a2035';
+        ctx2.lineWidth = 1;
+        for (let i = 0; i < 4; i++) {
+            const y = (h / 4) * i;
+            ctx2.beginPath();
+            ctx2.moveTo(0, y);
+            ctx2.lineTo(w, y);
+            ctx2.stroke();
+        }
+
+        if (minerSparklineData.length < 2) return;
+
+        const max = Math.max(...minerSparklineData.filter(v => v > 0), 1);
+        const step = w / (minerSparklineData.length - 1);
+
+        // Fill
+        ctx2.beginPath();
+        ctx2.moveTo(0, h);
+        minerSparklineData.forEach((v, i) => {
+            const x = i * step;
+            const y = h - (v / max) * h * 0.9;
+            ctx2.lineTo(x, y);
+        });
+        ctx2.lineTo(w, h);
+        ctx2.closePath();
+        ctx2.fillStyle = 'rgba(88, 166, 255, 0.1)';
+        ctx2.fill();
+
+        // Line
+        ctx2.beginPath();
+        minerSparklineData.forEach((v, i) => {
+            const x = i * step;
+            const y = h - (v / max) * h * 0.9;
+            if (i === 0) ctx2.moveTo(x, y);
+            else ctx2.lineTo(x, y);
+        });
+        ctx2.strokeStyle = '#58a6ff';
+        ctx2.lineWidth = 2;
+        ctx2.stroke();
+    }
+
+    // Draw miner sparkline periodically (decays to 0 to show inactivity)
+    setInterval(() => {
+        // Shift data left by 1 (time passes)
+        if (minerSparklineIdx > minerSparklineData.length) {
+            for (let i = 0; i < minerSparklineData.length - 1; i++) {
+                minerSparklineData[i] = minerSparklineData[i + 1];
+            }
+            minerSparklineData[minerSparklineData.length - 1] = currentMinerCount || 0;
+        }
+        drawMinerSparkline();
+    }, 5000);
 
     // ─── Boot ─────────────────────────────────────────────────────────────────
     setStatus('connecting', 'Connecting to ' + WS_URL + '...');
