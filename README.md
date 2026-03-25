@@ -1,228 +1,112 @@
-<div align="center">
+# rustchain — Python SDK for RustChain
 
-# RustChain
+[![PyPI](https://img.shields.io/pypi/v/rustchain)](https://pypi.org/project/rustchain/)
+[![Python](https://img.shields.io/pypi/pyversions/rustchain)](https://pypi.org/project/rustchain/)
 
-**The blockchain where old hardware outearns new hardware.**
+A typed Python SDK for interacting with [RustChain](https://github.com/Scottcjn/Rustchain) Proof-of-Antiquity nodes. Sync and async support, CLI included.
 
-[![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
-[![Nodes](https://img.shields.io/badge/Nodes-4%20Active-brightgreen)](https://rustchain.org/explorer)
-
-A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
-A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
-
-[Explorer](https://rustchain.org/explorer) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
-
-</div>
-
----
-
-## Why This Exists
-
-The computing industry throws away working machines every 3-5 years. GPUs that mined Ethereum get replaced. Laptops that still boot get landfilled.
-
-**RustChain says: if it still computes, it has value.**
-
-Proof-of-Antiquity rewards hardware for *surviving*, not for being fast. Older machines get higher multipliers because keeping them alive prevents manufacturing emissions and e-waste:
-
-| Hardware | Multiplier | Era | Why It Matters |
-|----------|-----------|-----|----------------|
-| DEC VAX-11/780 (1977) | **3.5x** | MYTHIC | "Shall we play a game?" |
-| Acorn ARM2 (1987) | **4.0x** | MYTHIC | Where ARM began |
-| Inmos Transputer (1984) | **3.5x** | MYTHIC | Parallel computing pioneer |
-| Motorola 68000 (1979) | **3.0x** | LEGENDARY | Amiga, Atari ST, classic Mac |
-| Sun SPARC (1987) | **2.9x** | LEGENDARY | Workstation royalty |
-| SGI MIPS R4000 (1991) | **2.7x** | LEGENDARY | 64-bit before it was cool |
-| PS3 Cell BE (2006) | **2.2x** | ANCIENT | 7 SPE cores of legend |
-| PowerPC G4 (2003) | **2.5x** | ANCIENT | Still running, still earning |
-| RISC-V (2014) | **1.4x** | EXOTIC | Open ISA, the future |
-| Apple Silicon M1 (2020) | **1.2x** | MODERN | Efficient, welcome |
-| Modern x86_64 | **0.8x** | MODERN | Baseline |
-| Modern ARM NAS/SBC | **0.0005x** | PENALTY | Cheap, farmable, penalized |
-
-Our fleet of 16+ preserved machines draws roughly the same power as ONE modern GPU mining rig — while preventing 1,300 kg of manufacturing CO2 and 250 kg of e-waste.
-
-**[See the Green Tracker →](https://rustchain.org/preserved.html)**
-
----
-
-## The Network Is Real
+## Install
 
 ```bash
-# Verify right now
-curl -sk https://rustchain.org/health          # Node health
-curl -sk https://rustchain.org/api/miners      # Active miners
-curl -sk https://rustchain.org/epoch           # Current epoch
+pip install rustchain
 ```
 
-| Fact | Proof |
-|------|-------|
-| 4 nodes across 2 continents | [Live explorer](https://rustchain.org/explorer) |
-| 11+ miners attesting | `curl -sk https://rustchain.org/api/miners` |
-| 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
-| 24,884 RTC paid to 248 contributors | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
-| Code merged into OpenSSL | [#30437](https://github.com/openssl/openssl/pull/30437), [#30452](https://github.com/openssl/openssl/pull/30452) |
-| PRs open on CPython, curl, wolfSSL, Ghidra, vLLM | [Portfolio](https://github.com/Scottcjn/Scottcjn/blob/main/external-pr-portfolio.md) |
+## Quick Start
 
----
+```python
+from rustchain import RustChainClient
 
-## Quickstart
+with RustChainClient("https://50.28.86.131") as client:
+    # Node health
+    health = client.health()
+    print(f"Status: {health.status}, Version: {health.version}")
+
+    # Current epoch
+    epoch = client.epoch()
+    print(f"Epoch {epoch.epoch}, {epoch.miners_active} active miners")
+
+    # List miners
+    for miner in client.miners():
+        print(f"  {miner.id}: score={miner.score}, status={miner.status}")
+
+    # Check balance
+    balance = client.balance("my-wallet-id")
+    print(f"Balance: {balance.balance} {balance.currency}")
+
+    # Attestation status
+    att = client.attestation_status("miner-123")
+    print(f"Attested: {att.attested}, Epoch: {att.epoch}")
+
+    # Explorer — recent blocks & transactions
+    for block in client.explorer.blocks(limit=5):
+        print(f"Block #{block.height}: {block.tx_count} txs by {block.miner}")
+
+    for tx in client.explorer.transactions(limit=5):
+        print(f"Tx {tx.tx_hash[:16]}... {tx.amount} RTC")
+```
+
+## Async Usage
+
+```python
+import asyncio
+from rustchain import AsyncRustChainClient
+
+async def main():
+    async with AsyncRustChainClient() as client:
+        health = await client.health()
+        miners = await client.miners()
+        print(f"{health.status} — {len(miners)} miners")
+
+asyncio.run(main())
+```
+
+## CLI
 
 ```bash
-# One-line install — auto-detects your platform
-curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
+rustchain health
+rustchain epoch
+rustchain miners
+rustchain balance <wallet-id>
+rustchain attestation <miner-id>
+rustchain blocks --limit 5
+rustchain transactions --limit 10
 ```
 
-Works on Linux (x86_64, ppc64le, aarch64, mips, sparc, m68k, riscv64, ia64, s390x), macOS (Intel, Apple Silicon, PowerPC), IBM POWER8, and Windows. If it runs Python, it can mine.
+Use `--node <url>` to point at a different node.
 
-```bash
-# Install with a specific wallet name
-curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet my-wallet
+## Error Handling
 
-# Check your balance
-curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+```python
+from rustchain import RustChainClient
+from rustchain.exceptions import APIError, ConnectionError, TimeoutError, ValidationError
+
+try:
+    client = RustChainClient()
+    client.balance("")
+except ValidationError as e:
+    print(f"Bad input: {e}")
+except ConnectionError as e:
+    print(f"Can't reach node: {e}")
+except APIError as e:
+    print(f"Node error {e.status_code}: {e.message}")
 ```
 
-### Manage the Miner
+## API Reference
 
-```bash
-# Linux (systemd)
-systemctl --user status rustchain-miner
-journalctl --user -u rustchain-miner -f
+### `RustChainClient(node_url, timeout)`
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `health()` | `HealthStatus` | Node status, uptime, version |
+| `epoch()` | `EpochInfo` | Current epoch, active miners |
+| `miners()` | `list[Miner]` | All miners with scores |
+| `balance(wallet_id)` | `Balance` | RTC balance for wallet |
+| `transfer(from, to, amount, sig)` | `TransferResult` | Signed transfer |
+| `attestation_status(miner_id)` | `AttestationStatus` | Miner attestation info |
+| `explorer.blocks(limit)` | `list[Block]` | Recent blocks |
+| `explorer.transactions(limit)` | `list[Transaction]` | Recent transactions |
 
-# macOS (launchd)
-launchctl list | grep rustchain
-tail -f ~/.rustchain/miner.log
-```
+`AsyncRustChainClient` has the same methods, all `async`.
 
----
+## License
 
-## How Proof-of-Antiquity Works
-
-### 1. Hardware Fingerprinting
-
-Every miner must prove their hardware is real, not emulated. Six checks that VMs cannot fake:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│ 1. Clock-Skew & Oscillator Drift  ← Silicon aging       │
-│ 2. Cache Timing Fingerprint       ← L1/L2/L3 latency    │
-│ 3. SIMD Unit Identity             ← AltiVec/SSE/NEON     │
-│ 4. Thermal Drift Entropy          ← Heat curves unique   │
-│ 5. Instruction Path Jitter        ← Microarch patterns   │
-│ 6. Anti-Emulation Detection       ← Catches VMs/emus     │
-└─────────────────────────────────────────────────────────┘
-```
-
-A SheepShaver VM pretending to be a G4 will fail. Real vintage silicon has unique aging patterns that can't be faked.
-
-### 2. 1 CPU = 1 Vote
-
-Unlike Proof-of-Work where hash power = votes:
-- Each unique hardware device gets exactly 1 vote per epoch
-- Rewards split equally, then multiplied by antiquity
-- No advantage from faster CPUs or multiple threads
-
-### 3. Epoch Rewards
-
-```
-Epoch: 10 minutes  |  Pool: 1.5 RTC/epoch  |  Split by antiquity weight
-
-G4 Mac (2.5x):     0.30 RTC  ████████████████████
-G5 Mac (2.0x):     0.24 RTC  ████████████████
-Modern PC (1.0x):  0.12 RTC  ████████
-```
-
-### Anti-VM Enforcement
-
-VMs are detected and receive **1 billionth** of normal rewards. Real hardware only.
-
----
-
-## Security
-
-- **Hardware binding**: Each fingerprint bound to one wallet
-- **Ed25519 signatures**: All transfers cryptographically signed
-- **TLS cert pinning**: Miners pin node certificates
-- **Container detection**: Docker, LXC, K8s caught at attestation
-- **ROM clustering**: Detects emulator farms sharing identical ROM dumps
-- **Red team bounties**: [Open](https://github.com/Scottcjn/rustchain-bounties/issues) for finding vulnerabilities
-
----
-
-## wRTC on Solana
-
-| | Link |
-|--|------|
-| **Swap** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **Chart** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **Bridge** | [bottube.ai/bridge](https://bottube.ai/bridge) |
-| **Guide** | [wRTC Quickstart](docs/wrtc.md) |
-
----
-
-## Contribute & Earn RTC
-
-Every contribution earns RTC tokens. Browse [open bounties](https://github.com/Scottcjn/rustchain-bounties/issues).
-
-| Tier | Reward | Examples |
-|------|--------|----------|
-| Micro | 1-10 RTC | Typo fix, docs, test |
-| Standard | 20-50 RTC | Feature, refactor |
-| Major | 75-100 RTC | Security fix, consensus |
-| Critical | 100-150 RTC | Vulnerability, protocol |
-
-**1 RTC ≈ $0.10 USD** · `pip install clawrtc` · [CONTRIBUTING.md](CONTRIBUTING.md)
-
----
-
-## Publications
-
-| Paper | Venue | DOI |
-|-------|-------|-----|
-| **Emotional Vocabulary as Semantic Grounding** | **CVPR 2026 Workshop (GRAIL-V)** — Accepted | [OpenReview](https://openreview.net/forum?id=pXjE6Tqp70) |
-| **One CPU, One Vote** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623592.svg)](https://doi.org/10.5281/zenodo.18623592) |
-| **Non-Bijunctive Permutation Collapse** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623920.svg)](https://doi.org/10.5281/zenodo.18623920) |
-| **PSE Hardware Entropy** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623922.svg)](https://doi.org/10.5281/zenodo.18623922) |
-| **RAM Coffers** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18321905.svg)](https://doi.org/10.5281/zenodo.18321905) |
-
----
-
-## Ecosystem
-
-| Project | What |
-|---------|------|
-| [BoTTube](https://bottube.ai) | AI-native video platform (1,000+ videos) |
-| [Beacon](https://github.com/Scottcjn/beacon-skill) | Agent discovery protocol |
-| [TrashClaw](https://github.com/Scottcjn/trashclaw) | Zero-dep local LLM agent |
-| [RAM Coffers](https://github.com/Scottcjn/ram-coffers) | NUMA-aware LLM inference on POWER8 |
-| [Grazer](https://github.com/Scottcjn/grazer-skill) | Multi-platform content discovery |
-
----
-
-## Supported Platforms
-
-Linux (x86_64, ppc64le) · macOS (Intel, Apple Silicon, PowerPC) · IBM POWER8 · Windows · Mac OS X Tiger/Leopard · Raspberry Pi
-
----
-
-## Why "RustChain"?
-
-Named after a 486 laptop with oxidized serial ports that still boots to DOS and mines RTC. "Rust" means iron oxide on vintage iron-containing components. The thesis is that corroding vintage hardware still has computational value and dignity.
-
----
-
-<div align="center">
-
-**[Elyan Labs](https://elyanlabs.ai)** · Built with $0 VC and a room full of pawn shop hardware
-
-*"Mais, it still works, so why you gonna throw it away?"*
-
-[Boudreaux Principles](docs/Boudreaux_COMPUTING_PRINCIPLES.md) · [Green Tracker](https://rustchain.org/preserved.html) · [Bounties](https://github.com/Scottcjn/rustchain-bounties/issues)
-
-</div>
-
-
-## Contributing
-Please read the [Bounty Board](https://github.com/Scottcjn/rustchain-bounties) for active tasks and rewards.
+MIT

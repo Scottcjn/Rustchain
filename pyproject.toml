@@ -1,16 +1,18 @@
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["node", "."]
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[tool.ruff]
-line-length = 120
-exclude = ["deprecated", "node_backups"]
+[project]
+name = "rustchain"
+version = "0.1.0"
+description = "Python SDK for interacting with RustChain nodes"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+dependencies = ["httpx>=0.25.0", "websockets>=12.0"]
 
-[tool.ruff.lint]
-select = ["E", "F", "W", "B", "I"]
-ignore = ["E501"] # Ignore long lines for legacy code
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "respx>=0.20"]
 
-[tool.mypy]
-python_version = "3.11"
-ignore_missing_imports = true
-exclude = ["deprecated", "node_backups"]
+[project.scripts]
+rustchain = "rustchain.cli:main"
