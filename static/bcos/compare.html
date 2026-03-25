@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BCOS v2 vs Nucleus Verify | RustChain</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap');
+        
+        :root {
+            --terminal-bg: #0a0a0a;
+            --terminal-green: #00ff00;
+            --terminal-dim: #00aa00;
+            --terminal-bright: #33ff33;
+            --terminal-cyan: #00ffff;
+            --terminal-yellow: #ffff00;
+            --terminal-red: #ff3333;
+            --terminal-border: #1a1a1a;
+            --glow-green: 0 0 10px #00ff00, 0 0 20px #00ff00, 0 0 30px #00ff00;
+            --glow-cyan: 0 0 10px #00ffff, 0 0 20px #00ffff;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: var(--terminal-bg);
+            color: var(--terminal-green);
+            font-family: 'Share Tech Mono', 'VT323', monospace;
+            min-height: 100vh;
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+        
+        /* Scanline effect */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.15),
+                rgba(0, 0, 0, 0.15) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            z-index: 1000;
+        }
+        
+        /* CRT flicker */
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 255, 0, 0.02);
+            pointer-events: none;
+            z-index: 999;
+            animation: flicker 0.15s infinite;
+        }
+        
+        @keyframes flicker {
+            0% { opacity: 0.97; }
+            50% { opacity: 1; }
+            100% { opacity: 0.98; }
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        /* Header */
+        .header {
+            border: 2px solid var(--terminal-green);
+            padding: 20px;
+            margin-bottom: 30px;
+            background: rgba(0, 255, 0, 0.05);
+            position: relative;
+        }
+        
+        .header::before {
+            content: '[RTC]';
+            position: absolute;
+            top: -12px;
+            left: 10px;
+            background: var(--terminal-bg);
+            padding: 0 10px;
+            color: var(--terminal-cyan);
+            font-weight: bold;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            text-shadow: var(--glow-green);
+            margin-bottom: 10px;
+            font-family: 'VT323', monospace;
+        }
+        
+        .header .subtitle {
+            color: var(--terminal-cyan);
+            font-size: 1.1em;
+        }
+        
+        .terminal-prompt {
+            color: var(--terminal-cyan);
+            margin-bottom: 20px;
+            font-size: 0.9em;
+        }
+        
+        .terminal-prompt::before {
+            content: '$ ';
+            color: var(--terminal-green);
+        }
+        
+        /* Comparison Section */
+        .comparison-section {
+            border: 1px solid var(--terminal-border);
+            margin-bottom: 30px;
+            position: relative;
+        }
+        
+        .section-header {
+            background: var(--terminal-green);
+            color: var(--terminal-bg);
+            padding: 10px 20px;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        
+        .section-header::before {
+            content: '$ cat /bcos/comparison.txt';
+            opacity: 0.7;
+            margin-right: 20px;
+        }
+        
+        /* Comparison Table */
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .comparison-table th,
+        .comparison-table td {
+            padding: 15px 20px;
+            text-align: left;
+            border-bottom: 1px solid var(--terminal-border);
+        }
+        
+        .comparison-table th {
+            background: rgba(0, 255, 0, 0.1);
+            color: var(--terminal-cyan);
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-size: 0.9em;
+        }
+        
+        .comparison-table th.bcos {
+            color: var(--terminal-green);
+            text-shadow: var(--glow-green);
+        }
+        
+        .comparison-table th.nucleus {
+            color: var(--terminal-yellow);
+        }
+        
+        .comparison-table tr:hover {
+            background: rgba(0, 255, 0, 0.05);
+        }
+        
+        .comparison-table td:first-child {
+            color: var(--terminal-cyan);
+            font-weight: bold;
+        }
+        
+        /* Winner highlighting */
+        .winner {
+            color: var(--terminal-green);
+            text-shadow: 0 0 5px var(--terminal-green);
+        }
+        
+        .winner::before {
+            content: '鉁?';
+        }
+        
+        .loser {
+            color: var(--terminal-red);
+            opacity: 0.8;
+        }
+        
+        .loser::before {
+            content: '鉁?';
+        }
+        
+        /* Feature category */
+        .feature-name {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .feature-icon {
+            font-size: 1.2em;
+        }
+        
+        /* Summary Section */
+        .summary-section {
+            border: 2px solid var(--terminal-green);
+            padding: 20px;
+            margin-top: 30px;
+            background: rgba(0, 255, 0, 0.03);
+        }
+        
+        .summary-header {
+            color: var(--terminal-cyan);
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+        
+        .summary-header::before {
+            content: '> ';
+            color: var(--terminal-green);
+        }
+        
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .stat-box {
+            border: 1px solid var(--terminal-border);
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .stat-box .stat-value {
+            font-size: 2em;
+            color: var(--terminal-green);
+            text-shadow: var(--glow-green);
+            font-family: 'VT323', monospace;
+        }
+        
+        .stat-box .stat-label {
+            color: var(--terminal-dim);
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        
+        /* Links Section */
+        .links-section {
+            margin-top: 30px;
+            padding: 20px;
+            border: 1px solid var(--terminal-border);
+        }
+        
+        .links-header {
+            color: var(--terminal-cyan);
+            margin-bottom: 15px;
+        }
+        
+        .links-header::before {
+            content: '$ ls -la /bcos/';
+        }
+        
+        .link-item {
+            display: inline-block;
+            margin: 5px 10px 5px 0;
+        }
+        
+        .link-item a {
+            color: var(--terminal-green);
+            text-decoration: none;
+            border: 1px solid var(--terminal-green);
+            padding: 8px 15px;
+            display: inline-block;
+            transition: all 0.3s ease;
+        }
+        
+        .link-item a:hover {
+            background: var(--terminal-green);
+            color: var(--terminal-bg);
+            text-shadow: none;
+            box-shadow: var(--glow-green);
+        }
+        
+        .link-item a::before {
+            content: '[>] ';
+        }
+        
+        /* Footer */
+        .footer {
+            margin-top: 40px;
+            padding: 20px;
+            border-top: 1px solid var(--terminal-border);
+            text-align: center;
+            color: var(--terminal-dim);
+            font-size: 0.9em;
+        }
+        
+        .footer a {
+            color: var(--terminal-green);
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            text-shadow: var(--glow-green);
+        }
+        
+        /* ASCII Art Banner */
+        .ascii-banner {
+            font-family: 'VT323', monospace;
+            white-space: pre;
+            font-size: 0.7em;
+            line-height: 1.2;
+            color: var(--terminal-dim);
+            margin-bottom: 20px;
+            overflow-x: auto;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8em;
+            }
+            
+            .comparison-table th,
+            .comparison-table td {
+                padding: 10px;
+                font-size: 0.9em;
+            }
+            
+            .ascii-banner {
+                font-size: 0.5em;
+            }
+        }
+        
+        /* Blinking cursor */
+        .cursor {
+            animation: blink 1s step-end infinite;
+        }
+        
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+        
+        /* Badge styles */
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        
+        .badge-free {
+            background: var(--terminal-green);
+            color: var(--terminal-bg);
+        }
+        
+        .badge-paid {
+            background: var(--terminal-red);
+            color: white;
+        }
+        
+        .badge-open {
+            background: var(--terminal-cyan);
+            color: var(--terminal-bg);
+        }
+        
+        .badge-proprietary {
+            background: var(--terminal-yellow);
+            color: var(--terminal-bg);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>BCOS v2 vs Nucleus Verify</h1>
+            <div class="subtitle">Blockchain Content Orchestration System 鈥?The Open Source Alternative</div>
+        </header>
+        
+        <div class="terminal-prompt">
+            rustchain@node1:~/bcos$ ./compare.sh --verbose<span class="cursor">_</span>
+        </div>
+        
+        <!-- ASCII Art -->
+        <div class="ascii-banner">
+ ____  _____ ____ ___ ____  _____ ____     _   _ ____   ____ ___  _   _  ____ ___ ___  _   _ 
+| __ )| ____/ ___|_ _|  _ \| ____/ ___|   | | | / ___| / ___/ _ \| \ | |/ ___|_ _/ _ \| \ | |
+|  _ \|  _| \___ \| || | | |  _| \___ \   | | | \___ \| |  | | | |  \| | |  _ | | | | |  \| |
+| |_) | |___ ___) | || |_| | |___ ___) |  | |_| |___) | |__| |_| | |\  | |_| || | |_| | |\  |
+|____/|_____|____/___|____/|_____|____/    \___/|____/ \____\___/|_| \_|\____|___\___/|_| \_|
+        </div>
+        
+        <!-- Comparison Table -->
+        <section class="comparison-section">
+            <div class="section-header">Feature Comparison</div>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Feature</th>
+                        <th class="bcos">BCOS v2</th>
+                        <th class="nucleus">Nucleus Verify</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>
+                            <span class="feature-name">
+                                <span class="feature-icon">$</span>
+                                Price
+                            </span>
+                        </td>
+                        <td class="winner">FREE (MIT License) <span class="badge badge-free">OPEN</span></td>
+                        <td class="loser">$20-50/month <span class="badge badge-paid">PAID</span></td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <span class="feature-name">
+                                <span class="feature-icon">&lt;/&gt;</span>
+                                Source Code
+                            </span>
+                        </td>
+                        <td class="winner">Open Source <span class="badge badge-open">PUBLIC</span></td>
+                        <td class="loser">Proprietary <span class="badge badge-proprietary">CLOSED</span></td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <span class="feature-name">
+                                <span class="feature-icon">馃敆</span>
+                                On-Chain Proof
+                            </span>
+                        </td>
+                        <td class="winner">RustChain BLAKE2b Anchoring</td>
+                        <td class="loser">None</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <span class="feature-name">
+                                <span class="feature-icon">馃枼</span>
+                                Offline Scanning
+                            </span>
+                        </td>
+                        <td class="winner">Full Local Engine</td>
+                        <td class="loser">Cloud API Only</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <span class="feature-name">
+                                <span class="feature-icon">鉁?/span>
+                                Human Review
+                            </span>
+                        </td>
+                        <td class="winner">L2 Ed25519 Signatures</td>
+                        <td class="loser">Fully Automated</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <span class="feature-name">
+                                <span class="feature-icon">馃搳</span>
+                                Trust Score
+                            </span>
+                        </td>
+                        <td class="winner">Transparent Formula</td>
+                        <td class="loser">Opaque Algorithm</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <span class="feature-name">
+                                <span class="feature-icon">鈱?/span>
+                                CLI Tool
+                            </span>
+                        </td>
+                        <td class="winner">clawrtc bcos</td>
+                        <td class="loser">Web Only</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <span class="feature-name">
+                                <span class="feature-icon">猸?/span>
+                                Community
+                            </span>
+                        </td>
+                        <td class="winner">183 stars, 18 months</td>
+                        <td class="loser">0 stars, 6 days</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <span class="feature-name">
+                                <span class="feature-icon">馃摐</span>
+                                Documentation
+                            </span>
+                        </td>
+                        <td class="winner">Full API Docs + Guides</td>
+                        <td class="loser">Limited</td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <span class="feature-name">
+                                <span class="feature-icon">馃敀</span>
+                                Data Sovereignty
+                            </span>
+                        </td>
+                        <td class="winner">Self-Hosted Option</td>
+                        <td class="loser">Vendor Lock-in</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+        
+        <!-- Summary Section -->
+        <section class="summary-section">
+            <div class="summary-header">Why Choose BCOS v2?</div>
+            <p>
+                BCOS (Blockchain Content Orchestration System) is a fully open-source verification framework 
+                that puts you in control. With on-chain proof anchoring, transparent trust scoring, and 
+                the ability to run entirely offline, BCOS is built for those who value security, transparency, 
+                and data sovereignty.
+            </p>
+            
+            <div class="summary-stats">
+                <div class="stat-box">
+                    <div class="stat-value">$0</div>
+                    <div class="stat-label">Monthly Cost</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value">10/10</div>
+                    <div class="stat-label">Feature Score</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value">鈭?/div>
+                    <div class="stat-label">API Calls (Self-Host)</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value">183+</div>
+                    <div class="stat-label">GitHub Stars</div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Links Section -->
+        <section class="links-section">
+            <div class="links-header"></div>
+            <div class="link-item">
+                <a href="https://rustchain.org/bcos/">BCOS Verification Page</a>
+            </div>
+            <div class="link-item">
+                <a href="https://github.com/Scottcjn/Rustchain/blob/main/BCOS.md">BCOS Documentation</a>
+            </div>
+            <div class="link-item">
+                <a href="https://rustchain.org">RustChain Home</a>
+            </div>
+            <div class="link-item">
+                <a href="https://github.com/Scottcjn/Rustchain">GitHub Repository</a>
+            </div>
+        </section>
+        
+        <!-- Footer -->
+        <footer class="footer">
+            <p>+--------------------------------------------------+</p>
+            <p>| RustChain v2.2.1-rip200 | Proof of Antiquity     |</p>
+            <p>| BCOS - Open Source Content Verification          |</p>
+            <p>+--------------------------------------------------+</p>
+            <p style="margin-top: 15px;">
+                <a href="https://github.com/Scottcjn/Rustchain">GitHub</a> |
+                <a href="https://rustchain.org/explorer">Explorer</a> |
+                <a href="https://rustchain.org/hall-of-fame/">Hall of Fame</a>
+            </p>
+            <p style="margin-top: 10px;">漏 2024-2026 Elyan Labs. Every CPU deserves dignity.</p>
+        </footer>
+    </div>
+</body>
+</html>
