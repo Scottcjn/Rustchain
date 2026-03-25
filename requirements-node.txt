@@ -4,4 +4,4 @@ requests==2.32.5
 psutil==7.2.2
 
 # Optional: Enhanced features
-gunicorn==25.1.0  # Production WSGI server
+gunicorn==25.2.0  # Production WSGI server
