@@ -353,12 +353,12 @@ def main():
         )
         report = scanner.run_all()
     else:
-        scanner = engine(
-            repo_path=repo_path,
-            tier=tier,
-            reviewer=reviewer,
-            commit_sha=commit_sha
-        )
+        # engine is already a MinimalBCOSScanner instance
+        scanner = engine
+        scanner.repo_path = Path(repo_path).resolve()
+        scanner.tier = tier
+        scanner.reviewer = reviewer
+        scanner.commit_sha = commit_sha or scanner._detect_commit_sha()
         report = scanner.run_all()
     
     # Print summary
