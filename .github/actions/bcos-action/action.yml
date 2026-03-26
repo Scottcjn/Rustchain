@@ -1,0 +1,135 @@
+name: 'BCOS v2 Scanner'
+description: 'Reusable GitHub Action to run BCOS v2 scans and produce trust score attestations'
+author: 'Scottcjn'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  tier:
+    description: 'Certification tier (L0, L1, or L2)'
+    required: false
+    default: 'L1'
+  reviewer:
+    description: 'Human reviewer name (required for L2 tier)'
+    required: false
+    default: ''
+  node-url:
+    description: 'RustChain node URL for anchoring attestations'
+    required: false
+    default: 'https://rustchain.org'
+  repo-path:
+    description: 'Path to repository to scan'
+    required: false
+    default: '.'
+  commit-sha:
+    description: 'Commit SHA to scan (auto-detected from PR if not provided)'
+    required: false
+    default: ''
+  github-token:
+    description: 'GitHub token for posting PR comments'
+    required: false
+    default: ${{ github.token }}
+  post-comment:
+    description: 'Whether to post PR comment with score badge'
+    required: false
+    default: 'true'
+  anchor-on-merge:
+    description: 'Whether to anchor attestation to RustChain on merge'
+    required: false
+    default: 'true'
+
+outputs:
+  trust_score:
+    description: 'Trust score (0-100)'
+    value: ${{ steps.bcos-scan.outputs.trust_score }}
+  cert_id:
+    description: 'BCOS certification ID'
+    value: ${{ steps.bcos-scan.outputs.cert_id }}
+  tier_met:
+    description: 'Whether the tier threshold was met'
+    value: ${{ steps.bcos-scan.outputs.tier_met }}
+  report-json:
+    description: 'Full JSON report (base64 encoded)'
+    value: ${{ steps.bcos-scan.outputs.report-json }}
+  commitment:
+    description: 'BLAKE2b commitment hash for on-chain anchoring'
+    value: ${{ steps.bcos-scan.outputs.commitment }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install BCOS dependencies
+      shell: bash
+      run: |
+        pip install semgrep pip-audit cyclonedx-bom pip-licenses blake2
+
+    - name: Run BCOS scan
+      id: bcos-scan
+      shell: bash
+      env:
+        INPUT_TIER: ${{ inputs.tier }}
+        INPUT_REVIEWER: ${{ inputs.reviewer }}
+        INPUT_REPO_PATH: ${{ inputs.repo-path }}
+        INPUT_COMMIT_SHA: ${{ inputs.commit-sha }}
+        INPUT_NODE_URL: ${{ inputs.node-url }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_POST_COMMENT: ${{ inputs.post-comment }}
+        INPUT_ANCHOR_ON_MERGE: ${{ inputs.anchor-on-merge }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_ACTION: ${{ github.event.action }}
+        PR_MERGED: ${{ github.event.pull_request.merged }}
+        MERGED_COMMIT: ${{ github.event.pull_request.head.sha }}
+      run: |
+        python ${{ github.action_path }}/main.py
+
+    - name: Upload BCOS report artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: bcos-attestation-${{ github.sha }}
+        path: bcos-attestation-*.json
+        retention-days: 30
+
+    - name: Post PR comment with badge
+      if: inputs.post-comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        TRUST_SCORE: ${{ steps.bcos-scan.outputs.trust_score }}
+        CERT_ID: ${{ steps.bcos-scan.outputs.cert_id }}
+        TIER_MET: ${{ steps.bcos-scan.outputs.tier_met }}
+        TIER: ${{ inputs.tier }}
+        COMMIT_SHA: ${{ steps.bcos-scan.outputs.commitment }}
+        REPORT_JSON: ${{ steps.bcos-scan.outputs.report-json }}
+      run: |
+        python ${{ github.action_path }}/post_comment.py
+
+    - name: Anchor attestation on merge
+      if: inputs.anchor-on-merge == 'true' && github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
+      shell: bash
+      env:
+        INPUT_NODE_URL: ${{ inputs.node-url }}
+        CERT_ID: ${{ steps.bcos-scan.outputs.cert_id }}
+        COMMITMENT: ${{ steps.bcos-scan.outputs.commitment }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        MERGED_COMMIT: ${{ github.event.pull_request.head.sha }}
+      run: |
+        echo "Anchoring BCOS attestation to RustChain..."
+        echo "Node: $INPUT_NODE_URL"
+        echo "Cert ID: $CERT_ID"
+        echo "Commitment: $COMMITMENT"
+        echo "Repo: $REPO"
+        echo "PR: #$PR_NUMBER"
+        echo "Merged Commit: $MERGED_COMMIT"
+        python ${{ github.action_path }}/anchor.py
