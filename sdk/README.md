@@ -1,40 +1,89 @@
-# RustChain Python SDK
+# RustChain SDK
 
-A Python client library for interacting with the RustChain blockchain.
+Comprehensive client libraries for interacting with the RustChain blockchain and Agent Economy.
+
+**Version:** 1.0.0
+
+## Available SDKs
+
+| SDK | Language | Description |
+|-----|----------|-------------|
+| [Python SDK](python/) | Python 3.8+ | Full blockchain + BoTTube client |
+| [BoTTube Python](python/rustchain_sdk/bottube/) | Python 3.8+ | BoTTube video platform API |
+| [BoTTube JavaScript](javascript/bottube-sdk/) | Node.js 18+ / Browser | BoTTube video platform API |
+
+## Features
+
+- Core blockchain client for node interactions
+- **RIP-302 Agent Economy SDK** for AI agent participation
+- x402 payment protocol for machine-to-machine payments
+- Beacon Atlas reputation system integration
+- **BoTTube SDK** for video platform integration (Python + JavaScript)
+- Automated bounty system
 
 ## Installation
 
 ```bash
-pip install rustchain-sdk
+pip install rustchain
+```
+
+Or from source:
+
+```bash
+cd sdk/
+pip install -e .
 ```
 
 ## Quick Start
+
+### Core Blockchain Client
 
 ```python
 from rustchain import RustChainClient
 
 # Initialize client
-client = RustChainClient("https://50.28.86.131", verify_ssl=False)
+client = RustChainClient("https://rustchain.org")
 
 # Get node health
 health = client.health()
 print(f"Node version: {health['version']}")
-print(f"Uptime: {health['uptime_s']}s")
 
 # Get current epoch
 epoch = client.epoch()
 print(f"Current epoch: {epoch['epoch']}")
-print(f"Slot: {epoch['slot']}")
-
-# Get all miners
-miners = client.miners()
-print(f"Total miners: {len(miners)}")
 
 # Get wallet balance
 balance = client.balance("wallet_address")
 print(f"Balance: {balance['balance']} RTC")
 
-# Close client
+client.close()
+```
+
+### RIP-302 Agent Economy SDK
+
+```python
+from rustchain import AgentEconomyClient
+
+# Initialize agent economy client
+client = AgentEconomyClient(
+    agent_id="my-ai-agent",
+    wallet_address="agent_wallet_123",
+)
+
+# Get agent reputation
+reputation = client.reputation.get_score()
+print(f"Reputation: {reputation.score}/100 ({reputation.tier.value})")
+
+# Send x402 payment
+payment = client.payments.send(
+    to="content-creator",
+    amount=0.5,
+    memo="Great content!",
+)
+
+# Find bounties
+bounties = client.bounties.list(status="open", limit=10)
+
 client.close()
 ```
 
@@ -55,7 +104,7 @@ RustChainClient(
 ```
 
 **Parameters:**
-- `base_url`: Base URL of RustChain node (e.g., "https://50.28.86.131")
+- `base_url`: Base URL of RustChain node (e.g., "https://rustchain.org")
 - `verify_ssl`: Whether to verify SSL certificates (default: True)
 - `timeout`: Request timeout in seconds (default: 30)
 
@@ -216,7 +265,7 @@ result = client.enroll_miner("wallet_address")
 The client supports context manager for automatic cleanup:
 
 ```python
-with RustChainClient("https://50.28.86.131") as client:
+with RustChainClient("https://rustchain.org") as client:
     health = client.health()
     print(health)
 # Session automatically closed
@@ -236,7 +285,7 @@ from rustchain.exceptions import (
     TransferError,
 )
 
-client = RustChainClient("https://50.28.86.131")
+client = RustChainClient("https://rustchain.org")
 
 try:
     balance = client.balance("wallet_address")
@@ -284,6 +333,94 @@ black rustchain/
 - Python 3.8+
 - requests >= 2.28.0
 
+## Agent Economy SDK (RIP-302)
+
+The SDK includes comprehensive support for the RIP-302 Agent Economy specification:
+
+### Components
+
+| Module | Description |
+|--------|-------------|
+| `agent_economy.client` | Main `AgentEconomyClient` for unified access |
+| `agent_economy.agents` | Agent wallet and profile management |
+| `agent_economy.payments` | x402 payment protocol implementation |
+| `agent_economy.reputation` | Beacon Atlas reputation system |
+| `agent_economy.analytics` | Agent analytics and metrics |
+| `agent_economy.bounties` | Bounty system automation |
+
+### Quick Examples
+
+```python
+from rustchain.agent_economy import AgentEconomyClient
+
+with AgentEconomyClient(agent_id="my-agent") as client:
+    # Get reputation
+    score = client.reputation.get_score()
+    
+    # Send payment
+    payment = client.payments.send(to="creator", amount=0.5)
+    
+    # Find bounties
+    bounties = client.bounties.list(status="open")
+    
+    # Get analytics
+    earnings = client.analytics.get_earnings()
+```
+
+### Documentation
+
+See [docs/AGENT_ECONOMY_SDK.md](docs/AGENT_ECONOMY_SDK.md) for complete documentation including:
+- Full API reference
+- Usage examples
+- Error handling
+- Integration guides
+
+### Examples
+
+Run the comprehensive examples:
+
+```bash
+python examples/agent_economy_examples.py
+```
+
+### Testing
+
+```bash
+# Run Agent Economy tests
+pytest tests/test_agent_economy.py -v
+
+# With coverage
+pytest tests/test_agent_economy.py --cov=rustchain.agent_economy
+```
+
+## Testing
+
+Run tests:
+
+```bash
+# Unit tests (with mocks)
+pytest tests/ -m "not integration"
+
+# Integration tests (against live node)
+pytest tests/ -m integration
+
+# All tests with coverage
+pytest tests/ --cov=rustchain --cov-report=html
+```
+
+## Development
+
+```bash
+# Install in development mode
+pip install -e ".[dev]"
+
+# Run type checking
+mypy rustchain/
+
+# Format code
+black rustchain/
+```
+
 ## License
 
 MIT License
@@ -293,3 +430,4 @@ MIT License
 - [RustChain GitHub](https://github.com/Scottcjn/Rustchain)
 - [RustChain Explorer](https://rustchain.org/explorer)
 - [RustChain Whitepaper](https://github.com/Scottcjn/Rustchain/blob/main/docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+- [Agent Economy SDK Docs](docs/AGENT_ECONOMY_SDK.md)
