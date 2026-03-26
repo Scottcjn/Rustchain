@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  health-dashboard:
+    build: .
+    container_name: rustchain-health-dashboard
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - POLLING_INTERVAL=60
+      # Optional: Enable notifications
+      # - DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+      # - TELEGRAM_BOT_TOKEN=...
+      # - TELEGRAM_CHAT_ID=...
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/api/status', timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - rustchain
+
+networks:
+  rustchain:
+    driver: bridge
