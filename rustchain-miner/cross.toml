@@ -1,0 +1,10 @@
+[build-dependencies]
+cross-rs = { version = "0.2", optional = true }
+
+[target.riscv64gc-unknown-linux-gnu]
+# RISC-V 64-bit with glibc (most common Linux distribution target)
+image = "riscv64gc/unknown-linux-gnu:latest"
+
+[target.riscv64gc-unknown-linux-musl]
+# RISC-V 64-bit with musl libc (static binary target)
+image = "riscv64gc/riscv64gc-unknown-linux-musl:latest"
