@@ -40,6 +40,19 @@ from flask_cors import CORS
 
 RUSTCHAIN_NODE = os.environ.get("RUSTCHAIN_NODE", "https://50.28.86.131")
 DB_PATH = os.environ.get("OTC_DB_PATH", "otc_bridge.db")
+
+# TLS verification: defaults to True (secure).
+# Set RUSTCHAIN_TLS_VERIFY=false only for local development with self-signed certs.
+# Prefer RUSTCHAIN_CA_BUNDLE to point at a pinned CA/cert file instead of disabling.
+_tls_verify_env = os.environ.get("RUSTCHAIN_TLS_VERIFY", "true").strip().lower()
+_ca_bundle = os.environ.get("RUSTCHAIN_CA_BUNDLE", "").strip()
+if _ca_bundle and os.path.isfile(_ca_bundle):
+    TLS_VERIFY = _ca_bundle          # Path to pinned cert / CA bundle
+elif _tls_verify_env in ("false", "0", "no"):
+    TLS_VERIFY = False                # Explicit opt-out (dev only)
+else:
+    TLS_VERIFY = True                 # Default: full CA verification
+
 ESCROW_WALLET = "otc_bridge_escrow"
 ORDER_TTL_DEFAULT = 7 * 86400       # 7 days
 ORDER_TTL_MAX = 30 * 86400          # 30 days
@@ -214,7 +227,7 @@ def rtc_get_balance(wallet_id):
         r = requests.get(
             f"{RUSTCHAIN_NODE}/wallet/balance",
             params={"miner_id": wallet_id},
-            verify=False, timeout=10
+            verify=TLS_VERIFY, timeout=10
         )
         if r.ok:
             data = r.json()
@@ -238,7 +251,7 @@ def rtc_create_escrow_job(poster_wallet, amount_rtc, title, description):
                 "ttl_seconds": ORDER_TTL_DEFAULT,
                 "tags": ["otc_bridge", "escrow"]
             },
-            verify=False, timeout=15
+            verify=TLS_VERIFY, timeout=15
         )
         if r.ok:
             data = r.json()
@@ -257,7 +270,7 @@ def rtc_release_escrow(job_id, poster_wallet):
         r = requests.post(
             f"{RUSTCHAIN_NODE}/agent/jobs/{job_id}/accept",
             json={"poster_wallet": poster_wallet},
-            verify=False, timeout=15
+            verify=TLS_VERIFY, timeout=15
         )
         return r.ok
     except Exception as e:
@@ -271,7 +284,7 @@ def rtc_cancel_escrow(job_id, poster_wallet):
         r = requests.post(
             f"{RUSTCHAIN_NODE}/agent/jobs/{job_id}/cancel",
             json={"poster_wallet": poster_wallet},
-            verify=False, timeout=15
+            verify=TLS_VERIFY, timeout=15
         )
         return r.ok
     except Exception as e:
@@ -638,7 +651,7 @@ def confirm_order(order_id):
             claim_r = requests.post(
                 f"{RUSTCHAIN_NODE}/agent/jobs/{order['escrow_job_id']}/claim",
                 json={"worker_wallet": "otc_bridge_worker"},
-                verify=False, timeout=15
+                verify=TLS_VERIFY, timeout=15
             )
 
             if claim_r.ok or "not open" in claim_r.text.lower():
@@ -649,7 +662,7 @@ def confirm_order(order_id):
                         "worker_wallet": "otc_bridge_worker",
                         "result_summary": f"OTC trade confirmed. Order: {order_id}. Quote TX: {quote_tx}"
                     },
-                    verify=False, timeout=15
+                    verify=TLS_VERIFY, timeout=15
                 )
 
                 # Accept (releases funds to otc_bridge_worker, then we transfer to actual recipient)
@@ -657,7 +670,7 @@ def confirm_order(order_id):
                     accept_r = requests.post(
                         f"{RUSTCHAIN_NODE}/agent/jobs/{order['escrow_job_id']}/accept",
                         json={"poster_wallet": escrow_poster, "rating": 5},
-                        verify=False, timeout=15
+                        verify=TLS_VERIFY, timeout=15
                     )
                     if not accept_r.ok:
                         log.error(f"Escrow accept failed: {accept_r.text}")

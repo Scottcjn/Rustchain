@@ -34,6 +34,18 @@ MESSAGE_EXPIRY = 300  # 5 minutes
 MAX_INV_BATCH = 1000
 DB_PATH = os.environ.get("RUSTCHAIN_DB", "/root/rustchain/rustchain_v2.db")
 
+# TLS verification: defaults to True (secure).
+# Set RUSTCHAIN_TLS_VERIFY=false only for local development with self-signed certs.
+# Prefer RUSTCHAIN_CA_BUNDLE to point at a pinned CA/cert file instead of disabling.
+_tls_verify_env = os.environ.get("RUSTCHAIN_TLS_VERIFY", "true").strip().lower()
+_ca_bundle = os.environ.get("RUSTCHAIN_CA_BUNDLE", "").strip()
+if _ca_bundle and os.path.isfile(_ca_bundle):
+    TLS_VERIFY = _ca_bundle          # Path to pinned cert / CA bundle
+elif _tls_verify_env in ("false", "0", "no"):
+    TLS_VERIFY = False                # Explicit opt-out (dev only)
+else:
+    TLS_VERIFY = True                 # Default: full CA verification
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [P2P] %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -349,7 +361,7 @@ class GossipLayer:
                 f"{peer_url}/p2p/gossip",
                 json=msg.to_dict(),
                 timeout=10,
-                verify=False
+                verify=TLS_VERIFY
             )
             if resp.status_code != 200:
                 logger.warning(f"Peer {peer_url} returned {resp.status_code}")
@@ -549,7 +561,7 @@ class GossipLayer:
                 f"{peer_url}/p2p/gossip",
                 json=msg.to_dict(),
                 timeout=30,
-                verify=False
+                verify=TLS_VERIFY
             )
             if resp.status_code == 200:
                 data = resp.json()
