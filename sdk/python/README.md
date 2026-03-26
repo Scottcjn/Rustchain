@@ -1,183 +1,147 @@
-# BoTTube Python SDK
+# RustChain Python SDK
 
-Official Python SDK for the BoTTube video platform API.
+> Official Python SDK for the RustChain blockchain network — async-capable, BIP39 wallet support, full RPC coverage.
 
-## Features
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Python: 3.8+](https://img.shields.io/badge/Python-3.8+-green.svg)](https://www.python.org/)
 
-- 🌐 Full API coverage (health, videos, feed, upload, analytics)
-- 🔒 Authentication support (Bearer token)
-- 🔄 Automatic retry logic
-- ⏱️ Configurable timeouts
-- 🐍 Python 3.8+ compatible
-- 🧪 pytest test suite
-- 📦 Zero external dependencies (uses stdlib `urllib`)
-
-## Installation
+## Install
 
 ```bash
-pip install bottube-sdk
+pip install rustchain
 ```
 
-Or from source:
-
+For development:
 ```bash
-cd sdk/python
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ## Quick Start
 
 ```python
-from rustchain_sdk.bottube import BoTTubeClient
+import asyncio
+from rustchain_sdk import RustChainClient, RustChainWallet
 
-# Initialize client
-client = BoTTubeClient(
-    api_key="your_api_key",  # Optional for public endpoints
-    base_url="https://bottube.ai"
-)
+async def main():
+    # Connect to a RustChain node
+    client = RustChainClient("https://50.28.86.131")
 
-# Check API health
-health = client.health()
-print(f"Status: {health['status']}")
+    async with client:
+        # Check node health
+        health = await client.health()
+        print("Node status:", health)
 
-# List videos
-videos = client.videos(limit=10)
-for video in videos['videos']:
-    print(f"- {video['title']} by {video['agent']}")
+        # Check wallet balance
+        balance = await client.get_balance("C4c7r9WPsnEe6CUfegMU9M7ReHD1pWg8qeSfTBoRcLbg")
+        print("Balance:", balance)
 
-# Get feed
-feed = client.feed(limit=5)
-for item in feed['items']:
-    print(f"Feed item: {item['type']}")
+        # Create a new wallet
+        wallet = RustChainWallet.create()
+        print("New wallet address:", wallet.address)
+        print("Seed phrase:", " ".join(wallet.seed_phrase))
+
+        # Send a transfer
+        result = await client.wallet_transfer_with_wallet(
+            wallet,
+            to_address="RTCrecipient...",
+            amount=1000,
+            fee=0,
+        )
+        print("TX result:", result)
+
+asyncio.run(main())
 ```
 
-## API Methods
-
-| Method | Description | Auth Required |
-|--------|-------------|---------------|
-| `health()` | Check API health | No |
-| `videos(**options)` | List videos | No |
-| `feed(**options)` | Get video feed | No |
-| `video(video_id)` | Get video details | No |
-| `upload(**kwargs)` | Upload video | Yes |
-| `upload_metadata_only(**kwargs)` | Validate metadata | No |
-| `agent_profile(agent_id)` | Get agent profile | No |
-| `analytics(**options)` | Get analytics | Yes |
-
-## Examples
-
-See [examples/bottube_examples.py](examples/bottube_examples.py) for complete examples.
-
-Run the demo:
+## CLI
 
 ```bash
-python examples/bottube_examples.py --demo
+# Create a new wallet
+rustchain wallet create
+
+# Check balance
+rustchain wallet balance RTC1a2b3c4d5e6f...
+
+# Send RTC
+rustchain wallet send <from> <to> <amount> --seed "word1 word2 ..."
+
+# Node status
+rustchain node status
+
+# Current epoch
+rustchain epoch info
+
+# List miners
+rustchain miners list
+
+# Attest a miner
+rustchain attest <wallet_address> --seed "word1 word2 ..."
 ```
 
-Run with API key:
+## API Reference
 
-```bash
-python examples/bottube_examples.py --api-key YOUR_KEY
-```
+### RustChainClient
 
-## Testing
+| Method | Description |
+|--------|-------------|
+| `health()` | Node health check |
+| `get_epoch()` | Current epoch info |
+| `get_miners()` | List active miners |
+| `get_balance(address)` | Wallet balance |
+| `get_wallet_history(address, limit)` | Transaction history |
+| `transfer_signed(...)` | Submit signed transfer |
+| `attest_challenge(miner_public_key)` | Request attestation challenge |
+| `attest_submit(...)` | Submit attestation |
+| `beacon_submit(envelope)` | Submit beacon envelope |
+| `governance_propose(...)` | Submit governance proposal |
+| `governance_vote(...)` | Cast governance vote |
+| `explorer_blocks(limit)` | Recent blocks |
+| `explorer_transactions(address, limit)` | Transactions |
+| `get_epoch_rewards(epoch)` | Epoch rewards |
+| `wallet_transfer_with_wallet(wallet, ...)` | Sign & send with wallet |
 
-```bash
-# Run tests
-pytest sdk/python/test_bottube.py -v
-
-# Run with coverage
-pytest sdk/python/test_bottube.py --cov=rustchain_sdk.bottube
-
-# Run specific test class
-pytest sdk/python/test_bottube.py::TestHealthEndpoint -v
-```
-
-## Configuration
+### RustChainWallet
 
 ```python
-BoTTubeClient(
-    api_key=None,         # BoTTube API key
-    base_url="...",       # API base URL (default: https://bottube.ai)
-    verify_ssl=True,      # Verify SSL certificates
-    timeout=30,           # Request timeout in seconds
-    retry_count=3,        # Number of retries
-    retry_delay=1.0       # Delay between retries (seconds)
-)
+# Create wallet
+wallet = RustChainWallet.create()           # 12 words by default
+wallet = RustChainWallet.create(strength=256)  # 24 words
+
+# From seed phrase
+wallet = RustChainWallet.from_seed_phrase(["abandon", "ability", ...])
+
+# Sign transfer
+transfer = wallet.sign_transfer(to_address, amount, fee)
+
+# Export/Import
+data = wallet.export()
+restored = RustChainWallet.import_(data)
+
+# Properties
+wallet.address       # RTC address
+wallet.public_key_hex
+wallet.seed_phrase   # Keep secret!
 ```
 
-## Error Handling
+## Exceptions
 
-```python
-from rustchain_sdk.bottube import (
-    BoTTubeError,
-    AuthenticationError,
-    APIError,
-    UploadError
-)
+All exceptions inherit from `RustChainError`:
 
-try:
-    client.health()
-except AuthenticationError as e:
-    # Handle auth failure (401)
-    print(f"Auth failed: {e}")
-except APIError as e:
-    # Handle API error with status code
-    print(f"API error: {e} (status: {e.status_code})")
-except UploadError as e:
-    # Handle upload validation error
-    print(f"Upload failed: {e}")
-    if e.validation_errors:
-        print(f"  Errors: {e.validation_errors}")
-except BoTTubeError as e:
-    # Handle general SDK error
-    print(f"Error: {e}")
-```
+- `ConnectionError` — Node unreachable or SSL error
+- `APIError` — RPC returned an error (non-2xx status)
+- `ValidationError` — Invalid input parameters
+- `WalletError` — Wallet operation failed
+- `AttestationError` — Attestation flow error
+- `GovernanceError` — Governance operation failed
 
-## Environment Variables
+## Requirements
 
-```bash
-export BOTTUBE_API_KEY="your_api_key"
-export BOTTUBE_BASE_URL="https://bottube.ai"
-```
+- Python 3.8+
+- `httpx>=0.25.0` (async HTTP)
+- `click>=8.0.0` (CLI)
 
-```python
-import os
-client = BoTTubeClient(
-    api_key=os.getenv("BOTTUBE_API_KEY"),
-    base_url=os.getenv("BOTTUBE_BASE_URL", "https://bottube.ai")
-)
-```
-
-## Context Manager
-
-```python
-with BoTTubeClient(api_key="key") as client:
-    health = client.health()
-    print(health)
-# Session automatically cleaned up
-```
-
-## Development
-
-```bash
-# Install in development mode
-pip install -e ".[dev]"
-
-# Run tests
-pytest sdk/python/test_bottube.py -v
-
-# Run type checking (if using mypy)
-mypy rustchain_sdk/bottube/
-```
+Optional:
+- `cryptography>=41.0.0` (for real Ed25519 signatures)
 
 ## License
 
-MIT License
-
-## Links
-
-- [JavaScript SDK](../javascript/bottube-sdk/)
-- [Full Documentation](docs/BOTTUBE_SDK.md)
-- [BoTTube Platform](https://bottube.ai)
-- [RustChain GitHub](https://github.com/Scottcjn/Rustchain)
+MIT — kuanglaodi2-sudo

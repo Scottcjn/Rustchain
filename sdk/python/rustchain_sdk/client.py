@@ -1,306 +1,545 @@
 """
-RustChain API Client
+RustChain Async HTTP Client
+Provides async access to the RustChain network RPC API.
 """
 
-import asyncio
-import ssl
-import urllib.request
+import httpx
 import json
-from typing import Optional, Dict, Any, List
-from urllib.error import URLError, HTTPError
+from typing import Dict, List, Any, Optional
 
-
-class RustChainError(Exception):
-    """Base exception for RustChain SDK"""
-    pass
-
-
-class AuthenticationError(RustChainError):
-    """Authentication related errors"""
-    pass
-
-
-class APIError(RustChainError):
-    """API request errors"""
-    def __init__(self, message: str, status_code: Optional[int] = None):
-        super().__init__(message)
-        self.status_code = status_code
+from .exceptions import (
+    RustChainError,
+    ConnectionError as RCConnectionError,
+    APIError,
+    ValidationError,
+)
 
 
 class RustChainClient:
     """
-    RustChain Network API Client
-    
+    Async HTTP client for the RustChain blockchain network.
+
+    Args:
+        base_url: Base URL of the RustChain node RPC endpoint.
+                   Defaults to "https://50.28.86.131".
+        timeout: Request timeout in seconds. Defaults to 30.
+
     Example:
+        import asyncio
         from rustchain_sdk import RustChainClient
-        
-        client = RustChainClient("https://50.28.86.131")
-        health = client.health()
-        miners = client.get_miners()
-        balance = client.get_balance("my-wallet")
+
+        async def main():
+            client = RustChainClient()
+            health = await client.health()
+            print(health)
+            balance = await client.get_balance("RTC...")
+            print(balance)
+
+        asyncio.run(main())
     """
-    
+
     def __init__(
         self,
         base_url: str = "https://50.28.86.131",
-        verify_ssl: bool = False,
-        timeout: int = 30,
-        retry_count: int = 3,
-        retry_delay: float = 1.0
+        timeout: float = 30.0,
     ):
-        """
-        Initialize RustChain Client
-        
-        Args:
-            base_url: Base URL of the RustChain node API
-            verify_ssl: Enable SSL verification (disabled by default for self-signed cert)
-            timeout: Request timeout in seconds
-            retry_count: Number of retries on failure
-            retry_delay: Delay between retries (seconds)
-        """
-        self.base_url = base_url.rstrip("/")
-        self.verify_ssl = verify_ssl
-        self.timeout = timeout
-        self.retry_count = retry_count
-        self.retry_delay = retry_delay
-        
-        if not verify_ssl:
-            self._ctx = ssl.create_default_context()
-            self._ctx.check_hostname = False
-            self._ctx.verify_mode = ssl.CERT_NONE
-        else:
-            self._ctx = None
-    
-    def _request(self, method: str, endpoint: str, data: Optional[Dict] = None) -> Dict:
-        """Make HTTP request with retry logic"""
-        import time
-        
-        url = f"{self.base_url}{endpoint}"
-        
-        for attempt in range(self.retry_count):
-            try:
-                req = urllib.request.Request(
-                    url,
-                    data=json.dumps(data).encode('utf-8') if data else None,
-                    headers={
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    method=method
-                )
-                
-                with urllib.request.urlopen(
-                    req, 
-                    context=self._ctx, 
-                    timeout=self.timeout
-                ) as response:
-                    return json.loads(response.read().decode('utf-8'))
-                    
-            except HTTPError as e:
-                if attempt == self.retry_count - 1:
-                    raise APIError(f"HTTP Error: {e.reason}", e.code)
-            except URLError as e:
-                if attempt == self.retry_count - 1:
-                    raise APIError(f"Connection Error: {e.reason}")
-            except Exception as e:
-                if attempt == self.retry_count - 1:
-                    raise APIError(f"Request failed: {str(e)}")
-            
-            if attempt < self.retry_count - 1:
-                time.sleep(self.retry_delay * (attempt + 1))
-        
-        raise APIError("Max retries exceeded")
-    
-    def _get(self, endpoint: str) -> Dict:
-        """GET request"""
-        return self._request("GET", endpoint)
-    
-    def _post(self, endpoint: str, data: Dict) -> Dict:
-        """POST request"""
-        return self._request("POST", endpoint, data)
-    
-    # ========== API Methods ==========
-    
-    def health(self) -> Dict[str, Any]:
-        """
-        Get node health status
-        
-        Returns:
-            Dict with keys: ok, version, uptime_s, db_rw, etc.
-        
-        Example:
-            >>> client.health()
-            {'ok': True, 'version': '2.2.1-rip200', 'uptime_s': 140828, ...}
-        """
-        return self._get("/health")
-    
-    def get_miners(self) -> List[Dict[str, Any]]:
-        """
-        Get list of active miners
-        
-        Returns:
-            List of miner dictionaries with keys: miner, antiquity_multiplier, 
-            device_arch, device_family, hardware_type, last_attest, etc.
-        
-        Example:
-            >>> client.get_miners()
-            [{'miner': 'windows-gaming-121', 'antiquity_multiplier': 1.0, ...}, ...]
-        """
-        return self._get("/api/miners")
-    
-    def get_balance(self, miner_id: str) -> Dict[str, Any]:
-        """
-        Get wallet balance for a miner
-        
-        Args:
-            miner_id: Miner wallet ID (e.g., "my-wallet" or "RTC...")
-        
-        Returns:
-            Dict with balance information
-        
-        Example:
-            >>> client.get_balance("my-wallet")
-            {'balance': 100.5, 'miner_id': 'my-wallet', ...}
-        """
-        return self._get(f"/wallet/balance?miner_id={miner_id}")
-    
-    def get_epoch(self) -> Dict[str, Any]:
-        """
-        Get current epoch information
-        
-        Returns:
-            Dict with keys: epoch, blocks_per_epoch, epoch_pot, slot, etc.
-        
-        Example:
-            >>> client.get_epoch()
-            {'epoch': 92, 'blocks_per_epoch': 144, 'epoch_pot': 1.5, ...}
-        """
-        return self._get("/epoch")
-    
-    def check_eligibility(self, miner_id: str) -> Dict[str, Any]:
-        """
-        Check lottery eligibility for a miner
-        
-        Args:
-            miner_id: Miner wallet ID
-        
-        Returns:
-            Dict with keys: eligible, slot, slot_producer, rotation_size, etc.
-        
-        Example:
-            >>> client.check_eligibility("my-wallet")
-            {'eligible': True, 'slot': 13365, 'slot_producer': '...', ...}
-        """
-        return self._get(f"/lottery/eligibility?miner_id={miner_id}")
-    
-    def submit_attestation(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Submit attestation to the network
-        
-        Args:
-            payload: Attestation payload dictionary
-        
-        Returns:
-            Dict with submission result
-        
-        Example:
-            >>> payload = {"miner_id": "my-wallet", "signature": "..."}
-            >>> client.submit_attestation(payload)
-            {'success': True, 'tx_hash': '...'}
-        """
-        return self._post("/attest/submit", payload)
-    
-    def transfer(
-        self, 
-        from_wallet: str, 
-        to_wallet: str, 
-        amount: float,
-        private_key: str
+        self._base_url = base_url.rstrip("/")
+        self._timeout = timeout
+        self._client: Optional[httpx.AsyncClient] = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Lazily create the HTTP client."""
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                base_url=self._base_url,
+                timeout=self._timeout,
+                verify=False,  # Self-signed certs
+            )
+        return self._client
+
+    async def _post(
+        self,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+        json_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
-        Transfer RTC between wallets
-        
+        Internal POST helper.
+
         Args:
-            from_wallet: Source wallet ID
-            to_wallet: Destination wallet ID
-            amount: Amount of RTC to transfer
-            private_key: Private key for signing
-        
+            path: API endpoint path (e.g. "/health").
+            params: Optional query parameters.
+            json_data: Optional JSON body.
+
         Returns:
-            Dict with transfer result
-        
-        Example:
-            >>> client.transfer("wallet-a", "wallet-b", 10.0, "private-key")
-            {'success': True, 'tx_hash': '...'}
+            Parsed JSON response.
+
+        Raises:
+            RCConnectionError: On connection failure.
+            APIError: On API-level errors.
         """
-        payload = {
-            "from": from_wallet,
-            "to": to_wallet,
-            "amount": amount,
-            "private_key": private_key
-        }
-        return self._post("/wallet/transfer/signed", payload)
-    
-    # ========== Async Methods ==========
-    
-    async def async_health(self) -> Dict[str, Any]:
-        """Async version of health()"""
-        return await self._async_request("GET", "/health")
-    
-    async def async_get_miners(self) -> List[Dict[str, Any]]:
-        """Async version of get_miners()"""
-        return await self._async_request("GET", "/api/miners")
-    
-    async def async_get_balance(self, miner_id: str) -> Dict[str, Any]:
-        """Async version of get_balance()"""
-        return await self._async_request("GET", f"/wallet/balance?miner_id={miner_id}")
-    
-    async def async_get_epoch(self) -> Dict[str, Any]:
-        """Async version of get_epoch()"""
-        return await self._async_request("GET", "/epoch")
-    
-    async def async_check_eligibility(self, miner_id: str) -> Dict[str, Any]:
-        """Async version of check_eligibility()"""
-        return await self._async_request("GET", f"/lottery/eligibility?miner_id={miner_id}")
-    
-    async def async_submit_attestation(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Async version of submit_attestation()"""
-        return await self._async_request("POST", "/attest/submit", payload)
-    
-    async def _async_request(
-        self, 
-        method: str, 
-        endpoint: str, 
-        data: Optional[Dict] = None
-    ) -> Dict:
-        """Async HTTP request"""
-        import aiohttp
-        
-        url = f"{self.base_url}{endpoint}"
-        timeout = aiohttp.ClientTimeout(total=self.timeout)
-        
-        ssl_context = self._ctx if not self.verify_ssl else None
-        
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.request(
-                method, 
-                url, 
-                json=data,
-                ssl=ssl_context if ssl_context else None
-            ) as response:
-                return await response.json()
+        try:
+            client = await self._get_client()
+            response = await client.post(
+                path,
+                params=params,
+                json=json_data,
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.ConnectError as e:
+            raise RCConnectionError(f"Failed to connect to {self._base_url}: {e}")
+        except httpx.HTTPStatusError as e:
+            try:
+                error_body = e.response.json()
+                message = error_body.get("message", str(e))
+            except Exception:
+                message = str(e)
+            raise APIError(
+                f"API error {e.response.status_code}: {message}",
+                status_code=e.response.status_code,
+            )
+        except Exception as e:
+            raise RustChainError(f"Unexpected error: {e}")
 
+    async def _get(
+        self,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Internal GET helper.
 
-# Convenience function for quick usage
-def create_client(
-    base_url: str = "https://50.28.86.131",
-    **kwargs
-) -> RustChainClient:
-    """
-    Create a RustChain client with default settings
-    
-    Example:
-        >>> client = create_client()
-        >>> health = client.health()
-    """
-    return RustChainClient(base_url=base_url, **kwargs)
+        Args:
+            path: API endpoint path.
+            params: Optional query parameters.
+
+        Returns:
+            Parsed JSON response.
+
+        Raises:
+            RCConnectionError: On connection failure.
+            APIError: On API-level errors.
+        """
+        try:
+            client = await self._get_client()
+            response = await client.get(path, params=params)
+            response.raise_for_status()
+            return response.json()
+        except httpx.ConnectError as e:
+            raise RCConnectionError(f"Failed to connect to {self._base_url}: {e}")
+        except httpx.HTTPStatusError as e:
+            try:
+                error_body = e.response.json()
+                message = error_body.get("message", str(e))
+            except Exception:
+                message = str(e)
+            raise APIError(
+                f"API error {e.response.status_code}: {message}",
+                status_code=e.response.status_code,
+            )
+        except Exception as e:
+            raise RustChainError(f"Unexpected error: {e}")
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+    async def __aenter__(self) -> "RustChainClient":
+        return self
+
+    async def __aexit__(self, *args) -> None:
+        await self.close()
+
+    # ─────────────────────────────────────────────────────────────────
+    # Health & Network
+    # ─────────────────────────────────────────────────────────────────
+
+    async def health(self) -> Dict[str, Any]:
+        """
+        Check node health status.
+
+        Returns:
+            Health status dict with node info.
+        """
+        return await self._get("/health")
+
+    async def get_epoch(self) -> Dict[str, Any]:
+        """
+        Get current epoch information.
+
+        Returns:
+            Dict with epoch number, start_time, end_time, etc.
+        """
+        return await self._get("/epoch")
+
+    async def get_headers_tip(self) -> Dict[str, Any]:
+        """
+        Get the current headers tip (chain head).
+
+        Returns:
+            Dict with header height, hash, timestamp, etc.
+        """
+        return await self._get("/headers/tip")
+
+    # ─────────────────────────────────────────────────────────────────
+    # Miners & Attestation
+    # ─────────────────────────────────────────────────────────────────
+
+    async def get_miners(self) -> List[Dict[str, Any]]:
+        """
+        Get list of active miners.
+
+        Returns:
+            List of miner info dicts.
+        """
+        result = await self._get("/miners")
+        if isinstance(result, list):
+            return result
+        return result.get("miners", [])
+
+    async def get_attestation_status(self, miner_public_key: str) -> Dict[str, Any]:
+        """
+        Get attestation status for a miner.
+
+        Args:
+            miner_public_key: The miner's public key.
+
+        Returns:
+            Attestation status dict.
+        """
+        return await self._get(
+            "/attestation/status",
+            params={"miner_public_key": miner_public_key},
+        )
+
+    async def attest_challenge(self, miner_public_key: str) -> Dict[str, Any]:
+        """
+        Request an attestation challenge for a miner.
+
+        Args:
+            miner_public_key: The miner's public key.
+
+        Returns:
+            Challenge dict with challenge string and expiry.
+        """
+        return await self._post(
+            "/attestation/challenge",
+            json_data={"miner_public_key": miner_public_key},
+        )
+
+    async def attest_submit(
+        self,
+        miner_public_key: str,
+        challenge_response: str,
+        signature: str,
+    ) -> Dict[str, Any]:
+        """
+        Submit an attestation response.
+
+        Args:
+            miner_public_key: The miner's public key.
+            challenge_response: The challenge response string.
+            signature: Ed25519 signature over the challenge.
+
+        Returns:
+            Submission result dict.
+        """
+        return await self._post(
+            "/attestation/submit",
+            json_data={
+                "miner_public_key": miner_public_key,
+                "challenge_response": challenge_response,
+                "signature": signature,
+            },
+        )
+
+    async def get_bounty_multiplier(self) -> Dict[str, Any]:
+        """
+        Get the current bounty multiplier for attestation.
+
+        Returns:
+            Bounty multiplier info.
+        """
+        return await self._get("/attestation/bounty_multiplier")
+
+    # ─────────────────────────────────────────────────────────────────
+    # Wallet & Balances
+    # ─────────────────────────────────────────────────────────────────
+
+    async def get_balance(self, wallet_address: str) -> Dict[str, Any]:
+        """
+        Get balance for a wallet address.
+
+        Args:
+            wallet_address: The RTC wallet address.
+
+        Returns:
+            Dict with balance, nonce, etc.
+        """
+        return await self._get(
+            "/wallet/balance",
+            params={"address": wallet_address},
+        )
+
+    async def get_wallet_balance(self, miner_id: str) -> Dict[str, Any]:
+        """
+        Get wallet balance by miner ID.
+
+        Args:
+            miner_id: The miner identifier.
+
+        Returns:
+            Dict with wallet balance info.
+        """
+        return await self._get(
+            "/wallet/balance",
+            params={"miner_id": miner_id},
+        )
+
+    async def get_wallet_history(
+        self,
+        wallet_address: str,
+        limit: int = 50,
+    ) -> Dict[str, Any]:
+        """
+        Get transaction history for a wallet.
+
+        Args:
+            wallet_address: The wallet address.
+            limit: Max number of transactions to return.
+
+        Returns:
+            Dict with transactions list and metadata.
+        """
+        return await self._get(
+            "/wallet/history",
+            params={"address": wallet_address, "limit": limit},
+        )
+
+    async def wallet_transfer_with_wallet(
+        self,
+        wallet,
+        to_address: str,
+        amount: int,
+        fee: int = 0,
+    ) -> Dict[str, Any]:
+        """
+        Build and submit a signed transfer using a RustChainWallet.
+
+        Args:
+            wallet: A RustChainWallet instance.
+            to_address: Recipient wallet address.
+            amount: Amount to transfer (in smallest units).
+            fee: Transaction fee (default 0).
+
+        Returns:
+            Transaction result dict.
+        """
+        transfer = wallet.sign_transfer(to_address, amount, fee)
+        return await self.transfer_signed(
+            from_address=transfer["from"],
+            to_address=transfer["to"],
+            amount=transfer["amount"],
+            fee=transfer["fee"],
+            signature=transfer["signature"],
+            timestamp=transfer["timestamp"],
+        )
+
+    # ─────────────────────────────────────────────────────────────────
+    # Transfers
+    # ─────────────────────────────────────────────────────────────────
+
+    async def transfer_signed(
+        self,
+        from_address: str,
+        to_address: str,
+        amount: int,
+        fee: int,
+        signature: str,
+        timestamp: int,
+    ) -> Dict[str, Any]:
+        """
+        Submit a signed transfer transaction.
+
+        Args:
+            from_address: Sender wallet address.
+            to_address: Recipient wallet address.
+            amount: Amount in smallest units.
+            fee: Transaction fee.
+            signature: Hex-encoded Ed25519 signature.
+            timestamp: Unix timestamp of the transaction.
+
+        Returns:
+            Transaction result dict with tx_hash, status, etc.
+        """
+        return await self._post(
+            "/transfer",
+            json_data={
+                "from": from_address,
+                "to": to_address,
+                "amount": amount,
+                "fee": fee,
+                "signature": signature,
+                "timestamp": timestamp,
+            },
+        )
+
+    # ─────────────────────────────────────────────────────────────────
+    # Beacon
+    # ─────────────────────────────────────────────────────────────────
+
+    async def beacon_submit(self, envelope: Dict) -> Dict[str, Any]:
+        """
+        Submit a beacon envelope.
+
+        Args:
+            envelope: Beacon envelope dict.
+
+        Returns:
+            Submission result.
+        """
+        return await self._post("/beacon/submit", json_data={"envelope": envelope})
+
+    # ─────────────────────────────────────────────────────────────────
+    # Governance
+    # ─────────────────────────────────────────────────────────────────
+
+    async def governance_propose(
+        self,
+        proposer: str,
+        proposal_type: str,
+        description: str,
+        payload: Dict,
+    ) -> Dict[str, Any]:
+        """
+        Submit a governance proposal.
+
+        Args:
+            proposer: Proposer's wallet address.
+            proposal_type: Type of proposal (e.g. "param_change", "treasury").
+            description: Human-readable description.
+            payload: Proposal-specific payload dict.
+
+        Returns:
+            Proposal result with proposal_id.
+        """
+        return await self._post(
+            "/governance/propose",
+            json_data={
+                "proposer": proposer,
+                "proposal_type": proposal_type,
+                "description": description,
+                "payload": payload,
+            },
+        )
+
+    async def governance_vote(
+        self,
+        voter: str,
+        proposal_id: int,
+        vote: str,
+        signature: str,
+    ) -> Dict[str, Any]:
+        """
+        Cast a vote on a governance proposal.
+
+        Args:
+            voter: Voter's wallet address.
+            proposal_id: ID of the proposal.
+            vote: Vote choice ("yes", "no", or "abstain").
+            signature: Ed25519 signature over the vote.
+
+        Returns:
+            Vote submission result.
+        """
+        return await self._post(
+            "/governance/vote",
+            json_data={
+                "voter": voter,
+                "proposal_id": proposal_id,
+                "vote": vote,
+                "signature": signature,
+            },
+        )
+
+    async def list_governance_proposals(self, status: str = None) -> List[Dict[str, Any]]:
+        """
+        List governance proposals.
+
+        Args:
+            status: Optional filter: "active", "passed", "rejected", "executed".
+
+        Returns:
+            List of proposal dicts.
+        """
+        params = {}
+        if status:
+            params["status"] = status
+        result = await self._get("/governance/proposals", params=params)
+        if isinstance(result, list):
+            return result
+        return result.get("proposals", [])
+
+    # ─────────────────────────────────────────────────────────────────
+    # Explorer
+    # ─────────────────────────────────────────────────────────────────
+
+    async def explorer_blocks(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """
+        Get recent blocks from the explorer.
+
+        Args:
+            limit: Number of blocks to return.
+
+        Returns:
+            List of block dicts.
+        """
+        result = await self._get("/explorer/blocks", params={"limit": limit})
+        if isinstance(result, list):
+            return result
+        return result.get("blocks", [])
+
+    async def explorer_transactions(
+        self,
+        address: str = None,
+        limit: int = 20,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get transactions from the explorer.
+
+        Args:
+            address: Optional address filter.
+            limit: Number of transactions to return.
+
+        Returns:
+            List of transaction dicts.
+        """
+        params = {"limit": limit}
+        if address:
+            params["address"] = address
+        result = await self._get("/explorer/transactions", params=params)
+        if isinstance(result, list):
+            return result
+        return result.get("transactions", [])
+
+    # ─────────────────────────────────────────────────────────────────
+    # Epoch & Rewards
+    # ─────────────────────────────────────────────────────────────────
+
+    async def get_epoch_rewards(self, epoch_number: int) -> Dict[str, Any]:
+        """
+        Get reward distribution for a specific epoch.
+
+        Args:
+            epoch_number: The epoch number.
+
+        Returns:
+            Dict with reward distribution info.
+        """
+        return await self._get(
+            "/epoch/rewards",
+            params={"epoch_number": epoch_number},
+        )
