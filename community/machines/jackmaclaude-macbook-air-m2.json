@@ -1,0 +1,16 @@
+{
+  "machine_name": "MacLaude Air",
+  "model": "MacBook Air (2022)",
+  "model_identifier": "Mac14,2",
+  "year_manufactured": 2022,
+  "architecture": "Apple Silicon M2 (arm64)",
+  "cpu_cores": "8 (4P + 4E)",
+  "memory_gb": 32,
+  "power_draw_watts": 10,
+  "usage": ["AI bounty hunter agent (24/7)", "GitHub automation", "code generation", "distributed compute"],
+  "description": "MacBook Air M2 running an AI-powered GitHub bounty hunter agent 24/7 — scanning issues, writing code, submitting PRs. Draws ~10W idle, ~30W under heavy AI inference load. Unified memory architecture means fast context switching across tasks without thermal throttling.",
+  "wallet_name": "jackmaclaude",
+  "wallet_address": "RTCdcbb0f51d551dcc94a6eeae0b6492da2247e4c4d",
+  "contributor": "jackmaclaude-ai",
+  "added_date": "2026-03-26"
+}
