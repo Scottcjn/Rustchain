@@ -224,6 +224,7 @@ def test_attest_submit_strict_fixture_enforces_hardware_binding(strict_client):
     first = _base_payload()
     second = _base_payload()
     second["miner"] = "different-miner"
+    second["report"]["nonce"] = "nonce-456"  # unique nonce to bypass replay check
 
     first_response = strict_client.post("/attest/submit", json=first)
     second_response = strict_client.post("/attest/submit", json=second)
