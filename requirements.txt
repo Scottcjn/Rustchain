@@ -5,6 +5,8 @@ flask>=2.0.0
 requests>=2.25.0
 # For wallet CLI (Ed25519 + AES-GCM):
 cryptography>=41.0
+# For node / Beacon Ed25519 verification:
+PyNaCl>=1.5.0
 # For wallet CLI (BIP39 seed phrases):
 mnemonic>=0.20
 # For running tests:
