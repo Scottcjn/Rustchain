@@ -10,6 +10,13 @@ import pytest
 
 integrated_node = sys.modules["integrated_node"]
 
+try:
+    from hardware_fingerprint_replay import init_replay_defense_schema as _init_replay_schema
+    import hardware_fingerprint_replay as _replay_mod
+    _HAS_REPLAY = True
+except ImportError:
+    _HAS_REPLAY = False
+
 CORPUS_DIR = Path(__file__).parent / "attestation_corpus"
 
 
@@ -97,6 +104,9 @@ def _client_fixture(monkeypatch, *, strict_security_path=False):
     local_tmp_dir.mkdir(exist_ok=True)
     db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
     _init_attestation_db(db_path)
+    if _HAS_REPLAY:
+        _replay_mod.DB_PATH = str(db_path)
+        _init_replay_schema()
 
     monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
     monkeypatch.setattr(integrated_node, "check_ip_rate_limit", lambda client_ip, miner_id: (True, "ok"))
