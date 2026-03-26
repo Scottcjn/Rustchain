@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BCOS Badge Generator</title>
+  <style>
+    :root {
+      --term-bg: #0d1117;
+      --term-fg: #c9d1d9;
+      --term-green: #2ea043;
+      --term-blue: #58a6ff;
+      --term-purple: #bc8cff;
+      --term-orange: #d29922;
+      --term-red: #f85149;
+      --term-cyan: #39c5cf;
+      --term-border: #30363d;
+      --term-dim: #8b949e;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      background: var(--term-bg);
+      color: var(--term-fg);
+      min-height: 100vh;
+      padding: 20px;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    /* Header with vintage terminal style */
+    .header {
+      border-bottom: 2px solid var(--term-border);
+      padding-bottom: 20px;
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      color: var(--term-green);
+      font-size: 1.8rem;
+      text-shadow: 0 0 10px rgba(46, 160, 67, 0.3);
+    }
+
+    .header h1::before {
+      content: "┌─ ";
+      color: var(--term-dim);
+    }
+
+    .header h1::after {
+      content: " ─┐";
+      color: var(--term-dim);
+    }
+
+    .header-subtitle {
+      color: var(--term-dim);
+      margin-top: 10px;
+      font-size: 0.9rem;
+    }
+
+    .header-subtitle::before {
+      content: "│ ";
+      color: var(--term-dim);
+    }
+
+    .header-subtitle::after {
+      content: " │";
+      color: var(--term-dim);
+    }
+
+    .header-connector {
+      color: var(--term-dim);
+      margin-top: 5px;
+    }
+
+    .header-connector::before {
+      content: "└";
+    }
+
+    .header-connector::after {
+      content: "────────────────────────────────────────────────────┘";
+    }
+
+    /* Main content area */
+    .terminal-window {
+      border: 1px solid var(--term-border);
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+
+    .terminal-header {
+      background: var(--term-border);
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .terminal-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .terminal-dot.red { background: var(--term-red); }
+    .terminal-dot.yellow { background: var(--term-orange); }
+    .terminal-dot.green { background: var(--term-green); }
+
+    .terminal-title {
+      margin-left: 12px;
+      font-size: 0.85rem;
+      color: var(--term-dim);
+    }
+
+    .terminal-body {
+      padding: 20px;
+    }
+
+    /* Form sections */
+    .section {
+      margin-bottom: 25px;
+    }
+
+    .section-title {
+      color: var(--term-blue);
+      font-size: 1.1rem;
+      margin-bottom: 15px;
+    }
+
+    .section-title::before {
+      content: "$ ";
+      color: var(--term-green);
+    }
+
+    .form-group {
+      margin-bottom: 15px;
+    }
+
+    .form-group label {
+      display: block;
+      color: var(--term-purple);
+      margin-bottom: 8px;
+      font-size: 0.95rem;
+    }
+
+    .form-group label::before {
+      content: "► ";
+      color: var(--term-dim);
+    }
+
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--term-bg);
+      border: 1px solid var(--term-border);
+      border-radius: 4px;
+      color: var(--term-fg);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.9rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: var(--term-blue);
+      box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+    }
+
+    .form-group input::placeholder {
+      color: var(--term-dim);
+    }
+
+    .form-hint {
+      color: var(--term-dim);
+      font-size: 0.8rem;
+      margin-top: 6px;
+    }
+
+    .form-hint::before {
+      content: "ℹ ";
+    }
+
+    /* Style selector buttons */
+    .style-selector {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .style-btn {
+      padding: 10px 16px;
+      background: var(--term-bg);
+      border: 1px solid var(--term-border);
+      border-radius: 4px;
+      color: var(--term-fg);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .style-btn:hover {
+      border-color: var(--term-green);
+      color: var(--term-green);
+    }
+
+    .style-btn.active {
+      background: var(--term-green);
+      border-color: var(--term-green);
+      color: var(--term-bg);
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 12px 24px;
+      background: var(--term-green);
+      border: none;
+      border-radius: 4px;
+      color: var(--term-bg);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.95rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn:hover {
+      background: var(--term-green);
+      opacity: 0.9;
+      box-shadow: 0 0 15px rgba(46, 160, 67, 0.4);
+    }
+
+    .btn:disabled {
+      background: var(--term-dim);
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--term-border);
+      color: var(--term-fg);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--term-fg);
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    /* Preview area */
+    .preview-area {
+      background: var(--term-bg);
+      border: 1px dashed var(--term-border);
+      border-radius: 4px;
+      padding: 20px;
+      text-align: center;
+      min-height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 15px 0;
+    }
+
+    .preview-area img {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .preview-placeholder {
+      color: var(--term-dim);
+      font-style: italic;
+    }
+
+    /* Output sections */
+    .output-section {
+      margin-top: 20px;
+    }
+
+    .output-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--term-border);
+      margin-bottom: 15px;
+    }
+
+    .output-tab {
+      padding: 10px 20px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--term-dim);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .output-tab:hover {
+      color: var(--term-fg);
+    }
+
+    .output-tab.active {
+      color: var(--term-green);
+      border-bottom-color: var(--term-green);
+    }
+
+    .output-content {
+      display: none;
+    }
+
+    .output-content.active {
+      display: block;
+    }
+
+    .code-block {
+      background: #010409;
+      border: 1px solid var(--term-border);
+      border-radius: 4px;
+      padding: 15px;
+      overflow-x: auto;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.85rem;
+      color: var(--term-fg);
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin-bottom: 12px;
+    }
+
+    .code-block .comment {
+      color: var(--term-dim);
+    }
+
+    .code-block .string {
+      color: var(--term-green);
+    }
+
+    .code-block .tag {
+      color: var(--term-blue);
+    }
+
+    .code-block .attr {
+      color: var(--term-purple);
+    }
+
+    /* Status messages */
+    .status {
+      padding: 12px 16px;
+      border-radius: 4px;
+      margin: 15px 0;
+      font-size: 0.9rem;
+    }
+
+    .status.success {
+      background: rgba(46, 160, 67, 0.15);
+      border: 1px solid var(--term-green);
+      color: var(--term-green);
+    }
+
+    .status.error {
+      background: rgba(248, 81, 73, 0.15);
+      border: 1px solid var(--term-red);
+      color: var(--term-red);
+    }
+
+    .status.info {
+      background: rgba(88, 166, 255, 0.15);
+      border: 1px solid var(--term-blue);
+      color: var(--term-blue);
+    }
+
+    /* Loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--term-dim);
+      border-top-color: var(--term-green);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 8px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* Footer */
+    .footer {
+      border-top: 2px solid var(--term-border);
+      padding-top: 20px;
+      margin-top: 30px;
+      text-align: center;
+      color: var(--term-dim);
+      font-size: 0.85rem;
+    }
+
+    .footer a {
+      color: var(--term-blue);
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      text-decoration: underline;
+    }
+
+    /* ASCII art decoration */
+    .ascii-art {
+      color: var(--term-dim);
+      font-size: 0.7rem;
+      line-height: 1.2;
+      margin: 20px 0;
+      white-space: pre;
+      overflow-x: hidden;
+    }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      .header h1 {
+        font-size: 1.4rem;
+      }
+
+      .style-selector {
+        flex-direction: column;
+      }
+
+      .style-btn {
+        text-align: left;
+      }
+
+      .btn-group {
+        flex-direction: column;
+      }
+
+      .btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <h1>BCOS Badge Generator</h1>
+      <div class="header-subtitle">Generate certification badges for BCOS-verified repositories</div>
+      <div class="header-connector"></div>
+    </div>
+
+    <!-- ASCII Art -->
+    <div class="ascii-art">
+  ╔══════════════════════════════════════════════════════╗
+  ║   ____  _____ _____ _____ _   _  ____               ║
+  ║  | __ )| ____|_   _|_   _| | | |/ ___|              ║
+  ║  |  _ \|  _|   | |   | | | |_| | |  _               ║
+  ║  | |_) | |___  | |   | | |  _  | |_| |              ║
+  ║  |____/|_____| |_|   |_| |_| |_|\____|              ║
+  ║                                                      ║
+  ║  Beacon Certified Open Source - Badge Generator      ║
+  ╚══════════════════════════════════════════════════════╝
+    </div>
+
+    <!-- Main Form -->
+    <div class="terminal-window">
+      <div class="terminal-header">
+        <div class="terminal-dot red"></div>
+        <div class="terminal-dot yellow"></div>
+        <div class="terminal-dot green"></div>
+        <span class="terminal-title">bcos-badge-generator — Generate Badge</span>
+      </div>
+      <div class="terminal-body">
+        <form id="badgeForm">
+          <!-- Input Section -->
+          <div class="section">
+            <div class="section-title">Input Parameters</div>
+
+            <div class="form-group">
+              <label for="inputType">Input Type</label>
+              <select id="inputType" name="inputType">
+                <option value="cert_id">Certificate ID (cert_id)</option>
+                <option value="repo_url">Repository URL</option>
+              </select>
+              <div class="form-hint">Choose how to identify your BCOS certification</div>
+            </div>
+
+            <div class="form-group">
+              <label for="certId">Certificate ID</label>
+              <input
+                type="text"
+                id="certId"
+                name="certId"
+                placeholder="BCOS-xxxxxxxx"
+                pattern="BCOS-[a-fA-F0-9]{8}"
+              />
+              <div class="form-hint">Format: BCOS-xxxxxxxx (8 hex characters)</div>
+            </div>
+
+            <div class="form-group hidden" id="repoUrlGroup">
+              <label for="repoUrl">Repository URL</label>
+              <input
+                type="url"
+                id="repoUrl"
+                name="repoUrl"
+                placeholder="https://github.com/owner/repo"
+              />
+              <div class="form-hint">Full GitHub repository URL</div>
+            </div>
+          </div>
+
+          <!-- Style Selector -->
+          <div class="section">
+            <div class="section-title">Badge Style</div>
+            <div class="style-selector" id="styleSelector">
+              <button type="button" class="style-btn active" data-style="flat">flat</button>
+              <button type="button" class="style-btn" data-style="flat-square">flat-square</button>
+              <button type="button" class="style-btn" data-style="for-the-badge">for-the-badge</button>
+            </div>
+            <div class="form-hint">Select the visual style for your badge</div>
+          </div>
+
+          <!-- Preview -->
+          <div class="section">
+            <div class="section-title">Live Preview</div>
+            <div class="preview-area" id="previewArea">
+              <span class="preview-placeholder">Enter a Certificate ID and click "Generate Preview" to see your badge</span>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="btn-group">
+            <button type="submit" class="btn" id="generateBtn">
+              Generate Badge
+            </button>
+            <button type="button" class="btn btn-secondary" id="resetBtn">
+              Reset
+            </button>
+          </div>
+
+          <!-- Status Messages -->
+          <div id="statusMessage" class="status hidden"></div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Output Section -->
+    <div class="terminal-window hidden" id="outputSection">
+      <div class="terminal-header">
+        <div class="terminal-dot red"></div>
+        <div class="terminal-dot yellow"></div>
+        <div class="terminal-dot green"></div>
+        <span class="terminal-title">bcos-badge-generator — Embed Codes</span>
+      </div>
+      <div class="terminal-body">
+        <div class="section">
+          <div class="section-title">Embed Your Badge</div>
+
+          <div class="output-tabs">
+            <button type="button" class="output-tab active" data-tab="markdown">Markdown</button>
+            <button type="button" class="output-tab" data-tab="html">HTML</button>
+          </div>
+
+          <!-- Markdown Output -->
+          <div class="output-content active" id="markdownOutput">
+            <div class="code-block" id="markdownCode"></div>
+            <div class="btn-group">
+              <button type="button" class="btn btn-secondary" onclick="copyToClipboard('markdownCode')">
+                Copy Markdown
+              </button>
+            </div>
+          </div>
+
+          <!-- HTML Output -->
+          <div class="output-content" id="htmlOutput">
+            <div class="code-block" id="htmlCode"></div>
+            <div class="btn-group">
+              <button type="button" class="btn btn-secondary" onclick="copyToClipboard('htmlCode')">
+                Copy HTML
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <p>BCOS — Beacon Certified Open Source</p>
+      <p>Part of the <a href="https://rustchain.org" target="_blank" rel="noopener">RustChain</a> ecosystem by <a href="https://elyanlabs.ai" target="_blank" rel="noopener">Elyan Labs</a></p>
+      <p style="margin-top: 10px;">
+        <a href="https://rustchain.org/bcos/" target="_blank" rel="noopener">Learn More</a> •
+        <a href="https://github.com/Scottcjn/Rustchain" target="_blank" rel="noopener">GitHub</a> •
+        <a href="https://rustchain.org/bcos/verify/" target="_blank" rel="noopener">Verify Certificate</a>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    // ── Configuration ──────────────────────────────────────────────
+    const BADGE_ENDPOINT = 'https://50.28.86.131/bcos/badge';
+    const VERIFY_BASE_URL = 'https://rustchain.org/bcos/verify';
+
+    // ── State ──────────────────────────────────────────────
+    let currentCertId = '';
+    let currentStyle = 'flat';
+
+    // ── DOM Elements ──────────────────────────────────────────────
+    const badgeForm = document.getElementById('badgeForm');
+    const inputType = document.getElementById('inputType');
+    const certIdInput = document.getElementById('certId');
+    const repoUrlGroup = document.getElementById('repoUrlGroup');
+    const repoUrlInput = document.getElementById('repoUrl');
+    const styleSelector = document.getElementById('styleSelector');
+    const styleBtns = styleSelector.querySelectorAll('.style-btn');
+    const previewArea = document.getElementById('previewArea');
+    const generateBtn = document.getElementById('generateBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const statusMessage = document.getElementById('statusMessage');
+    const outputSection = document.getElementById('outputSection');
+    const markdownCode = document.getElementById('markdownCode');
+    const htmlCode = document.getElementById('htmlCode');
+    const outputTabs = document.querySelectorAll('.output-tab');
+    const outputContents = document.querySelectorAll('.output-content');
+
+    // ── Event Listeners ──────────────────────────────────────────────
+
+    // Input type toggle
+    inputType.addEventListener('change', () => {
+      if (inputType.value === 'repo_url') {
+        certIdInput.parentElement.classList.add('hidden');
+        repoUrlGroup.classList.remove('hidden');
+        repoUrlInput.required = true;
+        certIdInput.required = false;
+      } else {
+        repoUrlGroup.classList.add('hidden');
+        certIdInput.parentElement.classList.remove('hidden');
+        certIdInput.required = true;
+        repoUrlInput.required = false;
+      }
+    });
+
+    // Style selector
+    styleBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        styleBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentStyle = btn.dataset.style;
+        if (currentCertId) {
+          updatePreview(currentCertId);
+        }
+      });
+    });
+
+    // Output tabs
+    outputTabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        outputTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        outputContents.forEach(c => c.classList.remove('active'));
+        document.getElementById(`${tab.dataset.tab}Output`).classList.add('active');
+      });
+    });
+
+    // Form submission
+    badgeForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await generateBadge();
+    });
+
+    // Reset button
+    resetBtn.addEventListener('click', resetForm);
+
+    // ── Functions ──────────────────────────────────────────────
+
+    async function generateBadge() {
+      const certId = inputType.value === 'cert_id'
+        ? certIdInput.value.trim()
+        : extractCertIdFromUrl(repoUrlInput.value.trim());
+
+      if (!certId) {
+        showStatus('Please enter a valid Certificate ID', 'error');
+        return;
+      }
+
+      if (!isValidCertId(certId)) {
+        showStatus('Invalid Certificate ID format. Expected: BCOS-xxxxxxxx', 'error');
+        return;
+      }
+
+      currentCertId = certId;
+      setLoading(true);
+
+      try {
+        await updatePreview(certId);
+        generateEmbedCodes(certId);
+        showStatus('Badge generated successfully!', 'success');
+        outputSection.classList.remove('hidden');
+        outputSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (error) {
+        showStatus(`Error: ${error.message}`, 'error');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function updatePreview(certId) {
+      const style = currentStyle;
+      const url = `${BADGE_ENDPOINT}/${certId}.svg?style=${style}`;
+
+      return new Promise((resolve, reject) => {
+        const img = document.createElement('img');
+        img.alt = `BCOS Badge for ${certId}`;
+
+        img.onload = () => {
+          previewArea.innerHTML = '';
+          previewArea.appendChild(img);
+          resolve();
+        };
+
+        img.onerror = () => {
+          // For demo purposes, show a placeholder if endpoint is unavailable
+          previewArea.innerHTML = `
+            <div style="text-align: left;">
+              <p style="color: var(--term-orange); margin-bottom: 10px;">
+                ⚠ Preview endpoint unavailable (expected in static mode)
+              </p>
+              <p style="color: var(--term-dim);">
+                Badge URL: <span style="color: var(--term-blue);">${url}</span>
+              </p>
+              <p style="color: var(--term-dim); margin-top: 10px;">
+                In production, this will fetch the badge from the BCOS API.
+              </p>
+            </div>
+          `;
+          resolve(); // Don't reject, just show placeholder
+        };
+
+        img.src = url;
+      });
+    }
+
+    function generateEmbedCodes(certId) {
+      const style = currentStyle;
+      const badgeUrl = `${BADGE_ENDPOINT}/${certId}.svg?style=${style}`;
+      const verifyUrl = `${VERIFY_BASE_URL}/${certId}`;
+
+      // Markdown format: [![BCOS](https://50.28.86.131/bcos/badge/BCOS-xxx.svg)](https://rustchain.org/bcos/verify/BCOS-xxx)
+      const markdown = `[![BCOS](${badgeUrl})](${verifyUrl})`;
+
+      // HTML format
+      const html = `<a href="${verifyUrl}" target="_blank" rel="noopener">
+  <img src="${badgeUrl}" alt="BCOS Certified" />
+</a>`;
+
+      markdownCode.textContent = markdown;
+      htmlCode.textContent = html;
+    }
+
+    function extractCertIdFromUrl(url) {
+      // Try to extract BCOS-xxxxxxxx from URL
+      const match = url.match(/BCOS-[a-fA-F0-9]{8}/i);
+      return match ? match[0] : null;
+    }
+
+    function isValidCertId(certId) {
+      return /^BCOS-[a-fA-F0-9]{8}$/i.test(certId);
+    }
+
+    function showStatus(message, type) {
+      statusMessage.textContent = message;
+      statusMessage.className = `status ${type}`;
+      statusMessage.classList.remove('hidden');
+    }
+
+    function setLoading(loading) {
+      if (loading) {
+        generateBtn.disabled = true;
+        generateBtn.innerHTML = '<span class="spinner"></span>Generating...';
+      } else {
+        generateBtn.disabled = false;
+        generateBtn.textContent = 'Generate Badge';
+      }
+    }
+
+    function resetForm() {
+      badgeForm.reset();
+      currentCertId = '';
+      currentStyle = 'flat';
+      styleBtns.forEach(b => b.classList.remove('active'));
+      styleBtns[0].classList.add('active');
+      previewArea.innerHTML = '<span class="preview-placeholder">Enter a Certificate ID and click "Generate Preview" to see your badge</span>';
+      outputSection.classList.add('hidden');
+      statusMessage.classList.add('hidden');
+      inputType.value = 'cert_id';
+      certIdInput.parentElement.classList.remove('hidden');
+      repoUrlGroup.classList.add('hidden');
+    }
+
+    function copyToClipboard(elementId) {
+      const element = document.getElementById(elementId);
+      const text = element.textContent;
+
+      navigator.clipboard.writeText(text).then(() => {
+        showStatus('Copied to clipboard!', 'success');
+        setTimeout(() => {
+          statusMessage.classList.add('hidden');
+        }, 2000);
+      }).catch(err => {
+        showStatus('Failed to copy: ' + err.message, 'error');
+      });
+    }
+
+    // ── Initialize ──────────────────────────────────────────────
+    // Set default required field
+    certIdInput.required = true;
+  </script>
+</body>
+</html>
