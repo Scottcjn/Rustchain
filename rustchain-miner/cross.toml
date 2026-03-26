@@ -42,3 +42,23 @@ image = "ghcr.io/cross-rs/powerpc64le-unknown-linux-gnu:main"
 
 [target.s390x-unknown-linux-gnu]
 image = "ghcr.io/cross-rs/s390x-unknown-linux-gnu:main"
+
+# Intel 386 (80386) - Vintage x86 from 1985
+# Bounty #435: Port RustChain Miner to Intel 386
+# Target: i686-unknown-linux-gnu (closest modern target for i386 code)
+# Note: Modern cross-compilers target i686 minimum; native i386 requires ELKS or similar
+[target.i686-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/i686-unknown-linux-gnu:main"
+pre-build = ["./scripts/cross-pre-build-i386.sh"]
+env.passthrough = [
+    "PKG_CONFIG_ALLOW_CROSS=1",
+    "CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_LINKER=i686-linux-gnu-gcc",
+]
+
+[target.i686-unknown-linux-musl]
+image = "ghcr.io/cross-rs/i686-unknown-linux-musl:main"
+pre-build = ["./scripts/cross-pre-build-i386-musl.sh"]
+env.passthrough = [
+    "PKG_CONFIG_ALLOW_CROSS=1",
+    "CARGO_TARGET_I686_UNKNOWN_LINUX_MUSL_LINKER=i686-linux-musl-gcc",
+]

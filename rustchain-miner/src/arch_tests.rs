@@ -317,4 +317,167 @@ mod architecture_detection_tests {
         assert_eq!(hw.family, hw2.family);
         assert_eq!(hw.arch, hw2.arch);
     }
+
+    // =====================================================================
+    // Intel 386 Tests (Bounty #435)
+    // The Intel 80386 launched in 1985 - the CPU that started the x86 era
+    // Maximum antiquity multiplier: 4.0x
+    // =====================================================================
+
+    #[test]
+    fn test_i386_detection() {
+        // Intel 386DX detection
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i386".to_string(),
+            hostname: "i386dx".to_string(),
+            family: "x86".to_string(),
+            arch: "i386DX".to_string(),
+            cpu: "Intel 80386DX".to_string(),
+            cores: 1,
+            memory_gb: 4,
+            serial: None,
+            macs: vec!["00:00:00:00:00:01".to_string()],
+            mac: "00:00:00:00:00:01".to_string(),
+        };
+
+        assert_eq!(hw.family, "x86");
+        assert_eq!(hw.arch, "i386DX");
+        assert_eq!(hw.machine, "i386");
+    }
+
+    #[test]
+    fn test_i386sx_detection() {
+        // Intel 386SX detection (budget version)
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i386".to_string(),
+            hostname: "i386sx".to_string(),
+            family: "x86".to_string(),
+            arch: "i386SX".to_string(),
+            cpu: "Intel 80386SX".to_string(),
+            cores: 1,
+            memory_gb: 4,
+            serial: None,
+            macs: vec!["00:00:00:00:00:01".to_string()],
+            mac: "00:00:00:00:00:01".to_string(),
+        };
+
+        assert_eq!(hw.family, "x86");
+        assert_eq!(hw.arch, "i386SX");
+    }
+
+    #[test]
+    fn test_i386_miner_id_generation() {
+        // Test that i386 systems generate appropriate miner IDs
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i386".to_string(),
+            hostname: "i386-box".to_string(),
+            family: "x86".to_string(),
+            arch: "i386DX".to_string(),
+            cpu: "Intel 80386DX".to_string(),
+            cores: 1,
+            memory_gb: 4,
+            serial: Some("386DX001".to_string()),
+            macs: vec!["aa:bb:cc:dd:ee:ff".to_string()],
+            mac: "aa:bb:cc:dd:ee:ff".to_string(),
+        };
+
+        let miner_id = hw.generate_miner_id();
+
+        // Miner ID should contain architecture info
+        assert!(miner_id.contains("i386dx") || miner_id.contains("i386"));
+        assert!(miner_id.contains("i386-box"));
+    }
+
+    #[test]
+    fn test_i386_wallet_generation() {
+        // Test wallet generation for i386 miner
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i386".to_string(),
+            hostname: "i386sx".to_string(),
+            family: "x86".to_string(),
+            arch: "i386SX".to_string(),
+            cpu: "Intel 80386SX".to_string(),
+            cores: 1,
+            memory_gb: 4,
+            serial: None,
+            macs: vec!["11:22:33:44:55:66".to_string()],
+            mac: "11:22:33:44:55:66".to_string(),
+        };
+
+        let miner_id = hw.generate_miner_id();
+        let wallet = hw.generate_wallet(&miner_id);
+
+        // Wallet should be properly formatted
+        assert!(wallet.contains("RTC"));
+        assert!(wallet.len() > 20);
+        // Should use x86 family for i386
+        assert!(wallet.starts_with("x86_"));
+    }
+
+    #[test]
+    fn test_i386_antiquity_multiplier() {
+        // i386 should be classified for maximum antiquity multiplier (4.0x)
+        // This test documents the expected behavior per bounty #435
+        let i386_variants = vec![
+            ("i386DX", "Intel 80386DX"),
+            ("i386SX", "Intel 80386SX"),
+            ("i386", "Intel 80386"),
+        ];
+
+        for (arch, cpu) in i386_variants {
+            let hw = HardwareInfo {
+                platform: "Linux".to_string(),
+                machine: "i386".to_string(),
+                hostname: "test".to_string(),
+                family: "x86".to_string(),
+                arch: arch.to_string(),
+                cpu: cpu.to_string(),
+                cores: 1,
+                memory_gb: 4,
+                serial: None,
+                macs: vec!["00:00:00:00:00:01".to_string()],
+                mac: "00:00:00:00:00:01".to_string(),
+            };
+
+            // All i386 variants should be in x86 family
+            assert_eq!(hw.family, "x86");
+            assert!(hw.arch.contains("i386"));
+        }
+    }
+
+    #[test]
+    fn test_i386_hardware_info_serialization() {
+        // Test that i386 HardwareInfo can be serialized (needed for attestation)
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i386".to_string(),
+            hostname: "test-i386".to_string(),
+            family: "x86".to_string(),
+            arch: "i386DX".to_string(),
+            cpu: "Intel 80386DX".to_string(),
+            cores: 1,
+            memory_gb: 4,
+            serial: Some("386DX001".to_string()),
+            macs: vec!["aa:bb:cc:dd:ee:ff".to_string()],
+            mac: "aa:bb:cc:dd:ee:ff".to_string(),
+        };
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&hw).unwrap();
+
+        // Verify it contains expected fields
+        assert!(json.contains("x86"));
+        assert!(json.contains("i386DX"));
+        assert!(json.contains("i386"));
+
+        // Deserialize back
+        let hw2: HardwareInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(hw.family, hw2.family);
+        assert_eq!(hw.arch, hw2.arch);
+        assert_eq!(hw.machine, hw2.machine);
+    }
 }

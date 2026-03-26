@@ -224,6 +224,20 @@ fn detect_cpu_family_arch(cpu: &str, machine: &str) -> (String, String) {
         return ("ARM".to_string(), "Generic ARM".to_string());
     }
 
+    // Intel 386 (1985) - MAXIMUM antiquity multiplier (4.0x)
+    // The CPU that started the x86 era, 40+ years old
+    if machine == "i386" || machine == "x86" {
+        if cpu_lower.contains("386") || cpu_lower.contains("80386") {
+            if cpu_lower.contains("sx") {
+                return ("x86".to_string(), "i386SX".to_string());
+            } else if cpu_lower.contains("dx") {
+                return ("x86".to_string(), "i386DX".to_string());
+            }
+            return ("x86".to_string(), "i386".to_string());
+        }
+        return ("x86".to_string(), "i386".to_string());
+    }
+
     // Default
     ("unknown".to_string(), "unknown".to_string())
 }
