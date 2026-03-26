@@ -54,6 +54,7 @@ linker = "s390x-linux-gnu-gcc"
 rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
 
 # Intel 386/486/Pentium (i386/i586/i686) target configuration
+# Note: Modern cross-compilers require i686 minimum for x86
 [target.i386-unknown-linux-gnu]
 linker = "i386-linux-gnu-gcc"
 rustflags = [
@@ -79,6 +80,7 @@ rustflags = [
 linker = "i686-linux-gnu-gcc"
 rustflags = [
     "-C", "link-arg=-Wl,--allow-multiple-definition",
+    "-C", "target-feature=-mmx,-sse,-sse2",
     "-C", "target-cpu=i686",
 ]
 
@@ -86,6 +88,7 @@ rustflags = [
 linker = "i686-linux-musl-gcc"
 rustflags = [
     "-C", "link-arg=-Wl,--allow-multiple-definition",
+    "-C", "target-feature=-mmx,-sse,-sse2",
     "-C", "target-cpu=i686",
 ]
 
@@ -97,3 +100,5 @@ build-arm64 = "build --target aarch64-unknown-linux-gnu"
 build-x86_64 = "build --target x86_64-unknown-linux-gnu"
 build-386 = "build --target i686-unknown-linux-gnu"
 build-386-musl = "build --target i686-unknown-linux-musl"
+build-i386 = "build --target i686-unknown-linux-gnu"
+build-i386-musl = "build --target i686-unknown-linux-musl"
