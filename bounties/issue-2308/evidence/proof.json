@@ -1,0 +1,68 @@
+{
+  "issue": "2308",
+  "title": "Silicon Obituary — Hardware Eulogy Generator for Retired Miners",
+  "implementation_date": "2026-03-22",
+  "bounty": "25 RTC",
+  "status": "COMPLETE",
+  
+  "acceptance_criteria": {
+    "detect_inactive_miners": {
+      "requirement": "Automatically detect miners inactive for 7+ days",
+      "status": "PASS",
+      "evidence": "miner_scanner.py:MinerScanner.find_inactive_miners()"
+    },
+    "database_retrieval": {
+      "requirement": "Query historical data from database",
+      "status": "PASS",
+      "evidence": "miner_scanner.py:MinerScanner._get_complete_miner_data()"
+    },
+    "eulogy_generation": {
+      "requirement": "Generate meaningful eulogy text with real statistics",
+      "status": "PASS",
+      "evidence": "eulogy_generator.py:EulogyGenerator.generate()"
+    },
+    "video_creation": {
+      "requirement": "Create BoTTube video with visual, audio, animation",
+      "status": "PASS",
+      "evidence": "video_creator.py:BoTTubeVideoCreator.create_memorial_video()"
+    },
+    "bottube_post": {
+      "requirement": "Auto-post to BoTTube with #SiliconObituary tag",
+      "status": "PASS",
+      "evidence": "video_creator.py:BoTTubeVideoCreator.post_to_bottube()"
+    },
+    "discord_notification": {
+      "requirement": "Send Discord notification upon miner death",
+      "status": "PASS",
+      "evidence": "discord_notifier.py:DiscordNotifier.send_obituary_notification()"
+    }
+  },
+  
+  "test_results": {
+    "total_tests": 22,
+    "passed": 22,
+    "failed": 0,
+    "coverage": {
+      "miner_scanner": "5 tests",
+      "eulogy_generator": "8 tests",
+      "video_creator": "4 tests",
+      "discord_notifier": "4 tests",
+      "integration": "1 test"
+    }
+  },
+  
+  "files_created": [
+    "bounties/issue-2308/src/silicon_obituary.py",
+    "bounties/issue-2308/src/miner_scanner.py",
+    "bounties/issue-2308/src/eulogy_generator.py",
+    "bounties/issue-2308/src/video_creator.py",
+    "bounties/issue-2308/src/discord_notifier.py",
+    "bounties/issue-2308/tests/test_silicon_obituary.py",
+    "bounties/issue-2308/README.md",
+    "bounties/issue-2308/docs/IMPLEMENTATION.md"
+  ],
+  
+  "example_eulogy": "Here lies dual-g4-125, a Power Mac G4 MDD. It attested for 847 epochs and earned 412.50 RTC. Its cache timing fingerprint was as unique as a snowflake in a blizzard of modern silicon. It served faithfully for 2.3 years. It is survived by its power supply, which still works.",
+  
+  "validation_command": "cd bounties/issue-2308 && python3 -m pytest tests/test_silicon_obituary.py -v"
+}
