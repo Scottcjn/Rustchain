@@ -1,7 +1,8 @@
 # BCOS v2 Scan - Example Workflow for External Repos
-# 
-# Copy this workflow to your repository to enable BCOS scanning.
-# Make sure your repo has the BCOS action available or reference the public version.
+#
+# This is an EXAMPLE workflow showing how BCOS scanning will work
+# once the bcos-action is published. It runs a lightweight inline
+# check for now.
 
 name: BCOS v2 Scan
 
@@ -24,30 +25,74 @@ jobs:
   bcos-scan:
     name: BCOS Trust Score
     runs-on: ubuntu-latest
-    
+
     permissions:
       contents: read
-      pull-requests: write
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run BCOS Scan
-        uses: Scottcjn/bcos-action@v1
-        id: bcos
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          tier: ${{ inputs.tier || 'L1' }}
-          reviewer: ${{ github.event.pull_request.requested_reviewers[0].login || '' }}
-          post-comment: true
-          anchor-on-merge: true
+          python-version: '3.11'
+
+      - name: Run BCOS Scan (inline)
+        id: bcos
+        run: |
+          # Inline BCOS scan until bcos-action is published
+          TIER="${{ inputs.tier || 'L1' }}"
+          echo "Running BCOS v2 scan at tier: $TIER"
+
+          SCORE=0
+          # Check 1: LICENSE exists
+          if [ -f LICENSE ] || [ -f LICENSE.md ]; then
+            echo "  [PASS] LICENSE found"
+            SCORE=$((SCORE + 15))
+          else
+            echo "  [FAIL] No LICENSE file"
+          fi
+
+          # Check 2: No secrets in repo
+          if ! grep -rn 'AKIA\|sk-\|ghp_\|-----BEGIN.*PRIVATE' --include='*.py' --include='*.js' --include='*.ts' . 2>/dev/null | grep -v '.github/'; then
+            echo "  [PASS] No hardcoded secrets detected"
+            SCORE=$((SCORE + 20))
+          else
+            echo "  [WARN] Possible secrets found"
+          fi
+
+          # Check 3: README exists
+          if [ -f README.md ] || [ -f README.rst ]; then
+            echo "  [PASS] README found"
+            SCORE=$((SCORE + 10))
+          else
+            echo "  [FAIL] No README"
+          fi
+
+          # Check 4: Has tests
+          if [ -d tests ] || [ -d test ]; then
+            echo "  [PASS] Test directory found"
+            SCORE=$((SCORE + 15))
+          else
+            echo "  [WARN] No test directory"
+          fi
+
+          # Check 5: CI configured
+          if [ -d .github/workflows ]; then
+            echo "  [PASS] CI workflows found"
+            SCORE=$((SCORE + 10))
+          fi
+
+          echo "trust_score=$SCORE" >> "$GITHUB_OUTPUT"
+          echo ""
+          echo "BCOS Trust Score: $SCORE/100 (Tier: $TIER)"
 
       - name: Summary
         run: |
-          echo "### 🛡️ BCOS Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "### BCOS Scan Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Trust Score | ${{ steps.bcos.outputs.trust_score }}/100 |" >> $GITHUB_STEP_SUMMARY
-          echo "| Cert ID | \`${{ steps.bcos.outputs.cert_id }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tier Met | \`${{ steps.bcos.outputs.tier_met }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tier | ${{ inputs.tier || 'L1' }} |" >> $GITHUB_STEP_SUMMARY

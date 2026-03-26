@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beacon Atlas — RustChain Agent Trust Network</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e17;color:#e0e6f0;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden}
+#app{width:100vw;height:100vh;position:relative}
+svg{width:100%;height:100%;display:block}
+
+/* Header */
+#header{position:absolute;top:0;left:0;right:0;padding:12px 20px;background:linear-gradient(180deg,rgba(10,14,23,.95),rgba(10,14,23,0));z-index:10;display:flex;align-items:center;gap:16px}
+#header h1{font-size:18px;font-weight:600;color:#7dd3fc}
+#header .subtitle{font-size:12px;color:#64748b}
+#stats{display:flex;gap:16px;margin-left:auto;font-size:12px}
+.stat{background:rgba(30,41,59,.7);border:1px solid #1e293b;border-radius:6px;padding:4px 10px}
+.stat-value{color:#7dd3fc;font-weight:700}
+
+/* Search */
+#search-box{position:absolute;top:12px;right:20px;z-index:10}
+#search{background:rgba(30,41,59,.8);border:1px solid #334155;border-radius:6px;color:#e0e6f0;padding:6px 12px;font-size:13px;width:200px;outline:none}
+#search:focus{border-color:#7dd3fc}
+#search::placeholder{color:#475569}
+
+/* Filter panel */
+#filters{position:absolute;top:52px;left:20px;z-index:10;display:flex;gap:8px;flex-wrap:wrap}
+.filter-btn{background:rgba(30,41,59,.7);border:1px solid #334155;border-radius:14px;color:#94a3b8;padding:4px 12px;font-size:11px;cursor:pointer;transition:all .2s}
+.filter-btn:hover,.filter-btn.active{border-color:#7dd3fc;color:#7dd3fc}
+.filter-btn .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+
+/* Info panel */
+#info-panel{position:absolute;bottom:20px;left:20px;z-index:10;background:rgba(15,23,42,.92);border:1px solid #1e293b;border-radius:10px;padding:16px;min-width:280px;max-width:360px;display:none;backdrop-filter:blur(8px)}
+#info-panel h3{color:#7dd3fc;font-size:14px;margin-bottom:8px}
+#info-panel .row{display:flex;justify-content:space-between;padding:3px 0;font-size:12px}
+#info-panel .label{color:#64748b}
+#info-panel .value{color:#e0e6f0;font-family:monospace}
+#info-close{position:absolute;top:8px;right:10px;cursor:pointer;color:#475569;font-size:16px}
+#info-close:hover{color:#e0e6f0}
+
+/* Legend */
+#legend{position:absolute;bottom:20px;right:20px;z-index:10;background:rgba(15,23,42,.85);border:1px solid #1e293b;border-radius:8px;padding:10px 14px;font-size:11px}
+#legend h4{color:#64748b;margin-bottom:6px;font-size:10px;text-transform:uppercase;letter-spacing:1px}
+.legend-item{display:flex;align-items:center;gap:6px;padding:2px 0}
+.legend-dot{width:10px;height:10px;border-radius:50%}
+.legend-hex{width:12px;height:12px;clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%)}
+
+/* Tooltip */
+.tooltip{position:absolute;background:rgba(15,23,42,.95);border:1px solid #334155;border-radius:6px;padding:6px 10px;font-size:11px;pointer-events:none;z-index:20;white-space:nowrap}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <h1>⚡ Beacon Atlas</h1>
+    <span class="subtitle">Agent Trust Network — Live</span>
+    <div id="stats">
+      <span class="stat">Miners: <span class="stat-value" id="stat-miners">0</span></span>
+      <span class="stat">Agents: <span class="stat-value" id="stat-agents">0</span></span>
+      <span class="stat">Connections: <span class="stat-value" id="stat-edges">0</span></span>
+      <span class="stat">Epoch: <span class="stat-value" id="stat-epoch">—</span></span>
+    </div>
+  </div>
+  <div id="search-box"><input id="search" type="text" placeholder="Search miner or agent..."></div>
+  <div id="filters">
+    <button class="filter-btn active" data-filter="all"><span class="dot" style="background:#7dd3fc"></span>All</button>
+    <button class="filter-btn" data-filter="G4"><span class="dot" style="background:#f59e0b"></span>G4</button>
+    <button class="filter-btn" data-filter="G5"><span class="dot" style="background:#3b82f6"></span>G5</button>
+    <button class="filter-btn" data-filter="POWER8"><span class="dot" style="background:#a855f7"></span>POWER8</button>
+    <button class="filter-btn" data-filter="x86"><span class="dot" style="background:#22c55e"></span>x86</button>
+    <button class="filter-btn" data-filter="ARM"><span class="dot" style="background:#ef4444"></span>ARM</button>
+    <button class="filter-btn" data-filter="beacon"><span class="dot" style="background:#f97316"></span>Beacon</button>
+  </div>
+  <div id="info-panel">
+    <span id="info-close">✕</span>
+    <h3 id="info-name">—</h3>
+    <div id="info-body"></div>
+  </div>
+  <div id="legend">
+    <h4>Legend</h4>
+    <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div> G4 (Amber)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div> G5 (Blue)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#a855f7"></div> POWER8 (Purple)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div> x86 (Green)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div> ARM (Red)</div>
+    <div class="legend-item"><div class="legend-hex" style="background:#f97316"></div> Beacon Agent</div>
+  </div>
+  <svg id="graph"></svg>
+  <div class="tooltip" id="tooltip" style="display:none"></div>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="beacon_atlas.js"></script>
+</body>
+</html>
