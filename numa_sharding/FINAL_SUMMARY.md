@@ -357,7 +357,90 @@ The NUMA-aware model sharding implementation for POWER8 llama.cpp is complete an
 
 ---
 
-*Final Summary Version: 1.0.0*  
-*Date: 2026-03-23*  
+*Final Summary Version: 1.1.0*  
+*Date: 2026-03-26*  
 *Bounty: Scottcjn/rustchain-bounties #2277*  
 *Status: Ready for Hardware Validation*
+
+---
+
+## Enhanced Additions (v1.1.0)
+
+### New Files Added
+
+| File | Purpose |
+|------|---------|
+| `src/ggml_numa_bindings.py` | Python ctypes bindings for the C library |
+| `benchmarks/benchmark_numa.ps1` | Cross-platform PowerShell benchmark script |
+| `scripts/gguf_analyze.py` | GGUF model tensor analyzer |
+| `presets/power8_llama2_70b.json` | LLaMA 2 70B preset (80 layers) |
+| `presets/power8_mixtral_8x7b.json` | Mixtral-8x7B MoE preset |
+
+### Python Bindings (`ggml_numa_bindings.py`)
+
+Provides Python-level access to NUMA sharding:
+- `GGMLNUMABindings` class with full C API wrapper
+- Pure Python fallbacks when native library unavailable
+- `get_numa_topology()` - detect system NUMA config
+- `recommend_shard_map(layers, nodes)` - auto-generate optimal map
+- `analyze_model_tensors()` - group tensors by NUMA node
+- CLI: `python ggml_numa_bindings.py topology|recommend|analyze`
+
+```python
+from ggml_numa_bindings import GGMLNUMABindings, recommend_shard_map
+
+numa = GGMLNUMABindings()
+numa.init("0-8:1,9-20:3,21-31:2")
+node = numa.assign_tensor("blk.15.attn_q.weight")
+# → 3 (Node 3, attention layer)
+
+# Auto-generate for any model
+shard_map = recommend_shard_map(num_layers=80, num_nodes=4)
+# → "0-20:1,21-53:3,54-79:2"
+```
+
+### PowerShell Benchmark (`benchmark_numa.ps1`)
+
+Cross-platform benchmark harness:
+- Works on Linux, macOS, and Windows (PowerShell 7+)
+- Supports `compare`, `baseline`, and `numa` modes
+- JSON output parsing with fallback grep
+- NUMA topology auto-detection
+- POWER8-aware defaults
+
+```powershell
+# Windows/Linux/macOS
+pwsh benchmark_numa.ps1 -ModelPath model.gguf -Mode compare -Threads 64
+
+# NUMA-sharded only
+pwsh benchmark_numa.ps1 -ModelPath model.gguf -Mode numa -NUMAConfig "0-8:1,9-20:3,21-31:2"
+```
+
+### GGUF Model Analyzer (`scripts/gguf_analyze.py`)
+
+Analyzes GGUF model files to generate optimal shard maps:
+- GGUF magic/version detection
+- Tensor name extraction from binary
+- Per-layer memory footprint estimation
+- Auto-generates NUMA shard recommendations
+- JSON and text output modes
+
+```bash
+python scripts/gguf_analyze.py --model tinyllama-1.1b.Q4_K_M.gguf --json
+# Output: recommended NUMA map + per-layer breakdown
+
+python scripts/gguf_analyze.py --model llama-2-70b.Q4_K_M.gguf
+# Output: text report with layer groupings for 80-layer model
+```
+
+### Model-Specific Presets
+
+**`power8_llama2_70b.json`** - LLaMA 2 70B (80 layers):
+- Node 1: Layers 0-20 (early/embedding)
+- Node 3: Layers 21-53 (attention-heavy middle)
+- Node 2: Layers 54-79 (FFN-heavy late)
+
+**`power8_mixtral_8x7b.json`** - Mixtral MoE (44 layers):
+- Handles expert routing awareness across nodes
+- MoE-specific routing strategy documentation
+- Expert distribution across all 4 nodes

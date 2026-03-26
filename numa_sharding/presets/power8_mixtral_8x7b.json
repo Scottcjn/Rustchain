@@ -1,0 +1,79 @@
+{
+  "preset_name": "Mixtral-8x7B MOE POWER8",
+  "preset_id": "mixtral_8x7b_power8_v1",
+  "version": "1.0.0",
+  "description": "NUMA sharding for Mixtral-8x7B MoE on POWER8 S824 - handles expert routing across nodes",
+
+  "hardware_target": {
+    "architecture": "ppc64le",
+    "cpu_family": "POWER8",
+    "model": "S824",
+    "numa_nodes": 4,
+    "total_memory_gb": 1024,
+    "cores_per_node": 16,
+    "threads_per_core": 8
+  },
+
+  "model_info": {
+    "name": "Mixtral-8x7B",
+    "parameter_count": "46B active / 8x7B total",
+    "layers": 44,
+    "hidden_size": 4096,
+    "intermediate_size": 14336,
+    "num_experts": 8,
+    "num_kv_heads": 8,
+    "vocab_size": 32000,
+    "quantization": "Q4_K_M recommended",
+    "memory_footprint_gb": "~26 active"
+  },
+
+  "numa_shard_config": {
+    "environment_variable": "GGML_NUMA_SHARD_MAP",
+    "value": "0-10:1,11-30:3,31-43:2",
+    "expert_routing_warning": "Mixtral's MoE expert routing means cross-NUMA access is unavoidable for expert layers. Shard to minimize routing hops.",
+    "rules": [
+      {
+        "layer_range": [0, 10],
+        "node": 1,
+        "rationale": "Early MoE layers: embed + first expert routing on Node 1"
+      },
+      {
+        "layer_range": [11, 30],
+        "node": 3,
+        "rationale": "Core MoE expert computation: Node 3 highest bandwidth for router decisions"
+      },
+      {
+        "layer_range": [31, 43],
+        "node": 2,
+        "rationale": "Late MoE layers + output projection: Node 2 for FFN matrix ops"
+      }
+    ]
+  },
+
+  "expert_routing_strategy": {
+    "approach": "hybrid",
+    "primary_experts_per_node": {
+      "0": "experts 0-1 (embedding projection)",
+      "1": "experts 2-3",
+      "2": "experts 4-5",
+      "3": "experts 6-7"
+    },
+    "routing_hint": "GGML NUMA sharding does not control expert routing - ensure MoE router weights are on the node running the majority of its expert lookups"
+  },
+
+  "thread_configuration": {
+    "recommended_threads": 64,
+    "note": "MoE models are compute-bound on POWER8. Thread count matters less than memory bandwidth."
+  },
+
+  "performance_targets": {
+    "pp512_min_tokens_per_sec": 20,
+    "tg128_min_tokens_per_sec": 12,
+    "cross_numa_access_max_pct": 25,
+    "moe_routing_overhead_max_pct": 10
+  },
+
+  "validation_commands": {
+    "expert_distribution": "export GGML_NUMA_SHARD_MAP=\"0-10:1,11-30:3,31-43:2\" && python3 scripts/trace_expert_routing.py --model mixtral-8x7b.Q4_K_M.gguf"
+  }
+}

@@ -253,15 +253,21 @@ void *ptr = GGML_NUMA_MALLOC(size, node);
 numa_sharding/
 ├── src/
 │   ├── ggml-numa-shard.h      # Header-only API (main deliverable)
-│   └── ggml-numa-shard.c      # Extended implementation
+│   ├── ggml-numa-shard.c      # Extended C implementation
+│   └── ggml_numa_bindings.py  # Python ctypes bindings (NEW)
 ├── benchmarks/
-│   ├── benchmark_numa.sh      # Automated benchmark script
+│   ├── benchmark_numa.sh      # Automated benchmark script (bash)
+│   ├── benchmark_numa.ps1     # Cross-platform PowerShell benchmark (NEW)
 │   ├── compare_results.py     # Result analysis script
 │   └── expected_results.json  # Expected baseline numbers
 ├── presets/
 │   ├── power8_s824.json       # POWER8 S824 tuning preset
 │   ├── power8_default.json    # Generic POWER8 preset
+│   ├── power8_llama2_70b.json # LLaMA 2 70B preset (NEW)
+│   ├── power8_mixtral_8x7b.json # Mixtral MOE preset (NEW)
 │   └── dual_socket_x86.json   # x86 dual-socket preset
+├── scripts/
+│   └── gguf_analyze.py        # GGUF model tensor analyzer (NEW)
 ├── reports/
 │   ├── validation_report.md   # Validation results
 │   └── performance_analysis.md # Detailed performance analysis
@@ -341,6 +347,93 @@ This implementation is provided as part of the rustchain-bounties program.
 
 ---
 
-**Version:** 1.0.0  
-**Date:** 2026-03-23  
+**Version:** 1.1.0  
+**Date:** 2026-03-26  
 **Bounty:** Scottcjn/rustchain-bounties #2277
+
+---
+
+## Python Integration
+
+### Python Bindings (`src/ggml_numa_bindings.py`)
+
+Python ctypes bindings for NUMA sharding:
+
+```python
+from ggml_numa_bindings import GGMLNUMABindings, recommend_shard_map, get_numa_topology
+
+# Detect system topology
+topo = get_numa_topology()
+print(f"NUMA nodes: {topo['num_nodes']}")  # → 4
+
+# Auto-generate shard map for any model
+shard_map = recommend_shard_map(num_layers=80, num_nodes=4)
+# → "0-20:1,21-53:3,54-79:2"
+
+# Use bindings
+numa = GGMLNUMABindings()
+numa.init(shard_map)
+node = numa.assign_tensor("blk.15.attn_q.weight", layer_idx=15)
+# → 3
+numa.bind(addr=0x1000, size=4096, node=node)
+numa.cleanup()
+```
+
+CLI:
+```bash
+python src/ggml_numa_bindings.py topology
+python src/ggml_numa_bindings.py recommend --layers 32 --nodes 4
+```
+
+---
+
+## GGUF Model Analyzer
+
+Analyze any GGUF model to generate optimal NUMA shard maps:
+
+```bash
+# Text report
+python scripts/gguf_analyze.py --model model.gguf
+
+# JSON output
+python scripts/gguf_analyze.py --model model.gguf --json
+
+# With verbose
+python scripts/gguf_analyze.py --model model.gguf --verbose
+```
+
+Output includes per-layer memory footprint, tensor type distribution, and recommended NUMA node assignments.
+
+---
+
+## Cross-Platform Benchmark
+
+### PowerShell (Windows/Linux/macOS)
+
+```powershell
+pwsh benchmarks/benchmark_numa.ps1 -ModelPath model.gguf -Mode compare
+pwsh benchmarks/benchmark_numa.ps1 -ModelPath model.gguf -Mode numa -NUMAConfig "0-8:1,9-20:3,21-31:2"
+```
+
+### Shell (Linux/macOS)
+
+```bash
+bash benchmarks/benchmark_numa.sh -m model.gguf --compare
+```
+
+---
+
+## Model-Specific Presets
+
+Additional presets beyond v1.0:
+
+| Preset | Model | Layers | Nodes |
+|--------|-------|--------|-------|
+| `power8_llama2_70b.json` | LLaMA 2 70B | 80 | 4 |
+| `power8_mixtral_8x7b.json` | Mixtral-8x7B MoE | 44 | 4 |
+
+Load a preset:
+```bash
+export GGML_NUMA_SHARD_MAP=$(jq -r '.numa_shard_config.value' \
+    presets/power8_llama2_70b.json)
+```
