@@ -258,3 +258,143 @@ requested → confirmed → releasing → complete
 | `complete` | wRTC minted on target chain |
 | `failed` | Lock failed |
 | `refunded` | RTC refunded to sender |
+
+---
+
+## RIP-305 Track D: Airdrop API
+
+The airdrop API provides GitHub-based eligibility checking and wRTC claim management for the RIP-305 cross-chain airdrop.
+
+### Integration with Flask App
+
+```python
+from bridge import register_bridge_routes, register_airdrop_routes
+
+# Register both bridge (Track C) and airdrop (Track D) routes:
+register_bridge_routes(app)
+register_airdrop_routes(app)
+```
+
+### Endpoints
+
+#### `GET /airdrop/eligibility`
+
+Check GitHub-based eligibility and tier.
+
+**Query params:**
+| Param | Description |
+|-------|-------------|
+| `github_token` | GitHub OAuth token |
+| `code` | GitHub OAuth code (alternative to token) |
+| `rustchain_wallet` | RustChain wallet name |
+
+**Response:**
+```json
+{
+  "eligible": true,
+  "github_username": "contributor",
+  "tier": "contributor",
+  "base_amount": 50,
+  "requirement": "1+ merged PRs",
+  "allocations": {
+    "solana": 30000,
+    "base": 20000,
+    "remaining_solana": 29950,
+    "remaining_base": 20000
+  },
+  "already_claimed": false,
+  "previous_claims": []
+}
+```
+
+**Anti-Sybil:** Accounts < 30 days old are rejected with `github_account_too_new`.
+
+#### `POST /airdrop/claim`
+
+Submit a wRTC airdrop claim.
+
+**Body:**
+```json
+{
+  "github_token": "oauth_token",
+  "rustchain_wallet": "my-rtc-wallet",
+  "target_chain": "base",
+  "target_address": "0xABC..."
+}
+```
+
+**Response (201):**
+```json
+{
+  "claim_id": "claim_a1b2c3d4e5f6...",
+  "state": "pending",
+  "github_username": "contributor",
+  "tier": "contributor",
+  "base_amount": 50,
+  "final_amount": 50.0,
+  "target_chain": "base",
+  "target_address": "0xABC...",
+  "message": "Claim submitted! ..."
+}
+```
+
+**Anti-Sybil checks:**
+- GitHub account age > 30 days
+- One claim per GitHub account (no duplicate claims)
+- One claim per RustChain wallet (no wallet recycling)
+
+#### `GET /airdrop/status/<claim_id>`
+
+Get full claim status + event history.
+
+#### `GET /airdrop/wallet/<wallet>`
+
+Get all claims for a RustChain wallet.
+
+#### `GET /airdrop/leaderboard`
+
+Top claimants by tier. Query params: `limit` (default 20, max 100), `tier` (filter).
+
+#### `GET /airdrop/stats`
+
+Overall airdrop statistics: total claims, wRTC distributed, allocations remaining, breakdown by tier and chain.
+
+#### `POST /airdrop/process` _(admin only)_
+
+Mark a pending claim as complete after wRTC minting.
+
+**Headers:** `X-Admin-Key: <admin-key>`
+
+```json
+{"claim_id": "claim_...", "tx_hash": "0xMintTx...", "notes": "optional"}
+```
+
+#### `POST /airdrop/reject` _(admin only)_
+
+Reject a pending claim. Body: `{"claim_id": "...", "reason": "..."}`.
+
+### Airdrop Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AIRDROP_DB_PATH` | SQLite DB path | `airdrop_ledger.db` |
+| `AIRDROP_ADMIN_KEY` | Admin API key | _(empty)_ |
+| `GITHUB_CLIENT_ID` | GitHub OAuth app client ID | _(empty)_ |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth app client secret | _(empty)_ |
+
+### Airdrop Tests
+
+```bash
+python -m pytest bridge/test_airdrop_api.py -v
+```
+
+### Eligibility Tiers
+
+| Tier | Requirement | Base wRTC |
+|------|-------------|-----------|
+| Stargazer | 10+ Scottcjn repos starred | 25 |
+| Contributor | 1+ merged PRs | 50 |
+| Builder | 3+ merged PRs | 100 |
+| Security | Verified vulnerability | 150 |
+| Core | 5+ merged PRs / Star King | 200 |
+| Miner | Active attestation history | 100 |
