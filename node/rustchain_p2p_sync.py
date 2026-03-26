@@ -204,12 +204,99 @@ class BlockSync:
                 self.peer_manager.mark_peer_inactive(peer_url)
 
     def _apply_blocks(self, blocks: List[Dict]):
-        """Apply received blocks to local chain"""
-        # This would integrate with the main RustChain block validation
-        # For now, just log that we received them
-        for block in blocks:
-            print(f"[P2P] Received block {block.get('height')} from peer")
-            # TODO: Validate and add block to local chain
+        """Validate and insert received blocks into the local chain.
+
+        For each block:
+        1. Verify the block hash matches its contents
+        2. Check parent hash links to existing chain tip
+        3. Insert into the blocks table
+        4. Update chain tip
+        """
+        import hashlib
+
+        with sqlite3.connect(self.db_path) as conn:
+            for block in blocks:
+                height = block.get("height")
+                block_hash = block.get("hash", block.get("block_hash"))
+                data = block.get("data", {})
+
+                if height is None or block_hash is None:
+                    print(f"[P2P] Skipping malformed block (missing height or hash)")
+                    continue
+
+                # 1. Verify block hash matches content
+                header = data.get("header", {})
+                if header:
+                    # Recompute hash from header fields using canonical ordering
+                    hash_fields = json.dumps(header, sort_keys=True)
+                    computed_hash = hashlib.sha256(hash_fields.encode()).hexdigest()
+                    # Also accept blake2b if available
+                    try:
+                        import hashlib as _hl
+                        computed_blake = _hl.blake2b(
+                            hash_fields.encode(), digest_size=32
+                        ).hexdigest()
+                    except Exception:
+                        computed_blake = None
+
+                    if block_hash != computed_hash and block_hash != computed_blake:
+                        print(f"[P2P] REJECTED block {height}: hash mismatch "
+                              f"(got {block_hash[:16]}..., expected {computed_hash[:16]}...)")
+                        continue
+
+                # 2. Check parent hash chain
+                prev_hash = header.get("prev_hash", data.get("prev_hash", ""))
+                if height > 0:
+                    row = conn.execute(
+                        "SELECT block_hash FROM blocks WHERE height = ?",
+                        (height - 1,)
+                    ).fetchone()
+                    if row is None:
+                        print(f"[P2P] Skipping block {height}: parent block {height - 1} not found locally")
+                        continue
+                    if row[0] != prev_hash:
+                        print(f"[P2P] REJECTED block {height}: prev_hash mismatch "
+                              f"(expected {row[0][:16]}..., got {prev_hash[:16]}...)")
+                        continue
+
+                # 3. Check if block already exists
+                existing = conn.execute(
+                    "SELECT 1 FROM blocks WHERE height = ?", (height,)
+                ).fetchone()
+                if existing:
+                    print(f"[P2P] Block {height} already exists, skipping")
+                    continue
+
+                # 4. Insert into blocks table
+                try:
+                    conn.execute("""
+                        INSERT INTO blocks (
+                            height, block_hash, prev_hash, timestamp,
+                            merkle_root, state_root, attestations_hash,
+                            producer, producer_sig, tx_count, attestation_count,
+                            body_json, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        height,
+                        block_hash,
+                        prev_hash,
+                        header.get("timestamp", int(time.time())),
+                        header.get("merkle_root", "0" * 64),
+                        header.get("state_root", "0" * 64),
+                        header.get("attestations_hash", "0" * 64),
+                        header.get("producer", "unknown"),
+                        header.get("producer_sig", ""),
+                        data.get("body", {}).get("tx_count", 0),
+                        data.get("body", {}).get("attestation_count", 0),
+                        json.dumps(data.get("body", {})),
+                        int(time.time())
+                    ))
+                    conn.commit()
+                    print(f"[P2P] Inserted block {height} ({block_hash[:16]}...)")
+                except sqlite3.IntegrityError as e:
+                    print(f"[P2P] Block {height} insert conflict: {e}")
+                except Exception as e:
+                    print(f"[P2P] Failed to insert block {height}: {e}")
 
     def start_sync_loop(self):
         """Start background sync loop"""
