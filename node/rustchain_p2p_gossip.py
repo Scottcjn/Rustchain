@@ -26,6 +26,20 @@ from collections import defaultdict
 import logging
 import requests
 
+# Cross-node replay defense integration (Issue #2296)
+# Lazy import to avoid circular dependency - the module may not be available
+# in all deployment configurations
+try:
+    from . import red_team_attestation_replay as cn_replay
+    CROSS_NODE_DEFENSE_AVAILABLE = True
+except ImportError:
+    try:
+        import red_team_attestation_replay as cn_replay
+        CROSS_NODE_DEFENSE_AVAILABLE = True
+    except ImportError:
+        cn_replay = None
+        CROSS_NODE_DEFENSE_AVAILABLE = False
+
 # Configuration
 P2P_SECRET = os.environ.get("RC_P2P_SECRET", "rustchain_p2p_secret_2025_decentralized")
 GOSSIP_TTL = 3
@@ -445,6 +459,35 @@ class GossipLayer:
             # Also update database
             self._save_attestation_to_db(attestation, ts_ok)
             logger.info(f"Merged attestation for {miner_id[:16]}...")
+
+            # Integrate with cross-node replay defense (Issue #2296)
+            # Record attestation received from peer into cross-node registry
+            # so that subsequent local attestation checks can detect cross-node replays
+            if CROSS_NODE_DEFENSE_AVAILABLE and cn_replay is not None:
+                try:
+                    # Map gossip attestation data to cross-node registry format
+                    # The gossip attestation has: miner, ts_ok, device_family, device_arch, entropy_score
+                    # Cross-node registry needs: hardware_id, entropy_profile_hash, fingerprint_hash,
+                    #                              wallet_address, miner_id, nonce
+                    cn_attestation = {
+                        'hardware_id': attestation.get('hardware_id') or miner_id,
+                        'entropy_profile_hash': attestation.get('entropy_profile_hash')
+                            or hashlib.sha256(json.dumps({
+                                'family': attestation.get('device_family', 'unknown'),
+                                'arch': attestation.get('device_arch', 'unknown'),
+                                'entropy': attestation.get('entropy_score', 0)
+                            }, sort_keys=True).encode()).hexdigest(),
+                        'fingerprint_hash': attestation.get('fingerprint_hash')
+                            or hashlib.sha256(json.dumps(attestation, sort_keys=True).encode()).hexdigest(),
+                        'miner_id': miner_id,
+                        'wallet_address': attestation.get('wallet_address') or miner_id,
+                        'nonce': attestation.get('nonce') or str(ts_ok),
+                        'timestamp': ts_ok,
+                        'attestation_valid': True
+                    }
+                    cn_replay.integrate_gossip_attestations(cn_attestation, source_node_id=msg.sender_id or 'unknown')
+                except Exception as e:
+                    logger.warning(f"Cross-node defense integration failed: {e}")
 
         return {"status": "ok"}
 
