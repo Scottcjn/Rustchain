@@ -2687,6 +2687,7 @@ def _submit_attestation_impl():
 
     # Issue #2276: Hardware Fingerprint Replay Attack Defense
     # Check for replay attacks BEFORE validating fingerprint data
+    fingerprint_passed = False  # Initialize before replay defense block
     replay_blocked = False
     replay_reason = "not_checked"
     replay_details = None
