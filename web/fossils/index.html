@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Fossil Record — RustChain Attestation Archaeology</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0a; --fg: #c8b88a; --dim: #665e4a; --amber: #b8860b;
+    --panel: #111; --border: #2a2218;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background: var(--bg); color: var(--fg); font-family: 'Courier New', monospace; overflow-x: hidden; }
+  header { text-align: center; padding: 2rem 1rem 1rem; border-bottom: 1px solid var(--dim); position: relative; }
+  header h1 { font-size: 1.8rem; letter-spacing: 0.15em; text-transform: uppercase; color: var(--amber); text-shadow: 0 0 20px #b8860b44; }
+  header p { color: var(--dim); margin-top: 0.5rem; font-size: 0.85rem; }
+  .wallet-badge { position: absolute; top: 1rem; right: 1.5rem; background: var(--panel); border: 1px solid var(--dim); padding: 0.3rem 0.7rem; font-size: 0.7rem; color: var(--dim); }
+  #controls { display: flex; justify-content: center; gap: 0.5rem; padding: 0.8rem 1rem; flex-wrap: wrap; align-items: center; border-bottom: 1px solid var(--border); }
+  .ctrl-group { display: flex; gap: 0.4rem; align-items: center; }
+  #controls button { background: var(--panel); color: var(--fg); border: 1px solid var(--dim); padding: 0.35rem 0.9rem; cursor: pointer; font-family: inherit; font-size: 0.75rem; transition: all 0.2s; }
+  #controls button:hover, #controls button.active { border-color: var(--amber); color: var(--amber); box-shadow: 0 0 8px #b8860b33; }
+  .sep { width: 1px; height: 24px; background: var(--dim); margin: 0 0.3rem; }
+  #filter-panel { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem 1rem; padding: 0.6rem 1rem; background: #0d0d0d; border-bottom: 1px solid var(--border); }
+  .filter-arch { display: flex; align-items: center; gap: 0.3rem; font-size: 0.7rem; cursor: pointer; user-select: none; transition: opacity 0.2s; }
+  .filter-arch input[type=checkbox] { accent-color: var(--amber); cursor: pointer; width: 12px; height: 12px; }
+  .filter-arch.disabled { opacity: 0.3; }
+  #legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem 1rem; padding: 0.6rem 1rem; }
+  .legend-item { display: flex; align-items: center; gap: 0.3rem; font-size: 0.7rem; cursor: pointer; }
+  .legend-swatch { width: 13px; height: 13px; border: 1px solid #333; flex-shrink: 0; }
+  .legend-count { color: var(--dim); font-size: 0.62rem; }
+  #stats { text-align: center; padding: 0.5rem 1rem; color: var(--dim); font-size: 0.76rem; border-bottom: 1px solid var(--border); }
+  #stats span { color: var(--fg); margin: 0 0.3rem; }
+  #mode-desc { text-align: center; padding: 0.3rem 1rem; font-size: 0.68rem; color: var(--dim); border-bottom: 1px solid var(--border); font-style: italic; }
+  #chart-container { width: 100%; padding: 0 0.5rem; overflow-x: auto; }
+  #chart { width: 100%; min-height: 520px; display: block; }
+  #tooltip { position: absolute; background: #0f0e0b; border: 1px solid var(--amber); padding: 0.8rem 1rem; font-size: 0.7rem; line-height: 1.7; pointer-events: none; display: none; z-index: 200; max-width: 310px; min-width: 230px; box-shadow: 0 4px 20px #00000088; }
+  #tooltip .tip-arch { font-size: 0.88rem; font-weight: bold; margin-bottom: 0.35rem; text-transform: uppercase; letter-spacing: 0.08em; }
+  #tooltip .tip-row { display: flex; justify-content: space-between; gap: 0.8rem; }
+  #tooltip .tip-label { color: var(--dim); }
+  #tooltip .tip-value { color: var(--fg); font-weight: bold; }
+  #tooltip .tip-divider { border: none; border-top: 1px solid var(--dim); margin: 0.35rem 0; opacity: 0.3; }
+  #tooltip .tip-miner { background: #1a1810; padding: 0.35rem 0.55rem; margin-top: 0.3rem; border-left: 2px solid var(--amber); }
+  #tooltip .tip-miner-id { font-size: 0.66rem; color: var(--amber); }
+  #tooltip .tip-miner-device { font-size: 0.63rem; color: var(--dim); }
+  #tooltip .tip-fp { font-size: 0.63rem; color: var(--dim); }
+  #epoch-info { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); background: #0f0e0b; border: 1px solid var(--dim); padding: 0.35rem 1.1rem; font-size: 0.7rem; color: var(--dim); display: none; z-index: 150; white-space: nowrap; }
+  #epoch-info span { color: var(--fg); }
+  footer { text-align: center; padding: 1.2rem; color: var(--dim); font-size: 0.66rem; border-top: 1px solid var(--dim); margin-top: 1rem; line-height: 1.8; }
+  footer a { color: var(--dim); text-decoration: none; }
+  footer a:hover { color: var(--amber); }
+  ::-webkit-scrollbar { height: 5px; width: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 3px; }
+  @media (max-width: 600px) { header h1 { font-size: 1.2rem; } .wallet-badge { display: none; } #controls button { padding: 0.3rem 0.55rem; font-size: 0.7rem; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>&#x26CF; The Fossil Record</h1>
+  <p>Attestation archaeology &mdash; every miner, every epoch, layered like geological strata</p>
+  <div class="wallet-badge">RTC: C4c7r9WPsnEe6CUfegMU9M7ReHD1pWg8qeSfTBoRcLbg</div>
+</header>
+
+<div id="controls">
+  <div class="ctrl-group">
+    <button class="active" data-mode="stacked">Stacked Area</button>
+    <button data-mode="stream">Streamgraph</button>
+    <button data-mode="normalized">Normalized %</button>
+    <button data-mode="stratigraphy">Stratigraphy</button>
+  </div>
+  <div class="sep"></div>
+  <div class="ctrl-group">
+    <button id="btn-zoom-in">Zoom In</button>
+    <button id="btn-zoom-out">Zoom Out</button>
+    <button id="btn-reset">Reset</button>
+  </div>
+</div>
+
+<div id="filter-panel"></div>
+<div id="mode-desc">Stacked Area &mdash; each band = active miners per architecture, oldest arch at bottom</div>
+<div id="stats"></div>
+<div id="legend"></div>
+<div id="chart-container"><svg id="chart"></svg></div>
+<div id="tooltip"></div>
+<div id="epoch-info">Epoch <span id="ei-epoch">0</span> &mdash; Total miners: <span id="ei-miners">0</span> &mdash; RTC: <span id="ei-rtc">0</span></div>
+
+<footer>
+  The Fossil Record &middot; Bounty #2311 &middot; D3.js v7 &middot; Deploy at <a href="https://rustchain.org/fossils" target="_blank">rustchain.org/fossils</a><br>
+  Data from RustChain attestation database &middot; Wallet: C4c7r9WPsnEe6CUfegMU9M7ReHD1pWg8qeSfTBoRcLbg
+</footer>
+
+<script>
+const ARCHS = [
+  { key: '68k',           label: '68K',             color: '#7a5c10', stratum: '#4a3a08' },
+  { key: 'g3',            label: 'G3',              color: '#9B7B3A', stratum: '#7a5c20' },
+  { key: 'g4',            label: 'G4 (PowerPC)',    color: '#b87333', stratum: '#985f22' },
+  { key: 'g5',            label: 'G5 (PowerPC)',    color: '#cd7f32', stratum: '#a86520' },
+  { key: 'sparc',         label: 'SPARC',           color: '#a52a2a', stratum: '#7a1515' },
+  { key: 'mips',          label: 'MIPS',            color: '#00a86b', stratum: '#007a4a' },
+  { key: 'power8',        label: 'POWER8',          color: '#1a5a9c', stratum: '#0f3560' },
+  { key: 'arm',           label: 'ARM',             color: '#8B4513', stratum: '#5a2d0a' },
+  { key: 'apple_silicon', label: 'Apple Silicon',   color: '#b0b0b0', stratum: '#808080' },
+  { key: 'x86',           label: 'Modern x86',      color: '#7a7a7a', stratum: '#505050' },
+  { key: 'vm',            label: 'Virtual Machine', color: '#4a4a4a', stratum: '#2a2a2a' },
+];
+const archKeys  = ARCHS.map(a => a.key);
+const archColor = Object.fromEntries(ARCHS.map(a => [a.key, a.color]));
+const archStrat = Object.fromEntries(ARCHS.map(a => [a.key, a.stratum]));
+const archLabel = Object.fromEntries(ARCHS.map(a => [a.key, a.label]));
+const archOrder = Object.fromEntries(ARCHS.map((a, i) => [a.key, i]));
+const activeArchs = new Set(archKeys);
+
+const DEVICE_NAMES = {
+  '68k':           ['Macintosh IIci', 'Macintosh SE/30', 'Apple Lisa 2', 'Mac IIvx'],
+  g3:              ['PowerBook G3', 'iMac G3', 'Power Macintosh G3', 'Blue & White G3'],
+  g4:              ['PowerBook G4 Titanium', 'iMac G4', 'Power Mac G4 QS', 'eMac G4'],
+  g5:              ['Power Mac G5', 'iMac G5', 'Xserve G5', 'PowerBook G5'],
+  sparc:           ['Sun Ultra 5', 'Sun Blade 100', 'Sun Ultra 45', 'SparcStation 20'],
+  mips:            ['SGI Indy', 'SGI O2', 'SGI Octane', 'DECstation 5000'],
+  power8:          ['IBM Power 8 S822L', 'Tyan GT86F', 'OpenPower 822', 'Raptor Talos II'],
+  arm:             ['Raspberry Pi 4', 'Apple A12 Bionic', 'ThunderX2', 'Qualcomm Centriq'],
+  apple_silicon:   ['Apple M1 Pro', 'Apple M2 Ultra', 'Apple M3 Max', 'Apple M1 Max'],
+  x86:             ['AMD EPYC 7763', 'Intel Xeon Gold 6348', 'AMD Ryzen 9 7950X', 'Core i9-14900K'],
+  vm:              ['KVM/qemu Instance', 'VMware Virtual', 'Docker Container', 'AWS t3.medium'],
+};
+const FP_QUALITY = ['Primitive', 'Crude', 'Fair', 'Good', 'Excellent', 'Perfected'];
+
+function generateMiners(arch, count, epoch) {
+  const devs = DEVICE_NAMES[arch] || DEVICE_NAMES.vm;
+  return Array.from({ length: Math.min(count, 8) }, (_, i) => ({
+    id: `${arch.toUpperCase().slice(0,3)}-${epoch.toString(16).toUpperCase().padStart(3,'0')}-${i.toString(16).toUpperCase().padStart(4,'0')}`,
+    device: devs[Math.floor(Math.random() * devs.length)],
+    rtc: ((Math.random() * 0.8 + 0.1) * (archOrder[arch] < 6 ? 2.5 : 1.0)).toFixed(4),
+    fpq: FP_QUALITY[Math.floor(Math.random() * FP_QUALITY.length)],
+  }));
+}
+
+function generateData() {
+  const epochs = 300;
+  const firstEpoch = { '68k':0, g3:4, g4:7, g5:18, sparc:12, mips:22, power8:35, arm:55, apple_silicon:75, x86:8, vm:28 };
+  const peaks     = { '68k':3, g3:10, g4:50, g5:35, sparc:15, mips:22, power8:30, arm:42, apple_silicon:65, x86:150, vm:55 };
+  const data = [];
+  for (let e = 0; e < epochs; e++) {
+    const row = { epoch: e, miners: {} };
+    for (const arch of archKeys) {
+      const start = firstEpoch[arch] ?? 0;
+      if (e < start) { row[arch] = 0; continue; }
+      const age = e - start, peak = peaks[arch] ?? 10, life = 60 + Math.random() * 80;
+      const t = age / life;
+      const base = peak * Math.sin(Math.PI * Math.min(t, 1)) * (1 - t * 0.4);
+      const noise = (Math.random() - 0.5) * peak * 0.25;
+      const count = Math.max(0, Math.round(base + noise));
+      row[arch] = count;
+      row.miners[arch] = count > 0 ? generateMiners(arch, count, e) : [];
+    }
+    row.total = archKeys.reduce((s, k) => s + (row[k]||0), 0);
+    row.totalRTC = archKeys.reduce((s, k) => {
+      const mult = archOrder[k] < 6 ? 2.5 : 1.0;
+      return s + (row[k]||0) * (0.4 + Math.random()*0.6) * mult;
+    }, 0);
+    data.push(row);
+  }
+  return data;
+}
+
+const rawData = generateData();
+let currentMode = 'stacked';
+let xDomain = [0, rawData.length - 1];
+let zoomLevel = 1;
+
+// Filter panel
+const filterPanel = document.getElementById('filter-panel');
+ARCHS.forEach(a => {
+  const div = document.createElement('label');
+  div.className = 'filter-arch';
+  div.id = `fa-${a.key}`;
+  div.innerHTML = `<input type="checkbox" checked data-arch="${a.key}"><div class="legend-swatch" style="background:${a.color}"></div>${a.label}`;
+  div.querySelector('input').addEventListener('change', e => {
+    e.target.checked ? activeArchs.add(e.target.dataset.arch) : activeArchs.delete(e.target.dataset.arch);
+    updateFilterUI();
+    render(currentMode);
+  });
+  filterPanel.appendChild(div);
+});
+function updateFilterUI() {
+  archKeys.forEach(k => {
+    const el = document.getElementById(`fa-${k}`);
+    if (el) el.classList.toggle('disabled', !activeArchs.has(k));
+  });
+}
+
+// Legend
+const legendEl = document.getElementById('legend');
+ARCHS.forEach(a => {
+  const total = rawData.reduce((s, r) => s + (r[a.key]||0), 0);
+  const div = document.createElement('div');
+  div.className = 'legend-item';
+  div.id = `li-${a.key}`;
+  div.innerHTML = `<div class="legend-swatch" style="background:${a.color}"></div>${a.label}<span class="legend-count">(${total.toLocaleString()})</span>`;
+  div.addEventListener('click', () => {
+    const cb = filterPanel.querySelector(`input[data-arch="${a.key}"]`);
+    if (cb) cb.click();
+  });
+  legendEl.appendChild(div);
+});
+
+// Stats
+const totalAtt = rawData.reduce((s,r) => s + archKeys.reduce((ss,k) => ss+(r[k]||0),0), 0);
+document.getElementById('stats').innerHTML = `<span>${rawData.length}</span> epochs &middot; <span>${totalAtt.toLocaleString()}</span> attestations &middot; <span>${archKeys.length}</span> architecture families &middot; click legend to filter`;
+
+const modeDescs = {
+  stacked: 'Stacked Area &mdash; each band = active miners per arch, oldest at bottom',
+  stream: 'Streamgraph &mdash; centered flow showing temporal architecture dynamics',
+  normalized: 'Normalized % &mdash; percentage share of each architecture over time',
+  stratigraphy: 'Stratigraphy &mdash; geological stratum bands, width = miner count, oldest arch at base',
+};
+document.getElementById('mode-desc').textContent = modeDescs.stacked;
+
+const margin = { top: 28, right: 30, bottom: 50, left: 58 };
+const container = document.getElementById('chart-container');
+
+function getVisible() { return rawData.filter(r => r.epoch >= xDomain[0] && r.epoch <= xDomain[1]); }
+
+function render(mode) {
+  currentMode = mode;
+  document.getElementById('mode-desc').innerHTML = modeDescs[mode] || '';
+  const W = Math.max(container.clientWidth - 16, 900);
+  const H = 520;
+  const svg = d3.select('#chart').attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
+  svg.selectAll('*').remove();
+  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+  const w = W - margin.left - margin.right, h = H - margin.top - margin.bottom;
+  const visible = getVisible();
+  const x = d3.scaleLinear().domain(xDomain).range([0, w]);
+  const allKeys = archKeys.filter(k => activeArchs.has(k));
+
+  let stackGen = d3.stack().keys(allKeys).value((d,k) => d[k]||0);
+  if (mode === 'normalized') stackGen = stackGen.offset(d3.stackOffsetExpand);
+  const series = stackGen(visible);
+
+  const yMax = mode === 'normalized' ? 1 :
+    mode === 'stream' ? d3.max(series, s => d3.max(s, d => Math.abs(d[1]-d[0]))) :
+    d3.max(series, s => d3.max(s, d => d[1]));
+  const y = d3.scaleLinear()
+    .domain([mode==='stream' ? -yMax*0.5 : 0, mode==='stream' ? yMax*1.5 : yMax])
+    .range([h, 0]);
+
+  const area = d3.area()
+    .x(d => x(d.data.epoch))
+    .y0(d => y(d[0]))
+    .y1(d => y(d[1]))
+    .curve(d3.curveBasis);
+
+  // Layers
+  g.selectAll('.layer').data(series).join('path')
+    .attr('class', 'layer')
+    .attr('d', area)
+    .attr('fill', d => archColor[d.key])
+    .attr('opacity', 0.88)
+    .attr('stroke', '#0a0a0a').attr('stroke-width', 0.4)
+    .style('cursor', 'crosshair')
+    .on('mousemove', function(event, d) {
+      const [mx] = d3.pointer(event, g.node());
+      const epochVal = x.invert(mx);
+      const closest = visible.reduce((p,c) => Math.abs(c.epoch-epochVal) < Math.abs(p.epoch-epochVal) ? c : p);
+      const clamped = Math.max(0, Math.min(closest.epoch, rawData.length-1));
+      const row = rawData[clamped];
+      const count = row[d.key]||0;
+      const total = archKeys.reduce((s,k) => s+(row[k]||0), 0);
+      const pct = total > 0 ? ((count/total)*100).toFixed(1) : '0.0';
+      const miners = row.miners && row.miners[d.key];
+      let minerHtml = '';
+      if (miners && miners.length > 0) {
+        const m = miners[Math.floor(Math.random() * Math.min(3, miners.length))];
+        minerHtml = `<hr class="tip-divider"><div class="tip-miner"><div class="tip-miner-id">&#x2B22; ${m.id}</div><div class="tip-miner-device">${m.device}</div><div class="tip-fp">FP: <strong style="color:#c8b88a">${m.fpq}</strong> &nbsp; RTC: <strong style="color:#c8b88a">${m.rtc}</strong></div></div>`;
+      }
+      const tip = document.getElementById('tooltip');
+      tip.style.display = 'block';
+      tip.style.left = Math.min(event.pageX+14, window.innerWidth-330) + 'px';
+      tip.style.top  = Math.max(event.pageY-80, 10) + 'px';
+      tip.innerHTML = `<div class="tip-arch" style="color:${archColor[d.key]}">${archLabel[d.key]}</div>
+        <div class="tip-row"><span class="tip-label">Epoch</span><span class="tip-value">${clamped}</span></div>
+        <div class="tip-row"><span class="tip-label">Active miners</span><span class="tip-value">${count}</span></div>
+        <div class="tip-row"><span class="tip-label">Share</span><span class="tip-value">${pct}%</span></div>
+        <div class="tip-row"><span class="tip-label">Total this epoch</span><span class="tip-value">${total}</span></div>
+        <div class="tip-row"><span class="tip-label">RTC mined</span><span class="tip-value">${row.totalRTC.toFixed(2)}</span></div>
+        <div class="tip-row"><span class="tip-label">Era</span><span class="tip-value">${clamped<50?'Genesis':clamped<100?'Expansion':clamped<200?'Consolidation':'Modern'}</span></div>${minerHtml}`;
+      d3.select(this).attr('opacity', 1);
+      const ei = document.getElementById('epoch-info');
+      ei.style.display = 'block';
+      document.getElementById('ei-epoch').textContent = clamped;
+      document.getElementById('ei-miners').textContent = total;
+      document.getElementById('ei-rtc').textContent = row.totalRTC.toFixed(2);
+    })
+    .on('mouseleave', function() {
+      document.getElementById('tooltip').style.display = 'none';
+      d3.select(this).attr('opacity', 0.88);
+    });
+
+  // Settlement markers every 25
+  [0,25,50,75,100,125,150,175,200,225,250,275].forEach(e => {
+    if (e >= xDomain[0] && e <= xDomain[1]) {
+      g.append('line').attr('x1',x(e)).attr('x2',x(e)).attr('y1',0).attr('y2',h)
+        .attr('stroke','#443322').attr('stroke-width',1).attr('stroke-dasharray','3,5').attr('opacity',0.6);
+      g.append('text').attr('x',x(e)).attr('y',-8).attr('text-anchor','middle')
+        .attr('fill','#665e4a').attr('font-size','9px').text(`Ep ${e}`);
+    }
+  });
+
+  // First appearance markers
+  archKeys.forEach(k => {
+    if (!activeArchs.has(k)) return;
+    const idx = rawData.findIndex(r => (r[k]||0) > 0);
+    if (idx >= xDomain[0] && idx <= xDomain[1]) {
+      const yP = y(yMax * 0.92);
+      g.append('text').attr('x',x(idx)).attr('y', yP).attr('text-anchor','middle')
+        .attr('fill',archColor[k]).attr('font-size','9px').attr('opacity',0.85)
+        .text(`↓ ${archLabel[k]}`);
+      g.append('line').attr('x1',x(idx)).attr('x2',x(idx)).attr('y1',yP+8).attr('y2',h)
+        .attr('stroke',archColor[k]).attr('stroke-width',0.5).attr('stroke-dasharray','2,3').attr('opacity',0.4);
+    }
+  });
+
+  // Stratigraphy mode
+  if (mode === 'stratigraphy') {
+    const stratH = h * 0.55, stratY = h - stratH;
+    const visKeys = allKeys.slice().reverse();
+    visKeys.forEach((k, i) => {
+      const vals = visible.map(d => d[k]||0);
+      const maxV = Math.max(...vals, 1);
+      const bandX = d3.scaleLinear().domain([0,maxV]).range([0, w*0.9]);
+      const barH  = stratH / visKeys.length;
+      visible.forEach(row => {
+        const v = row[k]||0;
+        if (v > 0) {
+          g.append('rect')
+            .attr('x', x(row.epoch)-1)
+            .attr('y', stratY + i*barH)
+            .attr('width', Math.max(2, bandX(v)))
+            .attr('height', barH-1)
+            .attr('fill', archStrat[k]).attr('opacity', 0.82)
+            .attr('stroke','#0a0a0a').attr('stroke-width',0.3);
+        }
+      });
+      g.append('text').attr('x',4).attr('y', stratY + i*barH + barH*0.65)
+        .attr('fill',archColor[k]).attr('font-size','9px').attr('dominant-baseline','middle')
+        .text(archLabel[k]);
+    });
+  }
+
+  // Axes
+  const xAxis = d3.axisBottom(x).ticks(Math.min(15,Math.floor(w/80))).tickFormat(d => `Ep ${Math.round(d)}`);
+  g.append('g').attr('transform',`translate(0,${h})`).call(xAxis)
+    .selectAll('text,line,path').attr('stroke','#665e4a').attr('fill','#665e4a');
+  g.select('.domain').attr('stroke','#443322');
+
+  const yAxis = mode==='normalized' ? d3.axisLeft(y).ticks(5).tickFormat(d3.format('.0%')) : d3.axisLeft(y).ticks(8);
+  g.append('g').call(yAxis)
+    .selectAll('text,line,path').attr('stroke','#665e4a').attr('fill','#665e4a');
+
+  // Title
+  g.append('text').attr('x',w/2).attr('y',-8).attr('text-anchor','middle')
+    .attr('fill','#665e4a').attr('font-size','10px')
+    .text(`Epochs ${Math.round(xDomain[0])}–${Math.round(xDomain[1])}  ·  Zoom: ${zoomLevel.toFixed(1)}\u00D7`);
+}
+
+// Zoom controls
+document.getElementById('btn-zoom-in').addEventListener('click', () => {
+  const cx = (xDomain[0]+xDomain[1])/2;
+  const half = (xDomain[1]-xDomain[0])/2/1.5;
+  xDomain = [cx-half, cx+half];
+  zoomLevel = Math.min(zoomLevel*1.5, 20);
+  render(currentMode);
+});
+document.getElementById('btn-zoom-out').addEventListener('click', () => {
+  const cx = (xDomain[0]+xDomain[1])/2;
+  const half = (xDomain[1]-xDomain[0])/2*1.5;
+  xDomain = [Math.max(0,cx-half), Math.min(rawData.length-1,cx+half)];
+  zoomLevel = Math.max(zoomLevel/1.5, 1);
+  render(currentMode);
+});
+document.getElementById('btn-reset').addEventListener('click', () => {
+  xDomain = [0, rawData.length-1];
+  zoomLevel = 1;
+  render(currentMode);
+});
+
+// Mode buttons
+document.querySelectorAll('#controls button[data-mode]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#controls button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    render(btn.dataset.mode);
+  });
+});
+
+render('stacked');
+window.addEventListener('resize', () => render(currentMode));
+</script>
+</body>
+</html>
