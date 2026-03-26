@@ -1,0 +1,102 @@
+# Makefile for Retro68 cross-compiler
+# Builds macos9_miner for Mac OS 9 (PowerPC) on modern macOS/Linux
+#
+# Usage: make -f Makefile.retro68 [clean|all]
+#
+# Requires: Retro68 (brew install retro68)
+
+# ---- Toolchain ----
+PPC_PREFIX ?= /usr/local/bin/powerpc-geeko-linux-gnu-
+CC      = $(PPC_PREFIX)gcc
+AR      = $(PPC_PREFIX)ar
+RANLIB  = $(PPC_PREFIX)ranlib
+
+# ---- Flags ----
+# Retro68 target: Mac OS 9 (Mach-O, classic runtime)
+TARGET_CFLAGS = \
+  -nostdinc \
+  -fno-exceptions \
+  -fno-rtti \
+  -fschedule-insns \
+  -fpascal-strings \
+  -DMACOS9 \
+  -DPOWERPC \
+  -Dposix_shim_EXPORTS
+
+TARGET_LDFLAGS = \
+  -static \
+  -Wl,-static \
+  -Wl,-arch,ppc \
+  -Wl,-mmacosx-version-min=9.0 \
+  -Wl,-seg1addr,0x10000000
+
+# Optimization
+OPT ?= -O2
+CFLAGS = $(TARGET_CFLAGS) $(OPT) -Wall -Wextra -pedantic -std=c89
+
+# ---- Directories ----
+SRC_DIR = .
+BUILD_DIR = build-retro68
+
+# ---- Source files ----
+SRCS = macos9_miner.c posix_shim.c sha256.c json_min.c
+OBJS = $(SRCS:%.c=$(BUILD_DIR)/%.o)
+
+# ---- Output ----
+OUTPUT = macos9_miner
+
+# ---- Retro68 include paths ----
+RETRO68_ROOT ?= /usr/local/share/retro68
+RETRO68_INC = $(RETRO68_ROOT)/macos_developer_headers/GlobalSD \
+
+GUSI_INC = $(RETRO68_ROOT)/macos_developer_headers/GUSI
+MACOS_INC = $(RETRO68_ROOT)/macos_developer_headers/GlobalSDK/Headers/MacOS
+OT_INC = $(RETRO68_ROOT)/macos_developer_headers/OpenTransport
+
+CFLAGS += -I$(SRC_DIR) -I.
+
+# ---- Default target ----
+.PHONY: all
+all: $(OUTPUT)
+
+$(OUTPUT): $(OBJS)
+	@echo "Linking $@..."
+	$(CC) $(TARGET_LDFLAGS) -o $@ $(OBJS) -lm
+	@echo "Built: $@"
+	@echo ""
+	@echo "NOTE: This produces a cross-compiled Mach-O PPC binary."
+	@echo "Transfer to Mac OS 9 via network/CD/floppy for execution."
+
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
+	@echo "Compiling $<..."
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+# ---- Clean ----
+.PHONY: clean
+clean:
+	rm -rf $(BUILD_DIR) $(OUTPUT)
+	@echo "Cleaned."
+
+# ---- Dependencies ----
+.PHONY: deps
+deps: $(SRCS)
+	$(CC) $(CFLAGS) -MM $(SRCS) > .depend
+
+# ---- Info ----
+.PHONY: info
+info:
+	@echo "Retro68 Cross-Compiler Build"
+	@echo "  CC:      $(CC)"
+	@echo "  CFLAGS:  $(CFLAGS)"
+	@echo "  LDFLAGS: $(TARGET_LDFLAGS)"
+	@echo "  Output:  $(OUTPUT)"
+	@echo ""
+	@echo "To build for Mac OS 9 native (CodeWarrior):"
+	@echo "  1. Open miners/macos9/ in CodeWarrior Pro 8"
+	@echo "  2. Add GUSI.lib to linker"
+	@echo "  3. Build → macos9_miner"
+
+-include .depend
