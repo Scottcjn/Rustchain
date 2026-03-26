@@ -4597,18 +4597,28 @@ def genesis_export():
 
 @app.route('/balance/<miner_pk>', methods=['GET'])
 def get_balance(miner_pk):
-    """Get miner balance - checks both miner_pk and miner_id columns"""
+    """Get miner balance with schema compatibility."""
     with sqlite3.connect(DB_PATH) as c:
-        # Try miner_pk first (old-style wallets), then miner_id (new-style)
-        row = c.execute("SELECT COALESCE(amount_i64, 0) FROM balances WHERE miner_pk = ?", (miner_pk,)).fetchone()
-        if not row or row[0] == 0:
-            row = c.execute("SELECT COALESCE(amount_i64, 0) FROM balances WHERE miner_id = ?", (miner_pk,)).fetchone()
-        balance_i64 = row[0] if row else 0
-        balance_rtc = balance_i64 / 1000000.0
+        cur = c.cursor()
+        cols = {r[1] for r in cur.execute("PRAGMA table_info(balances)").fetchall()}
+
+        balance_i64 = 0
+        if "amount_i64" in cols:
+            row = None
+            if "miner_pk" in cols:
+                row = cur.execute("SELECT COALESCE(amount_i64, 0) FROM balances WHERE miner_pk = ?", (miner_pk,)).fetchone()
+            if (not row or row[0] == 0) and "miner_id" in cols:
+                row = cur.execute("SELECT COALESCE(amount_i64, 0) FROM balances WHERE miner_id = ?", (miner_pk,)).fetchone()
+            balance_i64 = int(row[0]) if row else 0
+        else:
+            # Legacy schema: balances(miner_pk, balance_rtc)
+            row = cur.execute("SELECT COALESCE(balance_rtc, 0.0) FROM balances WHERE miner_pk = ?", (miner_pk,)).fetchone()
+            bal_rtc = float(row[0]) if row else 0.0
+            balance_i64 = int(round(bal_rtc * UNIT))
 
         return jsonify({
             "miner_pk": miner_pk,
-            "balance_rtc": balance_rtc,
+            "balance_rtc": balance_i64 / UNIT,
             "amount_i64": balance_i64
         })
 
@@ -5429,9 +5439,16 @@ def api_wallet_balance():
         return jsonify({"ok": False, "error": "miner_id or address required"}), 400
 
     with sqlite3.connect(DB_PATH) as db:
-        row = db.execute("SELECT amount_i64 FROM balances WHERE miner_id=?", (miner_id,)).fetchone()
+        try:
+            # Newer schema
+            row = db.execute("SELECT amount_i64 FROM balances WHERE miner_id=?", (miner_id,)).fetchone()
+            amt = int(row[0]) if row else 0
+        except sqlite3.OperationalError:
+            # Legacy schema: balances(miner_pk, balance_rtc)
+            row = db.execute("SELECT balance_rtc FROM balances WHERE miner_pk=?", (miner_id,)).fetchone()
+            bal_rtc = float(row[0]) if row else 0.0
+            amt = int(round(bal_rtc * UNIT))
 
-    amt = int(row[0]) if row else 0
     return jsonify({
         "miner_id": miner_id,
         "amount_i64": amt,

@@ -28,6 +28,19 @@ RustChain Token (RTC) is the native cryptocurrency of the RustChain network. Unl
 | **Bounties** | 25,000 RTC | 0.31% | Community contributions |
 | **Total** | 8,000,000 RTC | 100% | Fixed, no inflation |
 
+### Distribution Milestones (March 2026)
+
+| Metric | Value |
+|--------|-------|
+| **Total Wallets** | **500** |
+| **Non-Founder Wallets** | 496 |
+| **RTC to Contributors** | ~90,568 RTC |
+| **Bounty Payments** | ~27,000 RTC to 260+ contributors |
+| **Largest Single-Day Payout** | 1,995 RTC (B1tor, March 26, 2026) |
+| **Mining Rewards Distributed** | ~63,000 RTC (epoch settlements) |
+| **On-Chain Transactions** | 2,511 |
+| **Top Contributor Earnings** | 3,258 RTC |
+
 ### Emission Schedule
 
 ```mermaid
@@ -275,8 +288,11 @@ wRTC is also available on Base L2:
 |--------|-------|
 | **Reference Price** | $0.10 USD per RTC |
 | **Fully Diluted Value** | $800,000 USD |
-| **Circulating Supply** | ~75,000 RTC |
-| **Market Cap** | ~$7,500 USD |
+| **Circulating Supply** | ~90,568 RTC (contributor payouts + mining) |
+| **Market Cap** | ~$9,057 USD |
+| **Wallet Holders** | **500** (milestone reached March 26, 2026) |
+| **Bounties Paid** | ~27,000 RTC to 260+ contributors |
+| **Ledger Entries** | 2,511 on-chain transactions |
 
 ### Earning Potential
 
@@ -292,12 +308,37 @@ wRTC is also available on Base L2:
 
 ### Contribution Rewards
 
-| Tier | Reward | Examples |
-|------|--------|----------|
-| **Micro** | 1-10 RTC | Typo fix, small docs |
-| **Standard** | 20-50 RTC | Feature, refactor |
-| **Major** | 75-100 RTC | Security fix, consensus |
-| **Critical** | 100-150 RTC | Vulnerability patch |
+| Tier | Current Rate | After 35K Paid | After 50K Paid | Examples |
+|------|-------------|---------------|---------------|----------|
+| **Micro** | 1-10 RTC | 1-8 RTC | 1-5 RTC | Typo fix, small docs, first PR |
+| **Standard** | 20-50 RTC | 15-40 RTC | 10-25 RTC | Feature, refactor, tests |
+| **Major** | 75-150 RTC | 55-115 RTC | 40-75 RTC | Security fix, SDK, integration |
+| **Critical** | 200-400 RTC | 150-300 RTC | 100-200 RTC | Red team, consensus, vulnerability |
+
+### Bounty Payout Scaling (RIP-306)
+
+As the ecosystem matures and RTC distribution widens, bounty payouts scale down to protect token value for existing holders:
+
+| Milestone | Rate Adjustment | Rationale |
+|-----------|----------------|-----------|
+| **0-27K RTC paid** (current) | Full rates | Bootstrap phase — attract contributors |
+| **35K RTC paid** | -25% across all tiers | Early maturity — 500+ wallets, ecosystem proven |
+| **50K RTC paid** | -50% across all tiers | Growth phase — only high-impact gets premium |
+| **100K RTC paid** | -75% — elite bounties only | Mature phase — RTC value should reflect scarcity |
+
+**Why scale down?**
+
+1. **500 wallet holders** already exist — distribution goal met
+2. **50K of 8.3M supply** (0.6%) allocated to bounties is approaching meaningful dilution
+3. If RTC reference price increases, current bounty amounts become disproportionately expensive
+4. Early contributors who earned at full rates benefit from increasing scarcity
+5. The network is proven — we no longer need to overpay to attract contributors
+
+**What doesn't change:**
+- Mining epoch rewards (1.5 RTC/epoch) — unchanged, consensus-driven
+- Antiquity multipliers — unchanged, hardware-based
+- Airdrop pool — separate allocation
+- The commitment to paying contributors — rates adjust, payments continue
 
 ### Active Bounty Pools
 
@@ -326,6 +367,39 @@ Running multiple miners is economically unfeasible:
 2. **Cost**: Expensive to acquire and maintain
 3. **Authenticity**: Can't be faked (fingerprinting)
 4. **Decay**: Multipliers decrease over time
+
+
+## 500 Wallet Milestone (March 26, 2026)
+
+On March 26, 2026, RustChain reached **500 unique wallet holders** — a critical mass for a network that launched just four months earlier with zero marketing budget.
+
+### How We Got Here
+
+| Phase | Wallets | Strategy |
+|-------|---------|----------|
+| **Launch** (Dec 2025) | 8 | Founder hardware only (G4s, G5, POWER8) |
+| **First External** (Jan 2026) | 15 | Ryan's Factorio VM (first non-lab node) |
+| **Bounty System** (Feb 2026) | 50 | 1 RTC first-PR bounties attract contributors |
+| **Growth Sprint** (Mar 2026) | 500 | 260+ contributors, awesome list PRs, Moltbook presence |
+
+### What 500 Wallets Means
+
+1. **Sybil-resistant distribution** — 500 real wallets across diverse hardware
+2. **Community-driven growth** — no airdrops to bots, every wallet earned RTC
+3. **Bounty system works** — paying contributors builds both code AND distribution
+4. **Ready for DEX** — sufficient holder count for healthy trading when wRTC bridge launches
+
+### Wallet Distribution
+
+| Balance Range | Wallets | % of Holders |
+|---------------|---------|--------------|
+| > 1,000 RTC | ~15 | 3% |
+| 100-1,000 RTC | ~40 | 8% |
+| 10-100 RTC | ~100 | 20% |
+| 1-10 RTC | ~200 | 40% |
+| < 1 RTC | ~145 | 29% |
+
+This is a healthy distribution — most holders earned small amounts through first-PR bounties and mining, with larger balances going to consistent contributors. No whale concentration outside founder allocations.
 
 ## Future Considerations
 

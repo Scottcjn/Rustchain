@@ -1,0 +1,12 @@
+{
+  "generated_at": "2026-03-26T11:38:27.353250+00:00",
+  "badge_count": 5,
+  "badges": [
+    "network_status.json",
+    "total_bounties.json",
+    "weekly_growth.json",
+    "top_hunters.json",
+    "category_feature.json"
+  ],
+  "schema_version": 1
+}
