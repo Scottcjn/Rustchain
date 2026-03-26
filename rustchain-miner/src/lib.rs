@@ -27,6 +27,9 @@ pub mod transport;
 pub mod attestation;
 pub mod miner;
 
+#[cfg(test)]
+mod arch_tests;
+
 pub use config::Config;
 pub use error::{Result, MinerError};
 pub use hardware::HardwareInfo;

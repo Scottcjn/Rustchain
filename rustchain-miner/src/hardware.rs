@@ -118,6 +118,49 @@ impl HardwareInfo {
 fn detect_cpu_family_arch(cpu: &str, machine: &str) -> (String, String) {
     let cpu_lower = cpu.to_lowercase();
 
+    // RISC-V (2010+) - Open ISA, emerging vintage hardware
+    if machine.contains("riscv") || machine.contains("risc-v") {
+        // Detect specific RISC-V implementations
+        if cpu_lower.contains("sifive") {
+            if cpu_lower.contains("u74") {
+                return ("RISC-V".to_string(), "SiFive U74".to_string());
+            } else if cpu_lower.contains("u54") {
+                return ("RISC-V".to_string(), "SiFive U54".to_string());
+            } else if cpu_lower.contains("e51") {
+                return ("RISC-V".to_string(), "SiFive E51".to_string());
+            }
+            return ("RISC-V".to_string(), "SiFive".to_string());
+        } else if cpu_lower.contains("starfive") {
+            if cpu_lower.contains("jh7110") {
+                return ("RISC-V".to_string(), "StarFive JH7110".to_string());
+            } else if cpu_lower.contains("jh7100") {
+                return ("RISC-V".to_string(), "StarFive JH7100".to_string());
+            }
+            return ("RISC-V".to_string(), "StarFive".to_string());
+        } else if cpu_lower.contains("visionfive") {
+            return ("RISC-V".to_string(), "VisionFive".to_string());
+        } else if cpu_lower.contains("hifive") {
+            return ("RISC-V".to_string(), "HiFive".to_string());
+        } else if cpu_lower.contains("kendryte") {
+            return ("RISC-V".to_string(), "Kendryte".to_string());
+        } else if cpu_lower.contains("allwinner") {
+            if cpu_lower.contains("d1") || cpu_lower.contains("sunxi") {
+                return ("RISC-V".to_string(), "Allwinner D1".to_string());
+            }
+            return ("RISC-V".to_string(), "Allwinner".to_string());
+        } else if cpu_lower.contains("thead") {
+            if cpu_lower.contains("c910") || cpu_lower.contains("c906") {
+                return ("RISC-V".to_string(), "T-Head C910/C906".to_string());
+            }
+            return ("RISC-V".to_string(), "T-Head".to_string());
+        } else if machine.contains("64") {
+            return ("RISC-V".to_string(), "RISC-V 64-bit".to_string());
+        } else if machine.contains("32") {
+            return ("RISC-V".to_string(), "RISC-V 32-bit".to_string());
+        }
+        return ("RISC-V".to_string(), "Generic".to_string());
+    }
+
     // Apple Silicon (M1/M2/M3/M4)
     if machine == "aarch64" || machine == "arm64" {
         if cpu_lower.contains("m4") {
@@ -165,6 +208,20 @@ fn detect_cpu_family_arch(cpu: &str, machine: &str) -> (String, String) {
             return ("PowerPC".to_string(), "G3".to_string());
         }
         return ("PowerPC".to_string(), "G4".to_string());
+    }
+
+    // ARM (generic, non-Apple)
+    if machine.contains("arm") || machine.contains("aarch") {
+        if cpu_lower.contains("cortex-a72") {
+            return ("ARM".to_string(), "Cortex-A72".to_string());
+        } else if cpu_lower.contains("cortex-a53") {
+            return ("ARM".to_string(), "Cortex-A53".to_string());
+        } else if cpu_lower.contains("cortex-a76") {
+            return ("ARM".to_string(), "Cortex-A76".to_string());
+        } else if cpu_lower.contains("neoverse") {
+            return ("ARM".to_string(), "Neoverse".to_string());
+        }
+        return ("ARM".to_string(), "Generic ARM".to_string());
     }
 
     // Default
