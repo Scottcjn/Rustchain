@@ -58,7 +58,7 @@ curl -sk https://rustchain.org/epoch           # Current epoch
 
 | Fact | Proof |
 |------|-------|
-| 4 nodes across 2 continents | [Live explorer](https://rustchain.org/explorer) |
+| 5 nodes across 2 continents (US, HK, POWER8) | [Live explorer](https://rustchain.org/explorer) |
 | 22+ miners attesting | `curl -sk https://rustchain.org/api/miners` |
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
 | 25,875+ RTC paid to 260+ contributors | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
