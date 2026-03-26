@@ -58,52 +58,57 @@ WALLETS_FILE = DATA_DIR / "wallets.json"
 RATE_LIMIT_FILE = DATA_DIR / "rate_limits.json"
 
 # =============================================================================
-# Wallet Crypto (Simplified - Ed25519 placeholder)
+# Wallet Crypto (Ed25519 via cryptography library)
 # =============================================================================
 
-def derive_wallet_address(user_id: int, bot_secret: str) -> str:
-    """
-    Derive a deterministic wallet address from Telegram user ID + bot secret.
-    
-    In production, this should use proper Ed25519 key derivation.
-    For now, uses SHA256 for deterministic address generation.
-    """
-    seed = f"{bot_secret}:{user_id}"
-    hash_bytes = hashlib.sha256(seed.encode()).hexdigest()[:40]
-    return f"RTC{hash_bytes}"
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives import serialization
+
+
+def _derive_seed_bytes(user_id: int, bot_secret: str) -> bytes:
+    """Derive a deterministic 32-byte seed from user ID + bot secret."""
+    return hashlib.sha256(f"{bot_secret}:ed25519:{user_id}".encode()).digest()
 
 
 def derive_keypair(user_id: int, bot_secret: str) -> tuple:
     """
     Derive Ed25519 keypair from user ID + bot secret.
-    
+
     Returns: (private_key_hex, public_key_hex, address)
     """
-    # TODO: Replace with proper Ed25519 key derivation using cryptography library
-    # For now, use deterministic SHA256-based generation
-    seed = f"{bot_secret}:{user_id}"
-    priv = hashlib.sha256(f"{seed}:priv".encode()).hexdigest()
-    pub = hashlib.sha256(f"{seed}:pub".encode()).hexdigest()
-    addr = derive_wallet_address(user_id, bot_secret)
-    return priv, pub, addr
+    seed = _derive_seed_bytes(user_id, bot_secret)
+    private_key = Ed25519PrivateKey.from_private_bytes(seed)
+    pub_bytes = private_key.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    )
+    priv_bytes = private_key.private_bytes(
+        serialization.Encoding.Raw,
+        serialization.PrivateFormat.Raw,
+        serialization.NoEncryption(),
+    )
+    pub_hex = pub_bytes.hex()
+    priv_hex = priv_bytes.hex()
+    address = f"RTC{hashlib.sha256(pub_bytes).hexdigest()[:40]}"
+    return priv_hex, pub_hex, address
 
 
-def sign_transaction(priv_key: str, tx_data: dict) -> str:
+def derive_wallet_address(user_id: int, bot_secret: str) -> str:
+    """Derive a deterministic wallet address from Telegram user ID + bot secret."""
+    _, _, addr = derive_keypair(user_id, bot_secret)
+    return addr
+
+
+def sign_transaction(priv_key_hex: str, tx_data: dict) -> str:
     """
     Sign a transaction with Ed25519 private key.
-    
-    Returns: signature hex string
+
+    Returns: signature hex string (128 chars)
     """
-    # TODO: Replace with proper Ed25519 signing
-    # For now, use HMAC-SHA256 as placeholder
-    import hmac
-    message = json.dumps(tx_data, sort_keys=True)
-    sig = hmac.new(
-        priv_key.encode(),
-        message.encode(),
-        hashlib.sha256
-    ).hexdigest()
-    return sig
+    priv_bytes = bytes.fromhex(priv_key_hex)
+    private_key = Ed25519PrivateKey.from_private_bytes(priv_bytes)
+    message = json.dumps(tx_data, sort_keys=True).encode()
+    signature = private_key.sign(message)
+    return signature.hex()
 
 
 # =============================================================================
@@ -138,11 +143,11 @@ def save_rate_limits(limits: Dict):
         json.dump(limits, f)
 
 
-def get_or_create_wallet(user_id: int) -> dict:
+def get_or_create_wallet(user_id: int, username: str = "") -> dict:
     """Get or create wallet for a user."""
     wallets = load_wallets()
     user_id_str = str(user_id)
-    
+
     if user_id_str not in wallets:
         priv, pub, addr = derive_keypair(user_id, BOT_SECRET)
         wallets[user_id_str] = {
@@ -150,9 +155,14 @@ def get_or_create_wallet(user_id: int) -> dict:
             "public_key": pub,
             "private_key": priv,  # In production, encrypt this!
             "created_at": time.time(),
+            "username": username,
         }
         save_wallets(wallets)
-    
+    elif username and wallets[user_id_str].get("username") != username:
+        # Update cached username if it changed
+        wallets[user_id_str]["username"] = username
+        save_wallets(wallets)
+
     return wallets[user_id_str]
 
 
@@ -190,25 +200,31 @@ def get_balance(address: str) -> float:
     return float(result.get("amount_rtc", 0))
 
 
-def send_signed_transfer(from_addr: str, to_addr: str, amount: float, 
+def send_signed_transfer(from_addr: str, to_addr: str, amount: float,
                          priv_key: str, pub_key: str, memo: str = "") -> dict:
-    """Send signed transfer via node API."""
+    """Send Ed25519-signed transfer via node API."""
+    nonce = int(time.time() * 1000)
+    # Build the canonical transaction payload that gets signed
     tx_data = {
-        "from": from_addr,
-        "to": to_addr,
-        "amount": amount,
+        "from_address": from_addr,
+        "to_address": to_addr,
+        "amount_rtc": amount,
         "memo": memo,
-        "nonce": int(time.time() * 1000),
+        "nonce": nonce,
     }
-    
+
     signature = sign_transaction(priv_key, tx_data)
-    
+
     payload = {
-        **tx_data,
+        "from_address": from_addr,
+        "to_address": to_addr,
+        "amount_rtc": amount,
+        "memo": memo,
+        "nonce": nonce,
         "signature": signature,
         "public_key": pub_key,
     }
-    
+
     return api_post("/wallet/transfer/signed", payload)
 
 
@@ -240,7 +256,7 @@ def check_rate_limit(user_id: int) -> tuple:
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command."""
     user = update.effective_user
-    wallet = get_or_create_wallet(user.id)
+    wallet = get_or_create_wallet(user.id, username=user.username or "")
     
     msg = f"""🪙 **Welcome to RustChain Tip Bot!**
 
@@ -264,7 +280,7 @@ Your wallet address:
 async def cmd_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /balance command."""
     user = update.effective_user
-    wallet = get_or_create_wallet(user.id)
+    wallet = get_or_create_wallet(user.id, username=user.username or "")
     
     balance = get_balance(wallet['address'])
     
@@ -279,7 +295,7 @@ async def cmd_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /deposit command."""
     user = update.effective_user
-    wallet = get_or_create_wallet(user.id)
+    wallet = get_or_create_wallet(user.id, username=user.username or "")
     
     await update.message.reply_text(
         f"📥 **Your Deposit Address**\n\n"
@@ -326,7 +342,7 @@ async def cmd_tip(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # Get wallets
-    sender_wallet = get_or_create_wallet(user.id)
+    sender_wallet = get_or_create_wallet(user.id, username=user.username or "")
     
     # Check balance
     balance = get_balance(sender_wallet['address'])
@@ -338,20 +354,64 @@ async def cmd_tip(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # For now, we need the recipient's Telegram ID
-    # In a real implementation, we'd look up the @username in the chat
-    # For this MVP, we'll store pending tips and let recipients claim
-    
-    await update.message.reply_text(
-        f"💸 **Tip Initiated**\n\n"
-        f"To: {recipient_mention}\n"
-        f"Amount: {amount:.4f} RTC\n\n"
-        f"⚠️ Note: Recipient must have started this bot (/start) to receive tips.",
-        parse_mode="Markdown"
+    # Resolve recipient: check if mentioned via reply or if we can find them
+    # in our wallets by scanning for a matching Telegram user in the chat
+    recipient_user = None
+
+    # If the message is a reply, tip the replied-to user
+    if update.message.reply_to_message and update.message.reply_to_message.from_user:
+        recipient_user = update.message.reply_to_message.from_user
+
+    # Try to resolve @username from entities
+    if not recipient_user and update.message.entities:
+        for entity in update.message.entities:
+            if entity.type == "text_mention" and entity.user:
+                recipient_user = entity.user
+                break
+
+    if not recipient_user:
+        # Look up username in our local wallet store
+        target_username = recipient_mention.lstrip("@").lower()
+        wallets = load_wallets()
+        found_uid = None
+        for uid_str, w in wallets.items():
+            if w.get("username", "").lower() == target_username:
+                found_uid = int(uid_str)
+                break
+        if found_uid:
+            recipient_wallet = wallets[str(found_uid)]
+        else:
+            await update.message.reply_text(
+                f"Cannot resolve {recipient_mention}. "
+                f"The recipient must have used /start with this bot first, "
+                f"or reply to their message with /tip <amount>."
+            )
+            return
+    else:
+        recipient_wallet = get_or_create_wallet(recipient_user.id)
+
+    # Execute the transfer
+    result = send_signed_transfer(
+        sender_wallet['address'],
+        recipient_wallet['address'],
+        amount,
+        sender_wallet['private_key'],
+        sender_wallet['public_key'],
+        memo=f"Telegram tip from {user.first_name or user.username or user.id}"
     )
-    
-    # TODO: Implement actual transfer when we have recipient's user_id
-    # This requires tracking username -> user_id mapping
+
+    if "error" in result:
+        await update.message.reply_text(f"Transfer failed: {result['error']}")
+    elif result.get("ok"):
+        await update.message.reply_text(
+            f"**Tip Sent!**\n\n"
+            f"To: {recipient_mention}\n"
+            f"Amount: {amount:.4f} RTC\n"
+            f"Signature: `{result.get('signature', 'Ed25519')[:16]}...`",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text(f"Transfer failed: {result}")
 
 
 async def cmd_withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
