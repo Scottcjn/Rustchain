@@ -5,8 +5,14 @@
 - `macos/` - macOS miners for Apple Silicon and Intel
 - `windows/` - Windows miners
 - `ppc/` - PowerPC miners for G4/G5 Macs (legacy hardware bonus)
+- `apple2_miner/` - **Apple II 6502 miner (4.0x vintage multiplier)** — pure 6502 assembly via Uthernet II
 
 ## Supported Architectures
+
+| Architecture | `platform.machine()` | Multiplier Range | Examples |
+|---|---|---|---|
+| **MOS 6502 / Apple II** | `6502`, `apple2` | **4.0x** | Apple II, II+, IIe, IIgs (1MHz 6502) |
+| x86_64 | `x86_64` | 0.8-2.5x | Intel/AMD, vintage Pentium to modern Zen |
 The Linux miner auto-detects your hardware via `platform.machine()` and reports honestly:
 
 | Architecture | `platform.machine()` | Multiplier Range | Examples |
