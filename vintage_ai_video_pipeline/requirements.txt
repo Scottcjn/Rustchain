@@ -1,0 +1,28 @@
+# Vintage AI Video Pipeline - Requirements
+# Issue: #1855
+
+# Core dependencies (using standard library where possible)
+# No external dependencies required for basic functionality
+
+# Optional: For enhanced video generation backends
+# ltx-video>=0.1.0
+# cogvideo>=0.1.0
+# mochi>=0.1.0
+
+# Optional: For production deployments
+# requests>=2.28.0  # Alternative to urllib
+# Pillow>=9.0.0     # Thumbnail generation
+
+# Development
+# pytest>=7.0.0
+# pytest-cov>=4.0.0
+
+# Note: This pipeline uses Python standard library modules:
+# - urllib.request for HTTP requests
+# - json for data serialization
+# - ssl for HTTPS
+# - datetime for timestamps
+# - os for file operations
+# - time for delays
+# - hashlib for hashing
+# - random for demo generation

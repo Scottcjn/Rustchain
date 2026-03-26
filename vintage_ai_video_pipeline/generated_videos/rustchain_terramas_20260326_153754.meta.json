@@ -1,0 +1,43 @@
+{
+  "type": "vintage_ai_miner_video",
+  "version": "1.0",
+  "prompt_data": {
+    "prompt": "Unknown/Other mining RustChain. Modern ARM-based computing cluster style.\nPeer-to-peer network topology. Real-time ray tracing hints, smooth particle effects.\nColors: green PCB, black heatsinks, blue LEDs. Lighting: clean, efficient, minimalist. Mood: energy-efficient, modern, scalable.\nStats: terramas, Epoch 113, 0.00 RTC, x0.001\nHigh quality, detailed, smooth animation.",
+    "negative_prompt": "low quality, blurry, distorted, ugly, deformed, noisy, grainy, oversaturated, text artifacts, outdated CRT effects, excessive scanlines",
+    "backend": "demo",
+    "style": "modern_arm_cluster",
+    "era": "modern",
+    "duration_hint": "5s",
+    "include_text_overlay": true,
+    "metadata": {
+      "miner_id": "terramaster-nas-arm64",
+      "device_arch": "aarch64",
+      "device_family": "ARM",
+      "antiquity_multiplier": 0.001,
+      "epoch": 113,
+      "generated_at": "2026-03-26T15:37:54.948632"
+    },
+    "suggested_tags": [
+      "RustChain",
+      "cryptocurrency",
+      "mining",
+      "blockchain",
+      "AI video",
+      "aarch64",
+      "modern computing",
+      "contemporary",
+      "ARM"
+    ]
+  },
+  "generation_config": {
+    "resolution": "1280x720",
+    "fps": 24,
+    "duration_seconds": 5,
+    "guidance_scale": 7.5,
+    "inference_steps": 50
+  },
+  "generated_at": "2026-03-26T15:37:54.948710",
+  "backend": "demo",
+  "status": "demo",
+  "production_note": "This is a demonstration output showing the expected metadata format. For production deployment, configure a video generation backend (LTX-Video at http://localhost:8080, CogVideo at http://localhost:8000, or Mochi at http://localhost:7860). See PRODUCTION_DEPLOYMENT.md for setup."
+}

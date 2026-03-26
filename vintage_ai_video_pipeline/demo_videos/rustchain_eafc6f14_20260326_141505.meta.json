@@ -1,0 +1,17 @@
+{
+  "type": "vintage_ai_miner_video",
+  "version": "1.0",
+  "prompt_data": {
+    "prompt": "A beautifully preserved PowerPC G4 from the classic computing era, vintage_apple_beige_aesthetic aesthetic. PowerPC G4 (Vintage) mining RustChain cryptocurrency. Cryptographic hash functions visualized as flowing data streams with CRT monitor scanlines, pixel art transitions.",
+    "negative_prompt": "low quality, blurry, distorted, ugly, deformed",
+    "metadata": {
+      "miner_id": "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC",
+      "device_arch": "G4",
+      "antiquity_multiplier": 2.5
+    }
+  },
+  "generated_at": "2026-03-26T14:15:05.764803",
+  "backend": "demo",
+  "status": "simulated",
+  "note": "This is a simulated video for bounty demonstration. In production, integrate with LTX-Video, CogVideo, or similar."
+}

@@ -1,0 +1,37 @@
+{
+  "type": "vintage_ai_miner_video",
+  "version": "1.0",
+  "prompt_data": {
+    "prompt": "PowerMac G5 (Aluminum) mining RustChain. Early 1990s Macintosh Performera all-in-one design style.\nNetwork nodes connecting with glowing lines. Dithering effects, terminal text scrolling.\nColors: pearl white, dark gray accents, phosphor green. Lighting: soft ambient with monitor flicker. Mood: vintage computing, educational, approachable.\nStats: demo002e, Epoch 75, 0.98 RTC, x1.96\nHigh quality, detailed, smooth animation.",
+    "negative_prompt": "low quality, blurry, distorted, ugly, deformed, noisy, grainy, oversaturated, text artifacts, modern RGB gaming aesthetics, excessive neon",
+    "backend": "demo",
+    "style": "retro_apple_performera_style",
+    "era": "vintage",
+    "duration_hint": "5s",
+    "include_text_overlay": true,
+    "metadata": {
+      "miner_id": "demo002eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC",
+      "device_arch": "G3",
+      "device_family": "PowerPC",
+      "antiquity_multiplier": 1.96,
+      "epoch": 75,
+      "generated_at": "2026-03-26T14:42:30.470915"
+    },
+    "suggested_tags": [
+      "RustChain",
+      "cryptocurrency",
+      "mining",
+      "blockchain",
+      "AI video",
+      "G3",
+      "retro computing",
+      "vintage hardware",
+      "classic computer",
+      "PowerPC"
+    ]
+  },
+  "generated_at": "2026-03-26T14:42:30.470927",
+  "backend": "demo",
+  "status": "simulated",
+  "note": "This is a simulated video for bounty demonstration. In production, integrate with LTX-Video, CogVideo, or similar."
+}

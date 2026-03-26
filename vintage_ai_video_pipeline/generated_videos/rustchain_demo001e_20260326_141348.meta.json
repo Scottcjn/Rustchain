@@ -1,0 +1,38 @@
+{
+  "type": "vintage_ai_miner_video",
+  "version": "1.0",
+  "prompt_data": {
+    "prompt": "IBM Power7 Server mining RustChain. 1990s Apple Macintosh beige aesthetic with curved plastic style.\nBlockchain blocks forming and connecting in sequence. Low-poly 3d models, terminal text scrolling.\nColors: beige, cream, soft gray. Lighting: warm CRT monitor glow. Mood: nostalgic, cozy, retro-futuristic.\nStats: demo001e, Epoch 75, 1.50 RTC, x3.0\nHigh quality, detailed, smooth animation.",
+    "negative_prompt": "low quality, blurry, distorted, ugly, deformed, noisy, grainy, oversaturated, text artifacts, modern RGB gaming aesthetics, excessive neon",
+    "backend": "demo",
+    "style": "vintage_apple_beige_aesthetic",
+    "era": "vintage",
+    "duration_hint": "5s",
+    "include_text_overlay": true,
+    "metadata": {
+      "miner_id": "demo001eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC",
+      "device_arch": "G4",
+      "device_family": "IBM POWER",
+      "antiquity_multiplier": 3.0,
+      "epoch": 75,
+      "generated_at": "2026-03-26T14:13:48.984258"
+    },
+    "suggested_tags": [
+      "RustChain",
+      "cryptocurrency",
+      "mining",
+      "blockchain",
+      "AI video",
+      "G4",
+      "retro computing",
+      "vintage hardware",
+      "classic computer",
+      "high multiplier",
+      "IBM POWER"
+    ]
+  },
+  "generated_at": "2026-03-26T14:13:48.984272",
+  "backend": "demo",
+  "status": "simulated",
+  "note": "This is a simulated video for bounty demonstration. In production, integrate with LTX-Video, CogVideo, or similar."
+}
