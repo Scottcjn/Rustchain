@@ -14,7 +14,7 @@ A production-quality Python client for RustChain's Agent Economy APIs, implement
 ## Installation
 
 ```bash
-pip install rustchain-sdk
+pip install rustchain
 ```
 
 Or install from source:

@@ -24,7 +24,7 @@ Comprehensive client libraries for interacting with the RustChain blockchain and
 ## Installation
 
 ```bash
-pip install rustchain-sdk
+pip install rustchain
 ```
 
 Or from source:
@@ -57,6 +57,25 @@ balance = client.balance("wallet_address")
 print(f"Balance: {balance['balance']} RTC")
 
 client.close()
+```
+
+### Async Client
+
+```python
+import asyncio
+from rustchain import AsyncRustChainClient
+
+async def main():
+    async with AsyncRustChainClient("https://rustchain.org") as client:
+        # Get node health
+        health = await client.health()
+        print(f"Node version: {health['version']}")
+
+        # Get wallet balance
+        balance = await client.balance("wallet_address")
+        print(f"Balance: {balance['balance']} RTC")
+
+asyncio.run(main())
 ```
 
 ### RIP-302 Agent Economy SDK

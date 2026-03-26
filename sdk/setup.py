@@ -11,7 +11,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="rustchain-sdk",
+    name="rustchain",
     version="1.0.0",
     author="RustChain Community",
     author_email="dev@rustchain.org",
@@ -46,6 +46,7 @@ setup(
     python_requires=">=3.8",
     install_requires=[
         "requests>=2.28.0",
+        "aiohttp>=3.8.0",
     ],
     extras_require={
         "dev": [
