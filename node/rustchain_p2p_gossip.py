@@ -488,10 +488,31 @@ class GossipLayer:
             logger.warning(f"Invalid proposer {proposer} for epoch {epoch}, expected {expected_leader}")
             return {"status": "reject", "reason": "invalid_leader"}
 
-        # Validate distribution
-        # TODO: Verify merkle root matches our local calculation
+        # Validate Merkle root of distribution
+        distribution = proposal.get("distribution", {})
+        remote_merkle = proposal.get("merkle_root", "")
 
-        # Vote to accept
+        sorted_dist = sorted(distribution.items())
+        merkle_data = json.dumps(sorted_dist, sort_keys=True)
+        local_merkle = hashlib.sha256(merkle_data.encode()).hexdigest()
+
+        if remote_merkle != local_merkle:
+            logger.warning(
+                f"Epoch {epoch}: Merkle root mismatch "
+                f"(remote={remote_merkle[:16]}..., local={local_merkle[:16]}...)"
+            )
+            # Reject: distribution data is inconsistent
+            vote = self.create_message(MessageType.EPOCH_VOTE, {
+                "epoch": epoch,
+                "proposal_hash": proposal.get("proposal_hash"),
+                "vote": "reject",
+                "voter": self.node_id,
+                "reason": "merkle_root_mismatch"
+            })
+            self.broadcast(vote)
+            return {"status": "voted", "vote": "reject", "reason": "merkle_root_mismatch"}
+
+        # Merkle verified - vote to accept
         vote = self.create_message(MessageType.EPOCH_VOTE, {
             "epoch": epoch,
             "proposal_hash": proposal.get("proposal_hash"),
@@ -504,9 +525,63 @@ class GossipLayer:
         return {"status": "voted", "vote": "accept"}
 
     def _handle_epoch_vote(self, msg: GossipMessage) -> Dict:
-        """Handle epoch vote"""
-        # TODO: Collect votes and commit when majority reached
-        return {"status": "ok"}
+        """Handle epoch vote - collect votes and commit when quorum reached.
+
+        Requires at least 3 of 4 nodes (or majority of known nodes)
+        to agree before finalizing an epoch reward distribution.
+        """
+        payload = msg.payload
+        epoch = payload.get("epoch")
+        voter = payload.get("voter")
+        vote = payload.get("vote", "reject")
+        proposal_hash = payload.get("proposal_hash")
+
+        if epoch is None or voter is None:
+            return {"status": "error", "reason": "missing epoch or voter"}
+
+        # Initialize vote tracking for this epoch if needed
+        if not hasattr(self, '_epoch_votes'):
+            self._epoch_votes: Dict[int, Dict[str, str]] = {}
+        if epoch not in self._epoch_votes:
+            self._epoch_votes[epoch] = {}
+
+        # Record the vote
+        self._epoch_votes[epoch][voter] = vote
+
+        # Count votes
+        total_nodes = len(self.peers) + 1  # peers + self
+        votes_for_epoch = self._epoch_votes[epoch]
+        accept_count = sum(1 for v in votes_for_epoch.values() if v == "accept")
+        reject_count = sum(1 for v in votes_for_epoch.values() if v == "reject")
+
+        # Quorum: require at least 3 nodes or strict majority, whichever is larger
+        quorum = max(3, (total_nodes // 2) + 1)
+
+        logger.info(
+            f"Epoch {epoch} vote from {voter}: {vote} "
+            f"(accept={accept_count}, reject={reject_count}, quorum={quorum})"
+        )
+
+        # Check if quorum reached for acceptance
+        if accept_count >= quorum:
+            logger.info(f"Epoch {epoch}: QUORUM REACHED ({accept_count}/{total_nodes} accept)")
+            self.epoch_crdt.add(epoch, {"proposal_hash": proposal_hash, "finalized": True})
+            # Broadcast commit message
+            commit_msg = self.create_message(MessageType.EPOCH_COMMIT, {
+                "epoch": epoch,
+                "proposal_hash": proposal_hash,
+                "accept_count": accept_count,
+                "voters": list(votes_for_epoch.keys())
+            })
+            self.broadcast(commit_msg)
+            return {"status": "committed", "epoch": epoch, "accept_count": accept_count}
+
+        # Check if enough rejections to abort
+        if reject_count > total_nodes - quorum:
+            logger.warning(f"Epoch {epoch}: REJECTED ({reject_count} reject, cannot reach quorum)")
+            return {"status": "rejected", "epoch": epoch, "reject_count": reject_count}
+
+        return {"status": "ok", "epoch": epoch, "votes_so_far": len(votes_for_epoch)}
 
     def _handle_get_state(self, msg: GossipMessage) -> Dict:
         """Handle state request - return full CRDT state"""
