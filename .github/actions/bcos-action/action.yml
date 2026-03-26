@@ -68,7 +68,7 @@ runs:
     - name: Install BCOS dependencies
       shell: bash
       run: |
-        pip install semgrep pip-audit cyclonedx-bom pip-licenses blake2
+        pip install semgrep pip-audit cyclonedx-bom pip-licenses
 
     - name: Run BCOS scan
       id: bcos-scan
