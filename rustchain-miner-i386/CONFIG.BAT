@@ -1,0 +1,15 @@
+@ECHO OFF
+SET RUSTCHAIN_WALLET=C4c7r9WPsnEe6CUfegMU9M7ReHD1pWg8qeSfTBoRcLbg
+SET RUSTCHAIN_NODE=http://rustchain.org
+SET MTCPCFG=C:\MTCP\MTCPDCFG
+ECHO.
+ECHO RustChain 386 Miner Configuration
+ECHO =================================
+ECHO Wallet: %RUSTCHAIN_WALLET%
+ECHO Node:   %RUSTCHAIN_NODE%
+ECHO.
+ECHO To start mining, run:
+ECHO   LUA MINER.LUA
+ECHO or
+ECHO   MINER386
+ECHO.

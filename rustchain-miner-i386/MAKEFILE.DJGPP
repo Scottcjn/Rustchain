@@ -1,0 +1,31 @@
+DJGPP_ROOT ?= /opt/djgpp
+TARGET_TRIPLE = i586-pc-msdosdjgpp
+CC = $(TARGET_TRIPLE)-gcc
+AR = $(TARGET_TRIPLE)-ar
+STRIP = $(TARGET_TRIPLE)-strip
+
+CFLAGS = -march=i386 -mno-80387 -msoft-float -Os -Wall -DDJGPP
+CFLAGS += -fno-builtin -fno-stack-protector -I.
+
+LIBS = -lm
+TARGET = MINER386.EXE
+OBJECTS = MINER.o SHA256.o FINGERPRINT.o
+
+all: $(TARGET)
+
+$(TARGET): $(OBJECTS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
+	$(STRIP) $@
+
+%.o: %.c sha256.h fingerprint.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+clean:
+	rm -f $(OBJECTS) $(TARGET)
+
+install: $(TARGET)
+	cp $(TARGET) /mnt/freedos/c/rustchain/ 2>/dev/null || true
+
+rebuild: clean all
+
+.PHONY: all clean install rebuild
