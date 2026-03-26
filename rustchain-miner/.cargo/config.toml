@@ -53,9 +53,47 @@ rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
 linker = "s390x-linux-gnu-gcc"
 rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
 
+# Intel 386/486/Pentium (i386/i586/i686) target configuration
+[target.i386-unknown-linux-gnu]
+linker = "i386-linux-gnu-gcc"
+rustflags = [
+    "-C", "link-arg=-Wl,--allow-multiple-definition",
+    "-C", "target-cpu=i386",
+]
+
+[target.i486-unknown-linux-gnu]
+linker = "i486-linux-gnu-gcc"
+rustflags = [
+    "-C", "link-arg=-Wl,--allow-multiple-definition",
+    "-C", "target-cpu=i486",
+]
+
+[target.i586-unknown-linux-gnu]
+linker = "i586-linux-gnu-gcc"
+rustflags = [
+    "-C", "link-arg=-Wl,--allow-multiple-definition",
+    "-C", "target-cpu=i586",
+]
+
+[target.i686-unknown-linux-gnu]
+linker = "i686-linux-gnu-gcc"
+rustflags = [
+    "-C", "link-arg=-Wl,--allow-multiple-definition",
+    "-C", "target-cpu=i686",
+]
+
+[target.i686-unknown-linux-musl]
+linker = "i686-linux-musl-gcc"
+rustflags = [
+    "-C", "link-arg=-Wl,--allow-multiple-definition",
+    "-C", "target-cpu=i686",
+]
+
 # Helper aliases
 [alias]
 build-riscv = "build --target riscv64gc-unknown-linux-gnu"
 build-riscv-musl = "build --target riscv64gc-unknown-linux-musl"
 build-arm64 = "build --target aarch64-unknown-linux-gnu"
 build-x86_64 = "build --target x86_64-unknown-linux-gnu"
+build-386 = "build --target i686-unknown-linux-gnu"
+build-386-musl = "build --target i686-unknown-linux-musl"

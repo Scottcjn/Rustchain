@@ -28,7 +28,9 @@ Proof-of-Antiquity rewards hardware for *surviving*, not for being fast. Older m
 
 | Hardware | Multiplier | Era | Why It Matters |
 |----------|-----------|-----|----------------|
+| Intel 80386 (1985) | **4.0x** | MYTHIC | First 32-bit x86 — 40+ years old |
 | DEC VAX-11/780 (1977) | **3.5x** | MYTHIC | "Shall we play a game?" |
+| Intel 80486 (1989) | **3.5x** | MYTHIC | L1 cache, integrated FPU |
 | Acorn ARM2 (1987) | **4.0x** | MYTHIC | Where ARM began |
 | Inmos Transputer (1984) | **3.5x** | MYTHIC | Parallel computing pioneer |
 | Motorola 68000 (1979) | **3.0x** | LEGENDARY | Amiga, Atari ST, classic Mac |

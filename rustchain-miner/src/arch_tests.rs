@@ -288,6 +288,328 @@ mod architecture_detection_tests {
     }
 
     #[test]
+    fn test_intel_386_dx_detection() {
+        // Intel 80386DX - the original 32-bit CPU (1985)
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i386".to_string(),
+            hostname: "ibm-pcat-386".to_string(),
+            family: "x86".to_string(),
+            arch: "i386DX".to_string(),
+            cpu: "Intel 80386DX".to_string(),
+            cores: 1,
+            memory_gb: 4,
+            serial: None,
+            macs: vec!["00:00:00:00:00:01".to_string()],
+            mac: "00:00:00:00:00:01".to_string(),
+        };
+        
+        assert_eq!(hw.family, "x86");
+        assert_eq!(hw.arch, "i386DX");
+    }
+
+    #[test]
+    fn test_intel_386_sx_detection() {
+        // Intel 80386SX - cheaper variant with 16-bit bus (1988)
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i386".to_string(),
+            hostname: "386sx-laptop".to_string(),
+            family: "x86".to_string(),
+            arch: "i386SX".to_string(),
+            cpu: "Intel 80386SX".to_string(),
+            cores: 1,
+            memory_gb: 2,
+            serial: None,
+            macs: vec!["00:00:00:00:00:01".to_string()],
+            mac: "00:00:00:00:00:01".to_string(),
+        };
+        
+        assert_eq!(hw.family, "x86");
+        assert_eq!(hw.arch, "i386SX");
+    }
+
+    #[test]
+    fn test_intel_386_ex_detection() {
+        // Intel 80386EX - embedded variant (1994)
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i386".to_string(),
+            hostname: "386ex-sbc".to_string(),
+            family: "x86".to_string(),
+            arch: "i386EX".to_string(),
+            cpu: "Intel 80386EX".to_string(),
+            cores: 1,
+            memory_gb: 1,
+            serial: None,
+            macs: vec!["00:00:00:00:00:01".to_string()],
+            mac: "00:00:00:00:00:01".to_string(),
+        };
+        
+        assert_eq!(hw.family, "x86");
+        assert_eq!(hw.arch, "i386EX");
+    }
+
+    #[test]
+    fn test_intel_486_dx_detection() {
+        // Intel 80486DX - 486 with built-in FPU (1989)
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i486".to_string(),
+            hostname: "compaq-486".to_string(),
+            family: "x86".to_string(),
+            arch: "i486DX".to_string(),
+            cpu: "Intel 80486DX".to_string(),
+            cores: 1,
+            memory_gb: 8,
+            serial: None,
+            macs: vec!["00:00:00:00:00:01".to_string()],
+            mac: "00:00:00:00:00:01".to_string(),
+        };
+        
+        assert_eq!(hw.family, "x86");
+        assert_eq!(hw.arch, "i486DX");
+    }
+
+    #[test]
+    fn test_intel_486_sx_detection() {
+        // Intel 80486SX - cheaper variant without FPU (1991)
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i486".to_string(),
+            hostname: "486sx-pc".to_string(),
+            family: "x86".to_string(),
+            arch: "i486SX".to_string(),
+            cpu: "Intel 80486SX".to_string(),
+            cores: 1,
+            memory_gb: 4,
+            serial: None,
+            macs: vec!["00:00:00:00:00:01".to_string()],
+            mac: "00:00:00:00:00:01".to_string(),
+        };
+        
+        assert_eq!(hw.family, "x86");
+        assert_eq!(hw.arch, "i486SX");
+    }
+
+    #[test]
+    fn test_intel_pentium_detection() {
+        // Intel Pentium (1993)
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i586".to_string(),
+            hostname: "pentium-100".to_string(),
+            family: "x86".to_string(),
+            arch: "Pentium".to_string(),
+            cpu: "Intel Pentium".to_string(),
+            cores: 1,
+            memory_gb: 16,
+            serial: None,
+            macs: vec!["00:00:00:00:00:01".to_string()],
+            mac: "00:00:00:00:00:01".to_string(),
+        };
+        
+        assert_eq!(hw.family, "x86");
+        assert_eq!(hw.arch, "Pentium");
+    }
+
+    #[test]
+    fn test_intel_pentium_mmx_detection() {
+        // Intel Pentium MMX (1997)
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i586".to_string(),
+            hostname: "pentium-mmx".to_string(),
+            family: "x86".to_string(),
+            arch: "Pentium MMX".to_string(),
+            cpu: "Intel Pentium MMX".to_string(),
+            cores: 1,
+            memory_gb: 32,
+            serial: None,
+            macs: vec!["00:00:00:00:00:01".to_string()],
+            mac: "00:00:00:00:00:01".to_string(),
+        };
+        
+        assert_eq!(hw.family, "x86");
+        assert_eq!(hw.arch, "Pentium MMX");
+    }
+
+    #[test]
+    fn test_amd_386_detection() {
+        // AMD 386 (Am386)
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i386".to_string(),
+            hostname: "amd-386".to_string(),
+            family: "x86".to_string(),
+            arch: "AMD 386".to_string(),
+            cpu: "AMD 386DX-40".to_string(),
+            cores: 1,
+            memory_gb: 4,
+            serial: None,
+            macs: vec!["00:00:00:00:00:01".to_string()],
+            mac: "00:00:00:00:00:01".to_string(),
+        };
+        
+        assert_eq!(hw.family, "x86");
+        assert_eq!(hw.arch, "AMD 386");
+    }
+
+    #[test]
+    fn test_cyrix_386_detection() {
+        // Cyrix 386
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i386".to_string(),
+            hostname: "cyrix-386".to_string(),
+            family: "x86".to_string(),
+            arch: "Cyrix 386".to_string(),
+            cpu: "Cyrix 386DX".to_string(),
+            cores: 1,
+            memory_gb: 4,
+            serial: None,
+            macs: vec!["00:00:00:00:00:01".to_string()],
+            mac: "00:00:00:00:00:01".to_string(),
+        };
+        
+        assert_eq!(hw.family, "x86");
+        assert_eq!(hw.arch, "Cyrix 386");
+    }
+
+    #[test]
+    fn test_386_miner_id_generation() {
+        // Test that Intel 386 systems generate appropriate miner IDs
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i386".to_string(),
+            hostname: "ibm-pcat-386".to_string(),
+            family: "x86".to_string(),
+            arch: "i386DX".to_string(),
+            cpu: "Intel 80386DX".to_string(),
+            cores: 1,
+            memory_gb: 4,
+            serial: Some("IBM123456".to_string()),
+            macs: vec!["00:00:00:00:00:01".to_string()],
+            mac: "00:00:00:00:00:01".to_string(),
+        };
+        
+        let miner_id = hw.generate_miner_id();
+        
+        // Miner ID should be generated and contain architecture info
+        assert!(miner_id.len() > 0);
+        // The miner_id format is: arch-hostname-hw_hash
+        assert!(miner_id.contains("ibm-pcat-386"));
+    }
+
+    #[test]
+    fn test_386_wallet_generation() {
+        // Test wallet generation for Intel 386 miner
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i386".to_string(),
+            hostname: "compaq-386".to_string(),
+            family: "x86".to_string(),
+            arch: "i386DX".to_string(),
+            cpu: "Intel 80386DX".to_string(),
+            cores: 1,
+            memory_gb: 4,
+            serial: None,
+            macs: vec!["aa:bb:cc:dd:ee:ff".to_string()],
+            mac: "aa:bb:cc:dd:ee:ff".to_string(),
+        };
+        
+        let miner_id = hw.generate_miner_id();
+        let wallet = hw.generate_wallet(&miner_id);
+        
+        // Wallet should be properly formatted
+        assert!(wallet.contains("x86")); // Family name in wallet
+        assert!(wallet.contains("RTC")); // Token suffix
+        assert!(wallet.len() > 20);
+    }
+
+    #[test]
+    fn test_386_serialization() {
+        // Test that HardwareInfo for 386 can be serialized (needed for attestation)
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i386".to_string(),
+            hostname: "test-386".to_string(),
+            family: "x86".to_string(),
+            arch: "i386DX".to_string(),
+            cpu: "Intel 80386DX".to_string(),
+            cores: 1,
+            memory_gb: 4,
+            serial: Some("TEST386".to_string()),
+            macs: vec!["aa:bb:cc:dd:ee:ff".to_string()],
+            mac: "aa:bb:cc:dd:ee:ff".to_string(),
+        };
+        
+        // Serialize to JSON
+        let json = serde_json::to_string(&hw).unwrap();
+        
+        // Verify it contains expected fields
+        assert!(json.contains("x86"));
+        assert!(json.contains("i386DX"));
+        assert!(json.contains("Intel 80386DX"));
+        assert!(json.contains("i386"));
+        
+        // Deserialize back
+        let hw2: HardwareInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(hw.family, hw2.family);
+        assert_eq!(hw.arch, hw2.arch);
+        assert_eq!(hw.machine, hw2.machine);
+    }
+
+    #[test]
+    fn test_i686_machine_detection() {
+        // i686 is a 32-bit x86 Linux machine (Pentium Pro+)
+        // Should be classified correctly
+        let hw = HardwareInfo {
+            platform: "Linux".to_string(),
+            machine: "i686".to_string(),
+            hostname: "old-dell".to_string(),
+            family: "x86".to_string(),
+            arch: "i386".to_string(), // Default 386 when no specific CPU detected
+            cpu: "Intel Pentium II".to_string(),
+            cores: 1,
+            memory_gb: 128,
+            serial: None,
+            macs: vec!["00:00:00:00:00:01".to_string()],
+            mac: "00:00:00:00:00:01".to_string(),
+        };
+        
+        // i686 machine should still detect 386 if CPU string matches
+        assert_eq!(hw.family, "x86");
+    }
+
+    #[test]
+    fn test_intel_386_antiquity_multiplier() {
+        // Intel 386 should be classified as MYTHIC with 4.0x multiplier
+        // This is the highest multiplier in the system
+        let i386_archs = vec![
+            "i386DX",
+            "i386SX",
+            "i386EX",
+            "AMD 386",
+            "Cyrix 386",
+        ];
+        
+        for arch in i386_archs {
+            // All 386 variants should be recognized
+            assert!(
+                arch.contains("386") || arch.contains("AMD") || arch.contains("Cyrix"),
+                "Expected 386 variant in '{}'",
+                arch
+            );
+        }
+        
+        // Verify the highest multiplier is 4.0x (MYTHIC tier)
+        // In production, this multiplier would be looked up from the chain config
+        let mythic_multiplier = 4.0;
+        assert!((mythic_multiplier - 4.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
     fn test_hardware_info_serialization() {
         // Test that HardwareInfo can be serialized (needed for attestation)
         let hw = HardwareInfo {

@@ -1,0 +1,67 @@
+# ══════════════════════════════════════════════════════════════════════════════════════════
+# rustchain-miner-386.service — Systemd service for Intel 386 RustChain miner
+#
+# This service file is optimized for 386/486/Pentium systems with limited RAM.
+# Copy to /etc/systemd/system/ on the target system.
+#
+# Installation:
+#   sudo cp rustchain-miner-386.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable rustchain-miner-386
+#   sudo systemctl start rustchain-miner-386
+# ══════════════════════════════════════════════════════════════════════════════════════════
+
+[Unit]
+Description=RustChain Miner — Intel 386/486/Pentium Port
+Documentation=https://github.com/Scottcjn/Rustchain
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Run as a dedicated user for security
+User=rustchain
+Group=rustchain
+
+# Working directory (create this directory first)
+WorkingDirectory=/var/lib/rustchain
+
+# The miner binary (install to /usr/local/bin/)
+ExecStart=/usr/local/bin/rustchain-miner-386 --wallet ${RUSTCHAIN_WALLET} --node ${RUSTCHAIN_NODE_URL}
+
+# Environment variables
+Environment="RUSTCHAIN_WALLET=YOUR_WALLET_HERE"
+Environment="RUSTCHAIN_NODE_URL=https://50.28.86.131"
+Environment="RUST_LOG=info"
+
+# Restart policy — always restart on failure
+Restart=always
+RestartSec=30
+
+# Memory limits — 386 systems have very limited RAM
+# Adjust these based on available memory
+MemoryMax=64M
+MemoryHigh=32M
+
+# CPU limits — 386 systems are single-core
+CPUShares=1
+CPUAccounting=true
+CPUQuota=100%
+
+# Logging to systemd journal (auto-rotated)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rustchain-miner-386
+
+# Security hardening for old systems
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rustchain /var/log
+PrivateTmp=true
+
+# Endless loop watch — restart if miner crashes
+RestartPreventExitStatus=1
+RestartForceExitStatus=1
+
+[Install]
+WantedBy=multi-user.target

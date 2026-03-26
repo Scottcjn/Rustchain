@@ -38,28 +38,30 @@ VINTAGE_PROFILES: Dict[str, VintageProfile] = {
         name="Intel 80386",
         manufacturer="Intel",
         years=(1985, 1994),
-        base_multiplier=3.0,
-        timing_variance=(3.0, 8.0),  # High jitter due to slow clock
-        stability_window=(0.85, 0.95),
+        base_multiplier=4.0,  # MYTHIC tier — highest in the system
+        timing_variance=(4.0, 10.0),  # Extremely high jitter — no TSC, ISA bus timing
+        stability_window=(0.80, 0.92),  # Lower stability — vintage oscillator drift
         fingerprint_patterns=[
             r"i386", r"Intel 386", r"80386", r"Intel.*386",
+            r"AMD.*386", r"Cyrix.*386", r"386DX", r"386SX", r"386EX",
         ],
-        os_support=["Linux 1.x", "Linux 2.0.x", "MS-DOS", "Windows 3.1"],
-        notes="First 32-bit x86, max antiquity bonus"
+        os_support=["Linux 1.x", "Linux 2.0.x", "Linux 2.6.x (i386)", "MS-DOS", "Windows 3.1"],
+        notes="First 32-bit x86 CPU (1985). MYTHIC tier with 4.0x multiplier — the highest of any architecture. No rdtsc, no FPU (i387 optional), ISA bus timing. Extremely high attestation value."
     ),
     
     "intel_486": VintageProfile(
         name="Intel 80486",
         manufacturer="Intel",
         years=(1989, 1997),
-        base_multiplier=2.9,
-        timing_variance=(2.0, 6.0),
-        stability_window=(0.87, 0.96),
+        base_multiplier=3.5,  # MYTHIC tier — L1 cache, integrated FPU
+        timing_variance=(2.5, 7.0),  # High jitter — ISA bus timing, external cache
+        stability_window=(0.83, 0.94),  # Lower than modern — vintage thermal drift
         fingerprint_patterns=[
             r"i486", r"Intel 486", r"80486", r"486DX", r"486DX2", r"486SX",
+            r"AMD.*486", r"Cyrix.*486", r"486 SLC", r"486 DLC",
         ],
         os_support=["Linux 1.x", "Linux 2.0.x", "Linux 2.2.x", "MS-DOS", "Windows 95"],
-        notes="First x86 with integrated FPU"
+        notes="First x86 with integrated L1 cache and optional FPU (DX series). MYTHIC tier at 3.5x multiplier."
     ),
     
     "motorola_68000": VintageProfile(

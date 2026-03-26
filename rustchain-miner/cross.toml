@@ -40,5 +40,23 @@ image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:main"
 [target.powerpc64le-unknown-linux-gnu]
 image = "ghcr.io/cross-rs/powerpc64le-unknown-linux-gnu:main"
 
+[target.i686-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/i686-unknown-linux-gnu:main"
+pre-build = ["./scripts/cross-pre-build-386.sh"]
+env.passthrough = [
+    "PKG_CONFIG_ALLOW_CROSS=1",
+    "CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_LINKER=i686-linux-gnu-gcc",
+]
+# Note: i686 can run on 386 CPUs with FPU (i387)
+# For pure 386 (no FPU), use i386-unknown-linux-gnu with a custom Docker image
+
+[target.i586-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/i586-unknown-linux-gnu:main"
+pre-build = ["./scripts/cross-pre-build-386.sh"]
+env.passthrough = [
+    "PKG_CONFIG_ALLOW_CROSS=1",
+    "CARGO_TARGET_I586_UNKNOWN_LINUX_GNU_LINKER=i586-linux-gnu-gcc",
+]
+
 [target.s390x-unknown-linux-gnu]
 image = "ghcr.io/cross-rs/s390x-unknown-linux-gnu:main"

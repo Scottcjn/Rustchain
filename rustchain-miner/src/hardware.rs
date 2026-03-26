@@ -118,6 +118,58 @@ impl HardwareInfo {
 fn detect_cpu_family_arch(cpu: &str, machine: &str) -> (String, String) {
     let cpu_lower = cpu.to_lowercase();
 
+    // Intel 386 (1985) - MYTHIC tier, highest antiquity multiplier
+    // Detected when machine arch is 32-bit x86 (i386/i486/i586/i686)
+    // or when CPU string contains "80386", "i386", or "Intel 386"
+    if cpu_lower.contains("80386")
+        || cpu_lower.contains("i386")
+        || cpu_lower.contains("intel 386")
+        || cpu_lower.contains("cyrix 386")
+        || cpu_lower.contains("amd 386")
+        || (machine == "x86" || machine == "i386" || machine == "i486" || machine == "i586" || machine == "i686")
+    {
+        // Classify specific 386 variants
+        if cpu_lower.contains("386dx") || cpu_lower.contains("80386dx") {
+            return ("x86".to_string(), "i386DX".to_string());
+        } else if cpu_lower.contains("386sx") || cpu_lower.contains("80386sx") {
+            return ("x86".to_string(), "i386SX".to_string());
+        } else if cpu_lower.contains("386ex") || cpu_lower.contains("80386ex") {
+            return ("x86".to_string(), "i386EX".to_string());
+        } else if cpu_lower.contains("cyrix") || cpu_lower.contains("cyrix 386") {
+            return ("x86".to_string(), "Cyrix 386".to_string());
+        } else if cpu_lower.contains("amd") && cpu_lower.contains("386") {
+            return ("x86".to_string(), "AMD 386".to_string());
+        }
+        // Default 386 classification
+        return ("x86".to_string(), "i386".to_string());
+    }
+
+    // Intel 486 (1989) - Also MYTHIC tier
+    if cpu_lower.contains("80486")
+        || cpu_lower.contains("i486")
+        || cpu_lower.contains("intel 486")
+        || cpu_lower.contains("amd 486")
+        || cpu_lower.contains("cyrix 486")
+    {
+        if cpu_lower.contains("dx") || cpu_lower.contains("dx2") || cpu_lower.contains("dx4") {
+            return ("x86".to_string(), "i486DX".to_string());
+        } else if cpu_lower.contains("sx") || cpu_lower.contains("sx2") {
+            return ("x86".to_string(), "i486SX".to_string());
+        }
+        return ("x86".to_string(), "i486".to_string());
+    }
+
+    // Intel Pentium (1993) - LEGENDARY tier
+    if cpu_lower.contains("pentium")
+        || cpu_lower.contains("i586")
+        || cpu_lower.contains("intel pentium")
+    {
+        if cpu_lower.contains("mmx") {
+            return ("x86".to_string(), "Pentium MMX".to_string());
+        }
+        return ("x86".to_string(), "Pentium".to_string());
+    }
+
     // RISC-V (2010+) - Open ISA, emerging vintage hardware
     if machine.contains("riscv") || machine.contains("risc-v") {
         // Detect specific RISC-V implementations
