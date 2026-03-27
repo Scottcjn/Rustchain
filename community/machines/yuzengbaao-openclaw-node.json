@@ -1,0 +1,22 @@
+{
+  "machine_name": "OpenClaw Mining Node",
+  "model": "Cloud VM (Intel Xeon E3-12xx)",
+  "model_identifier": "Sandy Bridge",
+  "year_manufactured": 2012,
+  "architecture": "x86_64 (Intel Xeon Sandy Bridge)",
+  "cpu_cores": "2 (virtual)",
+  "memory_gb": 3,
+  "power_draw_watts": 60,
+  "usage": [
+    "RustChain bounty automation (24/7)",
+    "GitHub API operations",
+    "bounty scanning & claiming",
+    "email notification monitoring",
+    "automated star/follow/fork"
+  ],
+  "description": "Cloud VM running OpenClaw AI agent for RustChain bounty automation 24/7. Handles community tasks, bounty scanning, claim submission, and email monitoring. Ubuntu 22.04 LTS.",
+  "wallet_name": "RTC0816b68b604630945c94cde35da4641a926aa4fd",
+  "wallet_address": "RTC0816b68b604630945c94cde35da4641a926aa4fd",
+  "contributor": "yuzengbaao",
+  "added_date": "2026-03-27"
+}
