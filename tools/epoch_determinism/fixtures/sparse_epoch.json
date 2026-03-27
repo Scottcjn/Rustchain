@@ -1,0 +1,21 @@
+{
+  "fixture_id": "sparse_epoch",
+  "description": "Sparse epoch with only 2 miners — one ancient-tier (68000 Motorola) and one modern. Tests payout correctness when participation is minimal. Uses miner_attest_recent fallback path.",
+  "epoch": 25,
+  "miners": [
+    {
+      "miner_id": "RTC9sparse0000000000000000000000000000000001",
+      "device_arch": "68000",
+      "ts_offset": 50,
+      "fingerprint_passed": 1,
+      "warthog_bonus": 1.0
+    },
+    {
+      "miner_id": "RTC9sparse0000000000000000000000000000000002",
+      "device_arch": "modern",
+      "ts_offset": 60,
+      "fingerprint_passed": 1,
+      "warthog_bonus": 1.0
+    }
+  ]
+}
