@@ -5,4 +5,4 @@ psutil==7.2.2
 PyNaCl>=1.5.0
 
 # Optional: Enhanced features
-gunicorn==25.2.0  # Production WSGI server
+gunicorn==25.3.0  # Production WSGI server
