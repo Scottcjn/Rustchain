@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>RustChain · Hall of Fame</title>
+  <style>
+    :root {
+      --bg: #020604;
+      --panel: #08130d;
+      --line: #183626;
+      --txt: #aff7c9;
+      --muted: #7fcc9f;
+      --accent: #38ff8d;
+      --warn: #ffe28a;
+      --dead: #9aa39d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Courier New", monospace;
+      color: var(--txt);
+      background:
+        radial-gradient(circle at 50% -10%, rgba(56,255,141,0.12), transparent 45%),
+        linear-gradient(#020604, #010302);
+      text-shadow: 0 0 8px rgba(56,255,141,0.2);
+      position: relative;
+      overflow-x: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255,255,255,0.03) 0px,
+        rgba(255,255,255,0.03) 1px,
+        transparent 2px,
+        transparent 4px
+      );
+      opacity: 0.18;
+    }
+    .wrap { max-width: 1060px; margin: 22px auto; padding: 0 14px 40px; }
+    .site-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .logo { font-size: 22px; font-weight: 700; letter-spacing: 0.04em; color: var(--accent); text-decoration: none; }
+    .logo span { opacity: 0.6; }
+    .nav-links { display: flex; gap: 18px; }
+    .nav-links a { color: var(--muted); text-decoration: none; font-size: 13px; }
+    .nav-links a:hover { color: var(--accent); }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px;
+      box-shadow: 0 0 24px rgba(56,255,141,0.08), inset 0 0 18px rgba(56,255,141,0.04);
+    }
+    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+    .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; text-align: center; }
+    .stat-val { font-size: 22px; font-weight: 700; color: var(--accent); }
+    .stat-lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }
+    h1, h2, h3 { margin: 0 0 8px; }
+    h1 { font-size: 26px; color: var(--accent); letter-spacing: 0.04em; }
+    h2 { font-size: 18px; }
+    .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { padding: 8px 10px; border-bottom: 1px solid #143021; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; }
+    td { padding: 10px; border-bottom: 1px solid #0e1f16; font-size: 13px; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr.machine-row { cursor: pointer; transition: background 0.15s; }
+    tr.machine-row:hover { background: rgba(56,255,141,0.05); }
+    tr.machine-row td:first-child { padding-left: 14px; }
+    .rank { font-weight: 700; font-size: 16px; width: 40px; }
+    .rank-1 { color: #ffd700; }
+    .rank-2 { color: #c0c0c0; }
+    .rank-3 { color: #cd7f32; }
+    .rank-n { color: #5a7a68; }
+    .machine-name { font-weight: 700; color: var(--txt); }
+    .machine-fp { font-size: 11px; color: var(--muted); margin-top: 3px; font-family: monospace; }
+    .badge {
+      display: inline-block;
+      border: 1px solid #2c7d56;
+      border-radius: 999px;
+      color: var(--accent);
+      padding: 3px 9px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .badge-deceased {
+      border-color: #4a5450;
+      color: var(--dead);
+    }
+    .score { font-size: 16px; font-weight: 700; color: var(--accent); }
+    .arch-tag {
+      display: inline-block;
+      background: rgba(56,255,141,0.07);
+      border: 1px solid #1e4030;
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .plague-tag {
+      color: var(--warn);
+      font-size: 11px;
+    }
+    .deceased-tag {
+      color: var(--dead);
+      font-size: 11px;
+    }
+    .year { color: var(--muted); font-size: 13px; }
+    .attest { color: var(--muted); font-size: 13px; }
+    .link-cell a { color: var(--accent); text-decoration: none; font-size: 12px; }
+    .link-cell a:hover { text-decoration: underline; }
+    .err { color: #ff9b9b; padding: 20px 0; text-align: center; }
+    .loading-row td { text-align: center; padding: 30px; color: var(--muted); }
+    .blinking { animation: blink 1s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    .filter-row { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .filter-row label { font-size: 12px; color: var(--muted); }
+    .filter-row select, .filter-row input {
+      background: #07100b;
+      border: 1px solid #1a3527;
+      color: var(--txt);
+      padding: 5px 10px;
+      font-family: "Courier New", monospace;
+      font-size: 12px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .filter-row select:focus, .filter-row input:focus { outline: 1px solid var(--accent); }
+    .footer-note { text-align: center; color: var(--muted); font-size: 11px; margin-top: 20px; }
+    @media (max-width: 780px) {
+      .stats-row { grid-template-columns: repeat(2, 1fr); }
+      .hide-mobile { display: none; }
+    }
+    @media (max-width: 500px) {
+      .stats-row { grid-template-columns: 1fr 1fr; }
+      h1 { font-size: 20px; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="site-header">
+    <a href="/" class="logo">🦀 Rust<span>Chain</span></a>
+    <div class="nav-links">
+      <a href="/">Home</a>
+      <a href="/explorer/">Explorer</a>
+      <a href="/hall-of-fame/" style="color:var(--accent)">Hall of Fame</a>
+    </div>
+  </div>
+
+  <h1>⚙ Hall of Fame</h1>
+  <p class="subtitle">Immortal registry for dying hardware. Every machine that ever attests earns a permanent memorial.</p>
+
+  <div class="stats-row" id="statsRow">
+    <div class="stat"><div class="stat-val" id="st-total">—</div><div class="stat-lbl">Machines Inducted</div></div>
+    <div class="stat"><div class="stat-val" id="st-deceased">—</div><div class="stat-lbl">Deceased</div></div>
+    <div class="stat"><div class="stat-val" id="st-attest">—</div><div class="stat-lbl">Total Attestations</div></div>
+    <div class="stat"><div class="stat-val" id="st-plague">—</div><div class="stat-lbl">Capacitor Plague Survivors</div></div>
+  </div>
+
+  <div class="card">
+    <div class="filter-row">
+      <label>Show:
+        <select id="filterLimit" onchange="loadLeaderboard()">
+          <option value="25">Top 25</option>
+          <option value="50" selected>Top 50</option>
+          <option value="100">Top 100</option>
+        </select>
+      </label>
+      <label>Filter:
+        <select id="filterDeceased" onchange="loadLeaderboard()">
+          <option value="all">All machines</option>
+          <option value="alive">Active only</option>
+          <option value="deceased">Deceased only</option>
+        </select>
+      </label>
+      <label>Search:
+        <input id="filterSearch" type="text" placeholder="name / arch / model..." oninput="filterTable()" style="width:160px"/>
+      </label>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:44px">#</th>
+          <th>Machine</th>
+          <th class="hide-mobile">Architecture</th>
+          <th>Rust Score</th>
+          <th class="hide-mobile">Badge</th>
+          <th class="hide-mobile">Year</th>
+          <th>Attestations</th>
+          <th class="hide-mobile">Status</th>
+          <th>Profile</th>
+        </tr>
+      </thead>
+      <tbody id="leaderTbody">
+        <tr class="loading-row"><td colspan="9"><span class="blinking">█</span> Loading leaderboard...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="footer-note">
+    Data refreshes every 60 s · RustChain Proof-of-Antiquity ·
+    <a href="/hall-of-fame/machine.html?id=example" style="color:var(--muted)">Machine Profile</a>
+  </p>
+</div>
+
+<script>
+const API_LEADERBOARD = '/api/hall_of_fame/leaderboard';
+const API_STATS       = '/hall/stats';
+
+function esc(s){ return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function rankClass(i){
+  if(i===1) return 'rank-1';
+  if(i===2) return 'rank-2';
+  if(i===3) return 'rank-3';
+  return 'rank-n';
+}
+
+function badgeClass(isDeceased){ return isDeceased ? 'badge badge-deceased' : 'badge'; }
+
+let allRows = [];
+
+function buildRow(m, i){
+  const fp = m.fingerprint_hash || '';
+  const name = esc(m.nickname || (fp ? fp.slice(0,16)+'…' : 'Unknown'));
+  const arch = esc(m.device_arch || '—');
+  const model = esc(m.device_model || '');
+  const year = m.manufacture_year || '—';
+  const score = (m.rust_score != null ? Number(m.rust_score).toFixed(1) : '—');
+  const badge = esc(m.badge || '—');
+  const attest = m.total_attestations ?? 0;
+  const dead = !!m.is_deceased;
+  const plague = !!m.capacitor_plague;
+  const statusText = dead ? '☠ Deceased' : plague ? '⚡ Cap Plague' : '✓ Active';
+  const profileUrl = '/hall-of-fame/machine.html?id=' + encodeURIComponent(fp);
+
+  return `<tr class="machine-row" onclick="location.href='${profileUrl}'" data-search="${name.toLowerCase()} ${arch.toLowerCase()} ${model.toLowerCase()}">
+    <td class="rank ${rankClass(i)}">${i}</td>
+    <td>
+      <div class="machine-name">${name}${dead ? ' ☠' : ''}</div>
+      <div class="machine-fp">${esc(fp.slice(0,20))}…</div>
+    </td>
+    <td class="hide-mobile"><span class="arch-tag">${arch}</span><br><span style="font-size:11px;color:var(--muted)">${model.slice(0,24)}</span></td>
+    <td><span class="score">${score}</span></td>
+    <td class="hide-mobile"><span class="${badgeClass(dead)}">${badge}</span></td>
+    <td class="year hide-mobile">${year}</td>
+    <td class="attest">${Number(attest).toLocaleString()}</td>
+    <td class="hide-mobile">${dead ? `<span class="deceased-tag">☠ Deceased</span>` : plague ? `<span class="plague-tag">⚡ Cap Plague</span>` : '<span style="color:#38ff8d;font-size:11px">✓ Active</span>'}</td>
+    <td class="link-cell"><a href="${profileUrl}" onclick="event.stopPropagation()">View →</a></td>
+  </tr>`;
+}
+
+function filterTable(){
+  const q = document.getElementById('filterSearch').value.trim().toLowerCase();
+  const tbody = document.getElementById('leaderTbody');
+  if(!q){ tbody.innerHTML = allRows.join(''); return; }
+  const rows = Array.from(tbody.querySelectorAll('tr.machine-row'));
+  rows.forEach(r=>{ r.style.display = r.dataset.search.includes(q) ? '' : 'none'; });
+}
+
+async function loadLeaderboard(){
+  const limit = document.getElementById('filterLimit').value;
+  const deceased = document.getElementById('filterDeceased').value;
+  const tbody = document.getElementById('leaderTbody');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="9"><span class="blinking">█</span> Loading…</td></tr>';
+
+  try {
+    let url = API_LEADERBOARD + '?limit=' + limit;
+    if(deceased === 'deceased') url += '&deceased=1';
+    if(deceased === 'alive')    url += '&deceased=0';
+
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const machines = data.leaderboard || [];
+    if(!machines.length){
+      tbody.innerHTML = '<tr class="loading-row"><td colspan="9" class="err">No machines found.</td></tr>';
+      return;
+    }
+    allRows = machines.map((m, idx) => buildRow(m, idx+1));
+    tbody.innerHTML = allRows.join('');
+    filterTable();
+  } catch(e){
+    tbody.innerHTML = `<tr class="loading-row"><td colspan="9" class="err">Failed to load: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function loadStats(){
+  try {
+    const res = await fetch(API_STATS);
+    if(!res.ok) return;
+    const s = await res.json();
+    document.getElementById('st-total').textContent   = Number(s.total_machines||0).toLocaleString();
+    document.getElementById('st-deceased').textContent = Number(s.deceased_machines||0).toLocaleString();
+    document.getElementById('st-attest').textContent  = Number(s.total_attestations||0).toLocaleString();
+    document.getElementById('st-plague').textContent  = Number(s.capacitor_plague_survivors||0).toLocaleString();
+  } catch(_){}
+}
+
+loadStats();
+loadLeaderboard();
+
+// Auto-refresh every 60s
+setInterval(()=>{ loadLeaderboard(); loadStats(); }, 60000);
+</script>
+</body>
+</html>

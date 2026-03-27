@@ -573,19 +573,24 @@ function renderHallOfRust() {
     
     container.innerHTML = `
         <div class="section-title" style="margin-bottom: 16px;">🏆 Top Rust Score Machines</div>
-        ${topMachines.map((machine, index) => `
-            <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; margin-bottom: 8px;">
+        ${topMachines.map((machine, index) => {
+            const fp = machine.fingerprint_hash || '';
+            const profileUrl = '/hall-of-fame/machine.html?id=' + encodeURIComponent(fp);
+            const machineName = escapeHtml(machine.nickname || (fp ? fp.slice(0, 14) + '…' : 'Unknown'));
+            return `
+            <a href="${profileUrl}" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; margin-bottom: 8px; text-decoration: none; color: inherit; transition: background 0.15s;" onmouseover="this.style.background='var(--bg-tertiary,#1e293b)'" onmouseout="this.style.background='var(--bg-secondary)'">
                 <span style="font-size: 1.5rem; font-weight: bold; color: ${index === 0 ? '#f59e0b' : index === 1 ? '#94a3b8' : index === 2 ? '#b45309' : '#64748b'};">#${index + 1}</span>
                 <div style="flex: 1;">
-                    <div class="mono" style="font-size: 0.9rem;">${shortenAddress(machine.fingerprint_hash || 'unknown')}</div>
-                    <div class="text-muted" style="font-size: 0.8rem;">${escapeHtml(machine.device_arch || 'Unknown')} • ${machine.total_attestations || 0} attestations</div>
+                    <div class="mono" style="font-size: 0.9rem;">${machineName}</div>
+                    <div class="text-muted" style="font-size: 0.8rem;">${escapeHtml(machine.device_arch || 'Unknown')} • ${machine.total_attestations || 0} attestations${machine.is_deceased ? ' • <span style="color:#9aa39d">☠ deceased</span>' : ''}</div>
                 </div>
                 <div class="rust-score">${formatNumber(machine.rust_score || 0, 0)}</div>
                 <span class="rust-badge">${getRustBadge(machine.rust_score)}</span>
-            </div>
-        `).join('')}
+                <span style="color: #38ff8d; font-size: 0.75rem; margin-left: 4px;">→</span>
+            </a>`;
+        }).join('')}
         <div style="text-align: center; margin-top: 16px;">
-            <button class="btn btn-secondary" onclick="alert('Full Hall of Rust coming soon!')">View All</button>
+            <a href="/hall-of-fame/" class="btn btn-secondary" style="display:inline-block; text-decoration:none;">View Full Hall of Fame →</a>
         </div>
     `;
 }

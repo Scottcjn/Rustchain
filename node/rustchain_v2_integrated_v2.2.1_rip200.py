@@ -2415,6 +2415,15 @@ def museum_assets(filename: str):
     return _send_from_directory(MUSEUM_DIR, filename)
 
 
+@app.route("/hall-of-fame/", methods=["GET"])
+@app.route("/hall-of-fame", methods=["GET"])
+def hall_of_fame_index_page():
+    """Hall of Fame leaderboard index page."""
+    from flask import send_from_directory as _send_from_directory
+
+    return _send_from_directory(HOF_DIR, "index.html")
+
+
 @app.route("/hall-of-fame/machine.html", methods=["GET"])
 def hall_of_fame_machine_page():
     """Hall of Fame machine detail page."""
