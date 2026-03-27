@@ -19,8 +19,10 @@ def check_nodes():
     for node in NODES:
         start_time = time.time()
         try:
-            # Use verify=False because some nodes might have self-signed certs
-            resp = requests.get(node["url"], timeout=10, verify=False)
+            # Use pinned cert if available, else system CA bundle
+            _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
+            _verify = _cert if os.path.exists(_cert) else True
+            resp = requests.get(node["url"], timeout=10, verify=_verify)
             latency = (time.time() - start_time) * 1000
             
             if resp.status_code == 200:

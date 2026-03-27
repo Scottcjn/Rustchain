@@ -46,6 +46,10 @@ class RustChainClient:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._client: Optional[httpx.AsyncClient] = None
+        # Use pinned cert if available, else system CA bundle
+        import os
+        cert = os.path.expanduser("~/.rustchain/node_cert.pem")
+        self._tls_verify = cert if os.path.exists(cert) else True
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Lazily create the HTTP client."""
@@ -53,7 +57,7 @@ class RustChainClient:
             self._client = httpx.AsyncClient(
                 base_url=self._base_url,
                 timeout=self._timeout,
-                verify=False,  # Self-signed certs
+                verify=self._tls_verify,
             )
         return self._client
 

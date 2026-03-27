@@ -52,9 +52,15 @@ class RustChainAPI:
 
     def __init__(self, base_url: str, timeout: float = 10):
         self.base_url = base_url
+        try:
+            from node.tls_config import get_async_tls_verify
+            _verify = get_async_tls_verify()
+        except ImportError:
+            _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
+            _verify = _cert if os.path.exists(_cert) else True
         self._http = httpx.AsyncClient(
             timeout=httpx.Timeout(timeout),
-            verify=False,  # node uses self-signed cert
+            verify=_verify,
             headers={"User-Agent": "rustchain-discord-bot/2.0"},
         )
 

@@ -243,7 +243,10 @@ def run_live_tests(collection: Dict[str, Any], base_url: str = None) -> None:
         url = f"{base_url}{path}"
         try:
             if method == 'GET':
-                response = requests.get(url, timeout=10, verify=False)
+                import os as _os
+                _cert = _os.path.expanduser("~/.rustchain/node_cert.pem")
+                _verify = _cert if _os.path.exists(_cert) else True
+                response = requests.get(url, timeout=10, verify=_verify)
             
             if response.status_code == 200:
                 print_success(f"{method} {path} - {response.status_code}")

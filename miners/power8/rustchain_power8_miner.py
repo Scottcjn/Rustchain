@@ -6,8 +6,9 @@ With RIP-PoA Hardware Fingerprint Attestation
 import os, sys, json, time, hashlib, uuid, requests, socket, subprocess, platform, statistics, re, warnings
 from datetime import datetime
 
-# Suppress SSL warnings for self-signed cert
-warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+# TLS verification: use pinned cert if available, else system CA bundle
+_CERT_PATH = os.path.expanduser("~/.rustchain/node_cert.pem")
+TLS_VERIFY = _CERT_PATH if os.path.exists(_CERT_PATH) else True
 
 # Import fingerprint checks
 try:
@@ -197,7 +198,7 @@ class LocalMiner:
         self._get_hw_info()
 
         try:
-            resp = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=10, verify=False)
+            resp = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=10, verify=TLS_VERIFY)
             if resp.status_code != 200:
                 print(f"[FAIL] Challenge failed: {resp.status_code}")
                 return False
@@ -252,7 +253,7 @@ class LocalMiner:
 
         try:
             resp = requests.post(f"{self.node_url}/attest/submit",
-                               json=attestation, timeout=30, verify=False)
+                               json=attestation, timeout=30, verify=TLS_VERIFY)
 
             if resp.status_code == 200:
                 result = resp.json()
@@ -302,7 +303,7 @@ class LocalMiner:
                 "miner_id": f"power8-s824-{self.hw_info['hostname']}",
                 "miner_pubkey": self.wallet,  # Testnet: wallet as pubkey
                 "signature": "0" * 128   # Testnet: mock signature
-            }, timeout=10, verify=False)
+            }, timeout=10, verify=TLS_VERIFY)
 
             if resp.status_code == 200:
                 result = resp.json()
@@ -348,7 +349,7 @@ class LocalMiner:
     def check_balance(self):
         """Check balance"""
         try:
-            resp = requests.get(f"{self.node_url}/balance/{self.wallet}", timeout=10, verify=False)
+            resp = requests.get(f"{self.node_url}/balance/{self.wallet}", timeout=10, verify=TLS_VERIFY)
             if resp.status_code == 200:
                 result = resp.json()
                 balance = result.get('balance_rtc', 0)

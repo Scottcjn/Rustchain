@@ -121,7 +121,10 @@ def check_wallet_exists(wallet_address: str) -> bool:
     """Verify that a wallet address exists on the RustChain node."""
     try:
         url = f"{RUSTCHAIN_NODE_URL}/api/balance/{wallet_address}"
-        resp = requests.get(url, verify=False, timeout=10)
+        import os
+        _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
+        _verify = _cert if os.path.exists(_cert) else True
+        resp = requests.get(url, verify=_verify, timeout=10)
         if resp.status_code == 200:
             return True
     except Exception as exc:

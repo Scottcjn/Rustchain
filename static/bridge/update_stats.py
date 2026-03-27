@@ -31,7 +31,7 @@ def get_bridge_stats():
     # 1. Poll Bridge Nodes
     for node in BRIDGE_NODES:
         try:
-            resp = requests.get(node["url"], timeout=10, verify=False)
+            resp = requests.get(node["url"], timeout=10, verify=os.path.expanduser("~/.rustchain/node_cert.pem") if os.path.exists(os.path.expanduser("~/.rustchain/node_cert.pem")) else True)
             if resp.status_code == 200:
                 data = resp.json()
                 node_stats = {
@@ -52,7 +52,7 @@ def get_bridge_stats():
     for node in BRIDGE_NODES:
         try:
             ledger_url = node["url"].replace("/stats", "/ledger?limit=10")
-            resp = requests.get(ledger_url, timeout=10, verify=False)
+            resp = requests.get(ledger_url, timeout=10, verify=os.path.expanduser("~/.rustchain/node_cert.pem") if os.path.exists(os.path.expanduser("~/.rustchain/node_cert.pem")) else True)
             if resp.status_code == 200:
                 results["recent_transactions"] = resp.json().get("locks", [])
                 break

@@ -119,8 +119,13 @@ class RustChainPrometheusExporter:
         self.session.headers.update({
             'User-Agent': 'RustChain-Prometheus-Exporter/1.0',
         })
-        # Self-signed cert on 50.28.86.131
-        self.session.verify = False
+        # Use pinned cert if available, else system CA bundle
+        try:
+            from node.tls_config import get_tls_verify
+            self.session.verify = get_tls_verify()
+        except ImportError:
+            cert = os.path.expanduser("~/.rustchain/node_cert.pem")
+            self.session.verify = cert if os.path.exists(cert) else True
         self.running = False
 
         logger.info("Initialized exporter for node: %s", self.node_url)

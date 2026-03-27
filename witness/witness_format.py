@@ -323,7 +323,8 @@ def verify_witness(witness: EpochWitness, node_url: str = "") -> Tuple[bool, str
     if node_url:
         try:
             import requests
-            resp = requests.get(f"{node_url}/epoch", timeout=10, verify=False)
+            from node.tls_config import get_tls_verify
+            resp = requests.get(f"{node_url}/epoch", timeout=10, verify=get_tls_verify())
             if resp.status_code == 200:
                 chain_data = resp.json()
                 chain_epoch = chain_data.get("epoch", chain_data.get("current_epoch", 0))

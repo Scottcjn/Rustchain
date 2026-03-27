@@ -39,9 +39,12 @@ class RustChainAPI:
     def __init__(self, base_url: str, timeout: float):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        import os
+        _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
+        _verify = _cert if os.path.exists(_cert) else True
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(timeout),
-            verify=False,  # Self-signed cert on node
+            verify=_verify,
             headers={"User-Agent": "rustchain-discord-bot/1.0"},
         )
 

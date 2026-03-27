@@ -9,9 +9,16 @@ from datetime import datetime, timezone
 
 import requests
 
+try:
+    from node.tls_config import get_tls_verify
+    _TLS_VERIFY = get_tls_verify()
+except ImportError:
+    _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
+    _TLS_VERIFY = _cert if os.path.exists(_cert) else True
+
 
 def get_json(session: requests.Session, url: str, timeout: float):
-    resp = session.get(url, timeout=timeout, verify=False)
+    resp = session.get(url, timeout=timeout, verify=_TLS_VERIFY)
     resp.raise_for_status()
     return resp.json()
 

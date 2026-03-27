@@ -61,7 +61,15 @@ def _rate_ok(user_id: int) -> bool:
 # API helpers
 # ---------------------------------------------------------------------------
 
-_http = httpx.AsyncClient(verify=False, timeout=15.0)
+try:
+    from node.tls_config import get_async_tls_verify
+    _tls_verify = get_async_tls_verify()
+except ImportError:
+    import os
+    _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
+    _tls_verify = _cert if os.path.exists(_cert) else True
+
+_http = httpx.AsyncClient(verify=_tls_verify, timeout=15.0)
 
 
 async def _api_get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:

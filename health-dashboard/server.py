@@ -220,10 +220,12 @@ def check_node_health(node_config: dict) -> NodeStatus:
     timestamp = datetime.now()
     
     try:
-        # Determine verification behavior for HTTPS
-        verify = True
-        if 'http://' in node_config['endpoint']:
-            verify = False
+        # Use pinned cert for HTTPS, no verification needed for plain HTTP
+        _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
+        if 'https://' in node_config['endpoint']:
+            verify = _cert if os.path.exists(_cert) else True
+        else:
+            verify = False  # Plain HTTP has no TLS to verify
         
         response = requests.get(
             node_config['endpoint'],

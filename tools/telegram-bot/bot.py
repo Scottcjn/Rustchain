@@ -62,7 +62,13 @@ def _rate_ok(user_id: int) -> bool:
 # ---------------------------------------------------------------------------
 
 _session = requests.Session()
-_session.verify = False
+try:
+    from node.tls_config import get_tls_verify
+    _session.verify = get_tls_verify()
+except ImportError:
+    import os as _os
+    _cert = _os.path.expanduser("~/.rustchain/node_cert.pem")
+    _session.verify = _cert if _os.path.exists(_cert) else True
 
 
 def _api_get(path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
