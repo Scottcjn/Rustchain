@@ -437,6 +437,65 @@ def _table_exists(cursor, table_name):
     return row is not None
 
 
+@hall_bp.route('/api/hall_of_fame/leaderboard', methods=['GET'])
+def api_hall_of_fame_leaderboard():
+    """Leaderboard endpoint for Hall of Fame index page.
+
+    GET /api/hall_of_fame/leaderboard?limit=50&deceased=0|1
+    Returns machines ordered by rust_score DESC with badge decoration.
+    """
+    limit = min(int(request.args.get('limit', 50) or 50), 500)
+    deceased_filter = request.args.get('deceased')  # '0', '1', or omitted (all)
+
+    try:
+        from flask import current_app
+        db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        where_clause = ""
+        params: list = []
+        if deceased_filter == '1':
+            where_clause = "WHERE is_deceased = 1"
+        elif deceased_filter == '0':
+            where_clause = "WHERE is_deceased = 0 OR is_deceased IS NULL"
+
+        c.execute(
+            f"""
+            SELECT fingerprint_hash, miner_id, device_family, device_arch,
+                   device_model, manufacture_year, rust_score, total_attestations,
+                   capacitor_plague, is_deceased, nickname,
+                   first_attestation, last_attestation, thermal_events
+            FROM hall_of_rust
+            {where_clause}
+            ORDER BY rust_score DESC
+            LIMIT ?
+            """,
+            params + [limit],
+        )
+        rows = c.fetchall()
+        conn.close()
+
+        leaderboard = []
+        now_year = time.gmtime().tm_year
+        for idx, row in enumerate(rows, 1):
+            entry = dict(row)
+            entry['rank'] = idx
+            entry['badge'] = get_rust_badge(float(entry.get('rust_score') or 0))
+            mfg = entry.get('manufacture_year')
+            entry['age_years'] = max(0, now_year - int(mfg)) if mfg else None
+            leaderboard.append(entry)
+
+        return jsonify({
+            'leaderboard': leaderboard,
+            'total_machines': len(leaderboard),
+            'generated_at': int(time.time()),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @hall_bp.route('/api/hall_of_fame/machine', methods=['GET'])
 def api_hall_of_fame_machine():
     """Machine profile endpoint for Hall of Fame detail page."""
