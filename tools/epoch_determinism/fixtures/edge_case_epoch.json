@@ -1,0 +1,38 @@
+{
+  "fixture_id": "edge_case_epoch",
+  "description": "Edge-case epoch exercising boundary conditions: (1) one miner with fingerprint_passed=0 receives zero reward, (2) warthog_bonus applied to vintage hardware, (3) epoch_enroll primary path with explicit weights, (4) single-miner gets 100% of pool. Tests epoch_enroll primary path.",
+  "epoch": 99,
+  "miners": [
+    {
+      "miner_id": "RTCedge000000000000000000000000000000000001",
+      "device_arch": "386",
+      "ts_offset": 10,
+      "fingerprint_passed": 1,
+      "warthog_bonus": 1.15
+    },
+    {
+      "miner_id": "RTCedge000000000000000000000000000000000002",
+      "device_arch": "modern",
+      "ts_offset": 20,
+      "fingerprint_passed": 0,
+      "warthog_bonus": 1.0
+    },
+    {
+      "miner_id": "RTCedge000000000000000000000000000000000003",
+      "device_arch": "ps1_mips",
+      "ts_offset": 30,
+      "fingerprint_passed": 1,
+      "warthog_bonus": 1.0
+    }
+  ],
+  "epoch_enroll_override": [
+    {
+      "miner_pk": "RTCedge000000000000000000000000000000000001",
+      "weight": 3.45
+    },
+    {
+      "miner_pk": "RTCedge000000000000000000000000000000000003",
+      "weight": 2.80
+    }
+  ]
+}

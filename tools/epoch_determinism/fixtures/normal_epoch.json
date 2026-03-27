@@ -1,0 +1,42 @@
+{
+  "fixture_id": "normal_epoch",
+  "description": "Normal epoch with 5 miners spanning multiple hardware tiers (g4, g5, pentium3, modern). All fingerprints pass. Tests standard proportional payout via miner_attest_recent path.",
+  "epoch": 10,
+  "miners": [
+    {
+      "miner_id": "RTC1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "device_arch": "g4",
+      "ts_offset": 100,
+      "fingerprint_passed": 1,
+      "warthog_bonus": 1.0
+    },
+    {
+      "miner_id": "RTC2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "device_arch": "g5",
+      "ts_offset": 200,
+      "fingerprint_passed": 1,
+      "warthog_bonus": 1.0
+    },
+    {
+      "miner_id": "RTC3ccccccccccccccccccccccccccccccccccccccc",
+      "device_arch": "pentium3",
+      "ts_offset": 300,
+      "fingerprint_passed": 1,
+      "warthog_bonus": 1.0
+    },
+    {
+      "miner_id": "RTC4ddddddddddddddddddddddddddddddddddddddd",
+      "device_arch": "modern",
+      "ts_offset": 400,
+      "fingerprint_passed": 1,
+      "warthog_bonus": 1.0
+    },
+    {
+      "miner_id": "RTC5eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "device_arch": "486",
+      "ts_offset": 500,
+      "fingerprint_passed": 1,
+      "warthog_bonus": 1.1
+    }
+  ]
+}

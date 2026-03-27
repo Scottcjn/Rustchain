@@ -1,0 +1,37 @@
+{
+  "fixture_id": "divergent_epoch",
+  "description": "Intentionally divergent fixture — used to verify that the replay tool correctly DETECTS mismatches. The 'inject_divergence' key instructs the test harness to corrupt one node's data before comparison. This fixture is expected to produce a non-zero exit code.",
+  "epoch": 42,
+  "inject_divergence": true,
+  "divergence_spec": {
+    "target": "node_b",
+    "miner_id": "RTCdivergent0000000000000000000000000000001",
+    "field": "warthog_bonus",
+    "original_value": 1.0,
+    "injected_value": 1.15,
+    "expected_result": "MISMATCH"
+  },
+  "miners": [
+    {
+      "miner_id": "RTCdivergent0000000000000000000000000000001",
+      "device_arch": "g4",
+      "ts_offset": 100,
+      "fingerprint_passed": 1,
+      "warthog_bonus": 1.0
+    },
+    {
+      "miner_id": "RTCdivergent0000000000000000000000000000002",
+      "device_arch": "modern",
+      "ts_offset": 200,
+      "fingerprint_passed": 1,
+      "warthog_bonus": 1.0
+    },
+    {
+      "miner_id": "RTCdivergent0000000000000000000000000000003",
+      "device_arch": "pentium2",
+      "ts_offset": 300,
+      "fingerprint_passed": 1,
+      "warthog_bonus": 1.0
+    }
+  ]
+}
