@@ -3267,10 +3267,16 @@ def kv_set(key, val):
         db.commit()
 
 def is_admin(req):
-    """Check if request has valid admin API key"""
+    """Check if request has valid admin API key.
+
+    Uses hmac.compare_digest for constant-time comparison to prevent
+    timing side-channel attacks that could leak the admin key byte-by-byte.
+    """
     need = os.environ.get("RC_ADMIN_KEY", "")
     got = req.headers.get("X-Admin-Key", "") or req.headers.get("X-API-Key", "")
-    return need and got and (need == got)
+    if not need or not got:
+        return False
+    return hmac.compare_digest(need, got)
 
 
 def ensure_wallet_review_tables(conn):
