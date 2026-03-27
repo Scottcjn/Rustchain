@@ -41,7 +41,9 @@ state = {
 def fetch_api(path):
     """Fetch data from RustChain API."""
     try:
-        resp = requests.get(f"{API_BASE}{path}", timeout=API_TIMEOUT, verify=False)
+        _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
+        _verify = _cert if os.path.exists(_cert) else True
+        resp = requests.get(f"{API_BASE}{path}", timeout=API_TIMEOUT, verify=_verify)
         if resp.status_code == 200:
             return resp.json()
     except Exception:

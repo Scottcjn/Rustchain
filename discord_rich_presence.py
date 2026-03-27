@@ -25,8 +25,12 @@ import requests
 from datetime import datetime, timedelta
 from pypresence import Presence
 
-# RustChain API endpoint (self-signed cert requires verification=False)
+# RustChain API endpoint
 RUSTCHAIN_API: str = "https://rustchain.org"
+
+# TLS verification: pinned cert or system CA bundle
+_CERT_PATH = os.path.expanduser("~/.rustchain/node_cert.pem")
+TLS_VERIFY = _CERT_PATH if os.path.exists(_CERT_PATH) else True
 
 # Local state file for tracking earnings
 STATE_FILE: str = os.path.expanduser("~/.rustchain_discord_state.json")
@@ -58,7 +62,7 @@ def get_miner_info(miner_id: str) -> Optional[Dict[str, Any]]:
         response = requests.get(
             f"{RUSTCHAIN_API}/wallet/balance",
             params={"miner_id": miner_id},
-            verify=False,  # Self-signed cert
+            verify=TLS_VERIFY,  # Self-signed cert
             timeout=10
         )
         response.raise_for_status()
@@ -73,7 +77,7 @@ def get_miners_list() -> List[Dict[str, Any]]:
     try:
         response = requests.get(
             f"{RUSTCHAIN_API}/api/miners",
-            verify=False,
+            verify=TLS_VERIFY,
             timeout=10
         )
         response.raise_for_status()
@@ -88,7 +92,7 @@ def get_epoch_info() -> Optional[Dict[str, Any]]:
     try:
         response = requests.get(
             f"{RUSTCHAIN_API}/epoch",
-            verify=False,
+            verify=TLS_VERIFY,
             timeout=10
         )
         response.raise_for_status()
@@ -103,7 +107,7 @@ def get_node_health() -> Optional[Dict[str, Any]]:
     try:
         response = requests.get(
             f"{RUSTCHAIN_API}/health",
-            verify=False,
+            verify=TLS_VERIFY,
             timeout=10
         )
         response.raise_for_status()

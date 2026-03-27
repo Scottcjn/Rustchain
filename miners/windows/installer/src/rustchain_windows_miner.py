@@ -19,7 +19,7 @@ import re
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import requests
-import urllib3; urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# urllib3.disable_warnings no longer needed — TLS verification enabled
 from datetime import datetime
 from pathlib import Path
 
@@ -35,6 +35,10 @@ except ImportError:
 RUSTCHAIN_API = "https://rustchain.org"
 WALLET_DIR = Path.home() / ".rustchain"
 CONFIG_FILE = WALLET_DIR / "config.json"
+
+# TLS verification: pinned cert or system CA bundle
+_CERT_PATH = str(WALLET_DIR / "node_cert.pem")
+TLS_VERIFY = _CERT_PATH if os.path.exists(_CERT_PATH) else True
 WALLET_FILE = WALLET_DIR / "wallet.json"
 
 class RustChainWallet:
@@ -459,7 +463,7 @@ class RustChainMiner:
     def attest(self):
         """Perform hardware attestation for PoA."""
         try:
-            challenge = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=10, verify=False).json()
+            challenge = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=10, verify=TLS_VERIFY).json()
             nonce = challenge.get("nonce")
         except Exception:
             return False
@@ -496,7 +500,7 @@ class RustChainMiner:
 
         try:
             resp = requests.post(f"{self.node_url}/attest/submit", json=attestation,
-                                 timeout=30, verify=False)
+                                 timeout=30, verify=TLS_VERIFY)
             if resp.status_code == 200 and resp.json().get("ok"):
                 self.attestation_valid_until = time.time() + 580
                 return True
@@ -518,7 +522,7 @@ class RustChainMiner:
         }
 
         try:
-            resp = requests.post(f"{self.node_url}/epoch/enroll", json=payload, timeout=15, verify=False)
+            resp = requests.post(f"{self.node_url}/epoch/enroll", json=payload, timeout=15, verify=TLS_VERIFY)
             if resp.status_code == 200 and resp.json().get("ok"):
                 self.enrolled = True
                 self.last_enroll = time.time()
@@ -530,7 +534,7 @@ class RustChainMiner:
     def check_eligibility(self):
         """Check if eligible to mine"""
         try:
-            response = requests.get(f"{RUSTCHAIN_API}/lottery/eligibility?miner_id={self.miner_id}", verify=False)
+            response = requests.get(f"{RUSTCHAIN_API}/lottery/eligibility?miner_id={self.miner_id}", verify=TLS_VERIFY)
             if response.ok:
                 data = response.json()
                 return data.get("eligible", False)
@@ -555,7 +559,7 @@ class RustChainMiner:
     def submit_header(self, header):
         """Submit mining header"""
         try:
-            response = requests.post(f"{RUSTCHAIN_API}/headers/ingest_signed", json=header, timeout=5, verify=False)
+            response = requests.post(f"{RUSTCHAIN_API}/headers/ingest_signed", json=header, timeout=5, verify=TLS_VERIFY)
             return response.status_code == 200
         except:
             return False

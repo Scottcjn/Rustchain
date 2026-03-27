@@ -69,7 +69,9 @@ def check_node(node):
     """Poll a single node and return status dict."""
     start = time.time()
     try:
-        resp = requests.get(node["endpoint"], timeout=10, verify=False)
+        _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
+        _verify = _cert if os.path.exists(_cert) else True
+        resp = requests.get(node["endpoint"], timeout=10, verify=_verify)
         elapsed_ms = round((time.time() - start) * 1000)
         if resp.status_code == 200:
             try:

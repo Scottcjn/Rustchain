@@ -59,7 +59,7 @@ class BountyVerifier:
         try:
             resp = requests.get(
                 f"{CONFIG['miner_node_url']}/wallet/balance?miner_id={wallet_name}",
-                verify=False,
+                verify=os.path.expanduser("~/.rustchain/node_cert.pem") if os.path.exists(os.path.expanduser("~/.rustchain/node_cert.pem")) else True,
                 timeout=10
             )
             if resp.status_code == 200:

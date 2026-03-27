@@ -13,7 +13,6 @@ New in v2.5:
   - Sleep-resistant: re-attest on wake automatically
 """
 import warnings
-warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
 import os
 import sys
@@ -62,6 +61,10 @@ NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://50.28.86.131")
 PROXY_URL = os.environ.get("RUSTCHAIN_PROXY", "http://192.168.0.160:8089")
 BLOCK_TIME = 600  # 10 minutes
 LOTTERY_CHECK_INTERVAL = 10
+
+# TLS verification: pinned cert or system CA bundle
+_CERT_PATH = os.path.expanduser("~/.rustchain/node_cert.pem")
+TLS_VERIFY = _CERT_PATH if os.path.exists(_CERT_PATH) else True
 ATTESTATION_TTL = 580  # Re-attest 20s before expiry
 
 
@@ -85,7 +88,7 @@ class NodeTransport:
         try:
             r = requests.get(
                 self.node_url + "/health",
-                timeout=10, verify=False
+                timeout=10, verify=TLS_VERIFY
             )
             if r.status_code == 200:
                 print(success("[TRANSPORT] Direct HTTPS to node: OK"))
@@ -111,7 +114,7 @@ class NodeTransport:
                 print(warning("[TRANSPORT] Proxy {} also failed: {}".format(self.proxy_url, e)))
 
         # Last resort: try direct without verify (may work on some old systems)
-        print(warning("[TRANSPORT] Falling back to direct HTTPS (verify=False)"))
+        print(warning("[TRANSPORT] Falling back to direct HTTPS with TLS verification"))
         self.use_proxy = False
 
     @property

@@ -5,7 +5,6 @@ Supports: Apple Silicon (M1/M2/M3), Intel Mac, PowerPC (G4/G5)
 With RIP-PoA Hardware Fingerprint Attestation + Serial Binding v2.0
 """
 import warnings
-warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
 import os
 import sys
@@ -37,6 +36,10 @@ except ImportError:
 
 NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://rustchain.org")
 BLOCK_TIME = 600  # 10 minutes
+
+# TLS verification: pinned cert or system CA bundle
+_CERT_PATH = os.path.expanduser("~/.rustchain/node_cert.pem")
+TLS_VERIFY = _CERT_PATH if os.path.exists(_CERT_PATH) else True
 LOTTERY_CHECK_INTERVAL = 10  # Check every 10 seconds
 
 def get_mac_serial():
@@ -334,7 +337,7 @@ class MacMiner:
 
         try:
             # Step 1: Get challenge
-            resp = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=15, verify=False)
+            resp = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=15, verify=TLS_VERIFY)
             if resp.status_code != 200:
                 print(error(f"  ERROR: Challenge failed ({resp.status_code})"))
                 return False
@@ -389,7 +392,7 @@ class MacMiner:
 
         try:
             resp = requests.post(f"{self.node_url}/attest/submit",
-                               json=attestation, timeout=30, verify=False)
+                               json=attestation, timeout=30, verify=TLS_VERIFY)
 
             if resp.status_code == 200:
                 result = resp.json()
@@ -421,7 +424,7 @@ class MacMiner:
                 f"{self.node_url}/lottery/eligibility",
                 params={"miner_id": self.miner_id},
                 timeout=10,
-                verify=False
+                verify=TLS_VERIFY
             )
             if resp.status_code == 200:
                 return resp.json()
@@ -452,7 +455,7 @@ class MacMiner:
                 f"{self.node_url}/headers/ingest_signed",
                 json=header_payload,
                 timeout=15,
-                verify=False
+                verify=TLS_VERIFY
             )
 
             self.shares_submitted += 1

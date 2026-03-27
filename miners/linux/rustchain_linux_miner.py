@@ -4,7 +4,7 @@ RustChain Local x86 Miner - Modern Ryzen
 With RIP-PoA Hardware Fingerprint Attestation + Serial Binding v2.0
 """
 import warnings
-warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+# warnings.filterwarnings('ignore', message='Unverified HTTPS request')  # No longer needed — TLS verification enabled
 
 import os, sys, json, time, hashlib, uuid, requests, socket, subprocess, platform, statistics, re
 from datetime import datetime
@@ -26,6 +26,10 @@ except ImportError:
 
 NODE_URL = "https://rustchain.org"  # Use HTTPS via nginx
 BLOCK_TIME = 600  # 10 minutes
+
+# TLS verification: use pinned cert if available, else system CA bundle
+_CERT_PATH = os.path.expanduser("~/.rustchain/node_cert.pem")
+TLS_VERIFY = _CERT_PATH if os.path.exists(_CERT_PATH) else True
 
 def get_linux_serial():
     """Get hardware serial number for Linux systems"""
@@ -260,8 +264,8 @@ class LocalMiner:
         self._get_hw_info()
 
         try:
-            # Get challenge (verify=False for self-signed certs)
-            resp = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=10, verify=False)
+            # Get challenge (verify=TLS_VERIFY for self-signed certs)
+            resp = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=10, verify=TLS_VERIFY)
             if resp.status_code != 200:
                 print(f"❌ Challenge failed: {resp.status_code}")
                 return False
@@ -317,7 +321,7 @@ class LocalMiner:
 
         try:
             resp = requests.post(f"{self.node_url}/attest/submit",
-                               json=attestation, timeout=30, verify=False)
+                               json=attestation, timeout=30, verify=TLS_VERIFY)
 
             if resp.status_code == 200:
                 result = resp.json()
@@ -379,7 +383,7 @@ class LocalMiner:
 
         try:
             resp = requests.post(f"{self.node_url}/epoch/enroll",
-                                json=payload, timeout=30, verify=False)
+                                json=payload, timeout=30, verify=TLS_VERIFY)
 
             if resp.status_code == 200:
                 result = resp.json()
@@ -426,7 +430,7 @@ class LocalMiner:
     def check_balance(self):
         """Check balance"""
         try:
-            resp = requests.get(f"{self.node_url}/balance/{self.wallet}", timeout=10, verify=False)
+            resp = requests.get(f"{self.node_url}/balance/{self.wallet}", timeout=10, verify=TLS_VERIFY)
             if resp.status_code == 200:
                 result = resp.json()
                 balance = result.get('balance_rtc', 0)
@@ -462,7 +466,7 @@ class LocalMiner:
 
         # Optional health probe (read-only)
         try:
-            r = requests.get(f"{self.node_url}/health", timeout=8, verify=False)
+            r = requests.get(f"{self.node_url}/health", timeout=8, verify=TLS_VERIFY)
             print(f"[DRY-RUN] Health probe: HTTP {r.status_code}")
             if r.ok:
                 data = r.json()
