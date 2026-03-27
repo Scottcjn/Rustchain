@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>wRTC Bridge Dashboard — RustChain ↔ Solana</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e17;color:#e0e6f0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+.container{max-width:1200px;margin:0 auto;padding:20px}
+header{text-align:center;padding:24px 0;border-bottom:1px solid #1e293b;margin-bottom:24px}
+header h1{font-size:24px;color:#7dd3fc;font-weight:600}
+header .subtitle{color:#64748b;font-size:13px;margin-top:4px}
+.health-badge{display:inline-block;padding:4px 12px;border-radius:12px;font-size:11px;font-weight:600;margin-left:12px}
+.health-ok{background:#22c55e22;color:#22c55e;border:1px solid #22c55e44}
+.health-warn{background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44}
+.health-err{background:#ef444422;color:#ef4444;border:1px solid #ef444444}
+
+/* Stats Grid */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px}
+.stat-card{background:rgba(15,23,42,.7);border:1px solid #1e293b;border-radius:10px;padding:16px}
+.stat-label{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:1px}
+.stat-value{font-size:28px;font-weight:700;color:#7dd3fc;margin-top:4px}
+.stat-sub{color:#475569;font-size:12px;margin-top:2px}
+
+/* Tables */
+.panel{background:rgba(15,23,42,.7);border:1px solid #1e293b;border-radius:10px;padding:16px;margin-bottom:16px}
+.panel h3{color:#94a3b8;font-size:13px;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;color:#64748b;font-size:11px;padding:8px;border-bottom:1px solid #1e293b}
+td{padding:8px;font-size:13px;border-bottom:1px solid #1e293b11}
+.tx-wrap{color:#22c55e}
+.tx-unwrap{color:#f59e0b}
+.mono{font-family:monospace;font-size:12px;color:#94a3b8}
+.amount{font-weight:600;color:#e0e6f0}
+
+/* Price Chart */
+#price-chart{width:100%;height:200px;background:rgba(15,23,42,.5);border-radius:8px;position:relative;overflow:hidden}
+.chart-line{stroke:#7dd3fc;stroke-width:2;fill:none}
+.chart-area{fill:url(#gradient);opacity:0.3}
+
+/* Footer */
+footer{text-align:center;padding:16px;color:#475569;font-size:11px;border-top:1px solid #1e293b;margin-top:24px}
+.refresh-timer{color:#64748b;font-size:11px;text-align:right;margin-bottom:8px}
+
+/* Responsive */
+@media(max-width:768px){
+  .stats{grid-template-columns:1fr 1fr}
+  .stat-value{font-size:22px}
+}
+@media(max-width:480px){
+  .stats{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>⚡ wRTC Bridge Dashboard</h1>
+    <span class="subtitle">RustChain ↔ Solana | Real-Time Wrap/Unwrap Monitor</span>
+    <span class="health-badge health-ok" id="health-badge">● Bridge Healthy</span>
+  </header>
+
+  <div class="refresh-timer">Last updated: <span id="last-update">—</span> | Auto-refresh: 30s</div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-label">Total RTC Locked</div>
+      <div class="stat-value" id="rtc-locked">—</div>
+      <div class="stat-sub">In bridge contract</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">wRTC Circulating</div>
+      <div class="stat-value" id="wrtc-supply">—</div>
+      <div class="stat-sub">On Solana</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">wRTC Price</div>
+      <div class="stat-value" id="wrtc-price">—</div>
+      <div class="stat-sub" id="price-change">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Bridge Fee Revenue</div>
+      <div class="stat-value" id="fee-revenue">—</div>
+      <div class="stat-sub">Total collected</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">24h Volume</div>
+      <div class="stat-value" id="volume-24h">—</div>
+      <div class="stat-sub">Wrap + Unwrap</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>wRTC/SOL Price (24h)</h3>
+    <svg id="price-chart" viewBox="0 0 800 200" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="gradient" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#7dd3fc" stop-opacity="0.4"/>
+          <stop offset="100%" stop-color="#7dd3fc" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path class="chart-area" id="chart-area"/>
+      <path class="chart-line" id="chart-line"/>
+    </svg>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div class="panel">
+      <h3>Recent Wraps (RTC → wRTC)</h3>
+      <table>
+        <thead><tr><th>Time</th><th>Amount</th><th>Wallet</th><th>TX</th></tr></thead>
+        <tbody id="wrap-table"></tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h3>Recent Unwraps (wRTC → RTC)</h3>
+      <table>
+        <thead><tr><th>Time</th><th>Amount</th><th>Wallet</th><th>TX</th></tr></thead>
+        <tbody id="unwrap-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    wRTC Bridge Dashboard v1.0 — <a href="https://rustchain.org" style="color:#7dd3fc">rustchain.org</a>
+  </footer>
+</div>
+
+<script src="bridge_dashboard.js"></script>
+</body>
+</html>
