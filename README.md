@@ -7,7 +7,7 @@
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
-[![Nodes](https://img.shields.io/badge/Nodes-4%20Active-brightgreen)](https://rustchain.org/explorer)
+[![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer)
 
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
@@ -56,10 +56,21 @@ curl -sk https://rustchain.org/api/miners      # Active miners
 curl -sk https://rustchain.org/epoch           # Current epoch
 ```
 
+### Attestation Nodes
+
+| Node | Location | Notes |
+|------|----------|-------|
+| **Node 1** — 50.28.86.131 | Louisiana, US | Primary (LiquidWeb VPS) |
+| **Node 2** — 50.28.86.153 | Louisiana, US | Secondary + BoTTube (LiquidWeb VPS) |
+| **Node 3** — 76.8.228.245:8099 | US | First external node (Ryan's Proxmox) |
+| **Node 4** — 38.76.217.189:8099 | Hong Kong | First Asian node (CognetCloud) |
+| **Node 5** — POWER8 S824 | Local Lab | First non-x86 node (IBM ppc64le, 512GB RAM) |
+
 | Fact | Proof |
 |------|-------|
-| 5 nodes across 2 continents (US, HK, POWER8) | [Live explorer](https://rustchain.org/explorer) |
-| 22+ miners attesting | `curl -sk https://rustchain.org/api/miners` |
+| 5 nodes across 3 continents (NA ×3, Asia ×1, Local ×1) | [Live explorer](https://rustchain.org/explorer) |
+| 26+ miners attesting | `curl -sk https://rustchain.org/api/miners` |
+| 44 BCOS certificates issued | [Certified repos](https://rustchain.org/bcos) |
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
 | 25,875+ RTC paid to 260+ contributors | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
 | Code merged into OpenSSL | [#30437](https://github.com/openssl/openssl/pull/30437), [#30452](https://github.com/openssl/openssl/pull/30452) |
