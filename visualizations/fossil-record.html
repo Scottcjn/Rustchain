@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Fossil Record — RustChain Attestation Archaeology</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a;
+    color: #FFD700;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 12px 20px;
+    border-bottom: 1px solid #2a2a0a;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  h1 {
+    font-size: 1.1rem;
+    color: #FFD700;
+    letter-spacing: 0.08em;
+    text-shadow: 0 0 10px rgba(255,215,0,0.4);
+  }
+  .subtitle {
+    font-size: 0.65rem;
+    color: #888;
+    margin-top: 2px;
+  }
+  .controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .btn {
+    background: #1a1a0a;
+    color: #FFD700;
+    border: 1px solid #3a3a1a;
+    padding: 5px 14px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.15s;
+    letter-spacing: 0.05em;
+  }
+  .btn:hover { background: #2a2a0a; border-color: #FFD700; }
+  .btn.active {
+    background: #3a3a00;
+    border-color: #FFD700;
+    color: #FFD700;
+    box-shadow: 0 0 6px rgba(255,215,0,0.3);
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 8px 20px;
+    border-bottom: 1px solid #1a1a0a;
+    flex-shrink: 0;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.65rem;
+    color: #aaa;
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s;
+  }
+  .legend-item:hover { color: #FFD700; }
+  .legend-swatch {
+    width: 14px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .canvas-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+  }
+  #tooltip {
+    position: absolute;
+    background: rgba(10,10,10,0.95);
+    border: 1px solid #FFD700;
+    color: #FFD700;
+    font-family: 'Courier New', monospace;
+    font-size: 0.72rem;
+    padding: 8px 12px;
+    pointer-events: none;
+    border-radius: 4px;
+    display: none;
+    z-index: 100;
+    max-width: 220px;
+    line-height: 1.6;
+    box-shadow: 0 0 12px rgba(255,215,0,0.2);
+  }
+  #tooltip .tip-arch { color: #fff; font-weight: bold; }
+  #tooltip .tip-epoch { color: #888; font-size: 0.65rem; }
+  .status-bar {
+    padding: 4px 20px;
+    font-size: 0.6rem;
+    color: #444;
+    border-top: 1px solid #1a1a0a;
+    flex-shrink: 0;
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>⛏ The Fossil Record — RustChain Attestation Archaeology</h1>
+    <div class="subtitle">Geological strata of mining history by CPU architecture</div>
+  </div>
+  <div class="controls">
+    <button class="btn" data-range="24h">24h</button>
+    <button class="btn" data-range="7d">7d</button>
+    <button class="btn" data-range="30d">30d</button>
+    <button class="btn active" data-range="all">All</button>
+  </div>
+</header>
+
+<div class="legend" id="legend"></div>
+
+<div class="canvas-wrap">
+  <canvas id="canvas"></canvas>
+  <div id="tooltip"></div>
+</div>
+
+<div class="status-bar">
+  <span id="status-left">Hover over strata to inspect</span>
+  <span id="status-right">RustChain Attestation Archaeology · v1.0</span>
+</div>
+
+<script>
+const ARCHS = [
+  { name: 'G3',     color: '#CD7F32' },
+  { name: 'G4',     color: '#FFD700' },
+  { name: 'G5',     color: '#B87333' },
+  { name: 'POWER8', color: '#1E3A5F' },
+  { name: 'Apple',  color: '#C0C0C0' },
+  { name: 'Modern', color: '#A0A0A0' },
+  { name: 'ARM',    color: '#228B22' },
+  { name: 'RISC-V', color: '#008080' },
+  { name: 'Console',color: '#FF1493' },
+  { name: '68K',    color: '#8B4513' },
+];
+
+const TOTAL_EPOCHS = 100;
+const NOW_TS = Date.now();
+const EPOCH_MS = 6 * 60 * 1000; // ~6 min per epoch
+
+// Generate mock data
+function generateData() {
+  const epochs = [];
+  for (let i = 0; i < TOTAL_EPOCHS; i++) {
+    const ts = NOW_TS - (TOTAL_EPOCHS - i) * EPOCH_MS;
+    const counts = ARCHS.map((a, ai) => {
+      // Each arch has a "natural" period — simulate population waves
+      const wave = Math.sin(i / 8 + ai * 0.7) * 0.5 + 0.5;
+      const trend = Math.max(0, 1 - (i / TOTAL_EPOCHS) * 0.3 * (ai > 3 ? -1 : 1));
+      const noise = Math.random() * 0.4 + 0.1;
+      return Math.floor((wave * trend * noise + noise * 0.3) * 80 + 5);
+    });
+    epochs.push({ index: i, ts, counts });
+  }
+  return epochs;
+}
+
+const allData = generateData();
+
+// Range filter
+const RANGES = {
+  '24h': 24 * 60 * 60 * 1000,
+  '7d':  7  * 24 * 60 * 60 * 1000,
+  '30d': 30 * 24 * 60 * 60 * 1000,
+  'all': Infinity,
+};
+
+let currentRange = 'all';
+let visibleArchs = new Set(ARCHS.map(a => a.name));
+
+function getFilteredData() {
+  const cutoff = currentRange === 'all' ? 0 : NOW_TS - RANGES[currentRange];
+  return allData.filter(e => e.ts >= cutoff);
+}
+
+// Legend
+const legendEl = document.getElementById('legend');
+ARCHS.forEach(a => {
+  const item = document.createElement('div');
+  item.className = 'legend-item';
+  item.dataset.arch = a.name;
+  item.innerHTML = `<div class="legend-swatch" style="background:${a.color}"></div>${a.name}`;
+  item.addEventListener('click', () => {
+    if (visibleArchs.has(a.name)) {
+      if (visibleArchs.size > 1) visibleArchs.delete(a.name);
+    } else {
+      visibleArchs.add(a.name);
+    }
+    updateLegend();
+    draw();
+  });
+  legendEl.appendChild(item);
+});
+
+function updateLegend() {
+  document.querySelectorAll('.legend-item').forEach(el => {
+    const active = visibleArchs.has(el.dataset.arch);
+    el.style.opacity = active ? '1' : '0.3';
+  });
+}
+updateLegend();
+
+// Canvas setup
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+const statusLeft = document.getElementById('status-left');
+
+let hoverEpoch = -1;
+let hoverArch = -1;
+
+// Hit-map: epochIndex -> archIndex -> {x,y,w,h}
+let hitMap = [];
+
+function resizeCanvas() {
+  const wrap = canvas.parentElement;
+  canvas.width = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  draw();
+}
+
+function draw() {
+  const W = canvas.width;
+  const H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // Dark bg
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, W, H);
+
+  const data = getFilteredData();
+  if (!data.length) return;
+
+  const N = data.length;
+  const epochW = W / N;
+  const PAD_TOP = 10, PAD_BOT = 30;
+  const drawH = H - PAD_TOP - PAD_BOT;
+
+  hitMap = [];
+
+  // Find max total per epoch (for visible archs)
+  let maxTotal = 0;
+  data.forEach(ep => {
+    let t = 0;
+    ARCHS.forEach((a, ai) => { if (visibleArchs.has(a.name)) t += ep.counts[ai]; });
+    if (t > maxTotal) maxTotal = t;
+  });
+
+  data.forEach((ep, ei) => {
+    const x = ei * epochW;
+    let visTotal = 0;
+    ARCHS.forEach((a, ai) => { if (visibleArchs.has(a.name)) visTotal += ep.counts[ai]; });
+
+    let yOffset = PAD_TOP + drawH;
+    const epHits = [];
+
+    ARCHS.forEach((a, ai) => {
+      if (!visibleArchs.has(a.name)) { epHits.push(null); return; }
+      const count = ep.counts[ai];
+      const bandH = (count / maxTotal) * drawH;
+      const y = yOffset - bandH;
+
+      const isHovered = (hoverEpoch === ei && hoverArch === ai);
+
+      ctx.fillStyle = a.color;
+      ctx.globalAlpha = isHovered ? 1.0 : 0.82;
+
+      // Slight gap between bands for stratum feel
+      ctx.fillRect(Math.ceil(x) + 0.5, Math.ceil(y) + 0.5, Math.max(epochW - 1, 1), Math.max(bandH - 0.5, 1));
+
+      // Highlight on hover epoch (full column glow)
+      if (hoverEpoch === ei) {
+        ctx.fillStyle = 'rgba(255,215,0,0.06)';
+        ctx.fillRect(Math.ceil(x), PAD_TOP, epochW, drawH);
+      }
+
+      epHits.push({ x, y, w: epochW, h: bandH });
+      yOffset -= bandH;
+    });
+
+    hitMap.push(epHits);
+  });
+
+  ctx.globalAlpha = 1;
+
+  // X-axis labels
+  ctx.fillStyle = '#555';
+  ctx.font = '9px Courier New';
+  ctx.textAlign = 'center';
+  const labelStep = Math.max(1, Math.floor(N / 10));
+  data.forEach((ep, ei) => {
+    if (ei % labelStep === 0 || ei === N - 1) {
+      const x = ei * epochW + epochW / 2;
+      const d = new Date(ep.ts);
+      const label = `${d.getMonth()+1}/${d.getDate()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+      ctx.fillText(label, x, H - 8);
+    }
+  });
+
+  // Epoch count badge
+  ctx.fillStyle = '#333';
+  ctx.font = '9px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText(`${N} epochs`, 4, PAD_TOP + 10);
+
+  // Hover vertical line
+  if (hoverEpoch >= 0) {
+    const x = hoverEpoch * epochW + epochW / 2;
+    ctx.strokeStyle = 'rgba(255,215,0,0.35)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, PAD_TOP);
+    ctx.lineTo(x, PAD_TOP + drawH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  const data = getFilteredData();
+  if (!data.length) return;
+
+  const N = data.length;
+  const epochW = canvas.width / N;
+  const ei = Math.floor(mx / epochW);
+
+  if (ei < 0 || ei >= N) {
+    clearHover();
+    return;
+  }
+
+  hoverEpoch = ei;
+  hoverArch = -1;
+
+  // Find which arch band
+  if (hitMap[ei]) {
+    hitMap[ei].forEach((hit, ai) => {
+      if (!hit) return;
+      if (my >= hit.y && my <= hit.y + hit.h) {
+        hoverArch = ai;
+      }
+    });
+  }
+
+  draw();
+
+  // Show tooltip
+  const ep = data[ei];
+  const arch = hoverArch >= 0 ? ARCHS[hoverArch] : null;
+  const d = new Date(ep.ts);
+  const timeStr = d.toLocaleString();
+
+  let html = `<div class="tip-epoch">Epoch #${ep.index + 1} · ${timeStr}</div>`;
+  if (arch) {
+    html += `<div class="tip-arch" style="color:${arch.color}">${arch.name}</div>`;
+    html += `<div>Attestations: <b>${ep.counts[hoverArch]}</b></div>`;
+  }
+
+  let total = 0;
+  ARCHS.forEach((a, ai) => { if (visibleArchs.has(a.name)) total += ep.counts[ai]; });
+  html += `<div style="margin-top:4px;color:#888;font-size:0.6rem">`;
+  ARCHS.forEach((a, ai) => {
+    if (!visibleArchs.has(a.name)) return;
+    const pct = Math.round(ep.counts[ai] / total * 100);
+    html += `<span style="color:${a.color}">${a.name}</span>: ${ep.counts[ai]} (${pct}%)&nbsp; `;
+  });
+  html += `</div>`;
+  html += `<div style="margin-top:4px;color:#666;font-size:0.6rem">Total: ${total}</div>`;
+
+  tooltip.innerHTML = html;
+  tooltip.style.display = 'block';
+
+  // Position tooltip
+  const tw = 220, th = 130;
+  let tx = e.clientX - rect.left + 14;
+  let ty = e.clientY - rect.top - 20;
+  if (tx + tw > canvas.width) tx = e.clientX - rect.left - tw - 10;
+  if (ty + th > canvas.height) ty = e.clientY - rect.top - th - 10;
+  tooltip.style.left = tx + 'px';
+  tooltip.style.top = ty + 'px';
+
+  statusLeft.textContent = `Epoch #${ep.index + 1} · ${ARCHS.map((a,ai) => visibleArchs.has(a.name) ? `${a.name}: ${ep.counts[ai]}` : '').filter(Boolean).join(' · ')}`;
+});
+
+canvas.addEventListener('mouseleave', clearHover);
+
+function clearHover() {
+  if (hoverEpoch === -1) return;
+  hoverEpoch = -1;
+  hoverArch = -1;
+  tooltip.style.display = 'none';
+  statusLeft.textContent = 'Hover over strata to inspect';
+  draw();
+}
+
+// Range buttons
+document.querySelectorAll('.btn[data-range]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentRange = btn.dataset.range;
+    document.querySelectorAll('.btn[data-range]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    hoverEpoch = -1;
+    hoverArch = -1;
+    tooltip.style.display = 'none';
+    draw();
+  });
+});
+
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+</script>
+</body>
+</html>
