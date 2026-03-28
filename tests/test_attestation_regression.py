@@ -110,6 +110,40 @@ def _init_attestation_db(db_path: Path) -> None:
             first_seen INTEGER,
             PRIMARY KEY (miner_pk, mac)
         );
+        CREATE TABLE IF NOT EXISTS fingerprint_submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fingerprint_hash TEXT NOT NULL,
+            miner_id TEXT NOT NULL,
+            wallet_address TEXT NOT NULL,
+            hardware_id TEXT,
+            nonce TEXT NOT NULL,
+            submitted_at INTEGER NOT NULL,
+            entropy_profile_hash TEXT,
+            checks_hash TEXT,
+            attestation_valid INTEGER DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS entropy_collisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entropy_profile_hash TEXT NOT NULL,
+            wallet_a TEXT NOT NULL,
+            wallet_b TEXT NOT NULL,
+            detected_at INTEGER NOT NULL,
+            similarity_score REAL
+        );
+        CREATE TABLE IF NOT EXISTS fingerprint_rate_limits (
+            hardware_id TEXT PRIMARY KEY,
+            submission_count INTEGER DEFAULT 0,
+            window_start INTEGER NOT NULL,
+            last_submission INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS fingerprint_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            miner_id TEXT NOT NULL,
+            wallet_address TEXT NOT NULL,
+            fingerprint_hash TEXT NOT NULL,
+            sequence_num INTEGER DEFAULT 0,
+            recorded_at INTEGER NOT NULL
+        );
         """
     )
     conn.commit()
@@ -125,6 +159,12 @@ def test_client(monkeypatch):
     _init_attestation_db(db_path)
 
     monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+    # Also patch DB_PATH in hardware_fingerprint_replay module so it uses the same test DB
+    try:
+        import hardware_fingerprint_replay
+        monkeypatch.setattr(hardware_fingerprint_replay, "DB_PATH", str(db_path))
+    except (ImportError, AttributeError):
+        pass
     monkeypatch.setattr(integrated_node, "check_ip_rate_limit", lambda client_ip, miner_id: (True, "ok"))
     monkeypatch.setattr(integrated_node, "record_attestation_success", lambda *args, **kwargs: None)
     monkeypatch.setattr(integrated_node, "record_macs", lambda *args, **kwargs: None)

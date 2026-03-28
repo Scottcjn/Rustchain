@@ -1239,6 +1239,10 @@ def init_db():
         except ImportError:
             pass
 
+        # Issue #2276: Hardware fingerprint replay defense tables
+        if HAVE_REPLAY_DEFENSE:
+            init_replay_defense_schema()
+
         # Warthog dual-mining tables
         if HAVE_WARTHOG:
             init_warthog_tables(c)
