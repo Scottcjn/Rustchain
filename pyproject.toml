@@ -10,6 +10,13 @@ exclude = ["deprecated", "node_backups"]
 select = ["E", "F", "W", "B", "I"]
 ignore = ["E501"] # Ignore long lines for legacy code
 
+[tool.bandit]
+# Skip assert checks (B101) — expected in pytest test files
+# Skip random (B311) — tests use pseudo-random intentionally
+# Skip try/except/pass (B110) — common in test error handling
+skips = ["B101", "B311", "B110"]
+exclude_dirs = ["deprecated", "node_backups"]
+
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true

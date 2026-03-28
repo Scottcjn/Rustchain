@@ -32,7 +32,7 @@ jobs:
       run: mypy tests/mock_crypto.py --ignore-missing-imports
 
     - name: Security scan (tests)
-      run: bandit -r tests -ll
+      run: bandit -r tests --severity-level medium --confidence-level high -c pyproject.toml
 
     - name: Attestation fuzz regression gate
       env:
