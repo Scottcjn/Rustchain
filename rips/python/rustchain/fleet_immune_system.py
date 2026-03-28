@@ -135,6 +135,19 @@ CREATE TABLE IF NOT EXISTS fleet_clusters (
     detection_signals TEXT,              -- JSON: which signals triggered
     cumulative_score REAL DEFAULT 0.0
 );
+
+-- RIP-201 fix: Architecture cross-validation results (Bounty #554)
+-- Stores server-side validated arch for each miner so classify_miner_bucket()
+-- uses verified hardware class, not the raw client-reported device_arch.
+CREATE TABLE IF NOT EXISTS arch_validation_results (
+    miner TEXT PRIMARY KEY,
+    claimed_arch TEXT NOT NULL,
+    validated BOOLEAN NOT NULL DEFAULT 0,  -- 1 = passed cross-validation
+    validation_score REAL DEFAULT 0.0,     -- 0.0–1.0 from arch_cross_validation
+    validated_bucket TEXT,                 -- bucket assigned after validation
+    rejection_reason TEXT,                 -- Why validation failed (if any)
+    validated_at INTEGER NOT NULL          -- Unix timestamp
+);
 """
 
 
@@ -142,6 +155,128 @@ def ensure_schema(db: sqlite3.Connection):
     """Create fleet immune system tables if they don't exist."""
     db.executescript(SCHEMA_SQL)
     db.commit()
+
+
+# ═══════════════════════════════════════════════════════════
+# RIP-201 FIX: ARCH CROSS-VALIDATION INTEGRATION (Bounty #554)
+# ═══════════════════════════════════════════════════════════
+
+# Minimum validation score required to trust a vintage bucket claim.
+# Below this threshold the miner is downgraded to "modern" (no bonus).
+ARCH_VALIDATION_SCORE_THRESHOLD = 0.70
+
+
+def store_arch_validation_result(
+    db: sqlite3.Connection,
+    miner: str,
+    claimed_arch: str,
+    validation_score: float,
+    passed: bool,
+    validated_bucket: str,
+    rejection_reason: Optional[str] = None,
+) -> None:
+    """
+    Persist arch cross-validation outcome for a miner.
+
+    Called immediately after validate_arch_consistency() in the attestation
+    flow so that classify_miner_bucket() can make server-side decisions.
+    """
+    ensure_schema(db)
+    db.execute("""
+        INSERT OR REPLACE INTO arch_validation_results
+        (miner, claimed_arch, validated, validation_score,
+         validated_bucket, rejection_reason, validated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (miner, claimed_arch, int(passed), round(validation_score, 4),
+          validated_bucket, rejection_reason, int(time.time())))
+    db.commit()
+
+
+def run_arch_validation_for_attestation(
+    db: sqlite3.Connection,
+    miner: str,
+    claimed_arch: str,
+    fingerprint: dict,
+    device_info: Optional[dict] = None,
+) -> Tuple[bool, str]:
+    """
+    Run arch_cross_validation against a miner's fingerprint and store the result.
+
+    This is the integration hook that must be called from the attestation
+    submission flow (submit_attestation / record_attestation_success) AFTER
+    fingerprint data is collected.
+
+    Returns:
+        (passed: bool, validated_bucket: str)
+
+    Side-effects:
+        Writes result to arch_validation_results table.
+    """
+    try:
+        from node.arch_cross_validation import validate_arch_consistency, normalize_arch
+    except ImportError:
+        try:
+            import sys, os
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'node'))
+            from arch_cross_validation import validate_arch_consistency, normalize_arch
+        except ImportError:
+            # If arch_cross_validation is unavailable, fail safe — no bonus
+            store_arch_validation_result(
+                db, miner, claimed_arch, 0.0, False, "modern",
+                "arch_cross_validation module unavailable"
+            )
+            return False, "modern"
+
+    score, details = validate_arch_consistency(fingerprint, claimed_arch, device_info or {})
+    passed = score >= ARCH_VALIDATION_SCORE_THRESHOLD
+
+    # Derive the validated bucket:
+    # Only grant the claimed bucket if validation passed AND the arch maps to
+    # a non-modern bucket (i.e., a bonus bucket). Otherwise fall back to "modern".
+    raw_bucket = ARCH_TO_BUCKET.get(claimed_arch.lower(), "modern")
+    validated_bucket = raw_bucket if passed else "modern"
+
+    rejection_reason = None
+    if not passed:
+        issues = details.get("issues", [])
+        rejection_reason = "; ".join(issues[:5]) if issues else f"score {score:.3f} below threshold"
+
+    store_arch_validation_result(
+        db, miner, claimed_arch, score, passed, validated_bucket, rejection_reason
+    )
+    return passed, validated_bucket
+
+
+def get_validated_bucket(
+    db: sqlite3.Connection,
+    miner: str,
+    claimed_arch: str,
+) -> str:
+    """
+    Look up the server-validated bucket for a miner.
+
+    If no validated record exists (miner hasn't been through arch validation)
+    or validation failed, returns "modern" (safe default — no unearned bonus).
+
+    This is the core of the Bounty #554 fix: bucket classification is now
+    derived from server-side validated data, not the raw client claim.
+    """
+    ensure_schema(db)
+    row = db.execute("""
+        SELECT validated, validated_bucket
+        FROM arch_validation_results
+        WHERE miner = ? AND claimed_arch = ?
+    """, (miner, claimed_arch.lower())).fetchone()
+
+    if row is None:
+        # No validation record → treat as unvalidated → modern bucket (no bonus)
+        return "modern"
+
+    validated, validated_bucket = row
+    if not validated or not validated_bucket:
+        return "modern"
+
+    return validated_bucket
 
 
 # ═══════════════════════════════════════════════════════════
@@ -480,8 +615,28 @@ def compute_fleet_scores(
 # BUCKET NORMALIZATION
 # ═══════════════════════════════════════════════════════════
 
-def classify_miner_bucket(device_arch: str) -> str:
-    """Map a device architecture to its hardware bucket."""
+def classify_miner_bucket(
+    device_arch: str,
+    db: Optional[sqlite3.Connection] = None,
+    miner_id: Optional[str] = None,
+) -> str:
+    """
+    Map a device architecture to its hardware bucket.
+
+    RIP-201 / Bounty #554 fix: when a DB connection and miner_id are provided,
+    bucket assignment is derived from the server-side arch_validation_results
+    rather than the raw client-reported device_arch.  A miner claiming G4 but
+    whose fingerprint matches x86 will have validation_score < threshold and
+    will receive the "modern" bucket (1.0× multiplier) instead of
+    "vintage_powerpc" (2.5× multiplier).
+
+    Falls back to the legacy lookup when called without DB context (backwards
+    compatible for callers that don't yet pass DB / miner_id).
+    """
+    if db is not None and miner_id is not None:
+        return get_validated_bucket(db, miner_id, device_arch)
+    # Legacy path: trust the client-reported arch (only used when validation
+    # context is unavailable — callers should migrate to pass db+miner_id).
     return ARCH_TO_BUCKET.get(device_arch.lower(), "modern")
 
 
@@ -511,7 +666,8 @@ def compute_bucket_pressure(
     bucket_miners = defaultdict(list)
 
     for miner_id, arch, weight in miners:
-        bucket = classify_miner_bucket(arch)
+        # RIP-201 fix: use server-validated bucket when DB is available
+        bucket = classify_miner_bucket(arch, db=db, miner_id=miner_id)
         bucket_counts[bucket] += 1
         bucket_weights[bucket] += weight
         bucket_miners[bucket].append(miner_id)
@@ -639,7 +795,8 @@ def calculate_immune_rewards_equal_split(
         base = get_time_aged_multiplier(arch, chain_age_years)
         fleet_score = fleet_scores.get(miner_id, 0.0)
         effective = apply_fleet_decay(base, fleet_score)
-        bucket = classify_miner_bucket(arch)
+        # RIP-201 fix: use server-validated bucket, not raw client-reported arch
+        bucket = classify_miner_bucket(arch, db=db, miner_id=miner_id)
         buckets[bucket].append((miner_id, effective))
 
         # Record
@@ -765,9 +922,10 @@ def calculate_immune_weights(
     pressure = compute_bucket_pressure(decayed_weights, epoch, db)
 
     # Step 5: Apply pressure to get final weights
+    # RIP-201 fix: use server-validated bucket, not raw client-reported arch
     final_weights = {}
     for miner_id, arch, weight in decayed_weights:
-        bucket = classify_miner_bucket(arch)
+        bucket = classify_miner_bucket(arch, db=db, miner_id=miner_id)
         bucket_factor = pressure.get(bucket, 1.0)
         final_weights[miner_id] = weight * bucket_factor
 
