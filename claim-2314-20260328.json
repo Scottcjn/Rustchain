@@ -1,0 +1,10 @@
+{
+  "wallet": "0x64acF469BeC51d1DaC0660Ef903e8a3e402D0484",
+  "badge_id": "RUSTCHAIN-BADGE-2314-auto",
+  "issue_number": 2314,
+  "message": "I claim bounty #2314 as owner of RUSTCHAIN-BADGE-2314-auto",
+  "signature": "0xd0702b246f15981c15ae088603c87ae0cc860d9cdb327445905f3e15f056316e1b",
+  "timestamp": 1774706259,
+  "claimed_at": "2026-03-28T21:57:39.134445",
+  "notes": "Ghost in the Machine - Implemented"
+}

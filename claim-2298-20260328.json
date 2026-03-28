@@ -1,0 +1,10 @@
+{
+  "wallet": "0x64acF469BeC51d1DaC0660Ef903e8a3e402D0484",
+  "badge_id": "RUSTCHAIN-BADGE-2298-riscv",
+  "issue_number": 2298,
+  "message": "I claim bounty #2298 as owner of RUSTCHAIN-BADGE-2298-riscv",
+  "signature": "0x0eff8e49156b703bbb1cbea7eb729ab8f20a7d0db2c7698491925f5dafa5302d1b",
+  "timestamp": 1774706225,
+  "claimed_at": "2026-03-28T21:57:05.254967",
+  "notes": "RISC-V Miner Port - Implemented"
+}

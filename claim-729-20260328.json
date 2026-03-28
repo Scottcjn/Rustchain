@@ -1,0 +1,10 @@
+{
+  "wallet": "0x64acF469BeC51d1DaC0660Ef903e8a3e402D0484",
+  "badge_id": "RUSTCHAIN-BADGE-729-chrome",
+  "issue_number": 729,
+  "message": "I claim bounty #729 as owner of RUSTCHAIN-BADGE-729-chrome",
+  "signature": "0xfd9ccfaf9aa6badf2932919f17620fb69c71e0c6ad292fbc3471a50e7a09762b1b",
+  "timestamp": 1774705884,
+  "claimed_at": "2026-03-28T21:51:24.204860",
+  "notes": "BoTTube Chrome Extension - Implemented MVP"
+}

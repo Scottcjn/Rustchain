@@ -1,0 +1,10 @@
+{
+  "wallet": "0x64acF469BeC51d1DaC0660Ef903e8a3e402D0484",
+  "badge_id": "RUSTCHAIN-BADGE-765-prometheus",
+  "issue_number": 765,
+  "message": "I claim bounty #765 as owner of RUSTCHAIN-BADGE-765-prometheus",
+  "signature": "0x2d663ddfd70f6a0cb74ef0cc980e7df9fcde64fe024095712290d339cc2891221b",
+  "timestamp": 1774705907,
+  "claimed_at": "2026-03-28T21:51:47.866269",
+  "notes": "Prometheus Metrics Exporter - Implemented"
+}

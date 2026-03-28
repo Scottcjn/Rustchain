@@ -1,0 +1,10 @@
+{
+  "wallet": "0x64acF469BeC51d1DaC0660Ef903e8a3e402D0484",
+  "badge_id": "RUSTCHAIN-BADGE-1149-auto",
+  "issue_number": 1149,
+  "message": "I claim bounty #1149 as owner of RUSTCHAIN-BADGE-1149-auto",
+  "signature": "0x53b9da7251cfd70707cd4582d80acd276709f1b608a04a08521c91edb37375e71b",
+  "timestamp": 1774706331,
+  "claimed_at": "2026-03-28T21:58:51.315111",
+  "notes": "RIP-305 Cross-Chain Airdrop - Implemented"
+}

@@ -1,0 +1,10 @@
+{
+  "wallet": "0x64acF469BeC51d1DaC0660Ef903e8a3e402D0484",
+  "badge_id": "RUSTCHAIN-BADGE-2301-auto",
+  "issue_number": 2301,
+  "message": "I claim bounty #2301 as owner of RUSTCHAIN-BADGE-2301-auto",
+  "signature": "0x0150d4492d2129602a3bde754e5772ca4ab1172759f16e2930a0e21d81d1509b1b",
+  "timestamp": 1774706259,
+  "claimed_at": "2026-03-28T21:57:39.135080",
+  "notes": "Interactive Mining Simulator - Implemented"
+}

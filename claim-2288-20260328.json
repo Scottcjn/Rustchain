@@ -1,0 +1,10 @@
+{
+  "wallet": "0x64acF469BeC51d1DaC0660Ef903e8a3e402D0484",
+  "badge_id": "RUSTCHAIN-BADGE-2288-explorer",
+  "issue_number": 2288,
+  "message": "I claim bounty #2288 as owner of RUSTCHAIN-BADGE-2288-explorer",
+  "signature": "0xd155e45e4ff2f644fa3f0fe3c3ca491a862d3c4939d130dbfd81711b9bf0faa81b",
+  "timestamp": 1774706225,
+  "claimed_at": "2026-03-28T21:57:05.255574",
+  "notes": "Explorer UI - Implemented"
+}

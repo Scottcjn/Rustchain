@@ -1,0 +1,10 @@
+{
+  "wallet": "0x64acF469BeC51d1DaC0660Ef903e8a3e402D0484",
+  "badge_id": "RUSTCHAIN-BADGE-2296-auto",
+  "issue_number": 2296,
+  "message": "I claim bounty #2296 as owner of RUSTCHAIN-BADGE-2296-auto",
+  "signature": "0x5d8cc7fd0804841b8afd1ad89899ad641c5eddfd718ea46b31848512803ca06e1b",
+  "timestamp": 1774706199,
+  "claimed_at": "2026-03-28T21:56:39.606129",
+  "notes": "Red Team Attestation Replay Defense - Implemented"
+}

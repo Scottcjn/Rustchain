@@ -1,0 +1,10 @@
+{
+  "wallet": "0x64acF469BeC51d1DaC0660Ef903e8a3e402D0484",
+  "badge_id": "RUSTCHAIN-BADGE-2278-auto",
+  "issue_number": 2278,
+  "message": "I claim bounty #2278 as owner of RUSTCHAIN-BADGE-2278-auto",
+  "signature": "0xae9b97a5e854465660f604a98ccabbfe779dedbb2bfe9503920c6731e252adad1b",
+  "timestamp": 1774706199,
+  "claimed_at": "2026-03-28T21:56:39.605727",
+  "notes": "Ergo Anchor Chain Proof Verifier - Implemented"
+}

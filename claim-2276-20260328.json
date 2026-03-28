@@ -1,0 +1,10 @@
+{
+  "wallet": "0x64acF469BeC51d1DaC0660Ef903e8a3e402D0484",
+  "badge_id": "RUSTCHAIN-BADGE-2276-auto",
+  "issue_number": 2276,
+  "message": "I claim bounty #2276 as owner of RUSTCHAIN-BADGE-2276-auto",
+  "signature": "0x7cafdf282f1a88d8096c3a3368dab63be9e3300d77b1762b29c5e7e82ea935c51b",
+  "timestamp": 1774706319,
+  "claimed_at": "2026-03-28T21:58:39.728544",
+  "notes": "Hardware Fingerprint Replay Defense - Implemented"
+}

@@ -1,0 +1,10 @@
+{
+  "wallet": "0x64acF469BeC51d1DaC0660Ef903e8a3e402D0484",
+  "badge_id": "RUSTCHAIN-BADGE-2303-auto",
+  "issue_number": 2303,
+  "message": "I claim bounty #2303 as owner of RUSTCHAIN-BADGE-2303-auto",
+  "signature": "0x9235d5637eab4f5644697ea64729d945bf3fb2c108f29cbb1c69745d48e4f5a01b",
+  "timestamp": 1774706259,
+  "claimed_at": "2026-03-28T21:57:39.135398",
+  "notes": "wRTC Solana Bridge Dashboard - Implemented"
+}

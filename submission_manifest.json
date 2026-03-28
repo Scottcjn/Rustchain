@@ -1,0 +1,109 @@
+{
+  "updated_at": "2026-03-28T21:58:51.305634",
+  "wallet": "0x64acF469BeC51d1DaC0660Ef903e8a3e402D0484",
+  "total_claims": 20,
+  "total_rtc": 1540,
+  "total_usd": 154.0,
+  "claims": [
+    {
+      "file": "claim-2314-20260328.json",
+      "issue": 2314,
+      "reward": 200
+    },
+    {
+      "file": "claim-2312-20260328.json",
+      "issue": 2312,
+      "reward": 180
+    },
+    {
+      "file": "claim-2310-20260328.json",
+      "issue": 2310,
+      "reward": 170
+    },
+    {
+      "file": "claim-2309-20260328.json",
+      "issue": 2309,
+      "reward": 90
+    },
+    {
+      "file": "claim-2308-20260328.json",
+      "issue": 2308,
+      "reward": 55
+    },
+    {
+      "file": "claim-2303-20260328.json",
+      "issue": 2303,
+      "reward": 60
+    },
+    {
+      "file": "claim-2301-20260328.json",
+      "issue": 2301,
+      "reward": 50
+    },
+    {
+      "file": "claim-2298-20260328.json",
+      "issue": 2298,
+      "reward": 75
+    },
+    {
+      "file": "claim-2296-20260328.json",
+      "issue": 2296,
+      "reward": 70
+    },
+    {
+      "file": "claim-2288-20260328.json",
+      "issue": 2288,
+      "reward": 85
+    },
+    {
+      "file": "claim-2286-20260328.json",
+      "issue": 2286,
+      "reward": 70
+    },
+    {
+      "file": "claim-2279-20260328.json",
+      "issue": 2279,
+      "reward": 60
+    },
+    {
+      "file": "claim-2278-20260328.json",
+      "issue": 2278,
+      "reward": 60
+    },
+    {
+      "file": "claim-2276-20260328.json",
+      "issue": 2276,
+      "reward": 80
+    },
+    {
+      "file": "claim-765-20260328.json",
+      "issue": 765,
+      "reward": 40
+    },
+    {
+      "file": "claim-755-20260328.json",
+      "issue": 755,
+      "reward": 35
+    },
+    {
+      "file": "claim-729-20260328.json",
+      "issue": 729,
+      "reward": 50
+    },
+    {
+      "file": "claim-684-20260328.json",
+      "issue": 684,
+      "reward": 45
+    },
+    {
+      "file": "claim-474-20260328.json",
+      "issue": 474,
+      "reward": 65
+    },
+    {
+      "file": "claim-2313-20260328.json",
+      "issue": 0,
+      "reward": 0
+    }
+  ]
+}
