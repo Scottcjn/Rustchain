@@ -4,431 +4,628 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BCOS v2 vs Altermenta Nucleus Verify | RustChain</title>
+    <meta name="description" content="Compare BCOS v2 (Beacon Certified Open Source) with Altermenta Nucleus Verify. See why BCOS wins on every metric — free, open source, on-chain verified.">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        /* ===== RESET & BASE ===== */
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0a0a0f;
+            --surface: #0d1117;
+            --surface-alt: #161b22;
+            --border: #21262d;
+            --border-dim: #30363d;
+            --green: #00ff41;
+            --green-dim: #00cc33;
+            --green-glow: rgba(0, 255, 65, 0.15);
+            --green-glow-strong: rgba(0, 255, 65, 0.4);
+            --red: #ff6b6b;
+            --red-dim: rgba(255, 107, 107, 0.15);
+            --yellow: #ffd93d;
+            --yellow-dim: rgba(255, 217, 61, 0.15);
+            --text: #c9d1d9;
+            --text-dim: #8b949e;
+            --text-bright: #f0f6fc;
         }
 
         body {
             font-family: 'Courier New', Courier, monospace;
-            background-color: #0a0a0a;
-            color: #00ff41;
-            line-height: 1.6;
+            background-color: var(--bg);
+            color: var(--green);
+            line-height: 1.7;
             min-height: 100vh;
+            overflow-x: hidden;
         }
 
+        /* ===== SCANLINE OVERLAY ===== */
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 255, 65, 0.015) 2px,
+                rgba(0, 255, 65, 0.015) 4px
+            );
+            z-index: 9999;
+        }
+
+        /* ===== CONTAINER ===== */
         .container {
-            max-width: 1200px;
+            max-width: 1100px;
             margin: 0 auto;
             padding: 20px;
         }
 
-        /* Terminal Header */
-        .terminal-header {
-            background: linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 100%);
-            border: 2px solid #00ff41;
-            border-radius: 8px 8px 0 0;
-            padding: 15px 20px;
+        /* ===== TERMINAL CHROME ===== */
+        .terminal-frame {
+            border: 2px solid var(--green);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 0 40px var(--green-glow), 0 0 80px rgba(0,255,65,0.05);
+            margin: 30px 0;
+        }
+
+        .terminal-titlebar {
+            background: linear-gradient(180deg, #1a1a2e 0%, #0d0d1a 100%);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .terminal-dot {
+            width: 12px; height: 12px; border-radius: 50%;
+        }
+        .dot-red { background: #ff5f56; }
+        .dot-yellow { background: #ffbd2e; }
+        .dot-green { background: #27c93f; }
+
+        .terminal-title {
+            margin-left: 12px;
+            color: var(--text-dim);
+            font-size: 13px;
+            flex: 1;
+        }
+
+        .terminal-body {
+            background-color: var(--surface);
+            padding: 40px 50px;
+        }
+
+        /* ===== BOOT SEQUENCE ===== */
+        .boot-line {
+            color: var(--text-dim);
+            font-size: 14px;
+            margin-bottom: 4px;
+            opacity: 0;
+            animation: fadeIn 0.3s forwards;
+        }
+        .boot-line:nth-child(1) { animation-delay: 0.1s; }
+        .boot-line:nth-child(2) { animation-delay: 0.3s; }
+        .boot-line:nth-child(3) { animation-delay: 0.5s; }
+        .boot-line:nth-child(4) { animation-delay: 0.7s; }
+
+        .boot-line .prompt { color: var(--green); }
+        .boot-line .ok { color: var(--green-dim); }
+        .boot-line .err { color: var(--red); }
+
+        @keyframes fadeIn { to { opacity: 1; } }
+
+        /* ===== HEADINGS ===== */
+        h1 {
+            font-size: 2.4em;
+            margin: 30px 0 8px;
+            text-shadow: 0 0 20px var(--green-glow-strong), 0 0 40px var(--green-glow);
+            letter-spacing: -1px;
+        }
+
+        .subtitle {
+            color: var(--text-dim);
+            font-size: 1.05em;
+            margin-bottom: 35px;
+        }
+        .subtitle::before { content: "$ "; color: var(--green); }
+
+        /* ===== VERDICT BANNER ===== */
+        .verdict {
+            background: linear-gradient(135deg, rgba(0,255,65,0.12) 0%, rgba(0,204,51,0.06) 100%);
+            border: 1px solid var(--green-dim);
+            border-left: 4px solid var(--green);
+            padding: 18px 24px;
+            border-radius: 0 8px 8px 0;
+            margin-bottom: 40px;
+            font-size: 1.05em;
+        }
+        .verdict::before {
+            content: "[VERDICT] ";
+            color: var(--green);
+            font-weight: bold;
+        }
+
+        /* ===== SCORE DASHBOARD ===== */
+        .score-row {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 40px;
+            flex-wrap: wrap;
+        }
+
+        .score-card {
+            flex: 1;
+            min-width: 220px;
+            background: var(--surface-alt);
+            border: 1px solid var(--border-dim);
+            border-radius: 8px;
+            padding: 28px 24px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .score-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+        }
+
+        .score-card.bcos::before { background: var(--green); }
+        .score-card.nucleus::before { background: var(--red); }
+
+        .score-label {
+            font-size: 0.85em;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+        }
+
+        .score-value {
+            font-size: 2.8em;
+            font-weight: bold;
+            line-height: 1;
+            margin-bottom: 8px;
+        }
+
+        .score-card.bcos .score-value {
+            color: var(--green);
+            text-shadow: 0 0 15px var(--green-glow-strong);
+        }
+        .score-card.nucleus .score-value { color: var(--red); }
+
+        .score-detail {
+            font-size: 0.85em;
+            color: var(--text-dim);
+        }
+
+        .score-card.bcos { border-color: rgba(0,255,65,0.2); }
+        .score-card.nucleus { border-color: rgba(255,107,107,0.2); }
+
+        /* ===== COMPARISON TABLE ===== */
+        .section-label {
+            font-size: 0.85em;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 16px;
             display: flex;
             align-items: center;
             gap: 10px;
         }
-
-        .terminal-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background-color: #ff5f56;
+        .section-label::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border-dim);
         }
 
-        .terminal-dot:nth-child(2) {
-            background-color: #ffbd2e;
-        }
-
-        .terminal-dot:nth-child(3) {
-            background-color: #27c93f;
-        }
-
-        .terminal-title {
-            margin-left: auto;
-            color: #888;
-            font-size: 14px;
-        }
-
-        /* Main Content */
-        .terminal-body {
-            background-color: #0d1117;
-            border: 2px solid #00ff41;
-            border-top: none;
-            border-radius: 0 0 8px 8px;
-            padding: 40px;
-        }
-
-        h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-            text-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
-        }
-
-        .subtitle {
-            color: #888;
-            font-size: 1.1em;
-            margin-bottom: 40px;
-        }
-
-        .subtitle::before {
-            content: "> ";
-            color: #00ff41;
-        }
-
-        /* Winner Banner */
-        .winner-banner {
-            background: linear-gradient(135deg, #00ff41 0%, #00cc33 100%);
-            color: #0a0a0a;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 40px;
-            text-align: center;
-            font-weight: bold;
-            font-size: 1.2em;
-        }
-
-        .winner-banner::before {
-            content: "★ ";
-        }
-
-        /* Comparison Table */
         .comparison-table {
             width: 100%;
             border-collapse: collapse;
             margin-bottom: 40px;
-            background-color: #161b22;
-            border-radius: 8px;
-            overflow: hidden;
+            font-size: 0.95em;
         }
 
-        .comparison-table th,
-        .comparison-table td {
-            padding: 20px;
+        .comparison-table thead th {
+            background: var(--surface-alt);
+            padding: 16px 20px;
             text-align: left;
-            border-bottom: 1px solid #30363d;
-        }
-
-        .comparison-table th {
-            background-color: #21262d;
-            color: #00ff41;
             font-weight: bold;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 1.5px;
+            font-size: 0.8em;
+            color: var(--text-dim);
+            border-bottom: 2px solid var(--border);
         }
 
-        .comparison-table tr:last-child td {
-            border-bottom: none;
-        }
+        .comparison-table thead th:nth-child(2) { color: var(--green); }
+        .comparison-table thead th:nth-child(3) { color: var(--red); }
 
-        .comparison-table tr:hover {
-            background-color: #1c2128;
+        .comparison-table tbody tr {
+            border-bottom: 1px solid var(--border);
+            transition: background 0.2s;
+        }
+        .comparison-table tbody tr:last-child { border-bottom: none; }
+        .comparison-table tbody tr:hover { background: rgba(0,255,65,0.03); }
+
+        .comparison-table td {
+            padding: 16px 20px;
+            vertical-align: middle;
         }
 
         .feature-name {
+            color: var(--text-bright);
             font-weight: bold;
-            color: #c9d1d9;
         }
 
-        .bcos-cell {
-            color: #00ff41;
+        .feature-desc {
+            display: block;
+            font-size: 0.8em;
+            color: var(--text-dim);
+            font-weight: normal;
+            margin-top: 2px;
         }
 
-        .bcos-cell::before {
-            content: "✓ ";
+        .cell-bcos {
+            color: var(--green);
+        }
+        .cell-bcos .icon { margin-right: 6px; }
+
+        .cell-nucleus {
+            color: var(--red);
+        }
+        .cell-nucleus .icon { margin-right: 6px; }
+
+        .cell-win {
+            background: var(--green-glow);
+        }
+        .cell-lose {
+            background: var(--red-dim);
         }
 
-        .nucleus-cell {
-            color: #ff6b6b;
-        }
-
-        .nucleus-cell::before {
-            content: "✗ ";
-        }
-
-        .nucleus-cell.partial {
-            color: #ffd93d;
-        }
-
-        .nucleus-cell.partial::before {
-            content: "~ ";
-        }
-
-        /* Stats Section */
-        .stats-grid {
+        /* ===== DIFFERENTIATORS SECTION ===== */
+        .diff-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: 1fr 1fr;
             gap: 20px;
             margin-bottom: 40px;
         }
 
-        .stat-card {
-            background-color: #161b22;
-            border: 1px solid #30363d;
+        .diff-card {
+            background: var(--surface-alt);
+            border: 1px solid var(--border-dim);
             border-radius: 8px;
-            padding: 25px;
-            text-align: center;
+            padding: 24px;
         }
 
-        .stat-card.bcos {
-            border-color: #00ff41;
+        .diff-card h3 {
+            font-size: 1em;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
-        .stat-card.nucleus {
-            border-color: #ff6b6b;
+        .diff-card.pros h3 { color: var(--green); }
+        .diff-card.cons h3 { color: var(--red); }
+
+        .diff-card ul {
+            list-style: none;
+            padding: 0;
         }
 
-        .stat-value {
-            font-size: 2.5em;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
-
-        .stat-card.bcos .stat-value {
-            color: #00ff41;
-        }
-
-        .stat-card.nucleus .stat-value {
-            color: #ff6b6b;
-        }
-
-        .stat-label {
-            color: #888;
+        .diff-card li {
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
             font-size: 0.9em;
+            color: var(--text);
         }
+        .diff-card li:last-child { border-bottom: none; }
 
-        /* CTA Section */
-        .cta-section {
-            background: linear-gradient(135deg, #161b22 0%, #1c2128 100%);
-            border: 2px solid #00ff41;
+        .diff-card.pros li::before { content: "+ "; color: var(--green); font-weight: bold; }
+        .diff-card.cons li::before { content: "- "; color: var(--red); font-weight: bold; }
+
+        /* ===== CTA SECTION ===== */
+        .cta {
+            background: linear-gradient(135deg, rgba(0,255,65,0.06) 0%, rgba(0,204,51,0.02) 100%);
+            border: 1px solid rgba(0,255,65,0.25);
             border-radius: 8px;
             padding: 40px;
             text-align: center;
-            margin-top: 40px;
+            margin: 40px 0;
         }
 
-        .cta-section h2 {
-            color: #00ff41;
-            margin-bottom: 20px;
+        .cta h2 {
+            font-size: 1.5em;
+            margin-bottom: 12px;
+            text-shadow: 0 0 15px var(--green-glow);
+        }
+
+        .cta p {
+            color: var(--text-dim);
+            margin-bottom: 24px;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
         }
 
         .cta-buttons {
             display: flex;
-            gap: 20px;
+            gap: 16px;
             justify-content: center;
-            margin-top: 30px;
+            flex-wrap: wrap;
         }
 
         .btn {
             display: inline-block;
-            padding: 15px 30px;
+            padding: 14px 32px;
             border-radius: 6px;
             text-decoration: none;
             font-weight: bold;
-            transition: all 0.3s ease;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
             text-transform: uppercase;
             letter-spacing: 1px;
+            transition: all 0.25s ease;
+            cursor: pointer;
         }
 
         .btn-primary {
-            background-color: #00ff41;
-            color: #0a0a0a;
+            background: var(--green);
+            color: var(--bg);
+            border: 2px solid var(--green);
         }
-
         .btn-primary:hover {
-            background-color: #00cc33;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(0, 255, 65, 0.4);
+            background: transparent;
+            color: var(--green);
+            box-shadow: 0 0 20px var(--green-glow-strong);
         }
 
         .btn-secondary {
-            background-color: transparent;
-            color: #00ff41;
-            border: 2px solid #00ff41;
+            background: transparent;
+            color: var(--green);
+            border: 2px solid var(--border-dim);
         }
-
         .btn-secondary:hover {
-            background-color: #00ff41;
-            color: #0a0a0a;
+            border-color: var(--green);
+            box-shadow: 0 0 15px var(--green-glow);
         }
 
-        /* Footer */
+        /* ===== TERMINAL FOOTER ===== */
         .footer {
-            margin-top: 60px;
-            padding-top: 40px;
-            border-top: 1px solid #30363d;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
             text-align: center;
-            color: #888;
+            font-size: 0.85em;
+            color: var(--text-dim);
         }
 
         .footer a {
-            color: #00ff41;
+            color: var(--green);
             text-decoration: none;
         }
-
         .footer a:hover {
             text-decoration: underline;
         }
 
-        /* Blinking cursor */
         .cursor {
             display: inline-block;
-            width: 10px;
-            height: 20px;
-            background-color: #00ff41;
-            animation: blink 1s infinite;
-            margin-left: 5px;
+            width: 8px;
+            height: 16px;
+            background: var(--green);
+            animation: blink 1s step-end infinite;
+            vertical-align: text-bottom;
+            margin-left: 4px;
         }
 
         @keyframes blink {
-            0%, 50% { opacity: 1; }
-            51%, 100% { opacity: 0; }
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
         }
 
-        /* Responsive */
+        /* ===== RESPONSIVE ===== */
         @media (max-width: 768px) {
-            h1 {
-                font-size: 1.8em;
-            }
-
-            .terminal-body {
-                padding: 20px;
-            }
-
-            .comparison-table th,
-            .comparison-table td {
-                padding: 12px;
-                font-size: 0.9em;
-            }
-
-            .cta-buttons {
-                flex-direction: column;
-            }
-
-            .btn {
-                width: 100%;
-            }
+            .terminal-body { padding: 24px 20px; }
+            h1 { font-size: 1.6em; }
+            .score-row { flex-direction: column; }
+            .diff-grid { grid-template-columns: 1fr; }
+            .comparison-table { font-size: 0.82em; }
+            .comparison-table td, .comparison-table th { padding: 10px 12px; }
+            .cta { padding: 24px 16px; }
+            .cta-buttons { flex-direction: column; }
+            .btn { width: 100%; text-align: center; }
+            .feature-desc { display: none; }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="terminal-header">
-            <div class="terminal-dot"></div>
-            <div class="terminal-dot"></div>
-            <div class="terminal-dot"></div>
-            <div class="terminal-title">rustchain.org/bcos/compare.html</div>
-        </div>
-
-        <div class="terminal-body">
-            <h1>BCOS v2 vs Nucleus Verify</h1>
-            <p class="subtitle">Beacon Certified Open Source - The Transparent Choice</p>
-
-            <div class="winner-banner">
-                BCOS v2 Wins on Every Metric - Open Source, Free, and On-Chain Verified
+        <!-- Terminal Frame -->
+        <div class="terminal-frame">
+            <div class="terminal-titlebar">
+                <div class="terminal-dot dot-red"></div>
+                <div class="terminal-dot dot-yellow"></div>
+                <div class="terminal-dot dot-green"></div>
+                <span class="terminal-title">rustchain.org/bcos/compare.html — BCOS v2 vs Nucleus Verify</span>
             </div>
 
-            <table class="comparison-table">
-                <thead>
-                    <tr>
-                        <th>Feature</th>
-                        <th>BCOS v2</th>
-                        <th>Nucleus Verify</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td class="feature-name">Price</td>
-                        <td class="bcos-cell">Free (MIT License)</td>
-                        <td class="nucleus-cell">$20-50/month</td>
-                    </tr>
-                    <tr>
-                        <td class="feature-name">Source Code</td>
-                        <td class="bcos-cell">100% Open Source</td>
-                        <td class="nucleus-cell">Proprietary/Closed</td>
-                    </tr>
-                    <tr>
-                        <td class="feature-name">On-Chain Proof</td>
-                        <td class="bcos-cell">RustChain BLAKE2b Anchored</td>
-                        <td class="nucleus-cell">None</td>
-                    </tr>
-                    <tr>
-                        <td class="feature-name">Offline Scanning</td>
-                        <td class="bcos-cell">Full Local Engine</td>
-                        <td class="nucleus-cell">Cloud API Only</td>
-                    </tr>
-                    <tr>
-                        <td class="feature-name">Human Review</td>
-                        <td class="bcos-cell">L2 Ed25519 Signatures</td>
-                        <td class="nucleus-cell">Fully Automated</td>
-                    </tr>
-                    <tr>
-                        <td class="feature-name">Trust Score</td>
-                        <td class="bcos-cell">Transparent Formula</td>
-                        <td class="nucleus-cell">Opaque/Black Box</td>
-                    </tr>
-                    <tr>
-                        <td class="feature-name">CLI Tool</td>
-                        <td class="bcos-cell">clawrtc bcos</td>
-                        <td class="nucleus-cell">Web Interface Only</td>
-                    </tr>
-                    <tr>
-                        <td class="feature-name">Community</td>
-                        <td class="bcos-cell">183+ Stars, 18 Months Active</td>
-                        <td class="nucleus-cell">0 Stars, 6 Days Old</td>
-                    </tr>
-                    <tr>
-                        <td class="feature-name">Self-Hostable</td>
-                        <td class="bcos-cell">Yes - Full Control</td>
-                        <td class="nucleus-cell">No - SaaS Only</td>
-                    </tr>
-                    <tr>
-                        <td class="feature-name">Audit Trail</td>
-                        <td class="bcos-cell">Immutable Blockchain Record</td>
-                        <td class="nucleus-cell">Centralized Database</td>
-                    </tr>
-                </tbody>
-            </table>
+            <div class="terminal-body">
+                <!-- Boot Sequence -->
+                <div class="boot-line"><span class="prompt">rustchain@bcos:~$</span> loading comparison engine v2.4.1...</div>
+                <div class="boot-line"><span class="prompt">rustchain@bcos:~$</span> <span class="ok">OK</span> — BCOS trust score loaded (10/10 metrics pass)</div>
+                <div class="boot-line"><span class="prompt">rustchain@bcos:~$</span> <span class="ok">OK</span> — Nucleus Verify profile loaded (0/10 metrics pass)</div>
+                <div class="boot-line"><span class="prompt">rustchain@bcos:~$</span> <span class="err">WARN</span> — Nucleus: no on-chain proof, no open source, no CLI</div>
 
-            <div class="stats-grid">
-                <div class="stat-card bcos">
-                    <div class="stat-value">$0</div>
-                    <div class="stat-label">BCOS v2 Cost</div>
-                </div>
-                <div class="stat-card nucleus">
-                    <div class="stat-value">$240-600</div>
-                    <div class="stat-label">Nucleus Annual Cost</div>
-                </div>
-                <div class="stat-card bcos">
-                    <div class="stat-value">183+</div>
-                    <div class="stat-label">GitHub Stars</div>
-                </div>
-                <div class="stat-card nucleus">
-                    <div class="stat-value">0</div>
-                    <div class="stat-label">GitHub Stars</div>
-                </div>
-            </div>
+                <h1>BCOS v2 vs Nucleus Verify</h1>
+                <p class="subtitle">Beacon Certified Open Source — The Transparent Choice</p>
 
-            <div class="cta-section">
-                <h2>Ready to Go Open Source?</h2>
-                <p>Join the community of developers who trust BCOS v2 for transparent,<br>on-chain verified open source certification.</p>
-                <div class="cta-buttons">
-                    <a href="https://rustchain.org/bcos/verify" class="btn btn-primary">Verify Your Repo</a>
-                    <a href="https://github.com/Scottcjn/Rustchain/blob/main/docs/BEACON_CERTIFIED_OPEN_SOURCE.md" class="btn btn-secondary">Read Documentation</a>
+                <!-- Verdict -->
+                <div class="verdict">
+                    BCOS v2 wins on every metric. Free, open source, on-chain verified, community-driven. No contest.
                 </div>
-            </div>
 
-            <div class="footer">
-                <p>BCOS v2 is part of the <a href="https://rustchain.org">RustChain</a> ecosystem</p>
-                <p>Built with transparency. Verified on-chain. Forever free.</p>
-                <p style="margin-top: 20px;"><span class="cursor"></span></p>
+                <!-- Score Cards -->
+                <div class="score-row">
+                    <div class="score-card bcos">
+                        <div class="score-label">BCOS v2 Score</div>
+                        <div class="score-value">10/10</div>
+                        <div class="score-detail">All metrics pass</div>
+                    </div>
+                    <div class="score-card nucleus">
+                        <div class="score-label">Nucleus Score</div>
+                        <div class="score-value">0/10</div>
+                        <div class="score-detail">No metrics pass</div>
+                    </div>
+                    <div class="score-card bcos">
+                        <div class="score-label">Annual Cost</div>
+                        <div class="score-value">$0</div>
+                        <div class="score-detail">MIT License — forever free</div>
+                    </div>
+                    <div class="score-card nucleus">
+                        <div class="score-label">Annual Cost</div>
+                        <div class="score-value">$240+</div>
+                        <div class="score-detail">$20-50/mo SaaS subscription</div>
+                    </div>
+                </div>
+
+                <!-- Comparison Table -->
+                <div class="section-label">Feature Comparison</div>
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th style="width:28%">Feature</th>
+                            <th style="width:36%">BCOS v2</th>
+                            <th style="width:36%">Nucleus Verify</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="feature-name">Price
+                                <span class="feature-desc">Total cost of ownership</span>
+                            </td>
+                            <td class="cell-win cell-bcos"><span class="icon">&#10003;</span> Free (MIT License)</td>
+                            <td class="cell-lose cell-nucleus"><span class="icon">&#10007;</span> $20-50/month</td>
+                        </tr>
+                        <tr>
+                            <td class="feature-name">Source Code
+                                <span class="feature-desc">Code transparency and auditability</span>
+                            </td>
+                            <td class="cell-win cell-bcos"><span class="icon">&#10003;</span> 100% Open Source</td>
+                            <td class="cell-lose cell-nucleus"><span class="icon">&#10007;</span> Proprietary / Closed Source</td>
+                        </tr>
+                        <tr>
+                            <td class="feature-name">On-Chain Proof
+                                <span class="feature-desc">Blockchain-anchored verification</span>
+                            </td>
+                            <td class="cell-win cell-bcos"><span class="icon">&#10003;</span> RustChain BLAKE2b Anchored</td>
+                            <td class="cell-lose cell-nucleus"><span class="icon">&#10007;</span> None</td>
+                        </tr>
+                        <tr>
+                            <td class="feature-name">Offline Scanning
+                                <span class="feature-desc">Run without internet access</span>
+                            </td>
+                            <td class="cell-win cell-bcos"><span class="icon">&#10003;</span> Full Local Engine</td>
+                            <td class="cell-lose cell-nucleus"><span class="icon">&#10007;</span> Cloud API Only</td>
+                        </tr>
+                        <tr>
+                            <td class="feature-name">Human Review
+                                <span class="feature-desc">Manual verification layer</span>
+                            </td>
+                            <td class="cell-win cell-bcos"><span class="icon">&#10003;</span> L2 Ed25519 Signatures</td>
+                            <td class="cell-lose cell-nucleus"><span class="icon">&#10007;</span> Fully Automated (no humans)</td>
+                        </tr>
+                        <tr>
+                            <td class="feature-name">Trust Score
+                                <span class="feature-desc">Scoring methodology</span>
+                            </td>
+                            <td class="cell-win cell-bcos"><span class="icon">&#10003;</span> Transparent Formula (documented)</td>
+                            <td class="cell-lose cell-nucleus"><span class="icon">&#10007;</span> Opaque / Black Box</td>
+                        </tr>
+                        <tr>
+                            <td class="feature-name">CLI Tool
+                                <span class="feature-desc">Command-line interface</span>
+                            </td>
+                            <td class="cell-win cell-bcos"><span class="icon">&#10003;</span> clawrtc bcos</td>
+                            <td class="cell-lose cell-nucleus"><span class="icon">&#10007;</span> Web Interface Only</td>
+                        </tr>
+                        <tr>
+                            <td class="feature-name">Community
+                                <span class="feature-desc">GitHub adoption and maturity</span>
+                            </td>
+                            <td class="cell-win cell-bcos"><span class="icon">&#10003;</span> 183+ Stars, 18 Months</td>
+                            <td class="cell-lose cell-nucleus"><span class="icon">&#10007;</span> 0 Stars, 6 Days Old</td>
+                        </tr>
+                        <tr>
+                            <td class="feature-name">Self-Hostable
+                                <span class="feature-desc">Deploy on your own infrastructure</span>
+                            </td>
+                            <td class="cell-win cell-bcos"><span class="icon">&#10003;</span> Yes — Full Control</td>
+                            <td class="cell-lose cell-nucleus"><span class="icon">&#10007;</span> No — SaaS Only</td>
+                        </tr>
+                        <tr>
+                            <td class="feature-name">Audit Trail
+                                <span class="feature-desc">Verification history permanence</span>
+                            </td>
+                            <td class="cell-win cell-bcos"><span class="icon">&#10003;</span> Immutable Blockchain Record</td>
+                            <td class="cell-lose cell-nucleus"><span class="icon">&#10007;</span> Centralized Database</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <!-- Key Differentiators -->
+                <div class="section-label">Key Differentiators</div>
+                <div class="diff-grid">
+                    <div class="diff-card pros">
+                        <h3>[+] Why BCOS v2 Wins</h3>
+                        <ul>
+                            <li>Zero cost — MIT licensed, no subscriptions, no vendor lock-in</li>
+                            <li>On-chain proof — every certification anchored via BLAKE2b to RustChain ledger</li>
+                            <li>Full offline mode — scan and verify without sending code to any server</li>
+                            <li>Transparent trust score — published formula, no hidden weighting</li>
+                            <li>CLI-first — integrates into CI/CD pipelines with clawrtc bcos</li>
+                            <li>Human review layer — L2 Ed25519 signatures from real reviewers</li>
+                            <li>Battle-tested — 18 months of community development, 183+ stars</li>
+                            <li>Self-hostable — run your own instance, full data sovereignty</li>
+                        </ul>
+                    </div>
+                    <div class="diff-card cons">
+                        <h3>[-] Nucleus Verify Limitations</h3>
+                        <ul>
+                            <li>Paid subscription — $20-50/month, ongoing cost with no free tier</li>
+                            <li>No on-chain proof — verifications exist only in their database</li>
+                            <li>Cloud-only — must send code to their servers for scanning</li>
+                            <li>Black-box scoring — no visibility into how trust scores are calculated</li>
+                            <li>No CLI — web-only interface, no CI/CD integration</li>
+                            <li>No human review — fully automated, no accountability layer</li>
+                            <li>Brand new — launched 6 days ago, 0 community adoption</li>
+                            <li>Proprietary — cannot audit, modify, or self-host</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- CTA -->
+                <div class="cta">
+                    <h2>Ready to Go Open Source?</h2>
+                    <p>Join the community of developers who trust BCOS v2 for transparent, on-chain verified open source certification. No subscriptions. No lock-in. Just code.</p>
+                    <div class="cta-buttons">
+                        <a href="https://rustchain.org/bcos/" class="btn btn-primary">Verify Your Repo</a>
+                        <a href="https://github.com/Scottcjn/Rustchain/blob/main/docs/BEACON_CERTIFIED_OPEN_SOURCE.md" class="btn btn-secondary">Read BCOS Docs</a>
+                        <a href="https://github.com/Scottcjn/Rustchain" class="btn btn-secondary">Star on GitHub</a>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="footer">
+                    <p>BCOS v2 is part of the <a href="https://rustchain.org">RustChain</a> ecosystem by <a href="https://elyanlabs.ai">Elyan Labs</a></p>
+                    <p style="margin-top: 8px;">Built with transparency. Verified on-chain. Forever free.</p>
+                    <p style="margin-top: 16px;">rustchain@bcos:~$ <span class="cursor"></span></p>
+                </div>
             </div>
         </div>
     </div>
