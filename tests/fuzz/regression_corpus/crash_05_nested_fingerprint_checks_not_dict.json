@@ -1,0 +1,10 @@
+{
+  "_class": "NESTED_SHAPE",
+  "_description": "fingerprint.checks is a list, not a dict — INVALID_FINGERPRINT_CHECKS expected",
+  "_expected_error_code": "INVALID_FINGERPRINT_CHECKS",
+  "miner": "valid-miner",
+  "device": {"cores": 1},
+  "signals": {},
+  "report": {},
+  "fingerprint": {"checks": ["bad", "list"]}
+}

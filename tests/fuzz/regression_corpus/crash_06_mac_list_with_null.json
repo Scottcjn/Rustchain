@@ -1,0 +1,9 @@
+{
+  "_class": "MAC_LIST_ABUSE",
+  "_description": "signals.macs contains null — INVALID_SIGNALS_MACS expected",
+  "_expected_error_code": "INVALID_SIGNALS_MACS",
+  "miner": "valid-miner",
+  "device": {"cores": 1},
+  "signals": {"macs": ["aa:bb:cc:dd:ee:ff", null]},
+  "report": {}
+}
