@@ -50,7 +50,7 @@ from hardware_fingerprint_replay import (
     get_replay_defense_report,
     REPLAY_WINDOW_SECONDS,
     MAX_FINGERPRINT_SUBMISSIONS_PER_HOUR,
-    DB_PATH
+    get_db_path
 )
 
 # Test database path (set at module level before import)
@@ -61,9 +61,13 @@ _TEST_DB_FILE = Path(TEST_DB_PATH)
 # Fixtures
 # ============================================================================
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="function", autouse=True)
 def test_db():
     """Create a fresh test database for each test."""
+    # Set DB_PATH at test runtime to ensure isolation
+    os.environ['DB_PATH'] = TEST_DB_PATH
+    os.environ['RUSTCHAIN_DB_PATH'] = TEST_DB_PATH
+    
     # Remove old test DB if exists
     if _TEST_DB_FILE.exists():
         _TEST_DB_FILE.unlink()
