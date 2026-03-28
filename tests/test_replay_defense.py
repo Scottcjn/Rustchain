@@ -64,21 +64,25 @@ _TEST_DB_FILE = Path(TEST_DB_PATH)
 @pytest.fixture(scope="function")
 def test_db():
     """Create a fresh test database for each test."""
-    # Remove old test DB if exists
-    if _TEST_DB_FILE.exists():
-        _TEST_DB_FILE.unlink()
+    unique_db_path = f"{TEST_DB_PATH}_{os.getpid()}_{time.time_ns()}.db"
+    
+    # Update the module-level DB_PATH
+    import hardware_fingerprint_replay
+    hardware_fingerprint_replay.DB_PATH = unique_db_path
 
     # Initialize schema
     init_replay_defense_schema()
 
-    yield TEST_DB_PATH
+    yield unique_db_path
 
     # Cleanup
-    if _TEST_DB_FILE.exists():
-        try:
-            _TEST_DB_FILE.unlink()
-        except:
-            pass
+    if os.path.exists(unique_db_path):
+        for _ in range(5):
+            try:
+                os.remove(unique_db_path)
+                break
+            except PermissionError:
+                time.sleep(0.1)
 
 
 @pytest.fixture
