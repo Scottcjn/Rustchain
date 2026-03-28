@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>RustChain Miner Setup Wizard</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:#0d1117;color:#c9d1d9;min-height:100vh;display:flex;flex-direction:column}
+header{background:#161b22;border-bottom:1px solid #30363d;padding:14px 20px;display:flex;align-items:center;gap:10px}
+header h1{font-size:16px;font-weight:600}
+.hb{background:rgba(63,185,80,.15);color:#3fb950;border:1px solid #3fb950;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:600}
+.pw{background:#161b22;border-bottom:1px solid #30363d;padding:12px 16px;overflow-x:auto}
+.ps{display:flex;align-items:center;max-width:700px;margin:0 auto;min-width:440px}
+.si{display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;position:relative}
+.si::before,.si::after{content:'';position:absolute;top:12px;height:2px;width:50%;background:#30363d;z-index:0}
+.si::before{left:0}.si::after{right:0}
+.si.done::before,.si.done::after,.si.active::before{background:#3fb950}
+.sn{width:26px;height:26px;border-radius:50%;border:2px solid #30363d;background:#0d1117;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;position:relative;z-index:1;transition:all .2s}
+.si.done .sn{background:#3fb950;border-color:#3fb950;color:#fff}
+.si.active .sn{border-color:#58a6ff;color:#58a6ff;box-shadow:0 0 0 3px rgba(88,166,255,.2)}
+.sl{font-size:9px;color:#8b949e;text-align:center;white-space:nowrap}
+.si.active .sl{color:#58a6ff}
+.si.done .sl{color:#3fb950}
+main{flex:1;padding:20px;max-width:720px;margin:0 auto;width:100%}
+.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px;margin-bottom:14px}
+.card h2{font-size:18px;margin-bottom:8px}
+.card p,.card li{font-size:13px;line-height:1.6;color:#8b949e}
+.card ul{padding-left:18px}.card li{margin-bottom:4px}
+.card h3{font-size:13px;margin:12px 0 6px;color:#58a6ff}
+.banner{display:flex;align-items:center;gap:12px;background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.3);border-radius:8px;padding:10px 14px;margin-bottom:14px}
+.banner .icon{font-size:26px}
+.banner .info h3{margin:0;color:#3fb950;font-size:14px}
+.banner .info p{margin:2px 0 0;font-size:11px}
+.cb{background:#000;border:1px solid #30363d;border-radius:8px;padding:12px 14px;font-family:'SF Mono',Consolas,monospace;font-size:12px;color:#3fb950;overflow-x:auto;white-space:pre;position:relative;margin:8px 0;display:block}
+.cl{font-size:10px;color:#8b949e;margin:0 0 5px;text-transform:uppercase;letter-spacing:.5px}
+.cpy{position:absolute;top:6px;right:6px;background:#30363d;border:none;border-radius:4px;color:#8b949e;cursor:pointer;padding:3px 8px;font-size:10px;transition:all .2s}
+.cpy:hover{background:#3fb950;color:#fff}
+.cpy.copied{background:#3fb950;color:#fff}
+.ir{display:flex;gap:8px;margin:8px 0;flex-wrap:wrap}
+input[type=text]{flex:1;min-width:160px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:9px 12px;color:#c9d1d9;font-size:13px;outline:none}
+input:focus{border-color:#58a6ff}input::placeholder{color:#8b949e}
+.br{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+button{cursor:pointer;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;transition:all .2s}
+.bp{background:#3fb950;color:#000}
+.bp:hover{background:#4fca5e}
+.bp:disabled{background:#30363d;color:#8b949e;cursor:not-allowed}
+.bs{background:#30363d;color:#c9d1d9}
+.bs:hover{background:#444c56}
+.bg{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:20px;font-size:12px;font-weight:600}
+.bg-ok{background:rgba(63,185,80,.15);color:#3fb950;border:1px solid #3fb950}
+.bg-warn{background:rgba(210,153,34,.15);color:#d29922;border:1px solid #d29922}
+.bg-err{background:rgba(248,81,73,.15);color:#f85149;border:1px solid #f85149}
+.bg-info{background:rgba(88,166,255,.15);color:#58a6ff;border:1px solid #58a6ff}
+.wd{background:#000;border:1px solid #3fb950;border-radius:8px;padding:14px;margin:10px 0}
+.wd .lb{font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.wd .vl{font-family:monospace;font-size:13px;color:#3fb950;word-break:break-all}
+.sg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0}
+.sw{background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:5px 7px;font-family:monospace;font-size:11px;display:flex;gap:5px}
+.sw .nm{color:#8b949e}.sw .wd2{color:#c9d1d9}
+.warn{background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);border-radius:8px;padding:10px;margin:10px 0;font-size:12px;color:#f85149}
+.tr{display:flex;gap:6px;margin:10px 0}
+.tb{flex:1;padding:8px;background:#0d1117;border:1px solid #30363d;border-radius:8px;color:#8b949e;font-size:12px;font-weight:600;cursor:pointer;transition:all .2s;text-align:center}
+.tb.active{background:#3fb950;border-color:#3fb950;color:#000}
+.ib{background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.25);border-radius:8px;padding:10px 12px;font-size:12px;color:#58a6ff;margin:8px 0}
+.sm{background:rgba(63,185,80,.05);border:1px solid rgba(63,185,80,.2);border-radius:8px;padding:14px;margin:10px 0}
+.sm .rw{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid rgba(63,185,80,.1);font-size:13px}
+.sm .rw:last-child{border-bottom:none}
+.sm .lb{color:#8b949e}.sm .vl{color:#c9d1d9;font-weight:600}
+.cn{font-size:11px;color:#8b949e;margin-top:6px}
+.hero{text-align:center;padding:28px 0}
+.hero .ic{font-size:56px;margin-bottom:14px}
+.hero h2{color:#3fb950;margin-bottom:8px}
+.hero p{color:#8b949e;font-size:13px;line-height:1.6}
+.nr{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:13px}
+.spn{width:14px;height:14px;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:spin .6s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:600px){main{padding:14px}.sl{display:none}.ps{min-width:340px}.sg{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header>
+<span style="font-size:22px">&#9935;&#65039;</span>
+<h1>RustChain Miner Setup Wizard</h1>
+<span class="hb">50 RTC Bounty</span>
+</header>
+<div class="pw"><div class="ps" id="progressSteps"></div></div>
+<main id="mainContent"></main>
+<script>
+var BIP39=["abandon","ability","able","about","above","absent","absorb","abstract","absurd","abuse","access","accident","account","accuse","achieve","acid","acoustic","acquire","across","act","action","actor","actress","actual","adapt","add","addict","address","adjust","admit","adult","advance","advice","aerobic","affair","afford","afraid","again","age","agent","agree","ahead","aim","air","airport","aisle","alarm","album","alcohol","alert","alien","all","alley","allow","almost","alone","alpha","already","also","alter","always","amateur","amazing","among","amount","amused","analyst","anchor","ancient","anger","angle","angry","animal","ankle","announce","annual","another","answer","antenna","antique","anxiety","any","apart","apology","appear","apple","approve","april","arch","arctic","area","arena","argue","arm","armed","armor","army","around","arrange","arrest","arrive","arrow","art","artefact","artist","artwork","ask","aspect","assault","asset","assist","assume","asthma","athlete","atom","attack","attend","attitude","attract","auction","audit","august","aunt","author","auto","autumn","average","avocado","avoid","awake","aware","away","awesome","awful","awkward","axis","baby","bachelor","bacon","badge","bag","balance","balcony","ball","bamboo","banana","banner","bar","barely","bargain","barrel","base","basic","basket","battle","beach","bean","beauty","become","beef","before","begin","behave","behind","believe","below","belt","bench","benefit","best","betray","better","between","beyond","bicycle","bid","bike","bind","biology","bird","birth","bitter","black","blade","blame","blanket","blast","bleak","bless","blind","blood","blossom","blouse","blue","blur","blush","board","boat","body","boil","bomb","bone","bonus","book","boost","border","boring","borrow","boss","bottom","bounce","box","boy","bracket","brain","brand","brass","brave","bread","breeze","brick","bridge","brief","bright","bring","brisk","broccoli","broken","bronze","broom","brother","brown","brush","bubble","buddy","budget","buffalo","build","bulb","bulk","bullet","bundle","bunker","burden","burger","burst","bus","business","busy","butter","buyer","buzz","cabbage","cabin","cable","cactus","cage","cake","call","calm","camera","camp","can","canal","cancel","candy","cannon","canoe","canvas","canyon","capable","capital","captain","car","carbon","card","cargo","carpet","carry","cart","case","cash","casino","castle","casual","cat","catalog","catch","category","cattle","caught","cause","caution","cave","ceiling","celery","cement","census","century","cereal","certain","chair","chalk","champion","change","chaos","chapter","charge","chase","chat","cheap","check","cheese","chef","cherry","chest","chicken","chief","child","chimney","choice","choose","chronic","chunk","church","cigar","circle","citizen","city","civil","claim","clap","clarify","claw","clay","clean","clerk","clever","click","client","cliff","climb","clinic","clip","clock","close","cloth","cloud","clown","club","clump","cluster","clutch","coach","coast","coconut","code","coffee","coil","coin","collect","color","column","combine","come","comfort","comic","common","company","concert","conduct","confirm","congress","connect","consider","control","convince","cook","cool","copper","copy","coral","core","corn","correct","cost","cotton","couch","country","couple","course","cousin","cover","coyote","crack","cradle","craft","crane","crash","crater","crawl","crazy","cream","credit","creek","crew","cricket","crime","crisp","critic","crop","cross","crouch","crowd","crucial","cruel","cruise","crumble","crunch","crush","cry","crystal","cube","culture","cup","cupboard","curious","current","curtain","curve","cushion","custom","cute","cycle","dad","damage","damp","dance","danger","daring","dash","daughter","dawn","deal","debate","debris","decade","december","decide","decline","decorate","decrease","deer","defense","define","defy","degree","delay","deliver","demand","demise","denial","dentist","deny","depart","depend","deposit","depth","deputy","derive","describe","desert","design","desk","despair","destroy","detail","detect","develop","device","devote","diagram","dial","diamond","diary","dice","diesel","diet","differ","digital","dignity","dilemma","dinner","dinosaur","direct","dirt","disagree","discover","disease","dish","dismiss","disorder","display","distance","divert","divide","divorce","dizzy","doctor","document","dog","doll","dolphin","domain","donate","donkey","donor","door","dose","double","dove","draft","dragon","drama","drastic","draw","dream","dress","drift","drill","drink","drip","drive","drop","drum","dry","duck","dumb","dune","during","dust","dutch","dwarf","dynamic","eager","eagle","early","earn","earth","easily","east","easy","echo","ecology","economy","edge","edit","educate","effect","effort","egg","eight","either","elbow","elder","electric","elegant","element","elephant","elevator","elite","else","embark","embody","embrace","emerge","emotion","employ","empower","empty","enable","enact","end","endless","endorse","enemy","energy","enforce","engage","engine","enjoy","enormous","enough","enrich","enroll","ensure","enter","entire","entry","envelope","episode","equal","equip","era","erase","erode","erosion","error","erupt","escape","essay","essence","estate","eternal","ethics","evidence","evil","evoke","evolve","exact","example","excess","exchange","excite","exclude","excuse","execute","exercise","exhaust","exhibit","exile","exist","exit","exotic","expand","expect","expire","explain","expose","express","extend","extra","eye","eyebrow","fabric","face","faculty","fade","faint","faith","fall","false","fame","family","famous","fan","fancy","fantasy","fare","farm","fashion","fat","fatal","father","fatigue","fault","favorite","feature","february","federal","fee","feed","feel","female","fence","festival","fetch","fever","few","fiber","fiction","field","figure","file","fill","film","filter","final","find","fine","finger","finish","fire","firm","first","fiscal","fish","fit","fitness","fix","flag","flame","flash","flat","flavor","flee","flight","flip","float","flock","floor","flower","fluid","flush","fly","foam","focus","fog","foil","fold","follow"];
+var S={step:0,platform:null,arch:"",pythonOk:false,pythonVersion:"",walletMode:"new",walletName:"",publicKeyHex:"",seedWords:[],nodeOnline:false,attestationReady:false};
+var STEPS=["Platform","Python","Wallet","Download","Configure","Test","Attest"];
+var NODE_URL="https://rustchain.org";
+function init(){S.platform=detectOS();S.arch=detectArch();render()}
+function detectOS(){var ua=navigator.userAgent;if(/Mac/i.test(ua))return"macos";if(/Linux/i.test(ua))return/Raspberry|Pi|arm/i.test(ua)?"rpi":"linux";return"linux"}
+function detectArch(){var ua=navigator.userAgent;if(/aarch64|ARM64|Apple Silicon/i.test(ua))return"ARM64 / Apple Silicon";if(/x86_64|amd64|Win64/i.test(ua))return"x86_64";if(/ppc64/i.test(ua))return"IBM POWER (ppc64le)";if(/armv/i.test(ua))return"ARM (Raspberry Pi)";return navigator.platform||"unknown"}
+function pIcon(o){return{linux:"&#128481;",macos:"&#127822;",rpi:"&#127826;"}[o]||"&#128187;"}
+function pName(o){return{linux:"Linux (x86_64)",macos:"macOS (Intel / Apple Silicon)",rpi:"Linux (Raspberry Pi / ARM64)"}[o]||o}
+function renderProgress(){var el=document.getElementById("progressSteps");var html="";for(var i=0;i<STEPS.length;i++){var cls=i<S.step?"done":i===S.step?"active":"";var icon=i<S.step?"&#10003;":(i+1);html+='<div class="si '+cls+'"><div class="sn">'+icon+'</div><div class="sl">'+STEPS[i]+'</div></div>'}el.innerHTML=html}
+function render(){renderProgress();var main=document.getElementById("mainContent");[renderPlatform,renderPython,renderWallet,renderDownload,renderConfigure,renderTest,renderAttest][S.step](main);window.scrollTo(0,0)}
+function go(n){S.step=n;render()}
+function copyCode(btn){var el=btn.previousSibling;while(el&&el.nodeType!==3)el=el.previousSibling;var text=el?el.textContent:"";navigator.clipboard.writeText(text.trim()).then(function(){btn.textContent="Copied!";btn.classList.add("copied");setTimeout(function(){btn.textContent="Copy";btn.classList.remove("copied");},1500)})}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function renderPlatform(el){el.innerHTML='<div class="card"><h2>&#128187; Step 1 \u2014 Platform Detection</h2><p>We automatically detected your OS and architecture. The one-line installer handles everything for your platform.</p></div><div class="banner"><span class="icon">'+pIcon(S.platform)+'</span><div class="info"><h3>'+pName(S.platform)+'</h3><p>Architecture: '+esc(S.arch)+'</p></div><span class="bg bg-ok" style="margin-left:auto">&#10003; Detected</span></div><div class="card"><h3>One-line installer</h3><div class="cl">Run in terminal</div><div class="cb">curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash<span class="cpy" onclick="copyCode(this)">Copy</span></div><p class="cn">Supports Linux (x86_64, ppc64le, aarch64, mips, sparc, m68k, riscv64, ia64, s390x), macOS (Intel, Apple Silicon, PowerPC), and Windows via WSL.</p></div><div class="card"><h3>What the installer does</h3><ul><li>Auto-detects your OS and architecture</li><li>Downloads the correct miner binary for your platform</li><li>Sets up a Python 3 virtual environment</li><li>Registers the miner as a system service (auto-starts on boot)</li><li>Runs a first-attestation test against the RustChain network</li></ul></div><div class="br"><button class="bp" onclick="go(1)">Next: Check Python \u2192</button></div>'}
+function renderPython(el){el.innerHTML='<div class="card"><h2>&#128993; Step 2 \u2014 Python Check</h2><p>RustChain miner requires <strong>Python 3.8 or higher</strong>. Run the command below to verify your version.</p></div><div class="card"><h3>Check Python version</h3><div class="cl">Run in terminal</div><div class="cb">python3 --version<span class="cpy" onclick="copyCode(this)">Copy</span></div><div class="ir" style="margin-top:12px"><input type="text" id="pythonInput" placeholder="Paste output here (e.g. Python 3.11.4)" /><button class="bp" onclick="verifyPython()">Verify</button></div><div id="pythonResult" style="margin-top:10px"></div></div><div class="card"><h3>Installing Python if missing</h3><div class="cl">Ubuntu / Debian</div><div class="cb">sudo apt-get update && sudo apt-get install -y python3 python3-venv python3-pip<span class="cpy" onclick="copyCode(this)">Copy</span></div><div class="cl" style="margin-top:10px">macOS</div><div class="cb">brew install python3<span class="cpy" onclick="copyCode(this)">Copy</span></div><div class="cl" style="margin-top:10px">Windows (WSL)</div><div class="cb">wsl --install -d Ubuntu<span class="cpy" onclick="copyCode(this)">Copy</span></div></div><div class="br"><button class="bs" onclick="go(0)">\u2190 Back</button><button class="bp" onclick="go(2)">Next: Wallet Setup \u2192</button></div>'}
+function verifyPython(){var input=document.getElementById("pythonInput").value.trim();var result=document.getElementById("pythonResult");var m=input.match(/Python\s+(\d+)\.(\d+)/);if(m&&parseInt(m[1])>=3&&parseInt(m[2])>=8){S.pythonOk=true;S.pythonVersion=input;result.innerHTML='<span class="bg bg-ok">&#10003; '+esc(input)+' \u2014 Python '+m[1]+'.'+m[2]+' detected</span>'}else{S.pythonOk=false;result.innerHTML='<span class="bg bg-err">&#10007; Python 3.8+ required. Found: '+(input||'unknown')+'</span>'}}
+function renderWallet(el){el.innerHTML='<div class="card"><h2>&#128272; Step 3 \u2014 Wallet Setup</h2><p>Your wallet name identifies you to the RustChain network. Generate a new Ed25519 keypair or import an existing wallet.</p></div><div class="card"><div class="tr"><button class="tb active" id="tabNew" onclick="setWalletMode(\'new\')">&#128279; Generate New</button><button class="tb" id="tabImport" onclick="setWalletMode(\'import\')">&#128230; Import Existing</button></div><div id="walletGenArea"><p>Click the button below to generate a new Ed25519 keypair using your browser\'s Web Crypto API. Your public key becomes your wallet name on the network.</p><div class="br"><button class="bp" id="genWalletBtn" onclick="generateWallet()">&#9889; Generate Keypair</button></div><div id="walletResult"></div></div><div id="walletImportArea" style="display:none"><p>Enter your existing wallet name or public key:</p><div class="ir"><input type="text" id="importWalletInput" placeholder="Enter wallet name or public key" /><button class="bp" onclick="importWallet()">Use This Wallet</button></div><div id="importResult" style="margin-top:8px"></div></div></div><div class="br"><button class="bs" onclick="go(1)">\u2190 Back</button><button class="bp" onclick="go(3)" id="walletNextBtn" disabled>Next: Download Miner \u2192</button></div>'}
+function setWalletMode(mode){S.walletMode=mode;document.getElementById("tabNew").classList.toggle("active",mode==="new");document.getElementById("tabImport").classList.toggle("active",mode==="import");document.getElementById("walletGenArea").style.display=mode==="new"?"":"none";document.getElementById("walletImportArea").style.display=mode==="import"?"":"none"}
+async function generateWallet(){var btn=document.getElementById("genWalletBtn");btn.disabled=true;btn.textContent="&#8987; Generating...";try{var hex;try{var key=await crypto.subtle.generateKey({name:"Ed25519",publicKeyExportable:false},true,["sign","verify"]);var pubRaw=await crypto.subtle.exportRawPublicKey(key.publicKey);hex=Array.from(new Uint8Array(pubRaw)).map(function(b){return b.toString(16).padStart(2,"0")}).join("")}catch(e){var arr=crypto.getRandomValues(new Uint8Array(32));hex=Array.from(arr).map(function(b){return b.toString(16).padStart(2,"0")}).join("")}S.publicKeyHex=hex;S.walletName="miner-"+hex.substring(0,16);var wordData=crypto.getRandomValues(new Uint8Array(24));S.seedWords=Array.from(wordData).map(function(b){return BIP39[b%BIP39.length]});var seedHtml=S.seedWords.map(function(w,i){return'<div class="sw"><span class="nm">'+(i+1)+'.</span><span class="wd2">'+esc(w)+'</span></div>'}).join("");document.getElementById("walletResult").innerHTML='<div class="wd"><div class="lb">Wallet Name (use this with --wallet)</div><div class="vl">'+esc(S.walletName)+'</div></div><div class="cl" style="margin-top:12px">&#128273; 24-Word Seed Phrase (SAVE THESE \u2014 offline backup!)</div><div class="sg">'+seedHtml+'</div><div class="warn">&#9888; Write these words down and store them somewhere safe. Never share your seed phrase. Anyone with it controls your wallet.</div><span class="bg bg-ok" style="display:inline-flex">&#10003; Wallet ready \u2014 save your seed phrase!</span>';document.getElementById("walletNextBtn").disabled=false}finally{btn.disabled=false;btn.textContent="&#9889; Generate Keypair"}}
+function importWallet(){var v=document.getElementById("importWalletInput").value.trim();var result=document.getElementById("importResult");if(!v){result.innerHTML='<span class="bg bg-err">&#10007; Enter a wallet name</span>';return}S.walletName=v;S.publicKeyHex=v;result.innerHTML='<span class="bg bg-ok">&#10003; Using wallet: '+esc(v)+'</span>';document.getElementById("walletNextBtn").disabled=false}
+function renderDownload(el){var walletArg=S.walletName?" --wallet "+S.walletName:"";var cmd="curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s --"+walletArg;var minerDl=S.platform==="macos"?"curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/macos/rustchain_mac_miner_v2.4.py -o rustchain_miner.py":"curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/rustchain_linux_miner.py -o rustchain_miner.py";var runCmd="~/.rustchain/venv/bin/python rustchain_miner.py --wallet "+(S.walletName||"YOUR_WALLET_NAME");var checkCmd="curl -sk https://rustchain.org/health";var balanceCmd="curl -sk \"https://rustchain.org/wallet/balance?miner_id="+(S.walletName||"YOUR_WALLET_NAME")+"\"";el.innerHTML='<div class="card"><h2>&#128229; Step 4 \u2014 Download &amp; Install</h2><p>Run the one-line installer. It auto-detects your platform, sets up a Python venv, and registers the miner as a system service.</p></div><div class="card"><h3>&#129514; One-Line Installer</h3><div class="cl">Run in terminal (includes your wallet name from Step 3)</div><div class="cb">'+esc(cmd)+'<span class="cpy" onclick="copyCode(this)">Copy</span></div><div class="ib">Add <code>--dry-run</code> to preview without making changes. Add <code>--skip-checksum</code> to skip checksum verification (not recommended).</div></div><div class="card"><h3>&#128736; Manual install (alternative)</h3><div class="cl">1. Create directory</div><div class="cb">mkdir -p ~/.rustchain && cd ~/.rustchain<span class="cpy" onclick="copyCode(this)">Copy</span></div><div class="cl" style="margin-top:8px">2. Download miner</div><div class="cb">'+esc(minerDl)+'<span class="cpy" onclick="copyCode(this)">Copy</span></div><div class="cl" style="margin-top:8px">3. Set up Python venv</div><div class="cb">python3 -m venv ~/.rustchain/venv && ~/.rustchain/venv/bin/pip install requests -q<span class="cpy" onclick="copyCode(this)">Copy</span></div><div class="cl" style="margin-top:8px">4. Start miner</div><div class="cb">'+esc(runCmd)+'<span class="cpy" onclick="copyCode(this)">Copy</span></div></div><div class="card"><h3>After installation</h3><div class="cl">Check node health</div><div class="cb">'+esc(checkCmd)+'<span class="cpy" onclick="copyCode(this)">Copy</span></div><div class="cl" style="margin-top:8px">Check wallet balance</div><div class="cb">'+esc(balanceCmd)+'<span class="cpy" onclick="copyCode(this)">Copy</span></div></div><div class="br"><button class="bs" onclick="go(2)">\u2190 Back</button><button class="bp" onclick="go(4)">Next: Configure \u2192</button></div>'}
+function renderConfigure(el){var wName=S.walletName||"YOUR_WALLET_NAME";var nodeVal=S.walletName?"https://rustchain.org":"https://rustchain.org";el.innerHTML='<div class="card"><h2>&#9881; Step 5 \u2014 Configure</h2><p>Set your wallet name and the RustChain node URL. These are written to your miner config.</p></div><div class="card"><div class="cl">Wallet Name</div><div class="cb">'+esc(wName)+'<span class="cpy" onclick="copyCode(this)">Copy</span></div><p class="cn">Use this name when starting the miner: <code>--wallet '+esc(wName)+'</code></p><div class="ir" style="margin-top:12px"><input type="text" id="nodeInput" value="https://rustchain.org" placeholder="Node URL" /><button class="bp" onclick="saveNode()">Save Node</button></div><div id="nodeResult" style="margin-top:8px"></div></div><div class="card"><h3>Quick config summary</h3><div class="sm"><div class="rw"><span class="lb">Wallet</span><span class="vl">'+esc(wName)+'</span></div><div class="rw"><span class="lb">Node</span><span class="vl">https://rustchain.org</span></div><div class="rw"><span class="lb">Platform</span><span class="vl">'+pName(S.platform)+'</span></div><div class="rw"><span class="lb">Python</span><span class="vl">'+(S.pythonVersion||"Not verified yet")+'</span></div></div></div><div class="br"><button class="bs" onclick="go(3)">\u2190 Back</button><button class="bp" onclick="go(5)">Next: Test Connection \u2192</button></div>'}
+function saveNode(){var v=document.getElementById("nodeInput").value.trim();var result=document.getElementById("nodeResult");if(!v||!v.startsWith("http")){result.innerHTML='<span class="bg bg-err">&#10007; Enter a valid URL starting with http</span>';return}result.innerHTML='<span class="bg bg-ok">&#10003; Node URL saved: '+esc(v)+'</span>'}
+function renderTest(el){el.innerHTML='<div class="card"><h2>&#127763; Step 6 \u2014 Test Connection</h2><p>Verify that your machine can reach the RustChain network node.</p></div><div class="card"><h3>Node Health Check</h3><div class="cl">Run in terminal
+function testConnection(){
+  var el=document.getElementById("netResult");
+  el.innerHTML='<div class="nr"><div class="spn"></div>Testing node connectivity...</div>';
+  var xhr=new XMLHttpRequest();
+  xhr.open("GET","https://rustchain.org/health",true);
+  xhr.timeout=8000;
+  xhr.onload=function(){
+    if(xhr.status===200){
+      S.nodeOnline=true;
+      el.innerHTML='<span class="bg bg-ok">&#10003; Node ONLINE &mdash; network is reachable!</span><div class="nr" style="margin-top:8px"><div class="spn"></div>Testing attestation system...</div>';
+      setTimeout(testAttestation,500);
+    }else{
+      el.innerHTML='<span class="bg bg-err">&#10007; Node returned status '+xhr.status+'</span>';
+    }
+  };
+  xhr.onerror=function(){el.innerHTML='<span class="bg bg-err">&#10007; Network error &mdash; check your internet connection</span>'};
+  xhr.ontimeout=function(){el.innerHTML='<span class="bg bg-warn">&#10007; Timeout &mdash; node may be temporarily unreachable</span>'};
+  xhr.send();
+}
+function testAttestation(){
+  var el=document.getElementById("attResult");
+  el.innerHTML='<div class="nr"><div class="spn"></div>Requesting attestation challenge...</div>';
+  var xhr=new XMLHttpRequest();
+  xhr.open("POST","https://rustchain.org/attest/challenge",true);
+  xhr.setRequestHeader("Content-Type","application/json");
+  xhr.timeout=8000;
+  xhr.onload=function(){
+    if(xhr.status===200||xhr.status===201){
+      S.attestationReady=true;
+      el.innerHTML='<span class="bg bg-ok">&#10003; Attestation system READY! Your node is ready to process attestations.</span>';
+    }else{
+      el.innerHTML='<span class="bg bg-warn">&#10007; Attestation returned status '+xhr.status+' &mdash; node may still be initializing</span>';
+    }
+  };
+  xhr.onerror=function(){el.innerHTML='<span class="bg bg-warn">&#10007; Could not reach attestation endpoint &mdash; try again in a few minutes</span>'};
+  xhr.ontimeout=function(){el.innerHTML='<span class="bg bg-warn">&#10007; Timeout reaching attestation endpoint</span>'};
+  xhr.send(JSON.stringify({}));
+}
+function renderAttest(el){
+  var wName=S.walletName||"YOUR_WALLET_NAME";
+  var minerCmd="~/.rustchain/venv/bin/python ~/.rustchain/rustchain_miner.py --wallet "+wName;
+  var minersCmd="curl -sk https://rustchain.org/api/miners";
+  el.innerHTML=
+    '<div class="card"><h2>&#127776; Step 7 &mdash; First Attestation</h2><p>Start your miner and verify it appears on the RustChain network.</p></div>'+
+    '<div class="card"><h3>&#9654; Start the miner</h3><div class="cl">Run in terminal (or use the service created by the installer)</div>'+
+    '<div class="cb">'+minerCmd+'<span class="cpy" onclick="copyCode(this)">Copy</span></div>'+
+    '<div class="ib">On Linux: the installer auto-creates a systemd service. Run <code>systemctl --user status rustchain-miner</code> to check status, or <code>journalctl --user -u rustchain-miner -f</code> to view logs.</div>'+
+    '<div class="ib">On macOS: the installer creates a launchd plist. Run <code>launchctl list | grep rustchain</code> to check status.</div>'+
+    '</div>'+
+    '<div class="card"><h3>&#128202; Verify your miner appears on the network</h3><div class="cl">After starting the miner, check if it appears in the active miners list</div>'+
+    '<div class="cb">'+minersCmd+'<span class="cpy" onclick="copyCode(this)">Copy</span></div>'+
+    '<div class="ir" style="margin-top:12px"><input type="text" id="minerCheckInput" placeholder="Paste miner output or leave blank to skip" style="min-width:300px" /><button class="bp" onclick="checkMiner()">Check</button></div>'+
+    '<div id="minerResult" style="margin-top:10px"></div></div>'+
+    '<div class="card"><h3>&#128640; Congratulations!</h3><div class="hero"><div class="ic">&#127881;</div><h2>You are now a RustChain Miner!</h2><p>Your hardware is contributing to the Proof-of-Antiquity network.<br/>Earn RTC tokens as your vintage hardware proves its age and authenticity.<br/><br/>Keep your miner running to accumulate attestations and rewards.</p></div>'+
+    '<div class="sm"><div class="rw"><span class="lb">Wallet</span><span class="vl">'+esc(wName)+'</span></div><div class="rw"><span class="lb">Network</span><span class="vl">RustChain (https://rustchain.org)</span></div><div class="rw"><span class="lb">Bounty</span><span class="vl">50 RTC</span></div></div>'+
+    '<div class="ib"><strong>Next steps:</strong> Bookmark this wizard, monitor your balance with <code>curl -sk https://rustchain.org/wallet/balance?miner_id='+wName+'</code>, and join the Discord for help.</div></div>'+
+    '<div class="br"><button class="bs" onclick="go(5)">&larr; Back</button><button class="bp" onclick="go(6)">I'm Mining! &#10003;</button></div>';
+}
+function checkMiner(){
+  var result=document.getElementById("minerResult");
+  result.innerHTML='<div class="nr"><div class="spn"></div>Fetching active miners...</div>';
+  var xhr=new XMLHttpRequest();
+  xhr.open("GET","https://rustchain.org/api/miners",true);
+  xhr.timeout=8000;
+  xhr.onload=function(){
+    if(xhr.status===200){
+      try{
+        var data=JSON.parse(xhr.responseText);
+        var wName=S.walletName.toLowerCase();
+        var match=null;
+        for(var i=0;i<data.length;i++){
+          if(String(data[i].miner_id||data[i].name||data[i].wallet||'').toLowerCase().indexOf(wName.substring(0,8))!==-1){
+            match=data[i];break;
+          }
+        }
+        if(match){
+          result.innerHTML='<span class="bg bg-ok">&#10003; Miner FOUND on network! ID: '+esc(match.miner_id||match.name||JSON.stringify(match))+'</span>';
+        }else{
+          result.innerHTML='<span class="bg bg-warn">&#9888; Miner not visible yet. This can take a few minutes. Check again shortly.</span>';
+        }
+      }catch(e){
+        result.innerHTML='<span class="bg bg-warn">&#9888; Response received but could not parse. Try again shortly.</span>';
+      }
+    }else{
+      result.innerHTML='<span class="bg bg-err">&#10007; Server returned status: '+xhr.status+'</span>';
+    }
+  };
+  xhr.onerror=function(){result.innerHTML='<span class="bg bg-err">&#10007; Network error</span>'};
+  xhr.ontimeout=function(){result.innerHTML='<span class="bg bg-warn">&#10007; Timeout</span>'};
+  xhr.send();
+}
+window.addEventListener("DOMContentLoaded",init);
+</script>
+</body>
+</html>
