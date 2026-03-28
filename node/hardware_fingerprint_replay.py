@@ -121,7 +121,7 @@ def compute_fingerprint_hash(fingerprint: Dict) -> str:
     Returns:
         SHA-256 hash (hex) of the normalized fingerprint
     """
-    if not fingerprint or not isinstance(fingerprint, dict):
+    if fingerprint is None or not isinstance(fingerprint, dict):
         return ""
     
     # Normalize the fingerprint for consistent hashing
