@@ -1,0 +1,9 @@
+{
+  "_class": "MINER_ID_INJECT",
+  "_description": "miner contains SQL-injection fragment and spaces — must be rejected as INVALID_MINER",
+  "_expected_error_code": "INVALID_MINER",
+  "miner": "'; DROP TABLE miners; --",
+  "device": {"cores": 2},
+  "signals": {},
+  "report": {}
+}
