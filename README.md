@@ -188,6 +188,7 @@ Every contribution earns RTC tokens. Browse [open bounties](https://github.com/S
 | **Non-Bijunctive Permutation Collapse** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623920.svg)](https://doi.org/10.5281/zenodo.18623920) |
 | **PSE Hardware Entropy** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18623922.svg)](https://doi.org/10.5281/zenodo.18623922) |
 | **RAM Coffers** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18321905.svg)](https://doi.org/10.5281/zenodo.18321905) |
+| **RPI: Resonant Permutation Inference** | Preprint | [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19271983.svg)](https://doi.org/10.5281/zenodo.19271983) |
 
 ---
 
@@ -199,6 +200,7 @@ Every contribution earns RTC tokens. Browse [open bounties](https://github.com/S
 | [Beacon](https://github.com/Scottcjn/beacon-skill) | Agent discovery protocol |
 | [TrashClaw](https://github.com/Scottcjn/trashclaw) | Zero-dep local LLM agent |
 | [RAM Coffers](https://github.com/Scottcjn/ram-coffers) | NUMA-aware LLM inference on POWER8 |
+| [RPI Inference](https://github.com/Scottcjn/rpi-inference) | Zero-multiply inference engine (18K tok/s, runs on N64) |
 | [Grazer](https://github.com/Scottcjn/grazer-skill) | Multi-platform content discovery |
 
 ---
