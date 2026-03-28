@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BCOS Badge Generator | RustChain</title>
+    <meta name="description" content="Generate BCOS (Beacon Certified Open Source) badge embed codes for your GitHub repository. Free, open source certification badges.">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0a0a0f;
+            --surface: #0d1117;
+            --surface-alt: #161b22;
+            --border: #21262d;
+            --border-dim: #30363d;
+            --green: #00ff41;
+            --green-dim: #00cc33;
+            --green-glow: rgba(0, 255, 65, 0.15);
+            --green-glow-strong: rgba(0, 255, 65, 0.4);
+            --yellow: #ffd93d;
+            --text: #c9d1d9;
+            --text-dim: #8b949e;
+            --text-bright: #f0f6fc;
+        }
+
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--bg);
+            color: var(--green);
+            line-height: 1.7;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                0deg, transparent, transparent 2px,
+                rgba(0, 255, 65, 0.015) 2px, rgba(0, 255, 65, 0.015) 4px
+            );
+            z-index: 9999;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .terminal-frame {
+            border: 2px solid var(--green);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 0 40px var(--green-glow), 0 0 80px rgba(0,255,65,0.05);
+            margin: 30px 0;
+        }
+
+        .terminal-titlebar {
+            background: linear-gradient(180deg, #1a1a2e 0%, #0d0d1a 100%);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .terminal-dot { width: 12px; height: 12px; border-radius: 50%; }
+        .dot-red { background: #ff5f56; }
+        .dot-yellow { background: #ffbd2e; }
+        .dot-green { background: #27c93f; }
+
+        .terminal-title {
+            margin-left: 12px;
+            color: var(--text-dim);
+            font-size: 13px;
+            flex: 1;
+        }
+
+        .terminal-body {
+            background-color: var(--surface);
+            padding: 40px 50px;
+        }
+
+        .boot-line {
+            color: var(--text-dim);
+            font-size: 14px;
+            margin-bottom: 4px;
+            opacity: 0;
+            animation: fadeIn 0.3s forwards;
+        }
+        .boot-line:nth-child(1) { animation-delay: 0.1s; }
+        .boot-line:nth-child(2) { animation-delay: 0.3s; }
+        .boot-line:nth-child(3) { animation-delay: 0.5s; }
+        .boot-line:nth-child(4) { animation-delay: 0.7s; }
+        .boot-line:nth-child(5) { animation-delay: 0.9s; }
+        .boot-line .prompt { color: var(--green); }
+        .boot-line .ok { color: var(--green-dim); }
+        .boot-line .warn { color: var(--yellow); }
+
+        @keyframes fadeIn { to { opacity: 1; } }
+
+        h1 {
+            font-size: 2.4em;
+            margin: 30px 0 8px;
+            text-shadow: 0 0 20px var(--green-glow-strong), 0 0 40px var(--green-glow);
+            letter-spacing: -1px;
+        }
+
+        .subtitle {
+            color: var(--text-dim);
+            font-size: 1.05em;
+            margin-bottom: 35px;
+        }
+        .subtitle::before { content: "$ "; color: var(--green); }
+
+        .section-label {
+            font-size: 0.85em;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 16px;
+            margin-top: 32px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .section-label::before { content: "> "; color: var(--green); }
+        .section-label::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border-dim);
+        }
+
+        /* ===== INPUT SECTION ===== */
+        .input-group {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .input-wrapper {
+            flex: 1;
+            position: relative;
+        }
+
+        .input-wrapper input {
+            width: 100%;
+            background: var(--surface-alt);
+            border: 1px solid var(--border-dim);
+            color: var(--green);
+            font-family: 'Courier New', monospace;
+            font-size: 15px;
+            padding: 14px 16px;
+            border-radius: 6px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .input-wrapper input::placeholder { color: var(--text-dim); }
+        .input-wrapper input:focus {
+            border-color: var(--green);
+            box-shadow: 0 0 12px var(--green-glow);
+        }
+
+        .input-hint {
+            font-size: 0.82em;
+            color: var(--text-dim);
+            margin-top: 6px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 14px 28px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.25s ease;
+            cursor: pointer;
+            border: 2px solid var(--green);
+        }
+
+        .btn-primary {
+            background: var(--green);
+            color: var(--bg);
+        }
+        .btn-primary:hover {
+            background: transparent;
+            color: var(--green);
+            box-shadow: 0 0 20px var(--green-glow-strong);
+        }
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+
+        /* ===== STYLE SELECTOR ===== */
+        .style-options {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .style-option {
+            display: none;
+        }
+
+        .style-option + label {
+            display: inline-block;
+            padding: 10px 20px;
+            background: var(--surface-alt);
+            border: 1px solid var(--border-dim);
+            color: var(--text-dim);
+            border-radius: 6px;
+            font-size: 0.85em;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .style-option:checked + label {
+            background: var(--green-glow);
+            border-color: var(--green);
+            color: var(--green);
+            box-shadow: 0 0 10px var(--green-glow);
+        }
+
+        /* ===== BADGE PREVIEW ===== */
+        .preview-frame {
+            background: var(--bg);
+            border: 1px solid var(--border-dim);
+            border-radius: 8px;
+            padding: 40px 30px;
+            text-align: center;
+            margin-bottom: 24px;
+            min-height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .preview-placeholder {
+            color: var(--text-dim);
+            font-size: 0.9em;
+        }
+
+        .preview-placeholder::before { content: "[ "; color: var(--yellow); }
+        .preview-placeholder::after { content: " ]"; color: var(--yellow); }
+
+        .preview-badge img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+        }
+
+        /* ===== CODE OUTPUT ===== */
+        .output-tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 0;
+        }
+
+        .tab-btn {
+            background: var(--surface-alt);
+            border: 1px solid var(--border-dim);
+            border-bottom: none;
+            color: var(--text-dim);
+            font-family: 'Courier New', monospace;
+            font-size: 0.82em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 10px 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-radius: 6px 6px 0 0;
+            margin-right: -1px;
+        }
+
+        .tab-btn:hover { color: var(--green); }
+
+        .tab-btn.active {
+            background: var(--green-glow);
+            border-color: var(--green);
+            color: var(--green);
+        }
+
+        .code-box {
+            background: #050508;
+            border: 1px solid var(--green-dim);
+            border-radius: 0 6px 6px 6px;
+            padding: 20px 24px;
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .code-label {
+            position: absolute;
+            top: -1px;
+            right: 16px;
+            background: var(--green-dim);
+            color: var(--bg);
+            font-size: 0.75em;
+            padding: 2px 10px;
+            border-radius: 0 0 4px 4px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .code-box pre {
+            font-family: 'Courier New', monospace;
+            font-size: 0.88em;
+            color: var(--green);
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.6;
+            margin: 0;
+        }
+
+        .copy-btn {
+            background: var(--surface-alt);
+            border: 1px solid var(--border-dim);
+            color: var(--text-dim);
+            font-family: 'Courier New', monospace;
+            font-size: 0.82em;
+            padding: 6px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 12px;
+        }
+        .copy-btn:hover {
+            border-color: var(--green);
+            color: var(--green);
+        }
+        .copy-btn.copied {
+            border-color: var(--green-dim);
+            color: var(--green);
+        }
+
+        /* ===== VERIFY LINK ===== */
+        .verify-link {
+            display: inline-block;
+            margin-top: 16px;
+            color: var(--text-dim);
+            font-size: 0.88em;
+        }
+        .verify-link a {
+            color: var(--green);
+            text-decoration: none;
+        }
+        .verify-link a:hover { text-decoration: underline; }
+
+        /* ===== EXAMPLE SECTION ===== */
+        .example-section {
+            background: var(--surface-alt);
+            border: 1px solid var(--border-dim);
+            border-radius: 8px;
+            padding: 24px;
+            margin-top: 24px;
+        }
+
+        .example-section h3 {
+            color: var(--text-dim);
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 16px;
+        }
+        .example-section h3::before { content: "> "; color: var(--green); }
+
+        .example-badges {
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .example-badge-item {
+            text-align: center;
+        }
+
+        .example-badge-item img {
+            margin-bottom: 8px;
+        }
+
+        .example-badge-item span {
+            display: block;
+            font-size: 0.75em;
+            color: var(--text-dim);
+        }
+
+        /* ===== FOOTER CTA ===== */
+        .cta {
+            background: linear-gradient(135deg, rgba(0,255,65,0.06) 0%, rgba(0,204,51,0.02) 100%);
+            border: 1px solid rgba(0,255,65,0.25);
+            border-radius: 8px;
+            padding: 30px 40px;
+            text-align: center;
+            margin: 40px 0 20px;
+        }
+
+        .cta h2 {
+            font-size: 1.3em;
+            margin-bottom: 10px;
+            text-shadow: 0 0 15px var(--green-glow);
+        }
+
+        .cta p {
+            color: var(--text-dim);
+            margin-bottom: 20px;
+            font-size: 0.92em;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--green);
+            border: 2px solid var(--border-dim);
+        }
+        .btn-secondary:hover {
+            border-color: var(--green);
+            box-shadow: 0 0 15px var(--green-glow);
+        }
+
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            font-size: 0.85em;
+            color: var(--text-dim);
+        }
+
+        .footer a { color: var(--green); text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+
+        .cursor {
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background: var(--green);
+            animation: blink 1s step-end infinite;
+            vertical-align: text-bottom;
+            margin-left: 4px;
+        }
+
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 768px) {
+            .terminal-body { padding: 24px 20px; }
+            h1 { font-size: 1.6em; }
+            .input-group { flex-direction: column; }
+            .code-box { padding: 16px; }
+            .cta { padding: 24px 16px; }
+            .cta-buttons { flex-direction: column; }
+            .btn { width: 100%; text-align: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="terminal-frame">
+            <div class="terminal-titlebar">
+                <div class="terminal-dot dot-red"></div>
+                <div class="terminal-dot dot-yellow"></div>
+                <div class="terminal-dot dot-green"></div>
+                <span class="terminal-title">rustchain.org/bcos/badge-generator — BCOS Badge Generator</span>
+            </div>
+
+            <div class="terminal-body">
+                <!-- Boot Sequence -->
+                <div class="boot-line"><span class="prompt">rustchain@bcos:~$</span> loading badge engine v2.4.1...</div>
+                <div class="boot-line"><span class="prompt">rustchain@bcos:~$</span> <span class="ok">OK</span> — BCOS badge API ready (50.28.86.131)</div>
+                <div class="boot-line"><span class="prompt">rustchain@bcos:~$</span> <span class="ok">OK</span> — shields.io style presets loaded (flat, flat-square, for-the-badge)</div>
+                <div class="boot-line"><span class="prompt">rustchain@bcos:~$</span> <span class="warn">WAIT</span> — enter a cert_id to generate your badge</div>
+                <div class="boot-line"><span class="prompt">rustchain@bcos:~$</span> <span class="ok">READY</span></div>
+
+                <h1>BCOS Badge Generator</h1>
+                <p class="subtitle">Generate embed codes for BCOS-certified repositories</p>
+
+                <!-- Input Section -->
+                <div class="section-label">Step 1 — Enter Certificate ID</div>
+
+                <div class="input-group">
+                    <div class="input-wrapper">
+                        <input
+                            type="text"
+                            id="certIdInput"
+                            placeholder="BCOS-xxxxxxxx (e.g. BCOS-7f3a2c1e)"
+                            spellcheck="false"
+                            autocomplete="off"
+                        >
+                        <div class="input-hint">Found in your scan result after running: <code>clawrtc bcos scan .</code></div>
+                    </div>
+                    <button class="btn btn-primary" id="generateBtn" onclick="generateBadge()">Generate</button>
+                </div>
+
+                <!-- Style Selector -->
+                <div class="section-label">Step 2 — Choose Badge Style</div>
+                <div class="style-options">
+                    <input type="radio" name="style" id="style-flat" value="flat" class="style-option" checked>
+                    <label for="style-flat">flat</label>
+
+                    <input type="radio" name="style" id="style-flatsquare" value="flat-square" class="style-option">
+                    <label for="style-flatsquare">flat-square</label>
+
+                    <input type="radio" name="style" id="style-badge" value="for-the-badge" class="style-option">
+                    <label for="style-badge">for-the-badge</label>
+                </div>
+
+                <!-- Preview -->
+                <div class="section-label">Preview</div>
+                <div class="preview-frame" id="previewFrame">
+                    <span class="preview-placeholder">Enter a certificate ID to preview your badge</span>
+                </div>
+
+                <!-- Embed Code -->
+                <div class="section-label">Step 3 — Copy Embed Code</div>
+
+                <div class="output-tabs">
+                    <button class="tab-btn active" id="tabMarkdown" onclick="showTab('markdown')">Markdown</button>
+                    <button class="tab-btn" id="tabHtml" onclick="showTab('html')">HTML</button>
+                </div>
+
+                <div class="code-box" id="codeBox">
+                    <span class="code-label" id="codeLabel">Markdown</span>
+                    <pre id="codeOutput"># Add a BCOS badge to your README
+
+Enter a certificate ID above and click Generate</pre>
+                    <button class="copy-btn" id="copyBtn" onclick="copyCode()">[ Copy to Clipboard ]</button>
+                </div>
+
+                <div class="verify-link" id="verifyLink"></div>
+
+                <!-- Example Section -->
+                <div class="example-section">
+                    <h3>Example Badges</h3>
+                    <div class="example-badges">
+                        <div class="example-badge-item">
+                            <img src="https://img.shields.io/badge/BCOS-Certified-brightgreen?style=flat" alt="BCOS flat badge">
+                            <span>flat</span>
+                        </div>
+                        <div class="example-badge-item">
+                            <img src="https://img.shields.io/badge/BCOS-Certified-brightgreen?style=flat-square" alt="BCOS flat-square badge">
+                            <span>flat-square</span>
+                        </div>
+                        <div class="example-badge-item">
+                            <img src="https://img.shields.io/badge/BCOS-Certified-brightgreen?style=for-the-badge" alt="BCOS for-the-badge">
+                            <span>for-the-badge</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CTA -->
+                <div class="cta">
+                    <h2>Get Your Repository Certified</h2>
+                    <p>Run <code>clawrtc bcos scan .</code> to certify any open source project. Then generate your badge here.</p>
+                    <div class="cta-buttons">
+                        <a href="https://rustchain.org/bcos/" class="btn btn-primary">Verify Your Repo</a>
+                        <a href="https://github.com/Scottcjn/Rustchain" class="btn btn-secondary">View on GitHub</a>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="footer">
+                    <p>BCOS v2 — Beacon Certified Open Source — <a href="https://rustchain.org">RustChain</a> by <a href="https://elyanlabs.ai">Elyan Labs</a></p>
+                    <p style="margin-top: 8px;">Free, open source certification. Forever.</p>
+                    <p style="margin-top: 16px;">rustchain@bcos:~$ <span class="cursor"></span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'markdown';
+
+        // Listen for Enter key
+        document.getElementById('certIdInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') generateBadge();
+        });
+
+        // Listen for style changes
+        document.querySelectorAll('.style-option').forEach(function(radio) {
+            radio.addEventListener('change', generateBadge);
+        });
+
+        function getStyle() {
+            return document.querySelector('.style-option:checked').value;
+        }
+
+        function generateBadge() {
+            var certId = document.getElementById('certIdInput').value.trim();
+            if (!certId) {
+                document.getElementById('previewFrame').innerHTML =
+                    '<span class="preview-placeholder">Enter a certificate ID to preview your badge</span>';
+                document.getElementById('codeOutput').textContent =
+                    '# Add a BCOS badge to your README\n\nEnter a certificate ID above and click Generate';
+                document.getElementById('verifyLink').innerHTML = '';
+                return;
+            }
+
+            // Normalize: strip "BCOS-" prefix if user only entered the hex part
+            var normalizedId = certId.toUpperCase();
+            if (!normalizedId.startsWith('BCOS-')) {
+                normalizedId = 'BCOS-' + normalizedId;
+            }
+
+            var style = getStyle();
+
+            // Badge endpoint — try the BCOS-specific endpoint first, fallback to shields.io
+            var badgeSvgUrl = 'https://50.28.86.131/bcos/badge/' + normalizedId + '.svg?style=' + style;
+            var verifyUrl = 'https://rustchain.org/bcos/verify/' + normalizedId;
+
+            // Also provide shields.io fallback if BCOS endpoint fails
+            var shieldsUrl = 'https://img.shields.io/badge/BCOS-' + encodeURIComponent(normalizedId) + '-brightgreen?style=' + style;
+
+            // Try to load the badge, fallback to shields
+            var previewFrame = document.getElementById('previewFrame');
+            var img = new Image();
+            img.style.maxWidth = '100%';
+
+            img.onload = function() {
+                previewFrame.innerHTML = '<div class="preview-badge"><img src="' + badgeSvgUrl + '" alt="BCOS Badge for ' + normalizedId + '"></div>';
+            };
+
+            img.onerror = function() {
+                // Fallback to shields.io placeholder badge
+                previewFrame.innerHTML = '<div class="preview-badge"><img src="' + shieldsUrl + '" alt="BCOS Badge for ' + normalizedId + '" onerror="this.src=\'https://img.shields.io/badge/BCOS-' + encodeURIComponent(normalizedId) + '-green?style=' + style + '\'"></div>';
+            };
+
+            img.src = badgeSvgUrl;
+
+            // Build embed codes
+            var shieldsMd = '[![BCOS](https://img.shields.io/badge/BCOS-' + encodeURIComponent(normalizedId) + '-brightgreen?style=' + style + ')](' + verifyUrl + ')';
+
+            var shieldsHtml = '<a href="' + verifyUrl + '"><img src="https://img.shields.io/badge/BCOS-' + encodeURIComponent(normalizedId) + '-brightgreen?style=' + style + '" alt="BCOS Certified"></a>';
+
+            var bcosMd = '[![BCOS](https://50.28.86.131/bcos/badge/' + normalizedId + '.svg?style=' + style + ')](' + verifyUrl + ')';
+
+            var bcosHtml = '<a href="' + verifyUrl + '"><img src="https://50.28.86.131/bcos/badge/' + normalizedId + '.svg?style=' + style + '" alt="BCOS Certified"></a>';
+
+            // Show current tab
+            if (currentTab === 'markdown') {
+                document.getElementById('codeOutput').textContent =
+                    '# BCOS Official Badge (recommended — live verification)\n' + bcosMd +
+                    '\n\n# shields.io fallback (works without the BCOS server)\n' + shieldsMd;
+            } else {
+                document.getElementById('codeOutput').textContent =
+                    '<!-- BCOS Official Badge (recommended) -->\n' + bcosHtml +
+                    '\n\n<!-- shields.io fallback -->\n' + shieldsHtml;
+            }
+
+            document.getElementById('verifyLink').innerHTML =
+                '<a href="' + verifyUrl + '" target="_blank">View verification page → ' + normalizedId + '</a>';
+        }
+
+        function showTab(tab) {
+            currentTab = tab;
+            document.getElementById('tabMarkdown').classList.toggle('active', tab === 'markdown');
+            document.getElementById('tabHtml').classList.toggle('active', tab === 'html');
+            document.getElementById('codeLabel').textContent = tab === 'markdown' ? 'Markdown' : 'HTML';
+            generateBadge();
+        }
+
+        function copyCode() {
+            var code = document.getElementById('codeOutput').textContent;
+            navigator.clipboard.writeText(code).then(function() {
+                var btn = document.getElementById('copyBtn');
+                btn.textContent = '[ Copied! ]';
+                btn.classList.add('copied');
+                setTimeout(function() {
+                    btn.textContent = '[ Copy to Clipboard ]';
+                    btn.classList.remove('copied');
+                }, 2000);
+            }).catch(function() {
+                // Fallback
+                var ta = document.createElement('textarea');
+                ta.value = code;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                var btn = document.getElementById('copyBtn');
+                btn.textContent = '[ Copied! ]';
+                setTimeout(function() { btn.textContent = '[ Copy to Clipboard ]'; }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>
