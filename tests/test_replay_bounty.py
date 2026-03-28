@@ -45,7 +45,7 @@ from hardware_fingerprint_replay import (
     compute_entropy_profile_hash,
     check_fingerprint_replay,
     record_fingerprint_submission,
-    DB_PATH
+    get_db_path
 )
 
 
