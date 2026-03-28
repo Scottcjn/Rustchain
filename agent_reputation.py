@@ -401,3 +401,9 @@ if __name__ == "__main__":
     print(f"  Decay Applied:  -{result['decay_applied']} pts")
     print(f"  HW Verified:    {'✓' if result['hardware_verified'] else '✗'}")
     print()
+
+    def update_mining_duration(self):
+        if self.mining_start_time is None:
+            self.mining_start_time = datetime.now()
+        else:
+            self.mining_duration = (datetime.now() - self.mining_start_time).days
