@@ -1,0 +1,12 @@
+{
+  "_class": "BOUNDARY_INTS",
+  "_description": "BUG FOUND: _attest_positive_int does not catch OverflowError when int(float('inf')) is called. Production catches TypeError+ValueError but not OverflowError. Fix: add OverflowError to the except clause in _attest_positive_int.",
+  "_expected_error_code": null,
+  "_is_bug_report": true,
+  "_bug_function": "_attest_positive_int",
+  "_bug_input": "Infinity (float)",
+  "_bug_exception": "OverflowError: cannot convert float infinity to integer",
+  "_reproduction": "from attestation_validators import _attest_positive_int; _attest_positive_int(float('inf'), 1)",
+  "_fix": "Change: except (TypeError, ValueError): -> except (TypeError, ValueError, OverflowError):",
+  "note": "This file is a bug report, not a validator test case. See _reproduction above."
+}

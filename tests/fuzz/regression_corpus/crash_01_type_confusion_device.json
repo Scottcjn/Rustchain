@@ -1,0 +1,9 @@
+{
+  "_class": "TYPE_CONFUSION",
+  "_description": "device field is a list instead of a dict — shape validator must reject cleanly",
+  "_expected_error_code": "INVALID_DEVICE",
+  "miner": "valid-miner",
+  "device": [1, 2, 3],
+  "signals": {"hostname": "box"},
+  "report": {"nonce": "abc"}
+}
