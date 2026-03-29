@@ -36,10 +36,14 @@ New to RustChain? Get 10 RTC for your **first merged PR** — even for small imp
 ## Quick Start
 
 1. **Browse open bounties**: Check [Issues](https://github.com/Scottcjn/Rustchain/issues?q=is%3Aissue+is%3Aopen+label%3Abounty) labeled `bounty`
-2. **Comment on the issue** you want to work on (prevents duplicate work)
+2. **Check the bounty claim method** before you start:
+   - PR bounties: comment on the issue and submit a focused pull request.
+   - Proof bounties: follow the issue instructions exactly and submit the requested public proof or social post link.
 3. **Fork the repo** and create a feature branch
 4. **Submit a PR** referencing the issue number
 5. **Get paid** in RTC on merge
+
+For proof-only bounties, no PR is required unless the issue explicitly asks for one.
 
 ## Bounty Tiers
 

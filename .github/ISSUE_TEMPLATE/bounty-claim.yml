@@ -7,17 +7,25 @@ body:
     attributes:
       value: |
         ## Claim an RTC Bounty
-        Fill out this form after your PR is merged to receive your RTC payment.
+        Use this form for either:
+        - merged PR bounties, or
+        - proof-based bounties such as public posts, install reports, screenshots, or other requested evidence.
+        Include the merged PR link and/or public proof link that matches the bounty requirements.
         **Reference rate: 1 RTC = $0.10 USD**
 
   - type: input
     id: pr-link
     attributes:
-      label: Merged PR Link
-      description: Link to your merged pull request
+      label: Merged PR Link (if applicable)
+      description: Link to your merged pull request for code or docs bounties
       placeholder: https://github.com/Scottcjn/Rustchain/pull/123
-    validations:
-      required: true
+
+  - type: input
+    id: proof-link
+    attributes:
+      label: Public Proof Link (if applicable)
+      description: Link to the public post, screenshot, blog entry, install proof, or other evidence required by the bounty
+      placeholder: https://x.com/your-handle/status/123
 
   - type: input
     id: bounty-issue
@@ -31,9 +39,9 @@ body:
   - type: input
     id: wallet
     attributes:
-      label: RTC Wallet Name
-      description: Your RustChain wallet name (create one at rustchain.org/wallet.html)
-      placeholder: my-wallet-name
+      label: RTC Wallet Address or Name
+      description: Your RustChain payout target. If the bounty allows it, maintainers can create one for you if you do not already have one.
+      placeholder: RTC1yourwalletaddress or my-wallet-name
     validations:
       required: true
 
@@ -52,8 +60,8 @@ body:
   - type: textarea
     id: summary
     attributes:
-      label: What did you do?
-      description: Brief summary of your contribution
-      placeholder: Fixed the epoch settlement calculation for edge cases...
+      label: What did you complete?
+      description: Brief summary of the completed work or proof you are claiming against this bounty
+      placeholder: Shared a public post about why I starred RustChain and included my proof link above.
     validations:
       required: true

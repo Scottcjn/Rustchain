@@ -61,9 +61,10 @@ Do not open public issues for critical vulnerabilities before maintainers can pa
 
 When a contribution is tied to a bounty:
 
-1. Comment on the bounty issue using required claim format.
-2. Submit PR(s) and link them back to the bounty thread.
-3. Include wallet/miner id exactly as requested by the bounty rules.
+1. Follow the bounty's required claim format exactly.
+2. If the bounty is PR-based, submit PR(s) and link them back to the bounty thread.
+3. If the bounty is proof-based, include the required public proof link instead of a PR.
+4. Include wallet/miner id exactly as requested by the bounty rules.
 
 ## 9) Code of conduct expectations
 
