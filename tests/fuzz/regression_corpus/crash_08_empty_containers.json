@@ -1,0 +1,9 @@
+{
+  "_class": "EMPTY_CONTAINERS",
+  "_description": "miner is empty string after strip (whitespace-only) — MISSING_MINER expected",
+  "_expected_error_code": "MISSING_MINER",
+  "miner": "   ",
+  "device": {},
+  "signals": {"macs": []},
+  "report": {}
+}

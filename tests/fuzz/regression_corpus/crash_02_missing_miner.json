@@ -1,0 +1,8 @@
+{
+  "_class": "MISSING_FIELDS",
+  "_description": "Both miner and miner_id absent — MISSING_MINER error expected",
+  "_expected_error_code": "MISSING_MINER",
+  "device": {"cores": 4, "arch": "x86_64"},
+  "signals": {"hostname": "box"},
+  "report": {}
+}

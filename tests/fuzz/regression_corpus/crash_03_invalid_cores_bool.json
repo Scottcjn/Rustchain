@@ -1,0 +1,9 @@
+{
+  "_class": "BOUNDARY_INTS",
+  "_description": "device.cores = True (bool) — must be rejected (INVALID_DEVICE_CORES), not coerced to 1",
+  "_expected_error_code": "INVALID_DEVICE_CORES",
+  "miner": "valid-miner",
+  "device": {"cores": true},
+  "signals": {},
+  "report": {}
+}
