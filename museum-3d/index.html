@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RustChain Hardware Museum 3D</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #0a0a0f; font-family: 'Courier New', monospace; }
+  canvas { display: block; }
+  #ui { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
+  #intro { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; color: #fff; pointer-events: all; background: rgba(0,0,0,0.85); padding: 40px 60px; border: 2px solid #8b5cf6; border-radius: 12px; }
+  #intro h1 { color: #a855f7; font-size: 2em; margin-bottom: 10px; }
+  #intro p { color: #9ca3af; margin-bottom: 20px; }
+  #enter-btn { background: #8b5cf6; color: #fff; border: none; padding: 12px 32px; font-size: 1.1em; cursor: pointer; border-radius: 6px; }
+  #enter-btn:hover { background: #7c3aed; }
+  #info { position: absolute; bottom: 20px; left: 20px; background: rgba(0,0,0,0.75); color: #fff; padding: 15px; border-radius: 8px; border: 1px solid #333; font-size: 13px; line-height: 1.6; }
+  #info .label { color: #8b5cf6; }
+  #controls { position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.75); color: #fff; padding: 10px 15px; border-radius: 8px; border: 1px solid #333; font-size: 12px; }
+  #machine-panel { position: absolute; right: 20px; top: 80px; width: 280px; background: rgba(0,0,0,0.9); color: #fff; padding: 20px; border-radius: 8px; border: 1px solid #8b5cf6; display: none; pointer-events: all; }
+  #machine-panel h3 { color: #a855f7; margin-bottom: 10px; font-size: 1.1em; }
+  #machine-panel .stat { margin: 6px 0; font-size: 13px; }
+  #machine-panel .stat span { color: #10b981; }
+  #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #fff; font-size: 1.5em; }
+</style>
+</head>
+<body>
+
+<div id="intro">
+  <h1>RustChain Hardware Museum</h1>
+  <p>Interactive 3D Exhibit — Vintage & Modern Computing</p>
+  <button id="enter-btn">Enter Museum</button>
+</div>
+
+<div id="loading" style="display:none">Loading Three.js...</div>
+
+<div id="ui" style="display:none">
+  <div id="controls">
+    <div>Left-drag: rotate | Right-drag: pan | Scroll: zoom</div>
+  </div>
+  <div id="info">
+    <div><span class="label">RustChain Hardware Museum 3D</span></div>
+    <div id="total-miners">Machines: loading...</div>
+    <div id="room-name">Room: Vintage Wing</div>
+  </div>
+  <div id="machine-panel">
+    <h3 id="panel-arch">Architecture</h3>
+    <div class="stat">Era: <span id="panel-era">-</span></div>
+    <div class="stat">CPU: <span id="panel-cpu">-</span></div>
+    <div class="stat">Multiplier: <span id="panel-mult">-</span></div>
+    <div class="stat">RTC Earned: <span id="panel-rtc">-</span></div>
+    <div class="stat">Attestations: <span id="panel-attest">-</span></div>
+    <div class="stat">Fingerprint: <span id="panel-fp">-</span></div>
+    <div style="margin-top:10px"><button onclick="closePanel()" style="background:#333;color:#fff;border:1px solid #555;padding:5px 12px;cursor:pointer">Close</button></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+// === Museum Data (80 miners × 8 arch families) ===
+const ARCH_COLORS = {
+  '68K': 0xf59e0b,     // amber
+  'G4':  0xea580c,     // orange
+  'G5':  0x3b82f6,     // copper-blue
+  'SPARC': 0xdc2626,   // crimson
+  'MIPS': 0x10b981,    // jade
+  'POWER8': 0x7c3aed, // purple-blue
+  'ARM': 0x94a3b8,     // silver
+  'x86_64': 0x64748b,  // grey
+  'RISC-V': 0x84cc16   // olive
+};
+
+const ARCH_ERA = {
+  '68K': '1984–1993', 'G4': '1999–2004', 'G5': '2003–2006',
+  'SPARC': '1987–2012', 'MIPS': '1985–2014', 'POWER8': '2014–2020',
+  'ARM': '2012–2024', 'x86_64': '2003–2024', 'RISC-V': '2015–2024'
+};
+
+const ARCH_CPU = {
+  '68K': 'Motorola 68030/40', 'G4': 'PowerPC 7400/G4', 'G5': 'PowerPC 970/G5',
+  'SPARC': 'SPARC64 V, TI UltraSPARC', 'MIPS': 'MIPS R12000, R14000',
+  'POWER8': 'IBM POWER8 10-core', 'ARM': 'Cortex-A72, A76, A78',
+  'x86_64': 'Intel Core 2, i7, AMD Ryzen', 'RISC-V': 'StarFive JH7100, SiFive'
+};
+
+// Generate 25 sample miners
+const MINERS = [];
+const archs = Object.keys(ARCH_COLORS);
+for (let i = 0; i < 25; i++) {
+  const arch = archs[i % archs.length];
+  const era = ['Vintage Wing','Modern Wing'][arch === 'ARM' || arch === 'x86_64' || arch === 'RISC-V' ? 1 : 0];
+  MINERS.push({
+    id: `miner_${i+1}`,
+    arch, era,
+    multiplier: (0.5 + Math.random() * 0.9).toFixed(3),
+    rtc: Math.floor(50 + Math.random() * 500),
+    attestations: Math.floor(5 + Math.random() * 100),
+    fp_quality: Math.floor(60 + Math.random() * 40),
+    fp_pass: Math.random() > 0.15
+  });
+}
+
+// === Three.js Setup ===
+let scene, camera, renderer, controls;
+let machineMeshes = [];
+let raycaster, mouse;
+let activeMachine = null;
+
+function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0a1a);
+  scene.fog = new THREE.FogExp2(0x0a0a1a, 0.012);
+
+  camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
+  camera.position.set(0, 8, 30);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+  controls.maxPolarAngle = Math.PI * 0.85;
+
+  raycaster = new THREE.Raycaster();
+  mouse = new THREE.Vector2();
+
+  // Lighting
+  const ambient = new THREE.AmbientLight(0x404060, 0.6);
+  scene.add(ambient);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight.position.set(10, 20, 10);
+  dirLight.castShadow = true;
+  scene.add(dirLight);
+  const pointLight = new THREE.PointLight(0x8b5cf6, 0.5, 50);
+  pointLight.position.set(0, 10, 0);
+  scene.add(pointLight);
+
+  buildMuseum();
+
+  window.addEventListener('resize', onResize);
+  document.getElementById('enter-btn').addEventListener('click', enterMuseum);
+  document.addEventListener('click', onClick);
+
+  document.getElementById('total-miners').textContent = `Machines: ${MINERS.length} on display`;
+
+  animate();
+}
+
+function buildMuseum() {
+  // Floor - marble checkerboard
+  const floorGeo = new THREE.PlaneGeometry(80, 60, 40, 30);
+  const floorMat = new THREE.MeshStandardMaterial({
+    color: 0x1a1a2e,
+    roughness: 0.3,
+    metalness: 0.1
+  });
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  // Grid lines on floor
+  const grid = new THREE.GridHelper(80, 40, 0x333355, 0x222244);
+  grid.position.y = 0.01;
+  scene.add(grid);
+
+  // Vintage Wing sign
+  makeTextSprite('VINTAGE WING', { x: -15, y: 7, z: -25 }, 0xa855f7);
+  // Modern Wing sign
+  makeTextSprite('MODERN WING', { x: 15, y: 7, z: -25 }, 0x3b82f6);
+
+  // Place machine pedestals
+  MINERS.forEach((miner, i) => {
+    const col = i % 5;
+    const row = Math.floor(i / 5);
+    const isVintage = miner.era === 'Vintage Wing';
+    const x = isVintage ? -15 + col * 7 : 15 + col * 7;
+    const z = -15 + row * 10;
+
+    const mesh = createMachineMesh(miner);
+    mesh.position.set(x, 0.5, z);
+    mesh.userData = miner;
+    scene.add(mesh);
+    machineMeshes.push(mesh);
+
+    // Pedestal
+    const pedGeo = new THREE.CylinderGeometry(1.2, 1.4, 0.4, 8);
+    const pedMat = new THREE.MeshStandardMaterial({ color: 0x2d2d44, roughness: 0.5 });
+    const ped = new THREE.Mesh(pedGeo, pedMat);
+    ped.position.set(x, 0.2, z);
+    ped.receiveShadow = true;
+    scene.add(ped);
+  });
+
+  // Wall partitions
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x1e1e32, roughness: 0.8 });
+  const wall1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 5, 40), wallMat);
+  wall1.position.set(0, 2.5, -10);
+  scene.add(wall1);
+}
+
+function createMachineMesh(miner) {
+  const group = new THREE.Group();
+  const color = ARCH_COLORS[miner.arch];
+  const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.6 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.7 });
+
+  if (miner.arch === '68K') {
+    // Compact Mac-style
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.2, 1.3), mat);
+    body.position.y = 0.6;
+    group.add(body);
+    const screen = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.8, 0.1), darkMat);
+    screen.position.set(0, 0.9, -0.6);
+    group.add(screen);
+  } else if (miner.arch === 'G4' || miner.arch === 'G5') {
+    // Tower/gantry style
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.8, 1.6), mat);
+    body.position.y = 0.9;
+    group.add(body);
+    const front = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.6, 0.1), darkMat);
+    front.position.set(0, 1.2, 0.75);
+    group.add(front);
+    // Feet
+    [-0.4, 0.4].forEach(xOff => {
+      [-0.6, 0.6].forEach(zOff => {
+        const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.15, 6), mat);
+        foot.position.set(xOff, 0.075, zOff);
+        group.add(foot);
+      });
+    });
+  } else if (miner.arch === 'SPARC') {
+    // Rack-mount style
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.4, 1.0), mat);
+    body.position.y = 0.7;
+    group.add(body);
+    // Vent lines
+    for (let v = 0; v < 5; v++) {
+      const vent = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.04, 0.05), darkMat);
+      vent.position.set(0, 0.2 + v * 0.2, 0.48);
+      group.add(vent);
+    }
+  } else if (miner.arch === 'MIPS') {
+    // Workstation style
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.0, 1.4), mat);
+    body.position.y = 0.5;
+    group.add(body);
+    const monitor = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.9, 0.15), darkMat);
+    monitor.position.set(0, 1.4, -0.5);
+    monitor.rotation.x = -0.2;
+    group.add(monitor);
+  } else if (miner.arch === 'POWER8') {
+    // Large server rack
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.2, 1.4), mat);
+    body.position.y = 1.1;
+    group.add(body);
+    for (let r = 0; r < 4; r++) {
+      const rack = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.3, 0.1), darkMat);
+      rack.position.set(0, 0.4 + r * 0.5, 0.65);
+      group.add(rack);
+    }
+  } else if (miner.arch === 'ARM') {
+    // Small SBC-style (Raspberry Pi)
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.15, 0.7), mat);
+    body.position.y = 0.3;
+    group.add(body);
+    const chip = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 0.3), darkMat);
+    chip.position.y = 0.38;
+    group.add(chip);
+  } else if (miner.arch === 'x86_64') {
+    // Modern tower
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.0, 2.0, 1.4), mat);
+    body.position.y = 1.0;
+    group.add(body);
+    const frontPanel = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.3, 0.05), darkMat);
+    frontPanel.position.set(0, 1.5, 0.68);
+    group.add(frontPanel);
+  } else {
+    // RISC-V / generic — small box
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 0.8), mat);
+    body.position.y = 0.4;
+    group.add(body);
+    const chip = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.1, 0.25), darkMat);
+    chip.position.y = 0.75;
+    group.add(chip);
+  }
+
+  // Glow ring at base
+  const ringGeo = new THREE.TorusGeometry(0.8, 0.05, 8, 24);
+  const ringMat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.5 });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.05;
+  group.add(ring);
+
+  group.traverse(obj => { if (obj.isMesh) { obj.castShadow = true; obj.receiveShadow = true; } });
+  return group;
+}
+
+function makeTextSprite(text, pos, color) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 96;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(0,0,0,0)';
+  ctx.fillRect(0, 0, 512, 96);
+  ctx.font = 'bold 48px Courier New';
+  ctx.fillStyle = `#${color.toString(16).padStart(6,'0')}`;
+  ctx.textAlign = 'center';
+  ctx.fillText(text, 256, 60);
+  const texture = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+  const sprite = new THREE.Sprite(mat);
+  sprite.position.set(pos.x, pos.y, pos.z);
+  sprite.scale.set(8, 1.5, 1);
+  scene.add(sprite);
+}
+
+function enterMuseum() {
+  document.getElementById('intro').style.display = 'none';
+  document.getElementById('loading').style.display = 'block';
+  setTimeout(() => {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('ui').style.display = 'block';
+  }, 800);
+}
+
+function closePanel() {
+  document.getElementById('machine-panel').style.display = 'none';
+  activeMachine = null;
+}
+
+function onClick(event) {
+  if (event.target.tagName === 'BUTTON' || event.target.tagName === 'INPUT') return;
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(machineMeshes, true);
+  if (hits.length > 0) {
+    let obj = hits[0].object;
+    while (obj.parent && !obj.userData.arch) obj = obj.parent;
+    if (obj.userData.arch) showMachinePanel(obj.userData);
+  } else {
+    closePanel();
+  }
+}
+
+function showMachinePanel(miner) {
+  activeMachine = miner;
+  const panel = document.getElementById('machine-panel');
+  panel.style.display = 'block';
+  document.getElementById('panel-arch').textContent = miner.arch;
+  document.getElementById('panel-era').textContent = ARCH_ERA[miner.arch] || '-';
+  document.getElementById('panel-cpu').textContent = ARCH_CPU[miner.arch] || '-';
+  document.getElementById('panel-mult').textContent = miner.multiplier + 'x';
+  document.getElementById('panel-rtc').textContent = miner.rtc + ' RTC';
+  document.getElementById('panel-attest').textContent = miner.attestations;
+  document.getElementById('panel-fp').textContent = miner.fp_pass ? 'All checks pass' : 'Some checks fail';
+}
+
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+init();
+</script>
+</body>
+</html>
