@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Elyan Labs Vintage Hardware Museum — RustChain</title>
+  <meta name="description" content="3D interactive museum showcasing real vintage hardware mining RTC on the RustChain network.">
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- Three.js via CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"
+          integrity="sha512-BkeGGbYRtXW7GjkaCpYnGbAKm3RgJCGEHVMv3/rjSF2yUMh3P/+NCqYQlSfGfXjNkCi7iECdLVgDMjNiB03Ag=="
+          crossorigin="anonymous"
+          referrerpolicy="no-referrer"></script>
+</head>
+<body>
+
+<!-- Loading Screen -->
+<div id="loading">
+  <h2>ELYAN LABS</h2>
+  <p>VINTAGE HARDWARE MUSEUM · RUSTCHAIN</p>
+  <div class="loading-bar-outer">
+    <div class="loading-bar-inner"></div>
+  </div>
+  <p style="margin-top:16px;font-size:0.65rem;color:#334433;">Initializing 3D environment...</p>
+</div>
+
+<!-- Main 3D Canvas -->
+<div id="canvas-container"></div>
+
+<!-- Crosshair (shown when pointer-locked) -->
+<div id="crosshair"></div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="title-bar">
+    <div>
+      <h1>⬡ Elyan Labs · Vintage Hardware Museum</h1>
+      <div class="subtitle">WebGL · RustChain · Live Mining Data</div>
+    </div>
+  </div>
+  <div id="stats-badge">
+    <div><span class="stat-label">MINERS</span>Connecting...</div>
+  </div>
+  <div id="controls-hint">
+    WASD / ↑↓←→ Move &nbsp;·&nbsp; Click to Lock Mouse &nbsp;·&nbsp; Mouse Look &nbsp;·&nbsp; Click Exhibit for Details &nbsp;·&nbsp; Q/E Up/Down
+  </div>
+</div>
+
+<!-- Minimap -->
+<div id="minimap">
+  <canvas id="minimap-canvas"></canvas>
+</div>
+
+<!-- Info Panel (slides in from right) -->
+<div id="info-panel">
+  <div id="panel-header">
+    <button id="panel-close">✕</button>
+    <div id="panel-machine-name">—</div>
+    <div id="panel-machine-type">—</div>
+  </div>
+  <div id="panel-body">
+    <!-- Populated by panel.js -->
+  </div>
+</div>
+
+<!-- Tooltip -->
+<div id="tooltip"></div>
+
+<!-- Mobile Touch Controls -->
+<div id="touch-controls">
+  <div class="touch-btn empty"></div>
+  <button class="touch-btn" id="touch-w">▲</button>
+  <div class="touch-btn empty"></div>
+  <button class="touch-btn" id="touch-a">◀</button>
+  <button class="touch-btn" id="touch-s">▼</button>
+  <button class="touch-btn" id="touch-d">▶</button>
+</div>
+
+<!-- Application modules (load order matters) -->
+<script src="js/exhibits.js"></script>
+<script src="js/scene.js"></script>
+<script src="js/controls.js"></script>
+<script src="js/miners-api.js"></script>
+<script src="js/panel.js"></script>
+<script src="js/minimap.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
