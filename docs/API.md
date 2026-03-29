@@ -372,3 +372,140 @@ curl -sk -X POST https://rustchain.org/attest/submit \
 ---
 
 *Documentation generated for RustChain v2.2.1-rip200*
+
+
+---
+
+## Python Examples
+
+All examples use the `requests` library. Install with `pip install requests`.
+
+### Health Check
+
+```python
+import requests
+
+resp = requests.get("https://rustchain.org/health", verify=False)
+data = resp.json()
+print(f"Node OK: {data['ok']}, Version: {data['version']}")
+print(f"Uptime: {data['uptime_s']}s, Epoch: {data.get('epoch', 'N/A')}")
+```
+
+### Get Epoch Info
+
+```python
+import requests
+
+resp = requests.get("https://rustchain.org/epoch", verify=False)
+data = resp.json()
+print(f"Epoch {data['epoch']}, Slot {data['slot']}/{data['blocks_per_epoch']}")
+print(f"Pot: {data['epoch_pot']} RTC, Miners: {data['enrolled_miners']}")
+```
+
+### List Active Miners
+
+```python
+import requests
+
+resp = requests.get("https://rustchain.org/api/miners", verify=False)
+miners = resp.json()
+for m in miners:
+    print(f"{m['miner'][:20]}... | {m['device_arch']} | "
+          f"mult={m['antiquity_multiplier']:.1f}x | "
+          f"last={m['last_attest']}")
+```
+
+### Check Wallet Balance
+
+```python
+import requests
+
+miner_id = "your_wallet_name"
+resp = requests.get(
+    f"https://rustchain.org/wallet/balance",
+    params={"miner_id": miner_id},
+    verify=False
+)
+data = resp.json()
+print(f"Balance: {data['amount_rtc']} RTC ({data['amount_i64']} micro-RTC)")
+```
+
+### Get Wallet History
+
+```python
+import requests
+
+miner_id = "your_wallet_name"
+resp = requests.get(
+    "https://rustchain.org/wallet/history",
+    params={"miner_id": miner_id, "limit": 10},
+    verify=False
+)
+for tx in resp.json().get("transfers", []):
+    print(f"{tx['txid'][:12]}... | {tx['direction']} | {tx['amount_rtc']} RTC")
+```
+
+### Submit Attestation (Authenticated)
+
+```python
+import requests, json, time, hashlib, secp256k1
+
+# Build attestation payload
+payload = {
+    "version": 1,
+    "miner_id": "your_wallet_name",
+    "arch": "x86_64",
+    "entropy": hashlib.sha256(str(time.time()).encode()).hexdigest()[:32],
+    "timestamp": int(time.time()),
+}
+
+# Sign with secp256k1 (requires `pip install secp256k1`)
+priv = secp256k1.PrivateKey(bytes.fromhex("YOUR_PRIVATE_KEY_HEX"))
+sig = priv.ecdsa_sign_recoverable(
+    bytes.fromhex(hashlib.sha256(json.dumps(payload, separators=(',',':')).encode()).digest())
+)
+sig_serialized, _ = priv.ecdsa_recoverable_serialize(sig)
+
+resp = requests.post(
+    "https://rustchain.org/attest/submit",
+    json={**payload, "signature": sig_serialized.hex()},
+    verify=False,
+    timeout=10,
+)
+print(resp.json())
+```
+
+### Error Handling
+
+```python
+import requests
+
+try:
+    resp = requests.get("https://rustchain.org/wallet/balance", 
+                       params={"miner_id": "nonexistent"}, 
+                       verify=False,
+                       timeout=5)
+    if resp.status_code == 200:
+        print(resp.json())
+    else:
+        print(f"Error {resp.status_code}: {resp.text}")
+except requests.exceptions.Timeout:
+    print("Request timed out — node may be overloaded")
+except requests.exceptions.ConnectionError:
+    print("Connection failed — node may be offline")
+```
+
+### Self-Signed Certificate Note
+
+The node uses a self-signed certificate. Use `verify=False` with requests, or add the cert to your trust store:
+
+```python
+import requests, ssl
+
+# Option 1: Disable verification (less secure)
+requests.get(url, verify=False)
+
+# Option 2: Download cert and verify specifically
+import httpx
+client = httpx.Client(verify="/path/to/rustchain.crt")
+```
