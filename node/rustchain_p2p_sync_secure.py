@@ -29,6 +29,13 @@ from typing import List, Dict, Optional, Callable
 from functools import wraps
 from flask import request, jsonify
 import logging
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+def address_from_pubkey(public_key_hex: str) -> str:
+    """Generate RTC address: RTC + first 40 chars of SHA256(pubkey)"""
+    pubkey_hash = hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
+    return f"RTC{pubkey_hash}"
+
 
 
 # Trusted peer IPs - bypass auth for known nodes
@@ -183,6 +190,29 @@ class BlockValidator:
     - Merkle root validation
     """
 
+    def _verify_block_signature(self, block_data: Dict) -> bool:
+        """Verify Ed25519 signature on the block's message_hex using pubkey_hex."""
+        sig_hex = block_data.get('signature')
+        pubkey_hex = block_data.get('pubkey_hex')
+        message_hex = block_data.get('message_hex')
+        if not (sig_hex and pubkey_hex and message_hex):
+            return False
+        try:
+            pk = Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex))
+            pk.verify(bytes.fromhex(sig_hex), bytes.fromhex(message_hex))
+            return True
+        except Exception:
+            return False
+
+    def _verify_miner_pubkey_match(self, block_data: Dict) -> bool:
+        """Check that the miner address matches the public key."""
+        miner = block_data.get('miner')
+        pubkey_hex = block_data.get('pubkey_hex')
+        if not (miner and pubkey_hex):
+            return False
+        expected_addr = address_from_pubkey(pubkey_hex)
+        return miner == expected_addr
+
     def validate_block(self, block_data: Dict) -> tuple:
         """
         Validate block before accepting
@@ -208,7 +238,15 @@ class BlockValidator:
             # 4. Validate transactions
             for tx in block_data.get('transactions', []):
                 if not self._validate_transaction(tx):
-                    return False, f"Invalid transaction: {tx.get('tx_hash', 'unknown')}"
+                    return False, f"Invalid transaction: {tx.get('tx_hash', 'unknown')}
+
+            # NEW: Verify producer signature
+            if not self._verify_block_signature(block_data):
+                return False, "Invalid producer signature"
+
+            # NEW: Verify miner matches pubkey
+            if not self._verify_miner_pubkey_match(block_data):
+                return False, "Miner does not match pubkey"
 
             return True, "Block is valid"
 
