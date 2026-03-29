@@ -1239,6 +1239,19 @@ def init_db():
         except ImportError:
             pass
 
+        # C3 fix: Attestation history for first_attest tracking
+        c.execute("""CREATE TABLE IF NOT EXISTS miner_attest_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            miner TEXT NOT NULL,
+            ts_ok INTEGER NOT NULL,
+            device_family TEXT,
+            device_arch TEXT,
+            entropy_score REAL DEFAULT 0.0,
+            fingerprint_passed INTEGER DEFAULT 0
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_attest_history_miner ON miner_attest_history(miner)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_attest_history_ts ON miner_attest_history(miner, ts_ok)")
+
         # Issue #2276: Hardware fingerprint replay defense tables
         if HAVE_REPLAY_DEFENSE:
             init_replay_defense_schema()
@@ -1705,6 +1718,11 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, 1 if fingerprint_passed else 0, source_ip))
         _ = append_fingerprint_snapshot(conn, miner, fingerprint if isinstance(fingerprint, dict) else {}, now)
+        # C3 fix: Record attestation history for first_attest tracking
+        conn.execute("""
+            INSERT INTO miner_attest_history (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, 1 if fingerprint_passed else 0))
         conn.commit()
 
         # RIP-201: Record fleet immune system signals
