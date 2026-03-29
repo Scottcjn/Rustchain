@@ -91,7 +91,7 @@ POST /wallet/transfer/signed
 
 1. **Wallet IDs are NOT external addresses** - RustChain uses its own wallet system (e.g., `Ivan-houzhiwen`), not Ethereum or Solana addresses.
 
-2. **Self-signed certificates** - Use `curl -k` or `verify=False` in Python.
+2. **TLS certificates** - RustChain nodes use self-signed certificates. For production use, place the node's certificate at `~/.rustchain/node_cert.pem` and the `requests` library will automatically use it (default `verify=True`). For local testing with a self-signed certificate that is not pinned, you may temporarily set `verify=False` but be aware of MITM risks. The recommended pattern is to use the shared `tls_config` module from the RustChain codebase: `from node.tls_config import get_tls_session; session = get_tls_session()`.
 
 3. **Amount is in smallest unit** - 1 RTC = 1,000,000 smallest units.
 
@@ -107,7 +107,6 @@ import json
 response = requests.get(
     "https://50.28.86.131/wallet/balance",
     params={"miner_id": "Ivan-houzhiwen"},
-    verify=False
 )
 print(f"Balance: {response.json()['amount_rtc']} RTC")
 
@@ -123,7 +122,6 @@ transfer_data = {
 response = requests.post(
     "https://50.28.86.131/wallet/transfer/signed",
     json=transfer_data,
-    verify=False
 )
 print(response.json())
 ```
