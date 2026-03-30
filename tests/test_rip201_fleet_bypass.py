@@ -98,6 +98,7 @@ def attest_client(monkeypatch):
     local_tmp_dir = Path(__file__).parent / ".tmp_attestation"
     local_tmp_dir.mkdir(exist_ok=True)
     db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
+    _init_attestation_db(db_path)
 
     monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
     monkeypatch.setattr(integrated_node, "HW_BINDING_V2", False, raising=False)
