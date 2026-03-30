@@ -460,6 +460,29 @@ class TestIntegrationScenarios:
 
 
 # ============================================================================
+# Standalone DB helpers (used by run_tests(), not by pytest)
+# ============================================================================
+
+def setup_test_db():
+    """Initialise the replay-defense schema on the standalone TEST_DB_PATH."""
+    import hardware_fingerprint_replay
+    hardware_fingerprint_replay.DB_PATH = TEST_DB_PATH
+    init_replay_defense_schema()
+
+
+def cleanup_test_db():
+    """Remove the temporary test database created by setup_test_db()."""
+    for path in (TEST_DB_PATH,):
+        if os.path.exists(path):
+            for _ in range(5):
+                try:
+                    os.remove(path)
+                    break
+                except PermissionError:
+                    time.sleep(0.1)
+
+
+# ============================================================================
 # Test Runner
 # ============================================================================
 
