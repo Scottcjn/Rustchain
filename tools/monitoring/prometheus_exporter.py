@@ -3,7 +3,7 @@
 """
 RustChain Prometheus Exporter (tools edition)
 
-Cherry-picked from LaphoqueRC PR #1711, with infrastructure refs fixed.
+Cherry-picked from LaplaceRC PR #1711, with infrastructure refs fixed.
 For the simpler standalone exporter, see monitoring/rustchain-exporter.py.
 
 This version adds:
@@ -11,6 +11,8 @@ This version adds:
   - CLI arguments (--node-url, --listen-port, --scrape-interval)
   - Per-endpoint response-time gauges
   - JSON config file support
+  - Additional v2 metrics: api_requests_total, scrape_duration_seconds,
+    epoch_block_time_avg, miner_antiquity_distribution, tx_pool_size
 """
 
 import time
@@ -22,7 +24,7 @@ from threading import Thread
 from typing import Dict, Optional, Any
 
 import requests
-from prometheus_client import start_http_server, Gauge, Counter, Info
+from prometheus_client import start_http_server, Gauge, Counter, Info, Histogram
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,17 +32,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Configuration defaults — fixed to real RustChain infrastructure
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 DEFAULT_NODE_URL = "https://50.28.86.131"
 DEFAULT_LISTEN_PORT = 8000
 DEFAULT_SCRAPE_INTERVAL = 30
 DEFAULT_REQUEST_TIMEOUT = 10
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Prometheus metrics
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 rustchain_up = Gauge(
     'rustchain_node_up',
     'Whether the RustChain node is responding',
@@ -102,6 +104,34 @@ rustchain_api_response_time = Gauge(
     ['node_url', 'endpoint'],
 )
 
+# --- v2 metrics ---
+rustchain_api_requests_total = Counter(
+    'rustchain_api_requests_total',
+    'Total number of API requests by endpoint and status',
+    ['node_url', 'endpoint', 'status'],
+)
+rustchain_scrape_duration_seconds = Gauge(
+    'rustchain_scrape_duration_seconds',
+    'Time taken for each scrape cycle',
+    ['node_url'],
+)
+rustchain_epoch_block_time_avg = Gauge(
+    'rustchain_epoch_block_time_avg',
+    'Average block time in current epoch',
+    ['node_url'],
+)
+rustchain_miner_antiquity_distribution = Histogram(
+    'rustchain_miner_antiquity_distribution',
+    'Distribution of miner antiquity scores',
+    ['node_url'],
+    buckets=[0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0, 15.0, 30.0],
+)
+rustchain_tx_pool_size = Gauge(
+    'rustchain_tx_pool_size',
+    'Pending transaction pool size',
+    ['node_url'],
+)
+
 
 class RustChainPrometheusExporter:
     """Scrapes the RustChain node API and updates Prometheus gauges."""
@@ -119,15 +149,20 @@ class RustChainPrometheusExporter:
         self.session.headers.update({
             'User-Agent': 'RustChain-Prometheus-Exporter/1.0',
         })
-        # Self-signed cert on 50.28.86.131
-        self.session.verify = False
+        # Use pinned cert if available, else system CA bundle
+        try:
+            from node.tls_config import get_tls_verify
+            self.session.verify = get_tls_verify()
+        except ImportError:
+            cert = os.path.expanduser("~/.rustchain/node_cert.pem")
+            self.session.verify = cert if os.path.exists(cert) else True
         self.running = False
 
         logger.info("Initialized exporter for node: %s", self.node_url)
 
-    # ------------------------------------------------------------------
+    # -------------------------------------------------------------------------
     # HTTP helpers
-    # ------------------------------------------------------------------
+    # -------------------------------------------------------------------------
 
     def _make_request(self, endpoint: str) -> Optional[Dict[str, Any]]:
         """GET *endpoint* with timing and error handling."""
@@ -142,9 +177,16 @@ class RustChainPrometheusExporter:
             ).set(elapsed)
 
             if response.status_code == 200:
+                rustchain_api_requests_total.labels(
+                    node_url=self.node_url, endpoint=endpoint, status='200',
+                ).inc()
                 return response.json()
 
             logger.warning("API returned %d for %s", response.status_code, endpoint)
+            rustchain_api_requests_total.labels(
+                node_url=self.node_url, endpoint=endpoint,
+                status=str(response.status_code),
+            ).inc()
             rustchain_scrape_errors.labels(
                 node_url=self.node_url, error_type='http_error',
             ).inc()
@@ -172,9 +214,9 @@ class RustChainPrometheusExporter:
             ).inc()
         return None
 
-    # ------------------------------------------------------------------
+    # -------------------------------------------------------------------------
     # Metric scrapers — aligned to real node endpoints on port 8099
-    # ------------------------------------------------------------------
+    # -------------------------------------------------------------------------
 
     def _scrape_health(self):
         """GET /health -> node up/version/uptime."""
@@ -194,7 +236,7 @@ class RustChainPrometheusExporter:
             rustchain_up.labels(node_url=self.node_url).set(0)
 
     def _scrape_epoch(self):
-        """GET /epoch -> epoch number, slot, pot, enrolled miners, supply."""
+        """GET /epoch -> epoch number, slot, pot, supply."""
         data = self._make_request('/epoch')
         if data:
             rustchain_epoch_current.labels(node_url=self.node_url).set(
@@ -209,6 +251,11 @@ class RustChainPrometheusExporter:
             rustchain_total_rtc_supply.labels(node_url=self.node_url).set(
                 data.get('total_supply_rtc', 0),
             )
+            # v2: average block time in epoch
+            block_time_avg = data.get('epoch_block_time_avg', 0)
+            rustchain_epoch_block_time_avg.labels(
+                node_url=self.node_url,
+            ).set(block_time_avg)
 
     def _scrape_miners(self):
         """GET /api/miners -> active miner count."""
@@ -217,23 +264,48 @@ class RustChainPrometheusExporter:
             rustchain_active_miners.labels(node_url=self.node_url).set(len(data))
             rustchain_total_miners.labels(node_url=self.node_url).set(len(data))
 
+            # v2: miner antiquity score distribution
+            for miner in data:
+                antiquity = miner.get('antiquity_score', 0)
+                rustchain_miner_antiquity_distribution.labels(
+                    node_url=self.node_url,
+                ).observe(antiquity)
+
+    def _scrape_transactions(self):
+        """GET /tx/pool -> pending transaction pool size."""
+        data = self._make_request('/tx/pool')
+        if data:
+            # /tx/pool may return { "pool_size": N } or just a number
+            if isinstance(data, dict):
+                pool_size = data.get('pool_size', 0)
+            else:
+                pool_size = int(data) if data else 0
+            rustchain_tx_pool_size.labels(node_url=self.node_url).set(pool_size)
+
     def _scrape_all(self):
         """One complete scrape cycle."""
         logger.debug("Starting metrics scrape")
+        scrape_start = time.time()
+
         self._scrape_health()
 
         # Only continue if node is alive
         if rustchain_up.labels(node_url=self.node_url)._value.get() == 1:
             self._scrape_epoch()
             self._scrape_miners()
+            self._scrape_transactions()
 
-        logger.debug("Metrics scrape completed")
+        elapsed = time.time() - scrape_start
+        rustchain_scrape_duration_seconds.labels(
+            node_url=self.node_url,
+        ).set(elapsed)
+        logger.debug("Metrics scrape completed in %.2fs", elapsed)
 
-    # ------------------------------------------------------------------
+    # -------------------------------------------------------------------------
     # Main loop
-    # ------------------------------------------------------------------
+    # -------------------------------------------------------------------------
 
-    def start_scraping(self):
+    def start_scrapping(self):
         self.running = True
         logger.info("Scrape loop started (%ds interval)", self.scrape_interval)
         while self.running:
@@ -251,9 +323,9 @@ class RustChainPrometheusExporter:
         logger.info("Scraping stopped")
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # CLI
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 def load_config_file(path: str) -> Dict[str, Any]:
     try:
@@ -333,7 +405,7 @@ def main():
     start_http_server(listen_port)
     logger.info("Metrics server started on http://0.0.0.0:%d", listen_port)
 
-    scrape_thread = Thread(target=exporter.start_scraping, daemon=True)
+    scrape_thread = Thread(target=exporter.start_scrapping, daemon=True)
     scrape_thread.start()
 
     try:
