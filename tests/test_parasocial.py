@@ -20,7 +20,8 @@ DAY = 86400
 
 def _fresh() -> tuple["AudienceTracker", str]:
     """Return a tracker backed by a temp DB and the DB path for cleanup."""
-    path = tempfile.mktemp(suffix=".db")
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
     return AudienceTracker(db_path=path), path
 
 
