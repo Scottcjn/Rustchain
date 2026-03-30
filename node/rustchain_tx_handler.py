@@ -577,6 +577,11 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
         """List pending transactions"""
         try:
             limit = request.args.get('limit', 100, type=int)
+            # Cap limit to prevent DoS via memory exhaustion
+            if limit > 200:
+                return jsonify({"error": "limit exceeds maximum of 200"}), 400
+            if limit < 1:
+                limit = 1
             pending = tx_pool.get_pending_transactions(limit)
             return jsonify({
                 "count": len(pending),
@@ -631,6 +636,13 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
         try:
             limit = request.args.get('limit', 50, type=int)
             offset = request.args.get('offset', 0, type=int)
+            # Cap limit to prevent DoS via DB/resource exhaustion
+            if limit > 500:
+                return jsonify({"error": "limit exceeds maximum of 500"}), 400
+            if limit < 1:
+                limit = 1
+            if offset < 0:
+                offset = 0
 
             with sqlite3.connect(tx_pool.db_path) as conn:
                 conn.row_factory = sqlite3.Row
