@@ -108,6 +108,7 @@ def attest_client(monkeypatch):
     monkeypatch.setattr(integrated_node, "record_macs", lambda *args, **kwargs: None)
     monkeypatch.setattr(integrated_node, "current_slot", lambda: 12345)
     monkeypatch.setattr(integrated_node, "slot_to_epoch", lambda slot: 85)
+    monkeypatch.setattr(integrated_node, "HAVE_REPLAY_DEFENSE", False, raising=False)
 
     integrated_node.app.config["TESTING"] = True
     with integrated_node.app.test_client() as test_client:
