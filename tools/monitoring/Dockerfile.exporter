@@ -1,0 +1,6 @@
+FROM python:3.11-slim
+WORKDIR /app
+RUN pip install requests prometheus_client
+COPY prometheus_exporter.py .
+EXPOSE 8000
+CMD ["python", "prometheus_exporter.py", "--listen-port", "8000"]
