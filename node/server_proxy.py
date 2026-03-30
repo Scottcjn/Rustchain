@@ -33,7 +33,17 @@ def proxy(path):
             response = requests.get(url, timeout=10)
 
         # Return the response from local server
-        return response.json(), response.status_code
+        # Safely handle non-JSON responses from upstream
+        content_type = response.headers.get('Content-Type', '')
+        if 'application/json' in content_type:
+            try:
+                return response.json(), response.status_code
+            except (ValueError, Exception):
+                # JSON parse failed, fall back to text
+                return response.text, response.status_code
+        else:
+            # Non-JSON response (e.g., HTML error page), return as-is with text
+            return response.text, response.status_code
 
     except requests.exceptions.Timeout:
         return jsonify({'error': 'Local server timeout'}), 504
