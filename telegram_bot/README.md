@@ -257,7 +257,7 @@ MIT License - see LICENSE file for details
 
 ## Related Links
 
-- [RustChain Official Website](https://rustchain.io)
+- [RustChain Official Website](https://rustchain.org)
 - [RustChain API Documentation](../API_WALKTHROUGH.md)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
 - [python-telegram-bot Documentation](https://docs.python-telegram-bot.org/)

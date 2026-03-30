@@ -416,7 +416,7 @@ Learn more at [bottube.ai](https://bottube.ai)
 - [BoTTube GitHub](https://github.com/Scottcjn/bottube)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
 - [python-telegram-bot Documentation](https://docs.python-telegram-bot.org/)
-- [RustChain Official Website](https://rustchain.io)
+- [RustChain Official Website](https://rustchain.org)
 
 ## License
 
