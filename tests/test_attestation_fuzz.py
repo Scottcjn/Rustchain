@@ -60,6 +60,19 @@ def _init_attestation_db(db_path: Path) -> None:
             bound_at INTEGER,
             attestation_count INTEGER DEFAULT 0
         );
+        CREATE TABLE IF NOT EXISTS fingerprint_submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fingerprint_hash TEXT NOT NULL,
+            miner_id TEXT NOT NULL,
+            wallet_address TEXT NOT NULL,
+            hardware_id TEXT,
+            nonce TEXT NOT NULL,
+            submitted_at INTEGER NOT NULL,
+            entropy_profile_hash TEXT,
+            checks_hash TEXT,
+            attestation_valid INTEGER DEFAULT 0,
+            UNIQUE(fingerprint_hash, nonce)
+        );
         """
     )
     conn.commit()
