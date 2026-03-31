@@ -1,0 +1,21 @@
+{
+  "machine_name": "ukgorboss Mac mini",
+  "model": "Mac mini (2024)",
+  "model_identifier": "Mac16,10",
+  "year_manufactured": 2024,
+  "architecture": "Apple Silicon M4 (arm64)",
+  "cpu_cores": "10 (4P + 6E)",
+  "memory_gb": 16,
+  "power_draw_watts": 15,
+  "usage": [
+    "Telegram bot runtime",
+    "GitHub bounty automation",
+    "web research",
+    "local agent execution"
+  ],
+  "description": "Mac mini M4 running local agent workloads around the clock: Telegram bots, GitHub bounty automation, web research, and code execution. Draws roughly 15W at idle and stays useful as a compact always-on machine instead of becoming early e-waste.",
+  "wallet_name": "ukgorclawbot-stack",
+  "wallet_address": "ukgorclawbot-stack",
+  "contributor": "ukgorclawbot-stack",
+  "added_date": "2026-03-31"
+}
