@@ -426,6 +426,79 @@
     }
 
     /* ASCII art decoration */
+    /* Trust Score Panel */
+    .trust-score-panel {
+      background: var(--term-bg);
+      border: 1px solid var(--term-border);
+      border-radius: 4px;
+      padding: 16px;
+      margin-top: 10px;
+    }
+
+    .trust-score-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .trust-label {
+      color: var(--term-dim);
+      font-size: 0.9rem;
+    }
+
+    .trust-score {
+      font-size: 1.4rem;
+      font-weight: bold;
+      color: var(--term-green);
+    }
+
+    .trust-tier {
+      font-size: 0.85rem;
+      color: var(--term-blue);
+      background: rgba(88, 166, 255, 0.15);
+      border: 1px solid var(--term-blue);
+      border-radius: 4px;
+      padding: 2px 8px;
+    }
+
+    .trust-breakdown {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 8px;
+    }
+
+    .trust-metric {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--term-border);
+      border-radius: 4px;
+      padding: 8px 10px;
+    }
+
+    .trust-metric-label {
+      font-size: 0.75rem;
+      color: var(--term-dim);
+      margin-bottom: 4px;
+    }
+
+    .trust-metric-value {
+      font-size: 0.9rem;
+      color: var(--term-fg);
+    }
+
+    .trust-metric-value.pass {
+      color: var(--term-green);
+    }
+
+    .trust-metric-value.fail {
+      color: var(--term-red);
+    }
+
+    .trust-metric-value.partial {
+      color: var(--term-orange);
+    }
+
+    /* ASCII art decoration */
     .ascii-art {
       color: var(--term-dim);
       font-size: 0.7rem;
@@ -539,6 +612,25 @@
             <div class="form-hint">Select the visual style for your badge</div>
           </div>
 
+          <!-- Trust Score Preview -->
+          <div class="section">
+            <div class="section-title">Trust Score Preview</div>
+            <div class="trust-score-panel" id="trustScorePanel" style="display:none;">
+              <div class="trust-score-header">
+                <span class="trust-label">Trust Score:</span>
+                <span class="trust-score" id="trustScoreValue">--</span>
+                <span class="trust-tier" id="trustTier">--</span>
+              </div>
+              <div class="trust-breakdown" id="trustBreakdown"></div>
+              <button type="button" class="btn btn-secondary" id="checkTrustBtn" style="margin-top:10px;">
+                Refresh Trust Score
+              </button>
+            </div>
+            <div class="trust-score-placeholder" id="trustScorePlaceholder">
+              <span style="color: var(--term-dim);">Enter a Certificate ID and click "Check Trust Score" to preview the BCOS trust score before generating your badge.</span>
+            </div>
+          </div>
+
           <!-- Preview -->
           <div class="section">
             <div class="section-title">Live Preview</div>
@@ -641,6 +733,13 @@
     const htmlCode = document.getElementById('htmlCode');
     const outputTabs = document.querySelectorAll('.output-tab');
     const outputContents = document.querySelectorAll('.output-content');
+    const trustScorePanel = document.getElementById('trustScorePanel');
+    const trustScorePlaceholder = document.getElementById('trustScorePlaceholder');
+    const trustScoreValue = document.getElementById('trustScoreValue');
+    const trustTier = document.getElementById('trustTier');
+    const trustBreakdown = document.getElementById('trustBreakdown');
+    const checkTrustBtn = document.getElementById('checkTrustBtn');
+    const VERIFY_API_URL = 'https://rustchain.org/bcos/verify';
 
     // ── Event Listeners ──────────────────────────────────────────────
 
@@ -690,6 +789,20 @@
     // Reset button
     resetBtn.addEventListener('click', resetForm);
 
+    // Check Trust Score button
+    checkTrustBtn.addEventListener('click', () => {
+      const certId = certIdInput.value.trim();
+      if (!certId) {
+        showStatus('Please enter a Certificate ID first', 'error');
+        return;
+      }
+      if (!isValidCertId(certId)) {
+        showStatus('Invalid Certificate ID format. Expected: BCOS-xxxxxxxx', 'error');
+        return;
+      }
+      fetchTrustScore(certId);
+    });
+
     // ── Functions ──────────────────────────────────────────────
 
     async function generateBadge() {
@@ -716,6 +829,8 @@
         showStatus('Badge generated successfully!', 'success');
         outputSection.classList.remove('hidden');
         outputSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // Also fetch and display trust score in parallel
+        fetchTrustScore(certId);
       } catch (error) {
         showStatus(`Error: ${error.message}`, 'error');
       } finally {
@@ -811,9 +926,88 @@
       previewArea.innerHTML = '<span class="preview-placeholder">Enter a Certificate ID and click "Generate Preview" to see your badge</span>';
       outputSection.classList.add('hidden');
       statusMessage.classList.add('hidden');
+      trustScorePanel.style.display = 'none';
+      trustScorePlaceholder.style.display = 'block';
+      trustBreakdown.innerHTML = '';
       inputType.value = 'cert_id';
       certIdInput.parentElement.classList.remove('hidden');
       repoUrlGroup.classList.add('hidden');
+    }
+
+    async function fetchTrustScore(certId) {
+      checkTrustBtn.disabled = true;
+      checkTrustBtn.innerHTML = '<span class="spinner"></span>Checking...';
+      trustScorePlaceholder.style.display = 'none';
+      trustScorePanel.style.display = 'block';
+
+      try {
+        const response = await fetch(`${VERIFY_API_URL}/${certId}`);
+        if (!response.ok) {
+          throw new Error(`API returned ${response.status}`);
+        }
+        const data = await response.json();
+
+        // Display trust score
+        const score = data.trust_score ?? data.score ?? data.total_score ?? 0;
+        trustScoreValue.textContent = `${score}/100`;
+
+        // Display tier
+        const tier = data.tier || data.certification_tier || '';
+        trustTier.textContent = tier;
+        trustTier.style.display = tier ? 'inline-block' : 'none';
+
+        // Color code the score
+        if (score >= 80) {
+          trustScoreValue.style.color = 'var(--term-green)';
+        } else if (score >= 50) {
+          trustScoreValue.style.color = 'var(--term-orange)';
+        } else {
+          trustScoreValue.style.color = 'var(--term-red)';
+        }
+
+        // Build breakdown metrics
+        trustBreakdown.innerHTML = '';
+
+        const metrics = [
+          { label: 'License Compliance', key: 'license_score', max: 20 },
+          { label: 'Vulnerability Scan', key: 'vuln_score', max: 25 },
+          { label: 'Static Analysis', key: 'semgrep_score', max: 20 },
+          { label: 'SBOM', key: 'sbom_score', max: 10 },
+          { label: 'Dependency Fresh', key: 'dep_freshness', max: 5 },
+          { label: 'Test Evidence', key: 'test_score', max: 10 },
+          { label: 'Review Attestation', key: 'review_score', max: 10 },
+        ];
+
+        metrics.forEach(m => {
+          const val = data[m.key] ?? data[m.label.toLowerCase().replace(/ /g, '_')] ?? null;
+          if (val !== null) {
+            const div = document.createElement('div');
+            div.className = 'trust-metric';
+            const pct = typeof val === 'number' ? Math.round((val / m.max) * 100) : 0;
+            const cls = pct >= 80 ? 'pass' : pct >= 50 ? 'partial' : 'fail';
+            div.innerHTML = `<div class="trust-metric-label">${m.label}</div><div class="trust-metric-value ${cls}">${typeof val === 'number' ? val + '/' + m.max : val}</div>`;
+            trustBreakdown.appendChild(div);
+          }
+        });
+
+        // If no metrics found, show raw JSON
+        if (trustBreakdown.children.length === 0 && Object.keys(data).length > 0) {
+          const div = document.createElement('div');
+          div.className = 'trust-metric';
+          div.style.gridColumn = '1 / -1';
+          div.innerHTML = `<div class="trust-metric-label">Raw API Data</div><div class="trust-metric-value" style="font-size:0.75rem;word-break:break-all;">${JSON.stringify(data).slice(0, 200)}...</div>`;
+          trustBreakdown.appendChild(div);
+        }
+
+        showStatus(`Trust score loaded: ${score}/100 (${tier})`, 'success');
+      } catch (error) {
+        trustScorePanel.style.display = 'none';
+        trustScorePlaceholder.style.display = 'block';
+        showStatus(`Could not fetch trust score: ${error.message}. The verify API may be unavailable in static mode.`, 'info');
+      } finally {
+        checkTrustBtn.disabled = false;
+        checkTrustBtn.textContent = 'Refresh Trust Score';
+      }
     }
 
     function copyToClipboard(elementId) {
