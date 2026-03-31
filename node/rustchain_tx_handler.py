@@ -105,7 +105,7 @@ class TransactionPool:
 
     def __init__(self, db_path: str):
         self.db_path = db_path
-        self._lock = threading.Lock()
+        # Note: DB-level locking via BEGIN EXCLUSIVE replaces threading.Lock (#2017)
         self._ensure_schema()
 
     def _ensure_schema(self):
@@ -154,18 +154,22 @@ class TransactionPool:
 
     @contextmanager
     def _get_connection(self):
-        """Get database connection with proper locking"""
-        with self._lock:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            try:
-                yield conn
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-            finally:
-                conn.close()
+        """Get database connection with SQLite-level exclusive locking.
+
+        Uses BEGIN EXCLUSIVE for database-level transaction isolation,
+        safe across multiple processes (e.g. gunicorn workers). (#2017)
+        """
+        conn = sqlite3.connect(self.db_path, timeout=10)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("BEGIN EXCLUSIVE")
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def get_wallet_nonce(self, address: str) -> int:
         """Get current nonce for a wallet"""
