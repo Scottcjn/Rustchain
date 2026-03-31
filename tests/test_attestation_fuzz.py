@@ -119,6 +119,7 @@ def _client_fixture(monkeypatch, *, strict_security_path=False):
     _init_attestation_db(db_path)
     if _HAS_REPLAY:
         _replay_mod.DB_PATH = str(db_path)
+        monkeypatch.setattr(_replay_mod, "get_db_path", lambda: str(db_path))
         _init_replay_schema()
 
     monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
