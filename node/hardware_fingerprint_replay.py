@@ -27,11 +27,15 @@ import time
 from typing import Dict, List, Tuple, Optional, Any
 from collections import defaultdict
 
-# Configuration
-DB_PATH = os.environ.get('RUSTCHAIN_DB_PATH') or os.environ.get('DB_PATH') or '/root/rustchain/rustchain_v2.db'
+# Configuration constants
 REPLAY_WINDOW_SECONDS = 300  # 5 minutes - fingerprints expire after this
 MAX_FINGERPRINT_SUBMISSIONS_PER_HOUR = 10  # Rate limit per hardware ID
 ENTROPY_HASH_COLLISION_TOLERANCE = 0.95  # Similarity threshold for collision detection
+
+
+def get_db_path() -> str:
+    """Get database path from environment (evaluated at call time, not import time)."""
+    return os.environ.get('RUSTCHAIN_DB_PATH') or os.environ.get('DB_PATH') or '/root/rustchain/rustchain_v2.db'
 
 # Core entropy fields for fingerprint hashing
 CORE_ENTROPY_FIELDS = [
@@ -44,7 +48,7 @@ CORE_ENTROPY_FIELDS = [
 
 def init_replay_defense_schema():
     """Initialize database tables for replay attack defense."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(get_db_path()) as conn:
         # Table 1: Track submitted fingerprint hashes with timestamps
         conn.execute('''
             CREATE TABLE IF NOT EXISTS fingerprint_submissions (
@@ -114,16 +118,19 @@ def compute_fingerprint_hash(fingerprint: Dict) -> str:
     """
     Compute a cryptographic hash of the fingerprint data.
     This creates a unique identifier for the fingerprint payload.
-    
+
     Args:
         fingerprint: The fingerprint dictionary containing checks and data
-        
+
     Returns:
         SHA-256 hash (hex) of the normalized fingerprint
     """
-    if fingerprint is None or not isinstance(fingerprint, dict):
+    if fingerprint is None:
         return ""
     
+    if not isinstance(fingerprint, dict):
+        return ""
+
     # Normalize the fingerprint for consistent hashing
     checks = fingerprint.get('checks', {})
     normalized = {
@@ -242,8 +249,8 @@ def check_fingerprint_replay(
     """
     now = int(time.time())
     window_start = now - REPLAY_WINDOW_SECONDS
-    
-    with sqlite3.connect(DB_PATH) as conn:
+
+    with sqlite3.connect(get_db_path()) as conn:
         c = conn.cursor()
         
         # Check 1: Exact fingerprint hash replay (same fingerprint, different nonce)
@@ -322,8 +329,8 @@ def check_entropy_collision(
     """
     now = int(time.time())
     window_start = now - (REPLAY_WINDOW_SECONDS * 12)  # 1 hour window
-    
-    with sqlite3.connect(DB_PATH) as conn:
+
+    with sqlite3.connect(get_db_path()) as conn:
         c = conn.cursor()
         
         # Find recent submissions with similar entropy profile
@@ -384,11 +391,11 @@ def check_fingerprint_rate_limit(
     """
     if not hardware_id:
         return True, "no_hardware_id", None  # Can't rate limit without hardware ID
-    
+
     now = int(time.time())
     window_start = now - 3600  # 1 hour window
-    
-    with sqlite3.connect(DB_PATH) as conn:
+
+    with sqlite3.connect(get_db_path()) as conn:
         c = conn.cursor()
         
         # Get or create rate limit record
@@ -474,8 +481,8 @@ def record_fingerprint_submission(
     checks_hash = hashlib.sha256(
         json.dumps(fingerprint.get('checks', {}), sort_keys=True).encode()
     ).hexdigest()
-    
-    with sqlite3.connect(DB_PATH) as conn:
+
+    with sqlite3.connect(get_db_path()) as conn:
         c = conn.cursor()
         
         # Insert submission record
@@ -530,8 +537,8 @@ def detect_fingerprint_anomalies(
     """
     anomalies = []
     now = int(time.time())
-    
-    with sqlite3.connect(DB_PATH) as conn:
+
+    with sqlite3.connect(get_db_path()) as conn:
         c = conn.cursor()
         
         # Get recent fingerprint history for this miner
@@ -604,8 +611,8 @@ def get_replay_defense_report(
     """
     now = int(time.time())
     window_start = now - (hours * 3600)
-    
-    with sqlite3.connect(DB_PATH) as conn:
+
+    with sqlite3.connect(get_db_path()) as conn:
         c = conn.cursor()
         
         # Base query
