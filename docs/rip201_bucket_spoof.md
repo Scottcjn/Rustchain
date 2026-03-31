@@ -65,7 +65,7 @@ That is a **10x** per-miner reward advantage from bucket spoofing alone.
 
 ## Live Black-Box Validation
 
-The same technique was also validated against the live node at `https://50.28.86.131`.
+The same technique was also validated against the live node at `https://rustchain.org`.
 
 ### Request sent
 
