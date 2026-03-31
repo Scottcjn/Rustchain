@@ -52,6 +52,9 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --dry-run
 ```
 
+This shows what the installer *would* do without making any changes — useful for
+verifying that your platform is detected correctly before committing to installation.
+
 ### Pick a Wallet Name
 
 During install, you will see:
