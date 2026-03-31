@@ -33,6 +33,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Anti-DoS constants (#2019)
+MAX_PENDING_PER_ADDRESS = 16
+MIN_TX_AMOUNT_URTC = 1_000_000  # 0.01 RTC
+
 
 # =============================================================================
 # DATABASE SCHEMA UPGRADES
@@ -129,6 +133,22 @@ class TransactionPool:
                     except sqlite3.OperationalError as e:
                         if "already exists" not in str(e):
                             logger.warning(f"Schema statement failed: {e}")
+
+            # #2018: Add CHECK constraint to prevent negative balances.
+            # SQLite doesn't support ADD CONSTRAINT, so we create a trigger.
+            # The balances table may be created externally; guard accordingly.
+            try:
+                cursor.execute("DROP TRIGGER IF EXISTS prevent_negative_balance")
+                cursor.execute("""
+                    CREATE TRIGGER prevent_negative_balance
+                    BEFORE UPDATE OF balance_urtc ON balances
+                    WHEN NEW.balance_urtc < 0
+                    BEGIN
+                        SELECT RAISE(ABORT, 'balance_urtc cannot be negative');
+                    END
+                """)
+            except sqlite3.OperationalError:
+                pass  # balances table may not exist yet
 
             conn.commit()
 
@@ -301,20 +321,106 @@ class TransactionPool:
         """
         Submit a signed transaction to the pool.
 
+        Validation and insertion are performed atomically under a single
+        lock acquisition to prevent TOCTOU double-spend (#2017).
+
         Returns (success, error_or_tx_hash)
         """
-        # Validate
-        is_valid, error = self.validate_transaction(tx)
-        if not is_valid:
-            return False, error
+        # --- Pre-lock checks (stateless, no TOCTOU risk) ---
 
-        # Register public key if not already registered
-        self.register_public_key(tx.from_addr, tx.public_key)
+        # 1. Verify signature
+        if not tx.verify():
+            return False, "Invalid signature"
 
-        # Add to pending pool
+        # 2. Verify public key matches address
+        derived_addr = address_from_public_key(bytes.fromhex(tx.public_key))
+        if derived_addr != tx.from_addr:
+            return False, "Public key does not match from_addr"
+
+        # 3. Validate amount (#2019: minimum tx amount)
+        if tx.amount_urtc < MIN_TX_AMOUNT_URTC:
+            return False, f"Invalid amount: must be >= {MIN_TX_AMOUNT_URTC} uRTC (0.01 RTC)"
+
+        # --- Atomic section: validate state + insert under single lock ---
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
+            # #2019: Per-address pending limit
+            cursor.execute(
+                "SELECT COUNT(*) as cnt FROM pending_transactions WHERE from_addr = ? AND status = 'pending'",
+                (tx.from_addr,)
+            )
+            pending_count = cursor.fetchone()["cnt"]
+            if pending_count >= MAX_PENDING_PER_ADDRESS:
+                return False, "Pending limit exceeded"
+
+            # Check nonce (replay protection)
+            cursor.execute(
+                "SELECT wallet_nonce FROM balances WHERE wallet = ?",
+                (tx.from_addr,)
+            )
+            nonce_row = cursor.fetchone()
+            base_nonce = nonce_row["wallet_nonce"] if nonce_row else 0
+
+            cursor.execute(
+                "SELECT nonce FROM pending_transactions WHERE from_addr = ? AND status = 'pending'",
+                (tx.from_addr,)
+            )
+            pending_nonces = {row["nonce"] for row in cursor.fetchall()}
+
+            expected_nonce = base_nonce + 1
+            while expected_nonce in pending_nonces:
+                expected_nonce += 1
+
+            if tx.nonce != expected_nonce:
+                return False, f"Invalid nonce: expected {expected_nonce}, got {tx.nonce}"
+
+            # Check balance
+            cursor.execute(
+                "SELECT balance_urtc FROM balances WHERE wallet = ?",
+                (tx.from_addr,)
+            )
+            bal_row = cursor.fetchone()
+            balance = bal_row["balance_urtc"] if bal_row else 0
+
+            cursor.execute(
+                """SELECT COALESCE(SUM(amount_urtc), 0) as pending
+                   FROM pending_transactions
+                   WHERE from_addr = ? AND status = 'pending'""",
+                (tx.from_addr,)
+            )
+            pending_amount = cursor.fetchone()["pending"]
+            available = max(0, balance - pending_amount)
+
+            if tx.amount_urtc > available:
+                return False, f"Insufficient balance: have {available}, need {tx.amount_urtc}"
+
+            # Check for duplicate
+            cursor.execute(
+                "SELECT 1 FROM pending_transactions WHERE tx_hash = ?",
+                (tx.tx_hash,)
+            )
+            if cursor.fetchone():
+                return False, "Transaction already exists"
+            cursor.execute(
+                "SELECT 1 FROM transaction_history WHERE tx_hash = ?",
+                (tx.tx_hash,)
+            )
+            if cursor.fetchone():
+                return False, "Transaction already exists"
+
+            # Register public key
+            try:
+                cursor.execute(
+                    """INSERT OR REPLACE INTO wallet_pubkeys
+                       (address, public_key, registered_at)
+                       VALUES (?, ?, ?)""",
+                    (tx.from_addr, tx.public_key, int(time.time()))
+                )
+            except Exception:
+                pass  # Non-critical
+
+            # Insert into pending pool
             try:
                 cursor.execute(
                     """INSERT INTO pending_transactions
@@ -396,6 +502,21 @@ class TransactionPool:
                 return False
 
             try:
+                # #2018: Re-validate balance before deducting
+                cursor.execute(
+                    "SELECT balance_urtc FROM balances WHERE wallet = ?",
+                    (row["from_addr"],)
+                )
+                bal_row = cursor.fetchone()
+                current_balance = bal_row["balance_urtc"] if bal_row else 0
+
+                if current_balance < row["amount_urtc"]:
+                    logger.warning(
+                        f"TX confirm rejected: insufficient balance for {tx_hash[:16]}... "
+                        f"have {current_balance}, need {row['amount_urtc']}"
+                    )
+                    return False
+
                 # Move to history
                 cursor.execute(
                     """INSERT INTO transaction_history
