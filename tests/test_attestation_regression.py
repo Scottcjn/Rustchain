@@ -163,6 +163,7 @@ def test_client(monkeypatch):
     try:
         import hardware_fingerprint_replay
         monkeypatch.setattr(hardware_fingerprint_replay, "DB_PATH", str(db_path))
+        monkeypatch.setattr(hardware_fingerprint_replay, "get_db_path", lambda: str(db_path))
     except (ImportError, AttributeError):
         pass
     monkeypatch.setattr(integrated_node, "check_ip_rate_limit", lambda client_ip, miner_id: (True, "ok"))
