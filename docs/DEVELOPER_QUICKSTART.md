@@ -8,7 +8,7 @@
 ## Base URL & Setup
 
 ```bash
-NODE_URL="https://50.28.86.131"
+NODE_URL="https://rustchain.org"
 ```
 
 > ⚠️ **Self-Signed Certificate**: The node uses a self-signed TLS certificate. Always use `-k` or `--insecure` with curl.
@@ -234,7 +234,7 @@ import time
 import requests
 from nacl.signing import SigningKey
 
-NODE_URL = "https://50.28.86.131"
+NODE_URL = "https://rustchain.org"
 PRIVATE_KEY_HEX = "your_private_key_hex_here"
 TO_ADDRESS = "RTC89abcdef0123456789abcdef0123456789abcdef"
 AMOUNT_RTC = 1.0
@@ -285,7 +285,7 @@ print(response.json())
 ```bash
 #!/bin/bash
 
-NODE_URL="https://50.28.86.131"
+NODE_URL="https://rustchain.org"
 FROM_ADDRESS="RTC1234567890123456789012345678901234567890"
 TO_ADDRESS="RTC0987654321098765432109876543210987654321"
 AMOUNT=1.0
@@ -367,7 +367,7 @@ Before submitting your transfer:
 
 - Product Issue: `Scottcjn/Rustchain#701`
 - Bounty Issue: `Scottcjn/rustchain-bounties#1494`
-- Node: `https://50.28.86.131`
+- Node: `https://rustchain.org`
 - Tested: 2026-03-09
 
 ---
