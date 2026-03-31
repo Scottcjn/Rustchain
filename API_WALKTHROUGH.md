@@ -9,7 +9,7 @@ First steps for developers integrating with RustChain.
 ### 1. Health Check
 
 ```bash
-curl -sk https://50.28.86.131/health
+curl -sk https://rustchain.org/health
 ```
 
 **Response:**
@@ -24,7 +24,7 @@ curl -sk https://50.28.86.131/health
 ### 2. Get Epoch Info
 
 ```bash
-curl -sk https://50.28.86.131/epoch
+curl -sk https://rustchain.org/epoch
 ```
 
 **Response:**
@@ -39,7 +39,7 @@ curl -sk https://50.28.86.131/epoch
 ### 3. Check Balance
 
 ```bash
-curl -sk "https://50.28.86.131/wallet/balance?miner_id=Ivan-houzhiwen"
+curl -sk "https://rustchain.org/wallet/balance?miner_id=Ivan-houzhiwen"
 ```
 
 **Response:**
@@ -105,7 +105,7 @@ import json
 
 # Check balance
 response = requests.get(
-    "https://50.28.86.131/wallet/balance",
+    "https://rustchain.org/wallet/balance",
     params={"miner_id": "Ivan-houzhiwen"},
 )
 print(f"Balance: {response.json()['amount_rtc']} RTC")
@@ -120,7 +120,7 @@ transfer_data = {
     "timestamp": 1234567890
 }
 response = requests.post(
-    "https://50.28.86.131/wallet/transfer/signed",
+    "https://rustchain.org/wallet/transfer/signed",
     json=transfer_data,
 )
 print(response.json())
@@ -130,8 +130,8 @@ print(response.json())
 
 ## Reference
 
-- **Node:** `https://50.28.86.131`
-- **Explorer:** `https://50.28.86.131/explorer`
-- **Health:** `https://50.28.86.131/health`
+- **Node:** `https://rustchain.org`
+- **Explorer:** `https://rustchain.org/explorer`
+- **Health:** `https://rustchain.org/health`
 
 *Ref: Scottcjn/Rustchain#701*

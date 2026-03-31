@@ -51,7 +51,7 @@ Earn RTC by contributing compute resources.
 
 - Linux (recommended), macOS, or Windows
 - 4GB+ RAM
-- GPU recommended (4GB+ VRAM) for better rewards
+- No GPU needed — RustChain uses CPU-based Proof-of-Antiquity mining
 
 ### Start Mining
 
