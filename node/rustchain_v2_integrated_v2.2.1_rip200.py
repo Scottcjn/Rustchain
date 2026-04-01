@@ -4821,19 +4821,36 @@ def api_nodes():
 
 @app.route("/api/miners", methods=["GET"])
 def api_miners():
-    """Return list of attested miners with their PoA details"""
+    """Return list of attested miners with their PoA details.
+
+    Query params:
+        limit  (int, max 500, default 500)  — max miners to return
+        offset (int, default 0)             — skip this many rows
+    """
     import time as _time
     now = int(_time.time())
+
+    # Parse and clamp pagination parameters
+    try:
+        limit = min(int(request.args.get("limit", 500)), 500)
+    except (TypeError, ValueError):
+        limit = 500
+    try:
+        offset = max(int(request.args.get("offset", 0)), 0)
+    except (TypeError, ValueError):
+        offset = 0
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
-        # Get all miners attested in the last hour
+        # Get miners attested in the last hour, with pagination
         rows = c.execute("""
             SELECT miner, ts_ok, device_family, device_arch, entropy_score
-            FROM miner_attest_recent 
+            FROM miner_attest_recent
             WHERE ts_ok > ?
             ORDER BY ts_ok DESC
-        """, (now - 3600,)).fetchall()
+            LIMIT ? OFFSET ?
+        """, (now - 3600, limit, offset)).fetchall()
         
         miners = []
         for r in rows:
@@ -4880,8 +4897,8 @@ def api_miners():
                 "entropy_score": r["entropy_score"] or 0.0,
                 "antiquity_multiplier": mult
             })
-    
-    return jsonify(miners)
+
+    return jsonify({"miners": miners, "count": len(miners), "limit": limit, "offset": offset})
 
 
 @app.route("/api/badge/<miner_id>", methods=["GET"])
