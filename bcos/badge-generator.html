@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BCOS Badge Generator | RustChain</title>
+    <meta name="description" content="Generate embeddable BCOS (Beacon Certified Open Source) badges for your certified repositories.">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0a0a0f;
+            --surface: #0d1117;
+            --surface-alt: #161b22;
+            --border: #21262d;
+            --border-dim: #30363d;
+            --green: #00ff41;
+            --green-dim: #00cc33;
+            --green-glow: rgba(0, 255, 65, 0.15);
+            --green-glow-strong: rgba(0, 255, 65, 0.4);
+            --red: #ff6b6b;
+            --yellow: #ffd93d;
+            --text: #c9d1d9;
+            --text-dim: #8b949e;
+            --text-bright: #f0f6fc;
+        }
+
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--bg);
+            color: var(--green);
+            line-height: 1.7;
+            min-height: 100vh;
+        }
+
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                0deg, transparent, transparent 2px,
+                rgba(0, 255, 65, 0.015) 2px, rgba(0, 255, 65, 0.015) 4px
+            );
+            z-index: 9999;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+        }
+
+        header {
+            text-align: center;
+            padding: 3rem 0 2rem;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 2rem;
+        }
+
+        header h1 {
+            font-size: 1.8rem;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            text-shadow: 0 0 20px var(--green-glow-strong);
+            margin-bottom: 0.5rem;
+        }
+
+        header .subtitle {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+
+        .section {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .section-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-dim);
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        label {
+            display: block;
+            color: var(--text-dim);
+            font-size: 0.8rem;
+            margin-bottom: 0.4rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            background: var(--bg);
+            border: 1px solid var(--border-dim);
+            color: var(--green);
+            font-family: inherit;
+            font-size: 0.95rem;
+            padding: 0.75rem 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--green);
+            box-shadow: 0 0 10px var(--green-glow);
+        }
+
+        input[type="text"]::placeholder {
+            color: var(--border-dim);
+        }
+
+        .style-options {
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .style-btn {
+            background: var(--bg);
+            border: 1px solid var(--border-dim);
+            color: var(--text-dim);
+            font-family: inherit;
+            font-size: 0.8rem;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .style-btn:hover {
+            border-color: var(--green-dim);
+            color: var(--green-dim);
+        }
+
+        .style-btn.active {
+            border-color: var(--green);
+            color: var(--green);
+            background: var(--green-glow);
+            box-shadow: 0 0 10px var(--green-glow);
+        }
+
+        .preview-area {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 80px;
+            background: var(--bg);
+            border: 1px dashed var(--border-dim);
+            padding: 1.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .preview-area img {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .preview-placeholder {
+            color: var(--border-dim);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .preview-error {
+            color: var(--red);
+            font-size: 0.8rem;
+        }
+
+        .code-block {
+            position: relative;
+            background: var(--bg);
+            border: 1px solid var(--border-dim);
+            padding: 1rem;
+            margin-top: 0.5rem;
+            overflow-x: auto;
+        }
+
+        .code-block code {
+            color: var(--text);
+            font-size: 0.8rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .copy-btn {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background: var(--surface-alt);
+            border: 1px solid var(--border-dim);
+            color: var(--text-dim);
+            font-family: inherit;
+            font-size: 0.7rem;
+            padding: 0.3rem 0.6rem;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+        }
+
+        .copy-btn:hover {
+            border-color: var(--green-dim);
+            color: var(--green-dim);
+        }
+
+        .copy-btn.copied {
+            border-color: var(--green);
+            color: var(--green);
+        }
+
+        .input-row {
+            display: flex;
+            gap: 0.75rem;
+            align-items: flex-end;
+        }
+
+        .input-row .input-group {
+            flex: 1;
+        }
+
+        .generate-btn {
+            background: var(--green-glow);
+            border: 1px solid var(--green);
+            color: var(--green);
+            font-family: inherit;
+            font-size: 0.8rem;
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .generate-btn:hover {
+            background: var(--green-glow-strong);
+            box-shadow: 0 0 15px var(--green-glow);
+        }
+
+        .generate-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        footer {
+            text-align: center;
+            padding: 2rem 0;
+            border-top: 1px solid var(--border);
+            margin-top: 2rem;
+            color: var(--text-dim);
+            font-size: 0.75rem;
+        }
+
+        footer a {
+            color: var(--green-dim);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            color: var(--green);
+        }
+
+        .blink {
+            animation: blink 1s step-end infinite;
+        }
+
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+
+        @media (max-width: 600px) {
+            .input-row {
+                flex-direction: column;
+            }
+            .style-options {
+                flex-direction: column;
+            }
+            .style-btn {
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🦀 BCOS Badge Generator</h1>
+            <div class="subtitle">Generate embeddable badges for your certified open source projects</div>
+        </header>
+
+        <div class="section">
+            <div class="section-title">// Input</div>
+            <div class="input-row">
+                <div class="input-group">
+                    <label for="cert-input">Cert ID or Repo URL</label>
+                    <input type="text" id="cert-input" placeholder="BCOS-abc123 or https://github.com/owner/repo" autocomplete="off" spellcheck="false">
+                </div>
+                <button class="generate-btn" id="generate-btn" onclick="generateBadge()">
+                    Generate<span class="blink">_</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">// Badge Style</div>
+            <div class="style-options">
+                <button class="style-btn active" data-style="flat" onclick="setStyle(this)">Flat</button>
+                <button class="style-btn" data-style="flat-square" onclick="setStyle(this)">Flat-Square</button>
+                <button class="style-btn" data-style="for-the-badge" onclick="setStyle(this)">For-the-Badge</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">// Preview</div>
+            <div class="preview-area" id="preview-area">
+                <span class="preview-placeholder">[ Enter cert ID and generate ]</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">// Markdown</div>
+            <div class="code-block">
+                <button class="copy-btn" onclick="copyCode('md-code', this)">Copy</button>
+                <code id="md-code">[![BCOS](https://rustchain.org/bcos/badge/BCOS-xxx.svg)](https://rustchain.org/bcos/verify/BCOS-xxx)</code>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">// HTML</div>
+            <div class="code-block">
+                <button class="copy-btn" onclick="copyCode('html-code', this)">Copy</button>
+                <code id="html-code">&lt;a href="https://rustchain.org/bcos/verify/BCOS-xxx"&gt;&lt;img src="https://rustchain.org/bcos/badge/BCOS-xxx.svg" alt="BCOS Certified"&gt;&lt;/a&gt;</code>
+            </div>
+        </div>
+
+        <footer>
+            <a href="https://rustchain.org/bcos/">BCOS v2</a> — Beacon Certified Open Source<br>
+            Part of the <a href="https://github.com/Scottcjn/Rustchain">RustChain</a> ecosystem
+        </footer>
+    </div>
+
+    <script>
+        const API_BASE = 'https://rustchain.org';
+        let currentCertId = '';
+        let currentStyle = 'flat';
+
+        function setStyle(btn) {
+            document.querySelectorAll('.style-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentStyle = btn.dataset.style;
+            if (currentCertId) updateBadge();
+        }
+
+        function extractCertId(input) {
+            input = input.trim();
+            // Direct cert ID: BCOS-xxx or just xxx
+            if (/^BCOS-/i.test(input)) return input.toUpperCase();
+            if (/^[a-f0-9-]+$/i.test(input)) return 'BCOS-' + input;
+            // GitHub URL: extract repo path and hash it as a potential cert lookup
+            const ghMatch = input.match(/github\.com\/([^\/]+\/[^\/]+)/i);
+            if (ghMatch) return ghMatch[1]; // Return repo path for API lookup
+            return input;
+        }
+
+        async function generateBadge() {
+            const input = document.getElementById('cert-input').value;
+            if (!input.trim()) return;
+
+            const btn = document.getElementById('generate-btn');
+            btn.disabled = true;
+            btn.textContent = 'Loading...';
+
+            const extracted = extractCertId(input);
+
+            // If it looks like a repo path, try to look up the cert_id
+            if (extracted.includes('/') && !extracted.startsWith('BCOS-')) {
+                try {
+                    const resp = await fetch(`${API_BASE}/bcos/verify?repo=${encodeURIComponent(extracted)}`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        currentCertId = data.cert_id || data.certificate_id || extracted;
+                    } else {
+                        // Fallback: use repo path as cert ID
+                        currentCertId = extracted.replace('/', '-');
+                    }
+                } catch {
+                    currentCertId = extracted.replace('/', '-');
+                }
+            } else {
+                currentCertId = extracted;
+            }
+
+            updateBadge();
+            btn.disabled = false;
+            btn.innerHTML = 'Generate<span class="blink">_</span>';
+        }
+
+        function updateBadge() {
+            const badgeUrl = `${API_BASE}/bcos/badge/${currentCertId}.svg`;
+            const verifyUrl = `${API_BASE}/bcos/verify/${currentCertId}`;
+
+            // Update preview
+            const preview = document.getElementById('preview-area');
+            preview.innerHTML = `<img src="${badgeUrl}" alt="BCOS Badge" onerror="this.outerHTML='<span class=preview-error>[ Badge not found for ${currentCertId} ]</span>'">`;
+
+            // Update markdown code
+            const mdStyle = currentStyle !== 'flat' ? `?style=${currentStyle}` : '';
+            document.getElementById('md-code').textContent =
+                `[![BCOS](${badgeUrl}${mdStyle})](${verifyUrl})`;
+
+            // Update HTML code
+            document.getElementById('html-code').textContent =
+                `<a href="${verifyUrl}"><img src="${badgeUrl}${mdStyle}" alt="BCOS Certified"></a>`;
+        }
+
+        function copyCode(elementId, btn) {
+            const code = document.getElementById(elementId).textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = 'Copy';
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
+        }
+
+        // Allow Enter key to generate
+        document.getElementById('cert-input').addEventListener('keydown', e => {
+            if (e.key === 'Enter') generateBadge();
+        });
+    </script>
+</body>
+</html>
