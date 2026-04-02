@@ -4821,19 +4821,38 @@ def api_nodes():
 
 @app.route("/api/miners", methods=["GET"])
 def api_miners():
-    """Return list of attested miners with their PoA details"""
+    """
+    Return list of attested miners with their PoA details.
+    RIP-200 Bounty #2002: Added Pagination (limit, offset) to prevent DoS.
+    """
     import time as _time
     now = int(_time.time())
+    
+    # Pagination args
+    try:
+        limit = min(max(int(request.args.get("limit", 100)), 1), 1000)
+        offset = max(int(request.args.get("offset", 0)), 0)
+    except (ValueError, TypeError):
+        limit = 100
+        offset = 0
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
-        # Get all miners attested in the last hour
+        
+        # Get total count for metadata
+        total_count = c.execute("SELECT COUNT(*) FROM miner_attest_recent WHERE ts_ok > ?", (now - 3600,)).fetchone()[0]
+        
+        # Get paginated miners with their first attestation time (optimized subquery)
         rows = c.execute("""
-            SELECT miner, ts_ok, device_family, device_arch, entropy_score
-            FROM miner_attest_recent 
-            WHERE ts_ok > ?
-            ORDER BY ts_ok DESC
-        """, (now - 3600,)).fetchall()
+            SELECT 
+                r.miner, r.ts_ok, r.device_family, r.device_arch, r.entropy_score,
+                (SELECT MIN(h.ts_ok) FROM miner_attest_history h WHERE h.miner = r.miner) as first_ts
+            FROM miner_attest_recent r
+            WHERE r.ts_ok > ?
+            ORDER BY r.ts_ok DESC
+            LIMIT ? OFFSET ?
+        """, (now - 3600, limit, offset)).fetchall()
         
         miners = []
         for r in rows:
@@ -4858,22 +4877,10 @@ def api_miners():
             else:
                 hw_type = "Unknown/Other"
 
-            # Best-effort: join time (first attestation) from history table if present.
-            first_attest = None
-            try:
-                row2 = c.execute(
-                    "SELECT MIN(ts_ok) AS first_ts FROM miner_attest_history WHERE miner = ?",
-                    (r["miner"],),
-                ).fetchone()
-                if row2 and row2[0]:
-                    first_attest = int(row2[0])
-            except Exception:
-                first_attest = None
-
             miners.append({
                 "miner": r["miner"],
                 "last_attest": r["ts_ok"],
-                "first_attest": first_attest,
+                "first_attest": int(r["first_ts"]) if r["first_ts"] else None,
                 "device_family": r["device_family"],
                 "device_arch": r["device_arch"],
                 "hardware_type": hw_type,  # Museum System classification
@@ -4881,7 +4888,15 @@ def api_miners():
                 "antiquity_multiplier": mult
             })
     
-    return jsonify(miners)
+    return jsonify({
+        "miners": miners,
+        "pagination": {
+            "total": total_count,
+            "limit": limit,
+            "offset": offset,
+            "count": len(miners)
+        }
+    })
 
 
 @app.route("/api/badge/<miner_id>", methods=["GET"])
