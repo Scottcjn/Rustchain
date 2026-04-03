@@ -2,365 +2,335 @@
 
 ## Overview
 
-This guide will help you set up a RustChain miner node to participate in the network and earn RTC rewards. Mining in RustChain uses a Proof-of-Work consensus mechanism with energy-efficient algorithms.
+This guide will help you set up a RustChain miner to participate in the network and earn RTC rewards. RustChain uses **Proof-of-Antiquity (PoA)** consensus — rewards are based on hardware age, not computational power. Older machines earn higher multipliers.
 
-## Hardware Requirements
+> **New to RustChain?** Read the [Beginner Quickstart](QUICKSTART.md) for a step-by-step walkthrough with every command explained.
 
-### Minimum Requirements
-- **CPU**: 4 cores, 2.5 GHz
-- **RAM**: 8 GB
-- **Storage**: 50 GB SSD
-- **Network**: Stable broadband connection (10 Mbps+)
-- **Operating System**: Linux (Ubuntu 20.04+), macOS 10.15+, or Windows 10+
+---
 
-### Recommended Requirements
-- **CPU**: 8+ cores, 3.0+ GHz (AMD Ryzen 7 or Intel i7)
-- **RAM**: 16+ GB
-- **Storage**: 100+ GB NVMe SSD
-- **Network**: High-speed connection (50+ Mbps)
-- **GPU**: Optional but beneficial (NVIDIA GTX 1660+ or AMD RX 580+)
+## How Proof-of-Antiquity Works
 
-### Professional Mining Setup
-- **CPU**: 16+ cores (AMD Threadripper or Intel Xeon)
-- **RAM**: 32+ GB
-- **Storage**: 500+ GB NVMe SSD
-- **GPU**: Multiple high-end GPUs (RTX 3070+)
-- **Network**: Dedicated connection with low latency
+Unlike Proof-of-Work (where faster hardware wins), Proof-of-Antiquity rewards machines for *surviving*. Each unique hardware device gets exactly **1 vote per epoch**, and rewards are split equally then multiplied by an **antiquity multiplier** based on hardware age.
+
+### Hardware Fingerprinting
+
+Every miner must prove their hardware is real, not emulated. Six checks that VMs cannot fake:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ 1. Clock-Skew & Oscillator Drift  ← Silicon aging       │
+│ 2. Cache Timing Fingerprint       ← L1/L2/L3 latency    │
+│ 3. SIMD Unit Identity             ← AltiVec/SSE/NEON     │
+│ 4. Thermal Drift Entropy          ← Heat curves unique   │
+│ 5. Instruction Path Jitter        ← Microarch patterns   │
+│ 6. Anti-Emulation Detection       ← Catches VMs/emus     │
+└─────────────────────────────────────────────────────────┘
+```
+
+A VM pretending to be a G4 will fail. Real vintage silicon has unique aging patterns that cannot be spoofed.
+
+### Anti-VM Enforcement
+
+VMs (VMware, VirtualBox, QEMU, WSL) are detected and receive **1 billionth** of normal rewards. Real hardware only.
+
+---
+
+## Hardware Multipliers
+
+| Hardware | Multiplier | Era |
+|----------|-----------|-----|
+| DEC VAX-11/780 (1977) | **3.5x** | MYTHIC |
+| Acorn ARM2 (1987) | **4.0x** | MYTHIC |
+| Motorola 68000 (1979) | **3.0x** | LEGENDARY |
+| Sun SPARC (1987) | **2.9x** | LEGENDARY |
+| PowerPC G4 (2003) | **2.5x** | ANCIENT |
+| PowerPC G5 | **2.0x** | ANCIENT |
+| RISC-V (2014) | **1.4x** | EXOTIC |
+| Apple Silicon M1-M4 | **1.2x** | MODERN |
+| Modern x86_64 | **0.8x** | MODERN |
+| Modern ARM NAS/SBC | **0.0005x** | PENALTY |
+
+**1 RTC ≈ $0.10 USD** · Every 10 minutes, 1.5 RTC is split among all active miners.
+
+---
 
 ## Installation
 
-### Prerequisites
-
-1. **Install Rust** (if not already installed):
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source ~/.cargo/env
-```
-
-2. **Install Git**:
-```bash
-# Ubuntu/Debian
-sudo apt update && sudo apt install git
-
-# macOS
-brew install git
-
-# Windows
-# Download from https://git-scm.com/download/win
-```
-
-3. **Install build dependencies**:
-```bash
-# Ubuntu/Debian
-sudo apt install build-essential pkg-config libssl-dev
-
-# macOS
-xcode-select --install
-
-# Windows (using chocolatey)
-choco install visualstudio2019-workload-vctools
-```
-
-### Step 1: Clone the Repository
+### One-Line Install
 
 ```bash
-git clone https://github.com/rustchain/rustchain.git
-cd rustchain
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 ```
 
-### Step 2: Build the Miner
+**What this does:**
+
+1. Detects your OS and CPU architecture
+2. Installs Python 3 if needed (Linux only)
+3. Downloads the miner to `~/.rustchain/`
+4. Creates a Python virtual environment
+5. Asks you to pick a wallet name
+6. Sets up auto-start on boot
+7. Tests the connection to the network
+
+### Install with a Specific Wallet Name
 
 ```bash
-# Build optimized release version
-cargo build --release --bin miner
-
-# The binary will be available at target/release/miner
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet my-wallet
 ```
 
-### Step 3: Configuration
-
-Create a mining configuration file:
+### Dry Run (Preview Without Installing)
 
 ```bash
-mkdir -p ~/.rustchain
-cp config/miner.example.toml ~/.rustchain/miner.toml
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --dry-run
 ```
 
-Edit the configuration file:
+### Supported Platforms
 
-```toml
-[network]
-# Network to connect to (mainnet, testnet)
-network = "testnet"
+Linux (x86_64, ppc64le, aarch64, mips, sparc, m68k, riscv64, ia64, s390x), macOS (Intel, Apple Silicon, PowerPC), IBM POWER8, Windows, Mac OS X Tiger/Leopard, Raspberry Pi. **If it runs Python, it can mine.**
 
-# Bootstrap nodes
-bootstrap_nodes = [
-    "tcp://bootstrap1.rustchain.org:8080",
-    "tcp://bootstrap2.rustchain.org:8080"
-]
+---
 
-[mining]
-# Your wallet address for rewards
-wallet_address = "your_wallet_address_here"
-
-# Number of mining threads (0 = auto-detect)
-threads = 0
-
-# Mining algorithm (blake3, sha256)
-algorithm = "blake3"
-
-# Enable GPU mining if available
-gpu_enabled = false
-
-[logging]
-level = "info"
-file = "~/.rustchain/miner.log"
-```
-
-### Step 4: Create a Wallet
-
-If you don't have a wallet address:
+## Verify the Install
 
 ```bash
-# Generate a new wallet
-./target/release/wallet generate --output ~/.rustchain/wallet.json
-
-# Get your address
-./target/release/wallet address --wallet ~/.rustchain/wallet.json
+ls ~/.rustchain/
 ```
 
-Update your `miner.toml` with the generated wallet address.
+You should see:
+
+```
+rustchain_miner.py      # The miner script
+fingerprint_checks.py   # Hardware verification module
+start.sh                # Quick-start script
+venv/                   # Python virtual environment
+```
+
+Check the network is reachable:
+
+```bash
+curl -sk https://rustchain.org/health
+```
+
+Expected response:
+
+```json
+{
+  "ok": true,
+  "version": "2.2.1-rip200",
+  "uptime_s": 3966,
+  "db_rw": true
+}
+```
+
+---
 
 ## Running the Miner
 
-### Basic Mining
+### Auto-Start (Default)
 
-Start mining with default settings:
+The installer sets up auto-start. Check status:
 
+**Linux (systemd):**
 ```bash
-./target/release/miner --config ~/.rustchain/miner.toml
+systemctl --user status rustchain-miner
+journalctl --user -u rustchain-miner -f
 ```
 
-### Advanced Options
-
+**macOS (launchd):**
 ```bash
-# Specify custom configuration
-./target/release/miner --config /path/to/custom/config.toml
-
-# Override thread count
-./target/release/miner --threads 8
-
-# Enable verbose logging
-./target/release/miner --log-level debug
-
-# Mine on specific algorithm
-./target/release/miner --algorithm blake3
-
-# Enable GPU mining
-./target/release/miner --gpu
-```
-
-### Mining Pool
-
-To join a mining pool:
-
-```toml
-[pool]
-enabled = true
-url = "stratum+tcp://pool.rustchain.org:4444"
-username = "your_wallet_address"
-password = "worker_name"
-```
-
-## Monitoring
-
-### Command Line Monitoring
-
-Check mining status:
-
-```bash
-# View current mining stats
-./target/release/miner status
-
-# View mining history
-./target/release/miner history --last 24h
-
-# Check network hashrate
-./target/release/miner network-stats
-```
-
-### Log Files
-
-Monitor logs in real-time:
-
-```bash
+launchctl list | grep rustchain
 tail -f ~/.rustchain/miner.log
 ```
 
-### Web Dashboard
-
-Access the built-in web dashboard at `http://localhost:8081` when mining is active.
-
-## Optimization Tips
-
-### CPU Mining Optimization
-
-1. **Thread Count**: Set threads to match your CPU cores
-2. **CPU Affinity**: Pin mining threads to specific cores
-3. **Power Management**: Disable CPU frequency scaling
-4. **Cooling**: Ensure adequate cooling for sustained performance
-
-### GPU Mining Optimization
-
-1. **Driver Updates**: Keep GPU drivers current
-2. **Memory Clock**: Optimize memory clock speeds
-3. **Power Limit**: Adjust power limits for efficiency
-4. **Temperature**: Monitor GPU temperatures
-
-### System Optimization
+### Manual Start
 
 ```bash
-# Increase file descriptor limits
-echo "* soft nofile 65536" >> /etc/security/limits.conf
-echo "* hard nofile 65536" >> /etc/security/limits.conf
-
-# Optimize network buffers
-echo "net.core.rmem_max = 16777216" >> /etc/sysctl.conf
-echo "net.core.wmem_max = 16777216" >> /etc/sysctl.conf
-
-# Apply changes
-sysctl -p
+~/.rustchain/start.sh
 ```
+
+Or run the miner directly:
+
+```bash
+~/.rustchain/venv/bin/python ~/.rustchain/rustchain_miner.py --wallet YOUR_WALLET_NAME
+```
+
+### What You Will See
+
+When the miner starts, it runs 6 hardware fingerprint checks:
+
+```
+[1/6] Clock-Skew & Oscillator Drift... PASS
+[2/6] Cache Timing Fingerprint... PASS
+[3/6] SIMD Unit Identity... PASS
+[4/6] Thermal Drift Entropy... PASS
+[5/6] Instruction Path Jitter... PASS
+[6/6] Anti-Emulation Checks... PASS
+
+OVERALL RESULT: ALL CHECKS PASSED
+```
+
+Then it begins attesting to the network every few minutes:
+
+```
+[+] Attestation accepted. Next attestation in 300s.
+```
+
+---
+
+## Checking Your Balance
+
+Rewards settle every **10 minutes** (one epoch). After your first epoch:
+
+```bash
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME"
+```
+
+Example:
+
+```bash
+curl -sk "https://rustchain.org/wallet/balance?miner_id=scott-laptop"
+```
+
+Response:
+
+```json
+{
+  "miner_id": "scott-laptop",
+  "balance_rtc": 0.119051
+}
+```
+
+### View All Active Miners
+
+```bash
+curl -sk https://rustchain.org/api/miners
+```
+
+### Check Mining Eligibility
+
+```bash
+curl -sk "https://rustchain.org/lottery/eligibility?miner_id=YOUR_WALLET_NAME"
+```
+
+---
+
+## Epoch Rewards
+
+```
+Epoch: 10 minutes  |  Pool: 1.5 RTC/epoch  |  Split by antiquity weight
+
+G4 Mac (2.5x):     0.30 RTC  ████████████████████
+G5 Mac (2.0x):     0.24 RTC  ████████████████
+Modern PC (0.8x):  0.12 RTC  ████████
+```
+
+Over 24 hours (144 epochs), a G4 Mac earns roughly **43 RTC** ($4.30) while a modern PC earns roughly **17 RTC** ($1.70).
+
+---
 
 ## Troubleshooting
 
-### Common Issues
+### Miner Not Earning Rewards
 
-**Issue**: Miner fails to connect to network
-```bash
-# Solution: Check network connectivity and bootstrap nodes
-ping bootstrap1.rustchain.org
-netstat -an | grep 8080
-```
+1. **Confirm your miner appears in the active list:**
+   ```bash
+   curl -sk https://rustchain.org/api/miners
+   ```
+   Look for your wallet name in the output.
 
-**Issue**: Low hashrate
-```bash
-# Check CPU usage
-htop
+2. **Confirm you are querying the right wallet:**
+   ```bash
+   curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_EXACT_WALLET_NAME"
+   ```
 
-# Verify thread allocation
-./target/release/miner status --verbose
+3. **Wait for epoch settlement** — rewards settle every 10 minutes. Wait at least 2-3 epochs (20-30 minutes).
 
-# Test different algorithms
-./target/release/miner benchmark
-```
+### Virtual Machines Get Almost No Rewards
 
-**Issue**: High memory usage
-```bash
-# Monitor memory usage
-free -h
+This is by design. VMs are detected by the anti-emulation fingerprint check and receive roughly 1 billionth of normal rewards. Run the miner on **bare metal**, not inside a VM.
 
-# Check for memory leaks
-valgrind --tool=memcheck --leak-check=full ./target/release/miner
-```
+### Python 3 Not Found
 
-### Performance Debugging
+- **Linux:** The installer tries to install Python automatically.
+- **macOS:** `brew install python3` or download from https://python.org
+- **Windows:** Download from https://python.org/downloads and check "Add to PATH"
+
+### SSL Certificate Errors
+
+Add `-k` to curl commands to accept the self-signed TLS certificate:
 
 ```bash
-# Enable performance profiling
-perf record ./target/release/miner
-perf report
-
-# Check system resources
-iostat -x 1
-vmstat 1
+curl -sk https://rustchain.org/health
 ```
 
-### Network Issues
+The miner script handles this automatically.
+
+### Uninstall
 
 ```bash
-# Test connectivity to bootstrap nodes
-telnet bootstrap1.rustchain.org 8080
-
-# Check firewall settings
-sudo ufw status
-
-# Verify port forwarding (if applicable)
-netcat -l -p 8080
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --uninstall
 ```
+
+---
 
 ## Security Considerations
 
 ### Wallet Security
 
-1. **Backup**: Always backup your wallet file
-2. **Encryption**: Encrypt wallet with strong passphrase
-3. **Storage**: Store backups in secure, offline locations
+- **Write down your wallet name** — this is how you receive RTC
+- Each hardware fingerprint is bound to one wallet
+- All transfers are cryptographically signed with Ed25519
 
 ### Network Security
 
-1. **Firewall**: Configure firewall to allow only necessary ports
-2. **VPN**: Consider using VPN for enhanced privacy
-3. **Updates**: Keep software updated with latest security patches
+- The node uses a self-signed TLS certificate (expected behavior)
+- Miners pin node certificates for additional security
+- Container detection catches Docker, LXC, K8s at attestation
 
-### Operational Security
+---
 
-```bash
-# Run miner as non-root user
-sudo useradd -m -s /bin/bash rustchain-miner
-sudo -u rustchain-miner ./target/release/miner
-```
-
-## Profitability Calculator
-
-Calculate expected earnings:
+## Monitoring & Network Data
 
 ```bash
-# Check current difficulty and reward
-./target/release/miner calculator --hashrate YOUR_HASHRATE --power POWER_CONSUMPTION
+# Node health
+curl -sk https://rustchain.org/health
+
+# Current epoch
+curl -sk https://rustchain.org/epoch
+
+# Active miners
+curl -sk https://rustchain.org/api/miners
+
+# Connected nodes
+curl -sk https://rustchain.org/api/nodes
+
+# Block explorer (web UI)
+open https://rustchain.org/explorer
 ```
 
-Factors affecting profitability:
-- Network difficulty
-- Block rewards
-- Electricity costs
-- Hardware efficiency
-- Pool fees (if applicable)
+---
 
-## FAQ
+## Earning More with Bounties
 
-**Q: How long does it take to earn first RTC?**
-A: Depends on network difficulty and your hashrate. On testnet, blocks are found more frequently.
+Mining is passive income. For bigger payouts, contribute code:
 
-**Q: Can I mine on multiple machines?**
-A: Yes, each machine needs its own configuration with the same wallet address.
+**https://github.com/Scottcjn/rustchain-bounties/issues**
 
-**Q: What happens if my miner goes offline?**
-A: Mining automatically resumes when connection is restored. No rewards are lost for completed work.
+| Tier | Reward | Examples |
+|------|--------|----------|
+| Micro | 1-10 RTC | Typo fix, docs, test |
+| Standard | 20-50 RTC | Feature, refactor, integration |
+| Major | 75-100 RTC | Security fix, protocol improvement |
+| Critical | 100-200 RTC | Vulnerability discovery, consensus |
 
-**Q: How do I update the miner?**
-A: Pull latest changes and rebuild:
-```bash
-git pull origin main
-cargo build --release --bin miner
-```
-
-**Q: Can I mine and run a full node simultaneously?**
-A: Yes, but ensure sufficient system resources for both processes.
+---
 
 ## Getting Help
 
-- **Documentation**: https://docs.rustchain.org
-- **Discord**: https://discord.gg/rustchain
-- **GitHub Issues**: https://github.com/rustchain/rustchain/issues
-- **Mining Forum**: https://forum.rustchain.org/mining
-
-## Contributing
-
-Help improve mining by:
-- Reporting bugs and performance issues
-- Contributing optimizations
-- Updating documentation
-- Sharing mining strategies
+- **Beginner Guide:** [QUICKSTART.md](QUICKSTART.md)
+- **API Reference:** [api-reference.md](api-reference.md)
+- **FAQ & Troubleshooting:** [FAQ_TROUBLESHOOTING.md](FAQ_TROUBLESHOOTING.md)
+- **GitHub Issues:** https://github.com/Scottcjn/Rustchain/issues
+- **Bounties:** https://github.com/Scottcjn/rustchain-bounties/issues
 
 Happy mining! 🚀
