@@ -45,12 +45,12 @@ class TestAttestNonceReplay(unittest.TestCase):
 
     def test_nonce_replay_rejected(self):
         with self._conn() as conn:
+            conn.execute("INSERT INTO nonces (nonce, expires_at) VALUES (?, ?)", ("nonce-1", 1100))
             ok, err, _ = self.mod.attest_validate_and_store_nonce(
                 conn,
                 miner="miner-1",
                 nonce="nonce-1",
                 now_ts=1000,
-                nonce_ts=1000,
             )
             self.assertTrue(ok)
             self.assertIsNone(err)
@@ -60,49 +60,43 @@ class TestAttestNonceReplay(unittest.TestCase):
                 miner="miner-1",
                 nonce="nonce-1",
                 now_ts=1001,
-                nonce_ts=1001,
             )
             self.assertFalse(ok)
             self.assertEqual(err, "nonce_replay")
 
-    def test_nonce_freshness_with_skew_window(self):
+    def test_attestation_requires_server_issued_challenge(self):
         with self._conn() as conn:
             ok, err, _ = self.mod.attest_validate_and_store_nonce(
                 conn,
                 miner="miner-1",
                 nonce="nonce-stale",
                 now_ts=1000,
-                nonce_ts=900,
-                skew_seconds=60,
             )
             self.assertFalse(ok)
-            self.assertEqual(err, "nonce_stale")
+            self.assertEqual(err, "challenge_invalid")
 
+    def test_expired_challenge_is_rejected(self):
+        with self._conn() as conn:
+            conn.execute("INSERT INTO nonces (nonce, expires_at) VALUES (?, ?)", ("expired-challenge", 950))
             ok, err, _ = self.mod.attest_validate_and_store_nonce(
                 conn,
                 miner="miner-1",
-                nonce="nonce-fresh",
+                nonce="expired-challenge",
                 now_ts=1000,
-                nonce_ts=950,
-                skew_seconds=60,
             )
-            self.assertTrue(ok)
-            self.assertIsNone(err)
+            self.assertFalse(ok)
+            self.assertEqual(err, "challenge_invalid")
 
-    def test_hex_nonce_without_timestamp_is_backward_compatible(self):
+    def test_challenge_style_nonce_cannot_bypass_with_client_timestamp(self):
         with self._conn() as conn:
-            nonce_ts = self.mod.extract_attestation_timestamp({}, {}, "a7f1c4e9")
-            self.assertIsNone(nonce_ts)
-
             ok, err, _ = self.mod.attest_validate_and_store_nonce(
                 conn,
-                miner="miner-legacy",
-                nonce="a7f1c4e9",
+                miner="miner-1",
+                nonce="b" * 64,
                 now_ts=1000,
-                nonce_ts=nonce_ts,
             )
-            self.assertTrue(ok)
-            self.assertIsNone(err)
+            self.assertFalse(ok)
+            self.assertEqual(err, "challenge_invalid")
 
     def test_challenge_is_one_time(self):
         with self._conn() as conn:
@@ -119,20 +113,16 @@ class TestAttestNonceReplay(unittest.TestCase):
     def test_expired_entries_cleanup(self):
         with self._conn() as conn:
             conn.execute(
+                "INSERT INTO nonces (nonce, expires_at) VALUES (?, ?)",
+                ("old-challenge", 950),
+            )
+            conn.execute(
                 "INSERT INTO used_nonces (nonce, miner_id, first_seen, expires_at) VALUES (?, ?, ?, ?)",
                 ("old-nonce", "miner-1", 900, 950),
             )
             self.mod.attest_cleanup_expired(conn, now_ts=1000)
-
-            ok, err, _ = self.mod.attest_validate_and_store_nonce(
-                conn,
-                miner="miner-1",
-                nonce="old-nonce",
-                now_ts=1000,
-                nonce_ts=None,
-            )
-            self.assertTrue(ok)
-            self.assertIsNone(err)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM nonces").fetchone()[0], 0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM used_nonces").fetchone()[0], 0)
 
 
 if __name__ == "__main__":

@@ -54,6 +54,16 @@ def _init_attestation_db(db_path: Path) -> None:
             miner_id TEXT PRIMARY KEY,
             pubkey_hex TEXT
         );
+        CREATE TABLE nonces (
+            nonce TEXT PRIMARY KEY,
+            expires_at INTEGER
+        );
+        CREATE TABLE used_nonces (
+            nonce TEXT PRIMARY KEY,
+            miner_id TEXT NOT NULL,
+            first_seen INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL
+        );
         CREATE TABLE tickets (
             ticket_id TEXT PRIMARY KEY,
             expires_at INTEGER NOT NULL,
@@ -180,9 +190,16 @@ def _shared_fleet_fingerprint() -> dict:
     }
 
 
+def _attach_live_challenge(client, payload: dict) -> dict:
+    response = client.post("/attest/challenge", json={})
+    assert response.status_code == 200
+    payload["report"]["nonce"] = response.get_json()["nonce"]
+    return payload
+
+
 def test_client_ip_from_request_ignores_spoofed_x_forwarded_for(attest_client):
     client, db_path = attest_client
-    payload = {
+    payload = _attach_live_challenge(client, {
         "miner": "spoof-demo-1",
         "device": {
             "device_family": "x86",
@@ -201,7 +218,7 @@ def test_client_ip_from_request_ignores_spoofed_x_forwarded_for(attest_client):
             "commitment": "commitment-001",
         },
         "fingerprint": _minimal_valid_fingerprint(0.05),
-    }
+    })
 
     response = client.post(
         "/attest/submit",
@@ -226,7 +243,7 @@ def test_client_ip_from_request_ignores_spoofed_x_forwarded_for(attest_client):
 
 def test_client_ip_from_request_ignores_spoofed_x_real_ip_from_untrusted_peer(attest_client):
     client, db_path = attest_client
-    payload = {
+    payload = _attach_live_challenge(client, {
         "miner": "spoof-demo-2",
         "device": {
             "device_family": "x86",
@@ -245,7 +262,7 @@ def test_client_ip_from_request_ignores_spoofed_x_real_ip_from_untrusted_peer(at
             "commitment": "commitment-002",
         },
         "fingerprint": _minimal_valid_fingerprint(0.06),
-    }
+    })
 
     response = client.post(
         "/attest/submit",
@@ -269,7 +286,7 @@ def test_client_ip_from_request_ignores_spoofed_x_real_ip_from_untrusted_peer(at
 def test_client_ip_from_request_accepts_x_real_ip_from_trusted_proxy(attest_client, monkeypatch):
     client, db_path = attest_client
     monkeypatch.setenv("RC_TRUSTED_PROXY_IPS", "127.0.0.1/32,::1/128")
-    payload = {
+    payload = _attach_live_challenge(client, {
         "miner": "proxy-demo-1",
         "device": {
             "device_family": "x86",
@@ -288,7 +305,7 @@ def test_client_ip_from_request_accepts_x_real_ip_from_trusted_proxy(attest_clie
             "commitment": "commitment-003",
         },
         "fingerprint": _minimal_valid_fingerprint(0.07),
-    }
+    })
 
     response = client.post(
         "/attest/submit",
