@@ -1,3 +1,5 @@
+Changed: 0 -> 0
+SHA: 5f470910390ad4504af2dcf6a01fc51f42f9297e
 # Contributing to RustChain
 
 Thanks for your interest in contributing to RustChain! We pay bounties in RTC tokens for quality contributions.
