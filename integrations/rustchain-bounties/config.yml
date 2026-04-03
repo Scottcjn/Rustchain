@@ -15,7 +15,7 @@ tip_bot:
     max_per_hour: 20
 
   # RustChain node for balance checks (set RUSTCHAIN_NODE_URL secret to override)
-  rustchain_node_url: "https://bulbous-bouffant.metalseed.net"
+  rustchain_node_url: "https://rustchain.org"
 
   # Payout mode: "log_only" (v1 — maintainer manually sends RTC) or "auto" (future)
   payout_mode: log_only

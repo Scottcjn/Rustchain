@@ -154,11 +154,11 @@ git add tip_state.json && git commit -m "chore: mark tip paid [skip ci]"
 
 The bot is designed to work with the RustChain ecosystem:
 
-- **Node API:** `https://bulbous-bouffant.metalseed.net` (default, override via `RUSTCHAIN_NODE_URL`)
+- **Node API:** `https://rustchain.org` (default, override via `RUSTCHAIN_NODE_URL`)
 - **Balance check:** `GET /wallet/balance?miner_id=<wallet_id>`
 - **Miners list:** `GET /api/miners`
 
-> **SSL note:** The default node uses a self-signed certificate. The bot uses
+> **SSL note:** The node uses a self-signed certificate. The bot uses
 > `verify=False` for node queries (consistent with existing RustChain tooling).
 > Do **not** disable SSL verification for the GitHub API calls.
 
@@ -219,7 +219,7 @@ tip_bot:
   rate_limit:
     max_per_hour: 20      # Max tips per maintainer per hour
 
-  rustchain_node_url: "https://bulbous-bouffant.metalseed.net"
+  rustchain_node_url: "https://rustchain.org"
   payout_mode: log_only   # "log_only" (v1) or "auto" (v2, future)
   state_file: "tip_state.json"
 ```
@@ -246,9 +246,15 @@ rate limiting, and comment formatting.
 tip_bot.py                      Main bot — parsing, validation, event loop
 auth.py                         Webhook verification + maintainer allowlist
 state.py                        JSON state persistence + idempotency
-config.yml                      Bot configuration
+config.yml                      Bot configuration (this file)
 tip_state.json                  Live tip log (committed by the bot)
 test_tip_bot.py                 Full test suite (60 tests)
 requirements.txt                Python dependencies
 README.md                       This file
 ```
+
+> **Note:** The Python source files (`tip_bot.py`, `auth.py`, `state.py`, `test_tip_bot.py`,
+> `requirements.txt`) live in the upstream repository
+> [github.com/mtarcure/rustchain-tip-bot](https://github.com/mtarcure/rustchain-tip-bot).
+> This directory contains only `config.yml` and this README. Follow the Setup section
+> to copy the full project into your repo.

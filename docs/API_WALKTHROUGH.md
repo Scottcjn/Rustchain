@@ -5,7 +5,7 @@ This guide walks you through making your first API calls to RustChain.
 ## Base URL
 
 ```
-https://50.28.86.131
+https://rustchain.org
 ```
 
 > ⚠️ **Note**: The node uses a self-signed certificate. Use `-k` or `--insecure` with curl.
@@ -17,7 +17,7 @@ https://50.28.86.131
 The simplest way to verify the node is running:
 
 ```bash
-curl -k "https://50.28.86.131/health"
+curl -k "https://rustchain.org/health"
 ```
 
 **Response:**
@@ -39,7 +39,7 @@ curl -k "https://50.28.86.131/health"
 Query any wallet balance using the `miner_id` parameter:
 
 ```bash
-curl -k "https://50.28.86.131/wallet/balance?miner_id=tomisnotcat"
+curl -k "https://rustchain.org/wallet/balance?miner_id=tomisnotcat"
 ```
 
 **Response:**
@@ -66,7 +66,7 @@ curl -k "https://50.28.86.131/wallet/balance?miner_id=tomisnotcat"
 If you're mining, check your eligibility status:
 
 ```bash
-curl -k "https://50.28.86.131/lottery/eligibility?miner_id=tomisnotcat"
+curl -k "https://rustchain.org/lottery/eligibility?miner_id=tomisnotcat"
 ```
 
 **Response (not eligible):**
@@ -96,7 +96,7 @@ curl -k "https://50.28.86.131/lottery/eligibility?miner_id=tomisnotcat"
 ## 4. List Active Miners
 
 ```bash
-curl -k "https://50.28.86.131/api/miners"
+curl -k "https://rustchain.org/api/miners"
 ```
 
 **Response (truncated):**
@@ -199,7 +199,7 @@ payload = {
 
 # Send transfer
 response = requests.post(
-    "https://50.28.86.131/wallet/transfer/signed",
+    "https://rustchain.org/wallet/transfer/signed",
     json=payload,
     verify=False  # For self-signed cert
 )
@@ -237,7 +237,7 @@ pip install rustchain-sdk
 ```python
 from rustchain_sdk import Client
 
-client = Client("https://50.28.86.131")
+client = Client("https://rustchain.org")
 
 # Check balance
 balance = client.get_balance("tomisnotcat")
