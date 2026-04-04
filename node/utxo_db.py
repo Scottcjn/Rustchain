@@ -334,6 +334,9 @@ class UtxoDB:
 
             # -- conservation check (skip for coinbase) ----------------------
             output_total = sum(o['value_nrtc'] for o in outputs)
+            if fee < 0:
+                conn.execute("ROLLBACK")
+                return False
             if inputs and (output_total + fee) > input_total:
                 conn.execute("ROLLBACK")
                 return False
