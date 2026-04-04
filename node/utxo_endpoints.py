@@ -1,0 +1,367 @@
+"""
+RustChain UTXO Transaction Engine (Phase 3)
+=============================================
+
+Flask Blueprint providing UTXO-native endpoints alongside the existing
+account-based transfer system.
+
+Endpoints:
+    GET  /utxo/balance/<address>   - UTXO-derived balance
+    GET  /utxo/boxes/<address>     - Unspent boxes for address
+    GET  /utxo/box/<box_id>        - Single box lookup
+    GET  /utxo/state_root          - Current Merkle state root
+    GET  /utxo/integrity           - UTXO vs account model comparison
+    GET  /utxo/mempool             - Pending transactions
+    GET  /utxo/stats               - UTXO set statistics
+    POST /utxo/transfer            - UTXO-native signed transfer
+"""
+
+import hashlib
+import json
+import sqlite3
+import time
+
+from flask import Blueprint, request, jsonify
+
+from utxo_db import UtxoDB, coin_select, address_to_proposition, UNIT
+
+utxo_bp = Blueprint('utxo', __name__, url_prefix='/utxo')
+
+# These get set by register_utxo_blueprint() from the main server
+_utxo_db: UtxoDB = None
+_db_path: str = None
+_verify_sig_fn = None      # verify_rtc_signature(pubkey_hex, message, sig_hex) -> bool
+_addr_from_pk_fn = None    # address_from_pubkey(pubkey_hex) -> str
+_current_slot_fn = None    # current_slot() -> int
+_dual_write: bool = False
+
+
+def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
+                            verify_sig_fn, addr_from_pk_fn,
+                            current_slot_fn, dual_write: bool = False):
+    """
+    Wire up the UTXO blueprint with dependencies from the main server.
+    Call this after init_db().
+    """
+    global _utxo_db, _db_path, _verify_sig_fn, _addr_from_pk_fn
+    global _current_slot_fn, _dual_write
+
+    _utxo_db = utxo_db
+    _db_path = db_path
+    _verify_sig_fn = verify_sig_fn
+    _addr_from_pk_fn = addr_from_pk_fn
+    _current_slot_fn = current_slot_fn
+    _dual_write = dual_write
+
+    app.register_blueprint(utxo_bp)
+    print(f"[UTXO] Endpoints registered at /utxo/* (dual_write={'ON' if dual_write else 'OFF'})")
+
+
+# ---------------------------------------------------------------------------
+# Read endpoints
+# ---------------------------------------------------------------------------
+
+@utxo_bp.route('/balance/<address>')
+def utxo_balance(address):
+    """Get UTXO-derived balance for an address."""
+    balance_nrtc = _utxo_db.get_balance(address)
+    boxes = _utxo_db.get_unspent_for_address(address)
+    return jsonify({
+        'address': address,
+        'balance_nrtc': balance_nrtc,
+        'balance_rtc': balance_nrtc / UNIT,
+        'utxo_count': len(boxes),
+    })
+
+
+@utxo_bp.route('/boxes/<address>')
+def utxo_boxes(address):
+    """Get all unspent boxes for an address."""
+    boxes = _utxo_db.get_unspent_for_address(address)
+    return jsonify({
+        'address': address,
+        'count': len(boxes),
+        'boxes': [
+            {
+                'box_id': b['box_id'],
+                'value_nrtc': b['value_nrtc'],
+                'value_rtc': b['value_nrtc'] / UNIT,
+                'creation_height': b['creation_height'],
+                'transaction_id': b['transaction_id'],
+                'output_index': b['output_index'],
+                'registers': json.loads(b.get('registers_json', '{}')),
+            }
+            for b in boxes
+        ],
+    })
+
+
+@utxo_bp.route('/box/<box_id>')
+def utxo_box(box_id):
+    """Get a single box by ID (spent or unspent)."""
+    box = _utxo_db.get_box(box_id)
+    if not box:
+        return jsonify({'error': 'Box not found'}), 404
+    return jsonify({
+        'box_id': box['box_id'],
+        'value_nrtc': box['value_nrtc'],
+        'value_rtc': box['value_nrtc'] / UNIT,
+        'owner_address': box['owner_address'],
+        'creation_height': box['creation_height'],
+        'transaction_id': box['transaction_id'],
+        'output_index': box['output_index'],
+        'spent': box['spent_at'] is not None,
+        'spent_at': box['spent_at'],
+        'spent_by_tx': box['spent_by_tx'],
+        'registers': json.loads(box.get('registers_json', '{}')),
+        'tokens': json.loads(box.get('tokens_json', '[]')),
+    })
+
+
+@utxo_bp.route('/state_root')
+def utxo_state_root():
+    """Current Merkle state root of the UTXO set."""
+    root = _utxo_db.compute_state_root()
+    count = _utxo_db.count_unspent()
+    return jsonify({
+        'state_root': root,
+        'unspent_count': count,
+        'timestamp': int(time.time()),
+    })
+
+
+@utxo_bp.route('/integrity')
+def utxo_integrity():
+    """Compare UTXO totals against account model."""
+    # Get account model total
+    account_total = 0
+    try:
+        conn = sqlite3.connect(_db_path)
+        row = conn.execute(
+            "SELECT COALESCE(SUM(amount_i64), 0) FROM balances"
+        ).fetchone()
+        account_total = row[0] if row else 0
+        conn.close()
+    except Exception:
+        account_total = None
+
+    result = _utxo_db.integrity_check(expected_total=account_total)
+    if account_total is not None:
+        result['account_total_nrtc'] = account_total
+        result['account_total_rtc'] = account_total / UNIT
+    return jsonify(result)
+
+
+@utxo_bp.route('/mempool')
+def utxo_mempool():
+    """View pending mempool transactions."""
+    candidates = _utxo_db.mempool_get_block_candidates(max_count=50)
+    return jsonify({
+        'count': len(candidates),
+        'transactions': candidates,
+    })
+
+
+@utxo_bp.route('/stats')
+def utxo_stats():
+    """UTXO set statistics."""
+    conn = _utxo_db._conn()
+    try:
+        unspent = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(value_nrtc),0) AS total FROM utxo_boxes WHERE spent_at IS NULL"
+        ).fetchone()
+        spent = conn.execute(
+            "SELECT COUNT(*) AS n FROM utxo_boxes WHERE spent_at IS NOT NULL"
+        ).fetchone()
+        txs = conn.execute(
+            "SELECT COUNT(*) AS n FROM utxo_transactions"
+        ).fetchone()
+        mempool = conn.execute(
+            "SELECT COUNT(*) AS n FROM utxo_mempool"
+        ).fetchone()
+
+        return jsonify({
+            'unspent_boxes': unspent['n'],
+            'total_value_nrtc': unspent['total'],
+            'total_value_rtc': unspent['total'] / UNIT,
+            'spent_boxes': spent['n'],
+            'total_transactions': txs['n'],
+            'mempool_size': mempool['n'],
+            'state_root': _utxo_db.compute_state_root(),
+        })
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Transfer endpoint
+# ---------------------------------------------------------------------------
+
+@utxo_bp.route('/transfer', methods=['POST'])
+def utxo_transfer():
+    """
+    UTXO-native signed transfer.
+
+    Request JSON:
+    {
+        "from_address": "RTCsender...",
+        "to_address": "RTCrecipient...",
+        "amount_rtc": 10.5,
+        "public_key": "hex_ed25519_pubkey",
+        "signature": "hex_ed25519_sig",
+        "nonce": 1234567890,
+        "memo": "optional memo",
+        "fee_rtc": 0.0001       (optional, default 0)
+    }
+
+    The signature covers the same canonical JSON as /wallet/transfer/signed
+    for backward compatibility with existing wallet clients.
+
+    Internally:
+    1. Verify Ed25519 signature
+    2. Select UTXOs (coin selection)
+    3. Build UTXO transaction (inputs → outputs + change)
+    4. Apply atomically
+    5. If dual_write: also update account model
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'JSON body required'}), 400
+
+    from_address = (data.get('from_address') or '').strip()
+    to_address = (data.get('to_address') or '').strip()
+    amount_rtc = float(data.get('amount_rtc', 0))
+    public_key = (data.get('public_key') or '').strip()
+    signature = (data.get('signature') or '').strip()
+    nonce = data.get('nonce')
+    memo = data.get('memo', '')
+    fee_rtc = float(data.get('fee_rtc', 0))
+
+    # --- validation ---------------------------------------------------------
+
+    if not all([from_address, to_address, public_key, signature, nonce]):
+        return jsonify({
+            'error': 'Missing required fields',
+            'required': ['from_address', 'to_address', 'public_key',
+                         'signature', 'nonce']
+        }), 400
+
+    if amount_rtc <= 0:
+        return jsonify({'error': 'Amount must be positive'}), 400
+
+    # Verify pubkey → address
+    expected_addr = _addr_from_pk_fn(public_key)
+    if from_address != expected_addr:
+        return jsonify({
+            'error': 'Public key does not match from_address',
+            'expected': expected_addr,
+            'got': from_address,
+        }), 400
+
+    # Reconstruct signed message (same format as /wallet/transfer/signed)
+    tx_data = {
+        'from': from_address,
+        'to': to_address,
+        'amount': amount_rtc,
+        'memo': memo,
+        'nonce': nonce,
+    }
+    message = json.dumps(tx_data, sort_keys=True, separators=(',', ':')).encode()
+
+    if not _verify_sig_fn(public_key, message, signature):
+        return jsonify({'error': 'Invalid Ed25519 signature'}), 401
+
+    # --- UTXO transaction ---------------------------------------------------
+
+    amount_nrtc = int(amount_rtc * UNIT)
+    fee_nrtc = int(fee_rtc * UNIT)
+    target_nrtc = amount_nrtc + fee_nrtc
+
+    # Select UTXOs
+    utxos = _utxo_db.get_unspent_for_address(from_address)
+    selected, change_nrtc = coin_select(utxos, target_nrtc)
+
+    if not selected:
+        utxo_balance = _utxo_db.get_balance(from_address)
+        return jsonify({
+            'error': 'Insufficient UTXO balance',
+            'balance_nrtc': utxo_balance,
+            'balance_rtc': utxo_balance / UNIT,
+            'requested_nrtc': target_nrtc,
+            'requested_rtc': target_nrtc / UNIT,
+        }), 400
+
+    # Build outputs
+    outputs = [{'address': to_address, 'value_nrtc': amount_nrtc}]
+    if change_nrtc > 0:
+        outputs.append({'address': from_address, 'value_nrtc': change_nrtc})
+
+    # Build and apply UTXO transaction
+    block_height = _current_slot_fn()
+    tx = {
+        'tx_type': 'transfer',
+        'inputs': [{'box_id': u['box_id'], 'spending_proof': signature}
+                   for u in selected],
+        'outputs': outputs,
+        'fee_nrtc': fee_nrtc,
+        'timestamp': int(time.time()),
+    }
+
+    ok = _utxo_db.apply_transaction(tx, block_height)
+    if not ok:
+        return jsonify({'error': 'UTXO transaction failed (race condition or validation)'}), 500
+
+    # --- dual-write to account model ----------------------------------------
+
+    if _dual_write:
+        try:
+            conn = sqlite3.connect(_db_path)
+            c = conn.cursor()
+            amount_i64 = int(amount_rtc * 1_000_000_000)  # account model uses 9 decimals
+            c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+                      (to_address,))
+            c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
+                      (amount_i64, from_address))
+            c.execute("UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+                      (amount_i64, to_address))
+            now = int(time.time())
+            slot = _current_slot_fn()
+            c.execute(
+                "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
+                (now, slot, from_address, -amount_i64,
+                 f"utxo_transfer_out:{to_address[:20]}:{memo[:30]}")
+            )
+            c.execute(
+                "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
+                (now, slot, to_address, amount_i64,
+                 f"utxo_transfer_in:{from_address[:20]}:{memo[:30]}")
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            # Log but don't fail — UTXO is primary, account is shadow
+            print(f"[UTXO] WARNING: dual-write to account model failed: {e}")
+
+    # --- response -----------------------------------------------------------
+
+    # Get updated balances
+    sender_bal = _utxo_db.get_balance(from_address)
+    recipient_bal = _utxo_db.get_balance(to_address)
+
+    return jsonify({
+        'ok': True,
+        'from_address': from_address,
+        'to_address': to_address,
+        'amount_rtc': amount_rtc,
+        'fee_rtc': fee_rtc,
+        'inputs_consumed': len(selected),
+        'outputs_created': len(outputs),
+        'change_nrtc': change_nrtc,
+        'change_rtc': change_nrtc / UNIT,
+        'sender_balance_rtc': sender_bal / UNIT,
+        'recipient_balance_rtc': recipient_bal / UNIT,
+        'memo': memo,
+        'verified': True,
+        'signature_type': 'Ed25519',
+        'model': 'utxo',
+    })

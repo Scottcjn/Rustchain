@@ -6804,6 +6804,23 @@ if __name__ == "__main__":
 
     init_db()
 
+    # UTXO Transaction Engine (Phase 3)
+    if HAVE_UTXO:
+        try:
+            from utxo_endpoints import register_utxo_blueprint
+            _utxo_instance = UtxoDB(DB_PATH)
+            register_utxo_blueprint(
+                app, _utxo_instance, DB_PATH,
+                verify_sig_fn=verify_rtc_signature,
+                addr_from_pk_fn=address_from_pubkey,
+                current_slot_fn=current_slot,
+                dual_write=UTXO_DUAL_WRITE,
+            )
+        except ImportError as e:
+            print(f"[UTXO] Endpoints not available: {e}")
+        except Exception as e:
+            print(f"[UTXO] Endpoint registration failed: {e}")
+
     # BCOS v2: Register Blockchain Certified Open Source endpoints
     try:
         from bcos_routes import register_bcos_routes
