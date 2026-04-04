@@ -138,6 +138,24 @@ class TestUtxoDB(unittest.TestCase):
 
         self.assertFalse(ok)
 
+    def test_negative_fee_rejected(self):
+        """Negative fee should fail — allows minting via weakened conservation."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        alice_boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 1100 * UNIT}],
+            'fee_nrtc': -1000 * UNIT,  # negative fee bypasses conservation
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        # Balances unchanged
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+
     # -- double-spend --------------------------------------------------------
 
     def test_double_spend_rejected(self):
