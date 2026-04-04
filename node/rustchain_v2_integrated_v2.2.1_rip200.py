@@ -36,6 +36,17 @@ try:
 except Exception as e:
     print(f"WARN: Rewards module not loaded: {e}")
     HAVE_REWARDS = False
+
+# UTXO Layer (Phase 1 — dual-write alongside account model)
+UTXO_DUAL_WRITE = os.environ.get("UTXO_DUAL_WRITE", "0") == "1"
+try:
+    from utxo_db import UtxoDB
+    HAVE_UTXO = True
+except ImportError:
+    HAVE_UTXO = False
+    if UTXO_DUAL_WRITE:
+        print("[WARN] utxo_db.py not found but UTXO_DUAL_WRITE=1 — disabling")
+        UTXO_DUAL_WRITE = False
 from datetime import datetime
 from typing import Dict, Optional, Tuple
 from hashlib import blake2b
@@ -1239,6 +1250,15 @@ def init_db():
     # Keep Beacon schema migration logic centralized in beacon_anchor.py so
     # legacy payload hashes are versioned consistently across startup paths.
     init_beacon_table(DB_PATH)
+
+    # Initialize UTXO tables (Phase 1 — tables created even if dual-write is off)
+    if HAVE_UTXO:
+        try:
+            _utxo_db = UtxoDB(DB_PATH)
+            _utxo_db.init_tables()
+            print(f"[UTXO] Tables initialized (dual_write={'ON' if UTXO_DUAL_WRITE else 'OFF'})")
+        except Exception as e:
+            print(f"[UTXO] WARNING: Table init failed: {e}")
 
 # Hardware multipliers
 HARDWARE_WEIGHTS = {
