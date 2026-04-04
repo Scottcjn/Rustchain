@@ -20,9 +20,11 @@ Usage:
 import argparse
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import os
+import socket
 import sqlite3
 import threading
 import time
@@ -62,6 +64,68 @@ ALL_EVENT_TYPES = frozenset([
     "miner_left",
     "large_tx",
 ])
+
+# ---------------------------------------------------------------------------
+# SSRF prevention — block internal / reserved address ranges
+# ---------------------------------------------------------------------------
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),       # IPv4 loopback
+    ipaddress.ip_network("::1/128"),            # IPv6 loopback
+    ipaddress.ip_network("10.0.0.0/8"),         # RFC 1918
+    ipaddress.ip_network("172.16.0.0/12"),      # RFC 1918
+    ipaddress.ip_network("192.168.0.0/16"),     # RFC 1918
+    ipaddress.ip_network("169.254.0.0/16"),     # Link-local / cloud metadata
+    ipaddress.ip_network("0.0.0.0/8"),          # "This" network
+    ipaddress.ip_network("100.64.0.0/10"),      # CGNAT
+    ipaddress.ip_network("192.0.0.0/24"),       # IETF protocol assignments
+    ipaddress.ip_network("192.0.2.0/24"),       # TEST-NET-1 (documentation)
+    ipaddress.ip_network("198.51.100.0/24"),    # TEST-NET-2 (documentation)
+    ipaddress.ip_network("203.0.113.0/24"),     # TEST-NET-3 (documentation)
+    ipaddress.ip_network("fc00::/7"),           # IPv6 unique-local
+    ipaddress.ip_network("fe80::/10"),          # IPv6 link-local
+]
+
+
+def _is_blocked_ip(ip_str: str) -> bool:
+    """Return True if *ip_str* falls within a blocked (internal/reserved) range."""
+    try:
+        addr = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return True  # unparseable → block
+    return any(addr in net for net in _BLOCKED_NETWORKS)
+
+
+def validate_webhook_url(url: str) -> Optional[str]:
+    """Validate a subscriber URL.
+
+    Returns ``None`` on success, or an error-message string on failure.
+
+    Checks performed:
+    1. Scheme must be ``http`` or ``https``.
+    2. Hostname must resolve to a **public**, non-reserved IP address
+       (prevents DNS-rebinding by resolving before storage).
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return "url must use http or https scheme"
+    if not parsed.hostname:
+        return "url must contain a hostname"
+
+    # Resolve the hostname and check every returned IP
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, None)
+    except socket.gaierror:
+        return "url hostname could not be resolved"
+
+    ips = {info[4][0] for info in infos}
+    if not ips:
+        return "url hostname could not be resolved"
+
+    for ip in ips:
+        if _is_blocked_ip(ip):
+            return f"url resolves to a blocked address ({ip})"
+
+    return None
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -213,7 +277,9 @@ def deliver_webhook(sub: Subscriber, event: WebhookEvent, store: SubscriberStore
     backoff = INITIAL_BACKOFF
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            resp = requests.post(sub.url, data=payload_bytes, headers=headers, timeout=10)
+            resp = requests.post(
+                sub.url, data=payload_bytes, headers=headers, timeout=10, allow_redirects=False,
+            )
             store.log_delivery(sub.id, event.event_type, payload, resp.status_code, attempt)
             if 200 <= resp.status_code < 300:
                 log.info("Delivered %s to %s (attempt %d, status %d)",
@@ -469,9 +535,9 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "url is required"})
             return
 
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            self._send_json(400, {"error": "url must be http or https"})
+        error = validate_webhook_url(url)
+        if error:
+            self._send_json(400, {"error": error})
             return
 
         events_raw = body.get("events")
