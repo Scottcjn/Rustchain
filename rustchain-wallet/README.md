@@ -156,6 +156,19 @@ rustchain-wallet/
 - File permissions set to 600 on Unix
 - Zeroize-capable key handling
 - Ed25519 signatures on canonical JSON for tamper-proof transactions
+- **TLS certificate validation is enabled by default** for all API connections
+
+### Development TLS Bypass
+
+For local development against test servers with self-signed certificates, you may
+disable TLS validation by setting:
+
+```bash
+export RUSTCHAIN_DEV_INSECURE_TLS=1
+```
+
+**WARNING**: This disables TLS certificate validation and exposes the wallet to
+**man-in-the-middle attacks**. Never use this in production or with real funds.
 
 ## Dependencies
 

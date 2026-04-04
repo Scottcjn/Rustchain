@@ -14,13 +14,32 @@ pub struct NodeTransport {
 }
 
 impl NodeTransport {
-    /// Create a new transport with the given configuration
+    /// Create a new transport with the given configuration.
+    ///
+    /// By default, TLS certificate validation is **enabled**.
+    /// To disable validation (e.g. for local development against a test server
+    /// with self-signed certificates), set the environment variable
+    /// `RUSTCHAIN_DEV_INSECURE_TLS=1`. This is **strongly discouraged** in
+    /// production — it exposes the miner to man-in-the-middle attacks.
     pub fn new(node_url: String, proxy_url: Option<String>, timeout: Duration) -> crate::Result<Self> {
+        let insecure = std::env::var("RUSTCHAIN_DEV_INSECURE_TLS")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+
+        let builder = Client::builder().timeout(timeout);
+        let builder = if insecure {
+            eprintln!(
+                "WARNING: TLS certificate validation is DISABLED. \
+                 This is INSECURE and exposes the miner to man-in-the-middle attacks. \
+                 Do NOT use in production. Set via RUSTCHAIN_DEV_INSECURE_TLS=1."
+            );
+            builder.danger_accept_invalid_certs(true)
+        } else {
+            builder
+        };
+
         let transport = Self {
-            client: Client::builder()
-                .timeout(timeout)
-                .danger_accept_invalid_certs(true)
-                .build()?,
+            client: builder.build()?,
             node_url: node_url.trim_end_matches('/').to_string(),
             proxy_url: proxy_url.map(|u| u.trim_end_matches('/').to_string()),
             use_proxy: false,
