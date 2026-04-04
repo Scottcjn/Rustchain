@@ -5,7 +5,7 @@
 // Author: Flamekeeper Scott
 // Created: 2025-11-28
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use sha2::{Sha256, Digest};
 use serde::{Serialize, Deserialize};
@@ -53,6 +53,8 @@ pub struct ProofOfAntiquity {
     known_hardware: HashMap<[u8; 32], WalletAddress>,
     /// Anti-emulation verifier
     anti_emulation: AntiEmulationVerifier,
+    /// Track used nonces per wallet to prevent replay attacks
+    used_nonces: HashMap<WalletAddress, HashSet<u64>>,
 }
 
 /// A validated mining proof ready for block inclusion
@@ -106,6 +108,7 @@ impl ProofOfAntiquity {
             block_start_time: current_timestamp(),
             known_hardware: HashMap::new(),
             anti_emulation: AntiEmulationVerifier::new(),
+            used_nonces: HashMap::new(),
         }
     }
 
@@ -151,6 +154,11 @@ pub fn submit_proof(&mut self, proof: MiningProof) -> Result<SubmitResult, Proof
             return Err(ProofError::DuplicateSubmission);
         }
 
+        // Check for nonce reuse (prevents replay attacks)
+        if self.used_nonces.get(&proof.wallet).map_or(false, |nonces| nonces.contains(&proof.nonce)) {
+            return Err(ProofError::NonceReuse);
+        }
+
         // Check max miners
         if self.pending_proofs.len() >= MAX_MINERS_PER_BLOCK {
             return Err(ProofError::BlockFull);
@@ -183,7 +191,7 @@ pub fn submit_proof(&mut self, proof: MiningProof) -> Result<SubmitResult, Proof
 
         // Create validated proof
         let validated = ValidatedProof {
-            wallet: proof.wallet,
+            wallet: proof.wallet.clone(),
             hardware: proof.hardware,
             multiplier: capped_multiplier,
             anti_emulation_hash: proof.anti_emulation_hash,
@@ -192,6 +200,7 @@ pub fn submit_proof(&mut self, proof: MiningProof) -> Result<SubmitResult, Proof
 
         self.pending_proofs.push(validated);
         self.known_hardware.insert(hw_hash, proof.wallet.clone());
+        self.used_nonces.entry(proof.wallet).or_insert_with(HashSet::new).insert(proof.nonce);
 
         Ok(SubmitResult {
             accepted: true,
@@ -287,6 +296,7 @@ pub fn submit_proof(&mut self, proof: MiningProof) -> Result<SubmitResult, Proof
     fn reset_block(&mut self) {
         self.pending_proofs.clear();
         self.block_start_time = current_timestamp();
+        // NOTE: used_nonces is NOT cleared - persistent nonce tracking prevents replay across blocks
     }
 
     fn validate_hardware(&self, hardware: &HardwareInfo) -> Result<(), ProofError> {
@@ -529,6 +539,7 @@ pub enum ProofError {
     SuspiciousHardware(String),
     EmulationDetected,
     InvalidSignature,
+    NonceReuse,
 }
 
 impl std::fmt::Display for ProofError {
@@ -546,6 +557,7 @@ impl std::fmt::Display for ProofError {
             ProofError::SuspiciousHardware(msg) => write!(f, "Suspicious hardware: {}", msg),
             ProofError::EmulationDetected => write!(f, "Emulation detected"),
             ProofError::InvalidSignature => write!(f, "Invalid signature"),
+            ProofError::NonceReuse => write!(f, "Nonce has already been used (replay attempt)"),
         }
     }
 }
@@ -631,5 +643,102 @@ mod tests {
 
         assert!(poa.submit_proof(proof1).is_ok());
         assert!(matches!(poa.submit_proof(proof2), Err(ProofError::DuplicateSubmission)));
+    }
+
+    #[test]
+    fn test_nonce_reuse_rejected() {
+        // Same wallet reusing the same nonce across blocks must be rejected
+        let mut poa = ProofOfAntiquity::new();
+        let wallet = WalletAddress::new("RTC1TestMiner123456789");
+
+        let proof = MiningProof {
+            wallet: wallet.clone(),
+            hardware: HardwareInfo::new("CPU1".to_string(), "Gen1".to_string(), 15),
+            anti_emulation_hash: [0u8; 32],
+            timestamp: current_timestamp(),
+            nonce: 42,
+        };
+
+        assert!(poa.submit_proof(proof.clone()).is_ok());
+
+        // Process block
+        let _ = poa.process_block([0u8; 32], 1);
+
+        // Replay same proof with same nonce - should be rejected
+        assert!(matches!(poa.submit_proof(proof), Err(ProofError::NonceReuse)));
+    }
+
+    #[test]
+    fn test_different_nonce_accepted() {
+        // Same wallet with different nonces should be accepted (different hardware)
+        let mut poa = ProofOfAntiquity::new();
+        let wallet = WalletAddress::new("RTC1TestMiner123456789");
+
+        let proof1 = MiningProof {
+            wallet: wallet.clone(),
+            hardware: HardwareInfo::new("CPU1".to_string(), "Gen1".to_string(), 15),
+            anti_emulation_hash: [0u8; 32],
+            timestamp: current_timestamp(),
+            nonce: 1,
+        };
+
+        let proof2 = MiningProof {
+            wallet: wallet.clone(),
+            hardware: HardwareInfo::new("CPU2".to_string(), "Gen2".to_string(), 20),
+            anti_emulation_hash: [0u8; 32],
+            timestamp: current_timestamp(),
+            nonce: 2,
+        };
+
+        assert!(poa.submit_proof(proof1).is_ok());
+        assert!(matches!(poa.submit_proof(proof2), Err(ProofError::DuplicateSubmission)));
+    }
+
+    #[test]
+    fn test_replay_across_blocks_rejected() {
+        // A proof replayed in a new block is rejected because used_nonces persists
+        let mut poa = ProofOfAntiquity::new();
+        let wallet = WalletAddress::new("RTC1TestMiner123456789");
+        let hardware = HardwareInfo::new("CPU1".to_string(), "Gen1".to_string(), 15);
+
+        let proof = MiningProof {
+            wallet: wallet.clone(),
+            hardware: hardware.clone(),
+            anti_emulation_hash: [0u8; 32],
+            timestamp: current_timestamp(),
+            nonce: 999,
+        };
+
+        assert!(poa.submit_proof(proof.clone()).is_ok());
+        let _ = poa.process_block([0u8; 32], 1);
+
+        // Replay same proof - NonceReuse (used_nonces is NOT cleared)
+        assert!(matches!(poa.submit_proof(proof), Err(ProofError::NonceReuse)));
+    }
+
+    #[test]
+    fn test_block_reset_preserves_nonce_state() {
+        // After process_block, nonce state is preserved (nonces are NOT cleared)
+        // This prevents replay attacks across blocks
+        let mut poa = ProofOfAntiquity::new();
+        let wallet = WalletAddress::new("RTC1TestMiner123456789");
+        let hardware = HardwareInfo::new("CPU1".to_string(), "Gen1".to_string(), 15);
+
+        let proof = MiningProof {
+            wallet: wallet.clone(),
+            hardware: hardware.clone(),
+            anti_emulation_hash: [0u8; 32],
+            timestamp: current_timestamp(),
+            nonce: 42,
+        };
+
+        assert!(poa.submit_proof(proof.clone()).is_ok());
+
+        let prev_hash = [0u8; 32];
+        let result = poa.process_block(prev_hash, 1);
+        assert!(result.is_some());
+
+        // Same wallet + same nonce should be rejected even in new block
+        assert!(matches!(poa.submit_proof(proof), Err(ProofError::NonceReuse)));
     }
 }
