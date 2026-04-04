@@ -54,6 +54,7 @@ cargo install --path .
 | `RUSTCHAIN_ATTESTATION_TTL` | Attestation TTL in seconds | `580` |
 | `RUSTCHAIN_DRY_RUN` | Enable dry-run mode | `false` |
 | `RUSTCHAIN_VERBOSE` | Enable verbose logging | `false` |
+| `RUSTCHAIN_DEV_INSECURE_TLS` | Disable TLS cert validation (dev only) | `false` |
 
 ### .env File
 
@@ -205,12 +206,22 @@ cargo build --release
 
 ### TLS/SSL Errors
 
-If you encounter TLS errors on legacy systems:
+TLS certificate validation is **enabled by default**. If you encounter TLS errors
+on legacy systems or local test servers with self-signed certificates, you have
+two options:
 
-```bash
-# Use HTTP proxy instead
-./target/release/rustchain-miner --proxy http://192.168.0.160:8089
-```
+1. **Use an HTTP proxy** (recommended for legacy systems):
+   ```bash
+   ./target/release/rustchain-miner --proxy http://192.168.0.160:8089
+   ```
+
+2. **Disable TLS validation** (development only — **INSECURE**):
+   ```bash
+   export RUSTCHAIN_DEV_INSECURE_TLS=1
+   ./target/release/rustchain-miner
+   ```
+   **WARNING**: This disables TLS certificate validation and exposes the miner to
+   **man-in-the-middle attacks**. Never use this in production.
 
 ### Attestation Failed
 

@@ -66,12 +66,30 @@ pub struct NetworkInfo {
 }
 
 impl RustChainClient {
-    /// Create a new client with the specified API URL
+    /// Create a new client with the specified API URL.
+    ///
+    /// By default, TLS certificate validation is **enabled**.
+    /// To disable validation (e.g. for local development against a test server
+    /// with self-signed certificates), set the environment variable
+    /// `RUSTCHAIN_DEV_INSECURE_TLS=1`. This is **strongly discouraged** in
+    /// production — it exposes the wallet to man-in-the-middle attacks.
     pub fn new(api_url: String) -> Self {
-        let http_client = Client::builder()
-            .danger_accept_invalid_certs(true)
-            .build()
-            .unwrap_or_else(|_| Client::new());
+        let insecure = std::env::var("RUSTCHAIN_DEV_INSECURE_TLS")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+
+        let builder = Client::builder();
+        let builder = if insecure {
+            eprintln!(
+                "WARNING: TLS certificate validation is DISABLED. \
+                 This is INSECURE and exposes the wallet to man-in-the-middle attacks. \
+                 Do NOT use in production. Set via RUSTCHAIN_DEV_INSECURE_TLS=1."
+            );
+            builder.danger_accept_invalid_certs(true)
+        } else {
+            builder
+        };
+        let http_client = builder.build().unwrap_or_else(|_| Client::new());
 
         Self {
             api_url,
