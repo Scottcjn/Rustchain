@@ -1,0 +1,39 @@
+name: RTC Auto-Pay on PR Merge
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  pull-requests: write
+  issues: read
+
+jobs:
+  auto-pay:
+    # Only run when PR is actually merged, not just closed
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run RTC Auto-Pay
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          RTC_VPS_HOST: ${{ secrets.RTC_VPS_HOST }}
+          RTC_ADMIN_KEY: ${{ secrets.RTC_ADMIN_KEY }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        run: python scripts/auto-pay.py
