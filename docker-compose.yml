@@ -12,6 +12,8 @@ services:
       - RUSTCHAIN_DB=/rustchain/data/rustchain_v2.db
       - DOWNLOAD_DIR=/rustchain/downloads
       - PYTHONUNBUFFERED=1
+      # P2P HMAC secret — MUST be set in .env or docker-compose.override.yml
+      - RC_P2P_SECRET=${RC_P2P_SECRET:?RC_P2P_SECRET is required — generate with: openssl rand -hex 32}
     volumes:
       # Persistent storage for SQLite database
       - rustchain-data:/rustchain/data
