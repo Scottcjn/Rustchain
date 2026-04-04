@@ -398,3 +398,38 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 *Built by [Elyan Labs](https://elyanlabs.ai) -- $0 VC, a room full of pawn shop hardware,
 and a belief that old machines still have dignity.*
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| `Connection refused` when checking balance | The node may be restarting. Wait 30 seconds and retry. |
+| `Python not found` | Install Python 3.8+ from [python.org](https://python.org) (macOS/Windows) or `apt install python3` (Linux) |
+| `ModuleNotFoundError: requests` | Activate the venv first: `source ~/.rustchain/venv/bin/activate` |
+| Miner shows 0 RTC after mining | Mining rewards are paid per epoch (~60 minutes). Check back after an epoch completes. |
+| `SSL certificate verify failed` | Your system clock may be wrong. Sync your clock: `sudo ntpdate pool.ntp.org` (Linux) |
+| `wallet name already taken` | Wallet names are globally unique. Try a different name with a unique prefix. |
+
+### Checking Node Status
+
+If you suspect the network is down, check all attestation nodes:
+
+```bash
+# Check primary node health
+curl -sk https://rustchain.org/health
+
+# Check epoch status
+curl -sk https://rustchain.org/epoch
+
+# If the primary is down, check the backup nodes listed in the README
+```
+
+### Getting Help
+
+- **GitHub Issues**: [Open an issue](https://github.com/Scottcjn/Rustchain/issues)
+- **Discord**: [Join the community](https://discord.gg/VqVVS2CW9Q)
+- **Bounties**: Browse [open bounties](https://github.com/Scottcjn/rustchain-bounties/issues) to earn RTC while learning
