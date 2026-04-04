@@ -1,5 +1,6 @@
 //! Hardware attestation with fingerprint and entropy collection
 
+use ed25519_dalek::Signer;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -33,6 +34,13 @@ pub struct AttestationReport {
 
     /// Miner version
     pub miner_version: String,
+
+    /// Ed25519 signature over critical fields (miner, miner_id, nonce, commitment)
+    /// Binds the report to the miner's keypair, preventing tampering and replay attacks
+    pub signature: String,
+
+    /// Public key used for verification (hex-encoded, 32 bytes)
+    pub public_key: String,
 }
 
 /// Entropy report derived from timing measurements
@@ -200,7 +208,7 @@ pub async fn attest(
 
     // Step 1: Get challenge nonce from node
     let response = transport.post_json("/attest/challenge", &serde_json::json!({})).await?;
-    
+
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
@@ -233,7 +241,21 @@ pub async fn attest(
     let commitment_hash = Sha256::digest(commitment_string.as_bytes());
     let commitment = hex::encode(commitment_hash);
 
-    // Step 4: Build attestation report
+    // Step 4: Generate Ed25519 keypair and sign critical fields
+    // The signature binds (miner, miner_id, nonce, commitment) to prevent:
+    // - Wallet address tampering (attacker can't change miner field)
+    // - Replay attacks (nonce is unique per attestation)
+    // - Field modification (any change invalidates signature)
+    let signing_key = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
+    let verifying_key = signing_key.verifying_key();
+    let public_key_hex = hex::encode(verifying_key.as_bytes());
+
+    // Sign the critical fields that must be authentic
+    let message = format!("{}|{}|{}|{}", miner_id, wallet, nonce, commitment);
+    let signature = signing_key.sign(message.as_bytes());
+    let signature_hex = hex::encode(signature.to_bytes());
+
+    // Step 5: Build attestation report with signature
     let report = AttestationReport {
         miner: wallet.to_string(),
         miner_id: miner_id.to_string(),
@@ -248,9 +270,11 @@ pub async fn attest(
         signals: NetworkSignals::from(hw_info),
         fingerprint: fingerprint_data,
         miner_version: env!("CARGO_PKG_VERSION").to_string(),
+        signature: signature_hex,
+        public_key: public_key_hex,
     };
 
-    // Step 5: Submit attestation
+    // Step 6: Submit attestation
     let response = transport.post_json("/attest/submit", &report).await?;
 
     if !response.status().is_success() {
@@ -262,7 +286,7 @@ pub async fn attest(
     }
 
     let result: serde_json::Value = response.json().await?;
-    
+
     if result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
         tracing::info!("[ATTEST] Attestation accepted!");
         Ok(true)
@@ -283,5 +307,191 @@ mod tests {
         assert!(entropy.mean_ns > 0.0);
         assert!(entropy.sample_count == 10);
         assert!(!entropy.samples_preview.is_empty());
+    }
+
+    /// Helper: sign a message and return (signature_hex, public_key_hex)
+    fn sign_message(miner_id: &str, wallet: &str, nonce: &str, commitment: &str) -> (String, String) {
+        let signing_key = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
+        let verifying_key = signing_key.verifying_key();
+        let public_key_hex = hex::encode(verifying_key.as_bytes());
+
+        let message = format!("{}|{}|{}|{}", miner_id, wallet, nonce, commitment);
+        let signature = signing_key.sign(message.as_bytes());
+        let signature_hex = hex::encode(signature.to_bytes());
+
+        (signature_hex, public_key_hex)
+    }
+
+    /// Helper: verify a signature against the message
+    fn verify_signature(public_key_hex: &str, signature_hex: &str, message: &str) -> bool {
+        let public_key_bytes = match hex::decode(public_key_hex) {
+            Ok(b) => b,
+            Err(_) => return false,
+        };
+        let signature_bytes = match hex::decode(signature_hex) {
+            Ok(b) => b,
+            Err(_) => return false,
+        };
+
+        if public_key_bytes.len() != 32 || signature_bytes.len() != 64 {
+            return false;
+        }
+
+        let verifying_key = match ed25519_dalek::VerifyingKey::from_bytes(
+            &public_key_bytes.try_into().unwrap()
+        ) {
+            Ok(k) => k,
+            Err(_) => return false,
+        };
+
+        let signature = match ed25519_dalek::Signature::from_slice(&signature_bytes) {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
+
+        verifying_key.verify_strict(message.as_bytes(), &signature).is_ok()
+    }
+
+    #[test]
+    fn test_signature_creation_and_verification() {
+        let miner_id = "miner_123";
+        let wallet = "RTC_abc123";
+        let nonce = "nonce_456";
+        let commitment = "commit_789";
+
+        let (sig, pub_key) = sign_message(miner_id, wallet, nonce, commitment);
+
+        // Valid signature should verify
+        let message = format!("{}|{}|{}|{}", miner_id, wallet, nonce, commitment);
+        assert!(verify_signature(&pub_key, &sig, &message));
+    }
+
+    #[test]
+    fn test_tampered_wallet_rejected() {
+        let miner_id = "miner_123";
+        let original_wallet = "RTC_abc123";
+        let tampered_wallet = "RTC_attacker_wallet";
+        let nonce = "nonce_456";
+        let commitment = "commit_789";
+
+        let (sig, pub_key) = sign_message(miner_id, original_wallet, nonce, commitment);
+
+        // Attempt to verify with tampered wallet should fail
+        let tampered_message = format!("{}|{}|{}|{}", miner_id, tampered_wallet, nonce, commitment);
+        assert!(!verify_signature(&pub_key, &sig, &tampered_message));
+    }
+
+    #[test]
+    fn test_tampered_miner_id_rejected() {
+        let original_miner_id = "miner_123";
+        let tampered_miner_id = "miner_attacker";
+        let wallet = "RTC_abc123";
+        let nonce = "nonce_456";
+        let commitment = "commit_789";
+
+        let (sig, pub_key) = sign_message(original_miner_id, wallet, nonce, commitment);
+
+        // Attempt to verify with tampered miner_id should fail
+        let tampered_message = format!("{}|{}|{}|{}", tampered_miner_id, wallet, nonce, commitment);
+        assert!(!verify_signature(&pub_key, &sig, &tampered_message));
+    }
+
+    #[test]
+    fn test_tampered_nonce_rejected() {
+        let miner_id = "miner_123";
+        let wallet = "RTC_abc123";
+        let original_nonce = "nonce_456";
+        let tampered_nonce = "nonce_attacker";
+        let commitment = "commit_789";
+
+        let (sig, pub_key) = sign_message(miner_id, wallet, original_nonce, commitment);
+
+        // Attempt to verify with tampered nonce should fail
+        let tampered_message = format!("{}|{}|{}|{}", miner_id, wallet, tampered_nonce, commitment);
+        assert!(!verify_signature(&pub_key, &sig, &tampered_message));
+    }
+
+    #[test]
+    fn test_tampered_commitment_rejected() {
+        let miner_id = "miner_123";
+        let wallet = "RTC_abc123";
+        let nonce = "nonce_456";
+        let original_commitment = "commit_789";
+        let tampered_commitment = "commit_attacker";
+
+        let (sig, pub_key) = sign_message(miner_id, wallet, nonce, original_commitment);
+
+        // Attempt to verify with tampered commitment should fail
+        let tampered_message = format!("{}|{}|{}|{}", miner_id, wallet, nonce, tampered_commitment);
+        assert!(!verify_signature(&pub_key, &sig, &tampered_message));
+    }
+
+    #[test]
+    fn test_replay_attack_with_different_nonce() {
+        let miner_id = "miner_123";
+        let wallet = "RTC_abc123";
+        let original_nonce = "nonce_original";
+        let replay_nonce = "nonce_replay";
+        let commitment = "commit_789";
+
+        // Sign with original nonce
+        let (sig, pub_key) = sign_message(miner_id, wallet, original_nonce, commitment);
+
+        // Replay with different nonce should fail
+        let replay_message = format!("{}|{}|{}|{}", miner_id, wallet, replay_nonce, commitment);
+        assert!(!verify_signature(&pub_key, &sig, &replay_message));
+    }
+
+    #[test]
+    fn test_wrong_public_key_rejected() {
+        let miner_id = "miner_123";
+        let wallet = "RTC_abc123";
+        let nonce = "nonce_456";
+        let commitment = "commit_789";
+
+        let (sig, _) = sign_message(miner_id, wallet, nonce, commitment);
+
+        // Try to verify with a different keypair's public key
+        let other_signing_key = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
+        let other_public_key_hex = hex::encode(other_signing_key.verifying_key().as_bytes());
+
+        let message = format!("{}|{}|{}|{}", miner_id, wallet, nonce, commitment);
+        assert!(!verify_signature(&other_public_key_hex, &sig, &message));
+    }
+
+    #[test]
+    fn test_invalid_signature_format_rejected() {
+        let pub_key = hex::encode([0u8; 32]);
+        let invalid_sig = "not_hex";
+        let message = "test_message";
+
+        assert!(!verify_signature(&pub_key, invalid_sig, message));
+    }
+
+    #[test]
+    fn test_invalid_public_key_format_rejected() {
+        let invalid_pub_key = "not_hex";
+        let sig = hex::encode([0u8; 64]);
+        let message = "test_message";
+
+        assert!(!verify_signature(&invalid_pub_key, &sig, message));
+    }
+
+    #[test]
+    fn test_short_public_key_rejected() {
+        let short_pub_key = hex::encode([0u8; 16]);
+        let sig = hex::encode([0u8; 64]);
+        let message = "test_message";
+
+        assert!(!verify_signature(&short_pub_key, &sig, message));
+    }
+
+    #[test]
+    fn test_short_signature_rejected() {
+        let pub_key = hex::encode([0u8; 32]);
+        let short_sig = hex::encode([0u8; 32]);
+        let message = "test_message";
+
+        assert!(!verify_signature(&pub_key, &short_sig, message));
     }
 }

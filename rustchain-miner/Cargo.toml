@@ -41,6 +41,9 @@ uuid = { version = "1.6", features = ["v4"] }
 sha2 = "0.10"
 hex = "0.4"
 
+# Cryptographic signing
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+
 # Time
 chrono = { version = "0.4", features = ["serde"] }
 
