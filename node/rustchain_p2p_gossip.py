@@ -26,8 +26,33 @@ from collections import defaultdict
 import logging
 import requests
 
-# Configuration
-P2P_SECRET = os.environ.get("RC_P2P_SECRET", "rustchain_p2p_secret_2025_decentralized")
+# ---------------------------------------------------------------------------
+# P2P HMAC secret — MUST be set via the RC_P2P_SECRET environment variable.
+# There is NO safe default: every node in a P2P cluster must share the same
+# strong, randomly generated secret (≥ 32 hex chars recommended).
+# ---------------------------------------------------------------------------
+_P2P_SECRET_RAW = os.environ.get("RC_P2P_SECRET", "").strip()
+
+# Known insecure placeholders that must never be accepted in production.
+_INSECURE_DEFAULTS = {
+    "rustchain_p2p_secret_2025_decentralized",
+    "changeme",
+    "secret",
+    "default",
+    "default-hmac-secret-change-me",
+    "",
+}
+
+if not _P2P_SECRET_RAW or _P2P_SECRET_RAW.lower() in _INSECURE_DEFAULTS:
+    raise SystemExit(
+        "[P2P] FATAL: RC_P2P_SECRET environment variable is not set or contains "
+        "an insecure placeholder value.  Every node must be configured with the "
+        "same strong, randomly generated HMAC secret before startup.\n"
+        "  Generate one with:  openssl rand -hex 32\n"
+        "  Then export:        export RC_P2P_SECRET=<your-secret>"
+    )
+
+P2P_SECRET = _P2P_SECRET_RAW
 GOSSIP_TTL = 3
 SYNC_INTERVAL = 30
 MESSAGE_EXPIRY = 300  # 5 minutes
