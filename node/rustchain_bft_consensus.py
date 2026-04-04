@@ -392,6 +392,17 @@ class BFTConsensus:
                 logging.warning(f"PRE-PREPARE not from leader: {msg.node_id}")
                 return None
 
+            # Verify HMAC signature (matches pattern in handle_prepare/handle_commit)
+            sign_data = f"{MessageType.PRE_PREPARE.value}:{msg.view}:{epoch}:{msg.digest}:{msg.timestamp}"
+            if not self._verify_signature(msg.node_id, sign_data, msg.signature):
+                logging.warning(f"Invalid PRE-PREPARE signature from {msg.node_id}")
+                return None
+
+            # Check timestamp freshness
+            if abs(time.time() - msg.timestamp) > CONSENSUS_MESSAGE_TTL:
+                logging.warning(f"Stale PRE-PREPARE from {msg.node_id} (age={int(time.time()) - msg.timestamp}s)")
+                return None
+
             # Validate proposal (hardware attestation checks)
             if not self._validate_proposal(msg.proposal):
                 logging.warning(f"Invalid proposal for epoch {epoch}")
