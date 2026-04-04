@@ -225,31 +225,36 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
 
 
 def rollback_genesis(db_path: str) -> int:
-    """Remove all genesis boxes and their transactions."""
-    conn = sqlite3.connect(db_path)
-    try:
-        # Get genesis tx_ids before deleting
-        rows = conn.execute(
-            "SELECT DISTINCT transaction_id FROM utxo_boxes WHERE creation_height = ?",
-            (GENESIS_HEIGHT,),
-        ).fetchall()
-        tx_ids = [r[0] for r in rows]
+    """Remove all genesis boxes and their transactions atomically.
 
-        # Delete boxes
+    Wrapped in a single BEGIN IMMEDIATE transaction so no partial
+    deletion state is possible. Idempotent: safe to call when no
+    genesis data exists (returns 0).
+    """
+    conn = sqlite3.connect(db_path, timeout=30)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+
+        # Delete genesis boxes first (child table)
         deleted = conn.execute(
             "DELETE FROM utxo_boxes WHERE creation_height = ?",
             (GENESIS_HEIGHT,),
         ).rowcount
 
-        # Delete transactions
-        for tx_id in tx_ids:
-            conn.execute(
-                "DELETE FROM utxo_transactions WHERE tx_id = ?", (tx_id,)
-            )
+        # Delete genesis transactions (parent table)
+        conn.execute(
+            "DELETE FROM utxo_transactions WHERE tx_type = 'genesis'"
+        )
 
-        conn.commit()
-        print(f"Rolled back {deleted} genesis boxes and {len(tx_ids)} transactions.")
+        conn.execute("COMMIT")
         return deleted
+
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
     finally:
         conn.close()
 
