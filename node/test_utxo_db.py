@@ -293,6 +293,50 @@ class TestUtxoDB(unittest.TestCase):
         recovered = proposition_to_address(prop)
         self.assertEqual(recovered, addr)
 
+    # -- bounty #2819: empty-input minting vulnerability ---------------------
+
+    def test_empty_inputs_rejected_for_transfer(self):
+        """A normal transfer with empty inputs must be rejected.
+        This prevents minting funds from nothing (bounty #2819)."""
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [],
+            'outputs': [{'address': 'attacker', 'value_nrtc': 1_000_000 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': int(time.time()),
+        }, block_height=10)
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('attacker'), 0)
+
+    def test_empty_inputs_rejected_for_unknown_tx_type(self):
+        """Any non-minting tx_type with empty inputs must be rejected."""
+        ok = self.db.apply_transaction({
+            'tx_type': 'some_random_type',
+            'inputs': [],
+            'outputs': [{'address': 'attacker', 'value_nrtc': 500 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': int(time.time()),
+        }, block_height=10)
+        self.assertFalse(ok)
+
+    def test_mining_reward_empty_inputs_allowed(self):
+        """Legitimate mining_reward transactions MUST still work with empty inputs."""
+        ok = self._apply_coinbase('alice', 100 * UNIT)
+        self.assertTrue(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+
+    def test_mempool_empty_inputs_rejected_for_transfer(self):
+        """Mempool must also reject non-minting txs with empty inputs."""
+        tx = {
+            'tx_id': 'ffff' * 16,
+            'tx_type': 'transfer',
+            'inputs': [],
+            'outputs': [{'address': 'attacker', 'value_nrtc': 999 * UNIT}],
+            'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+
 
 class TestCoinSelect(unittest.TestCase):
 

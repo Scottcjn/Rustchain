@@ -332,7 +332,14 @@ class UtxoDB:
                     return False
                 input_total += row['value_nrtc']
 
-            # -- conservation check (skip for coinbase) ----------------------
+            # -- conservation check ------------------------------------------
+            # Only authorized minting transaction types may have empty inputs.
+            # All other transactions must consume at least one input box.
+            MINTING_TX_TYPES = {'mining_reward'}
+            if not inputs and tx_type not in MINTING_TX_TYPES:
+                conn.execute("ROLLBACK")
+                return False
+
             output_total = sum(o['value_nrtc'] for o in outputs)
             if inputs and (output_total + fee) > input_total:
                 conn.execute("ROLLBACK")
@@ -534,7 +541,13 @@ class UtxoDB:
 
             tx_id = tx.get('tx_id', '')
             inputs = tx.get('inputs', [])
+            tx_type = tx.get('tx_type', 'transfer')
             now = int(time.time())
+
+            # Only authorized minting transaction types may have empty inputs.
+            MINTING_TX_TYPES = {'mining_reward'}
+            if not inputs and tx_type not in MINTING_TX_TYPES:
+                return False
 
             conn.execute("BEGIN IMMEDIATE")
 
