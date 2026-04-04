@@ -181,8 +181,20 @@ class DownloadHandler(SimpleHTTPRequestHandler):
         else:
             # Serve files from downloads directory
             file_path = self.path.lstrip('/')
-            full_path = os.path.join(DOWNLOAD_DIR, file_path)
-            
+
+            # SECURITY: Reject path traversal attempts
+            if '..' in file_path or file_path.startswith(('/', '\\')):
+                self.send_error(403, "Forbidden")
+                return
+
+            full_path = os.path.realpath(os.path.join(DOWNLOAD_DIR, file_path))
+            real_download = os.path.realpath(DOWNLOAD_DIR)
+
+            # SECURITY: Ensure resolved path is within DOWNLOAD_DIR
+            if not full_path.startswith(real_download + os.sep) and full_path != real_download:
+                self.send_error(403, "Forbidden")
+                return
+
             if os.path.isfile(full_path):
                 self.send_response(200)
                 if file_path.endswith('.py'):
