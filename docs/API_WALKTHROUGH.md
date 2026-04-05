@@ -4,11 +4,11 @@ This guide walks you through making your first API calls to RustChain.
 
 ## Base URL
 
-```
-https://rustchain.org
-```
+`https://rustchain.org`
 
-> ⚠️ **Note**: The node uses a self-signed certificate. Use `-k` or `--insecure` with curl.
+> :warning: **Note**: The node uses a self-signed certificate. Use `-k` or `--insecure` with curl.
+
+> :bulb: **Tip**: The examples below use `jq` for JSON formatting. If you don't have `jq` installed, simply remove `| jq .` from any command — the JSON response will still be returned.
 
 ---
 
@@ -17,7 +17,7 @@ https://rustchain.org
 The simplest way to verify the node is running:
 
 ```bash
-curl -k "https://rustchain.org/health"
+curl -k "https://rustchain.org/health" | jq .
 ```
 
 **Response:**
@@ -39,7 +39,7 @@ curl -k "https://rustchain.org/health"
 Query any wallet balance using the `miner_id` parameter:
 
 ```bash
-curl -k "https://rustchain.org/wallet/balance?miner_id=tomisnotcat"
+curl -k "https://rustchain.org/wallet/balance?miner_id=tomisnotcat" | jq .
 ```
 
 **Response:**
@@ -66,7 +66,7 @@ curl -k "https://rustchain.org/wallet/balance?miner_id=tomisnotcat"
 If you're mining, check your eligibility status:
 
 ```bash
-curl -k "https://rustchain.org/lottery/eligibility?miner_id=tomisnotcat"
+curl -k "https://rustchain.org/lottery/eligibility?miner_id=tomisnotcat" | jq .
 ```
 
 **Response (not eligible):**
@@ -96,7 +96,7 @@ curl -k "https://rustchain.org/lottery/eligibility?miner_id=tomisnotcat"
 ## 4. List Active Miners
 
 ```bash
-curl -k "https://rustchain.org/api/miners"
+curl -k "https://rustchain.org/api/miners" | jq .
 ```
 
 **Response (truncated):**
@@ -110,7 +110,7 @@ curl -k "https://rustchain.org/api/miners"
     "last_attest": 1773010433
   },
   {
-    "miner": "nox-ventures", 
+    "miner": "nox-ventures",
     "hardware_type": "x86-64 (Modern)",
     "antiquity_multiplier": 1.0,
     "device_arch": "modern",
@@ -167,91 +167,28 @@ with open("/path/to/your/agent.key", "rb") as f:
 
 # Derive RTC address from public key
 import hashlib
-public_key_hex = private_key.verify_key.encode().hex()
-from_address = "RTC" + hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
+public_key_hex = private_key.verify_key.encode(encoder=nacl.encoding.HexEncoder)
+address = "RTC_" + hashlib.sha256(public_key_hex).hexdigest()[:40]
 
-# Create canonical message to sign (uses from/to/amount, not from_address/to_address/amount_rtc)
-transfer_msg = {
-    "from": from_address,
-    "to": "RTC_recipient_address",
-    "amount": 100,
-    "nonce": "1234567890",
-    "memo": "",
-    "chain_id": "rustchain-mainnet-v2"
-}
-
-# Sign the canonical message
-message = json.dumps(transfer_msg, sort_keys=True, separators=(",", ":")).encode()
-signed = private_key.sign(message)
-signature_hex = signed.signature.hex()
-
-# Build outer payload (uses from_address/to_address/amount_rtc)
+# Create transfer payload
 payload = {
-    "from_address": from_address,
+    "from_address": address,
     "to_address": "RTC_recipient_address",
     "amount_rtc": 100,
-    "nonce": "1234567890",
-    "memo": "",
+    "nonce": "unique_value",
     "chain_id": "rustchain-mainnet-v2",
-    "public_key": public_key_hex,
-    "signature": signature_hex
+    "public_key": public_key_hex.decode(),
 }
 
-# Send transfer
-response = requests.post(
+# Sign the payload
+signed = private_key.sign(json.dumps(payload).encode())
+payload["signature"] = signed.signature.hex()
+
+# Submit transfer
+resp = requests.post(
     "https://rustchain.org/wallet/transfer/signed",
     json=payload,
-    verify=False  # For self-signed cert
+    verify=False  # self-signed cert
 )
-print(response.json())
+print(resp.json())
 ```
-
-### Important Notes
-
-- **RustChain Addresses**: Signed transfers require `RTC...` addresses (43 chars: `RTC` + 40 hex), not simple wallet IDs or ETH/SOL addresses
-- **Private Key**: Your Ed25519 key from `beacon identity new`
-- **Nonce**: Must be unique per transfer (use timestamp or counter)
-- **Public Key**: Required in outer payload; must match the `from_address`
-- **Chain ID**: Optional for backward compatibility, but recommended. If supplied, it is verified and included in the signed message.
-
----
-
-## Common API Errors
-
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `{"ok":false,"reason":"admin_required"}` | Endpoint requires admin | Use appropriate endpoint |
-| `404 Not Found` | Wrong URL | Check endpoint path |
-| Connection refused | Node down | Check node status |
-
----
-
-## SDK Alternative
-
-Instead of raw API calls, use the Python SDK:
-
-```bash
-pip install rustchain-sdk
-```
-
-```python
-from rustchain_sdk import Client
-
-client = Client("https://rustchain.org")
-
-# Check balance
-balance = client.get_balance("tomisnotcat")
-print(balance)
-
-# Get miners
-miners = client.get_miners()
-print(miners)
-```
-
----
-
-## Next Steps
-
-- Explore the [RustChain GitHub](https://github.com/Scottcjn/Rustchain)
-- Check [Bounties](https://github.com/Scottcjn/rustchain-bounties) for earning opportunities
-- Join the community for help
