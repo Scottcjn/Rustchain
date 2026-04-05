@@ -122,6 +122,7 @@ class ViewChangeMessage:
     node_id: str
     prepared_cert: Optional[Dict]  # Proof of prepared state
     signature: str
+    timestamp: int = 0  # Unix timestamp (used for HMAC + freshness check)
 
 
 # ============================================================================
@@ -711,7 +712,8 @@ class BFTConsensus:
                 epoch=self.current_epoch,
                 node_id=self.node_id,
                 prepared_cert=None,  # Could include prepared certificate
-                signature=signature
+                signature=signature,
+                timestamp=timestamp
             )
 
             # Log view change
@@ -730,7 +732,42 @@ class BFTConsensus:
         with self.lock:
             new_view = msg_data.get('view')
             node_id = msg_data.get('node_id')
+            signature = msg_data.get('signature', '')
+            timestamp = msg_data.get('timestamp', 0)
+            epoch = msg_data.get('epoch', 0)
 
+            # -- Validation: reject garbage / missing fields -----------------
+            if not all([new_view, node_id, signature, timestamp]):
+                logging.warning("[VIEW-CHANGE] Rejected: missing required fields")
+                return
+
+            # Must be requesting a *higher* view than current
+            if new_view <= self.current_view:
+                logging.warning(
+                    f"[VIEW-CHANGE] Rejected stale view {new_view} "
+                    f"(<= current {self.current_view})"
+                )
+                return
+
+            # -- Verify HMAC signature (same format as _trigger_view_change) --
+            sign_data = (
+                f"{MessageType.VIEW_CHANGE.value}:{new_view}:{epoch}:{timestamp}"
+            )
+            if not self._verify_signature(node_id, sign_data, signature):
+                logging.warning(
+                    f"[VIEW-CHANGE] Invalid signature from {node_id}"
+                )
+                return
+
+            # -- Timestamp freshness -----------------------------------------
+            if abs(time.time() - timestamp) > CONSENSUS_MESSAGE_TTL:
+                logging.warning(
+                    f"[VIEW-CHANGE] Stale message from {node_id} "
+                    f"(age={int(time.time()) - timestamp}s)"
+                )
+                return
+
+            # -- Passed all checks, store ------------------------------------
             if new_view not in self.view_change_log:
                 self.view_change_log[new_view] = {}
 
