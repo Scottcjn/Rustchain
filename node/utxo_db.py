@@ -574,6 +574,29 @@ class UtxoDB:
                     conn.execute("ROLLBACK")
                     return False
 
+            # -- conservation-of-value check ---------------------------------
+            # Prevent mempool admission of transactions that would fail
+            # apply_transaction(), locking UTXOs until expiry (DoS vector).
+            fee = tx.get('fee_nrtc', 0)
+            if fee < 0:
+                conn.execute("ROLLBACK")
+                return False
+
+            input_total = 0
+            for inp in inputs:
+                row = conn.execute(
+                    "SELECT value_nrtc FROM utxo_boxes WHERE box_id = ?",
+                    (inp['box_id'],),
+                ).fetchone()
+                if row:
+                    input_total += row['value_nrtc']
+
+            outputs = tx.get('outputs', [])
+            output_total = sum(o.get('value_nrtc', 0) for o in outputs)
+            if input_total > 0 and (output_total + fee) > input_total:
+                conn.execute("ROLLBACK")
+                return False
+
             # Insert into mempool
             conn.execute(
                 """INSERT OR IGNORE INTO utxo_mempool
