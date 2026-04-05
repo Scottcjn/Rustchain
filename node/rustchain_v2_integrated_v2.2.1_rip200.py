@@ -1703,16 +1703,26 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
     now = int(time.time())
     verified_device = derive_verified_device(device or {}, fingerprint if isinstance(fingerprint, dict) else {}, fingerprint_passed)
     with sqlite3.connect(DB_PATH) as conn:
+        # FIX: Prevent attestation overwrite from degrading prior fingerprint status.
+        # If the miner already has fingerprint_passed=1, a later failed attestation
+        # should not downgrade it. We still update ts_ok to keep the attestation fresh.
+        new_fp = 1 if fingerprint_passed else 0
         conn.execute("""
-            INSERT OR REPLACE INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, source_ip)
+            INSERT INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, source_ip)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, 1 if fingerprint_passed else 0, source_ip))
+            ON CONFLICT(miner) DO UPDATE SET
+                ts_ok = excluded.ts_ok,
+                device_family = excluded.device_family,
+                device_arch = excluded.device_arch,
+                source_ip = excluded.source_ip,
+                fingerprint_passed = MAX(miner_attest_recent.fingerprint_passed, excluded.fingerprint_passed)
+        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, new_fp, source_ip))
         _ = append_fingerprint_snapshot(conn, miner, fingerprint if isinstance(fingerprint, dict) else {}, now)
         # C3 fix: Record attestation history for first_attest tracking
         conn.execute("""
             INSERT INTO miner_attest_history (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, 1 if fingerprint_passed else 0))
+        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, new_fp))
         conn.commit()
 
         # RIP-201: Record fleet immune system signals
@@ -2922,8 +2932,12 @@ def _submit_attestation_impl():
                 "INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
                 (miner,)
             )
+            # FIX: Use INSERT OR IGNORE for epoch_enroll to prevent a later
+            # low-weight (e.g. fingerprint-failed) attestation from overwriting
+            # a prior high-weight enrollment within the same epoch. This avoids
+            # "attestation overwrite causes prior-epoch reward loss".
             enroll_conn.execute(
-                "INSERT OR REPLACE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
                 (epoch, miner, enroll_weight)
             )
             enroll_conn.execute(
