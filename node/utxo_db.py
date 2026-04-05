@@ -207,33 +207,62 @@ class UtxoDB:
         """
         Mark a box as spent.  Returns the box dict or None if not found.
         Raises ValueError on double-spend attempt.
+
+        When called without an external ``conn``, acquires BEGIN IMMEDIATE
+        to prevent TOCTOU races between the SELECT and UPDATE.
         """
         own = conn is None
         if own:
             conn = self._conn()
         try:
+            if own:
+                conn.execute("BEGIN IMMEDIATE")
+
             row = conn.execute(
                 "SELECT * FROM utxo_boxes WHERE box_id = ?", (box_id,)
             ).fetchone()
             if not row:
+                if own:
+                    conn.execute("ROLLBACK")
                 return None
             if row['spent_at'] is not None:
+                if own:
+                    conn.execute("ROLLBACK")
                 raise ValueError(
                     f"Double-spend attempt: box {box_id[:16]} already spent "
                     f"by tx {row['spent_by_tx'][:16]}"
                 )
-            conn.execute(
+            updated = conn.execute(
                 """UPDATE utxo_boxes
                    SET spent_at = ?, spent_by_tx = ?
                    WHERE box_id = ? AND spent_at IS NULL""",
                 (int(time.time()), spent_by_tx, box_id),
-            )
+            ).rowcount
+            if updated != 1:
+                # Another connection spent this box between our SELECT
+                # and UPDATE — treat as double-spend.
+                if own:
+                    conn.execute("ROLLBACK")
+                raise ValueError(
+                    f"Double-spend race: box {box_id[:16]} was spent "
+                    f"concurrently"
+                )
             if own:
                 conn.commit()
             return dict(row)
+        except ValueError:
+            raise
+        except Exception:
+            if own:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
+            raise
         finally:
             if own:
                 conn.close()
+
 
     def get_box(self, box_id: str) -> Optional[dict]:
         """Get a box by ID (spent or unspent)."""

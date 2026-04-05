@@ -181,6 +181,26 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.get_balance('bob'), 100 * UNIT)
         self.assertEqual(self.db.get_balance('eve'), 0)
 
+    def test_spend_box_double_spend_raises(self):
+        """spend_box() must raise ValueError on double-spend, not silently
+        return the box dict (bounty #2819 HIGH-1 TOCTOU fix)."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+        box_id = boxes[0]['box_id']
+
+        # First spend succeeds
+        result = self.db.spend_box(box_id, 'tx_first')
+        self.assertIsNotNone(result)
+
+        # Second spend must raise, not return silently
+        with self.assertRaises(ValueError):
+            self.db.spend_box(box_id, 'tx_second')
+
+    def test_spend_box_nonexistent_returns_none(self):
+        """spend_box() on a nonexistent box_id returns None."""
+        result = self.db.spend_box('deadbeef' * 8, 'tx_whatever')
+        self.assertIsNone(result)
+
     def test_nonexistent_input_rejected(self):
         ok = self.db.apply_transaction({
             'tx_type': 'transfer',
