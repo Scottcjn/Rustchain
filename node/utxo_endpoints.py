@@ -20,6 +20,7 @@ import hashlib
 import json
 import sqlite3
 import time
+from decimal import Decimal, ROUND_DOWN
 
 from flask import Blueprint, request, jsonify
 
@@ -273,8 +274,12 @@ def utxo_transfer():
 
     # --- UTXO transaction ---------------------------------------------------
 
-    amount_nrtc = int(amount_rtc * UNIT)
-    fee_nrtc = int(fee_rtc * UNIT)
+    # Use Decimal for exact RTC → nanoRTC conversion.
+    # float multiplication truncates: int(0.1 * 100_000_000) = 9_999_999
+    # instead of the correct 10_000_000.  Over thousands of transactions
+    # the cumulative error is non-trivial.
+    amount_nrtc = int(Decimal(str(amount_rtc)) * UNIT)
+    fee_nrtc = int(Decimal(str(fee_rtc)) * UNIT)
     target_nrtc = amount_nrtc + fee_nrtc
 
     # Select UTXOs
