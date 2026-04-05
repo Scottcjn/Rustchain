@@ -121,8 +121,8 @@ def main() -> None:
     repo = env("REPO")
     pr_number = env("PR_NUMBER")
     pr_author = env("PR_AUTHOR")
-    vps_host = env("RTC_VPS_HOST")
-    admin_key = env("RTC_ADMIN_KEY")
+    vps_host = env("RTC_VPS_HOST", required=False)
+    admin_key = env("RTC_ADMIN_KEY", required=False)
     repo_owner = env("REPO_OWNER")
 
     print(f"Processing PR #{pr_number} in {repo} (author: {pr_author})")
@@ -177,6 +177,19 @@ def main() -> None:
     memo = f"PR #{pr_number} in {repo} — auto-pay"
 
     print(f"Initiating transfer: {payment_amount} RTC from {FROM_WALLET} to {to_wallet}")
+
+    # --- Check if VPS secrets are configured ------------------------------
+    if not vps_host or not admin_key:
+        print("::warning::RTC_VPS_HOST or RTC_ADMIN_KEY not configured — posting manual transfer notice.")
+        manual_body = (
+            f"**RTC Auto-Pay — Manual Transfer Required**\n\n"
+            f"Payment directive found: **{payment_amount} RTC** for @{to_wallet}\n\n"
+            f"VPS secrets not configured — please process this payment manually.\n\n"
+            f"<!-- {ALREADY_PAID_MARKER}:MANUAL -->"
+        )
+        post_comment(repo, pr_number, manual_body)
+        print(f"Manual transfer notice posted for {payment_amount} RTC to {to_wallet}")
+        return
 
     # --- Call VPS transfer API --------------------------------------------
     try:

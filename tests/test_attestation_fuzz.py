@@ -265,7 +265,7 @@ def test_attest_submit_strict_fixture_enforces_hardware_binding(strict_client):
     first = _attach_live_challenge(strict_client, _base_payload())
     second = _attach_live_challenge(strict_client, _base_payload())
     second["miner"] = "different-miner"
-    second["report"]["nonce"] = "nonce-456"  # unique nonce to bypass replay check
+    # _attach_live_challenge already provides a fresh, unique challenge nonce
 
     first_response = strict_client.post("/attest/submit", json=first)
     second_response = strict_client.post("/attest/submit", json=second)

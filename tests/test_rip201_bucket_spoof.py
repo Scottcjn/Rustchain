@@ -290,7 +290,8 @@ def test_public_apis_do_not_expose_spoofed_claim_as_vintage(attest_client):
 
     miners = client.get("/api/miners")
     miners_body = miners.get_json()
-    miner_row = next(row for row in miners_body if row["miner"] == payload["miner"])
+    miners_list = miners_body.get("miners", miners_body) if isinstance(miners_body, dict) else miners_body
+    miner_row = next(row for row in miners_list if row["miner"] == payload["miner"])
     assert miner_row["device_family"] == "x86_64"
     assert miner_row["device_arch"] == "default"
     assert miner_row["hardware_type"] == "x86-64 (Modern)"
