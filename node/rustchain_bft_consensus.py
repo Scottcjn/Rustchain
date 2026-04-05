@@ -464,6 +464,18 @@ class BFTConsensus:
                 logging.warning(f"Invalid PREPARE signature from {msg.node_id}")
                 return
 
+            # SECURITY: Verify digest matches the PRE-PREPARE proposal.
+            # Without this, a Byzantine node can send PREPARE for a
+            # different digest, enabling equivocation.
+            if epoch in self.pre_prepare_log:
+                expected_digest = self.pre_prepare_log[epoch].digest
+                if msg.digest != expected_digest:
+                    logging.warning(
+                        f"[PREPARE] Digest mismatch from {msg.node_id}: "
+                        f"got {msg.digest[:16]}... expected {expected_digest[:16]}..."
+                    )
+                    return
+
             # Store prepare
             if epoch not in self.prepare_log:
                 self.prepare_log[epoch] = {}
@@ -547,6 +559,18 @@ class BFTConsensus:
             if not self._verify_signature(msg.node_id, sign_data, msg.signature):
                 logging.warning(f"Invalid COMMIT signature from {msg.node_id}")
                 return
+
+            # SECURITY: Verify digest matches the PRE-PREPARE proposal.
+            # Without this, a Byzantine node can commit a different
+            # proposal than what was proposed and prepared.
+            if epoch in self.pre_prepare_log:
+                expected_digest = self.pre_prepare_log[epoch].digest
+                if msg.digest != expected_digest:
+                    logging.warning(
+                        f"[COMMIT] Digest mismatch from {msg.node_id}: "
+                        f"got {msg.digest[:16]}... expected {expected_digest[:16]}..."
+                    )
+                    return
 
             # Store commit
             if epoch not in self.commit_log:
