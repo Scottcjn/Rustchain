@@ -464,6 +464,16 @@ class BFTConsensus:
                 logging.warning(f"Invalid PREPARE signature from {msg.node_id}")
                 return
 
+            # Check timestamp freshness — prevents replay of stale messages
+            if abs(time.time() - msg.timestamp) > CONSENSUS_MESSAGE_TTL:
+                logging.warning(f"Stale PREPARE from {msg.node_id} (age={int(time.time()) - msg.timestamp}s)")
+                return
+
+            # Verify digest matches the PRE-PREPARE for this epoch
+            if epoch in self.pre_prepare_log and msg.digest != self.pre_prepare_log[epoch].digest:
+                logging.warning(f"PREPARE digest mismatch for epoch {epoch}: expected {self.pre_prepare_log[epoch].digest[:16]}... got {msg.digest[:16]}...")
+                return
+
             # Store prepare
             if epoch not in self.prepare_log:
                 self.prepare_log[epoch] = {}
@@ -485,6 +495,22 @@ class BFTConsensus:
         quorum = self.get_quorum_size()
 
         logging.info(f"[PREPARE] Epoch {epoch}: {prepare_count}/{quorum} prepares")
+
+        # Verify all prepares share the same digest as the PRE-PREPARE.
+        # Individual handle_prepare() calls already filter mismatches, but this
+        # provides defense-in-depth against race conditions or code paths that
+        # bypass the per-message check.
+        if epoch in self.pre_prepare_log:
+            expected_digest = self.pre_prepare_log[epoch].digest
+            for node_id in list(self.prepare_log[epoch].keys()):
+                msg = self.prepare_log[epoch][node_id]
+                if msg.digest != expected_digest:
+                    logging.warning(
+                        f"[PREPARE] Digest mismatch from {node_id} for epoch {epoch}: "
+                        f"expected {expected_digest[:16]}... got {msg.digest[:16]}..."
+                    )
+                    del self.prepare_log[epoch][node_id]
+                    prepare_count -= 1
 
         # Phase guard prevents sending duplicate COMMITs if more PREPAREs arrive
         # after we already advanced — only transition once per epoch.
@@ -542,10 +568,24 @@ class BFTConsensus:
             if epoch in self.committed_epochs:
                 return
 
+            # Validate view matches current view
+            if msg.view != self.current_view:
+                return
+
             # Verify signature
             sign_data = f"{MessageType.COMMIT.value}:{msg.view}:{epoch}:{msg.digest}:{msg.timestamp}"
             if not self._verify_signature(msg.node_id, sign_data, msg.signature):
                 logging.warning(f"Invalid COMMIT signature from {msg.node_id}")
+                return
+
+            # Check timestamp freshness — prevents replay of stale messages
+            if abs(time.time() - msg.timestamp) > CONSENSUS_MESSAGE_TTL:
+                logging.warning(f"Stale COMMIT from {msg.node_id} (age={int(time.time()) - msg.timestamp}s)")
+                return
+
+            # Verify digest matches the PRE-PREPARE for this epoch
+            if epoch in self.pre_prepare_log and msg.digest != self.pre_prepare_log[epoch].digest:
+                logging.warning(f"COMMIT digest mismatch for epoch {epoch}: expected {self.pre_prepare_log[epoch].digest[:16]}... got {msg.digest[:16]}...")
                 return
 
             # Store commit
