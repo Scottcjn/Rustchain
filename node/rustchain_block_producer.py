@@ -30,6 +30,11 @@ from rustchain_crypto import (
 )
 from rustchain_tx_handler import TransactionPool
 
+try:
+    from utxo_db import UtxoDB as _UtxoDB
+except Exception:  # pragma: no cover - soft dependency for legacy/account-mode use
+    _UtxoDB = None
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [BLOCK] %(levelname)s: %(message)s'
@@ -190,12 +195,14 @@ class BlockProducer:
         db_path: str,
         tx_pool: TransactionPool,
         signer: Optional[Ed25519Signer] = None,
-        wallet_address: Optional[str] = None
+        wallet_address: Optional[str] = None,
+        utxo_db: Optional["_UtxoDB"] = None
     ):
         self.db_path = db_path
         self.tx_pool = tx_pool
         self.signer = signer
         self.wallet_address = wallet_address
+        self._utxo_db = utxo_db
         self._lock = threading.Lock()
 
     def get_current_slot(self) -> int:
@@ -283,8 +290,15 @@ class BlockProducer:
         """
         Compute current state root.
 
-        State root is hash of all balances sorted by address.
+        Prefer the UTXO Merkle root when a UTXO database is attached; otherwise
+        fall back to the legacy account-model balances table.
         """
+        if self._utxo_db is not None:
+            try:
+                return self._utxo_db.compute_state_root()
+            except Exception as exc:
+                logger.warning("UTXO state root computation failed; falling back to balances table: %s", exc)
+
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
