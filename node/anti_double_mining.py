@@ -512,106 +512,249 @@ def settle_epoch_with_anti_double_mining(
     db_path: str,
     epoch: int,
     per_epoch_urtc: int,
-    current_slot: int
+    current_slot: int,
+    existing_conn=None
 ) -> Dict[str, Any]:
     """
     Settle epoch rewards with anti-double-mining enforcement.
-    
-    This is a drop-in replacement for the existing settle_epoch_rip200 function
-    that adds anti-double-mining protection.
-    
+
+    When *existing_conn* is provided (a live sqlite3.Connection already holding
+    ``BEGIN IMMEDIATE``), it is used for all reads/writes and the caller owns
+    the transaction lifecycle.  When omitted, a fresh connection is opened
+    (legacy / standalone-call compatibility).
+
     Returns:
         Settlement result with telemetry data
     """
-    DB_PATH = db_path
     UNIT = 1_000_000
-    
-    with sqlite3.connect(db_path, timeout=10) as db:
+
+    if existing_conn is not None:
+        db = existing_conn
+        own_conn = False
+    else:
+        db = sqlite3.connect(db_path, timeout=10)
+        own_conn = True
         db.execute("BEGIN IMMEDIATE")
-        
-        try:
-            # Check if already settled
-            st = db.execute("SELECT settled FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
-            if st and int(st[0]) == 1:
+
+    try:
+        # Check if already settled
+        st = db.execute("SELECT settled FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
+        if st and int(st[0]) == 1:
+            if own_conn:
                 db.rollback()
-                return {"ok": True, "epoch": epoch, "already_settled": True}
-            
-            # Calculate rewards with anti-double-mining
+            return {"ok": True, "epoch": epoch, "already_settled": True}
+
+        # Calculate rewards with anti-double-mining.
+        # When we share the caller's connection we must NOT open a separate one.
+        if existing_conn is not None:
+            rewards, telemetry = _calculate_anti_double_mining_rewards_conn(
+                db, epoch, per_epoch_urtc, current_slot
+            )
+        else:
             rewards, telemetry = calculate_anti_double_mining_rewards(
                 db_path, epoch, per_epoch_urtc, current_slot
             )
-            
-            if not rewards:
+
+        if not rewards:
+            if own_conn:
                 db.rollback()
-                return {"ok": False, "error": "no_eligible_miners", "epoch": epoch}
-            
-            # Credit rewards to miners
-            ts_now = int(time.time())
-            miners_data = []
-            
-            for miner_id, share_urtc in rewards.items():
-                # Insert or update balance
-                db.execute(
-                    "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?) "
-                    "ON CONFLICT(miner_id) DO UPDATE SET amount_i64 = amount_i64 + ?",
-                    (miner_id, share_urtc, share_urtc)
-                )
-                
-                # Record in ledger
-                db.execute(
-                    "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
-                    (ts_now, epoch, miner_id, share_urtc, f"epoch_{epoch}_reward")
-                )
-                
-                # Record in epoch_rewards
-                db.execute(
-                    "INSERT INTO epoch_rewards (epoch, miner_id, share_i64) VALUES (?, ?, ?)",
-                    (epoch, miner_id, share_urtc)
-                )
-                
-                # Get metadata for reporting
-                arch_row = db.execute(
-                    "SELECT device_arch FROM miner_attest_recent WHERE miner = ? LIMIT 1",
-                    (miner_id,)
-                ).fetchone()
-                device_arch = arch_row[0] if arch_row else "unknown"
-                
-                from rip_200_round_robin_1cpu1vote import get_time_aged_multiplier, get_chain_age_years
-                chain_age = get_chain_age_years(current_slot)
-                multiplier = get_time_aged_multiplier(device_arch, chain_age)
-                
-                miners_data.append({
-                    "miner_id": miner_id,
-                    "share_urtc": share_urtc,
-                    "share_rtc": share_urtc / UNIT,
-                    "multiplier": round(multiplier, 3),
-                    "device_arch": device_arch
-                })
-            
-            # Mark epoch as settled
+            return {"ok": False, "error": "no_eligible_miners", "epoch": epoch}
+
+        # Credit rewards to miners
+        ts_now = int(time.time())
+        miners_data = []
+
+        for miner_id, share_urtc in rewards.items():
+            # Insert or update balance
             db.execute(
-                "INSERT OR REPLACE INTO epoch_state (epoch, settled, settled_ts) VALUES (?, 1, ?)",
-                (epoch, ts_now)
+                "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?) "
+                "ON CONFLICT(miner_id) DO UPDATE SET amount_i64 = amount_i64 + ?",
+                (miner_id, share_urtc, share_urtc)
             )
-            
+
+            # Record in ledger
+            db.execute(
+                "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
+                (ts_now, epoch, miner_id, share_urtc, f"epoch_{epoch}_reward")
+            )
+
+            # Record in epoch_rewards
+            db.execute(
+                "INSERT INTO epoch_rewards (epoch, miner_id, share_i64) VALUES (?, ?, ?)",
+                (epoch, miner_id, share_urtc)
+            )
+
+            # Get metadata for reporting
+            arch_row = db.execute(
+                "SELECT device_arch FROM miner_attest_recent WHERE miner = ? LIMIT 1",
+                (miner_id,)
+            ).fetchone()
+            device_arch = arch_row[0] if arch_row else "unknown"
+
+            from rip_200_round_robin_1cpu1vote import get_time_aged_multiplier, get_chain_age_years
+            chain_age = get_chain_age_years(current_slot)
+            multiplier = get_time_aged_multiplier(device_arch, chain_age)
+
+            miners_data.append({
+                "miner_id": miner_id,
+                "share_urtc": share_urtc,
+                "share_rtc": share_urtc / UNIT,
+                "multiplier": round(multiplier, 3),
+                "device_arch": device_arch
+            })
+
+        # Mark epoch as settled
+        db.execute(
+            "INSERT OR REPLACE INTO epoch_state (epoch, settled, settled_ts) VALUES (?, 1, ?)",
+            (epoch, ts_now)
+        )
+
+        if own_conn:
             db.commit()
-            
-            return {
-                "ok": True,
-                "epoch": epoch,
-                "distributed_rtc": per_epoch_urtc / UNIT,
-                "distributed_urtc": per_epoch_urtc,
-                "miners": miners_data,
-                "chain_age_years": round(get_chain_age_years(current_slot), 2),
-                "anti_double_mining_telemetry": telemetry
-            }
-            
-        except Exception as e:
+
+        return {
+            "ok": True,
+            "epoch": epoch,
+            "distributed_rtc": per_epoch_urtc / UNIT,
+            "distributed_urtc": per_epoch_urtc,
+            "miners": miners_data,
+            "chain_age_years": round(get_chain_age_years(current_slot), 2),
+            "anti_double_mining_telemetry": telemetry
+        }
+
+    except Exception as e:
+        if own_conn:
             try:
                 db.rollback()
             except Exception:
                 pass
-            raise
+        raise
+    finally:
+        if own_conn:
+            db.close()
+
+
+def _calculate_anti_double_mining_rewards_conn(
+    conn,
+    epoch: int,
+    total_reward_urtc: int,
+    current_slot: int
+) -> Tuple[Dict[str, int], Dict[str, Any]]:
+    """Same as calculate_anti_double_mining_rewards but uses an existing connection.
+
+    The caller owns the transaction lifecycle — this function does NOT commit
+    or rollback.
+    """
+    from rip_200_round_robin_1cpu1vote import get_time_aged_multiplier, get_chain_age_years
+
+    chain_age_years = get_chain_age_years(current_slot)
+
+    epoch_start_slot = epoch * 144
+    epoch_end_slot = epoch_start_slot + 143
+    epoch_start_ts = 1728000000 + (epoch_start_slot * 600)
+    epoch_end_ts = 1728000000 + (epoch_end_slot * 600)
+
+    # Detect duplicate identities
+    duplicates = detect_duplicate_identities(conn, epoch, epoch_start_ts, epoch_end_ts)
+
+    # Log telemetry
+    log_duplicate_detection(duplicates, epoch)
+
+    # Get all miner groups by machine identity
+    miner_groups = get_epoch_miner_groups(conn, epoch)
+
+    # Select representative miner for each machine
+    representative_map: Dict[str, str] = {}  # machine_identity -> representative_miner_id
+    skipped_miners: Dict[str, str] = {}  # skipped_miner_id -> representative_miner_id
+
+    for identity_hash, miner_ids in miner_groups.items():
+        if len(miner_ids) > 1:
+            rep = select_representative_miner(conn, miner_ids)
+            representative_map[identity_hash] = rep
+            for mid in miner_ids:
+                if mid != rep:
+                    skipped_miners[mid] = rep
+        else:
+            representative_map[identity_hash] = miner_ids[0]
+
+    cursor = conn.cursor()
+    machine_data = []
+
+    for identity_hash, miner_id in representative_map.items():
+        row = cursor.execute(
+            "SELECT device_arch, COALESCE(fingerprint_passed, 1) FROM miner_attest_recent WHERE miner=?",
+            (miner_id,)
+        ).fetchone()
+
+        if row:
+            device_arch = row[0] or "unknown"
+            fingerprint_ok = row[1]
+            machine_data.append((miner_id, device_arch, fingerprint_ok, identity_hash))
+
+    # Calculate time-aged weights for each machine
+    weighted_machines = []
+    total_weight = 0.0
+
+    for miner_id, device_arch, fingerprint_ok, identity_hash in machine_data:
+        if fingerprint_ok == 0:
+            weight = 0.0
+        else:
+            weight = get_time_aged_multiplier(device_arch, chain_age_years)
+
+        if weight > 0 and fingerprint_ok == 1:
+            try:
+                wart_row = cursor.execute(
+                    "SELECT warthog_bonus FROM miner_attest_recent WHERE miner=?",
+                    (miner_id,)
+                ).fetchone()
+                if wart_row and wart_row[0] and wart_row[0] > 1.0:
+                    weight *= wart_row[0]
+            except Exception:
+                pass
+
+        weighted_machines.append((miner_id, weight))
+        total_weight += weight
+
+    # Distribute rewards
+    rewards = {}
+    remaining = total_reward_urtc
+    positive_weight_miners = [(mid, w) for mid, w in weighted_machines if w > 0]
+
+    if not positive_weight_miners:
+        return {}, {
+            "epoch": epoch,
+            "total_machines": len(representative_map),
+            "total_miner_ids_processed": sum(len(ids) for ids in miner_groups.values()),
+            "duplicate_machines_detected": len(duplicates),
+            "duplicate_miner_ids_skipped": len(skipped_miners),
+            "skipped_details": [
+                {"skipped": skipped, "rewarded_representative": rep}
+                for skipped, rep in skipped_miners.items()
+            ],
+            "duplicate_machine_details": [d.to_dict() for d in duplicates],
+            "note": "No eligible miners (all failed fingerprint validation)"
+        }
+
+    for i, (miner_id, weight) in enumerate(positive_weight_miners):
+        if i == len(positive_weight_miners) - 1:
+            share = remaining
+        else:
+            share = int((weight / total_weight) * total_reward_urtc)
+            remaining -= share
+        rewards[miner_id] = share
+
+    return rewards, {
+        "epoch": epoch,
+        "total_machines": len(representative_map),
+        "total_miner_ids_processed": sum(len(ids) for ids in miner_groups.values()),
+        "duplicate_machines_detected": len(duplicates),
+        "duplicate_miner_ids_skipped": len(skipped_miners),
+        "skipped_details": [
+            {"skipped": skipped, "rewarded_representative": rep}
+            for skipped, rep in skipped_miners.items()
+        ],
+        "duplicate_machine_details": [d.to_dict() for d in duplicates]
+    }
 
 
 # =============================================================================

@@ -121,6 +121,12 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
             "anti_double_mining_telemetry": {...}  # Only if enabled
         }
     """
+    # Reject future epochs — defense in depth (caller should also check).
+    current_epoch = slot_to_epoch(current_slot())
+    if epoch > current_epoch:
+        return {"ok": False, "error": "epoch_not_reached",
+                "requested": epoch, "current_epoch": current_epoch}
+
     # Handle both connection and path
     if isinstance(db_path, str):
         # timeout helps concurrent settle attempts fail fast rather than hang forever.
@@ -147,12 +153,20 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
         # Issue #1449: Use anti-double-mining rewards if enabled and available
         if enable_anti_double_mining and ANTI_DOUBLE_MINING_AVAILABLE:
             try:
+                # Pass the locked `db` connection so the anti-double-mining path
+                # operates inside the same IMMEDIATE transaction.  This closes
+                # the race window where a concurrent caller could open a separate
+                # connection and also pass the already_settled check.
                 result = settle_epoch_with_anti_double_mining(
                     db_path if isinstance(db_path, str) else DB_PATH,
                     epoch,
                     PER_EPOCH_URTC,
-                    current
+                    current,
+                    existing_conn=db,
                 )
+                # The callee wrote rewards + settled flag on our connection but
+                # does NOT commit (caller owns the transaction).  Commit now.
+                db.commit()
                 return result
             except Exception as e:
                 print(f"[WARN] Anti-double-mining failed, falling back to standard: {e}")
