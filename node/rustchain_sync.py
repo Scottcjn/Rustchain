@@ -201,7 +201,12 @@ class RustChainSyncManager:
                         if local_row and local_row["last_attest"] is not None and local_row["last_attest"] >= sanitized["last_attest"]:
                             continue
 
-                # For balances, reject if remote would reduce known local balance
+                # SECURITY: Balances must NEVER be updated via peer sync.
+                # Balance state is authoritative: it can only change through
+                # local transaction processing (mining rewards, signed
+                # transfers, epoch settlements).  Accepting balance data from
+                # peers — even "increases only" — lets a single compromised
+                # node inflate any wallet to an arbitrary value.
                 if table_name == "balances":
                     candidate_balance_col = None
                     for c in ("amount_i64", "balance_i64", "balance_urtc", "amount_rtc"):
@@ -216,12 +221,15 @@ class RustChainSyncManager:
                         )
                         local_row = cursor.fetchone()
                         if local_row and local_row[0] is not None:
-                            try:
-                                if int(local_row[0]) > int(sanitized[candidate_balance_col]):
-                                    self.logger.warning(f"Rejected sync: Balance reduction for {sanitized[pk]}")
-                                    continue
-                            except Exception:
-                                pass
+                            remote_val = int(sanitized[candidate_balance_col])
+                            local_val = int(local_row[0])
+                            if remote_val != local_val:
+                                self.logger.warning(
+                                    f"Rejected sync: Balance modification for "
+                                    f"{sanitized[pk]} (local={local_val}, "
+                                    f"remote={remote_val})"
+                                )
+                                continue
 
                 # Safe upsert (avoid INSERT OR REPLACE data loss semantics)
                 columns = list(sanitized.keys())
