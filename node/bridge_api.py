@@ -19,6 +19,7 @@ import time
 import hashlib
 import os
 from typing import Optional, Tuple, Dict, Any
+from decimal import Decimal
 from dataclasses import dataclass
 from enum import Enum
 
@@ -277,7 +278,7 @@ def create_bridge_transfer(
     now = int(time.time())
     current_epoch = slot_to_epoch(current_slot())
     
-    amount_i64 = int(request.amount_rtc * BRIDGE_UNIT)
+    amount_i64 = int(Decimal(str(request.amount_rtc)) * BRIDGE_UNIT)
     tx_hash = generate_bridge_tx_hash(
         request.direction,
         request.source_chain,
