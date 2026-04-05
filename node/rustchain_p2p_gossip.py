@@ -477,10 +477,22 @@ class GossipLayer:
         """Save attestation to SQLite database"""
         try:
             with sqlite3.connect(self.db_path) as conn:
+                # FIX: Prevent attestation overwrite from degrading prior fingerprint status.
+                # P2P-synced attestations don't carry fingerprint_passed; use MAX to preserve
+                # any existing fingerprint_passed=1 set by the local node's attestation flow.
                 conn.execute("""
-                    INSERT OR REPLACE INTO miner_attest_recent
-                    (miner, ts_ok, device_family, device_arch, entropy_score)
+                    INSERT INTO miner_attest_recent
+                        (miner, ts_ok, device_family, device_arch, entropy_score)
                     VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(miner) DO UPDATE SET
+                        ts_ok = excluded.ts_ok,
+                        device_family = excluded.device_family,
+                        device_arch = excluded.device_arch,
+                        entropy_score = excluded.entropy_score,
+                        fingerprint_passed = COALESCE(
+                            MAX(COALESCE(miner_attest_recent.fingerprint_passed, 0),
+                                COALESCE(excluded.fingerprint_passed, miner_attest_recent.fingerprint_passed)),
+                            miner_attest_recent.fingerprint_passed)
                 """, (
                     attestation.get("miner"),
                     ts_ok,
