@@ -234,6 +234,42 @@ class TestAttestSignatureVerification(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(body["ok"])
 
+    def test_signature_rejected_when_pynacl_missing(self):
+        """When pynacl is not installed and a signature is provided, reject with 503.
+
+        This is the fail-closed path: the node must not accept a signed
+        attestation it cannot verify.  Unsigned attestations are still
+        accepted for backward compatibility.
+
+        We simulate HAVE_NACL=False by monkeypatching the module-level flag.
+        """
+        mod, _ = self._load_module(
+            "rustchain_attest_sig_no_nacl", "sig_no_nacl.db",
+        )
+        # Monkeypatch HAVE_NACL to False to simulate missing pynacl
+        original_have_nacl = mod.HAVE_NACL
+        mod.HAVE_NACL = False
+
+        nonce = self._get_challenge(mod)
+        # Provide a signature — the node cannot verify it without pynacl
+        payload = self._base_payload(
+            "RTC_NO_NACL_MINER",
+            nonce,
+            "deadbeef",
+            sig_hex="aa" * 64,
+            pubkey_hex="bb" * 32,
+            miner_id="miner_nacl_missing",
+        )
+        status, body = self._submit(mod, payload)
+
+        # Must be rejected — fail-closed, not fail-open
+        self.assertEqual(status, 503)
+        self.assertEqual(body["code"], "ED25519_UNAVAILABLE")
+        self.assertEqual(body["error"], "ed25519_unavailable")
+
+        # Restore original flag (cleanup — module will be discarded anyway)
+        mod.HAVE_NACL = original_have_nacl
+
 
 if __name__ == "__main__":
     unittest.main()
