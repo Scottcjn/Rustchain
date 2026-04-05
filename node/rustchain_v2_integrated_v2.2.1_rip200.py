@@ -4,7 +4,6 @@ RustChain v2 - Integrated Server
 Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
 import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math, re, statistics
-from decimal import Decimal
 import ipaddress
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect
@@ -5472,6 +5471,12 @@ def api_rewards_settle():
     if epoch < 0:
         return jsonify({"ok": False, "error": "epoch required"}), 400
 
+    # Reject future epochs — only current or past epochs may be settled.
+    current_epoch = slot_to_epoch(current_slot())
+    if epoch > current_epoch:
+        return jsonify({"ok": False, "error": "epoch_not_reached",
+                        "requested": epoch, "current_epoch": current_epoch}), 400
+
     with sqlite3.connect(DB_PATH) as db:
         res = settle_epoch(db, epoch)
     return jsonify(res)
@@ -5749,7 +5754,7 @@ def wallet_transfer_v2():
     amount_rtc = pre.details["amount_rtc"]
     reason = str((data or {}).get('reason', 'admin_transfer'))
     
-    amount_i64 = int(Decimal(str(amount_rtc)) * 1000000)
+    amount_i64 = int(amount_rtc * 1000000)
     now = int(time.time())
     confirms_at = now + CONFIRMATION_DELAY_SECONDS
     current_epoch = current_slot()
@@ -6110,7 +6115,7 @@ def wallet_transfer_OLD():
     if amount_rtc <= 0:
         return jsonify({"error": "Amount must be positive"}), 400
 
-    amount_i64 = int(Decimal(str(amount_rtc)) * 1000000)
+    amount_i64 = int(amount_rtc * 1000000)
 
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -6677,7 +6682,7 @@ def wallet_transfer_signed():
     # SECURITY/HARDENING: signed transfers should follow the same 2-phase commit
     # semantics as admin transfers (pending_ledger + delayed confirmation). This
     # prevents bypassing the 24h pending window via the signed endpoint.
-    amount_i64 = int(Decimal(str(amount_rtc)) * 1000000)
+    amount_i64 = int(amount_rtc * 1000000)
     now = int(time.time())
     confirms_at = now + CONFIRMATION_DELAY_SECONDS
     current_epoch = current_slot()

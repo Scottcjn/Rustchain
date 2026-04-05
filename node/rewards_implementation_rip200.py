@@ -121,6 +121,12 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
             "anti_double_mining_telemetry": {...}  # Only if enabled
         }
     """
+    # Reject future epochs — defense in depth (caller should also check).
+    current_epoch = slot_to_epoch(current_slot())
+    if epoch > current_epoch:
+        return {"ok": False, "error": "epoch_not_reached",
+                "requested": epoch, "current_epoch": current_epoch}
+
     # Handle both connection and path
     if isinstance(db_path, str):
         # timeout helps concurrent settle attempts fail fast rather than hang forever.
