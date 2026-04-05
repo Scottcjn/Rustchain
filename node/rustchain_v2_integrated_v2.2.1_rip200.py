@@ -2603,6 +2603,29 @@ def _submit_attestation_impl():
     nonce = report.get('nonce') or _attest_text(data.get('nonce'))
     device = _normalize_attestation_device(data.get('device'))
 
+    # SECURITY: Verify Ed25519 signature on attestation report if present.
+    # The rustchain-miner signs (miner_id|wallet|nonce|commitment) and includes
+    # signature + public_key at the top level.  If both fields are present we
+    # MUST verify — this prevents an MITM from changing the miner (wallet) field
+    # in transit and claiming another miner's hardware rewards (wallet hijack).
+    sig_hex = (data.get('signature') or '').strip().lower()
+    pubkey_hex = (data.get('public_key') or '').strip().lower()
+    miner_id_raw = _attest_text(data.get('miner_id')) or miner
+    commitment = report.get('commitment') or ''
+    if sig_hex and pubkey_hex:
+        if HAVE_NACL:
+            sign_message = '{}|{}|{}|{}'.format(miner_id_raw, miner, nonce, commitment)
+            if not verify_rtc_signature(pubkey_hex, sign_message.encode('utf-8'), sig_hex):
+                print(f"[ATTEST/SIG] INVALID SIGNATURE: miner={miner[:20]}... pubkey={pubkey_hex[:16]}...")
+                return jsonify({
+                    "ok": False,
+                    "error": "invalid_attestation_signature",
+                    "message": "Ed25519 signature verification failed — report may have been tampered",
+                    "code": "INVALID_SIGNATURE",
+                }), 400
+        else:
+            print("[ATTEST/SIG] WARNING: pynacl not installed — cannot verify attestation signature")
+
     # IP rate limiting (Security Hardening 2026-02-02)
     ip_ok, ip_reason = check_ip_rate_limit(client_ip, miner)
     if not ip_ok:
