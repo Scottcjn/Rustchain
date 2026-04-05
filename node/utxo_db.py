@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 UNIT = 100_000_000          # 1 RTC = 100,000,000 nanoRTC (8 decimals)
 DUST_THRESHOLD = 1_000      # nanoRTC below which change is absorbed into fee
+MAX_COINBASE_OUTPUT_NRTC = 150 * UNIT  # Max minting output per block (1.5 RTC)
 MAX_POOL_SIZE = 10_000
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
 P2PK_PREFIX = b'\x00\x08'   # Pay-to-Public-Key proposition prefix
@@ -396,6 +397,13 @@ class UtxoDB:
                 if not isinstance(o['value_nrtc'], int) or o['value_nrtc'] <= 0:
                     conn.execute("ROLLBACK")
                     return False
+
+            # Cap minting (coinbase) output to prevent unbounded fund creation.
+            # Without this, any caller that passes tx_type='mining_reward'
+            # can mint arbitrary amounts.
+            if tx_type in MINTING_TX_TYPES and output_total > MAX_COINBASE_OUTPUT_NRTC:
+                conn.execute("ROLLBACK")
+                return False
 
             if fee < 0:
                 conn.execute("ROLLBACK")

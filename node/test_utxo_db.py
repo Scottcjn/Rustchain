@@ -13,7 +13,7 @@ import unittest
 
 from utxo_db import (
     UtxoDB, coin_select, compute_box_id, address_to_proposition,
-    proposition_to_address, UNIT, DUST_THRESHOLD,
+    proposition_to_address, UNIT, DUST_THRESHOLD, MAX_COINBASE_OUTPUT_NRTC,
 )
 
 
@@ -317,7 +317,7 @@ class TestUtxoDB(unittest.TestCase):
 
     def test_mempool_block_candidates(self):
         self._apply_coinbase('alice', 100 * UNIT, block_height=1)
-        self._apply_coinbase('alice', 200 * UNIT, block_height=2)
+        self._apply_coinbase('alice', 120 * UNIT, block_height=2)
         boxes = self.db.get_unspent_for_address('alice')
 
         # Add two txs with different fees (outputs + fee <= inputs)
@@ -330,7 +330,7 @@ class TestUtxoDB(unittest.TestCase):
         self.db.mempool_add({
             'tx_id': 'high' * 16,
             'inputs': [{'box_id': boxes[1]['box_id']}],
-            'outputs': [{'address': 'bob', 'value_nrtc': 200 * UNIT - 5000}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 120 * UNIT - 5000}],
             'fee_nrtc': 5000,
         })
 
@@ -444,6 +444,27 @@ class TestUtxoDB(unittest.TestCase):
         }, block_height=10)
         self.assertTrue(ok, "UTXO layer should accept any spending_proof "
                             "(verification is endpoint's job)")
+
+    def test_mining_reward_at_cap_allowed(self):
+        """Mining reward exactly at MAX_COINBASE_OUTPUT_NRTC must succeed."""
+        ok = self._apply_coinbase('miner', MAX_COINBASE_OUTPUT_NRTC)
+        self.assertTrue(ok)
+        self.assertEqual(self.db.get_balance('miner'), MAX_COINBASE_OUTPUT_NRTC)
+
+    def test_mining_reward_over_cap_rejected(self):
+        """Mining reward exceeding MAX_COINBASE_OUTPUT_NRTC must be rejected.
+        Without this, any caller that passes tx_type='mining_reward' can
+        mint unlimited funds (bounty #2819 HIGH-2)."""
+        ok = self.db.apply_transaction({
+            'tx_type': 'mining_reward',
+            'inputs': [],
+            'outputs': [{'address': 'attacker',
+                         'value_nrtc': MAX_COINBASE_OUTPUT_NRTC + 1}],
+            'fee_nrtc': 0,
+            'timestamp': int(time.time()),
+        }, block_height=10)
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('attacker'), 0)
 
     def test_mempool_empty_inputs_rejected_for_transfer(self):
         """Mempool must also reject non-minting txs with empty inputs."""
