@@ -216,6 +216,32 @@ class TestUtxoDB(unittest.TestCase):
         root_after = self.db.compute_state_root()
         self.assertNotEqual(root_before, root_after)
 
+    def test_state_root_odd_count_unique(self):
+        """Odd-count UTXO sets must produce unique roots.
+
+        The old Merkle construction duplicated the last hash when the count
+        was odd, creating second-preimage ambiguity: sets [A,B,C] and
+        [A,B,C,C] could produce the same root. The domain-separated padding
+        and count-binding fix eliminates this (bounty #2819 MED-2).
+        """
+        # Create 3 boxes (odd count)
+        self._apply_coinbase('alice', 10 * UNIT, block_height=1)
+        self._apply_coinbase('bob',   20 * UNIT, block_height=2)
+        self._apply_coinbase('carol', 30 * UNIT, block_height=3)
+        root_3 = self.db.compute_state_root()
+        self.assertEqual(len(root_3), 64)
+
+        # Create a 4th box — root must change
+        self._apply_coinbase('dave', 40 * UNIT, block_height=4)
+        root_4 = self.db.compute_state_root()
+        self.assertNotEqual(root_3, root_4)
+
+        # Create a 5th box (odd again) — root must change again
+        self._apply_coinbase('eve', 50 * UNIT, block_height=5)
+        root_5 = self.db.compute_state_root()
+        self.assertNotEqual(root_4, root_5)
+        self.assertNotEqual(root_3, root_5)
+
     # -- integrity -----------------------------------------------------------
 
     def test_integrity_ok(self):
