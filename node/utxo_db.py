@@ -316,6 +316,15 @@ class UtxoDB:
         try:
             conn.execute("BEGIN IMMEDIATE")
 
+            # -- reject duplicate input box_ids --------------------------------
+            # Without this, the same box_id counted twice inflates
+            # input_total.  The spend-phase rowcount check catches it
+            # today, but only accidentally.  Defense in depth.
+            input_box_ids = [i['box_id'] for i in inputs]
+            if len(input_box_ids) != len(set(input_box_ids)):
+                conn.execute("ROLLBACK")
+                return False
+
             # -- validate inputs exist and are unspent -----------------------
             input_total = 0
             for inp in inputs:
