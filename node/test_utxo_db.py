@@ -274,17 +274,17 @@ class TestUtxoDB(unittest.TestCase):
         self._apply_coinbase('alice', 200 * UNIT, block_height=2)
         boxes = self.db.get_unspent_for_address('alice')
 
-        # Add two txs with different fees
+        # Add two txs with different fees (outputs + fee <= inputs)
         self.db.mempool_add({
             'tx_id': 'low_' * 16,
             'inputs': [{'box_id': boxes[0]['box_id']}],
-            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT - 1000}],
             'fee_nrtc': 1000,
         })
         self.db.mempool_add({
             'tx_id': 'high' * 16,
             'inputs': [{'box_id': boxes[1]['box_id']}],
-            'outputs': [{'address': 'bob', 'value_nrtc': 200 * UNIT}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 200 * UNIT - 5000}],
             'fee_nrtc': 5000,
         })
 
@@ -351,6 +351,99 @@ class TestUtxoDB(unittest.TestCase):
             'inputs': [],
             'outputs': [{'address': 'attacker', 'value_nrtc': 999 * UNIT}],
             'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+
+    # -- mempool conservation-of-value (DoS prevention) ----------------------
+
+    def test_mempool_rejects_outputs_exceed_inputs(self):
+        """Mempool must reject tx where outputs > inputs (conservation violation).
+        Prevents UTXO locking DoS — invalid tx would lock boxes until expiry."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'cons' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 1_000_000 * UNIT}],
+            'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        # Box should NOT be locked — still available for legitimate tx
+        self.assertFalse(
+            self.db.mempool_check_double_spend(boxes[0]['box_id'])
+        )
+
+    def test_mempool_rejects_negative_fee(self):
+        """Mempool must reject negative fee (minting via weakened conservation)."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'nfee' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 50 * UNIT}],
+            'fee_nrtc': -50 * UNIT,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        # Box should NOT be locked
+        self.assertFalse(
+            self.db.mempool_check_double_spend(boxes[0]['box_id'])
+        )
+
+    def test_mempool_accepts_valid_tx(self):
+        """Mempool should accept a well-formed tx with valid conservation."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'good' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [
+                {'address': 'bob', 'value_nrtc': 90 * UNIT},
+                {'address': 'alice', 'value_nrtc': 9 * UNIT},
+            ],
+            'fee_nrtc': 1 * UNIT,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertTrue(ok)
+        # Box should be locked
+        self.assertTrue(
+            self.db.mempool_check_double_spend(boxes[0]['box_id'])
+        )
+
+    def test_mempool_accepts_exact_input_output(self):
+        """Mempool should accept tx where outputs == inputs (no fee, no change)."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'xact' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertTrue(ok)
+
+    def test_mempool_rejects_fee_exceeding_surplus(self):
+        """Mempool must reject tx where outputs + fee > inputs."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'hife' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 99 * UNIT}],
+            'fee_nrtc': 2 * UNIT,  # 99 + 2 = 101 > 100
         }
         ok = self.db.mempool_add(tx)
         self.assertFalse(ok)
