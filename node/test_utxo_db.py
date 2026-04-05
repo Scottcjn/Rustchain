@@ -389,6 +389,62 @@ class TestUtxoDB(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
 
+    # -- bounty #2819 LOW: validation gaps & edge cases ----------------------
+
+    def test_duplicate_input_rejected(self):
+        """Same box_id listed twice in inputs must be rejected.
+        Without explicit dedup, input_total is inflated 2x (LOW-2)."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+        box_id = boxes[0]['box_id']
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [
+                {'box_id': box_id, 'spending_proof': 'sig'},
+                {'box_id': box_id, 'spending_proof': 'sig'},  # duplicate
+            ],
+            'outputs': [{'address': 'attacker', 'value_nrtc': 200 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=10)
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('attacker'), 0)
+
+    def test_self_transfer(self):
+        """Self-transfer (from == to) must work correctly."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [{'address': 'alice', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=10)
+        self.assertTrue(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+
+    def test_spending_proof_accepted_without_verification(self):
+        """The UTXO layer accepts any spending_proof without verification.
+        Signature verification is the endpoint layer's responsibility.
+        This test documents the behavior so future changes don't
+        accidentally rely on it (LOW-3)."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        # Bogus spending_proof is accepted at the UTXO layer
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id'],
+                         'spending_proof': 'TOTALLY_BOGUS'}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=10)
+        self.assertTrue(ok, "UTXO layer should accept any spending_proof "
+                            "(verification is endpoint's job)")
+
     def test_mempool_empty_inputs_rejected_for_transfer(self):
         """Mempool must also reject non-minting txs with empty inputs."""
         tx = {
