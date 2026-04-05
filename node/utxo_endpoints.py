@@ -25,6 +25,11 @@ from flask import Blueprint, request, jsonify
 
 from utxo_db import UtxoDB, coin_select, address_to_proposition, UNIT
 
+# Account-model balances store amount_i64 at 6 decimals (micro-RTC).
+# This MUST match the multiplier used in rustchain_v2_integrated_v2.2.1_rip200.py
+# (e.g. line 2370: amount_i64 = int(amount_decimal * Decimal(1000000))).
+ACCOUNT_UNIT = 1_000_000  # 1 RTC = 1,000,000 uRTC (6 decimals)
+
 utxo_bp = Blueprint('utxo', __name__, url_prefix='/utxo')
 
 # These get set by register_utxo_blueprint() from the main server
@@ -133,7 +138,9 @@ def utxo_state_root():
 @utxo_bp.route('/integrity')
 def utxo_integrity():
     """Compare UTXO totals against account model."""
-    # Get account model total
+    # Get account model total and convert to nanoRTC (8 decimals).
+    # balances.amount_i64 is stored at 6 decimals (ACCOUNT_UNIT),
+    # so multiply by UNIT/ACCOUNT_UNIT (=100) to get nanoRTC.
     account_total = 0
     try:
         conn = sqlite3.connect(_db_path)
@@ -142,13 +149,17 @@ def utxo_integrity():
         ).fetchone()
         account_total = row[0] if row else 0
         conn.close()
+        # Convert from 6-decimal uRTC to 8-decimal nanoRTC for comparison
+        account_total_nrtc = account_total * (UNIT // ACCOUNT_UNIT)
     except Exception:
         account_total = None
+        account_total_nrtc = None
 
-    result = _utxo_db.integrity_check(expected_total=account_total)
+    result = _utxo_db.integrity_check(expected_total=account_total_nrtc)
     if account_total is not None:
-        result['account_total_nrtc'] = account_total
-        result['account_total_rtc'] = account_total / UNIT
+        result['account_total_i64'] = account_total
+        result['account_total_nrtc'] = account_total_nrtc
+        result['account_total_rtc'] = account_total_nrtc / UNIT
     return jsonify(result)
 
 
@@ -317,7 +328,7 @@ def utxo_transfer():
         try:
             conn = sqlite3.connect(_db_path)
             c = conn.cursor()
-            amount_i64 = int(amount_rtc * 1_000_000_000)  # account model uses 9 decimals
+            amount_i64 = int(amount_rtc * ACCOUNT_UNIT)
             c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
                       (to_address,))
             c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
