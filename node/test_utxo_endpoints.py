@@ -228,6 +228,33 @@ class TestUtxoEndpoints(unittest.TestCase):
         # 100 - 90 - 1 fee = 9 change
         self.assertEqual(data['change_rtc'], 9.0)
 
+    def test_transfer_float_precision(self):
+        """0.1 RTC must convert to exactly 10_000_000 nanoRTC.
+
+        Without Decimal: int(0.1 * 100_000_000) = 9_999_999 (truncation)
+        With Decimal:    int(Decimal('0.1') * 100_000_000) = 10_000_000
+        (bounty #2819 MED-3)
+        """
+        self._seed_coinbase('RTC_test_aabbccdd', 100 * UNIT)
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': 'RTC_test_aabbccdd',
+            'to_address': 'bob',
+            'amount_rtc': 0.1,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+        data = r.get_json()
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(data['ok'])
+
+        # Bob must have exactly 0.1 RTC = 10_000_000 nanoRTC
+        bob_bal = self.utxo_db.get_balance('bob')
+        self.assertEqual(bob_bal, 10_000_000,
+                         f"Expected 10_000_000 nanoRTC, got {bob_bal} "
+                         f"(float truncation bug)")
+
 
 if __name__ == '__main__':
     unittest.main()
