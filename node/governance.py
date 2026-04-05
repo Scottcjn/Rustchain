@@ -404,6 +404,11 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                         (proposal_id, miner_id)
                     ).fetchone()
                     if old_vote:
+                        # SECURITY: Validate the stored vote value before
+                        # using it in f-string SQL to prevent injection via
+                        # corrupted DB rows.
+                        if old_vote[0] not in VOTE_CHOICES:
+                            return jsonify({"error": "corrupted vote record"}), 500
                         # Remove old weight
                         old_col = f"votes_{old_vote[0]}"
                         conn.execute(
