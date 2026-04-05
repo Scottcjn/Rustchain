@@ -36,7 +36,7 @@ try:
     HAVE_NACL = True
 except ImportError:
     HAVE_NACL = False
-    print("[WARN] PyNaCl not available - signature verification disabled")
+    print("[WARN] PyNaCl not available — claim signature verification will REJECT all claims")
 
 try:
     from claims_eligibility import (
@@ -146,9 +146,9 @@ def validate_claim_signature(
         (valid: bool, error_message: str or None)
     """
     if not HAVE_NACL:
-        # In production, this should return False
-        # For testing, we allow mock signatures
-        return True, None
+        # SECURITY: Fail closed — reject claims when the crypto library
+        # is unavailable rather than silently accepting any signature.
+        return False, "Ed25519 library (PyNaCl) is not installed — cannot verify signatures"
     
     try:
         # Decode hex strings
@@ -402,7 +402,7 @@ def get_claim_status(
                 "verified_at": row["verified_at"],
                 "settled_at": row["settled_at"],
                 "reward_urtc": row["reward_urtc"],
-                "reward_rtc": row["reward_urtc"] / 100_000_000,
+                "reward_rtc": row["reward_urtc"] / 1_000_000,
                 "wallet_address": row["wallet_address"],
                 "transaction_hash": row["transaction_hash"],
                 "settlement_batch": row["settlement_batch"],
@@ -522,7 +522,7 @@ def submit_claim(
         result["submitted_at"] = claim_record["submitted_at"]
         result["estimated_settlement"] = claim_record["estimated_settlement"]
         result["reward_urtc"] = eligibility["reward_urtc"]
-        result["reward_rtc"] = eligibility["reward_urtc"] / 100_000_000
+        result["reward_rtc"] = eligibility["reward_urtc"] / 1_000_000
         
         return result
     except DuplicateClaimError as e:
@@ -596,7 +596,7 @@ def get_claim_history(
                 "miner_id": miner_id,
                 "total_claims": total_count,
                 "total_claimed_urtc": total_claimed,
-                "total_claimed_rtc": total_claimed / 100_000_000,
+                "total_claimed_rtc": total_claimed / 1_000_000,
                 "claims": claims
             }
     except sqlite3.Error as e:
