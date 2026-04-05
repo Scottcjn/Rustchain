@@ -120,6 +120,32 @@ class TransactionPool:
                 except sqlite3.OperationalError:
                     pass  # Column might already exist
 
+            # Migrate balances table to add CHECK(balance_urtc >= 0) constraint.
+            # SQLite doesn't support ALTER TABLE ADD CHECK, so we recreate the table.
+            # Detect existing constraint by inspecting the CREATE TABLE statement.
+            cursor.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='balances'"
+            )
+            row = cursor.fetchone()
+            has_check = row and "CHECK" in (row[0] or "").upper()
+            if not has_check:
+                try:
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS balances_new (
+                            wallet TEXT PRIMARY KEY,
+                            balance_urtc INTEGER NOT NULL CHECK(balance_urtc >= 0),
+                            wallet_nonce INTEGER DEFAULT 0
+                        )
+                    """)
+                    cursor.execute("INSERT OR IGNORE INTO balances_new SELECT wallet, balance_urtc, wallet_nonce FROM balances WHERE balance_urtc >= 0")
+                    cursor.execute("DROP TABLE IF EXISTS balances_old")
+                    cursor.execute("ALTER TABLE balances RENAME TO balances_old")
+                    cursor.execute("ALTER TABLE balances_new RENAME TO balances")
+                    cursor.execute("DROP TABLE IF EXISTS balances_old")
+                    logger.info("Added CHECK(balance_urtc >= 0) constraint to balances table")
+                except sqlite3.OperationalError as e:
+                    logger.warning(f"Balance CHECK constraint migration skipped: {e}")
+
             # Create other tables
             for statement in SCHEMA_UPGRADE_SQL.split(';'):
                 statement = statement.strip()
@@ -396,6 +422,21 @@ class TransactionPool:
                 return False
 
             try:
+                # Re-validate sender balance before deduction (security: prevent
+                # negative-balance minting when balance changed between submit and confirm)
+                cursor.execute(
+                    "SELECT balance_urtc FROM balances WHERE wallet = ?",
+                    (row["from_addr"],)
+                )
+                sender_row = cursor.fetchone()
+                sender_balance = sender_row["balance_urtc"] if sender_row else 0
+                if sender_balance < row["amount_urtc"]:
+                    logger.error(
+                        f"TX confirm rejected: insufficient balance for {tx_hash[:16]}... "
+                        f"(have {sender_balance}, need {row['amount_urtc']})"
+                    )
+                    return False
+
                 # Move to history
                 cursor.execute(
                     """INSERT INTO transaction_history
