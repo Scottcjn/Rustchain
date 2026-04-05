@@ -380,8 +380,8 @@ class TestUtxoDB(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
 
-    def test_spending_proof_not_verified_in_utxo_layer(self):
-        """The UTXO layer does NOT verify spending proofs — by design.
+    def test_spending_proof_accepted_without_verification(self):
+        """The UTXO layer accepts any spending_proof without verification.
         Signature verification is the endpoint layer's responsibility.
         This test documents the behavior so future changes don't
         accidentally rely on it (LOW-3)."""

@@ -292,6 +292,12 @@ class UtxoDB:
         """
         Atomically apply a transaction: spend inputs, create outputs.
 
+        .. warning::
+            This method does **not** verify ``spending_proof``.  Callers
+            MUST authenticate the spender (e.g. Ed25519 signature check)
+            before calling this method.  See ``utxo_endpoints.py`` for
+            the endpoint-level verification.
+
         ``tx`` keys:
             tx_type: str
             inputs: list of {box_id: str, spending_proof: str}
@@ -317,6 +323,9 @@ class UtxoDB:
             conn.execute("BEGIN IMMEDIATE")
 
             # -- reject duplicate input box_ids --------------------------------
+            # Keyed on box_id alone (the PK of the UTXO being consumed).
+            # Different spending_proof values for the same box_id are still
+            # a duplicate — the proof content is irrelevant to dedup.
             # Without this, the same box_id counted twice inflates
             # input_total.  The spend-phase rowcount check catches it
             # today, but only accidentally.  Defense in depth.
