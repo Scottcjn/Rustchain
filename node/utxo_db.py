@@ -485,6 +485,15 @@ class UtxoDB:
 
         Deterministic: sorted by box_id, pairwise SHA256.
         All nodes with the same UTXO set produce the same root.
+
+        Odd-layer padding uses a domain-separated sentinel
+        (``SHA256(0x01 || last_hash)``) instead of duplicating the last
+        element.  This prevents second-preimage ambiguity where sets
+        ``[A, B, C]`` and ``[A, B, C, C]`` would otherwise produce
+        identical roots.
+
+        The leaf count is also mixed into each leaf hash so the tree
+        is bound to a specific UTXO-set cardinality.
         """
         conn = self._conn()
         try:
@@ -497,14 +506,20 @@ class UtxoDB:
             if not rows:
                 return hashlib.sha256(b"empty").hexdigest()
 
+            # Mix element count into leaf hashes to bind tree to cardinality
+            count_bytes = len(rows).to_bytes(8, 'little')
             hashes = [
-                hashlib.sha256(bytes.fromhex(r['box_id'])).digest()
+                hashlib.sha256(count_bytes + bytes.fromhex(r['box_id'])).digest()
                 for r in rows
             ]
 
             while len(hashes) > 1:
                 if len(hashes) % 2 == 1:
-                    hashes.append(hashes[-1])
+                    # Domain-separated padding — distinguishable from a
+                    # real duplicate leaf.
+                    hashes.append(
+                        hashlib.sha256(b'\x01' + hashes[-1]).digest()
+                    )
                 hashes = [
                     hashlib.sha256(hashes[i] + hashes[i + 1]).digest()
                     for i in range(0, len(hashes), 2)
