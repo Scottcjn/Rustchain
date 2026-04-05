@@ -229,5 +229,93 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(data['change_rtc'], 9.0)
 
 
+class TestDualWriteConsistency(unittest.TestCase):
+    """Verify that dual-write uses the same UNIT as the UTXO layer.
+
+    Bounty #2819 CRIT-2: the original code multiplied by 1e9 instead of
+    UNIT (1e8), inflating the account model by 10x on every transfer.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp.close()
+        self.db_path = self.tmp.name
+
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS balances "
+            "(miner_id TEXT PRIMARY KEY, amount_i64 INTEGER DEFAULT 0)"
+        )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ledger "
+            "(ts INTEGER, epoch INTEGER, miner_id TEXT, "
+            " delta_i64 INTEGER, reason TEXT)"
+        )
+        # Seed sender balance in account model
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            ('RTC_test_aabbccdd', 100 * UNIT),
+        )
+        conn.commit()
+        conn.close()
+
+        self.utxo_db = UtxoDB(self.db_path)
+        self.utxo_db.init_tables()
+
+        self.app = Flask(__name__)
+        self.app.config['TESTING'] = True
+        register_utxo_blueprint(
+            self.app, self.utxo_db, self.db_path,
+            verify_sig_fn=mock_verify_sig,
+            addr_from_pk_fn=mock_addr_from_pk,
+            current_slot_fn=mock_current_slot,
+            dual_write=True,          # <-- dual-write ON
+        )
+        self.client = self.app.test_client()
+
+    def tearDown(self):
+        os.unlink(self.db_path)
+
+    def test_dual_write_amount_matches_utxo(self):
+        """Account-model delta must equal UTXO-model delta (same UNIT)."""
+        # Seed UTXO
+        self.utxo_db.apply_transaction({
+            'tx_type': 'mining_reward',
+            'inputs': [],
+            'outputs': [{'address': 'RTC_test_aabbccdd',
+                         'value_nrtc': 100 * UNIT}],
+            'timestamp': int(time.time()),
+        }, block_height=1)
+
+        # Transfer 60 RTC via the endpoint (dual-write enabled)
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': 'RTC_test_aabbccdd',
+            'to_address': 'bob',
+            'amount_rtc': 60.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+        self.assertEqual(r.status_code, 200)
+
+        # Check account model got the right amount
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        row = conn.execute(
+            "SELECT amount_i64 FROM balances WHERE miner_id = ?",
+            ('bob',),
+        ).fetchone()
+        conn.close()
+
+        expected = 60 * UNIT   # 6_000_000_000 nanoRTC
+        self.assertIsNotNone(row, "bob should exist in balances table")
+        self.assertEqual(
+            row[0], expected,
+            f"Account model got {row[0]} but UTXO model transferred "
+            f"{expected} — decimal mismatch!"
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

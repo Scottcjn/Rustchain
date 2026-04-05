@@ -317,7 +317,11 @@ def utxo_transfer():
         try:
             conn = sqlite3.connect(_db_path)
             c = conn.cursor()
-            amount_i64 = int(amount_rtc * 1_000_000_000)  # account model uses 9 decimals
+            # Use amount_nrtc (already converted via UNIT = 10^8) to stay
+            # consistent with the UTXO model.  The previous code used
+            # int(amount_rtc * 1_000_000_000) which is 10x too large,
+            # inflating the account model on every dual-write transfer.
+            amount_i64 = amount_nrtc
             c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
                       (to_address,))
             c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
