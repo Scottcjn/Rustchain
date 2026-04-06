@@ -68,9 +68,16 @@ def inc_epoch_block(epoch):
         c.execute("UPDATE epoch_state SET accepted_blocks = accepted_blocks + 1 WHERE epoch=?", (epoch,))
 
 def enroll_epoch(epoch, miner_pk, weight):
-    """Enroll miner in epoch with weight"""
+    """Enroll miner in epoch with weight.
+
+    FIX: Use INSERT OR IGNORE to prevent external weight downgrades.
+    The first enrollment in an epoch wins; subsequent calls for the same
+    (epoch, miner_pk) are no-ops. This closes the zero-weight reward
+    distortion vector where an attacker could overwrite a legitimate
+    miner's weight via repeated enroll calls.
+    """
     with sqlite3.connect(DB_PATH) as c:
-        c.execute("INSERT OR REPLACE INTO epoch_enroll(epoch, miner_pk, weight) VALUES (?,?,?)", (epoch, miner_pk, float(weight)))
+        c.execute("INSERT OR IGNORE INTO epoch_enroll(epoch, miner_pk, weight) VALUES (?,?,?)", (epoch, miner_pk, float(weight)))
 
 def finalize_epoch(epoch, per_block_rtc):
     """Finalize epoch and distribute rewards"""
