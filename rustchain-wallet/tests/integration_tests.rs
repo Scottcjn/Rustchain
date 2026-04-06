@@ -116,7 +116,7 @@ fn test_encrypted_storage() {
 
     // Load wallet
     let loaded = storage.load("test_wallet", password).unwrap();
-    assert_eq!(loaded.public_key_base58(), address);
+    assert_eq!(loaded.rtc_address(), address);
 
     // Wrong password fails
     let result = storage.load("test_wallet", "wrong_password");

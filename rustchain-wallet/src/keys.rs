@@ -5,7 +5,6 @@
 
 use bs58;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
-use rand::rngs::OsRng;
 
 use crate::error::{Result, WalletError};
 
@@ -18,8 +17,9 @@ pub struct KeyPair {
 impl KeyPair {
     /// Generate a new random keypair
     pub fn generate() -> Self {
-        let mut csprng = OsRng;
-        let signing_key = SigningKey::generate(&mut csprng);
+        let mut seed = [0u8; 32];
+        getrandom::getrandom(&mut seed).expect("Failed to generate random bytes");
+        let signing_key = SigningKey::from_bytes(&seed);
         let verifying_key = signing_key.verifying_key();
 
         Self {
