@@ -196,7 +196,118 @@ pub fn collect_entropy(cycles: usize, inner_loop: usize) -> EntropyData {
     }
 }
 
-/// Perform hardware attestation with the node
+/// Perform hardware attestation with the node using a pre-generated signing key.
+/// This allows the same keypair to be reused for enrollment signature verification.
+pub async fn attest_with_key(
+    transport: &NodeTransport,
+    wallet: &str,
+    miner_id: &str,
+    hw_info: &HardwareInfo,
+    signing_key: &ed25519_dalek::SigningKey,
+    public_key_hex: &str,
+    fingerprint_data: Option<FingerprintData>,
+) -> crate::Result<bool> {
+    tracing::info!("[ATTEST] Starting hardware attestation...");
+
+    // Step 1: Get challenge nonce from node
+    let response = transport.post_json("/attest/challenge", &serde_json::json!({})).await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(crate::error::MinerError::Attestation(
+            format!("Challenge failed: HTTP {} - {}", status, body)
+        ));
+    }
+
+    let challenge: serde_json::Value = response.json().await?;
+    let nonce = challenge
+        .get("nonce")
+        .and_then(|n| n.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    if nonce.is_empty() {
+        return Err(crate::error::MinerError::Attestation(
+            "No nonce in challenge response".to_string()
+        ));
+    }
+
+    tracing::info!("[ATTEST] Got challenge nonce: {}...", &nonce[..nonce.len().min(16)]);
+
+    // Step 2: Collect entropy
+    let entropy = collect_entropy(48, 25000);
+
+    // Step 3: Build commitment
+    let entropy_json = serde_json::to_string(&entropy)?;
+    let commitment_string = format!("{}{}{}", nonce, wallet, entropy_json);
+    let commitment_hash = Sha256::digest(commitment_string.as_bytes());
+    let commitment = hex::encode(commitment_hash);
+
+    // Step 4: Sign critical fields using the provided keypair
+    // The signature binds (miner, miner_id, nonce, commitment) to prevent:
+    // - Wallet address tampering (attacker can't change miner field)
+    // - Replay attacks (nonce is unique per attestation)
+    // - Field modification (any change invalidates signature)
+    let verifying_key = signing_key.verifying_key();
+    let computed_pubkey_hex = hex::encode(verifying_key.as_bytes());
+
+    // Verify the provided public_key_hex matches the signing key
+    if computed_pubkey_hex != public_key_hex {
+        return Err(crate::error::MinerError::Attestation(
+            "Public key mismatch: provided key doesn't match signing key".to_string()
+        ));
+    }
+
+    // Sign the critical fields that must be authentic
+    let message = format!("{}|{}|{}|{}", miner_id, wallet, nonce, commitment);
+    let signature = signing_key.sign(message.as_bytes());
+    let signature_hex = hex::encode(signature.to_bytes());
+
+    // Step 5: Build attestation report with signature
+    let report = AttestationReport {
+        miner: wallet.to_string(),
+        miner_id: miner_id.to_string(),
+        nonce: nonce.clone(),
+        report: EntropyReport {
+            nonce,
+            commitment,
+            derived: entropy.clone(),
+            entropy_score: entropy.variance_ns,
+        },
+        device: DeviceInfo::from(hw_info),
+        signals: NetworkSignals::from(hw_info),
+        fingerprint: fingerprint_data,
+        miner_version: env!("CARGO_PKG_VERSION").to_string(),
+        signature: signature_hex,
+        public_key: public_key_hex.to_string(),
+    };
+
+    // Step 6: Submit attestation
+    let response = transport.post_json("/attest/submit", &report).await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(crate::error::MinerError::Attestation(
+            format!("Submit failed: HTTP {} - {}", status, body)
+        ));
+    }
+
+    let result: serde_json::Value = response.json().await?;
+
+    if result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+        tracing::info!("[ATTEST] Attestation accepted!");
+        Ok(true)
+    } else {
+        Err(crate::error::MinerError::Attestation(
+            format!("Attestation rejected: {:?}", result)
+        ))
+    }
+}
+
+/// Perform hardware attestation with the node (generates a fresh keypair).
+/// Prefer `attest_with_key` when the same keypair should be reused for enrollment.
 pub async fn attest(
     transport: &NodeTransport,
     wallet: &str,
