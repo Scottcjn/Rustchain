@@ -388,6 +388,13 @@ class UtxoDB:
                 conn.execute("ROLLBACK")
                 return False
 
+            # CRITICAL FIX: Reject empty outputs to prevent fund destruction
+            # Without this check, outputs=[] bypasses conservation law
+            # and results in complete fund destruction
+            if not outputs:
+                conn.execute("ROLLBACK")
+                return False
+
             output_total = sum(o['value_nrtc'] for o in outputs)
 
             # Every output must carry a strictly positive value.
