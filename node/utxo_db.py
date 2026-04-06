@@ -388,6 +388,15 @@ class UtxoDB:
                 return False
 
             output_total = sum(o['value_nrtc'] for o in outputs)
+
+            # Every output must carry a strictly positive value.
+            # Without this, a negative-value output lowers output_total,
+            # letting an attacker create more value than the inputs hold.
+            for o in outputs:
+                if not isinstance(o['value_nrtc'], int) or o['value_nrtc'] <= 0:
+                    conn.execute("ROLLBACK")
+                    return False
+
             if fee < 0:
                 conn.execute("ROLLBACK")
                 return False

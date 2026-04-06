@@ -550,6 +550,68 @@ class TestUtxoDB(unittest.TestCase):
         ok = self.db.mempool_add(tx)
         self.assertFalse(ok)
 
+    # -- bounty #2819: negative / zero value outputs -------------------------
+
+    def test_negative_value_output_rejected(self):
+        """Negative value_nrtc on an output bypasses conservation law.
+
+        Attack: 100 RTC input → [+200 RTC, -100 RTC] outputs.
+        output_total = 200 + (-100) = 100 <= input_total = 100, PASSES.
+        Attacker mints 100 RTC from nothing.
+        """
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [
+                {'address': 'attacker', 'value_nrtc': 200 * UNIT},
+                {'address': 'burn',     'value_nrtc': -100 * UNIT},
+            ],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        # Balance must be unchanged
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('attacker'), 0)
+
+    def test_zero_value_output_rejected(self):
+        """Zero-value outputs are meaningless dust that bloats the UTXO set."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [
+                {'address': 'bob',  'value_nrtc': 100 * UNIT},
+                {'address': 'dust', 'value_nrtc': 0},
+            ],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+
+    def test_float_value_nrtc_rejected(self):
+        """value_nrtc must be an integer; floats cause silent truncation."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [
+                {'address': 'bob', 'value_nrtc': 99.5 * UNIT},
+            ],
+            'fee_nrtc': 0,
+        }, block_height=10)
+        self.assertFalse(ok)
+
 
 class TestCoinSelect(unittest.TestCase):
 
