@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 Test case for UTXO Empty Outputs Bug - FUND DESTRUCTION VULNERABILITY
 Issue: #2819 - Red Team UTXO Implementation
