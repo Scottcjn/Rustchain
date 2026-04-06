@@ -109,6 +109,18 @@ class TransactionPool:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
+            # Base case: create the balances table if it doesn't exist at all.
+            # The migration steps below assume the table already exists (ALTER TABLE,
+            # PRAGMA table_info, etc.), so a fresh empty DB would fail without this.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS balances (
+                    wallet TEXT PRIMARY KEY,
+                    balance_urtc INTEGER NOT NULL DEFAULT 0,
+                    wallet_nonce INTEGER DEFAULT 0
+                )
+            """)
+            conn.commit()
+
             # Check if wallet_nonce column exists
             cursor.execute("PRAGMA table_info(balances)")
             columns = [col[1] for col in cursor.fetchall()]
