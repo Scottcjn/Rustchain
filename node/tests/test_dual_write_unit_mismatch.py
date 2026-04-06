@@ -110,6 +110,15 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         recipient = 'RTC_test_eeffgghh'
         self._seed_coinbase(sender, 100 * UNIT)
 
+        # Seed shadow balance so dual-write can proceed (security guard requires it)
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            (sender, int(100.0 * ACCOUNT_UNIT)),
+        )
+        conn.commit()
+        conn.close()
+
         r = self.client.post('/utxo/transfer', json={
             'from_address': sender,
             'to_address': recipient,
@@ -140,11 +149,11 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         recipient = 'RTC_test_eeffgghh'
         self._seed_coinbase(sender, 100 * UNIT)
 
-        # Pre-seed sender in balances table (dual-write UPDATE requires existing row)
+        # Pre-seed sender in balances table with sufficient shadow balance
         conn = sqlite3.connect(self.db_path)
         conn.execute(
-            "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
-            (sender,)
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            (sender, int(100.0 * ACCOUNT_UNIT)),
         )
         conn.commit()
         conn.close()
@@ -163,13 +172,23 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
 
         expected_amount = int(25.5 * ACCOUNT_UNIT)  # 25_500_000
         self.assertEqual(recipient_i64, expected_amount)
-        self.assertEqual(sender_i64, -expected_amount)
+        # Sender started with 100 * ACCOUNT_UNIT, debited 25.5 * ACCOUNT_UNIT
+        self.assertEqual(sender_i64, int(100.0 * ACCOUNT_UNIT) - expected_amount)
 
     def test_dual_write_fractional_rtc(self):
         """Transferring 0.001 RTC should write 1000 uRTC, not 1_000_000."""
         sender = 'RTC_test_aabbccdd'
         recipient = 'RTC_test_eeffgghh'
         self._seed_coinbase(sender, 10 * UNIT)
+
+        # Seed shadow balance so dual-write can proceed
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            (sender, int(10.0 * ACCOUNT_UNIT)),
+        )
+        conn.commit()
+        conn.close()
 
         self.client.post('/utxo/transfer', json={
             'from_address': sender,
@@ -193,6 +212,15 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         recipient = 'RTC_test_eeffgghh'
         self._seed_coinbase(sender, 2_000_000 * UNIT)
 
+        # Seed shadow balance so dual-write can proceed
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            (sender, int(2_000_000.0 * ACCOUNT_UNIT)),
+        )
+        conn.commit()
+        conn.close()
+
         self.client.post('/utxo/transfer', json={
             'from_address': sender,
             'to_address': recipient,
@@ -214,6 +242,15 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         sender = 'RTC_test_aabbccdd'
         recipient = 'RTC_test_eeffgghh'
         self._seed_coinbase(sender, 100 * UNIT)
+
+        # Seed shadow balance so dual-write can proceed
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            (sender, int(100.0 * ACCOUNT_UNIT)),
+        )
+        conn.commit()
+        conn.close()
 
         self.client.post('/utxo/transfer', json={
             'from_address': sender,
@@ -261,6 +298,15 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         sender = 'RTC_test_aabbccdd'
         recipient = 'RTC_test_eeffgghh'
         self._seed_coinbase(sender, 100 * UNIT)
+
+        # Seed shadow balance so dual-write can proceed
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            (sender, int(100.0 * ACCOUNT_UNIT)),
+        )
+        conn.commit()
+        conn.close()
 
         self.client.post('/utxo/transfer', json={
             'from_address': sender,

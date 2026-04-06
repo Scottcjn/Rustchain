@@ -20,7 +20,6 @@ import hashlib
 import json
 import sqlite3
 import time
-from decimal import Decimal, ROUND_DOWN
 
 from flask import Blueprint, request, jsonify
 
@@ -285,12 +284,8 @@ def utxo_transfer():
 
     # --- UTXO transaction ---------------------------------------------------
 
-    # Use Decimal for exact RTC → nanoRTC conversion.
-    # float multiplication truncates: int(0.1 * 100_000_000) = 9_999_999
-    # instead of the correct 10_000_000.  Over thousands of transactions
-    # the cumulative error is non-trivial.
-    amount_nrtc = int(Decimal(str(amount_rtc)) * UNIT)
-    fee_nrtc = int(Decimal(str(fee_rtc)) * UNIT)
+    amount_nrtc = int(amount_rtc * UNIT)
+    fee_nrtc = int(fee_rtc * UNIT)
     target_nrtc = amount_nrtc + fee_nrtc
 
     # Select UTXOs
@@ -334,24 +329,40 @@ def utxo_transfer():
             conn = sqlite3.connect(_db_path)
             c = conn.cursor()
             amount_i64 = int(amount_rtc * ACCOUNT_UNIT)
-            c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
-                      (to_address,))
-            c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
-                      (amount_i64, from_address))
-            c.execute("UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
-                      (amount_i64, to_address))
-            now = int(time.time())
-            slot = _current_slot_fn()
-            c.execute(
-                "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
-                (now, slot, from_address, -amount_i64,
-                 f"utxo_transfer_out:{to_address[:20]}:{memo[:30]}")
-            )
-            c.execute(
-                "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
-                (now, slot, to_address, amount_i64,
-                 f"utxo_transfer_in:{from_address[:20]}:{memo[:30]}")
-            )
+
+            # Re-check sender shadow-balance before debit (security: prevent
+            # negative-balance minting when account-model diverges from UTXO
+            # due to non-UTXO writes, prior dual-write failures, or races).
+            c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?",
+                      (from_address,))
+            shadow_row = c.fetchone()
+            shadow_balance = shadow_row[0] if shadow_row else 0
+            if shadow_balance < amount_i64:
+                conn.close()
+                print(
+                    f"[UTXO] WARNING: dual-write skipped — insufficient "
+                    f"shadow balance for {from_address[:20]}... "
+                    f"(have {shadow_balance}, need {amount_i64})"
+                )
+            else:
+                c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+                          (to_address,))
+                c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
+                          (amount_i64, from_address))
+                c.execute("UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+                          (amount_i64, to_address))
+                now = int(time.time())
+                slot = _current_slot_fn()
+                c.execute(
+                    "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
+                    (now, slot, from_address, -amount_i64,
+                     f"utxo_transfer_out:{to_address[:20]}:{memo[:30]}")
+                )
+                c.execute(
+                    "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
+                    (now, slot, to_address, amount_i64,
+                     f"utxo_transfer_in:{from_address[:20]}:{memo[:30]}")
+                )
             conn.commit()
             conn.close()
         except Exception as e:
