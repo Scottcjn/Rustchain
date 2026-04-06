@@ -40,7 +40,7 @@ log = logging.getLogger("rip0002_governance")
 VOTING_WINDOW_SECONDS = 7 * 86400      # 7 days
 QUORUM_THRESHOLD = 0.33                 # 33% of active miners
 FOUNDER_VETO_DURATION = 2 * 365 * 86400  # 2 years from genesis
-GENESIS_TIMESTAMP = 1700000000          # Approximate RustChain genesis (override if needed)
+GENESIS_TIMESTAMP = 1764706927          # Production chain launch (Dec 2, 2025)
 MAX_PROPOSALS_PER_MINER = 10            # Anti-spam: max active proposals
 MAX_TITLE_LEN = 200
 MAX_DESCRIPTION_LEN = 10000
@@ -404,11 +404,6 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                         (proposal_id, miner_id)
                     ).fetchone()
                     if old_vote:
-                        # SECURITY: Validate the stored vote value before
-                        # using it in f-string SQL to prevent injection via
-                        # corrupted DB rows.
-                        if old_vote[0] not in VOTE_CHOICES:
-                            return jsonify({"error": "corrupted vote record"}), 500
                         # Remove old weight
                         old_col = f"votes_{old_vote[0]}"
                         conn.execute(

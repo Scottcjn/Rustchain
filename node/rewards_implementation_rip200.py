@@ -87,7 +87,7 @@ UNIT = 1_000_000  # uRTC per 1 RTC
 DB_PATH = "/root/rustchain/rustchain_v2.db"
 PER_EPOCH_URTC = int(1.5 * UNIT)  # 1,500,000 uRTC
 BLOCK_TIME = 600
-GENESIS_TIMESTAMP = 1728000000  # Placeholder - will be set from server
+GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
 
 def current_slot():
     """Get current blockchain slot"""

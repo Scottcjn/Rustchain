@@ -27,6 +27,10 @@ import logging
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 
+# Canonical genesis timestamp — must match rip_200_round_robin_1cpu1vote.py
+GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
+BLOCK_TIME = 600
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [ANTI-DOUBLE-MINING] %(levelname)s: %(message)s'
@@ -289,8 +293,8 @@ def get_epoch_miner_groups(
     """
     epoch_start_slot = epoch * 144
     epoch_end_slot = epoch_start_slot + 143
-    epoch_start_ts = 1728000000 + (epoch_start_slot * 600)  # GENESIS_TIMESTAMP
-    epoch_end_ts = 1728000000 + (epoch_end_slot * 600)
+    epoch_start_ts = GENESIS_TIMESTAMP + (epoch_start_slot * BLOCK_TIME)
+    epoch_end_ts = GENESIS_TIMESTAMP + (epoch_end_slot * BLOCK_TIME)
     
     cursor = conn.cursor()
     
@@ -370,9 +374,9 @@ def calculate_anti_double_mining_rewards(
     
     epoch_start_slot = epoch * 144
     epoch_end_slot = epoch_start_slot + 143
-    epoch_start_ts = 1728000000 + (epoch_start_slot * 600)
-    epoch_end_ts = 1728000000 + (epoch_end_slot * 600)
-    
+    epoch_start_ts = GENESIS_TIMESTAMP + (epoch_start_slot * BLOCK_TIME)
+    epoch_end_ts = GENESIS_TIMESTAMP + (epoch_end_slot * BLOCK_TIME)
+
     with sqlite3.connect(db_path) as conn:
         conn.execute("BEGIN")
         
@@ -651,8 +655,8 @@ def _calculate_anti_double_mining_rewards_conn(
 
     epoch_start_slot = epoch * 144
     epoch_end_slot = epoch_start_slot + 143
-    epoch_start_ts = 1728000000 + (epoch_start_slot * 600)
-    epoch_end_ts = 1728000000 + (epoch_end_slot * 600)
+    epoch_start_ts = GENESIS_TIMESTAMP + (epoch_start_slot * BLOCK_TIME)
+    epoch_end_ts = GENESIS_TIMESTAMP + (epoch_end_slot * BLOCK_TIME)
 
     # Detect duplicate identities
     duplicates = detect_duplicate_identities(conn, epoch, epoch_start_ts, epoch_end_ts)
@@ -836,7 +840,7 @@ def setup_test_scenario(db_path: str):
         # Insert test data
         current_ts = int(time.time())
         epoch = 0
-        epoch_start_ts = 1728000000 + (epoch * 144 * 600)
+        epoch_start_ts = GENESIS_TIMESTAMP + (epoch * 144 * BLOCK_TIME)
         
         # Machine A: Same fingerprint, 3 different miner IDs
         fingerprint_a = json.dumps({
@@ -924,8 +928,8 @@ if __name__ == "__main__":
     setup_test_scenario(test_db)
     
     print("\n=== Testing Anti-Double-Mining Detection ===\n")
-    
-    current_slot = (int(time.time()) - 1728000000) // 600
+
+    current_slot = (int(time.time()) - GENESIS_TIMESTAMP) // BLOCK_TIME
     rewards, telemetry = calculate_anti_double_mining_rewards(
         test_db, epoch=0, total_reward_urtc=150_000_000, current_slot=current_slot
     )

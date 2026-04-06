@@ -25,6 +25,9 @@ from typing import List, Dict, Optional
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from functools import lru_cache
 
+# Canonical genesis timestamp — must match node consensus modules
+GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
+
 logging.basicConfig(
     level=logging.INFO,
     format='[Fossil Record] %(asctime)s %(levelname)s %(message)s',
@@ -177,12 +180,12 @@ def fetch_attestation_history(db_path: str, limit: int = 10000) -> List[Dict]:
     return attestations
 
 
-def calculate_epoch(timestamp: int, genesis_timestamp: int = 1728000000) -> int:
+def calculate_epoch(timestamp: int, genesis_timestamp: int = 1764706927) -> int:
     """
     Calculate epoch number from timestamp.
-    
+
     RustChain epochs are approximately 24 hours (86400 seconds).
-    Genesis timestamp defaults to Oct 4, 2024 (RustChain launch).
+    Genesis timestamp defaults to production chain launch (Dec 2, 2025).
     """
     if not timestamp:
         return 0
@@ -253,7 +256,7 @@ def generate_sample_data(num_epochs: int = 150, num_miners: int = 100) -> List[D
             })
     
     # Generate attestations across epochs
-    genesis_timestamp = 1728000000
+    genesis_timestamp = 1764706927
     
     for epoch in range(num_epochs + 1):
         epoch_timestamp = genesis_timestamp + (epoch * 86400)
