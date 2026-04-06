@@ -1,0 +1,57 @@
+{
+  "miner": "demo-miner-001",
+  "device": {
+    "device_family": "PowerPC",
+    "device_arch": "power8",
+    "cores": 8
+  },
+  "signals": {
+    "hostname": "power8-test-node",
+    "macs": ["AA:BB:CC:DD:EE:01"]
+  },
+  "fingerprint": {
+    "checks": {
+      "clock_drift": {
+        "passed": true,
+        "mean_ns": 1234567,
+        "stdev_ns": 456789,
+        "cv": 0.369
+      },
+      "cache_timing": {
+        "passed": true,
+        "l1_avg": 2.1,
+        "l2_avg": 8.5,
+        "l3_avg": 45.2
+      },
+      "simd_identity": {
+        "passed": true,
+        "simd_unit": "VSX",
+        "bias_profile": "power8_vsx_unique"
+      },
+      "thermal_drift": {
+        "passed": true,
+        "thermal_curve": "authentic_power8",
+        "entropy_score": 0.89
+      },
+      "instruction_jitter": {
+        "passed": true,
+        "jitter_stdev_ns": 245,
+        "pipeline_signature": "power8_pipeline"
+      },
+      "anti_emulation": {
+        "passed": true,
+        "emulator_indicators": [],
+        "behavioral_score": 0.95
+      },
+      "device_age": {
+        "passed": true,
+        "established": "2014-2015",
+        "confidence": 0.92
+      }
+    }
+  },
+  "report": {
+    "commitment": "demo_commitment_hash_1234567890abcdef",
+    "timestamp": "2026-04-06T17:30:00Z"
+  }
+}
