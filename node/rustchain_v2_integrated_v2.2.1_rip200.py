@@ -4031,9 +4031,13 @@ def request_withdrawal():
 
         # RIP-301: Route fee to mining pool (founder_community) instead of burning
         fee_urtc = int(WITHDRAWAL_FEE * UNIT)
+        fee_rtc = WITHDRAWAL_FEE
+        # Ensure founder_community row exists before crediting
+        c.execute("INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
+                  ("founder_community",))
         c.execute(
-            "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
-            (fee_urtc, "founder_community")
+            "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
+            (fee_rtc, "founder_community")
         )
         c.execute(
             """INSERT INTO fee_events (source, source_id, miner_pk, fee_rtc, fee_urtc, destination, created_at)
@@ -4103,9 +4107,9 @@ def api_fee_pool():
 
         # Community fund balance (where fees go)
         fund_row = c.execute(
-            "SELECT COALESCE(amount_i64, 0) FROM balances WHERE miner_id = 'founder_community'"
+            "SELECT COALESCE(balance_rtc, 0) FROM balances WHERE miner_pk = 'founder_community'"
         ).fetchone()
-        fund_balance = fund_row[0] / 1_000_000.0 if fund_row else 0.0
+        fund_balance = fund_row[0] if fund_row else 0.0
 
     return jsonify({
         "rip": 301,
@@ -4748,11 +4752,10 @@ def bounty_multiplier():
 
         # Current balance
         bal_row = c.execute(
-            "SELECT COALESCE(amount_i64, 0) FROM balances WHERE miner_id = ?",
+            "SELECT COALESCE(balance_rtc, 0) FROM balances WHERE miner_pk = ?",
             ("founder_community",)
         ).fetchone()
-        remaining_urtc = bal_row[0] if bal_row else 0
-        remaining_rtc = remaining_urtc / 1000000.0
+        remaining_rtc = bal_row[0] if bal_row else 0.0
 
     # Half-life decay: multiplier = 0.5^(total_paid / half_life)
     multiplier = 0.5 ** (total_paid_rtc / BOUNTY_HALF_LIFE)
