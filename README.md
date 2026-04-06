@@ -18,7 +18,7 @@ A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most resp
 
 ---
 
-## Why This Exists
+## Why RustChain Exists
 
 The computing industry throws away working machines every 3-5 years. GPUs that mined Ethereum get replaced. Laptops that still boot get landfilled.
 
