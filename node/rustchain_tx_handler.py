@@ -401,15 +401,18 @@ class TransactionPool:
         self,
         tx_hash: str,
         block_height: int,
-        block_hash: str
+        block_hash: str,
+        conn: Optional[sqlite3.Connection] = None
     ) -> bool:
         """
         Confirm a transaction (move from pending to history).
         Also updates balances and nonces.
-        """
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
 
+        If *conn* is provided the caller owns the transaction boundary
+        (e.g. ``BlockProducer.save_block``).  Otherwise a standalone
+        connection is used (legacy / test path).
+        """
+        def _do_confirm(cursor) -> bool:
             # Get pending transaction
             cursor.execute(
                 "SELECT * FROM pending_transactions WHERE tx_hash = ?",
@@ -421,75 +424,82 @@ class TransactionPool:
                 logger.warning(f"Transaction not found in pending: {tx_hash}")
                 return False
 
-            try:
-                # Re-validate sender balance before deduction (security: prevent
-                # negative-balance minting when balance changed between submit and confirm)
-                cursor.execute(
-                    "SELECT balance_urtc FROM balances WHERE wallet = ?",
-                    (row["from_addr"],)
+            # Re-validate sender balance before deduction (security: prevent
+            # negative-balance minting when balance changed between submit and confirm)
+            cursor.execute(
+                "SELECT balance_urtc FROM balances WHERE wallet = ?",
+                (row["from_addr"],)
+            )
+            sender_row = cursor.fetchone()
+            sender_balance = sender_row["balance_urtc"] if sender_row else 0
+            if sender_balance < row["amount_urtc"]:
+                logger.error(
+                    f"TX confirm rejected: insufficient balance for {tx_hash[:16]}... "
+                    f"(have {sender_balance}, need {row['amount_urtc']})"
                 )
-                sender_row = cursor.fetchone()
-                sender_balance = sender_row["balance_urtc"] if sender_row else 0
-                if sender_balance < row["amount_urtc"]:
-                    logger.error(
-                        f"TX confirm rejected: insufficient balance for {tx_hash[:16]}... "
-                        f"(have {sender_balance}, need {row['amount_urtc']})"
-                    )
-                    return False
-
-                # Move to history
-                cursor.execute(
-                    """INSERT INTO transaction_history
-                       (tx_hash, from_addr, to_addr, amount_urtc, nonce,
-                        timestamp, memo, signature, public_key,
-                        block_height, block_hash, confirmed_at, status)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed')""",
-                    (
-                        row["tx_hash"],
-                        row["from_addr"],
-                        row["to_addr"],
-                        row["amount_urtc"],
-                        row["nonce"],
-                        row["timestamp"],
-                        row["memo"],
-                        row["signature"],
-                        row["public_key"],
-                        block_height,
-                        block_hash,
-                        int(time.time())
-                    )
-                )
-
-                # Update sender balance and nonce
-                cursor.execute(
-                    """UPDATE balances
-                       SET balance_urtc = balance_urtc - ?,
-                           wallet_nonce = ?
-                       WHERE wallet = ?""",
-                    (row["amount_urtc"], row["nonce"], row["from_addr"])
-                )
-
-                # Update receiver balance (create if not exists)
-                cursor.execute(
-                    """INSERT INTO balances (wallet, balance_urtc, wallet_nonce)
-                       VALUES (?, ?, 0)
-                       ON CONFLICT(wallet) DO UPDATE SET
-                       balance_urtc = balance_urtc + ?""",
-                    (row["to_addr"], row["amount_urtc"], row["amount_urtc"])
-                )
-
-                # Remove from pending
-                cursor.execute(
-                    "DELETE FROM pending_transactions WHERE tx_hash = ?",
-                    (tx_hash,)
-                )
-
-                logger.info(f"TX confirmed: {tx_hash[:16]}... in block {block_height}")
-                return True
-
-            except Exception as e:
-                logger.error(f"Failed to confirm transaction: {e}")
                 return False
+
+            # Move to history
+            cursor.execute(
+                """INSERT INTO transaction_history
+                   (tx_hash, from_addr, to_addr, amount_urtc, nonce,
+                    timestamp, memo, signature, public_key,
+                    block_height, block_hash, confirmed_at, status)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed')""",
+                (
+                    row["tx_hash"],
+                    row["from_addr"],
+                    row["to_addr"],
+                    row["amount_urtc"],
+                    row["nonce"],
+                    row["timestamp"],
+                    row["memo"],
+                    row["signature"],
+                    row["public_key"],
+                    block_height,
+                    block_hash,
+                    int(time.time())
+                )
+            )
+
+            # Update sender balance and nonce
+            cursor.execute(
+                """UPDATE balances
+                   SET balance_urtc = balance_urtc - ?,
+                       wallet_nonce = ?
+                   WHERE wallet = ?""",
+                (row["amount_urtc"], row["nonce"], row["from_addr"])
+            )
+
+            # Update receiver balance (create if not exists)
+            cursor.execute(
+                """INSERT INTO balances (wallet, balance_urtc, wallet_nonce)
+                   VALUES (?, ?, 0)
+                   ON CONFLICT(wallet) DO UPDATE SET
+                   balance_urtc = balance_urtc + ?""",
+                (row["to_addr"], row["amount_urtc"], row["amount_urtc"])
+            )
+
+            # Remove from pending
+            cursor.execute(
+                "DELETE FROM pending_transactions WHERE tx_hash = ?",
+                (tx_hash,)
+            )
+
+            logger.info(f"TX confirmed: {tx_hash[:16]}... in block {block_height}")
+            return True
+
+        if conn is not None:
+            # Caller-managed connection — no independent commit/rollback.
+            # The caller (e.g. save_block) controls the transaction boundary.
+            cursor = conn.cursor()
+            cursor.row_factory = sqlite3.Row
+            return _do_confirm(cursor)
+
+        # Legacy standalone path — own connection, own transaction.
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            return _do_confirm(cursor)
 
     def reject_transaction(self, tx_hash: str, reason: str = "") -> bool:
         """Reject a pending transaction"""
