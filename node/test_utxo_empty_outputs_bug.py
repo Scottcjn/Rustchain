@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 """
-Test case for UTXO Empty Outputs Bug - FUND DESTRUCTION VULNERABILITY
+Test case for UTXO Empty Outputs Bug in apply_transaction()
 Issue: #2819 - Red Team UTXO Implementation
 
 This test demonstrates a CRITICAL vulnerability where empty outputs
-result in complete fund destruction, violating the conservation law.
+result in complete fund destruction.
 """
 
 import unittest
@@ -14,8 +14,7 @@ import os
 import sys
 import time
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, '/tmp/Rustchain_utxo/node')
 
 from utxo_db import UtxoDB, UNIT
 
@@ -102,12 +101,10 @@ class TestUTXOEmptyOutputsBug(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    # Run the test
     suite = unittest.TestLoader().loadTestsFromTestCase(TestUTXOEmptyOutputsBug)
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
 
-    # Print summary
     print("\n" + "=" * 70)
     if result.failures:
         print("⚠️  CRITICAL VULNERABILITY CONFIRMED!")
