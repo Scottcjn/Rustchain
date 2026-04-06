@@ -88,34 +88,39 @@ impl ChainAdapter for SolanaAdapter {
         })
     }
 
-    async fn get_balance(&self, _address: &str) -> Result<u64> {
-        // In production, this would make actual RPC call
-        // For now, simulate with mock data
-        // Example RPC call structure:
-        // let client = reqwest::Client::new();
-        // let response = client
-        //     .post(&self.rpc_url)
-        //     .json(&serde_json::json!({
-        //         "jsonrpc": "2.0",
-        //         "id": 1,
-        //         "method": "getBalance",
-        //         "params": [address]
-        //     }))
-        //     .send()
-        //     .await?;
-        // let result: serde_json::Value = response.json().await?;
-        // Ok(result["result"]["value"].as_u64().unwrap_or(0))
-
-        // Mock implementation for testing
-        Ok(200_000_000) // 0.2 SOL mock
+    async fn get_balance(&self, address: &str) -> Result<u64> {
+        let client = reqwest::Client::new();
+        let response = client
+            .post(&self.rpc_url)
+            .json(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getBalance",
+                "params": [address]
+            }))
+            .send()
+            .await
+            .map_err(|e| {
+                crate::error::AirdropError::WalletVerification(format!(
+                    "Solana RPC request failed: {}", e
+                ))
+            })?;
+        let result: serde_json::Value = response.json().await.map_err(|e| {
+            crate::error::AirdropError::WalletVerification(format!(
+                "Solana RPC response parse failed: {}", e
+            ))
+        })?;
+        Ok(result["result"]["value"].as_u64().unwrap_or(0))
     }
 
     async fn get_wallet_age(&self, _address: &str) -> Result<u64> {
-        // In production, fetch first transaction via Solana RPC
-        // getSignaturesForAddress and check earliest signature timestamp
-
-        // Mock implementation for testing
-        Ok(10 * 24 * 60 * 60) // 10 days mock
+        // Determining wallet age requires fetching the first transaction via
+        // getSignaturesForAddress and correlating block timestamps.  This is
+        // significantly more involved than a simple balance query and depends
+        // on historical RPC availability.  Return 0 as a conservative default
+        // so that the age gate must be satisfied by other means (or disabled
+        // at the policy level) rather than being trivially bypassed.
+        Ok(0)
     }
 
     fn validate_address(&self, address: &str) -> Result<()> {
@@ -219,34 +224,42 @@ impl ChainAdapter for BaseAdapter {
         })
     }
 
-    async fn get_balance(&self, _address: &str) -> Result<u64> {
-        // In production, make actual RPC call to Base node
-        // Example:
-        // let client = reqwest::Client::new();
-        // let response = client
-        //     .post(&self.rpc_url)
-        //     .json(&serde_json::json!({
-        //         "jsonrpc": "2.0",
-        //         "id": 1,
-        //         "method": "eth_getBalance",
-        //         "params": [address, "latest"]
-        //     }))
-        //     .send()
-        //     .await?;
-        // let result: serde_json::Value = response.json().await?;
-        // let balance_hex = result["result"].as_str().unwrap_or("0x0");
-        // u64::from_str_radix(balance_hex.trim_start_matches("0x"), 16)
-
-        // Mock implementation for testing
-        Ok(20_000_000_000_000_000) // 0.02 ETH mock
+    async fn get_balance(&self, address: &str) -> Result<u64> {
+        let client = reqwest::Client::new();
+        let response = client
+            .post(&self.rpc_url)
+            .json(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "eth_getBalance",
+                "params": [address, "latest"]
+            }))
+            .send()
+            .await
+            .map_err(|e| {
+                crate::error::AirdropError::WalletVerification(format!(
+                    "Base RPC request failed: {}", e
+                ))
+            })?;
+        let result: serde_json::Value = response.json().await.map_err(|e| {
+            crate::error::AirdropError::WalletVerification(format!(
+                "Base RPC response parse failed: {}", e
+            ))
+        })?;
+        let balance_hex = result["result"].as_str().unwrap_or("0x0");
+        u64::from_str_radix(balance_hex.trim_start_matches("0x"), 16)
+            .map_err(|e| {
+                crate::error::AirdropError::WalletVerification(format!(
+                    "Base balance hex parse failed: {}", e
+                ))
+            })
     }
 
     async fn get_wallet_age(&self, _address: &str) -> Result<u64> {
-        // In production, use Etherscan-like API to get first transaction
-        // Base provides similar API: https://api.basescan.org/api
-
-        // Mock implementation for testing
-        Ok(14 * 24 * 60 * 60) // 14 days mock
+        // Determining wallet age requires querying an Etherscan-like API
+        // (e.g. Basescan) for the first transaction.  Return 0 as a
+        // conservative default so the age gate is not trivially bypassed.
+        Ok(0)
     }
 
     fn validate_address(&self, address: &str) -> Result<()> {
@@ -387,26 +400,110 @@ mod tests {
     #[test]
     fn test_base_tier_calculation() {
         let adapter = BaseAdapter::with_defaults("https://mainnet.base.org".to_string());
-        
+
         // 0.005 ETH (below minimum)
         assert_eq!(
             adapter.calculate_tier(5_000_000_000_000_000),
             WalletTier::Minimum
         );
-        
+
         // 0.05 ETH
         assert_eq!(
             adapter.calculate_tier(50_000_000_000_000_000),
             WalletTier::Minimum
         );
-        
+
         // 0.5 ETH
         assert_eq!(adapter.calculate_tier(500_000_000_000_000_000), WalletTier::Mid);
-        
+
         // 5 ETH
         assert_eq!(
             adapter.calculate_tier(5_000_000_000_000_000_000),
             WalletTier::High
         );
+    }
+
+    // --- RPC balance tests (mocked HTTP) ---
+
+    #[tokio::test]
+    async fn test_solana_get_balance_from_rpc() {
+        let mut mock = mockito::Server::new_async().await;
+        let _m = mock
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"jsonrpc":"2.0","id":1,"result":{"context":{"slot":12345},"value":350000000}}"#,
+            )
+            .create_async()
+            .await;
+
+        let adapter = SolanaAdapter::new(mock.url(), 100_000_000, 7 * 24 * 60 * 60);
+        let balance = adapter.get_balance("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU").await.unwrap();
+        assert_eq!(balance, 350_000_000); // 0.35 SOL
+    }
+
+    #[tokio::test]
+    async fn test_solana_get_balance_zero_on_missing() {
+        let mut mock = mockito::Server::new_async().await;
+        let _m = mock
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"jsonrpc":"2.0","id":1,"result":{"context":{"slot":12345},"value":0}}"#)
+            .create_async()
+            .await;
+
+        let adapter = SolanaAdapter::new(mock.url(), 100_000_000, 7 * 24 * 60 * 60);
+        let balance = adapter.get_balance("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU").await.unwrap();
+        assert_eq!(balance, 0);
+    }
+
+    #[tokio::test]
+    async fn test_solana_get_wallet_age_returns_zero() {
+        let adapter = SolanaAdapter::with_defaults("https://api.mainnet-beta.solana.com".to_string());
+        // Age is conservatively 0 since it requires historical tx data
+        let age = adapter.get_wallet_age("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU").await.unwrap();
+        assert_eq!(age, 0);
+    }
+
+    #[tokio::test]
+    async fn test_base_get_balance_from_rpc() {
+        let mut mock = mockito::Server::new_async().await;
+        let _m = mock
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"jsonrpc":"2.0","id":1,"result":"0x16345785d8a0000"}"#)
+            .create_async()
+            .await;
+
+        let adapter = BaseAdapter::new(mock.url(), 10_000_000_000_000_000, 7 * 24 * 60 * 60);
+        let balance = adapter.get_balance("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1").await.unwrap();
+        assert_eq!(balance, 100_000_000_000_000_000); // 0.1 ETH
+    }
+
+    #[tokio::test]
+    async fn test_base_get_balance_zero_on_empty() {
+        let mut mock = mockito::Server::new_async().await;
+        let _m = mock
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"jsonrpc":"2.0","id":1,"result":"0x0"}"#)
+            .create_async()
+            .await;
+
+        let adapter = BaseAdapter::new(mock.url(), 10_000_000_000_000_000, 7 * 24 * 60 * 60);
+        let balance = adapter.get_balance("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1").await.unwrap();
+        assert_eq!(balance, 0);
+    }
+
+    #[tokio::test]
+    async fn test_base_get_wallet_age_returns_zero() {
+        let adapter = BaseAdapter::with_defaults("https://mainnet.base.org".to_string());
+        // Age is conservatively 0 since it requires historical tx data
+        let age = adapter.get_wallet_age("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1").await.unwrap();
+        assert_eq!(age, 0);
     }
 }
