@@ -1,39 +1,58 @@
 //! Verification pipeline for cross-chain airdrop claims
 
 use crate::chain_adapter::ChainAdapter;
+use crate::claim_store::{ClaimStore, InMemoryClaimStore};
 use crate::error::{AirdropError, Result};
 use crate::github_verifier::GitHubVerifier;
 use crate::models::{
     ClaimRecord, ClaimRequest, ClaimResponse, ClaimStatus, EligibilityResult, TargetChain,
 };
 use chrono::Utc;
-use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use uuid::Uuid;
 
-/// Verification pipeline for processing airdrop claims
-pub struct VerificationPipeline {
+/// Verification pipeline for processing airdrop claims.
+///
+/// The `S` type parameter controls where deduplication state is stored.
+/// By default an [`InMemoryClaimStore`] is used (volatile — state is lost
+/// on restart).  For production deployments pass a durable store such as
+/// [`SqliteClaimStore`](crate::SqliteClaimStore) so that duplicate claims
+/// are rejected even after the process restarts.
+pub struct VerificationPipeline<S = InMemoryClaimStore> {
     github_verifier: GitHubVerifier,
     chain_adapters: Vec<Arc<dyn ChainAdapter>>,
-    /// In-memory claim store (would be database in production)
-    claims: Arc<Mutex<Vec<ClaimRecord>>>,
-    /// Track claimed GitHub accounts to prevent duplicates
-    claimed_github_ids: Arc<Mutex<HashSet<u64>>>,
-    /// Track claimed wallet addresses to prevent duplicates
-    claimed_wallets: Arc<Mutex<HashSet<String>>>,
+    store: S,
 }
 
-impl VerificationPipeline {
+impl VerificationPipeline<InMemoryClaimStore> {
+    /// Create a pipeline with the default in-memory claim store.
+    ///
+    /// **Warning:** the in-memory store loses all deduplication state on
+    /// process restart, allowing the same GitHub account or wallet to
+    /// claim again.  Use [`VerificationPipeline::with_store`] with a
+    /// persistent [`ClaimStore`] for production use.
     pub fn new(
         github_verifier: GitHubVerifier,
         chain_adapters: Vec<Arc<dyn ChainAdapter>>,
     ) -> Self {
+        Self::with_store(github_verifier, chain_adapters, InMemoryClaimStore::new())
+    }
+}
+
+impl<S: ClaimStore> VerificationPipeline<S> {
+    /// Create a pipeline with a custom claim store.
+    ///
+    /// Use this to plug in a persistent store (e.g. SQLite) so that
+    /// duplicate-claim prevention survives process restarts.
+    pub fn with_store(
+        github_verifier: GitHubVerifier,
+        chain_adapters: Vec<Arc<dyn ChainAdapter>>,
+        store: S,
+    ) -> Self {
         Self {
             github_verifier,
             chain_adapters,
-            claims: Arc::new(Mutex::new(Vec::new())),
-            claimed_github_ids: Arc::new(Mutex::new(HashSet::new())),
-            claimed_wallets: Arc::new(Mutex::new(HashSet::new())),
+            store,
         }
     }
 
@@ -49,17 +68,15 @@ impl VerificationPipeline {
             .await
             .map_err(|e| AirdropError::Claim(format!("GitHub verification failed: {}", e)))?;
 
-        // Step 2: Check for duplicate GitHub account
+        // Step 2: Check for duplicate GitHub account (via store)
+        if self
+            .store
+            .is_github_claimed(github_verification.profile.id)?
         {
-            let mut claimed = self.claimed_github_ids.lock().map_err(|e| {
-                AirdropError::Claim(format!("Lock poisoning: {}", e))
-            })?;
-            if claimed.contains(&github_verification.profile.id) {
-                return Err(AirdropError::Claim(format!(
-                    "GitHub account {} has already claimed airdrop",
-                    github_verification.profile.login
-                )));
-            }
+            return Err(AirdropError::Claim(format!(
+                "GitHub account {} has already claimed airdrop",
+                github_verification.profile.login
+            )));
         }
 
         // Step 3: Find appropriate chain adapter
@@ -77,18 +94,16 @@ impl VerificationPipeline {
             .await
             .map_err(|e| AirdropError::Claim(format!("Wallet verification failed: {}", e)))?;
 
-        // Step 5: Check for duplicate wallet
+        // Step 5: Check for duplicate wallet (via store)
+        let chain_str = request.target_chain.to_string();
+        if self
+            .store
+            .is_wallet_claimed(&chain_str, &request.target_address)?
         {
-            let claimed = self.claimed_wallets.lock().map_err(|e| {
-                AirdropError::Claim(format!("Lock poisoning: {}", e))
-            })?;
-            let wallet_key = format!("{}:{}", request.target_chain, request.target_address);
-            if claimed.contains(&wallet_key) {
-                return Err(AirdropError::Claim(format!(
-                    "Wallet {} on {} has already claimed airdrop",
-                    request.target_address, request.target_chain
-                )));
-            }
+            return Err(AirdropError::Claim(format!(
+                "Wallet {} on {} has already claimed airdrop",
+                request.target_address, request.target_chain
+            )));
         }
 
         // Step 6: Calculate eligibility
@@ -104,7 +119,7 @@ impl VerificationPipeline {
             )));
         }
 
-        // Step 7: Record the claim as pending
+        // Step 7: Record the claim as pending (atomically checks + inserts)
         let claim_record = ClaimRecord {
             claim_id: claim_id.clone(),
             github_login: github_verification.profile.login.clone(),
@@ -123,33 +138,15 @@ impl VerificationPipeline {
             updated_at: now,
         };
 
-        // Store claim and mark as claimed
-        {
-            let mut claims = self.claims.lock().map_err(|e| {
-                AirdropError::Claim(format!("Lock poisoning: {}", e))
-            })?;
-            claims.push(claim_record.clone());
-        }
-
-        {
-            let mut claimed_github = self.claimed_github_ids.lock().map_err(|e| {
-                AirdropError::Claim(format!("Lock poisoning: {}", e))
-            })?;
-            claimed_github.insert(github_verification.profile.id);
-        }
-
-        {
-            let mut claimed_wallets = self.claimed_wallets.lock().map_err(|e| {
-                AirdropError::Claim(format!("Lock poisoning: {}", e))
-            })?;
-            claimed_wallets.insert(format!(
-                "{}:{}",
-                request.target_chain, request.target_address
-            ));
-        }
+        self.store.record_claim(
+            github_verification.profile.id,
+            &chain_str,
+            &request.target_address,
+            claim_record.clone(),
+        )?;
 
         let target_chain_str = request.target_chain.to_string();
-        
+
         Ok(ClaimResponse {
             claim_id,
             status: ClaimStatus::Pending,
@@ -202,20 +199,12 @@ impl VerificationPipeline {
 
     /// Get all claims
     pub fn get_claims(&self) -> Result<Vec<ClaimRecord>> {
-        let claims = self
-            .claims
-            .lock()
-            .map_err(|e| AirdropError::Claim(format!("Lock poisoning: {}", e)))?;
-        Ok(claims.clone())
+        self.store.get_claims()
     }
 
     /// Get claim by ID
     pub fn get_claim(&self, claim_id: &str) -> Result<Option<ClaimRecord>> {
-        let claims = self
-            .claims
-            .lock()
-            .map_err(|e| AirdropError::Claim(format!("Lock poisoning: {}", e)))?;
-        Ok(claims.iter().find(|c| c.claim_id == claim_id).cloned())
+        self.store.get_claim(claim_id)
     }
 
     /// Update claim status
@@ -226,30 +215,13 @@ impl VerificationPipeline {
         lock_id: Option<String>,
         rejection_reason: Option<String>,
     ) -> Result<()> {
-        let mut claims = self
-            .claims
-            .lock()
-            .map_err(|e| AirdropError::Claim(format!("Lock poisoning: {}", e)))?;
-
-        if let Some(claim) = claims.iter_mut().find(|c| c.claim_id == claim_id) {
-            claim.status = status;
-            claim.updated_at = Utc::now();
-            if let Some(lid) = lock_id {
-                claim.lock_id = Some(lid);
-            }
-            claim.rejection_reason = rejection_reason;
-            Ok(())
-        } else {
-            Err(AirdropError::Claim(format!("Claim not found: {}", claim_id)))
-        }
+        self.store
+            .update_claim(claim_id, status, lock_id, rejection_reason)
     }
 
     /// Get statistics
     pub fn get_stats(&self) -> Result<AirdropStats> {
-        let claims = self
-            .claims
-            .lock()
-            .map_err(|e| AirdropError::Claim(format!("Lock poisoning: {}", e)))?;
+        let claims = self.store.get_claims()?;
 
         let total_claims = claims.len() as u64;
         let total_distributed: u64 = claims
@@ -274,7 +246,7 @@ impl VerificationPipeline {
                 solana: solana_claims,
                 base: base_claims,
             },
-            claims_by_tier: ClaimsByTier::default(), // Would need tier tracking
+            claims_by_tier: ClaimsByTier::default(),
         })
     }
 }

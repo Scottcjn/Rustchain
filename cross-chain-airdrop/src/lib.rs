@@ -55,6 +55,7 @@
 
 pub mod bridge_client;
 pub mod chain_adapter;
+pub mod claim_store;
 pub mod config;
 pub mod error;
 pub mod github_verifier;
@@ -62,6 +63,9 @@ pub mod models;
 pub mod pipeline;
 
 // Re-export commonly used types
+pub use claim_store::{ClaimStore, InMemoryClaimStore};
+#[cfg(feature = "sqlite-store")]
+pub use claim_store::SqliteClaimStore;
 pub use config::AirdropConfig as Config;
 pub use error::{AirdropError, Result};
 pub use github_verifier::GitHubVerifier;

@@ -13,6 +13,10 @@ use std::sync::Arc;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
+/// Default path for the persistent claim store.
+#[cfg(feature = "sqlite-store")]
+const DEFAULT_STORE_PATH: &str = "airdrop_claims.sqlite";
+
 #[derive(Parser)]
 #[command(name = "airdrop-cli")]
 #[command(author = "RustChain Contributors")]
@@ -114,6 +118,19 @@ async fn main() -> Result<()> {
     let solana_adapter = Arc::new(SolanaAdapter::with_defaults(config.solana_rpc_url.clone()));
     let base_adapter = Arc::new(BaseAdapter::with_defaults(config.base_rpc_url.clone()));
 
+    // Use SQLite-backed store for durable duplicate-claim prevention
+    #[cfg(feature = "sqlite-store")]
+    let pipeline = {
+        let store = cross_chain_airdrop::SqliteClaimStore::open(DEFAULT_STORE_PATH)
+            .expect("Failed to open claim store");
+        VerificationPipeline::with_store(
+            github_verifier,
+            vec![solana_adapter.clone(), base_adapter.clone()],
+            store,
+        )
+    };
+
+    #[cfg(not(feature = "sqlite-store"))]
     let pipeline = VerificationPipeline::new(
         github_verifier,
         vec![solana_adapter.clone(), base_adapter.clone()],
