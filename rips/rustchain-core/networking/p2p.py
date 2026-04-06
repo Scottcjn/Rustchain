@@ -263,9 +263,11 @@ class MessageHandler:
     Implements message validation, deduplication, and routing.
     """
 
-    def __init__(self):
+    def __init__(self, max_seen: int = 10000):
         self.handlers: Dict[MessageType, List[Callable]] = {}
         self.seen_messages: Set[str] = set()
+        self._max_seen = max_seen
+        self._insertion_order: List[str] = []
         self._lock = threading.Lock()
 
     def register_handler(self, msg_type: MessageType, handler: Callable):
@@ -286,10 +288,12 @@ class MessageHandler:
             if msg_hash in self.seen_messages:
                 return False
             self.seen_messages.add(msg_hash)
+            self._insertion_order.append(msg_hash)
 
-            # Cleanup old messages periodically
-            if len(self.seen_messages) > 10000:
-                self.seen_messages.clear()
+            # Evict oldest entries when cache is full (FIFO, not full clear)
+            while len(self.seen_messages) > self._max_seen:
+                oldest = self._insertion_order.pop(0)
+                self.seen_messages.discard(oldest)
 
         # Validate timestamp (reject old messages)
         now = int(time.time())
