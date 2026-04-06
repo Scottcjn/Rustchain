@@ -538,18 +538,34 @@ class GossipLayer:
                 f"Epoch {epoch}: Merkle root mismatch "
                 f"(remote={remote_merkle[:16]}..., local={local_merkle[:16]}...)"
             )
-            # Reject: distribution data is inconsistent
-            vote = self.create_message(MessageType.EPOCH_VOTE, {
-                "epoch": epoch,
-                "proposal_hash": proposal.get("proposal_hash"),
-                "vote": "reject",
-                "voter": self.node_id,
-                "reason": "merkle_root_mismatch"
-            })
-            self.broadcast(vote)
-            return {"status": "voted", "vote": "reject", "reason": "merkle_root_mismatch"}
+            return self._reject_epoch_vote(epoch, proposal, "merkle_root_mismatch")
 
-        # Merkle verified - vote to accept
+        # Validate distribution recipients against locally attested miners.
+        # The merkle check above only proves internal consistency (the hash
+        # matches the provided data); it does NOT verify that the distribution
+        # actually corresponds to enrolled miners.  A malicious proposer could
+        # send a self-paying distribution with a correctly computed merkle root.
+        # Cross-reference each recipient against miner_attest_recent to ensure
+        # only legitimately attested miners receive rewards.
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute(
+                    "SELECT miner FROM miner_attest_recent"
+                )
+                attested_miners = {row[0] for row in cursor.fetchall()}
+        except Exception as e:
+            logger.error(f"Epoch {epoch}: Failed to query attested miners: {e}")
+            return self._reject_epoch_vote(epoch, proposal, "attested_miners_query_error")
+
+        for recipient in distribution:
+            if recipient not in attested_miners:
+                logger.warning(
+                    f"Epoch {epoch}: Distribution recipient {recipient} "
+                    f"not found in attested miners"
+                )
+                return self._reject_epoch_vote(epoch, proposal, "unattested_recipient")
+
+        # Merkle verified AND recipients validated - vote to accept
         vote = self.create_message(MessageType.EPOCH_VOTE, {
             "epoch": epoch,
             "proposal_hash": proposal.get("proposal_hash"),
@@ -560,6 +576,18 @@ class GossipLayer:
         self.broadcast(vote)
 
         return {"status": "voted", "vote": "accept"}
+
+    def _reject_epoch_vote(self, epoch: int, proposal: Dict, reason: str) -> Dict:
+        """Helper: broadcast epoch vote rejection with reason."""
+        vote = self.create_message(MessageType.EPOCH_VOTE, {
+            "epoch": epoch,
+            "proposal_hash": proposal.get("proposal_hash"),
+            "vote": "reject",
+            "voter": self.node_id,
+            "reason": reason
+        })
+        self.broadcast(vote)
+        return {"status": "voted", "vote": "reject", "reason": reason}
 
     def _handle_epoch_vote(self, msg: GossipMessage) -> Dict:
         """Handle epoch vote - collect votes and commit when quorum reached.
