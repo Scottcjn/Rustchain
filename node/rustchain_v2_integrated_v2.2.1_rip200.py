@@ -3071,8 +3071,15 @@ def enroll_epoch():
         )
 
         # Enroll in epoch
+        # FIX: Use INSERT OR IGNORE to prevent external actors from downgrading
+        # a miner's epoch weight via repeated /epoch/enroll calls. The first
+        # enrollment in an epoch wins (whether from auto-enroll or explicit).
+        # This closes the "zero-weight miner reward distortion" vector where an
+        # attacker could overwrite a legitimate miner's weight (e.g. 2.5) with
+        # a near-zero value (1e-9) by calling this endpoint with failed-fingerprint
+        # or default device data.
         c.execute(
-            "INSERT OR REPLACE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
             (epoch, miner_pk, weight)
         )
 
