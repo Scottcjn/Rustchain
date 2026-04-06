@@ -13,6 +13,7 @@
 [![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer)
 [![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
 [![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+[![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.19442753.svg)](https://doi.org/10.5281/zenodo.19442753)
 
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.

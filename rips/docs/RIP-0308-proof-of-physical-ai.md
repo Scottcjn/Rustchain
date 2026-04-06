@@ -1,5 +1,7 @@
 # RIP-0308: Proof of Physical AI (PPA)
 
+[![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.19442753.svg)](https://doi.org/10.5281/zenodo.19442753)
+
 ```yaml
 rip: 0308
 title: Proof of Physical AI (PPA)
@@ -9,7 +11,10 @@ type: Standards Track
 category: Core
 created: 2026-04-06
 requires: RIP-0001, RIP-0007, RIP-0200, RIP-0201
+doi: 10.5281/zenodo.19442753
 ```
+
+> **Citation:** Boudreaux, S. (2026). *RIP-0308: Proof of Physical AI (PPA) — Hardware Fingerprinting for Verifiable Compute Provenance*. Elyan Labs. https://doi.org/10.5281/zenodo.19442753
 
 ---
 
