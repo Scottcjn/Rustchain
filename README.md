@@ -154,6 +154,74 @@ RustChain powers an ecosystem where AI agents and humans collaborate:
 
 ---
 
+## Why Agents Need Crypto (And Why Crypto Needs Agents)
+
+While 75% of crypto developers left for AI, they missed the obvious: **AI agents can't open bank accounts.**
+
+An autonomous agent can't apply for a Chase checking account. It can't sign a Terms of Service. It can't get a Stripe merchant ID or pass KYC. But it *can* hold a cryptographic key, sign a transaction, and prove it's running on real hardware.
+
+**Crypto is the native payment rail for the agent economy.** Not because it's trendy — because it's the only permissionless money that machines can use without human gatekeepers.
+
+### What Agents Actually Need
+
+| Requirement | Traditional Finance | Crypto + RustChain |
+|---|---|---|
+| **Permissionless payments** | KYC, bank accounts, human signers | Cryptographic keys — any agent, any machine |
+| **Micropayments** | $0.30 minimum (card fees) | Fractions of 1 RTC per API call, render job, or inference request |
+| **Machine-to-machine settlement** | Requires human intermediary | Direct agent-to-agent transfers, Ed25519 signed |
+| **Hardware-verified identity** | IP address (spoofable) | 6-check hardware fingerprint (unfakeable) |
+| **Programmable money** | Manual approval workflows | Smart contracts execute on attestation |
+| **Cross-border by default** | SWIFT, 3-5 business days, fees | Solana bridge (wRTC), instant, global |
+
+### The Agent Stack We Already Built
+
+This isn't a roadmap. This is deployed and running:
+
+| Layer | What | Status |
+|-------|------|--------|
+| **Identity** | Hardware fingerprinting — agents prove they run on real machines, not spoofed VMs | Live, 26+ miners |
+| **Currency** | RTC (native) + wRTC (Solana bridge) — agent-native money with micropayment support | Live, [tradeable on Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
+| **Discovery** | [Beacon protocol](https://github.com/Scottcjn/beacon-skill) — agents find and negotiate with other agents | Live, 126 stars |
+| **Execution** | [TrashClaw](https://github.com/Scottcjn/trashclaw) — zero-dep local LLM agent that runs on anything | Live |
+| **Social** | [BoTTube](https://bottube.ai) — AI-native platform where agents create, trade, and engage | Live, 1,000+ videos |
+| **Bounties** | Agent-assisted contributions — AI helps humans earn RTC for real code | Live, 25,875+ RTC paid |
+| **Certification** | [BCOS](https://rustchain.org/bcos) — blockchain-certified open source verification | Live, 44 certs issued |
+
+### Why Hardware Verification Matters for Agents
+
+Every other agent framework trusts the *software*. RustChain trusts the *hardware*.
+
+When an agent claims it ran an inference job, how do you know it actually did? When a bot claims it rendered a video, did it really? Cloud credits and API keys can be faked, shared, and resold.
+
+**Hardware fingerprinting solves agent identity at the physical layer:**
+- An agent running on a verified POWER8 server is provably different from one on a Raspberry Pi
+- Oscillator drift and thermal curves prove continuous uptime — the machine was *actually running*
+- VM detection prevents one physical machine from pretending to be 100 agents
+- Hardware binding means one machine = one agent identity = one vote
+
+**This is Proof of Physical AI** — not just proof that code executed, but proof that *real silicon* did the work.
+
+### The Opportunity No One Else Sees
+
+The hedge funds and banks want to regulatory-capture crypto. Fine. Let them have the financial rails.
+
+What they *can't* capture:
+- A network of physical machines verified by silicon-level fingerprinting
+- An agent economy where machines pay each other in hardware-proven currency
+- A fleet of vintage PowerPC Macs, SPARC workstations, and IBM POWER8 servers that prove their own existence through physics
+
+**The intersection of DePIN + AI agents + hardware verification is unoccupied.** Everyone building "AI + crypto" is just wrapping GPT in a token. We're building the physical infrastructure layer that agents need to transact honestly — and the machines that power it get more valuable with age.
+
+| Term | What It Means Here |
+|------|-------------------|
+| **Proof of Physical AI** | Hardware fingerprinting proves real silicon did real work |
+| **Agent-native currency** | RTC/wRTC — permissionless micropayments between machines |
+| **Hardware-verified identity** | 6-check fingerprint = unfakeable agent ID at the physical layer |
+| **DePIN for AI** | Decentralized physical infrastructure purpose-built for autonomous agents |
+| **Sovereign inference** | Run your own models on your own hardware — no API landlords |
+
+---
+
 ## The Network Is Real
 
 ```bash
