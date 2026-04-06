@@ -121,6 +121,34 @@ GPU_PROFILES = {
         "vram_mb": 16384,
         "compute_cap": "7.5",
     },
+    "RTX_5070": {
+        "fp16_fp32_ratio": (2.5, 3.5),
+        "fp32_tflops": (25.0, 40.0),
+        "pcie_h2d_gbps": (20.0, 30.0),
+        "vram_mb": 12288,
+        "compute_cap": "12.0",
+    },
+    "RTX_3090": {
+        "fp16_fp32_ratio": (1.8, 2.5),
+        "fp32_tflops": (30.0, 36.0),
+        "pcie_h2d_gbps": (20.0, 28.0),
+        "vram_mb": 24576,
+        "compute_cap": "8.6",
+    },
+    "MI300X": {
+        "fp16_fp32_ratio": (4.0, 8.0),
+        "fp32_tflops": (80.0, 164.0),
+        "pcie_h2d_gbps": (30.0, 64.0),
+        "vram_mb": 196608,
+        "compute_cap": "N/A",  # AMD, no CUDA compute cap
+    },
+    "L40S": {
+        "fp16_fp32_ratio": (3.5, 5.5),
+        "fp32_tflops": (60.0, 91.0),
+        "pcie_h2d_gbps": (20.0, 32.0),
+        "vram_mb": 49152,
+        "compute_cap": "8.9",
+    },
 }
 
 
