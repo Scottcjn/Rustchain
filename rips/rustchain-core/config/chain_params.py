@@ -121,7 +121,7 @@ MIN_ENTROPY_SCORE: float = 0.60
 # =============================================================================
 
 GENESIS_HASH: str = "019c177b44a41f78da23caa99314adbc44889be2dcdd5021930f9d991e7e34cf"
-GENESIS_TIMESTAMP: int = 1735689600  # 2025-01-01 00:00:00 UTC
+GENESIS_TIMESTAMP: int = 1764706927  # Production chain launch (Dec 2, 2025)
 GENESIS_DIFFICULTY: int = 1
 
 # =============================================================================

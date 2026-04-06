@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 MIGRATION_VERSION = "2.3.0-mainnet"
-GENESIS_TIMESTAMP = 1728000000  # Oct 4, 2024 00:00:00 UTC (same as testnet)
+GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
 
 # Paths
 TESTNET_DB_PATH = os.environ.get("TESTNET_DB", "/root/rustchain/rustchain_v2.db")
