@@ -55,9 +55,16 @@ bs58 = "0.5"
 # Async trait
 async-trait = "0.1"
 
+# Optional: persistent claim store (SQLite-backed)
+rusqlite = { version = "0.31", features = ["bundled"], optional = true }
+
 [dev-dependencies]
 tokio-test = "0.4"
 mockito = "1.2"
+
+[features]
+default = []
+sqlite-store = ["dep:rusqlite"]
 
 [profile.release]
 opt-level = 3
