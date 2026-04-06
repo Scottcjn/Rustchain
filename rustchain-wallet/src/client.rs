@@ -143,16 +143,21 @@ impl RustChainClient {
     /// Submit a signed transaction to the network.
     ///
     /// Posts to: POST {api_url}/wallet/transfer/signed
+    ///
+    /// The request payload uses the server-expected field names:
+    /// `from_address`, `to_address`, `amount_rtc` (in RTC units, not smallest units),
+    /// `nonce` (as string), `signature`, `public_key`, `memo`.
     pub async fn submit_transaction(&self, tx: &Transaction) -> Result<TransactionResponse> {
         let url = format!("{}/wallet/transfer/signed", self.api_url);
 
+        // Convert amount from smallest units to RTC units (6 decimals)
+        let amount_rtc = tx.amount as f64 / 1_000_000.0;
+
         let payload = serde_json::json!({
-            "from": tx.from,
-            "to": tx.to,
-            "amount": tx.amount,
-            "fee": tx.fee,
-            "nonce": tx.nonce,
-            "timestamp": tx.timestamp.timestamp(),
+            "from_address": tx.from,
+            "to_address": tx.to,
+            "amount_rtc": amount_rtc,
+            "nonce": tx.nonce.to_string(),
             "memo": tx.memo,
             "signature": tx.signature,
             "public_key": tx.public_key,

@@ -8,6 +8,51 @@ use crate::nonce_store::NonceStore;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Smallest-unit-to-RTC conversion factor (6 decimals).
+const AMOUNT_UNIT: u64 = 1_000_000;
+
+/// Format an f64 amount to match Python's json.dumps float representation.
+/// Python serializes 1.0 as "1.0", 1000000.0 as "1000000.0", etc.
+fn py_json_number(n: f64) -> String {
+    if n.trunc() == n {
+        format!("{n:.1}")
+    } else {
+        format!("{n}")
+    }
+}
+
+/// Build the canonical signed message JSON, matching the Python server format:
+/// `json.dumps(tx_data, sort_keys=True, separators=(",", ":"))`
+///
+/// Sorted key order: amount, chain_id (optional), from, memo, nonce, to
+fn canonical_message(
+    from: &str,
+    to: &str,
+    amount_rtc: f64,
+    memo: &str,
+    nonce_str: &str,
+    chain_id: Option<&str>,
+) -> Vec<u8> {
+    let mut s = String::with_capacity(256);
+    s.push('{');
+    s.push_str("\"amount\":");
+    s.push_str(&py_json_number(amount_rtc));
+    if let Some(cid) = chain_id {
+        s.push_str(",\"chain_id\":");
+        s.push_str(&serde_json::to_string(cid).unwrap_or(cid.to_string()));
+    }
+    s.push_str(",\"from\":");
+    s.push_str(&serde_json::to_string(from).unwrap_or(from.to_string()));
+    s.push_str(",\"memo\":");
+    s.push_str(&serde_json::to_string(memo).unwrap_or(memo.to_string()));
+    s.push_str(",\"nonce\":");
+    s.push_str(&serde_json::to_string(nonce_str).unwrap_or(nonce_str.to_string()));
+    s.push_str(",\"to\":");
+    s.push_str(&serde_json::to_string(to).unwrap_or(to.to_string()));
+    s.push('}');
+    s.into_bytes()
+}
+
 /// A RustChain transaction
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
@@ -58,20 +103,29 @@ impl Transaction {
         self.amount + self.fee
     }
 
-    /// Serialize the transaction for signing (excludes signature field)
+    /// Serialize the transaction for signing using the canonical format
+    /// that matches the Python server's verification format.
+    ///
+    /// The server reconstructs the signed message as:
+    /// `json.dumps({"from":...,"to":...,"amount":...,"memo":...,"nonce":str(nonce)},
+    ///              sort_keys=True, separators=(",",":"))`
+    ///
+    /// Note: `amount` is converted from smallest units to RTC units (÷1_000_000),
+    /// and `nonce` is serialized as a JSON string (not a number).
     pub fn serialize_for_signing(&self) -> Result<Vec<u8>> {
-        let tx = UnsignedTransaction {
-            from: self.from.clone(),
-            to: self.to.clone(),
-            amount: self.amount,
-            fee: self.fee,
-            nonce: self.nonce,
-            timestamp: self.timestamp.timestamp(),
-            memo: self.memo.clone(),
-        };
+        let amount_rtc = self.amount as f64 / AMOUNT_UNIT as f64;
+        let nonce_str = self.nonce.to_string();
+        let memo = self.memo.as_deref().unwrap_or("");
+        Ok(canonical_message(&self.from, &self.to, amount_rtc, memo, &nonce_str, None))
+    }
 
-        let json = serde_json::to_string(&tx)?;
-        Ok(json.into_bytes())
+    /// Serialize the transaction for signing with an optional chain_id.
+    /// Use this when the server requires chain_id in the signed message.
+    pub fn serialize_for_signing_with_chain_id(&self, chain_id: &str) -> Result<Vec<u8>> {
+        let amount_rtc = self.amount as f64 / AMOUNT_UNIT as f64;
+        let nonce_str = self.nonce.to_string();
+        let memo = self.memo.as_deref().unwrap_or("");
+        Ok(canonical_message(&self.from, &self.to, amount_rtc, memo, &nonce_str, Some(chain_id)))
     }
 
     /// Sign the transaction with a keypair
@@ -143,18 +197,6 @@ impl Transaction {
         // Then verify signature
         self.verify(keypair)
     }
-}
-
-/// Internal structure for signing (excludes signature)
-#[derive(Serialize, Deserialize)]
-struct UnsignedTransaction {
-    from: String,
-    to: String,
-    amount: u64,
-    fee: u64,
-    nonce: u64,
-    timestamp: i64,
-    memo: Option<String>,
 }
 
 /// Transaction builder for fluent API
@@ -492,5 +534,142 @@ mod tests {
         // Verify unsigned transaction should fail
         let result = tx.verify_with_pubkey(&keypair);
         assert!(result.is_err());
+    }
+
+    // ==================== Canonical Message Format Compatibility Tests ====================
+    // These tests verify that the Rust wallet produces the exact same signed message
+    // format that the Python server expects for /wallet/transfer/signed verification.
+
+    #[test]
+    fn test_canonical_message_format_matches_python_server() {
+        // Python server format:
+        // json.dumps({"from":"RTC...","to":"RTC...","amount":1.0,"memo":"","nonce":"1733420000000"},
+        //            sort_keys=True, separators=(",",":"))
+        // = {"amount":1.0,"from":"RTCabc...","memo":"","nonce":"1733420000000","to":"RTCdef..."}
+
+        let msg = canonical_message(
+            "RTCabc123",
+            "RTCdef456",
+            1.0,
+            "",
+            "1733420000000",
+            None,
+        );
+        let json_str = String::from_utf8(msg).unwrap();
+        assert_eq!(
+            json_str,
+            r#"{"amount":1.0,"from":"RTCabc123","memo":"","nonce":"1733420000000","to":"RTCdef456"}"#
+        );
+    }
+
+    #[test]
+    fn test_canonical_message_with_memo() {
+        let msg = canonical_message(
+            "RTCabc",
+            "RTCdef",
+            0.5,
+            "hello world",
+            "42",
+            None,
+        );
+        let json_str = String::from_utf8(msg).unwrap();
+        assert_eq!(
+            json_str,
+            r#"{"amount":0.5,"from":"RTCabc","memo":"hello world","nonce":"42","to":"RTCdef"}"#
+        );
+    }
+
+    #[test]
+    fn test_canonical_message_with_chain_id() {
+        let msg = canonical_message(
+            "RTCabc",
+            "RTCdef",
+            100.0,
+            "",
+            "1",
+            Some("rustchain-mainnet"),
+        );
+        let json_str = String::from_utf8(msg).unwrap();
+        assert_eq!(
+            json_str,
+            r#"{"amount":100.0,"chain_id":"rustchain-mainnet","from":"RTCabc","memo":"","nonce":"1","to":"RTCdef"}"#
+        );
+    }
+
+    #[test]
+    fn test_canonical_message_nonce_is_string_not_number() {
+        // Critical: nonce must be a JSON string, not a number
+        let msg = canonical_message("RTCabc", "RTCdef", 1.0, "", "12345", None);
+        let json_str = String::from_utf8(msg).unwrap();
+        // Verify nonce appears as "12345" (quoted) not 12345 (unquoted)
+        assert!(json_str.contains(r#""nonce":"12345""#));
+        assert!(!json_str.contains(r#""nonce":12345"#));
+    }
+
+    #[test]
+    fn test_canonical_message_amount_integer_renders_as_float() {
+        // Python renders 1.0 as "1.0", not "1"
+        let msg = canonical_message("RTCabc", "RTCdef", 1.0, "", "1", None);
+        let json_str = String::from_utf8(msg).unwrap();
+        assert!(json_str.contains(r#""amount":1.0"#));
+        assert!(!json_str.contains(r#""amount":1,"#));
+    }
+
+    #[test]
+    fn test_serialize_for_signing_produces_canonical_format() {
+        let keypair = KeyPair::generate();
+        let mut tx = Transaction::new(
+            keypair.public_key_base58(),
+            "RTCrecipient12345678901234567890123456".to_string(),
+            5_000_000, // 5.0 RTC in smallest units
+            1000,
+            1733420000000u64,
+        )
+        .with_memo("test".to_string());
+        tx.sign(&keypair).unwrap();
+
+        let message = tx.serialize_for_signing().unwrap();
+        let json_str = String::from_utf8(message).unwrap();
+
+        // Verify sorted key order: amount, from, memo, nonce, to
+        let amount_pos = json_str.find(r#""amount":"#).unwrap();
+        let from_pos = json_str.find(r#""from":"#).unwrap();
+        let memo_pos = json_str.find(r#""memo":"#).unwrap();
+        let nonce_pos = json_str.find(r#""nonce":"#).unwrap();
+        let to_pos = json_str.find(r#""to":"#).unwrap();
+
+        assert!(amount_pos < from_pos);
+        assert!(from_pos < memo_pos);
+        assert!(memo_pos < nonce_pos);
+        assert!(nonce_pos < to_pos);
+
+        // Verify nonce is a string
+        assert!(json_str.contains(r#""nonce":"1733420000000""#));
+
+        // Verify amount is 5.0 (5_000_000 / 1_000_000)
+        assert!(json_str.contains(r#""amount":5.0"#));
+    }
+
+    #[test]
+    fn test_sign_and_verify_roundtrip_with_canonical_format() {
+        let keypair = KeyPair::generate();
+        let mut tx = Transaction::new(
+            keypair.rtc_address(),
+            "RTCrecipient12345678901234567890123456".to_string(),
+            1_000_000, // 1.0 RTC
+            1000,
+            999,
+        );
+        tx.sign(&keypair).unwrap();
+
+        // Verify using the same canonical format
+        let valid = tx.verify(&keypair).unwrap();
+        assert!(valid);
+
+        // Tampered amount should fail verification
+        let mut tx2 = tx.clone();
+        tx2.amount = 2_000_000; // Changed from 1.0 to 2.0 RTC
+        let valid = tx2.verify(&keypair).unwrap();
+        assert!(!valid);
     }
 }
