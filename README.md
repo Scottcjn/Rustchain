@@ -2,12 +2,17 @@
 
 # RustChain
 
+### DePIN for Vintage Hardware — AI-Augmented Proof of Real Machines
+
 **The blockchain where old hardware outearns new hardware.**
+**And all hardware becomes old. It's just a matter of time.**
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
 [![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer)
+[![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
+[![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
 
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
@@ -15,6 +20,69 @@ A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most resp
 [Explorer](https://rustchain.org/explorer) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
 
 </div>
+
+---
+
+## Crypto Lost Its Way. We're Going Back.
+
+In 2026, crypto developer commits fell 75%. Ethereum lost 34% of its active devs. Solana lost 40%. The builders left for AI.
+
+**We built both.**
+
+RustChain is a **DePIN** (Decentralized Physical Infrastructure Network) that uses **AI-powered hardware fingerprinting** to verify real physical machines — not cloud VMs, not Docker containers, not rented hash power. Real silicon. Real oscillator drift. Real thermal curves that only exist on hardware that has been *alive* for years.
+
+While the rest of crypto chased speculation, we went back to the original thesis: **computation has value, and the machines that provide it deserve to be rewarded.** Especially the ones everyone else threw away.
+
+| What Crypto Became | What RustChain Is |
+|---|---|
+| Abstract financial instruments | Physical machines doing real work |
+| VC-funded token launches | $0 VC, built on pawn shop hardware |
+| Proof of nothing useful | Proof of real, verified hardware |
+| Disposable — mine and dump | Preservation — keep old machines alive |
+| AI-hostile | AI-augmented consensus and verification |
+
+---
+
+## Every Machine Becomes Vintage
+
+Here's what no one else in DePIN has figured out:
+
+**Your brand-new Threadripper will be vintage hardware someday.** Your M4 MacBook will be a museum piece. That RTX 5090 will be a curiosity. Time is undefeated.
+
+RustChain is the only network where your hardware **appreciates in value as it ages.** Start mining today at 1.0x. In ten years, when that CPU is a relic and you're still running it? Your multiplier grows. In twenty years? It's legendary.
+
+Every other blockchain punishes old hardware. Proof-of-Work demands the newest ASICs. Proof-of-Stake demands the biggest wallet. RustChain demands **patience and preservation.**
+
+```
+2026:  Your Ryzen 9 mines at 1.0x         ░░░░░░░░░░
+2031:  Same machine, now "retro" at 1.3x   ░░░░░░░░░░░░░
+2036:  Vintage tier unlocked at 1.8x        ░░░░░░░░░░░░░░░░░░
+2041:  Ancient tier — 2.2x and climbing     ░░░░░░░░░░░░░░░░░░░░░░
+       ↑ Same hardware. Same owner. Growing rewards.
+```
+
+**The best time to start mining was 20 years ago. The second best time is now.**
+
+---
+
+## How RustChain Compares to DePIN Leaders
+
+RustChain belongs to the **DePIN** sector — the same $10B category as Helium, Filecoin, and Render — but with a fundamentally different thesis: **the value is in the hardware itself, not just what it computes.**
+
+| | **RustChain** | **Helium** | **Filecoin** | **Render** | **io.net** |
+|---|---|---|---|---|---|
+| **Physical Infra** | Vintage computers | LoRa/5G hotspots | Storage drives | GPUs | GPUs |
+| **Proof Mechanism** | Proof of Antiquity (6 HW checks + AI) | Proof of Coverage | Proof of Replication | Proof of Render | Proof of Compute |
+| **What's Rewarded** | Keeping real hardware alive | Network coverage | Storage provision | GPU render jobs | GPU compute jobs |
+| **Anti-Spoofing** | Clock drift, cache timing, SIMD identity, thermal entropy, instruction jitter, anti-emulation | Location proof | Storage proofs | Job completion | TEE attestation |
+| **Hardware Diversity** | 15+ architectures (PowerPC, SPARC, MIPS, ARM, x86, RISC-V, 68K, Cell BE, Transputer) | Single device type | Storage only | GPU only | GPU only |
+| **AI Integration** | Hardware fingerprint validation, agent economy, AI-native social platform | None | None | AI render jobs | AI inference |
+| **E-Waste Impact** | Directly prevents disposal of working machines | Neutral | Neutral | Neutral | Neutral |
+| **VC Funding** | $0 — pawn shop arbitrage | $365M | $257M | $30M | $40M |
+
+**The others rent compute. We preserve machines.**
+
+Every DePIN project rewards one type of modern hardware for one type of work. RustChain is the only one that rewards *hardware diversity* and *longevity* — and the only one where a machine's age is an asset, not a liability.
 
 ---
 
@@ -38,12 +106,51 @@ Proof-of-Antiquity rewards hardware for *surviving*, not for being fast. Older m
 | PowerPC G4 (2003) | **2.5x** | ANCIENT | Still running, still earning |
 | RISC-V (2014) | **1.4x** | EXOTIC | Open ISA, the future |
 | Apple Silicon M1 (2020) | **1.2x** | MODERN | Efficient, welcome |
-| Modern x86_64 | **0.8x** | MODERN | Baseline |
+| Modern x86_64 | **0.8x** | MODERN | Baseline — *for now* |
 | Modern ARM NAS/SBC | **0.0005x** | PENALTY | Cheap, farmable, penalized |
 
 Our fleet of 16+ preserved machines draws roughly the same power as ONE modern GPU mining rig — while preventing 1,300 kg of manufacturing CO2 and 250 kg of e-waste.
 
 **[See the Green Tracker →](https://rustchain.org/preserved.html)**
+
+---
+
+## AI-Augmented Consensus
+
+RustChain doesn't just use blockchain. It uses **AI to make blockchain honest.**
+
+### Hardware Fingerprinting (6 Checks No VM Can Fake)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ 1. Clock-Skew & Oscillator Drift  ← Silicon aging       │
+│ 2. Cache Timing Fingerprint       ← L1/L2/L3 latency    │
+│ 3. SIMD Unit Identity             ← AltiVec/SSE/NEON     │
+│ 4. Thermal Drift Entropy          ← Heat curves unique   │
+│ 5. Instruction Path Jitter        ← Microarch patterns   │
+│ 6. Anti-Emulation Detection       ← Catches VMs/emus     │
+└─────────────────────────────────────────────────────────┘
+```
+
+A SheepShaver VM pretending to be a G4 will fail. Real vintage silicon has unique aging patterns that can't be faked.
+
+### Server-Side AI Validation
+
+The attestation server doesn't trust self-reported data. It:
+- **Cross-validates** SIMD features against claimed architecture
+- **Detects ROM clustering** — multiple "different" machines with identical ROM hashes = emulator farm
+- **Analyzes timing distributions** — real oscillators have imperfections; synthetic ones are too perfect
+- **Flags thermal anomalies** — VMs have uniform thermal response; real hardware doesn't
+
+### AI Agent Economy
+
+RustChain powers an ecosystem where AI agents and humans collaborate:
+- **[BoTTube](https://bottube.ai)** — AI-native video platform where bots create, curate, and engage
+- **[Beacon](https://github.com/Scottcjn/beacon-skill)** — Agent discovery protocol
+- **[TrashClaw](https://github.com/Scottcjn/trashclaw)** — Zero-dep local LLM agent
+- **Bounty system** — 25,875+ RTC paid to 260+ contributors, many AI-assisted
+
+**This is what crypto + AI looks like when you build both instead of abandoning one for the other.**
 
 ---
 
@@ -113,31 +220,14 @@ tail -f ~/.rustchain/miner.log
 
 ## How Proof-of-Antiquity Works
 
-### 1. Hardware Fingerprinting
-
-Every miner must prove their hardware is real, not emulated. Six checks that VMs cannot fake:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│ 1. Clock-Skew & Oscillator Drift  ← Silicon aging       │
-│ 2. Cache Timing Fingerprint       ← L1/L2/L3 latency    │
-│ 3. SIMD Unit Identity             ← AltiVec/SSE/NEON     │
-│ 4. Thermal Drift Entropy          ← Heat curves unique   │
-│ 5. Instruction Path Jitter        ← Microarch patterns   │
-│ 6. Anti-Emulation Detection       ← Catches VMs/emus     │
-└─────────────────────────────────────────────────────────┘
-```
-
-A SheepShaver VM pretending to be a G4 will fail. Real vintage silicon has unique aging patterns that can't be faked.
-
-### 2. 1 CPU = 1 Vote
+### 1 CPU = 1 Vote
 
 Unlike Proof-of-Work where hash power = votes:
 - Each unique hardware device gets exactly 1 vote per epoch
 - Rewards split equally, then multiplied by antiquity
 - No advantage from faster CPUs or multiple threads
 
-### 3. Epoch Rewards
+### Epoch Rewards
 
 ```
 Epoch: 10 minutes  |  Pool: 1.5 RTC/epoch  |  Split by antiquity weight
