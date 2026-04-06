@@ -3,9 +3,10 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use ed25519_dalek::Signer;
 use tokio::time::sleep;
 
-use crate::attestation::{attest, FingerprintData};
+use crate::attestation::{attest_with_key, FingerprintData};
 use crate::config::Config;
 use crate::error::{MinerError, Result};
 use crate::hardware::HardwareInfo;
@@ -84,6 +85,12 @@ pub struct Miner {
     /// Hardware information
     hw_info: HardwareInfo,
 
+    /// Ed25519 signing keypair (used for attestation + enrollment signatures)
+    signing_key: ed25519_dalek::SigningKey,
+
+    /// Hex-encoded public key of the signing keypair
+    public_key_hex: String,
+
     /// Attestation valid until (Unix timestamp)
     attestation_valid_until: AtomicU64,
 
@@ -109,6 +116,11 @@ impl Miner {
         // Generate or use provided wallet
         let wallet = config.wallet.clone().unwrap_or_else(|| hw_info.generate_wallet(&miner_id));
 
+        // Generate Ed25519 signing keypair (reused for attestation + enrollment)
+        let signing_key = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
+        let verifying_key = signing_key.verifying_key();
+        let public_key_hex = hex::encode(verifying_key.as_bytes());
+
         // Create transport
         let mut transport = NodeTransport::new(
             config.node_url.clone(),
@@ -125,6 +137,8 @@ impl Miner {
             wallet,
             miner_id,
             hw_info,
+            signing_key,
+            public_key_hex,
             attestation_valid_until: AtomicU64::new(0),
             enrolled: AtomicBool::new(false),
             stats: Arc::new(MiningStats::new()),
@@ -221,11 +235,13 @@ impl Miner {
         // For now, no fingerprint data (can be added later)
         let fingerprint_data: Option<FingerprintData> = None;
 
-        match attest(
+        match attest_with_key(
             &self.transport,
             &self.wallet,
             &self.miner_id,
             &self.hw_info,
+            &self.signing_key,
+            &self.public_key_hex,
             fingerprint_data,
         )
         .await
@@ -257,13 +273,26 @@ impl Miner {
     async fn enroll(&self) -> Result<bool> {
         tracing::info!("[ENROLL] Enrolling in epoch...");
 
+        let epoch_response = self.transport.get("/epoch").await?;
+        let epoch_state: serde_json::Value = epoch_response.json().await?;
+        let epoch = epoch_state.get("epoch").and_then(|e| e.as_u64()).unwrap_or(0);
+
+        // Sign enrollment request using the SAME Ed25519 keypair from attestation.
+        // The signature binds (miner_pubkey|miner_id|epoch) to prove the enrollment
+        // caller is the same entity that performed the attestation.
+        let enroll_message = format!("{}|{}|{}", self.wallet, self.miner_id, epoch);
+        let signature = self.signing_key.sign(enroll_message.as_bytes());
+        let signature_hex = hex::encode(signature.to_bytes());
+
         let payload = serde_json::json!({
             "miner_pubkey": self.wallet,
             "miner_id": self.miner_id,
             "device": {
                 "family": self.hw_info.family,
                 "arch": self.hw_info.arch
-            }
+            },
+            "signature": signature_hex,
+            "public_key": self.public_key_hex
         });
 
         let response = self.transport.post_json("/epoch/enroll", &payload).await?;

@@ -1698,24 +1698,30 @@ def auto_induct_to_hall(miner: str, device: dict):
     except Exception as e:
         print(f"[HALL] Auto-induct error: {e}")
 
-def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False, source_ip: str = None, signals: dict = None, fingerprint: dict = None):
+def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False, source_ip: str = None, signals: dict = None, fingerprint: dict = None, signing_pubkey: str = None):
     now = int(time.time())
     verified_device = derive_verified_device(device or {}, fingerprint if isinstance(fingerprint, dict) else {}, fingerprint_passed)
     with sqlite3.connect(DB_PATH) as conn:
+        # Ensure signing_pubkey column exists (idempotent migration)
+        try:
+            conn.execute("ALTER TABLE miner_attest_recent ADD COLUMN signing_pubkey TEXT")
+        except Exception:
+            pass  # Column already exists or table doesn't exist yet
         # FIX: Prevent attestation overwrite from degrading prior fingerprint status.
         # If the miner already has fingerprint_passed=1, a later failed attestation
         # should not downgrade it. We still update ts_ok to keep the attestation fresh.
         new_fp = 1 if fingerprint_passed else 0
         conn.execute("""
-            INSERT INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, source_ip)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, source_ip, signing_pubkey)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(miner) DO UPDATE SET
                 ts_ok = excluded.ts_ok,
                 device_family = excluded.device_family,
                 device_arch = excluded.device_arch,
                 source_ip = excluded.source_ip,
-                fingerprint_passed = MAX(miner_attest_recent.fingerprint_passed, excluded.fingerprint_passed)
-        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, new_fp, source_ip))
+                fingerprint_passed = MAX(miner_attest_recent.fingerprint_passed, excluded.fingerprint_passed),
+                signing_pubkey = excluded.signing_pubkey
+        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, new_fp, source_ip, signing_pubkey))
         _ = append_fingerprint_snapshot(conn, miner, fingerprint if isinstance(fingerprint, dict) else {}, now)
         # C3 fix: Record attestation history for first_attest tracking
         conn.execute("""
@@ -2897,7 +2903,8 @@ def _submit_attestation_impl():
                 warthog_bonus = 1.0
 
     # Record successful attestation (with fingerprint status)
-    record_attestation_success(miner, device, fingerprint_passed, client_ip, signals=signals, fingerprint=fingerprint)
+    # Store the Ed25519 signing pubkey for enrollment signature verification
+    record_attestation_success(miner, device, fingerprint_passed, client_ip, signals=signals, fingerprint=fingerprint, signing_pubkey=pubkey_hex or None)
 
     temporal_review = {"score": 1.0, "review_flag": False, "reason": "insufficient_history", "flags": [], "check_scores": {}}
     try:
@@ -3038,6 +3045,91 @@ def enroll_epoch():
     if not miner_pk:
         return jsonify({"error": "Missing miner_pubkey"}), 400
 
+    # SECURITY: Verify Ed25519 signature on enrollment request if present.
+    # The rustchain-miner signs (miner_pubkey|miner_id|epoch) using the SAME
+    # Ed25519 keypair from its most recent attestation.  The node stores the
+    # attestation signing public key in miner_attest_recent.signing_pubkey and
+    # verifies the enrollment signature against it.  This proves the enrollment
+    # caller is the same entity that performed the attestation, closing the
+    # unauthorized-enrollment / miner_id-hijack vector.
+    # Backward-compatible: unsigned requests are still accepted (warn-only) to
+    # allow legacy miners to continue working while operators upgrade.
+    sig_hex = (data.get('signature') or '').strip().lower()
+    pubkey_hex = (data.get('public_key') or '').strip().lower()
+    epoch = slot_to_epoch(current_slot())
+
+    if sig_hex and pubkey_hex:
+        if HAVE_NACL:
+            # Look up the signing pubkey stored during the miner's attestation
+            stored_pubkey = None
+            try:
+                with sqlite3.connect(DB_PATH) as lk_conn:
+                    row = lk_conn.execute(
+                        "SELECT signing_pubkey FROM miner_attest_recent WHERE miner = ?",
+                        (miner_pk,)
+                    ).fetchone()
+                    if row and row[0]:
+                        stored_pubkey = row[0]
+            except Exception:
+                pass  # Column may not exist yet (pre-migration)
+
+            if stored_pubkey:
+                # Verify enrollment pubkey matches the attestation pubkey
+                if pubkey_hex != stored_pubkey:
+                    print(f"[ENROLL/SIG] PUBKEY MISMATCH: enrollment pubkey != "
+                          f"attestation pubkey for {miner_pk[:20]}...")
+                    return jsonify({
+                        "ok": False,
+                        "error": "pubkey_mismatch",
+                        "message": "The provided public key does not match the attestation signing key",
+                        "code": "PUBKEY_MISMATCH",
+                    }), 400
+
+                # Verify signature over (miner_pubkey|miner_id|epoch)
+                enroll_message = '{}|{}|{}'.format(miner_pk, miner_id, epoch)
+                if not verify_rtc_signature(pubkey_hex, enroll_message.encode('utf-8'), sig_hex):
+                    print(f"[ENROLL/SIG] INVALID SIGNATURE: miner_pk={miner_pk[:20]}...")
+                    return jsonify({
+                        "ok": False,
+                        "error": "invalid_enrollment_signature",
+                        "message": "Ed25519 signature verification failed",
+                        "code": "INVALID_ENROLLMENT_SIGNATURE",
+                    }), 400
+            else:
+                # No stored signing pubkey — accept with warning (legacy attestation)
+                logging.warning(
+                    "[ENROLL/SIG] No stored signing pubkey for %s... "
+                    "(legacy attestation — accepting unsigned path)",
+                    miner_pk[:20],
+                )
+        else:
+            # pynacl not available but signature provided — fail-closed.
+            print("[ENROLL/SIG] REJECTED: pynacl not installed — cannot verify "
+                  "enrollment signature (install pynacl or submit unsigned)")
+            return jsonify({
+                "ok": False,
+                "error": "ed25519_unavailable",
+                "message": (
+                    "Ed25519 signature was provided but pynacl is not installed "
+                    "on the node. Install pynacl or submit an unsigned enrollment."
+                ),
+                "code": "ED25519_UNAVAILABLE",
+            }), 503
+    elif sig_hex or pubkey_hex:
+        # Only one of signature/public_key provided — malformed request
+        return jsonify({
+            "ok": False,
+            "error": "incomplete_signature",
+            "message": "Both signature and public_key are required for signed enrollment",
+            "code": "INCOMPLETE_SIGNATURE",
+        }), 400
+    else:
+        # No signature — backward compatibility path (warn-only)
+        logging.warning(
+            "[ENROLL/SIG] UNSIGNED enrollment accepted for %s... (upgrade miner to signed flow)",
+            miner_pk[:20],
+        )
+
     # RIP-0146b: Enforce attestation + MAC requirements
     allowed, check_result = check_enrollment_requirements(miner_pk)
     if not allowed:
@@ -3051,7 +3143,7 @@ def enroll_epoch():
     family = device.get('family', 'x86')
     arch = device.get('arch', 'default')
     hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch, 1.0)
-    
+
     # RIP-PoA Phase 2: VM miners get minimal (but non-zero) weight
     # VMs can technically earn RTC, but it's economically pointless (1e-9 vs 1.0-2.5 for real hardware)
     fingerprint_failed = check_result.get('fingerprint_failed', False)
@@ -3061,8 +3153,6 @@ def enroll_epoch():
     else:
         weight = hw_weight
 
-    epoch = slot_to_epoch(current_slot())
-
     with sqlite3.connect(DB_PATH) as c:
         # Ensure miner has balance entry
         c.execute(
@@ -3071,8 +3161,15 @@ def enroll_epoch():
         )
 
         # Enroll in epoch
+        # FIX: Use INSERT OR IGNORE to prevent external actors from downgrading
+        # a miner's epoch weight via repeated /epoch/enroll calls. The first
+        # enrollment in an epoch wins (whether from auto-enroll or explicit).
+        # This closes the "zero-weight miner reward distortion" vector where an
+        # attacker could overwrite a legitimate miner's weight (e.g. 2.5) with
+        # a near-zero value (1e-9) by calling this endpoint with failed-fingerprint
+        # or default device data.
         c.execute(
-            "INSERT OR REPLACE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
             (epoch, miner_pk, weight)
         )
 
@@ -4031,9 +4128,13 @@ def request_withdrawal():
 
         # RIP-301: Route fee to mining pool (founder_community) instead of burning
         fee_urtc = int(WITHDRAWAL_FEE * UNIT)
+        fee_rtc = WITHDRAWAL_FEE
+        # Ensure founder_community row exists before crediting
+        c.execute("INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
+                  ("founder_community",))
         c.execute(
-            "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
-            (fee_urtc, "founder_community")
+            "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
+            (fee_rtc, "founder_community")
         )
         c.execute(
             """INSERT INTO fee_events (source, source_id, miner_pk, fee_rtc, fee_urtc, destination, created_at)
@@ -4103,9 +4204,9 @@ def api_fee_pool():
 
         # Community fund balance (where fees go)
         fund_row = c.execute(
-            "SELECT COALESCE(amount_i64, 0) FROM balances WHERE miner_id = 'founder_community'"
+            "SELECT COALESCE(balance_rtc, 0) FROM balances WHERE miner_pk = 'founder_community'"
         ).fetchone()
-        fund_balance = fund_row[0] / 1_000_000.0 if fund_row else 0.0
+        fund_balance = fund_row[0] if fund_row else 0.0
 
     return jsonify({
         "rip": 301,
@@ -4748,11 +4849,10 @@ def bounty_multiplier():
 
         # Current balance
         bal_row = c.execute(
-            "SELECT COALESCE(amount_i64, 0) FROM balances WHERE miner_id = ?",
+            "SELECT COALESCE(balance_rtc, 0) FROM balances WHERE miner_pk = ?",
             ("founder_community",)
         ).fetchone()
-        remaining_urtc = bal_row[0] if bal_row else 0
-        remaining_rtc = remaining_urtc / 1000000.0
+        remaining_rtc = bal_row[0] if bal_row else 0.0
 
     # Half-life decay: multiplier = 0.5^(total_paid / half_life)
     multiplier = 0.5 ** (total_paid_rtc / BOUNTY_HALF_LIFE)
