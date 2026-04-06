@@ -388,6 +388,14 @@ class UtxoDB:
                 conn.execute("ROLLBACK")
                 return False
 
+            # CRITICAL FIX: Reject empty outputs to prevent fund destruction
+            # Without this check, outputs=[] bypasses conservation law:
+            # output_total=0, fee=0 → (0+0) > input_total → False (bypassed)
+            # Result: inputs spent, no outputs created → funds destroyed
+            if not outputs and tx_type not in MINTING_TX_TYPES:
+                conn.execute("ROLLBACK")
+                return False
+
             output_total = sum(o['value_nrtc'] for o in outputs)
 
             # Every output must carry a strictly positive value.
@@ -658,6 +666,12 @@ class UtxoDB:
             # apply_transaction(), locking UTXOs until expiry (DoS vector).
             fee = tx.get('fee_nrtc', 0)
             if fee < 0:
+                conn.execute("ROLLBACK")
+                return False
+
+            # MEDIUM FIX: Reject empty outputs to prevent DoS
+            outputs = tx.get('outputs', [])
+            if not outputs and tx_type not in MINTING_TX_TYPES:
                 conn.execute("ROLLBACK")
                 return False
 
