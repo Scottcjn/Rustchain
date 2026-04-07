@@ -1262,14 +1262,43 @@ def init_db():
 
 # Hardware multipliers
 HARDWARE_WEIGHTS = {
-    "PowerPC": {"G4": 2.5, "G5": 2.0, "G3": 1.8, "power8": 2.0, "power9": 1.5, "default": 1.5},
-    "Apple Silicon": {"M1": 1.2, "M2": 1.2, "M3": 1.1, "default": 1.2},
-    "x86": {"retro": 1.4, "core2": 1.3, "default": 1.0},
-    "x86_64": {"default": 1.0},
-    "ARM": {"default": 1.0},
+    # PowerPC — vintage computing royalty
+    "PowerPC": {"G4": 2.5, "G5": 2.0, "G3": 1.8, "power8": 2.0, "POWER8": 2.0, "power9": 1.5, "default": 1.5},
+    # Apple Silicon — efficient modern chips (also detected as ARM/aarch64)
+    "Apple Silicon": {"M1": 1.2, "M2": 1.2, "M3": 1.1, "M4": 1.05, "default": 1.2},
+    # ARM — includes Apple Silicon when detected as ARM/aarch64 by derive_verified_device
+    # aarch64 on macOS = Apple Silicon, aarch64 on Linux = NAS/SBC (penalized)
+    "ARM": {
+        "aarch64": 0.0005,  # Default ARM NAS/SBC penalty
+        "armv7": 0.0005,    # Cheap SBC
+        # Vintage ARM — LEGENDARY multipliers
+        "arm2": 4.0, "arm3": 3.8, "arm6": 3.5, "arm7": 3.0,
+        "arm7tdmi": 3.0, "strongarm": 2.8, "sa1100": 2.7, "sa1110": 2.7,
+        "xscale": 2.5, "arm9": 2.3, "arm926ej": 2.3,
+        "arm11": 2.0, "arm1176": 2.0,
+        "cortex_a8": 1.8, "cortex_a9": 1.5,
+        "default": 0.0005,
+    },
+    # x86 — modern and vintage tiers
+    "x86": {
+        "retro": 1.4, "core2": 1.3, "core2duo": 1.3, "nehalem": 1.2,
+        "sandy_bridge": 1.1, "sandybridge": 1.1, "ivy_bridge": 1.1, "ivybridge": 1.1,
+        "haswell": 1.05, "broadwell": 1.05,
+        "pentium": 1.5, "pentium4": 1.5, "486": 2.0, "386": 2.5,
+        "modern": 0.8, "default": 1.0,
+    },
+    "x86_64": {"modern": 0.8, "default": 0.8},
+    # Windows — same as x86, map by CPU brand
+    "Windows": {
+        "default": 0.8,
+        "Intel64 Family 6 Model 42": 1.1,  # Sandy Bridge
+        "Intel64 Family 6 Model 58": 1.1,  # Ivy Bridge
+        "Intel64 Family 6 Model 60": 1.05, # Haswell
+    },
+    # Console hardware — retro gaming
     "console": {"nes_6502": 2.8, "snes_65c816": 2.7, "n64_mips": 2.5,
                 "genesis_68000": 2.5, "gameboy_z80": 2.6, "ps1_mips": 2.8,
-                "saturn_sh2": 2.6, "gba_arm7": 2.3, "default": 2.5}
+                "saturn_sh2": 2.6, "gba_arm7": 2.3, "default": 2.5},
 }
 
 POWERPC_ARCHES = {"g3", "g4", "g5", "power8", "power9", "powerpc", "power macintosh"}
@@ -1541,6 +1570,8 @@ def _detect_exotic_arch(device: dict) -> Optional[dict]:
 def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: bool) -> dict:
     family, arch = _claimed_family_and_arch(device)
     cpu_brand = _cpu_brand_string(device)
+    machine = str(device.get("machine") or "").lower()
+    print(f"[DERIVE_DEBUG] family={family}, arch={arch}, machine={machine}, cpu_brand={cpu_brand[:50]}, platform={device.get('platform_system','?')}")
     simd_data = _fingerprint_check_data(fingerprint, "simd_identity")
 
     # Exotic arch detection — SPARC, MIPS, RISC-V, SH, 68K, Cell, Itanium, etc.
@@ -1554,6 +1585,27 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
     # BUT vintage ARM (ARM2, ARM7TDMI, StrongARM, etc.) keeps its specific arch
     # for proper LEGENDARY/ANCIENT multipliers.
     if _detect_arm_evidence(device, fingerprint):
+        # === APPLE SILICON DETECTION ===
+        # Apple M-series chips are ARM but deserve their own family/multiplier.
+        # Detect via CPU brand, machine type, or platform info.
+        machine = str(device.get("machine") or "").lower()
+        cpu_brand_lower = cpu_brand.lower()
+        is_apple_silicon = (
+            "apple m" in cpu_brand_lower or "apple_silicon" in arch.lower()
+            or any(f"m{n}" in cpu_brand_lower for n in ("1", "2", "3", "4"))
+            or device.get("platform_system", "").lower() == "darwin"
+            or "mac" in str(device.get("model") or device.get("device_model") or "").lower()
+        )
+        if is_apple_silicon:
+            # Determine which M-chip
+            m_arch = "default"
+            for chip in ["M4", "M3", "M2", "M1"]:
+                if chip.lower() in cpu_brand_lower or chip.lower() in arch.lower():
+                    m_arch = chip
+                    break
+            print(f"[APPLE_DETECT] Apple Silicon: {cpu_brand} -> Apple Silicon/{m_arch}")
+            return {"device_family": "Apple Silicon", "device_arch": m_arch}
+
         # Vintage ARM architectures that deserve high multipliers
         vintage_arm_arches = {
             "arm2", "arm3", "arm6", "arm7", "arm7tdmi",
@@ -1568,17 +1620,46 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
             return {"device_family": "ARM", "device_arch": arch_lower}
 
         # Modern ARM — generic penalty
-        machine = str(device.get("machine") or "").lower()
         arm_arch = "armv7" if machine in ("armv7l", "armv6l", "armhf") else "aarch64"
         if family.lower() in ("x86", "x86_64"):
             print(f"[ARM_DETECT] OVERRIDE: claimed={family}/{arch} -> ARM/{arm_arch}")
         return {"device_family": "ARM", "device_arch": arm_arch}
 
-    # PowerPC deep validation (existing logic)
+    # PowerPC / POWER detection
+    # Check machine field first — ppc64le/ppc64 is definitive
+    machine_field = str(device.get("machine") or "").lower()
+    if machine_field in ("ppc64le", "ppc64", "ppc", "powerpc", "powerpc64"):
+        ppc_arch = arch.upper() if arch.lower() in ("g3", "g4", "g5", "power8", "power9") else "default"
+        if "power8" in cpu_brand.lower() or "8286" in cpu_brand.lower():
+            ppc_arch = "POWER8"
+        elif "power9" in cpu_brand.lower():
+            ppc_arch = "POWER9"
+        print(f"[PPC_DETECT] machine={machine_field}, brand={cpu_brand[:30]} -> PowerPC/{ppc_arch}")
+        return {"device_family": "PowerPC", "device_arch": ppc_arch}
+
     if _claims_powerpc(device):
+        # If CPU brand contains PowerPC/IBM/POWER identifiers, trust the claim
+        ppc_brands = {"powerpc", "power8", "power9", "ibm power", "altivec", "970", "7450", "g3", "g4", "g5"}
+        brand_matches = _has_any_token(cpu_brand, ppc_brands)
+        
+        if brand_matches:
+            # CPU brand confirms PowerPC — determine specific arch
+            ppc_arch = arch.upper() if arch.lower() in ("g3", "g4", "g5", "power8", "power9") else "default"
+            if "power8" in cpu_brand.lower():
+                ppc_arch = "POWER8"
+            elif "power9" in cpu_brand.lower():
+                ppc_arch = "POWER9"
+            elif "970" in cpu_brand.lower() or "g5" in cpu_brand.lower():
+                ppc_arch = "G5"
+            elif "7450" in cpu_brand.lower() or "7447" in cpu_brand.lower() or "g4" in cpu_brand.lower():
+                ppc_arch = "G4"
+            print(f"[PPC_DETECT] brand_match: {cpu_brand[:40]} -> PowerPC/{ppc_arch}")
+            return {"device_family": "PowerPC", "device_arch": ppc_arch}
+        
+        # Claims PowerPC but brand doesn't confirm — strict validation
         if fingerprint_passed and _powerpc_cpu_brand_matches(device) and _has_powerpc_simd_evidence(fingerprint) and _has_powerpc_cache_profile(fingerprint):
             return {"device_family": "PowerPC", "device_arch": arch.upper()}
-        # Failed PowerPC validation — fall through to x86/ARM brand checks
+        # Failed all validation — fall through to x86
         if _has_any_token(cpu_brand, X86_CPU_BRANDS) or bool(simd_data.get("has_sse")) or bool(simd_data.get("has_avx")):
             return {"device_family": "x86_64", "device_arch": "default"}
         return {"device_family": "x86", "device_arch": "default"}
@@ -1700,7 +1781,15 @@ def auto_induct_to_hall(miner: str, device: dict):
 
 def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False, source_ip: str = None, signals: dict = None, fingerprint: dict = None, signing_pubkey: str = None):
     now = int(time.time())
-    verified_device = derive_verified_device(device or {}, fingerprint if isinstance(fingerprint, dict) else {}, fingerprint_passed)
+    # Miner-name platform hints — helps detect Apple Silicon / POWER8 when client doesn't send rich device info
+    _device = dict(device or {})
+    _miner_lower = miner.lower() if miner else ""
+    if any(tag in _miner_lower for tag in ["mac-mini", "macbook", "imac", "-m1-", "-m2-", "-m3-", "-m4-", "apple"]):
+        _device.setdefault("platform_system", "Darwin")
+    if any(tag in _miner_lower for tag in ["power8", "ppc", "powerpc", "g4-", "g5-", "dual-g4"]):
+        if not _device.get("machine"):
+            _device["machine"] = "ppc64le" if "power8" in _miner_lower else "ppc"
+    verified_device = derive_verified_device(_device, fingerprint if isinstance(fingerprint, dict) else {}, fingerprint_passed)
     with sqlite3.connect(DB_PATH) as conn:
         # Ensure signing_pubkey column exists (idempotent migration)
         try:
@@ -2933,7 +3022,14 @@ def _submit_attestation_impl():
     # This eliminates the need for miners to make a separate POST /epoch/enroll call
     try:
         epoch = slot_to_epoch(current_slot())
-        verified_device = derive_verified_device(device or {}, fingerprint if isinstance(fingerprint, dict) else {}, fingerprint_passed)
+        _device2 = dict(device or {})
+        _miner_lower2 = miner.lower() if isinstance(miner, str) else ""
+        if any(tag in _miner_lower2 for tag in ["mac-mini", "macbook", "imac", "-m1-", "-m2-", "-m3-", "-m4-", "apple"]):
+            _device2.setdefault("platform_system", "Darwin")
+        if any(tag in _miner_lower2 for tag in ["power8", "ppc", "powerpc", "g4-", "g5-", "dual-g4"]):
+            if not _device2.get("machine"):
+                _device2["machine"] = "ppc64le" if "power8" in _miner_lower2 else "ppc"
+        verified_device = derive_verified_device(_device2, fingerprint if isinstance(fingerprint, dict) else {}, fingerprint_passed)
         family = verified_device["device_family"]
         arch_for_weight = verified_device["device_arch"]
         hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight, HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0))
@@ -5002,7 +5098,17 @@ def api_miners():
             # Calculate antiquity multiplier from HARDWARE_WEIGHTS (single source of truth)
             title_fam = r["device_family"] or "unknown"
             title_arch = r["device_arch"] or "unknown"
-            mult = HARDWARE_WEIGHTS.get(title_fam, {}).get(title_arch, HARDWARE_WEIGHTS.get(title_fam, {}).get("default", 1.0))
+            # Multiplier lookup — handle exact match, then prefix match (for Windows CPU strings)
+            fam_weights = HARDWARE_WEIGHTS.get(title_fam, {})
+            mult = fam_weights.get(title_arch, None)
+            if mult is None:
+                # Prefix match for Windows CPU brand strings like "Intel64 Family 6 Model 42 Stepping 7"
+                for key, val in fam_weights.items():
+                    if key != "default" and title_arch.startswith(key):
+                        mult = val
+                        break
+                if mult is None:
+                    mult = fam_weights.get("default", 1.0)
 
             # Hardware type label for display
             if "powerpc" in fam or "ppc" in fam:
