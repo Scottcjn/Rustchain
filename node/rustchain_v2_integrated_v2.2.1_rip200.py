@@ -1301,6 +1301,13 @@ HARDWARE_WEIGHTS = {
                 "saturn_sh2": 2.6, "gba_arm7": 2.3, "default": 2.5},
 }
 
+# === WELCOME BONUS & STREAK REWARDS ===
+WELCOME_BONUS_RTC = 0.5          # RTC given on first successful attestation
+WELCOME_BONUS_SOURCE = "founder_community"  # Fund that pays welcome bonuses
+STREAK_BONUS_PER_DAY = 0.02      # Additional multiplier per consecutive day (caps at 30 days = +0.6x)
+STREAK_MAX_DAYS = 30             # Max streak bonus cap
+STREAK_GRACE_HOURS = 26          # Hours before streak resets (gives timezone flexibility)
+
 POWERPC_ARCHES = {"g3", "g4", "g5", "power8", "power9", "powerpc", "power macintosh"}
 X86_CPU_BRANDS = {"intel", "xeon", "core", "celeron", "pentium", "amd", "ryzen", "epyc", "athlon", "threadripper"}
 ARM_CPU_BRANDS = {
@@ -1778,6 +1785,117 @@ def auto_induct_to_hall(miner: str, device: dict):
             conn.commit()
     except Exception as e:
         print(f"[HALL] Auto-induct error: {e}")
+
+def _check_welcome_bonus(miner: str):
+    """Award welcome bonus on first-ever attestation. Funded from founder_community."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            # Check if this miner has ever attested before
+            history_count = conn.execute(
+                "SELECT COUNT(*) FROM miner_attest_history WHERE miner = ?", (miner,)
+            ).fetchone()[0]
+            
+            if history_count <= 1:  # First attestation (just recorded)
+                # Check if welcome bonus already paid
+                already_paid = conn.execute(
+                    "SELECT COUNT(*) FROM ledger WHERE to_miner = ? AND memo LIKE '%welcome%'", (miner,)
+                ).fetchone()[0]
+                
+                if already_paid == 0:
+                    bonus_i64 = int(WELCOME_BONUS_RTC * 1_000_000)
+                    # Transfer from founder_community
+                    conn.execute(
+                        "UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
+                        (bonus_i64, WELCOME_BONUS_SOURCE)
+                    )
+                    conn.execute(
+                        "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (miner,)
+                    )
+                    conn.execute(
+                        "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+                        (bonus_i64, miner)
+                    )
+                    conn.execute(
+                        "INSERT INTO ledger (from_miner, to_miner, amount_i64, memo, ts) VALUES (?, ?, ?, ?, ?)",
+                        (WELCOME_BONUS_SOURCE, miner, bonus_i64, f"welcome_bonus:{WELCOME_BONUS_RTC}_rtc", int(time.time()))
+                    )
+                    conn.commit()
+                    print(f"[WELCOME] {miner} received {WELCOME_BONUS_RTC} RTC welcome bonus!")
+    except Exception as e:
+        print(f"[WELCOME] Error for {miner}: {e}")
+
+
+def _get_streak_bonus(miner: str) -> float:
+    """Calculate streak bonus based on consecutive days of attestation."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            # Get attestation timestamps from history, ordered newest first
+            rows = conn.execute(
+                "SELECT ts_ok FROM miner_attest_history WHERE miner = ? ORDER BY ts_ok DESC LIMIT 1000",
+                (miner,)
+            ).fetchall()
+            
+            if not rows:
+                return 0.0
+            
+            # Count consecutive days with at least one attestation
+            from datetime import datetime, timedelta
+            attest_dates = set()
+            for row in rows:
+                dt = datetime.utcfromtimestamp(row[0])
+                attest_dates.add(dt.date())
+            
+            if not attest_dates:
+                return 0.0
+            
+            # Walk backwards from today counting consecutive days
+            today = datetime.utcnow().date()
+            streak = 0
+            check_date = today
+            
+            while check_date in attest_dates and streak < STREAK_MAX_DAYS:
+                streak += 1
+                check_date -= timedelta(days=1)
+            
+            # Also check if yesterday was the last day (grace period)
+            if streak == 0:
+                yesterday = today - timedelta(days=1)
+                if yesterday in attest_dates:
+                    streak = 1
+                    check_date = yesterday - timedelta(days=1)
+                    while check_date in attest_dates and streak < STREAK_MAX_DAYS:
+                        streak += 1
+                        check_date -= timedelta(days=1)
+            
+            bonus = min(streak * STREAK_BONUS_PER_DAY, STREAK_MAX_DAYS * STREAK_BONUS_PER_DAY)
+            return round(bonus, 4)
+    except Exception as e:
+        print(f"[STREAK] Error for {miner}: {e}")
+        return 0.0
+
+
+def _projected_multiplier_growth(current_mult: float, device_arch: str) -> dict:
+    """Show miners how their multiplier will grow as hardware ages."""
+    # All hardware eventually becomes vintage
+    years_ahead = [1, 2, 5, 10]
+    projections = {}
+    
+    # Base multiplier stays the same (hardware doesn't change)
+    # But streak bonus grows, and eventually the hardware tier may upgrade
+    for y in years_ahead:
+        # Streak at max (30 days) = +0.60x bonus
+        streak_at_max = STREAK_MAX_DAYS * STREAK_BONUS_PER_DAY
+        # Future multiplier = current hardware mult + streak bonus
+        future = current_mult + streak_at_max
+        projections[f"{y}y"] = round(future, 2)
+    
+    return {
+        "current": current_mult,
+        "with_max_streak": round(current_mult + STREAK_MAX_DAYS * STREAK_BONUS_PER_DAY, 2),
+        "streak_days_needed": STREAK_MAX_DAYS,
+        "message": f"Mine {STREAK_MAX_DAYS} consecutive days to reach {round(current_mult + STREAK_MAX_DAYS * STREAK_BONUS_PER_DAY, 2)}x"
+    }
+
 
 def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False, source_ip: str = None, signals: dict = None, fingerprint: dict = None, signing_pubkey: str = None):
     now = int(time.time())
@@ -3017,6 +3135,9 @@ def _submit_attestation_impl():
     # Record MACs if provided
     if macs:
         record_macs(miner, macs)
+
+    # Check for welcome bonus (first attestation)
+    _check_welcome_bonus(miner)
 
     # AUTO-ENROLL: Automatically enroll miner in current epoch on successful attestation
     # This eliminates the need for miners to make a separate POST /epoch/enroll call
@@ -5142,6 +5263,36 @@ def api_miners():
             "offset": offset,
             "count": len(miners)
         }
+    })
+
+
+@app.route("/api/miner/<miner_id>/streak", methods=["GET"])
+def api_miner_streak(miner_id: str):
+    """Get miner's streak bonus and projected multiplier growth."""
+    miner_id = miner_id.strip()
+    streak_bonus = _get_streak_bonus(miner_id)
+    
+    # Get current hardware multiplier
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT device_family, device_arch FROM miner_attest_recent WHERE miner = ?",
+            (miner_id,)
+        ).fetchone()
+    
+    if not row:
+        return jsonify({"error": "Miner not found"}), 404
+    
+    fam, arch = row[0] or "x86", row[1] or "modern"
+    hw_mult = HARDWARE_WEIGHTS.get(fam, {}).get(arch, HARDWARE_WEIGHTS.get(fam, {}).get("default", 1.0))
+    
+    projections = _projected_multiplier_growth(hw_mult, arch)
+    
+    return jsonify({
+        "miner_id": miner_id,
+        "hardware_multiplier": hw_mult,
+        "streak_bonus": streak_bonus,
+        "effective_multiplier": round(hw_mult + streak_bonus, 4),
+        "projections": projections,
     })
 
 
