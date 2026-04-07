@@ -335,23 +335,107 @@ class TransactionPool:
             )
             return cursor.fetchone() is not None
 
+    # SECURITY FIX #2019: Max pending transactions per wallet to prevent DoS
+    MAX_PENDING_PER_WALLET = 10
+
     def submit_transaction(self, tx: SignedTransaction) -> Tuple[bool, str]:
         """
         Submit a signed transaction to the pool.
 
         Returns (success, error_or_tx_hash)
+
+        SECURITY FIX #2017: Validation and insertion are now performed
+        atomically within a single database connection/transaction to
+        prevent TOCTOU double-spend via concurrent submissions.
+
+        SECURITY FIX #2019: Per-wallet pending TX count is capped at
+        MAX_PENDING_PER_WALLET to prevent pending pool DoS.
         """
-        # Validate
-        is_valid, error = self.validate_transaction(tx)
-        if not is_valid:
-            return False, error
+        # Pre-validate signature and address (no DB needed, safe outside lock)
+        if not tx.verify():
+            return False, "Invalid signature"
+
+        derived_addr = address_from_public_key(bytes.fromhex(tx.public_key))
+        if derived_addr != tx.from_addr:
+            return False, "Public key does not match from_addr"
+
+        if tx.amount_urtc <= 0:
+            return False, "Invalid amount: must be > 0"
 
         # Register public key if not already registered
         self.register_public_key(tx.from_addr, tx.public_key)
 
-        # Add to pending pool
+        # SECURITY FIX #2017: Atomic validate-and-insert within one
+        # serialized DB transaction so concurrent submissions cannot
+        # both pass the balance check before either is recorded.
         with self._get_connection() as conn:
             cursor = conn.cursor()
+
+            # SECURITY FIX #2019: Enforce per-wallet pending TX limit
+            cursor.execute(
+                """SELECT COUNT(*) as cnt FROM pending_transactions
+                   WHERE from_addr = ? AND status = 'pending'""",
+                (tx.from_addr,)
+            )
+            pending_count = cursor.fetchone()["cnt"]
+            if pending_count >= self.MAX_PENDING_PER_WALLET:
+                return False, (
+                    f"Pending transaction limit reached: {pending_count}/"
+                    f"{self.MAX_PENDING_PER_WALLET}. Wait for confirmations."
+                )
+
+            # Check nonce
+            cursor.execute(
+                "SELECT wallet_nonce FROM balances WHERE wallet = ?",
+                (tx.from_addr,)
+            )
+            nonce_row = cursor.fetchone()
+            expected_nonce = (nonce_row["wallet_nonce"] if nonce_row else 0) + 1
+
+            cursor.execute(
+                "SELECT nonce FROM pending_transactions WHERE from_addr = ? AND status = 'pending'",
+                (tx.from_addr,)
+            )
+            pending_nonces = {row["nonce"] for row in cursor.fetchall()}
+            while expected_nonce in pending_nonces:
+                expected_nonce += 1
+
+            if tx.nonce != expected_nonce:
+                return False, f"Invalid nonce: expected {expected_nonce}, got {tx.nonce}"
+
+            # Check balance (atomically within same transaction)
+            cursor.execute(
+                "SELECT balance_urtc FROM balances WHERE wallet = ?",
+                (tx.from_addr,)
+            )
+            bal_row = cursor.fetchone()
+            balance = bal_row["balance_urtc"] if bal_row else 0
+
+            cursor.execute(
+                """SELECT COALESCE(SUM(amount_urtc), 0) as pending
+                   FROM pending_transactions
+                   WHERE from_addr = ? AND status = 'pending'""",
+                (tx.from_addr,)
+            )
+            pending_sum = cursor.fetchone()["pending"]
+            available = max(0, balance - pending_sum)
+
+            if tx.amount_urtc > available:
+                return False, f"Insufficient balance: have {available}, need {tx.amount_urtc}"
+
+            # Check for duplicate
+            cursor.execute(
+                "SELECT 1 FROM pending_transactions WHERE tx_hash = ?",
+                (tx.tx_hash,)
+            )
+            if cursor.fetchone():
+                return False, "Transaction already exists"
+            cursor.execute(
+                "SELECT 1 FROM transaction_history WHERE tx_hash = ?",
+                (tx.tx_hash,)
+            )
+            if cursor.fetchone():
+                return False, "Transaction already exists"
 
             try:
                 cursor.execute(
@@ -436,18 +520,22 @@ class TransactionPool:
                 logger.warning(f"Transaction not found in pending: {tx_hash}")
                 return False
 
-            # Re-validate sender balance before deduction (security: prevent
-            # negative-balance minting when balance changed between submit and confirm)
+            # SECURITY FIX #2018: Atomic balance deduction with underflow
+            # guard.  The WHERE clause ensures the UPDATE only succeeds if
+            # the sender actually has enough funds.  If rowcount == 0, the
+            # balance was insufficient — no separate SELECT+compare needed,
+            # eliminating the TOCTOU window between check and deduct.
             cursor.execute(
-                "SELECT balance_urtc FROM balances WHERE wallet = ?",
-                (row["from_addr"],)
+                """UPDATE balances
+                   SET balance_urtc = balance_urtc - ?,
+                       wallet_nonce = ?
+                   WHERE wallet = ? AND balance_urtc >= ?""",
+                (row["amount_urtc"], row["nonce"], row["from_addr"], row["amount_urtc"])
             )
-            sender_row = cursor.fetchone()
-            sender_balance = sender_row["balance_urtc"] if sender_row else 0
-            if sender_balance < row["amount_urtc"]:
+            if cursor.rowcount == 0:
                 logger.error(
                     f"TX confirm rejected: insufficient balance for {tx_hash[:16]}... "
-                    f"(have {sender_balance}, need {row['amount_urtc']})"
+                    f"(atomic deduction failed, need {row['amount_urtc']})"
                 )
                 return False
 
@@ -472,15 +560,6 @@ class TransactionPool:
                     block_hash,
                     int(time.time())
                 )
-            )
-
-            # Update sender balance and nonce
-            cursor.execute(
-                """UPDATE balances
-                   SET balance_urtc = balance_urtc - ?,
-                       wallet_nonce = ?
-                   WHERE wallet = ?""",
-                (row["amount_urtc"], row["nonce"], row["from_addr"])
             )
 
             # Update receiver balance (create if not exists)
