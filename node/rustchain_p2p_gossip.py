@@ -654,18 +654,35 @@ class GossipLayer:
         return {"status": "ok", "epoch": epoch, "votes_so_far": len(votes_for_epoch)}
 
     def _handle_get_state(self, msg: GossipMessage) -> Dict:
-        """Handle state request - return full CRDT state"""
+        """Handle state request - return full CRDT state with signature"""
+        state_data = {
+            "attestations": self.attestation_crdt.to_dict(),
+            "epochs": self.epoch_crdt.to_dict(),
+            "balances": self.balance_crdt.to_dict()
+        }
+        # Sign the state response so the requester can verify authenticity.
+        # The signature covers msg_type:json(payload) to match verify_message().
+        payload = {"state": state_data}
+        content = f"{MessageType.STATE.value}:{json.dumps(payload, sort_keys=True)}"
+        signature, timestamp = self._sign_message(content)
         return {
             "status": "ok",
-            "state": {
-                "attestations": self.attestation_crdt.to_dict(),
-                "epochs": self.epoch_crdt.to_dict(),
-                "balances": self.balance_crdt.to_dict()
-            }
+            "state": state_data,
+            "signature": signature,
+            "timestamp": timestamp
         }
 
     def _handle_state(self, msg: GossipMessage) -> Dict:
         """Handle incoming state - merge with local"""
+        # SECURITY: Reject state messages without valid signatures.
+        # Previously, request_full_sync() passed signature="" which bypassed
+        # all authentication. Now we require a valid signature on ALL state.
+        if not msg.signature:
+            logger.warning(f"Rejected state merge from {msg.sender_id}: empty signature")
+            return {"status": "error", "error": "missing_signature"}
+        if not self.verify_message(msg):
+            logger.warning(f"Rejected state merge from {msg.sender_id}: invalid signature")
+            return {"status": "error", "error": "invalid_signature"}
         state = msg.payload.get("state", {})
 
         # Merge attestations
@@ -711,13 +728,20 @@ class GossipLayer:
             if resp.status_code == 200:
                 data = resp.json()
                 if "state" in data:
+                    # SECURITY: Verify signature on state response.
+                    # Previously signature="" was used, bypassing all auth.
+                    signature = data.get("signature", "")
+                    timestamp = data.get("timestamp", int(time.time()))
+                    if not signature:
+                        logger.error(f"Full sync from {peer_url}: no signature on state response")
+                        return
                     state_msg = GossipMessage(
                         msg_type=MessageType.STATE.value,
-                        msg_id="sync",
-                        sender_id="peer",
-                        timestamp=int(time.time()),
+                        msg_id=f"sync:{peer_url}:{timestamp}",
+                        sender_id=peer_url,
+                        timestamp=timestamp,
                         ttl=0,
-                        signature="",
+                        signature=signature,
                         payload=data
                     )
                     self._handle_state(state_msg)
