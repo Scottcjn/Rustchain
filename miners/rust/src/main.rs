@@ -12,6 +12,7 @@
 ///                   --interval 60
 
 mod fingerprint;
+mod ppa_spoofer;
 
 use clap::Parser;
 use chrono::Utc;
@@ -20,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 use tokio::time::sleep;
+use rand::Rng;
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -67,6 +69,9 @@ struct FingerprintPayload {
     cache_timing: Vec<f64>,
     thermal_drift: f64,
     simd_identity: String,
+    instruction_jitter: Vec<f64>,
+    anti_emulation_score: f64,
+    fleet_detection_hash: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -122,6 +127,53 @@ fn estimate_thermal_drift() -> f64 {
     (second - first).abs()
 }
 
+/// Generate spoofed fingerprint for testing PPA bypass capabilities
+fn generate_spoofed_fingerprint(miner_id: &str) -> FingerprintPayload {
+    use ppa_spoofer::{SpooferConfig, SpoofMode};
+    
+    // Configure spoofer for bypass mode with high realism
+    let config = SpooferConfig {
+        mode: SpoofMode::BypassVm,
+        target_arch: fingerprint::detect_architecture(),
+        realism: 8,
+        seed: miner_id.len() as u64,
+    };
+    
+    let spoofed = ppa_spoofer::generate_spoofed_fingerprint(&config);
+    
+    // Validate the spoofed data
+    if let Err(e) = ppa_spoofer::validate_spoofed_fingerprint(&spoofed) {
+        log_warn(&format!("Spoofed fingerprint validation failed: {}", e));
+        // Fallback to real fingerprint
+        return build_real_fingerprint(miner_id);
+    }
+    
+    FingerprintPayload {
+        clock_drift_cv: spoofed.clock_drift_cv,
+        cache_timing: spoofed.cache_timing,
+        thermal_drift: spoofed.thermal_drift,
+        simd_identity: spoofed.simd_identity,
+        instruction_jitter: spoofed.instruction_jitter,
+        anti_emulation_score: spoofed.anti_emulation_score,
+        fleet_detection_hash: spoofed.fleet_detection_hash,
+    }
+}
+
+/// Build real fingerprint for fallback or real mode
+fn build_real_fingerprint(miner_id: &str) -> FingerprintPayload {
+    let cpu = fingerprint::get_cpu_info();
+    
+    FingerprintPayload {
+        clock_drift_cv: fingerprint::measure_clock_drift(),
+        cache_timing: fingerprint::measure_cache_timing(),
+        thermal_drift: estimate_thermal_drift(),
+        simd_identity: fingerprint::simd_identity(&cpu.simd_features),
+        instruction_jitter: vec![], // TODO: implement real measurement
+        anti_emulation_score: 0.5,  // TODO: implement real measurement
+        fleet_detection_hash: format!("{:x}", Sha256::digest(miner_id.as_bytes()))[..16].to_string(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ANSI colour helpers (no external dep)
 // ---------------------------------------------------------------------------
@@ -161,6 +213,18 @@ fn log_section(title: &str) {
 /// Collect the full fingerprint and build the attestation payload.
 fn build_payload(miner_id: &str) -> AttestationPayload {
     log_info("Collecting hardware fingerprint…");
+    
+    // Check if we should use spoofed mode (for testing PPA bypass)
+    let spoof_mode = std::env::var("RUSTCHAIN_SPOOF_MODE").unwrap_or_else(|_| "real".to_string());
+    
+    let fingerprint_payload = if spoof_mode == "spoof" {
+        log_info("Using SPOOFTED fingerprint for PPA bypass testing");
+        generate_spoofed_fingerprint(miner_id)
+    } else {
+        log_info("Using REAL hardware fingerprint");
+        build_real_fingerprint(miner_id)
+    };
+
     let cpu = fingerprint::get_cpu_info();
 
     log_info(&format!(
@@ -168,20 +232,18 @@ fn build_payload(miner_id: &str) -> AttestationPayload {
         cpu.arch, cpu.cores, cpu.model
     ));
 
-    let clock_drift_cv = fingerprint::measure_clock_drift();
-    log_info(&format!("  clock_drift_cv={:.6}", clock_drift_cv));
-
-    let cache_timing = fingerprint::measure_cache_timing();
-    log_info(&format!(
-        "  cache_timing=[{}]",
-        cache_timing.iter().map(|v| format!("{:.1}ns", v)).collect::<Vec<_>>().join(", ")
-    ));
-
-    let thermal_drift = estimate_thermal_drift();
-    log_info(&format!("  thermal_drift={:.6}", thermal_drift));
-
-    let simd_id = fingerprint::simd_identity(&cpu.simd_features);
-    log_info(&format!("  simd_identity={}", simd_id));
+    log_info(&format!("  clock_drift_cv={:.6}", fingerprint_payload.clock_drift_cv));
+    log_info(&format!("  thermal_drift={:.6}", fingerprint_payload.thermal_drift));
+    log_info(&format!("  simd_identity={}", fingerprint_payload.simd_identity));
+    
+    if !fingerprint_payload.instruction_jitter.is_empty() {
+        log_info(&format!("  instruction_jitter=[{}]", 
+            fingerprint_payload.instruction_jitter.iter().map(|v| format!("{:.3}", v)).collect::<Vec<_>>().join(", ")
+        ));
+    }
+    
+    log_info(&format!("  anti_emulation_score={:.3}", fingerprint_payload.anti_emulation_score));
+    log_info(&format!("  fleet_detection_hash={}", fingerprint_payload.fleet_detection_hash));
 
     let timestamp = Utc::now().to_rfc3339();
     let hash = integrity_hash(miner_id, &timestamp, &cpu.arch);
@@ -194,12 +256,7 @@ fn build_payload(miner_id: &str) -> AttestationPayload {
             cores: cpu.cores,
             model: cpu.model,
         },
-        fingerprint: FingerprintPayload {
-            clock_drift_cv,
-            cache_timing,
-            thermal_drift,
-            simd_identity: simd_id,
-        },
+        fingerprint: fingerprint_payload,
         integrity_hash: hash,
     }
 }
