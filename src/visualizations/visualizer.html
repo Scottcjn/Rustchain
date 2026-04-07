@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PPA Fingerprint Visualizer</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <canvas id="myRadarChart" width="400" height="400"></canvas>
+
+    <script>
+    function visualizeHardwareFingerprint(data) {
+        const ctx = document.getElementById('myRadarChart').getContext('2d');
+        const labels = Object.keys(data);
+        const values = Object.values(data);
+
+        const radarChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Hardware Fingerprint',
+                    data: values,
+                    backgroundColor: 'rgba(79, 129, 189, 0.2)',
+                    borderColor: 'rgba(79, 129, 189, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                scale: {
+                    ticks: {
+                        beginAtZero: true,
+                        max: 1
+                    }
+                }
+            }
+        });
+    }
+
+    // Example data input
+    const exampleData = { "Channel 1": 0.8, "Channel 2": 0.6, "Channel 3": 0.9, "Channel 4": 0.4, "Channel 5": 0.7, "Channel 6": 0.5, "Channel 7": 0.3 };
+    visualizeHardwareFingerprint(exampleData);
+    </script>
+</body>
+</html>
