@@ -81,6 +81,10 @@ except ImportError:
     except ImportError:
         ANTI_DOUBLE_MINING_AVAILABLE = False
         print("[WARN] anti_double_mining.py not available - using standard rewards")
+# Constants for API responses
+RTC_DECIMAL_PRECISION = 8
+DATABASE_LOCKED_ERROR_MESSAGE = "Service unavailable due to database issues"
+UNEXPECTED_DATABASE_ERROR_MESSAGE = "An unexpected database error occurred"
 
 # Constants
 UNIT = 1_000_000  # uRTC per 1 RTC
@@ -284,18 +288,25 @@ def register_rewards_rip200(app, DB_PATH):
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
 
-        with sqlite3.connect(DB_PATH) as db:
-            row = db.execute(
-                "SELECT amount_i64 FROM balances WHERE miner_id = ?",
-                (miner_id,)
-            ).fetchone()
+        try:
+            with sqlite3.connect(DB_PATH) as db:
+                row = db.execute(
+                    "SELECT amount_i64 FROM balances WHERE miner_id = ?",
+                    (miner_id,)
+                ).fetchone()
 
-            amount_i64 = int(row[0]) if row else 0
-            return jsonify({
-                "miner_id": miner_id,
-                "amount_i64": amount_i64,
-                "amount_rtc": amount_i64 / UNIT
-            })
+                amount_i64 = int(row[0]) if row else 0
+                return jsonify({
+                    "miner_id": miner_id,
+                    "amount_i64": amount_i64,
+                    "amount_rtc": round(amount_i64 / UNIT, RTC_DECIMAL_PRECISION)
+                })
+        except sqlite3.OperationalError as e:
+            print(f"Database operational error in get_balance for miner_id {miner_id}: {e}")
+            return jsonify({"error": DATABASE_LOCKED_ERROR_MESSAGE}), 503
+        except sqlite3.Error as e:
+            print(f"Unexpected database error in get_balance for miner_id {miner_id}: {e}")
+            return jsonify({"error": UNEXPECTED_DATABASE_ERROR_MESSAGE}), 500
 
     @app.route('/wallet/balances/all', methods=['GET'])
     def get_all_balances():
