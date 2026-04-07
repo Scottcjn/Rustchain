@@ -536,7 +536,7 @@
           fetchJson("/agent/stats").catch(() => ({ stats: {} })),
           fetchJson("/agent/jobs").catch(() => ({ jobs: [] })),
         ]);
-        state.miners = Array.isArray(miners) ? miners : [];
+        state.miners = Array.isArray(miners) ? miners : (miners.miners || miners.data || []);
         state.agentStats = agentStats;
         state.agentJobs = Array.isArray(agentJobs.jobs) ? agentJobs.jobs : [];
         renderTopCards(health, epoch);
