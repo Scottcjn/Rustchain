@@ -475,6 +475,12 @@ def calculate_epoch_rewards_time_aged(
     Each attested CPU gets rewards weighted by their time-aged antiquity multiplier.
     More miners = smaller individual rewards (anti-pool design).
 
+    FIX (settlement-integrity): Use epoch_enroll as the canonical miner list when
+    available, then look up device_arch from miner_attest_recent for the multiplier.
+    This ensures delayed settlement produces the same result as finalize_epoch()
+    which reads epoch_enroll directly.  Falls back to the old miner_attest_recent
+    time-window query only when epoch_enroll has no rows for the epoch.
+
     Args:
         db_path: Database path
         epoch: Epoch number to calculate rewards for
@@ -486,7 +492,6 @@ def calculate_epoch_rewards_time_aged(
     """
     chain_age_years = get_chain_age_years(current_slot)
 
-    # Get all miners who were attested during this epoch
     epoch_start_slot = epoch * 144
     epoch_end_slot = epoch_start_slot + 143
     epoch_start_ts = GENESIS_TIMESTAMP + (epoch_start_slot * BLOCK_TIME)
@@ -495,14 +500,40 @@ def calculate_epoch_rewards_time_aged(
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
 
-        # Get unique attested miners during epoch (any attestation in epoch window)
-        cursor.execute("""
-            SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp
-            FROM miner_attest_recent
-            WHERE ts_ok >= ? AND ts_ok <= ?
-        """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
+        # Primary source: epoch_enroll (per-epoch snapshot, matches finalize_epoch).
+        cursor.execute(
+            "SELECT miner_pk FROM epoch_enroll WHERE epoch = ?",
+            (epoch,)
+        )
+        enrolled = cursor.fetchall()
 
-        epoch_miners = cursor.fetchall()
+        if enrolled:
+            # Use enrolled miners; look up device_arch from latest attestation.
+            epoch_miners = []
+            for (miner_pk,) in enrolled:
+                arch_row = cursor.execute(
+                    "SELECT device_arch, COALESCE(fingerprint_passed, 1) "
+                    "FROM miner_attest_recent WHERE miner = ? LIMIT 1",
+                    (miner_pk,)
+                ).fetchone()
+                if arch_row:
+                    device_arch = arch_row[0] or "unknown"
+                    fp = arch_row[1]
+                else:
+                    # No attestation record — treat as unknown arch, fingerprint ok.
+                    device_arch = "unknown"
+                    fp = 1
+                epoch_miners.append((miner_pk, device_arch, fp))
+        else:
+            # Fallback: legacy path for epochs without enrollment records.
+            # This is vulnerable to the stale-attestation issue when settlement
+            # is delayed, but preserves backward compatibility.
+            cursor.execute("""
+                SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp
+                FROM miner_attest_recent
+                WHERE ts_ok >= ? AND ts_ok <= ?
+            """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
+            epoch_miners = cursor.fetchall()
 
     if not epoch_miners:
         return {}
