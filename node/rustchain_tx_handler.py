@@ -109,6 +109,18 @@ class TransactionPool:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
+            # Base case: create the balances table if it doesn't exist at all.
+            # The migration steps below assume the table already exists (ALTER TABLE,
+            # PRAGMA table_info, etc.), so a fresh empty DB would fail without this.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS balances (
+                    wallet TEXT PRIMARY KEY,
+                    balance_urtc INTEGER NOT NULL DEFAULT 0,
+                    wallet_nonce INTEGER DEFAULT 0
+                )
+            """)
+            conn.commit()
+
             # Check if wallet_nonce column exists
             cursor.execute("PRAGMA table_info(balances)")
             columns = [col[1] for col in cursor.fetchall()]
@@ -627,7 +639,20 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
     def list_pending():
         """List pending transactions"""
         try:
-            limit = request.args.get('limit', 100, type=int)
+            limit_raw = request.args.get('limit')
+            if limit_raw is None:
+                limit = 100
+            else:
+                try:
+                    limit = int(limit_raw)
+                except (ValueError, TypeError):
+                    return jsonify({"error": "limit must be an integer"}), 400
+
+            if limit < 0:
+                return jsonify({"error": "limit cannot be negative"}), 400
+            if limit > 200:
+                return jsonify({"error": "limit exceeds maximum of 200"}), 400
+
             pending = tx_pool.get_pending_transactions(limit)
             return jsonify({
                 "count": len(pending),
@@ -680,8 +705,23 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
     def get_wallet_history(address: str):
         """Get transaction history for wallet"""
         try:
-            limit = request.args.get('limit', 50, type=int)
-            offset = request.args.get('offset', 0, type=int)
+            limit_raw = request.args.get('limit')
+            offset_raw = request.args.get('offset')
+            
+            # Parameter Validation
+            try:
+                limit = int(limit_raw) if limit_raw is not None else 50
+                offset = int(offset_raw) if offset_raw is not None else 0
+            except (ValueError, TypeError):
+                return jsonify({"error": "limit and offset must be integers"}), 400
+
+            if limit < 0:
+                return jsonify({"error": "limit cannot be negative"}), 400
+            if limit > 500:
+                return jsonify({"error": "limit exceeds maximum of 500"}), 400
+            
+            if offset < 0:
+                offset = 0
 
             with sqlite3.connect(tx_pool.db_path) as conn:
                 conn.row_factory = sqlite3.Row
