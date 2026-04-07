@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>PPA Attestation Visualizer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            padding: 40px;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            font-weight: 300;
+            letter-spacing: 2px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 40px;
+        }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            align-items: center;
+        }
+        @media (max-width: 700px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+        .status {
+            text-align: center;
+            padding: 20px;
+            border-radius: 12px;
+            background: #00E67620;
+            border: 2px solid #00E676;
+        }
+        .status-text {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00E676;
+        }
+        .status-score {
+            font-size: 48px;
+            font-weight: bold;
+            color: #00E676;
+            margin: 10px 0;
+        }
+        .checks-list {
+            margin-top: 20px;
+        }
+        .check-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .check-pass { color: #00E676; }
+        .check-fail { color: #FF5252; }
+        .check-unknown { color: #888; }
+        svg {
+            display: block;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 PPA ATTESTATION</h1>
+        <p class="subtitle">Proof of Physical AI — Hardware Fingerprint Visualization</p>
+        
+        <div class="grid">
+            <div class="card">
+                <svg width="400" height="200" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:hsl(273, 70%, 50%)"/>
+                <stop offset="100%" style="stop-color:hsl(313, 70%, 50%)"/>
+            </linearGradient>
+        </defs>
+        <rect width="100%" height="100%" rx="10" fill="url(#grad)"/>
+        <rect x="10" y="10" width="380" height="180" rx="8" fill="rgba(255,255,255,0.95)"/>
+        <text x="200" y="50" text-anchor="middle" font-size="24" font-weight="bold" fill="#333">PowerPC</text>
+        <text x="200" y="80" text-anchor="middle" font-size="16" fill="#666">POWER8</text>
+        <text x="200" y="110" text-anchor="middle" font-size="14" fill="#999">8 Cores</text>
+        <circle cx="200" cy="160" r="15" fill="hsl(273, 70%, 50%)"/>
+        <text x="200" y="165" text-anchor="middle" font-size="10" fill="white" font-weight="bold">PPA</text>
+    </svg>
+            </div>
+            <div class="card">
+                <div class="status">
+                    <div class="status-text">PPA COMPLIANT</div>
+                    <div class="status-score">100%</div>
+                    <div>7/7 checks passed</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3 style="text-align:center;margin-bottom:20px;">Channel Performance Radar</h3>
+            <svg width="350" height="350" xmlns="http://www.w3.org/2000/svg">
+        <rect width="100%" height="100%" fill="#fafafa"/>
+        <circle cx="175" cy="175" r="33.75" fill="none" stroke="#ddd" stroke-width="1"/><circle cx="175" cy="175" r="67.5" fill="none" stroke="#ddd" stroke-width="1"/><circle cx="175" cy="175" r="101.25" fill="none" stroke="#ddd" stroke-width="1"/><circle cx="175" cy="175" r="135.0" fill="none" stroke="#ddd" stroke-width="1"/>
+        <line x1="175" y1="175" x2="175.0" y2="40.0" stroke="#333" stroke-width="1"/><line x1="175" y1="175" x2="280.54725013318404" y2="90.82887674907099" stroke="#333" stroke-width="1"/><line x1="175" y1="175" x2="306.6152681445462" y2="205.04032608410245" stroke="#333" stroke-width="1"/><line x1="175" y1="175" x2="233.57430478087036" y2="296.6307971668266" stroke="#333" stroke-width="1"/><line x1="175" y1="175" x2="116.42569521912966" y2="296.6307971668266" stroke="#333" stroke-width="1"/><line x1="175" y1="175" x2="43.38473185545382" y2="205.04032608410245" stroke="#333" stroke-width="1"/><line x1="175" y1="175" x2="69.45274986681596" y2="90.828876749071" stroke="#333" stroke-width="1"/>
+        <polygon points="175.0,40.0 280.54725013318404,90.82887674907099 306.6152681445462,205.04032608410245 233.57430478087036,296.6307971668266 116.42569521912966,296.6307971668266 43.38473185545382,205.04032608410245 69.45274986681596,90.828876749071" fill="rgba(0, 230, 118, 0.3)" stroke="#00E676" stroke-width="2"/>
+        <text x="175.0" y="15.0" text-anchor="middle" font-size="10" fill="#666">Clock Drift</text><text x="300.0930371948848" y="75.24163170260265" text-anchor="start" font-size="10" fill="#666">Cache Timing</text><text x="330.9884659490918" y="210.6033494330103" text-anchor="start" font-size="10" fill="#666">SIMD Identity</text><text x="244.4213982588093" y="319.1550188643871" text-anchor="start" font-size="10" fill="#666">Thermal Drift</text><text x="105.57860174119071" y="319.1550188643871" text-anchor="end" font-size="10" fill="#666">Instruction Jitter</text><text x="19.01153405090821" y="210.60334943301032" text-anchor="end" font-size="10" fill="#666">Anti-Emulation</text><text x="49.906962805115214" y="75.24163170260266" text-anchor="end" font-size="10" fill="#666">Device Age</text>
+    </svg>
+        </div>
+        
+        <div class="card">
+            <h3>Detailed Check Results</h3>
+            <div class="checks-list">
+                <div class="check-item"><span>Clock Drift</span><span class="check-pass">✓</span></div>
+                <div class="check-item"><span>Cache Timing</span><span class="check-pass">✓</span></div>
+                <div class="check-item"><span>Simd Identity</span><span class="check-pass">✓</span></div>
+                <div class="check-item"><span>Thermal Drift</span><span class="check-pass">✓</span></div>
+                <div class="check-item"><span>Instruction Jitter</span><span class="check-pass">✓</span></div>
+                <div class="check-item"><span>Anti Emulation</span><span class="check-pass">✓</span></div>
+                <div class="check-item"><span>Device Age</span><span class="check-pass">✓</span></div>
+            </div>
+        </div>
+        
+        <div style="text-align:center;color:#666;margin-top:40px;">
+            Generated by PPA Attestation Visualizer v1.0
+        </div>
+    </div>
+</body>
+</html>
