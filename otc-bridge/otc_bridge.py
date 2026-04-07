@@ -615,10 +615,11 @@ def match_order(order_id):
 @app.route("/api/orders/<order_id>/confirm", methods=["POST"])
 @rate_limited
 def confirm_order(order_id):
-    """Confirm settlement -- reveals HTLC secret, releases escrow."""
+    """Confirm settlement -- verifies HTLC preimage, releases escrow."""
     data = request.get_json(silent=True) or {}
     wallet = str(data.get("wallet", "")).strip()
     quote_tx = str(data.get("quote_tx", "")).strip()
+    secret = str(data.get("secret", "")).strip()
 
     if not wallet:
         return jsonify({"error": "wallet required"}), 400
@@ -638,6 +639,15 @@ def confirm_order(order_id):
         # Either party can confirm
         if wallet not in (order["maker_wallet"], order["taker_wallet"]):
             return jsonify({"error": "Only maker or taker can confirm"}), 403
+
+        # Verify HTLC preimage before releasing escrow
+        if not secret:
+            return jsonify({"error": "HTLC secret (preimage) required to confirm settlement"}), 400
+
+        # Validate the provided secret matches the stored hash
+        computed_hash = hashlib.sha256(bytes.fromhex(secret)).hexdigest()
+        if computed_hash != order["htlc_hash"]:
+            return jsonify({"error": "Invalid HTLC secret (preimage hash mismatch)"}), 400
 
         now = int(time.time())
 
@@ -706,10 +716,10 @@ def confirm_order(order_id):
             "order_id": order_id,
             "trade_id": trade_id,
             "status": "completed",
-            "htlc_secret": order["htlc_secret"],
+            "htlc_secret": secret,
             "amount_rtc": order["amount_rtc"],
             "rtc_recipient": rtc_recipient,
-            "message": f"Trade completed. {order['amount_rtc']} RTC released to {rtc_recipient}. HTLC secret revealed."
+            "message": f"Trade completed. {order['amount_rtc']} RTC released to {rtc_recipient}. HTLC secret verified and revealed."
         })
 
     except Exception as e:
