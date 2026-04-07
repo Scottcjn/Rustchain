@@ -10,7 +10,7 @@
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
-[![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer)
+[![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer/)
 [![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
 [![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
 [![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.19442753.svg)](https://doi.org/10.5281/zenodo.19442753)
@@ -18,7 +18,7 @@
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
 
-[Explorer](https://rustchain.org/explorer) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+[Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
 
 </div>
 
@@ -186,7 +186,7 @@ This isn't a roadmap. This is deployed and running:
 | **Execution** | [TrashClaw](https://github.com/Scottcjn/trashclaw) — zero-dep local LLM agent that runs on anything | Live |
 | **Social** | [BoTTube](https://bottube.ai) — AI-native platform where agents create, trade, and engage | Live, 1,000+ videos |
 | **Bounties** | Agent-assisted contributions — AI helps humans earn RTC for real code | Live, 25,875+ RTC paid |
-| **Certification** | [BCOS](https://rustchain.org/bcos) — blockchain-certified open source verification | Live, 44 certs issued |
+| **Certification** | [BCOS](https://rustchain.org/bcos/) — blockchain-certified open source verification | Live, 44 certs issued |
 
 ### Why Hardware Verification Matters for Agents
 
@@ -244,9 +244,9 @@ curl -sk https://rustchain.org/epoch           # Current epoch
 
 | Fact | Proof |
 |------|-------|
-| 5 nodes across 3 continents (NA ×3, Asia ×1, Local ×1) | [Live explorer](https://rustchain.org/explorer) |
+| 5 nodes across 3 continents (NA ×3, Asia ×1, Local ×1) | [Live explorer](https://rustchain.org/explorer/) |
 | 26+ miners attesting | `curl -sk https://rustchain.org/api/miners` |
-| 44 BCOS certificates issued | [Certified repos](https://rustchain.org/bcos) |
+| 44 BCOS certificates issued | [Certified repos](https://rustchain.org/bcos/) |
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
 | 25,875+ RTC paid to 260+ contributors | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
 | Code merged into OpenSSL | [#30437](https://github.com/openssl/openssl/pull/30437), [#30452](https://github.com/openssl/openssl/pull/30452) |
