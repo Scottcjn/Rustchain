@@ -459,13 +459,23 @@ class BlockProducer:
                     int(time.time())
                 ))
 
-                # Confirm transactions
+                # Confirm transactions — pass the same connection so the
+                # entire block save + all confirmations are a single atomic
+                # transaction.  If any confirmation fails, roll back the
+                # whole block to avoid partial state.
                 for tx in block.body.transactions:
-                    self.tx_pool.confirm_transaction(
+                    ok = self.tx_pool.confirm_transaction(
                         tx.tx_hash,
                         block.height,
-                        block.hash
+                        block.hash,
+                        conn=conn
                     )
+                    if not ok:
+                        logger.error(
+                            f"Block save aborted: confirmation failed for "
+                            f"tx {tx.tx_hash[:16]}... at block {block.height}"
+                        )
+                        return False
 
                 conn.commit()
 
