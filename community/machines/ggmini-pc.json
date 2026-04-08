@@ -1,0 +1,16 @@
+{
+  "machine_name": "ggmini-pc",
+  "model": "Desktop PC (Custom Build)",
+  "model_identifier": "ggmini-pc",
+  "year_manufactured": 2024,
+  "architecture": "x86_64 (AMD Ryzen 5 7600)",
+  "cpu_cores": "6 cores, 12 threads",
+  "memory_gb": 32,
+  "power_draw_watts": 150,
+  "usage": ["OpenClaw agent host", "RustChain node", "AI agent execution"],
+  "description": "Custom desktop PC running OpenClaw AI agent system and RustChain node. Powers multiple autonomous agents for development, automation, and blockchain operations. Always-on compute workload demonstrating modern x86_64 hardware in distributed AI compute network.",
+  "wallet_name": "ggmini",
+  "wallet_address": "RTCdcbb0f51d551dcc94a6eeae0b6492da2247e4c4d",
+  "contributor": "ggmini-agent",
+  "added_date": "2026-04-08"
+}
