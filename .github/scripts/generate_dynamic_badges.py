@@ -237,137 +237,63 @@ def _count_categories(bounties_dir: Path) -> Dict[str, int]:
                 cats["security"] += 1
             else:
                 cats["feature"] += 1
-    return dict(cats)
+    return cats
 
 
-# ── Validation ───────────────────────────────────────────────────────
+# ── Main generator function ──────────────────────────────────────────
 
 
-def validate_badge(b: dict) -> List[str]:
-    """Validate a badge dict against the shields.io endpoint schema.
-
-    Returns list of errors (empty = valid).
-    """
-    errors: list[str] = []
-    if b.get("schemaVersion") != 1:
-        errors.append(f"schemaVersion must be 1, got {b.get('schemaVersion')}")
-    if not b.get("label"):
-        errors.append("label is required and must be non-empty")
-    if "message" not in b:
-        errors.append("message is required")
-    if not isinstance(b.get("message"), str):
-        errors.append(f"message must be string, got {type(b.get('message'))}")
-    return errors
-
-
-# ── Main ─────────────────────────────────────────────────────────────
-
-
-def generate_all_badges(data: dict, output_dir: str = ".github/badges") -> List[str]:
-    """Generate all badge JSON files. Returns list of written paths."""
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-
-    written: list[str] = []
-
-    # 1. Network status
-    _write(out / "network_status.json", generate_network_status_badge(data), written)
-
-    # 2. Total bounties
-    _write(out / "total_bounties.json", generate_total_bounties_badge(data), written)
-
-    # 3. Weekly growth
-    _write(out / "weekly_growth.json", generate_weekly_growth_badge(data), written)
-
-    # 4. Top hunters summary
-    _write(
-        out / "top_hunters.json",
-        generate_top_hunters_badge(data.get("hunters", [])),
-        written,
-    )
-
-    # 5. Category badges
-    for cat, count in data.get("categories", {}).items():
-        if count > 0:
-            _write(
-                out / f"category_{cat}.json",
-                generate_category_badge(cat, count),
-                written,
-            )
-
-    # 6. Per-hunter badges (collision-safe slugs)
-    slugs_seen: set[str] = set()
+def generate_all_badges(data: dict, output_dir: Path) -> None:
+    """Generate all badge files."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    badges = {
+        "network_status.json": generate_network_status_badge(data),
+        "total_bounties.json": generate_total_bounties_badge(data),
+        "weekly_growth.json": generate_weekly_growth_badge(data),
+        "top_hunters.json": generate_top_hunters_badge(data.get("hunters", [])),
+    }
+    
+    # Category badges
+    for category, count in data.get("categories", {}).items():
+        badges[f"category_{category}.json"] = generate_category_badge(category, count)
+    
+    # Hunter badges
     for hunter in data.get("hunters", []):
         slug = make_slug(hunter.get("name", "unknown"))
-        # Extra collision safety: append counter if duplicate
-        base_slug = slug
-        counter = 2
-        while slug in slugs_seen:
-            slug = f"{base_slug}-{counter}"
-            counter += 1
-        slugs_seen.add(slug)
-
-        _write(out / f"hunter_{slug}.json", generate_hunter_badge(hunter), written)
-
-    # Write manifest
-    manifest = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "badge_count": len(written),
-        "badges": [os.path.basename(p) for p in written],
-        "schema_version": BADGE_SCHEMA_VERSION,
-    }
-    manifest_path = str(out / "manifest.json")
-    with open(manifest_path, "w") as f:
-        json.dump(manifest, f, indent=2)
-    written.append(manifest_path)
-
-    return written
+        badges[f"hunter_{slug}.json"] = generate_hunter_badge(hunter)
+    
+    # Write all badge files
+    for filename, badge_data in badges.items():
+        badge_path = output_dir / filename
+        with open(badge_path, "w") as f:
+            json.dump(badge_data, f, indent=2)
+        print(f"Generated: {badge_path}")
 
 
-def _write(path: Path, badge_data: dict, written: list) -> None:
-    """Write badge JSON after validation."""
-    errors = validate_badge(badge_data)
-    if errors:
-        print(f"WARN: Skipping {path.name}: {errors}", file=sys.stderr)
-        return
-    with open(path, "w") as f:
-        json.dump(badge_data, f, indent=2)
-    written.append(str(path))
+# ── CLI ──────────────────────────────────────────────────────────────
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate dynamic shields.io badges")
-    parser.add_argument("--data-file", help="Path to bounty data JSON")
-    parser.add_argument(
-        "--output-dir", default=".github/badges", help="Output directory"
+    parser = argparse.ArgumentParser(
+        description="Generate dynamic shields.io badges for bounty program"
     )
-    parser.add_argument("--validate-only", action="store_true", help="Only validate existing badges")
+    parser.add_argument(
+        "--data-file", help="JSON file with bounty data (optional)"
+    )
+    parser.add_argument(
+        "--output-dir", 
+        default=".github/badges", 
+        help="Output directory for badge files"
+    )
+    
     args = parser.parse_args()
-
-    if args.validate_only:
-        badge_dir = Path(args.output_dir)
-        if not badge_dir.exists():
-            print("No badges directory found")
-            sys.exit(1)
-        errors_total = 0
-        for f in sorted(badge_dir.glob("*.json")):
-            if f.name == "manifest.json":
-                continue
-            with open(f) as fh:
-                data = json.load(fh)
-            errs = validate_badge(data)
-            if errs:
-                print(f"FAIL {f.name}: {errs}")
-                errors_total += len(errs)
-            else:
-                print(f"OK   {f.name}")
-        sys.exit(1 if errors_total else 0)
-
+    
     data = load_data(args.data_file)
-    written = generate_all_badges(data, args.output_dir)
-    print(f"Generated {len(written)} badge files in {args.output_dir}/")
-    for path in written:
-        print(f"  {path}")
+    output_dir = Path(args.output_dir)
+    
+    generate_all_badges(data, output_dir)
+    print(f"\n✅ Badge generation complete! Files written to {output_dir}")
 
 
 if __name__ == "__main__":
