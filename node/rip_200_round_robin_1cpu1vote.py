@@ -13,9 +13,12 @@ Key Changes:
 4. Time-aging: Vintage hardware advantage decays over blockchain lifetime
 """
 
+import logging
 import sqlite3
 import time
 from typing import List, Tuple, Dict
+
+logger = logging.getLogger(__name__)
 
 # Genesis timestamp (adjust to actual genesis block timestamp)
 GENESIS_TIMESTAMP = 1764706927  # First actual block (Dec 2, 2025)
@@ -525,9 +528,16 @@ def calculate_epoch_rewards_time_aged(
                     fp = 1
                 epoch_miners.append((miner_pk, device_arch, fp))
         else:
-            # Fallback: legacy path for epochs without enrollment records.
-            # This is vulnerable to the stale-attestation issue when settlement
-            # is delayed, but preserves backward compatibility.
+            # SECURITY FIX #2159: Fallback for epochs without enrollment
+            # records.  This path is vulnerable to the stale-attestation
+            # issue when settlement is delayed — miners who re-attested
+            # after the epoch window are silently dropped.  Log a warning
+            # so operators can detect when the fallback fires.
+            logger.warning(
+                "Epoch %d: no epoch_enroll rows, falling back to "
+                "miner_attest_recent time-window query (may drop miners "
+                "if settlement is delayed)", epoch
+            )
             cursor.execute("""
                 SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp
                 FROM miner_attest_recent

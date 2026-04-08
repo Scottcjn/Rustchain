@@ -180,7 +180,13 @@ def detect_duplicate_identities(
                 entropy_score = 0.0
             rows.append((miner_pk, device_arch, fingerprint_passed, entropy_score, profile_json))
     else:
-        # Fallback: legacy path for epochs without enrollment records.
+        # SECURITY FIX #2159: Fallback for epochs without enrollment records.
+        # Vulnerable to stale-attestation drop when settlement is delayed.
+        logger.warning(
+            "detect_duplicate_identities: epoch %d has no epoch_enroll rows, "
+            "falling back to miner_attest_recent (may drop miners if delayed)",
+            epoch
+        )
         cursor.execute("""
             SELECT
                 miner,
@@ -199,7 +205,7 @@ def detect_duplicate_identities(
             ORDER BY device_arch, entropy_score DESC
         """, (epoch_start_ts, epoch_end_ts))
         rows = cursor.fetchall()
-    
+
     # Group miners by machine identity
     identity_map: Dict[str, List[Tuple[str, Dict]]] = {}  # identity_hash -> [(miner_id, attestation_data)]
     
@@ -358,7 +364,13 @@ def get_epoch_miner_groups(
             device_arch = (arch_row[0] or "unknown") if arch_row else "unknown"
             rows.append((miner_pk, device_arch, profile_json))
     else:
-        # Fallback: legacy path for epochs without enrollment records.
+        # SECURITY FIX #2159: Fallback for epochs without enrollment records.
+        # Vulnerable to stale-attestation drop when settlement is delayed.
+        logger.warning(
+            "get_epoch_miner_groups: epoch %d has no epoch_enroll rows, "
+            "falling back to miner_attest_recent (may drop miners if delayed)",
+            epoch
+        )
         cursor.execute("""
             SELECT
                 miner,

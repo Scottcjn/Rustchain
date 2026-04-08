@@ -728,13 +728,18 @@ class GossipLayer:
             if resp.status_code == 200:
                 data = resp.json()
                 if "state" in data:
-                    # SECURITY: Verify signature on state response.
-                    # Previously signature="" was used, bypassing all auth.
+                    # SECURITY FIX #2154: Verify signature on state response.
+                    # The responder signs over {"state": <state_data>} (see
+                    # _handle_get_state), so the payload we feed into the
+                    # GossipMessage must match exactly — NOT the full HTTP
+                    # response which also contains "status", "signature", and
+                    # "timestamp" keys.
                     signature = data.get("signature", "")
                     timestamp = data.get("timestamp", int(time.time()))
                     if not signature:
                         logger.error(f"Full sync from {peer_url}: no signature on state response")
                         return
+                    state_payload = {"state": data["state"]}
                     state_msg = GossipMessage(
                         msg_type=MessageType.STATE.value,
                         msg_id=f"sync:{peer_url}:{timestamp}",
@@ -742,7 +747,7 @@ class GossipLayer:
                         timestamp=timestamp,
                         ttl=0,
                         signature=signature,
-                        payload=data
+                        payload=state_payload
                     )
                     self._handle_state(state_msg)
         except Exception as e:

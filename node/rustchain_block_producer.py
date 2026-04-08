@@ -471,6 +471,12 @@ class BlockProducer:
                         conn=conn
                     )
                     if not ok:
+                        # SECURITY FIX #2156: Explicit rollback so the block
+                        # INSERT and any partial confirmations are discarded.
+                        # Without this, the `with` context manager would call
+                        # conn.commit() on clean exit, persisting an
+                        # inconsistent partial block.
+                        conn.rollback()
                         logger.error(
                             f"Block save aborted: confirmation failed for "
                             f"tx {tx.tx_hash[:16]}... at block {block.height}"
