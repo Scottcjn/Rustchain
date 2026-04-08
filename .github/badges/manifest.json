@@ -1,12 +1,30 @@
 {
-  "generated_at": "2026-03-26T11:38:27.353250+00:00",
-  "badge_count": 5,
+  "schemaVersion": 1,
   "badges": [
-    "network_status.json",
-    "total_bounties.json",
-    "weekly_growth.json",
-    "top_hunters.json",
-    "category_feature.json"
-  ],
-  "schema_version": 1
+    {
+      "name": "network_status",
+      "url": "https://raw.githubusercontent.com/RustChainBuilder/rustchain/main/.github/badges/network_status.json",
+      "description": "Network health status"
+    },
+    {
+      "name": "total_bounties", 
+      "url": "https://raw.githubusercontent.com/RustChainBuilder/rustchain/main/.github/badges/total_bounties.json",
+      "description": "Total RTC bounties paid out"
+    },
+    {
+      "name": "weekly_growth",
+      "url": "https://raw.githubusercontent.com/RustChainBuilder/rustchain/main/.github/badges/weekly_growth.json", 
+      "description": "Weekly growth percentage"
+    },
+    {
+      "name": "top_hunters",
+      "url": "https://raw.githubusercontent.com/RustChainBuilder/rustchain/main/.github/badges/top_hunters.json",
+      "description": "Top 3 bounty hunters"
+    },
+    {
+      "name": "category_feature",
+      "url": "https://raw.githubusercontent.com/RustChainBuilder/rustchain/main/.github/badges/category_feature.json",
+      "description": "Feature bounties count"
+    }
+  ]
 }
