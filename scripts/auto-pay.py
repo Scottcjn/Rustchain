@@ -32,7 +32,7 @@ import requests
 # ---------------------------------------------------------------------------
 
 GITHUB_API = "https://api.github.com"
-VPS_PORT = 8099
+VPS_PORT = 8088
 FROM_WALLET = "founder_community"
 
 # Payment directive pattern — matches both bold and plain variants:
