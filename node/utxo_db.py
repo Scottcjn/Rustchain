@@ -13,6 +13,15 @@ Security properties:
 - Double-spend prevention via spent_at tracking
 - Deterministic Merkle state root for cross-node consensus
 - Mempool-level double-spend detection via utxo_mempool_inputs
+
+Architectural boundary -- spending_proof validation:
+  The ``spending_proof`` field on transaction inputs is stored but **not
+  verified** by this module.  Signature verification (Ed25519 over the
+  canonical input box ID + output commitments) is performed at the
+  endpoint layer (``utxo_endpoints.py``) before any call to
+  ``UtxoDB.apply_transaction()``.  This separation is intentional:
+  the UTXO layer is a pure state-transition engine; authentication
+  belongs to the caller.  See issue #2085 for the rationale.
 """
 
 import hashlib
@@ -141,6 +150,15 @@ class UtxoDB:
 
     All public methods accept an optional ``conn`` parameter.  When provided
     the caller owns the transaction; otherwise a fresh connection is created.
+
+    **Spending-proof boundary:** This module handles UTXO state transitions
+    only.  Signature verification is the caller's responsibility.
+    ``apply_transaction()`` accepts ``spending_proof`` on inputs for
+    storage/recording but never validates it cryptographically.  The endpoint
+    layer (see ``utxo_endpoints.py``) performs Ed25519 verification *before*
+    calling into this module.  Future maintainers: do not add proof
+    verification here -- it would violate the layer separation and create
+    redundant checks.  See issue #2085.
     """
 
     def __init__(self, db_path: str):
@@ -344,6 +362,10 @@ class UtxoDB:
             conn = self._conn()
 
         ts = tx.get('timestamp', int(time.time()))
+        # NOTE(issue #2085): spending_proof is present on each input dict but
+        # is intentionally ignored by this layer.  It is stored for
+        # on-chain auditability, but cryptographic verification is the sole
+        # responsibility of the caller (utxo_endpoints.py).
         inputs = tx.get('inputs', [])
         outputs = tx.get('outputs', [])
         fee = tx.get('fee_nrtc', 0)
