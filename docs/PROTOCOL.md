@@ -229,4 +229,5 @@ The 6-check fingerprint system targets known VM/emulator weaknesses:
 ---
 
 *Protocol version: RIP-200 v2.2.1*
-*See [API.md](./API.md) for endpoint documentation.*
+*See [api-reference.md](./api-reference.md) for endpoint documentation.*
+*See [RIP200_CONSENSUS.md](./RIP200_CONSENSUS.md) for theoretical breakdown.*

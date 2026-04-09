@@ -85,7 +85,8 @@ curl -sk https://rustchain.org/epoch
   "slot": 10800,
   "blocks_per_epoch": 144,
   "epoch_pot": 1.5,
-  "enrolled_miners": 10
+  "enrolled_miners": 10,
+  "total_supply_rtc": 21000000
 }
 ```
 
@@ -93,9 +94,76 @@ curl -sk https://rustchain.org/epoch
 |-------|------|-------------|
 | `epoch` | integer | Current epoch number |
 | `slot` | integer | Current slot within epoch |
-| `blocks_per_epoch` | integer | Slots per epoch (144) |
+| `blocks_per_epoch` | integer | Slots per epoch (default 144) |
 | `epoch_pot` | float | RTC reward pool for epoch |
-| `enrolled_miners` | integer | Active miners this epoch |
+| `enrolled_miners` | integer | Active miners enrolled this epoch |
+| `total_supply_rtc` | float | Total circulation of RTC |
+
+---
+
+#### GET /api/stats
+
+Get comprehensive system-wide statistics.
+
+```bash
+curl -sk https://rustchain.org/api/stats
+```
+
+**Response**:
+```json
+{
+  "version": "2.2.1-rip200",
+  "chain_id": "rustchain-mainnet-v2",
+  "epoch": 75,
+  "block_time": 600,
+  "total_miners": 150,
+  "total_balance": 96673.0,
+  "pending_withdrawals": 3,
+  "features": ["RIP-0005", "RIP-0008", "RIP-0009", "RIP-0200"]
+}
+```
+
+---
+
+### Block Data
+
+#### GET /headers/tip
+
+Get the current tip of the blockchain.
+
+```bash
+curl -sk https://rustchain.org/headers/tip
+```
+
+**Response**:
+```json
+{
+  "slot": 25200,
+  "miner": "scott",
+  "tip_age": 120,
+  "signature_prefix": "a1b2c3d4..."
+}
+```
+
+---
+
+#### POST /headers/ingest_signed
+
+Submit a signed block header to the network.
+
+```bash
+curl -sk -X POST https://rustchain.org/headers/ingest_signed \
+  -H "Content-Type: application/json" \
+  -d '{
+    "miner_id": "scott",
+    "header": {
+      "slot": 25201,
+      "parent_hash": "abc...",
+      "state_root": "def..."
+    },
+    "signature": "64_char_hex_sig"
+  }'
+```
 
 ---
 
@@ -150,30 +218,20 @@ curl -sk https://rustchain.org/api/miners
 
 #### GET /api/nodes
 
-List connected attestation nodes.
+List connected attestation nodes and their health.
 
 ```bash
 curl -sk https://rustchain.org/api/nodes
 ```
 
-**Response**:
-```json
-[
-  {
-    "node_id": "primary",
-    "address": "50.28.86.131",
-    "role": "attestation",
-    "status": "active",
-    "last_seen": 1771187406
-  },
-  {
-    "node_id": "ergo-anchor",
-    "address": "50.28.86.153",
-    "role": "anchor",
-    "status": "active",
-    "last_seen": 1771187400
-  }
-]
+---
+
+#### GET /metrics_mac
+
+Get Prometheus metrics for MAC OUI enforcement and network diversity.
+
+```bash
+curl -sk https://rustchain.org/metrics_mac
 ```
 
 ---
@@ -574,6 +632,40 @@ curl -sk https://rustchain.org/wallet/swap-info
   "raydium_pool": "8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb",
   "bridge_url": "https://bottube.ai/bridge"
 }
+```
+
+---
+
+## Agent Economy (Marketplace)
+
+These endpoints provide data for the autonomous agent marketplace where jobs are posted and claimed.
+
+### GET /agent/stats
+
+Get high-level marketplace statistics.
+
+```bash
+curl -sk https://rustchain.org/agent/stats
+```
+
+---
+
+### GET /agent/jobs
+
+List all open or historical agent jobs.
+
+```bash
+curl -sk https://rustchain.org/agent/jobs
+```
+
+---
+
+### GET /agent/reputation/{wallet}
+
+Query the trust level and reputation score of a specific wallet.
+
+```bash
+curl -sk https://rustchain.org/agent/reputation/scott
 ```
 
 ---
