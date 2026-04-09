@@ -652,6 +652,11 @@ class UtxoDB:
                 return False
 
             tx_id = tx.get('tx_id', '')
+            # FIX(#2179): Reject empty/whitespace-only tx_id to prevent
+            # INSERT OR IGNORE collisions that create orphan input claims.
+            if not tx_id or not tx_id.strip():
+                return False
+
             inputs = tx.get('inputs', [])
             tx_type = tx.get('tx_type', 'transfer')
             now = int(time.time())
@@ -707,14 +712,29 @@ class UtxoDB:
                     input_total += row['value_nrtc']
 
             outputs = tx.get('outputs', [])
-            output_total = sum(o.get('value_nrtc', 0) for o in outputs)
+
+            # FIX(#2179): Mirror apply_transaction() output validation.
+            # Reject outputs with missing, non-int, zero, or negative value_nrtc.
+            # Without this, unmineable transactions enter the mempool and lock
+            # UTXOs until expiry (DoS vector).
+            for o in outputs:
+                val = o.get('value_nrtc')
+                if not isinstance(val, int) or val <= 0:
+                    conn.execute("ROLLBACK")
+                    return False
+
+            output_total = sum(o['value_nrtc'] for o in outputs)
             if input_total > 0 and (output_total + fee) > input_total:
                 conn.execute("ROLLBACK")
                 return False
 
             # Insert into mempool
-            conn.execute(
-                """INSERT OR IGNORE INTO utxo_mempool
+            # FIX(#2179): Use INSERT OR ABORT instead of INSERT OR IGNORE.
+            # With IGNORE, a duplicate tx_id silently skips the insert but
+            # execution continues to claim inputs — creating orphan entries
+            # that lock UTXOs with no corresponding mempool transaction.
+            cursor = conn.execute(
+                """INSERT OR ABORT INTO utxo_mempool
                    (tx_id, tx_data_json, fee_nrtc, submitted_at, expires_at)
                    VALUES (?,?,?,?,?)""",
                 (
