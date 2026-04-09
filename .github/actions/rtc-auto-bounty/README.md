@@ -11,7 +11,7 @@ A reusable GitHub Action that automatically awards RustChain (RTC) to contributo
 - **Duplicate prevention** — detects already-awarded PRs via comment markers
 - **PR comment confirmation** — posts a formatted table with transfer details
 - **Safety caps** — configurable maximum award amount to prevent accidental large transfers
-- **Publishable to GitHub Marketplace** — follows composite action conventions
+- **Reusable as an in-repo composite action** — reference it directly from your workflows without publishing
 
 ## Usage
 
@@ -72,9 +72,9 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-### Reusable workflow (for Marketplace publishing)
+### Reusable across repositories
 
-If you publish this action to the Marketplace, consumers can use it like:
+If this action lives in a separate repository (e.g., `Scottcjn/RustChain`), other repos can reference it directly:
 
 ```yaml
 - name: Award RTC
