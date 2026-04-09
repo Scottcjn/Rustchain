@@ -25,7 +25,7 @@ RustChain follows five principles drawn from Cajun survival culture (see [Boudre
 
 ### Digital Preservation
 
-Every machine mining RTC is a machine that did not go to a landfill. RustChain tracks preserved hardware on the [Green Tracker](https://rustchain.org/preserved.html), including estimated CO2 and e-waste prevented.
+Every machine mining RTC is a machine that did not go to a landfill. RustChain tracks preserved hardware on the [Green Tracker](https://rustchain.org/transparency.html), including estimated CO2 and e-waste prevented.
 
 Current fleet statistics:
 - 22+ active miners across 4 attestation nodes
