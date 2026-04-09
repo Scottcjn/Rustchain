@@ -1,4 +1,6 @@
 # RIP-200: Proof of Antiquity Consensus
+<!-- SPDX-License-Identifier: MIT -->
+<!-- BCOS-Tier: L1 -->
 
 ## Executive Summary
 **RIP-200 (RustChain Iterative Protocol)** defines the consensus mechanism for the RustChain network. It implements a **Proof of Antiquity (PoA)** model that prioritizes hardware longevity over raw hash power. The goal is to create a decentralized infrastructure network where high-precision hardware fingerprinting ensures 1-CPU-1-Vote democratic participation, weighted by the historical antiquity of the silicon.
