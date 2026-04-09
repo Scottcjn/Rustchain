@@ -46,7 +46,8 @@ jobs:
             function isDocOnly(path) {
               const p = path.toLowerCase();
               return p.startsWith("docs/") || p.endsWith(".md") ||
-                     p.endsWith(".png") || p.endsWith(".jpg") || p.endsWith(".svg") || p.endsWith(".pdf");
+                     p.endsWith(".png") || p.endsWith(".jpg") || p.endsWith(".jpeg") ||
+                     p.endsWith(".gif") || p.endsWith(".svg") || p.endsWith(".pdf");
             }
 
             const nonDoc = files.filter(f => !isDocOnly(f));
@@ -111,7 +112,7 @@ jobs:
           "
 
       - name: Comment trust score on PR
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v8
         with:
           script: |
