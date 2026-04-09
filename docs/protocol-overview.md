@@ -250,6 +250,7 @@ curl -sk https://rustchain.org/api/miners
 - **Whitepaper**: [RustChain_Whitepaper_Flameholder_v0.97-1.pdf](./RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
 - **API Reference**: [api-reference.md](./api-reference.md)
 - **Consensus Breakdown**: [RIP200_CONSENSUS.md](./RIP200_CONSENSUS.md)
+- **Vintage Mining Guide**: [GRANDMAS_COMPUTER.md](./GRANDMAS_COMPUTER.md)
 - **Protocol Spec**: [PROTOCOL.md](./PROTOCOL.md)
 - **Glossary**: [GLOSSARY.md](./GLOSSARY.md)
 
