@@ -1,0 +1,55 @@
+# Example workflow: RTC Auto-Bounty on PR merge
+#
+# Copy this file to .github/workflows/rtc-auto-bounty.yml and configure
+# the required secrets (RTC_VPS_HOST, RTC_ADMIN_KEY) in your repository settings.
+#
+# This workflow awards RTC to contributors automatically when their PR is merged.
+
+name: RTC Auto-Bounty
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  award-bounty:
+    # Only run when the PR is actually merged (not just closed)
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Award RTC bounty
+        uses: ./.github/actions/rtc-auto-bounty
+        with:
+          # Default RTC amount per merge
+          # Can be overridden per-PR with "bounty: <amount> RTC" in the PR body
+          rtc-amount: '50'
+
+          # RustChain VPS host (set as a repository secret)
+          rtc-vps-host: ${{ secrets.RTC_VPS_HOST }}
+
+          # Admin key for the /wallet/transfer endpoint (set as a repository secret)
+          rtc-admin-key: ${{ secrets.RTC_ADMIN_KEY }}
+
+          # Source wallet for the transfer
+          from-wallet: 'founder_community'
+
+          # Safety cap — transfers above this amount will fail
+          max-amount: '10000'
+
+          # Set to "true" to test without making real transfers
+          dry-run: 'false'
+
+          # Post a confirmation comment on the merged PR
+          post-comment: 'true'
+
+          # GitHub token (auto-provided by GitHub Actions)
+          github-token: ${{ secrets.GITHUB_TOKEN }}
