@@ -410,7 +410,7 @@ and a belief that old machines still have dignity.*
 | `Connection refused` when checking balance | The node may be restarting. Wait 30 seconds and retry. |
 | `Python not found` | Install Python 3.8+ from [python.org](https://python.org) (macOS/Windows) or `apt install python3` (Linux) |
 | `ModuleNotFoundError: requests` | Activate the venv first: `source ~/.rustchain/venv/bin/activate` |
-| Miner shows 0 RTC after mining | Mining rewards are paid per epoch (~60 minutes). Check back after an epoch completes. |
+| Miner shows 0 RTC after mining | Mining rewards are paid per epoch (~10 minutes). Check back after an epoch completes. |
 | `SSL certificate verify failed` | Your system clock may be wrong. Sync your clock: `sudo ntpdate pool.ntp.org` (Linux) |
 | `wallet name already taken` | Wallet names are globally unique. Try a different name with a unique prefix. |
 

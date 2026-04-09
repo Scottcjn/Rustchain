@@ -444,7 +444,7 @@ MIT License
 
 ### 白皮书与技术文档
 
-- [RustChain 白皮书](https://github.com/Scottcjn/Rustchain/blob/main/docs/RustChain_Whitepaper.pdf)
+- [RustChain 白皮书](https://github.com/Scottcjn/Rustchain/blob/main/docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
 - [链架构文档](https://github.com/Scottcjn/Rustchain/blob/main/docs/chain_architecture.md)
 - [开发者牵引报告](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md)
 
