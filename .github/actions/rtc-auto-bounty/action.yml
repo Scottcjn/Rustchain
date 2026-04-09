@@ -1,0 +1,98 @@
+name: 'RTC Auto-Bounty'
+description: >
+  Automatically awards RTC to contributors when a PR is merged.
+  Reads the contributor wallet from the PR body or a .rtc-wallet file,
+  calls the RustChain admin transfer API, and posts a confirmation comment.
+  Supports dry-run mode for safe testing.
+author: 'Scottcjn'
+
+branding:
+  icon: 'award'
+  color: 'orange'
+
+inputs:
+  rtc-amount:
+    description: 'Default RTC amount to award per merge (can be overridden by PR body directive)'
+    required: false
+    default: '50'
+  rtc-vps-host:
+    description: 'RustChain VPS host (IP or hostname)'
+    required: false
+    default: ''
+  rtc-admin-key:
+    description: 'Admin key for the /wallet/transfer endpoint'
+    required: false
+    default: ''
+  from-wallet:
+    description: 'Source wallet for the transfer (defaults to founder_community)'
+    required: false
+    default: 'founder_community'
+  dry-run:
+    description: 'When true, simulate the transfer without calling the API'
+    required: false
+    default: 'false'
+  post-comment:
+    description: 'Whether to post a confirmation comment on the PR'
+    required: false
+    default: 'true'
+  github-token:
+    description: 'GitHub token for API access (posting comments, fetching PR data)'
+    required: false
+    default: ${{ github.token }}
+  repo-path:
+    description: 'Path to the checked-out repository (for reading .rtc-wallet)'
+    required: false
+    default: '.'
+  max-amount:
+    description: 'Safety cap — transfers above this amount will fail'
+    required: false
+    default: '10000'
+
+outputs:
+  awarded:
+    description: 'Whether an award was made (true/false)'
+    value: ${{ steps.award.outputs.awarded }}
+  amount:
+    description: 'RTC amount that was (or would be in dry-run) awarded'
+    value: ${{ steps.award.outputs.amount }}
+  recipient-wallet:
+    description: 'Wallet address that received the award'
+    value: ${{ steps.award.outputs.recipient_wallet }}
+  tx-hash:
+    description: 'Transaction hash from the transfer (empty in dry-run)'
+    value: ${{ steps.award.outputs.tx_hash }}
+  pending-id:
+    description: 'Pending transfer ID from the node (empty in dry-run)'
+    value: ${{ steps.award.outputs.pending_id }}
+  skip-reason:
+    description: 'Reason the award was skipped (empty if not skipped)'
+    value: ${{ steps.award.outputs.skip_reason }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Award RTC on merge
+      id: award
+      shell: bash
+      env:
+        INPUT_RTC_AMOUNT: ${{ inputs.rtc-amount }}
+        INPUT_RTC_VPS_HOST: ${{ inputs.rtc-vps-host }}
+        INPUT_RTC_ADMIN_KEY: ${{ inputs.rtc-admin-key }}
+        INPUT_FROM_WALLET: ${{ inputs.from-wallet }}
+        INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        INPUT_POST_COMMENT: ${{ inputs.post-comment }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_REPO_PATH: ${{ inputs.repo-path }}
+        INPUT_MAX_AMOUNT: ${{ inputs.max-amount }}
+        # GitHub context — automatically populated
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_EVENT_PATH: ${{ github.event_path }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        PR_MERGED: ${{ github.event.pull_request.merged }}
+        PR_BODY: ${{ github.event.pull_request.body }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PR_TITLE: ${{ github.event.pull_request.title }}
+      run: |
+        python "${{ github.action_path }}/award_rtc.py"
