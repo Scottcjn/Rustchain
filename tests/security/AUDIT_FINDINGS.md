@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: MIT -->
+
 # RustChain Security Audit (#2867)
 
 ## Summary
