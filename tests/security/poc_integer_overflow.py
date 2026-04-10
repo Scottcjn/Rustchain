@@ -51,7 +51,7 @@ def test_integer_overflow():
         resp = requests.post(
             f"{TARGET_API}/utxo/transfer",
             json=payload,
-            verify=False,
+            verify=False,  # nosec B501 — intentional for self-signed test node
             timeout=5
         )
         print(f"[TEST 1] Large amount (1e20) response: {resp.status_code}")
@@ -70,7 +70,7 @@ def test_integer_overflow():
         resp = requests.post(
             f"{TARGET_API}/utxo/transfer",
             json=payload,
-            verify=False,
+            verify=False,  # nosec B501 — intentional for self-signed test node
             timeout=5
         )
         print(f"\n[TEST 2] Negative amount response: {resp.status_code}")
@@ -86,7 +86,7 @@ def test_integer_overflow():
         resp = requests.post(
             f"{TARGET_API}/utxo/transfer",
             json=payload,
-            verify=False,
+            verify=False,  # nosec B501 — intentional for self-signed test node
             timeout=5
         )
         print(f"\n[TEST 3] Precision edge case response: {resp.status_code}")
