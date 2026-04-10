@@ -269,17 +269,38 @@ def utxo_transfer():
             'got': from_address,
         }), 400
 
-    # Reconstruct signed message (same format as /wallet/transfer/signed)
-    tx_data = {
+    # Reconstruct signed message.
+    # FIX(#2202): Include fee in signed data to prevent MITM fee manipulation.
+    # Backward-compatible: try new format (with fee) first, fall back to legacy
+    # (without fee) with a deprecation warning. Remove fallback after 2026-07-01.
+    tx_data_v2 = {
+        'from': from_address,
+        'to': to_address,
+        'amount': amount_rtc,
+        'fee': fee_rtc,
+        'memo': memo,
+        'nonce': nonce,
+    }
+    message_v2 = json.dumps(tx_data_v2, sort_keys=True, separators=(',', ':')).encode()
+
+    tx_data_legacy = {
         'from': from_address,
         'to': to_address,
         'amount': amount_rtc,
         'memo': memo,
         'nonce': nonce,
     }
-    message = json.dumps(tx_data, sort_keys=True, separators=(',', ':')).encode()
+    message_legacy = json.dumps(tx_data_legacy, sort_keys=True, separators=(',', ':')).encode()
 
-    if not _verify_sig_fn(public_key, message, signature):
+    if _verify_sig_fn(public_key, message_v2, signature):
+        pass  # New client — fee is signed, MITM-resistant
+    elif _verify_sig_fn(public_key, message_legacy, signature):
+        logging.warning(
+            "[UTXO/SIG] DEPRECATED: signature without fee accepted for %s... "
+            "Upgrade client to include fee in signed message.",
+            from_address[:20],
+        )
+    else:
         return jsonify({'error': 'Invalid Ed25519 signature'}), 401
 
     # --- UTXO transaction ---------------------------------------------------
