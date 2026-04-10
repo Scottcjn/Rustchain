@@ -1,14 +1,6 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["node", "."]
-# Known broken test files — fixture/assertion mismatches from contributor PRs.
-# Tracked for fix but excluded from CI gate to avoid blocking all PRs.
-# test_epoch_settlement_formal: epoch_enroll table not created in test fixture
-# test_rip201_bucket_spoof: assertion values stale after server-side arch detection changes
-collect_ignore = [
-    "tests/test_epoch_settlement_formal.py",
-    "tests/test_rip201_bucket_spoof.py",
-]
 
 [tool.ruff]
 line-length = 120
