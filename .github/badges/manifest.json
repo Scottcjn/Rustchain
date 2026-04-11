@@ -1,12 +1,50 @@
 {
-  "generated_at": "2026-03-26T11:38:27.353250+00:00",
-  "badge_count": 5,
-  "badges": [
-    "network_status.json",
-    "total_bounties.json",
-    "weekly_growth.json",
-    "top_hunters.json",
-    "category_feature.json"
-  ],
-  "schema_version": 1
+  "schemaVersion": 1,
+  "description": "RustChain GitHub Bounty Program Badge Manifest",
+  "version": "1.0.0",
+  "badges": {
+    "network_status": {
+      "name": "Network Status",
+      "description": "Current network health status",
+      "endpoint": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/network_status.json",
+      "shield": "https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/network_status.json"
+    },
+    "total_bounties": {
+      "name": "Total Bounties Paid",
+      "description": "Total RTC paid out to bounty hunters",
+      "endpoint": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/total_bounties.json",
+      "shield": "https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/total_bounties.json"
+    },
+    "weekly_growth": {
+      "name": "Weekly Growth",
+      "description": "Weekly bounty program growth percentage",
+      "endpoint": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/weekly_growth.json",
+      "shield": "https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/weekly_growth.json"
+    },
+    "top_hunters": {
+      "name": "Top Hunters",
+      "description": "Top 3 bounty hunters summary",
+      "endpoint": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/top_hunters.json",
+      "shield": "https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/top_hunters.json"
+    },
+    "category_feature": {
+      "name": "Feature Bounties",
+      "description": "Total feature bounties available",
+      "endpoint": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/category_feature.json",
+      "shield": "https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/category_feature.json"
+    },
+    "bounty_campaign": {
+      "name": "GitHub Bounty Campaign",
+      "description": "Active GitHub bounty campaign status",
+      "endpoint": "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/bounty_campaign.json",
+      "shield": "https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/bounty_campaign.json"
+    }
+  },
+  "campaign": {
+    "active": true,
+    "title": "Tham gia chiến dịch GitHub Bounty!",
+    "description": "Hãy tham gia chiến dịch GitHub Bounty ngay hôm nay! 🌟",
+    "repository": "https://github.com/Scottcjn/Rustchain",
+    "started_at": "2024-12-28T00:00:00Z"
+  }
 }
