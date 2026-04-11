@@ -3,7 +3,7 @@
 RustChain v2 - Integrated Server
 Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 """
-import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math, re, statistics
+import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math, re, statistics, random
 import ipaddress
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect
@@ -2541,64 +2541,52 @@ def finalize_epoch(epoch, per_block_rtc):
             print(f"[SECURITY] Epoch {epoch} already settled, skipping to prevent double-reward")
             return
 
-        # Get all enrolled miners
-        miners = c.execute(
-            "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
-            (epoch,)
-        ).fetchall()
+        # RIP-309: Fetch previous epoch's last block hash for measurement nonce
+        prev_epoch_last_slot = (epoch * EPOCH_SLOTS) - 1
+        prev_block_hash = None
+        if prev_epoch_last_slot >= 0:
+            row = c.execute("SELECT message_hex FROM headers WHERE slot = ?", (prev_epoch_last_slot,)).fetchone()
+            if row:
+                prev_block_hash = binascii.unhexlify(row[0])
 
-        if not miners:
-            return
-
-        # Calculate total weight
-        total_weight = sum(w for _, w in miners)
-
-        # DIVISION BY ZERO PROTECTION
-        if total_weight == 0:
-            print(f"[SECURITY] Total weight is 0 for epoch {epoch}, skipping reward distribution")
-            return
-
-        # PRECISION: Use Decimal for exact financial calculations
-        total_reward = Decimal(str(per_block_rtc)) * Decimal(EPOCH_SLOTS)
-
-        # WEIGHT VALIDATION: Cap maximum weight to prevent drain attacks
-        MAX_WEIGHT = 10000
-        # Filter out miners with 0 weight (VM/emulator detected)
-        valid_miners = [(pk, w) for pk, w in miners if w > 0]
-        zero_weight_miners = [pk for pk, w in miners if w == 0]
-        if zero_weight_miners:
-            print(f"[SECURITY] Excluding {len(zero_weight_miners)} miners with 0 weight (VM/emulator)")
+        # Standard RIP-200 rewards (anti-double-mining handled via weight calculation)
+        from rip_200_round_robin_1cpu1vote import calculate_epoch_rewards_time_aged
         
-        # Recalculate total weight with valid miners only
-        miners = valid_miners
-        total_weight = sum(w for _, w in miners)
-        
-        if total_weight == 0:
-            print(f"[SECURITY] No valid miners for epoch {epoch} after filtering")
+        # Calculate current slot for age calculation
+        current = current_slot()
+        total_reward_urtc = int(Decimal(str(per_block_rtc)) * Decimal(EPOCH_SLOTS) * Decimal(1000000))
+
+        rewards = calculate_epoch_rewards_time_aged(
+            DB_PATH,
+            epoch,
+            total_reward_urtc,
+            current,
+            prev_block_hash=prev_block_hash
+        )
+
+        if not rewards:
+            print(f"[SECURITY] No valid miners for epoch {epoch}, skipping reward distribution")
             return
-        
-        for pk, weight in miners:
-            if weight > MAX_WEIGHT:
-                print(f"[SECURITY] Capping weight {weight} for miner {pk} to {MAX_WEIGHT}")
-                weight = MAX_WEIGHT
 
         # ATOMIC TRANSACTION: Wrap all updates in explicit transaction
         try:
             c.execute("BEGIN TRANSACTION")
 
             # Distribute rewards with precision
-            for pk, weight in miners:
+            for pk, amount_i64 in rewards.items():
                 # Use Decimal arithmetic to avoid float precision loss
-                amount_decimal = total_reward * Decimal(weight) / Decimal(total_weight)
-                amount_i64 = int(amount_decimal * Decimal(1000000))
+                amount_decimal = Decimal(amount_i64) / Decimal(1000000)
 
                 # OVERFLOW PROTECTION: Ensure amount_i64 fits in signed 64-bit int
                 if amount_i64 >= 2**63:
                     raise ValueError(f"Reward overflow for miner {pk}: {amount_i64}")
 
+                # Ensure miner has balance entry (moved inside transaction)
+                c.execute("INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)", (pk,))
+
                 c.execute(
-                    "UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?",
-                    (amount_i64, amount_i64, pk)
+                    "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
+                    (float(amount_decimal), pk)
                 )
 
                 # Update metrics with decimal value for accuracy
@@ -2606,13 +2594,13 @@ def finalize_epoch(epoch, per_block_rtc):
 
             # Mark epoch as settled - use UPDATE with WHERE settled=0 to prevent race
             result = c.execute(
-                "UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ? AND settled = 0",
-                (int(time.time()), epoch)
+                "UPDATE epoch_state SET settled = 1 WHERE epoch = ?",
+                (epoch,)
             )
 
             # Commit transaction atomically
             c.execute("COMMIT")
-            print(f"[EPOCH] Finalized epoch {epoch} with {len(miners)} miners, total_weight={total_weight}")
+            print(f"[EPOCH] Finalized epoch {epoch} with {len(rewards)} miners")
 
         except Exception as e:
             # ROLLBACK on any error to maintain consistency
