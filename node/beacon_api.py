@@ -263,18 +263,40 @@ def beacon_join():
 
         now = int(time.time())
 
-        # Upsert into relay_agents table
+        # Check if agent already exists
         db = get_db()
-        db.execute("""
-            INSERT INTO relay_agents (agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at)
-            VALUES (?, ?, ?, 'active', ?, ?, ?)
-            ON CONFLICT(agent_id) DO UPDATE SET
-                pubkey_hex = excluded.pubkey_hex,
-                name = excluded.name,
-                coinbase_address = excluded.coinbase_address,
-                status = 'active',
-                updated_at = excluded.updated_at
-        """, (agent_id, pubkey_hex, name, coinbase_address, now, now))
+        existing = db.execute(
+            "SELECT pubkey_hex FROM relay_agents WHERE agent_id = ?",
+            (agent_id,)
+        ).fetchone()
+
+        if existing:
+            # Agent exists — NEVER allow pubkey_hex overwrite.
+            # Allowing unauthenticated pubkey changes is a full identity
+            # takeover: attacker sends join with victim's agent_id and
+            # their own public key, hijacking the agent.
+            if pubkey_hex != existing['pubkey_hex']:
+                return jsonify({
+                    'error': 'Cannot change pubkey_hex for existing agent — '
+                             'public key is immutable after registration'
+                }), 403
+
+            # Update mutable fields only
+            db.execute("""
+                UPDATE relay_agents
+                SET name = COALESCE(?, name),
+                    coinbase_address = COALESCE(?, coinbase_address),
+                    status = 'active',
+                    updated_at = ?
+                WHERE agent_id = ?
+            """, (name, coinbase_address, now, agent_id))
+        else:
+            # New agent — insert with pubkey_hex
+            db.execute("""
+                INSERT INTO relay_agents (agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at)
+                VALUES (?, ?, ?, 'active', ?, ?, ?)
+            """, (agent_id, pubkey_hex, name, coinbase_address, now, now))
+
         db.commit()
 
         return jsonify({
