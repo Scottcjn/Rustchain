@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 zhaog100
 #!/usr/bin/env python3
 """
 Security Audit PoC — Real Code Vulnerabilities (#2867 v2)
