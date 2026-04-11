@@ -194,6 +194,121 @@ class RustChainClient:
         )
         return WalletBalance.from_dict(data)
 
+    async def create_wallet(self, wallet_name: str) -> dict[str, Any]:
+        """
+        Register a new wallet on the RustChain network.
+
+        Args:
+            wallet_name: Unique wallet identifier (agent_id format)
+
+        Returns:
+            dict with wallet_address and confirmation details
+        """
+        import hashlib
+        wallet_hash = hashlib.sha256(f"agent:{wallet_name}".encode()).hexdigest()[:16]
+        wallet_address = f"agent_{wallet_hash}"
+        payload = {
+            "agent_id": wallet_name,
+            "wallet_address": wallet_address,
+        }
+        try:
+            data = await self._request(
+                "POST", "/api/agent/wallet/create", json_data=payload
+            )
+            return {
+                "wallet": wallet_name,
+                "wallet_address": data.get("wallet_address", wallet_address),
+                "registered": True,
+                **(data or {}),
+            }
+        except APIError as e:
+            if e.status_code == 404:
+                raise APIError(
+                    code="WALLET_ENDPOINT_UNAVAILABLE",
+                    message=f"Wallet creation endpoint unavailable. "
+                            f"Node may not support agent wallet registration.",
+                    status_code=503,
+                )
+            raise
+
+    async def submit_attestation(
+        self,
+        wallet_name: str,
+        device_hostname: str = "unknown",
+        device_arch: str = "x86_64",
+        device_family: str = "Generic",
+        device_os: str = "Linux",
+        entropy_hash: str = "",
+        sample_count: int = 100,
+    ) -> dict[str, Any]:
+        """
+        Submit a hardware fingerprint attestation.
+
+        Workflow:
+        1. Get a challenge nonce from /attest/challenge
+        2. Submit attestation to /attest/submit with the nonce
+
+        Args:
+            wallet_name: Wallet/miner identifier
+            device_hostname: Hostname of the device
+            device_arch: CPU architecture (e.g., x86_64, arm64, G5, POWER8)
+            device_family: CPU family (e.g., Intel x86_64, PowerPC G5)
+            device_os: Operating system string
+            entropy_hash: SHA256 hash of hardware entropy samples
+            sample_count: Number of entropy samples collected
+
+        Returns:
+            dict with attestation confirmation (includes weight and epoch)
+        """
+        # Step 1: Get a challenge nonce
+        try:
+            challenge = await self._request("POST", "/attest/challenge", json_data={})
+        except APIError as e:
+            raise APIError(
+                code="CHALLENGE_FAILED",
+                message=f"Failed to get attestation challenge: {e}",
+                status_code=502,
+            )
+
+        nonce = challenge.get("nonce")
+        if not nonce:
+            raise APIError(
+                code="NO_NONCE",
+                message="Attestation challenge did not return a nonce.",
+                status_code=502,
+            )
+
+        # Step 2: Submit attestation with the nonce
+        payload = {
+            "miner": wallet_name,
+            "report": {"nonce": nonce},
+            "device": {
+                "hostname": device_hostname,
+                "arch": device_arch,
+                "family": device_family,
+                "os": device_os,
+            },
+            "signals": {
+                "entropy_hash": entropy_hash or "0" * 64,
+                "sample_count": sample_count,
+            },
+        }
+
+        try:
+            data = await self._request("POST", "/attest/submit", json_data=payload)
+            return {
+                "attestation": "accepted",
+                "miner": wallet_name,
+                "nonce": nonce,
+                **(data or {}),
+            }
+        except APIError as e:
+            raise APIError(
+                code="ATTESTATION_REJECTED",
+                message=f"Attestation rejected: {e}",
+                status_code=e.status_code,
+            )
+
     async def query(
         self,
         query_type: str,

@@ -165,6 +165,46 @@ class NetworkStats:
 
 
 @dataclass
+class BountyInfo:
+    """Bounty issue from rustchain-bounties repo."""
+    number: int
+    title: str
+    reward_rtc: float
+    reward_label: str
+    url: str
+    state: str
+    labels: list[str]
+    body: str
+    assignees: list[str]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "BountyInfo":
+        reward_rtc = 0.0
+        reward_label = ""
+        for label in data.get("labels", []):
+            name = label.get("name", "")
+            if name in ("critical", "major", "standard", "easy"):
+                reward_label = name
+                # Extract RTC amount from title like "[BOUNTY: 100 RTC]"
+                import re
+                match = re.search(r'\[BOUNTY:?\s*(\d+(?:\.\d+)?)\s*RTC\]', data.get("title", ""))
+                if match:
+                    reward_rtc = float(match.group(1))
+                break
+        return cls(
+            number=data.get("number", 0),
+            title=data.get("title", ""),
+            reward_rtc=reward_rtc,
+            reward_label=reward_label,
+            url=data.get("html_url", data.get("url", "")),
+            state=data.get("state", "unknown"),
+            labels=[label.get("name", "") for label in data.get("labels", [])],
+            body=data.get("body", "")[:500],
+            assignees=[a.get("login", "") for a in data.get("assignees", [])],
+        )
+
+
+@dataclass
 class APIError(Exception):
     """Standardized API error."""
     code: str
@@ -241,5 +281,74 @@ QUERY_SCHEMA = {
         },
     },
     "required": ["query_type"],
+    "additionalProperties": False,
+}
+
+BOUNTIES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "labels": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Filter by label names (e.g., ['good first issue', 'standard']). Empty = all bounties.",
+        },
+        "state": {
+            "type": "string",
+            "enum": ["open", "closed", "all"],
+            "description": "Issue state (default: open)",
+        },
+        "limit": {
+            "type": "integer",
+            "description": "Maximum bounties to return (default: 50, max: 100)",
+        },
+    },
+    "additionalProperties": False,
+}
+
+CREATE_WALLET_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "wallet_name": {
+            "type": "string",
+            "description": "Desired wallet name (3-32 chars, alphanumeric + underscore)",
+        },
+    },
+    "required": ["wallet_name"],
+    "additionalProperties": False,
+}
+
+SUBMIT_ATTESTATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "wallet_name": {
+            "type": "string",
+            "description": "Wallet/miner name to submit attestation for",
+        },
+        "device_hostname": {
+            "type": "string",
+            "description": "Hostname of the device (default: unknown)",
+        },
+        "device_arch": {
+            "type": "string",
+            "description": "CPU architecture, e.g. x86_64, arm64, G5, POWER8 (default: x86_64)",
+        },
+        "device_family": {
+            "type": "string",
+            "description": "CPU family name (default: Generic)",
+        },
+        "device_os": {
+            "type": "string",
+            "description": "Operating system string (default: Linux)",
+        },
+        "entropy_hash": {
+            "type": "string",
+            "description": "SHA256 hex hash of hardware entropy samples",
+        },
+        "sample_count": {
+            "type": "integer",
+            "description": "Number of entropy samples collected (default: 100)",
+        },
+    },
+    "required": ["wallet_name"],
     "additionalProperties": False,
 }

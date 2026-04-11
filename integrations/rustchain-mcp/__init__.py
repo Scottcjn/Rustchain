@@ -16,22 +16,30 @@ try:
     from .client import RustChainClient, get_balance, get_epoch, get_health, run_query
     from .schemas import (
         APIError,
+        BountyInfo,
+        BOUNTIES_SCHEMA,
+        CREATE_WALLET_SCHEMA,
         EpochInfo,
         HealthStatus,
         QueryResult,
+        SUBMIT_ATTESTATION_SCHEMA,
         WalletBalance,
     )
 except ImportError:
     from client import RustChainClient, get_balance, get_epoch, get_health, run_query
     from schemas import (
         APIError,
+        BountyInfo,
+        BOUNTIES_SCHEMA,
+        CREATE_WALLET_SCHEMA,
         EpochInfo,
         HealthStatus,
         QueryResult,
+        SUBMIT_ATTESTATION_SCHEMA,
         WalletBalance,
     )
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __all__ = [
     # Client
     "RustChainClient",
@@ -44,5 +52,10 @@ __all__ = [
     "EpochInfo",
     "WalletBalance",
     "QueryResult",
+    "BountyInfo",
     "APIError",
+    # JSON Schemas
+    "BOUNTIES_SCHEMA",
+    "CREATE_WALLET_SCHEMA",
+    "SUBMIT_ATTESTATION_SCHEMA",
 ]
