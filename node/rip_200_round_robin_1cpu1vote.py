@@ -579,12 +579,26 @@ def calculate_epoch_rewards_time_aged(
         weighted_miners.append((miner_id, weight))
         total_weight += weight
 
+    # Guard: if total weight is zero (all miners failed fingerprint or have
+    # zero multiplier), no rewards can be distributed.  Returning an empty
+    # dict prevents ZeroDivisionError and stops a zero-weight miner from
+    # capturing the entire pool via the "last miner gets remainder" logic.
+    if total_weight <= 0:
+        logger.warning(
+            "Epoch %d: total_weight=0 — all %d miners have zero weight, "
+            "no rewards distributed", epoch, len(weighted_miners)
+        )
+        return {}
+
+    # Filter out zero-weight miners — they should receive nothing
+    eligible_miners = [(m, w) for m, w in weighted_miners if w > 0]
+
     # Distribute rewards proportionally by weight
     rewards = {}
     remaining = total_reward_urtc
 
-    for i, (miner_id, weight) in enumerate(weighted_miners):
-        if i == len(weighted_miners) - 1:
+    for i, (miner_id, weight) in enumerate(eligible_miners):
+        if i == len(eligible_miners) - 1:
             # Last miner gets remainder (prevents rounding issues)
             share = remaining
         else:
