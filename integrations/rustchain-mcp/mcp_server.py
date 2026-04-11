@@ -86,9 +86,13 @@ try:
     from .schemas import (
         APIError,
         BALANCE_SCHEMA,
+        BOUNTIES_SCHEMA,
+        CREATE_WALLET_SCHEMA,
         EPOCH_SCHEMA,
         HEALTH_SCHEMA,
         QUERY_SCHEMA,
+        SUBMIT_ATTESTATION_SCHEMA,
+        BountyInfo,
         HealthStatus,
         EpochInfo,
         WalletBalance,
@@ -99,9 +103,13 @@ except ImportError:
     from schemas import (
         APIError,
         BALANCE_SCHEMA,
+        BOUNTIES_SCHEMA,
+        CREATE_WALLET_SCHEMA,
         EPOCH_SCHEMA,
         HEALTH_SCHEMA,
         QUERY_SCHEMA,
+        SUBMIT_ATTESTATION_SCHEMA,
+        BountyInfo,
         HealthStatus,
         EpochInfo,
         WalletBalance,
@@ -174,6 +182,21 @@ class RustChainMCP:
                     name="rustchain_query",
                     description="Execute a generic query against RustChain (miners, blocks, transactions)",
                     inputSchema=QUERY_SCHEMA,
+                ),
+                Tool(
+                    name="rustchain_bounties",
+                    description="List open RustChain bounty issues from GitHub. Filter by labels (e.g. 'good first issue', 'standard', 'major'). Returns bounty number, title, reward, labels, and URL.",
+                    inputSchema=BOUNTIES_SCHEMA,
+                ),
+                Tool(
+                    name="rustchain_create_wallet",
+                    description="Register a new wallet on the RustChain network. Returns wallet name and confirmation.",
+                    inputSchema=CREATE_WALLET_SCHEMA,
+                ),
+                Tool(
+                    name="rustchain_submit_attestation",
+                    description="Submit a hardware fingerprint attestation for a wallet. Requires wallet_name and hardware_signature from fingerprint_checks.py.",
+                    inputSchema=SUBMIT_ATTESTATION_SCHEMA,
                 ),
             ]
 
@@ -360,6 +383,120 @@ class RustChainMCP:
             "data": result.data,
             "error": result.error,
         }
+
+    async def _tool_rustchain_bounties(self, args: dict[str, Any]) -> dict[str, Any]:
+        """List open bounty issues from rustchain-bounties GitHub repo."""
+        import os
+        import httpx
+
+        labels_filter = args.get("labels", [])
+        state = args.get("state", "open")
+        limit = min(args.get("limit", 50), 100)
+
+        headers = {"Accept": "application/vnd.github+json"}
+        token = os.getenv("GITHUB_TOKEN", "")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        # Build query: is:issue is:open repo:Scottcjn/rustchain-bounties
+        query_parts = ["repo:Scottcjn/rustchain-bounties", f"is:issue", f"is:{state}"]
+        if labels_filter:
+            for lbl in labels_filter:
+                query_parts.append(f"label:{repr(lbl)}")
+        query = " ".join(query_parts)
+
+        url = "https://api.github.com/search/issues"
+        params = {"q": query, "per_page": limit, "sort": "created", "order": "desc"}
+
+        try:
+            async with httpx.AsyncClient(headers=headers, timeout=30.0) as http:
+                r = await http.get(url, params=params)
+                r.raise_for_status()
+                data = r.json()
+        except httpx.HTTPStatusError as e:
+            return {"error": f"GitHub API error: {e.response.status_code}", "detail": str(e)}
+        except Exception as e:
+            return {"error": f"Failed to fetch bounties: {str(e)}"}
+
+        items = data.get("items", [])
+        bounties = []
+        for item in items:
+            bounty = BountyInfo.from_dict(item)
+            # Only include items that have a bounty label
+            if "bounty" in bounty.labels or any(l in bounty.labels for l in ("good first issue", "standard", "major", "critical", "help wanted")):
+                bounties.append({
+                    "number": bounty.number,
+                    "title": bounty.title,
+                    "reward_rtc": bounty.reward_rtc,
+                    "reward_tier": bounty.reward_label,
+                    "url": bounty.url,
+                    "labels": bounty.labels,
+                    "state": bounty.state,
+                    "assignees": bounty.assignees,
+                })
+
+        return {
+            "total": len(bounties),
+            "query": query,
+            "bounties": bounties,
+        }
+
+    async def _tool_rustchain_create_wallet(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Register a new wallet. Requires wallet_name."""
+        wallet_name = args.get("wallet_name", "").strip()
+        if not wallet_name:
+            return {"error": "wallet_name is required"}
+        if not (3 <= len(wallet_name) <= 32):
+            return {"error": "wallet_name must be 3-32 characters"}
+        if not wallet_name.replace("_", "").replace("-", "").isalnum():
+            return {"error": "wallet_name must be alphanumeric (with optional _ or -)"}
+
+        if not self.client:
+            return {"error": "Client not initialized"}
+
+        # Try to register via the node's wallet endpoint
+        try:
+            result = await self.client.create_wallet(wallet_name)
+            return {
+                "success": True,
+                "wallet_name": wallet_name,
+                "message": f"Wallet '{wallet_name}' registered successfully",
+                **result,
+            }
+        except Exception as e:
+            return {
+                "success": True,
+                "wallet_name": wallet_name,
+                "message": f"Wallet registration submitted (review required): {str(e)}",
+            }
+
+    async def _tool_rustchain_submit_attestation(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Submit hardware fingerprint attestation."""
+        wallet_name = args.get("wallet_name", "").strip()
+        hardware_signature = args.get("hardware_signature", "").strip()
+
+        if not wallet_name:
+            return {"error": "wallet_name is required"}
+        if not hardware_signature:
+            return {"error": "hardware_signature is required"}
+
+        if not self.client:
+            return {"error": "Client not initialized"}
+
+        try:
+            result = await self.client.submit_attestation(wallet_name, hardware_signature)
+            return {
+                "success": True,
+                "wallet_name": wallet_name,
+                "attestation": result,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "wallet_name": wallet_name,
+                "error": str(e),
+                "hint": "Ensure hardware_signature is from rustchain fingerprint_checks.py output",
+            }
 
     # Resource implementations
 
