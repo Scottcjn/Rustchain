@@ -33,6 +33,45 @@ from flask import Blueprint, request, jsonify
 
 log = logging.getLogger("rip0002_governance")
 
+# Signature window: reject requests with timestamps older than this
+_SIGNATURE_MAX_AGE_SECONDS = 300  # 5 minutes
+
+
+def _verify_miner_signature(miner_id: str, action: str, data: dict) -> bool:
+    """Verify ed25519 signature proving the caller controls miner_id.
+
+    Expected fields in *data*:
+      - signature: hex-encoded ed25519 signature
+      - timestamp: integer unix timestamp (included in signed payload)
+
+    The signed payload is: f"{action}:{miner_id}:{timestamp}"
+    """
+    signature_hex = data.get("signature", "").strip()
+    timestamp = data.get("timestamp")
+
+    if not signature_hex or not timestamp:
+        return False
+
+    # Reject stale signatures to prevent replay
+    try:
+        ts = int(timestamp)
+    except (TypeError, ValueError):
+        return False
+    if abs(time.time() - ts) > _SIGNATURE_MAX_AGE_SECONDS:
+        return False
+
+    # Verify signature
+    try:
+        from nacl.signing import VerifyKey
+        from nacl.exceptions import BadSignatureError
+        verify_key = VerifyKey(bytes.fromhex(miner_id))
+        message = f"{action}:{miner_id}:{ts}".encode()
+        verify_key.verify(message, bytes.fromhex(signature_hex))
+        return True
+    except (BadSignatureError, Exception) as e:
+        log.debug("Signature verification failed for %s: %s", miner_id, e)
+        return False
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -236,6 +275,9 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         # Validation
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
+        # Cryptographic authentication: caller must prove they control miner_id
+        if not _verify_miner_signature(miner_id, "propose", data):
+            return jsonify({"error": "invalid or missing signature — prove you control this miner_id"}), 401
         if not title or len(title) > MAX_TITLE_LEN:
             return jsonify({"error": f"title required (max {MAX_TITLE_LEN} chars)"}), 400
         if not description or len(description) > MAX_DESCRIPTION_LEN:
@@ -366,6 +408,9 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
 
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
+        # Cryptographic authentication: caller must prove they control miner_id
+        if not _verify_miner_signature(miner_id, "vote", data):
+            return jsonify({"error": "invalid or missing signature — prove you control this miner_id"}), 401
         if proposal_id is None:
             return jsonify({"error": "proposal_id required"}), 400
         if vote_choice not in VOTE_CHOICES:
