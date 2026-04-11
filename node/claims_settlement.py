@@ -212,42 +212,47 @@ def sign_and_broadcast_transaction(
     db_path: str
 ) -> Tuple[bool, Optional[str], Optional[str]]:
     """
-    Sign transaction with treasury key and broadcast to network
+    Sign transaction with treasury key and broadcast to network.
 
     Returns:
         (success: bool, transaction_hash: str or None, error: str or None)
 
-    NOTE: This is a stub. In production, this would:
-    1. Load treasury private key from secure storage
-    2. Sign the transaction
-    3. Broadcast to RustChain network
-    4. Wait for confirmation
+    In production this MUST integrate with the actual wallet/transaction
+    module.  Mock mode is available **only** when the environment variable
+    ``RUSTCHAIN_MOCK_MODE`` is explicitly set to ``"1"``.
     """
-    # STUB: Simulate transaction processing
-    # In production, integrate with actual wallet/transaction module
+    import os
+    import hashlib
 
     print(f"[SETTLEMENT] Constructing transaction with {len(tx_data['outputs'])} outputs")
     print(f"[SETTLEMENT] Total amount: {tx_data['total_amount_urtc']} uRTC")
     print(f"[SETTLEMENT] Fee: {tx_data['fee_urtc']} uRTC")
 
-    # Check if running in test mode (always succeed for deterministic tests)
-    import os
+    # ── Test harness (pytest) ────────────────────────────────────────
     if os.environ.get('PYTEST_CURRENT_TEST'):
-        # Test mode: always succeed
-        import hashlib
         tx_hash = hashlib.sha256(
             f"{tx_data['batch_id']}-{tx_data['total_amount_urtc']}".encode()
         ).hexdigest()
         return True, "0x" + tx_hash, None
 
-    # Simulate success (90% success rate for testing)
-    import random
-    if random.random() < 0.9:
-        # Generate mock transaction hash
-        tx_hash = "0x" + "".join(random.choices("0123456789abcdef", k=64))
-        return True, tx_hash, None
-    else:
-        return False, None, "Simulated transaction failure"
+    # ── Explicit mock mode (opt-in only) ─────────────────────────────
+    if os.environ.get("RUSTCHAIN_MOCK_MODE") == "1":
+        print("[SETTLEMENT] WARNING: Running in MOCK mode — no real transaction broadcast")
+        import random
+        if random.random() < 0.9:
+            tx_hash = "0x" + "".join(random.choices("0123456789abcdef", k=64))
+            return True, tx_hash, None
+        else:
+            return False, None, "Simulated transaction failure"
+
+    # ── Production path ──────────────────────────────────────────────
+    # TODO: Integrate with real wallet / transaction broadcast module.
+    # Until real integration is wired up, refuse to silently generate
+    # fake hashes that the rest of the pipeline treats as settled.
+    raise SettlementError(
+        "sign_and_broadcast_transaction: real wallet integration not configured. "
+        "Set RUSTCHAIN_MOCK_MODE=1 for testing."
+    )
 
 
 def update_claims_settled(
