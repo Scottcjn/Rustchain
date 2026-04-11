@@ -378,6 +378,12 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
 
         try:
             with sqlite3.connect(db_path) as conn:
+                # SECURITY: Use BEGIN IMMEDIATE to serialize the read-modify-write
+                # cycle.  Without this, two concurrent change-vote requests can
+                # read the same old_vote weight, both decrement the old tally
+                # column and increment the new one, producing negative or
+                # inflated vote counts.
+                conn.execute("BEGIN IMMEDIATE")
                 proposal = conn.execute(
                     "SELECT id, status, expires_at FROM governance_proposals WHERE id = ?",
                     (proposal_id,)
@@ -502,7 +508,10 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         # Admin key is validated via environment variable (not hardcoded)
         import os
         expected_key = os.environ.get("RUSTCHAIN_ADMIN_KEY", "")
-        if not expected_key or admin_key != expected_key:
+        if not expected_key:
+            return jsonify({"error": "RUSTCHAIN_ADMIN_KEY not configured — veto disabled"}), 503
+        import hmac as _hmac
+        if not _hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "invalid admin_key"}), 403
 
         try:

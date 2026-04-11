@@ -217,6 +217,29 @@ def beacon_join():
         return resp
 
     try:
+        # --- Per-IP rate limiting for /beacon/join ---
+        # Without rate limiting, an attacker can flood relay_agents with
+        # thousands of fake agents, consuming DB space and poisoning the atlas.
+        client_ip = request.headers.get('X-Real-IP', request.remote_addr or 'unknown')
+        now_ts = int(time.time())
+        _join_window = 3600  # 1 hour
+        _max_joins_per_ip = 10
+
+        if not hasattr(join_beacon, '_rate_limits'):
+            join_beacon._rate_limits = {}
+        # Cleanup stale entries
+        stale = [k for k, v in join_beacon._rate_limits.items() if now_ts - v['window_start'] > _join_window]
+        for k in stale:
+            del join_beacon._rate_limits[k]
+
+        rl = join_beacon._rate_limits.get(client_ip, {'count': 0, 'window_start': now_ts})
+        if now_ts - rl['window_start'] > _join_window:
+            rl = {'count': 0, 'window_start': now_ts}
+        if rl['count'] >= _max_joins_per_ip:
+            return jsonify({'error': 'Rate limit exceeded — max 10 joins per hour'}), 429
+        rl['count'] += 1
+        join_beacon._rate_limits[client_ip] = rl
+
         data = request.get_json(silent=True)
         if not data:
             return jsonify({'error': 'Invalid or missing JSON body'}), 400
@@ -514,10 +537,8 @@ def sync_bounties():
         
         all_bounties = []
         
-        # Create SSL context that doesn't verify (for demo)
+        # Use proper SSL verification for GitHub API calls
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
         
         for repo in repos:
             try:

@@ -267,7 +267,15 @@ class BlockSync:
                     print(f"[P2P] Block {height} already exists, skipping")
                     continue
 
-                # 4. Insert into blocks table
+                # 4. Verify producer signature is present.
+                # Without a valid signature, an adversary who controls peers
+                # can inject arbitrary blocks that pass the hash check.
+                producer_sig = header.get("producer_sig", "") or data.get("producer_sig", "")
+                if not producer_sig:
+                    print(f"[P2P] REJECTED block {height}: missing producer signature")
+                    continue
+
+                # 5. Insert into blocks table
                 try:
                     conn.execute("""
                         INSERT INTO blocks (
@@ -285,7 +293,7 @@ class BlockSync:
                         header.get("state_root", "0" * 64),
                         header.get("attestations_hash", "0" * 64),
                         header.get("producer", "unknown"),
-                        header.get("producer_sig", ""),
+                        producer_sig,
                         data.get("body", {}).get("tx_count", 0),
                         data.get("body", {}).get("attestation_count", 0),
                         json.dumps(data.get("body", {})),
@@ -407,15 +415,40 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
 
     @app.route('/p2p/announce', methods=['POST'])
     def announce_peer():
-        """Endpoint for peer nodes to announce themselves"""
-        data = request.get_json()
-        peer_url = data.get('peer_url')
+        """Endpoint for peer nodes to announce themselves.
 
-        if peer_url:
-            success = peer_manager.add_peer(peer_url)
-            return jsonify({"ok": success, "peers": len(peer_manager.get_active_peers())})
-        else:
-            return jsonify({"ok": False, "error": "peer_url required"}), 400
+        Requires X-P2P-Secret header to prevent unauthenticated peers
+        from polluting the peer table or triggering SSRF via crafted URLs.
+        """
+        import os, hmac as _hmac
+        _secret = os.environ.get('RC_P2P_SECRET', '')
+        _provided = request.headers.get('X-P2P-Secret', '')
+        if not _secret:
+            return jsonify({'ok': False, 'error': 'P2P secret not configured'}), 503
+        if not _hmac.compare_digest(_provided, _secret):
+            return jsonify({'ok': False, 'error': 'Unauthorized'}), 401
+
+        data = request.get_json()
+        peer_url = data.get('peer_url', '') if data else ''
+
+        # Validate URL format to prevent SSRF
+        if not peer_url or not peer_url.startswith(('http://', 'https://')):
+            return jsonify({'ok': False, 'error': 'Invalid peer_url'}), 400
+
+        # Block internal/private IPs
+        import ipaddress
+        from urllib.parse import urlparse as _urlparse
+        try:
+            _parsed = _urlparse(peer_url)
+            _host = _parsed.hostname or ''
+            _ip = ipaddress.ip_address(_host)
+            if _ip.is_private or _ip.is_loopback or _ip.is_link_local:
+                return jsonify({'ok': False, 'error': 'Private IP not allowed'}), 400
+        except ValueError:
+            pass  # Hostname, not IP — allow DNS resolution
+
+        success = peer_manager.add_peer(peer_url)
+        return jsonify({'ok': success, 'peers': len(peer_manager.get_active_peers())})
 
     @app.route('/p2p/peers', methods=['GET'])
     def get_peers():
@@ -427,7 +460,7 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
     def get_blocks():
         """Get blocks for sync (start height, limit)"""
         start = request.args.get('start', 0, type=int)
-        limit = request.args.get('limit', 100, type=int)
+        limit = min(request.args.get('limit', 100, type=int), 1000)  # Cap at 1000
 
         # Fetch blocks from database
         with sqlite3.connect(peer_manager.db_path) as conn:

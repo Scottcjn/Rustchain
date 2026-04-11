@@ -62,7 +62,7 @@ def compute_machine_identity_hash(device_arch: str, fingerprint_profile: Dict[st
     
     # Hash the canonical representation
     profile_json = json.dumps(canonical_profile, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(profile_json.encode()).hexdigest()[:16]
+    return hashlib.sha256(profile_json.encode()).hexdigest()[:32]
 
 
 def normalize_fingerprint(fingerprint_data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -77,7 +77,11 @@ def normalize_fingerprint(fingerprint_data: Optional[Dict[str, Any]]) -> Dict[st
     Returns a normalized dict suitable for JSON serialization.
     """
     if not fingerprint_data:
-        return {}
+        # SECURITY: Return a unique sentinel so that miners with NO
+        # fingerprint data don't all collapse into the same identity hash.
+        # The miner_id is NOT available here, so we return an empty dict
+        # and the caller must handle this case (see compute_machine_identity_hash).
+        return {"__no_fingerprint__": True}
     
     normalized = {}
     checks = fingerprint_data.get("checks", {})

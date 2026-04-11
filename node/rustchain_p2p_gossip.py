@@ -395,20 +395,22 @@ class GossipLayer:
 
     def handle_message(self, msg: GossipMessage) -> Optional[Dict]:
         """Handle received gossip message"""
-        # Deduplication
-        if msg.msg_id in self.seen_messages:
-            return {"status": "duplicate"}
+        # Deduplication — must be atomic with add() to prevent concurrent
+        # Flask threads from processing the same message twice (TOCTOU).
+        with self.lock:
+            if msg.msg_id in self.seen_messages:
+                return {"status": "duplicate"}
 
-        # Verify signature
-        if not self.verify_message(msg):
-            logger.warning(f"Invalid signature from {msg.sender_id}")
-            return {"status": "invalid_signature"}
+            # Verify signature
+            if not self.verify_message(msg):
+                logger.warning(f"Invalid signature from {msg.sender_id}")
+                return {"status": "invalid_signature"}
 
-        self.seen_messages.add(msg.msg_id)
+            self.seen_messages.add(msg.msg_id)
 
-        # Limit seen_messages size
-        if len(self.seen_messages) > 10000:
-            self.seen_messages = set(list(self.seen_messages)[-5000:])
+            # Limit seen_messages size
+            if len(self.seen_messages) > 10000:
+                self.seen_messages = set(list(self.seen_messages)[-5000:])
 
         # Handle by type
         msg_type = MessageType(msg.msg_type)
@@ -609,20 +611,22 @@ class GossipLayer:
         if epoch is None or voter is None:
             return {"status": "error", "reason": "missing epoch or voter"}
 
-        # Initialize vote tracking for this epoch if needed
-        if not hasattr(self, '_epoch_votes'):
-            self._epoch_votes: Dict[int, Dict[str, str]] = {}
-        if epoch not in self._epoch_votes:
-            self._epoch_votes[epoch] = {}
+        # Initialize and record votes under lock to prevent concurrent
+        # Flask threads from corrupting the tally (negative/inflated counts).
+        with self.lock:
+            if not hasattr(self, '_epoch_votes'):
+                self._epoch_votes: Dict[int, Dict[str, str]] = {}
+            if epoch not in self._epoch_votes:
+                self._epoch_votes[epoch] = {}
 
-        # Record the vote
-        self._epoch_votes[epoch][voter] = vote
+            # Record the vote
+            self._epoch_votes[epoch][voter] = vote
 
-        # Count votes
-        total_nodes = len(self.peers) + 1  # peers + self
-        votes_for_epoch = self._epoch_votes[epoch]
-        accept_count = sum(1 for v in votes_for_epoch.values() if v == "accept")
-        reject_count = sum(1 for v in votes_for_epoch.values() if v == "reject")
+            # Count votes
+            total_nodes = len(self.peers) + 1  # peers + self
+            votes_for_epoch = self._epoch_votes[epoch]
+            accept_count = sum(1 for v in votes_for_epoch.values() if v == "accept")
+            reject_count = sum(1 for v in votes_for_epoch.values() if v == "reject")
 
         # Quorum: require at least 3 nodes or strict majority, whichever is larger
         quorum = max(3, (total_nodes // 2) + 1)

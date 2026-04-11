@@ -486,11 +486,17 @@ def record_fingerprint_submission(
         c = conn.cursor()
         
         # Insert submission record
+        # INSERT...ON CONFLICT: if a (fingerprint_hash, nonce) pair already
+        # exists, update the record instead of silently dropping it.  This
+        # ensures every submission attempt is recorded for replay analytics.
         c.execute('''
-            INSERT OR IGNORE INTO fingerprint_submissions
+            INSERT INTO fingerprint_submissions
             (fingerprint_hash, miner_id, wallet_address, hardware_id, 
              nonce, submitted_at, entropy_profile_hash, checks_hash, attestation_valid)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(fingerprint_hash, nonce) DO UPDATE SET
+                submitted_at = excluded.submitted_at,
+                attestation_valid = excluded.attestation_valid
         ''', (fingerprint_hash, miner_id, wallet_address, hardware_id,
               nonce, now, entropy_profile_hash, checks_hash, 1 if attestation_valid else 0))
         
@@ -661,11 +667,21 @@ def get_replay_defense_report(
         }
 
 
-# Initialize on import
-try:
-    init_replay_defense_schema()
-except Exception as e:
-    print(f"[REPLAY_DEFENSE] Init warning: {e}")
+# SECURITY: Do NOT initialize schema at import time — the DB path may
+# not be configured yet, and the hardcoded fallback (/root/rustchain/...)
+# is not portable.  Call init_replay_defense_schema() explicitly from
+# the application entry point after environment is configured.
+_replay_defense_initialized = False
+
+def ensure_replay_defense_schema():
+    """Lazy one-shot schema initialization."""
+    global _replay_defense_initialized
+    if not _replay_defense_initialized:
+        try:
+            init_replay_defense_schema()
+            _replay_defense_initialized = True
+        except Exception as e:
+            print(f"[REPLAY_DEFENSE] Init warning: {e}")
 
 
 if __name__ == "__main__":

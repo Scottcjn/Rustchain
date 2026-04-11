@@ -515,7 +515,7 @@ def calculate_epoch_rewards_time_aged(
             epoch_miners = []
             for (miner_pk,) in enrolled:
                 arch_row = cursor.execute(
-                    "SELECT device_arch, COALESCE(fingerprint_passed, 1) "
+                    "SELECT device_arch, COALESCE(fingerprint_passed, 0) "
                     "FROM miner_attest_recent WHERE miner = ? LIMIT 1",
                     (miner_pk,)
                 ).fetchone()
@@ -523,9 +523,9 @@ def calculate_epoch_rewards_time_aged(
                     device_arch = arch_row[0] or "unknown"
                     fp = arch_row[1]
                 else:
-                    # No attestation record — treat as unknown arch, fingerprint ok.
+                    # No attestation record — fail closed (fingerprint = 0).
                     device_arch = "unknown"
-                    fp = 1
+                    fp = 0
                 epoch_miners.append((miner_pk, device_arch, fp))
         else:
             # SECURITY FIX #2159: Fallback for epochs without enrollment
@@ -539,7 +539,7 @@ def calculate_epoch_rewards_time_aged(
                 "if settlement is delayed)", epoch
             )
             cursor.execute("""
-                SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp
+                SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 0) as fp
                 FROM miner_attest_recent
                 WHERE ts_ok >= ? AND ts_ok <= ?
             """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
@@ -552,32 +552,39 @@ def calculate_epoch_rewards_time_aged(
     weighted_miners = []
     total_weight = 0.0
 
-    for row in epoch_miners:
-        miner_id, device_arch = row[0], row[1]
-        fingerprint_ok = row[2] if len(row) > 2 else 1
-        
-        # STRICT: VMs/emulators with failed fingerprint get ZERO weight
-        if fingerprint_ok == 0:
-            weight = 0.0  # No rewards for failed fingerprint
-            print(f"[REWARD] {miner_id[:20]}... fingerprint=FAIL -> weight=0")
-        else:
-            weight = get_time_aged_multiplier(device_arch, chain_age_years)
+    # SECURITY FIX: Open a fresh connection for post-processing queries.
+    # The original code used `cursor` from the `with` block above,
+    # which is closed after the block exits.  The `except: pass` on the
+    # warthog_bonus query silently swallowed the closed-cursor error,
+    # causing ALL miners to miss their Warthog dual-mining bonus.
+    with sqlite3.connect(db_path) as conn2:
+        cursor2 = conn2.cursor()
+        for row in epoch_miners:
+            miner_id, device_arch = row[0], row[1]
+            fingerprint_ok = row[2] if len(row) > 2 else 1
 
-        # Apply Warthog dual-mining bonus (1.0x/1.1x/1.15x)
-        # Double-gated: fingerprint must pass (weight>0) AND fingerprint_ok==1
-        if weight > 0 and fingerprint_ok == 1:
-            try:
-                wart_row = cursor.execute(
-                    "SELECT warthog_bonus FROM miner_attest_recent WHERE miner=?",
-                    (miner_id,)
-                ).fetchone()
-                if wart_row and wart_row[0] and wart_row[0] > 1.0:
-                    weight *= wart_row[0]
-            except Exception:
-                pass  # Column may not exist on older schemas
+            # STRICT: VMs/emulators with failed fingerprint get ZERO weight
+            if fingerprint_ok == 0:
+                weight = 0.0  # No rewards for failed fingerprint
+                print(f"[REWARD] {miner_id[:20]}... fingerprint=FAIL -> weight=0")
+            else:
+                weight = get_time_aged_multiplier(device_arch, chain_age_years)
 
-        weighted_miners.append((miner_id, weight))
-        total_weight += weight
+            # Apply Warthog dual-mining bonus (1.0x/1.1x/1.15x)
+            # Double-gated: fingerprint must pass (weight>0) AND fingerprint_ok==1
+            if weight > 0 and fingerprint_ok == 1:
+                try:
+                    wart_row = cursor2.execute(
+                        "SELECT warthog_bonus FROM miner_attest_recent WHERE miner=?",
+                        (miner_id,)
+                    ).fetchone()
+                    if wart_row and wart_row[0] and wart_row[0] > 1.0:
+                        weight *= wart_row[0]
+                except Exception:
+                    pass  # Column may not exist on older schemas
+
+            weighted_miners.append((miner_id, weight))
+            total_weight += weight
 
     # Distribute rewards proportionally by weight
     rewards = {}
