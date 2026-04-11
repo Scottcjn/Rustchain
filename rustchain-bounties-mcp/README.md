@@ -56,8 +56,9 @@ Add to your Claude Code MCP config (or Cursor / VS Code Copilot MCP config):
 | `rustchain_balance` | Get RTC wallet balance | `miner_id` | `GET /wallet/balance` |
 | `rustchain_miners` | List active miners with filters | none | `GET /api/miners` |
 | `rustchain_epoch` | Current epoch info | none | `GET /epoch` |
-| `rustchain_verify_wallet` | Verify wallet presence for a miner (auto-provisioned) | `miner_id` | `GET /wallet/balance` |
-| `rustchain_submit_attestation` | Submit hardware attestation | `miner_id`, `device` | `POST /attest/submit` |
+| `rustchain_verify_wallet` | Heuristic wallet check (non-zero balance only) | `miner_id` | `GET /wallet/balance` |
+| `rustchain_attest_challenge` | Fetch attestation nonce for enrollment | none | `POST /attest/challenge` |
+| `rustchain_submit_attestation` | Submit hardware attestation (nonce required) | `miner_id`, `device`, `nonce` | `POST /attest/submit` |
 | `rustchain_bounties` | List open bounties (via GitHub API) | none | GitHub Issues API |
 
 ### Tool Details
@@ -143,20 +144,49 @@ Get current epoch information.
 
 #### rustchain_verify_wallet
 
-Verify whether a wallet exists for a given miner_id. The RustChain node does not
-expose a dedicated wallet-creation endpoint — wallets are auto-provisioned on first
-activity (mining payout, transfer). This tool queries the balance endpoint to
-confirm wallet presence and returns the current balance.
+Heuristically verify whether a wallet exists for a given miner_id. The live
+`/wallet/balance` endpoint returns HTTP 200 with a zero balance for **any**
+miner_id (including nonsense strings), so a 200 response does **not** prove
+wallet existence. This tool uses a conservative heuristic: `exists=True` only
+when the queried miner_id shows a **non-zero** balance, indicating observed
+on-chain activity.
 
-**Input:** `{"miner_id": "new_miner"}`
+**Input:** `{"miner_id": "scott"}`
+
+**Output (non-zero balance):**
+```json
+{
+  "wallet_address": "scott",
+  "exists": true,
+  "balance_rtc": 155.0,
+  "message": "Observed wallet activity for scott with balance 155.0 RTC"
+}
+```
+
+**Output (zero / unknown):**
+```json
+{
+  "wallet_address": "unknown_id",
+  "exists": false,
+  "balance_rtc": 0.0,
+  "message": "Balance endpoint returned a zero-balance row; this does not prove wallet existence on the live API"
+}
+```
+
+#### rustchain_attest_challenge
+
+Fetch a fresh attestation nonce from the node. This nonce **must** be included
+in the subsequent `rustchain_submit_attestation` call — the live endpoint
+rejects submissions without a valid nonce (`MISSING_NONCE`).
+
+**Input:** `{}`
 
 **Output:**
 ```json
 {
-  "wallet_address": "new_miner",
-  "exists": true,
-  "balance_rtc": 0.0,
-  "message": "Wallet found for new_miner with balance 0.0 RTC"
+  "nonce": "da0cd8aafb29b4ccab3ce182d2679015da621919a2b7fd2d804bda890ac53e",
+  "expires_at": 1775911361,
+  "server_time": 1775911061
 }
 ```
 
@@ -192,10 +222,12 @@ Submit a hardware attestation for miner enrollment.
 
 List RustChain bounties. Defaults to open bounties.
 
-**Data source:** The node does not expose a native `/api/bounties` endpoint.
-Bounties are fetched from the GitHub Issues API at
-`Scottcjn/rustchain-bounties`. Reward amounts are parsed from issue labels
-and titles.
+**Data source (intentional):** The live RustChain node does **not** expose a
+native `/api/bounties` endpoint (it returns HTTP 404). Bounties are fetched
+from the GitHub Issues API at `Scottcjn/rustchain-bounties`. Reward amounts are
+parsed from issue labels (e.g. `"bounty: 500 RTC"`) and titles (e.g.
+`"Bounty: MCP Server (500 RTC)"`). This is the authoritative source for bounty
+data and is by design — the bounty workflow is managed through GitHub Issues.
 
 **Input:** `{"status": "open", "limit": 20}`
 
@@ -320,11 +352,19 @@ Or use [`pipx`](https://github.com/pypa/pipx) for user-level installs.
 
 ## Security Notes
 
-- **Self-signed TLS:** The node uses self-signed certificates. The client sets `ssl=False`. In production, pin the node certificate.
-- **Read-only tools:** `health`, `balance`, `miners`, `epoch`, `verify_wallet`, `bounties` are read-only.
+- **Self-signed TLS certificate:** The live RustChain node at `50.28.86.131`
+  uses a self-signed TLS certificate. The client disables certificate
+  verification (`ssl=False`) to connect. In production you should either:
+  - Pin the node's certificate fingerprint, or
+  - Deploy the node behind a properly signed certificate (e.g. Let's Encrypt), or
+  - Use a trusted internal CA.
+  To pin the cert, set `RUSTCHAIN_NODE_URL` to an `https://` URL and modify
+  `client.py` to pass an `ssl.SSLContext` with `load_verify_locations()`.
+- **Read-only tools:** `health`, `balance`, `miners`, `epoch`, `verify_wallet`, `bounties`, `attest_challenge` are read-only.
 - **State-changing tools:** `submit_attestation` modifies node state. Use with appropriate access controls.
 - **No secrets in MCP output:** The server never logs or returns private keys or signing material.
 - **GitHub API rate limits:** Unauthenticated GitHub API calls are limited to 60/hour. For heavy usage, set a `GITHUB_TOKEN` environment variable (the client can be extended to support auth headers).
+- **Attestation nonce expiry:** Nonces returned by `rustchain_attest_challenge` have a short TTL (typically ~5 minutes). Call `rustchain_attest_challenge` immediately before `rustchain_submit_attestation`.
 
 ## License
 

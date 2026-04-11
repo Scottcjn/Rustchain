@@ -102,7 +102,6 @@ class MinerInfo:
     antiquity_multiplier: float
     hardware_type: str
     first_attest: Optional[int] = None
-    epochs_mined: int = 0
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "MinerInfo":
@@ -115,7 +114,6 @@ class MinerInfo:
             antiquity_multiplier=float(data.get("antiquity_multiplier", 1.0)),
             hardware_type=data.get("hardware_type", "Unknown/Other"),
             first_attest=data.get("first_attest"),
-            epochs_mined=int(data.get("epochs_mined", 0)),
         )
 
 
@@ -293,6 +291,12 @@ VERIFY_WALLET_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+ATTEST_CHALLENGE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": False,
+}
+
 SUBMIT_ATTESTATION_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -301,10 +305,11 @@ SUBMIT_ATTESTATION_SCHEMA: dict[str, Any] = {
             "type": "object",
             "description": "Device fingerprint dict (device_model, device_arch, cores, etc.)",
         },
+        "nonce": {"type": "string", "description": "Challenge nonce from rustchain_attest_challenge"},
         "signature": {"type": "string", "description": "Ed25519 signature hex (optional)"},
         "public_key": {"type": "string", "description": "Signing public key hex (optional)"},
     },
-    "required": ["miner_id", "device"],
+    "required": ["miner_id", "device", "nonce"],
     "additionalProperties": False,
 }
 

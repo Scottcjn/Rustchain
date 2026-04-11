@@ -81,7 +81,7 @@ class TestMinerInfo:
             "miner": "alice", "last_attest": 1700000000,
             "device_family": "PowerPC", "device_arch": "g4",
             "entropy_score": 0.95, "antiquity_multiplier": 2.0,
-            "hardware_type": "PowerPC G4 (Vintage)", "epochs_mined": 10,
+            "hardware_type": "PowerPC G4 (Vintage)",
         })
         assert m.miner == "alice"
         assert m.antiquity_multiplier == 2.0

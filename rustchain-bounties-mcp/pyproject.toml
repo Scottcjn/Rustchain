@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "MCP server for RustChain bounties — health, balance, miners, epoch, wallet creation, attestation, and bounties"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 keywords = ["rustchain", "mcp", "blockchain", "bounties", "ai"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -34,7 +34,7 @@ dev = [
 ]
 
 [project.scripts]
-rustchain-bounties-mcp = "rustchain_bounties_mcp.mcp_server:main"
+rustchain-bounties-mcp = "rustchain_bounties_mcp.mcp_server:entry"
 
 [project.urls]
 Homepage = "https://github.com/Scottcjn/RustChain"

@@ -35,12 +35,12 @@ class _FakeClient:
             MinerInfo(
                 miner="alice", last_attest=1700000000, device_family="PowerPC",
                 device_arch="g4", entropy_score=0.95, antiquity_multiplier=2.0,
-                hardware_type="PowerPC G4 (Vintage)", epochs_mined=10,
+                hardware_type="PowerPC G4 (Vintage)",
             ),
             MinerInfo(
                 miner="bob", last_attest=1700000001, device_family="x86-64",
                 device_arch="modern", entropy_score=0.5, antiquity_multiplier=1.0,
-                hardware_type="x86-64 (Modern)", epochs_mined=5,
+                hardware_type="x86-64 (Modern)",
             ),
         ]
         self._wallet_result = WalletVerifyResult(
@@ -72,12 +72,12 @@ class _FakeClient:
         if hardware_type:
             ht = hardware_type.lower()
             miners = [m for m in miners if ht in m.hardware_type.lower() or ht in m.device_family.lower()]
-        return {"miners": miners, "total_count": len(self._miners), "limit": limit, "offset": 0}
+        return {"miners": miners, "total_count": len(self._miners), "limit": limit, "offset": 0, "pagination": {"total": len(self._miners), "offset": 0}}
 
     async def verify_wallet(self, miner_id: str):
         return self._wallet_result
 
-    async def submit_attestation(self, miner_id, device, signature=None, public_key=None):
+    async def submit_attestation(self, miner_id, device, nonce=None, signature=None, public_key=None):
         return self._attest_result
 
     async def get_attest_challenge(self):
@@ -145,6 +145,7 @@ class TestMCPTools:
         r = await server._tool_rustchain_submit_attestation({
             "miner_id": "new_miner",
             "device": {"device_model": "PowerBook", "device_arch": "g4", "cores": 1},
+            "nonce": "abc123",
         })
         assert r["ok"] is True
         assert r["miner_id"] == "new_miner"

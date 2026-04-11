@@ -6,13 +6,14 @@ Model Context Protocol (MCP) server for RustChain blockchain.
 Exposes 7 tools over stdio, compatible with Claude Code / Cursor / VS Code Copilot MCP clients.
 
 Tools:
-    rustchain_health            — Node health probe
-    rustchain_balance           — Wallet balance by miner_id
-    rustchain_miners            — List active miners
-    rustchain_epoch             — Current epoch info
-    rustchain_verify_wallet     — Verify wallet presence for a miner
+    rustchain_health             — Node health probe
+    rustchain_balance            — Wallet balance by miner_id
+    rustchain_miners             — List active miners
+    rustchain_epoch              — Current epoch info
+    rustchain_verify_wallet      — Heuristic wallet verification for a miner
+    rustchain_attest_challenge   — Fetch attestation nonce/challenge
     rustchain_submit_attestation — Submit hardware attestation
-    rustchain_bounties          — List open bounties (via GitHub API)
+    rustchain_bounties           — List open bounties (via GitHub API)
 
 Usage:
     python -m rustchain_bounties_mcp.mcp_server
@@ -79,6 +80,7 @@ except ImportError:
 from .client import RustChainClient
 from .schemas import (
     APIError,
+    ATTEST_CHALLENGE_SCHEMA,
     BALANCE_SCHEMA,
     BOUNTIES_SCHEMA,
     EPOCH_SCHEMA,
@@ -156,12 +158,17 @@ class RustchainBountiesMCP:
                 ),
                 Tool(
                     name="rustchain_verify_wallet",
-                    description="Verify wallet presence for a miner_id on RustChain (queries balance endpoint; wallets are auto-provisioned on first activity)",
+                    description="Heuristically verify whether a miner_id shows observed wallet activity on RustChain (the balance endpoint returns 200 even for unknown ids)",
                     inputSchema=VERIFY_WALLET_SCHEMA,
                 ),
                 Tool(
+                    name="rustchain_attest_challenge",
+                    description="Fetch an attestation nonce/challenge from the RustChain node before calling rustchain_submit_attestation",
+                    inputSchema=ATTEST_CHALLENGE_SCHEMA,
+                ),
+                Tool(
                     name="rustchain_submit_attestation",
-                    description="Submit a hardware attestation for a miner (device fingerprint required)",
+                    description="Submit a hardware attestation for a miner (nonce from rustchain_attest_challenge required by the live endpoint)",
                     inputSchema=SUBMIT_ATTESTATION_SCHEMA,
                 ),
                 Tool(
@@ -223,7 +230,6 @@ class RustchainBountiesMCP:
                 "antiquity_multiplier": m.antiquity_multiplier,
                 "entropy_score": m.entropy_score,
                 "last_attest": m.last_attest,
-                "epochs_mined": m.epochs_mined,
             })
         return {
             "total_count": result["total_count"],
@@ -253,14 +259,29 @@ class RustchainBountiesMCP:
             "message": r.message,
         }
 
+    async def _tool_rustchain_attest_challenge(self, _args: dict[str, Any]) -> dict[str, Any]:
+        challenge = await self._require_client().get_attest_challenge()
+        return {
+            "nonce": challenge.nonce,
+            "expires_at": challenge.expires_at,
+            "server_time": challenge.server_time,
+        }
+
     async def _tool_rustchain_submit_attestation(self, args: dict[str, Any]) -> dict[str, Any]:
         miner_id = args.get("miner_id", "")
         device = args.get("device")
+        nonce = args.get("nonce")
         if not device or not isinstance(device, dict):
             return {"error": "VALIDATION_ERROR", "message": "device is required and must be a dict"}
+        if not nonce:
+            return {
+                "error": "VALIDATION_ERROR",
+                "message": "nonce is required; call rustchain_attest_challenge first",
+            }
         r = await self._require_client().submit_attestation(
             miner_id=miner_id,
             device=device,
+            nonce=nonce,
             signature=args.get("signature"),
             public_key=args.get("public_key"),
         )
@@ -321,7 +342,7 @@ async def main() -> None:
             await server.app.run(
                 read_stream,
                 write_stream,
-                server.create_initialization_options(),
+                server.app.create_initialization_options(),
             )
     finally:
         await server.stop()
@@ -333,4 +354,4 @@ def entry() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    entry()

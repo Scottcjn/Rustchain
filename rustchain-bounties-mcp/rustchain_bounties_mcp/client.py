@@ -142,7 +142,7 @@ class RustChainClient:
         limit: int = 50,
         hardware_type: Optional[str] = None,
     ) -> dict[str, Any]:
-        """GET /api/miners — returns paginated list with metadata."""
+        """GET /api/miners — the live API returns `miners` list + `pagination` dict."""
         params: dict[str, Any] = {"limit": min(max(limit, 1), 1000)}
         data = await self._request("GET", "/api/miners", params=params)
         miners_raw = data.get("miners", [])
@@ -152,32 +152,39 @@ class RustChainClient:
             ht = hardware_type.lower()
             miners = [m for m in miners if ht in m.hardware_type.lower() or ht in m.device_family.lower()]
 
+        limited = miners[: params["limit"]]
+
+        # Live API returns pagination as a nested dict: {"miners": [...], "pagination": {"total": N, ...}}
+        pagination = data.get("pagination", {})
+        total_count = pagination.get("total", len(miners))
+
         return {
-            "miners": miners,
-            "total_count": data.get("total_count", len(miners)),
-            "limit": data.get("limit", limit),
-            "offset": data.get("offset", 0),
+            "miners": limited,
+            "total_count": total_count,
+            "limit": params["limit"],
+            "offset": pagination.get("offset", 0),
         }
 
     async def verify_wallet(self, miner_id: str) -> WalletVerifyResult:
-        """Verify wallet presence for a miner_id.
+        """Heuristically verify wallet activity for a miner_id.
 
-        The node does not expose a dedicated wallet-creation endpoint.
-        Wallets are implicitly provisioned on first activity (mining payout,
-        transfer).  This method queries the balance endpoint to confirm
-        whether the miner_id has a wallet row, and returns its status.
-
-        Returns a WalletVerifyResult indicating whether the wallet exists
-        and its current balance.  This is a *verification* tool, not a
-        *creation* tool — the name reflects the actual capability.
+        The live `/wallet/balance` endpoint returns HTTP 200 with a zero
+        balance even for nonsense ids, so it cannot prove wallet existence.
+        For MCP purposes we expose a conservative heuristic instead:
+        `exists=True` only when the queried id shows observed non-zero balance.
         """
         try:
             bal = await self.balance(miner_id)
+            has_observed_activity = bal.amount_i64 > 0 or bal.amount_rtc > 0
             return WalletVerifyResult(
                 wallet_address=bal.miner_id,
-                exists=True,
+                exists=has_observed_activity,
                 balance_rtc=bal.amount_rtc,
-                message=f"Wallet found for {miner_id} with balance {bal.amount_rtc} RTC",
+                message=(
+                    f"Observed wallet activity for {miner_id} with balance {bal.amount_rtc} RTC"
+                    if has_observed_activity
+                    else "Balance endpoint returned a zero-balance row; this does not prove wallet existence on the live API"
+                ),
             )
         except APIError as exc:
             if exc.status_code == 400:
@@ -193,6 +200,7 @@ class RustChainClient:
         self,
         miner_id: str,
         device: dict[str, Any],
+        nonce: str,
         signature: Optional[str] = None,
         public_key: Optional[str] = None,
     ) -> AttestSubmitResult:
@@ -205,6 +213,7 @@ class RustChainClient:
         payload: dict[str, Any] = {
             "miner_id": miner_id,
             "device": device,
+            "nonce": nonce,
         }
         if signature:
             payload["signature"] = signature
