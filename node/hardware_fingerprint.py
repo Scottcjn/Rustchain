@@ -469,6 +469,45 @@ class HardwareFingerprint:
                             checks["vm_artifacts"].append(f"dmi_product:{product.strip()}")
                 except:
                     pass
+
+                # SECURITY FIX: Additional VM detection vectors beyond
+                # /proc/cpuinfo and DMI — catches Docker, LXC, systemd-nspawn,
+                # VirtualBox, and other containerization.
+
+                # Check /proc/1/cgroup for container indicators
+                try:
+                    with open("/proc/1/cgroup", "r") as f:
+                        cgroup = f.read().lower()
+                        if any(c in cgroup for c in ["docker", "lxc", "kubepods"]):
+                            checks["vm_artifacts"].append(f"cgroup_container")
+                except:
+                    pass
+
+                # Check systemd-detect-virt (most reliable on systemd distros)
+                try:
+                    result = subprocess.run(
+                        ["systemd-detect-virt"], capture_output=True,
+                        text=True, timeout=5
+                    )
+                    virt_type = result.stdout.strip().lower()
+                    if virt_type and virt_type != "none":
+                        checks["hypervisor_detected"] = True
+                        checks["vm_artifacts"].append(f"systemd_virt:{virt_type}")
+                except:
+                    pass
+
+                # Check DMI sys_vendor for common VM vendors
+                try:
+                    with open("/sys/class/dmi/id/sys_vendor", "r") as f:
+                        vendor = f.read().lower().strip()
+                        vm_vendors = ["qemu", "bochs", "virtualbox",
+                                      "vmware", "microsoft corporation",
+                                      "xen", "parallels", "innotek"]
+                        if any(v in vendor for v in vm_vendors):
+                            checks["hypervisor_detected"] = True
+                            checks["vm_artifacts"].append(f"dmi_vendor:{vendor}")
+                except:
+                    pass
                     
         except:
             pass

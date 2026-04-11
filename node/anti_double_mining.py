@@ -165,11 +165,23 @@ def detect_duplicate_identities(
                 (miner_pk,)
             ).fetchone()
             profile_json = profile_row[0] if profile_row else None
+            # SECURITY FIX: Add epoch time constraint to prevent reading
+            # attestations from after the epoch boundary.  Without this,
+            # a miner who re-attested with different hardware post-epoch
+            # would be evaluated against the wrong identity hash.
             arch_row = cursor.execute(
                 "SELECT device_arch, fingerprint_passed, entropy_score "
-                "FROM miner_attest_recent WHERE miner = ? LIMIT 1",
-                (miner_pk,)
+                "FROM miner_attest_recent WHERE miner = ? "
+                "AND ts_ok >= ? AND ts_ok <= ? LIMIT 1",
+                (miner_pk, epoch_start_ts, epoch_end_ts)
             ).fetchone()
+            if not arch_row:
+                # Fallback: no attestation within epoch window, try latest
+                arch_row = cursor.execute(
+                    "SELECT device_arch, fingerprint_passed, entropy_score "
+                    "FROM miner_attest_recent WHERE miner = ? LIMIT 1",
+                    (miner_pk,)
+                ).fetchone()
             if arch_row:
                 device_arch = arch_row[0] or "unknown"
                 fingerprint_passed = arch_row[1]

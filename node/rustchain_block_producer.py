@@ -44,7 +44,11 @@ logger = logging.getLogger(__name__)
 GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
 BLOCK_TIME = 600  # 10 minutes (600 seconds)
 MAX_TXS_PER_BLOCK = 1000
-ATTESTATION_TTL = 600  # 10 minutes
+ATTESTATION_TTL = 600  # 10 minutes (seconds) — used for DB queries with ts_ok
+# SECURITY NOTE: Block header timestamps use milliseconds (time.time() * 1000)
+# but ATTESTATION_TTL and get_attested_miners() comparisons use seconds.
+# When comparing header.timestamp against ATTESTATION_TTL, divide by 1000 first.
+ATTESTATION_TTL_MS = ATTESTATION_TTL * 1000  # For header-level comparisons
 
 
 # =============================================================================

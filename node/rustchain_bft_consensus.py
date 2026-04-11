@@ -823,7 +823,22 @@ class BFTConsensus:
             # If we're the new leader, propose
             if self.is_leader():
                 logging.info(f"[NEW-VIEW] We are the new leader!")
-                # New leader should re-propose pending epochs
+                # SECURITY FIX: Re-propose any pending (unsettled) epochs.
+                # Previously this block was empty, causing pending settlements
+                # to be silently dropped after every view change.
+                try:
+                    if hasattr(self, 'pending_epochs') and self.pending_epochs:
+                        for epoch in list(self.pending_epochs):
+                            logging.info(
+                                f"[NEW-VIEW] Re-proposing pending epoch {epoch}"
+                            )
+                            self.propose_epoch_settlement(epoch)
+                    else:
+                        logging.info(
+                            "[NEW-VIEW] No pending epochs to re-propose"
+                        )
+                except Exception as e:
+                    logging.error(f"[NEW-VIEW] Re-proposal failed: {e}")
 
     # ========================================================================
     # VALIDATION

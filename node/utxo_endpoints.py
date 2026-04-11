@@ -24,6 +24,7 @@ import time
 from flask import Blueprint, request, jsonify
 
 from utxo_db import UtxoDB, coin_select, address_to_proposition, UNIT
+from decimal import Decimal, ROUND_DOWN
 
 # Account-model balances store amount_i64 at 6 decimals (micro-RTC).
 # This MUST match the multiplier used in rustchain_v2_integrated_v2.2.1_rip200.py
@@ -305,8 +306,11 @@ def utxo_transfer():
 
     # --- UTXO transaction ---------------------------------------------------
 
-    amount_nrtc = int(amount_rtc * UNIT)
-    fee_nrtc = int(fee_rtc * UNIT)
+    # SECURITY FIX: Use Decimal to avoid IEEE 754 float drift.
+    # float(0.1) * 1e8 = 9999999.999... → int() = 9999999 (lost 1 nanoRTC).
+    # Decimal ensures exact conversion.
+    amount_nrtc = int(Decimal(str(amount_rtc)) * UNIT)
+    fee_nrtc = int(Decimal(str(fee_rtc)) * UNIT)
     target_nrtc = amount_nrtc + fee_nrtc
 
     # Select UTXOs
@@ -347,9 +351,14 @@ def utxo_transfer():
 
     if _dual_write:
         try:
+            # NOTE: This dual-write is NOT atomic with the UTXO apply above.
+            # If the process crashes between apply_transaction and this block,
+            # the UTXO model will be updated but the account model will not.
+            # This is acceptable because UTXO is the primary source of truth
+            # and the account model is a read-only shadow used for legacy APIs.
             conn = sqlite3.connect(_db_path)
             c = conn.cursor()
-            amount_i64 = int(amount_rtc * ACCOUNT_UNIT)
+            amount_i64 = int(Decimal(str(amount_rtc)) * ACCOUNT_UNIT)
 
             # Re-check sender shadow-balance before debit (security: prevent
             # negative-balance minting when account-model diverges from UTXO

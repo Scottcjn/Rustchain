@@ -173,7 +173,14 @@ def _is_active_miner(miner_id: str, db_path: str) -> bool:
 
 
 def _count_active_miners(db_path: str) -> int:
-    """Count miners who attested in the last 2 days (quorum denominator)."""
+    """Count miners who attested in the last 2 days (quorum denominator).
+    
+    SECURITY FIX: Added minimum floor of 10 to prevent quorum manipulation
+    by flooding the attestation table with Sybil entries.  An attacker who
+    registered many pseudo-miners could lower the quorum threshold below
+    a safe level.
+    """
+    MIN_QUORUM_DENOMINATOR = 10
     try:
         cutoff = int(time.time()) - 86400 * 2
         with sqlite3.connect(db_path) as conn:
@@ -181,10 +188,11 @@ def _count_active_miners(db_path: str) -> int:
                 "SELECT COUNT(DISTINCT miner_id) FROM attestations WHERE timestamp >= ?",
                 (cutoff,)
             ).fetchone()
-            return int(row[0]) if row else 0
+            count = int(row[0]) if row else 0
+            return max(count, MIN_QUORUM_DENOMINATOR)
     except Exception as e:
         log.debug("Active miner count failed: %s", e)
-    return 0
+    return MIN_QUORUM_DENOMINATOR
 
 
 def _is_within_founder_veto_period() -> bool:
@@ -551,9 +559,14 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         reason = data.get("reason", "Security-critical change").strip()
 
         # Admin key is validated via environment variable (not hardcoded)
-        import os
+        import os, hmac as _hmac
         expected_key = os.environ.get("RUSTCHAIN_ADMIN_KEY", "")
-        if not expected_key or admin_key != expected_key:
+        # SECURITY FIX: Return 503 when key is not configured (distinct from
+        # wrong-key 403) so operators notice the misconfiguration.
+        if not expected_key:
+            return jsonify({"error": "RUSTCHAIN_ADMIN_KEY not configured"}), 503
+        # SECURITY FIX: Constant-time comparison prevents timing attacks.
+        if not _hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "invalid admin_key"}), 403
 
         try:

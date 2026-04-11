@@ -270,6 +270,10 @@ class TransactionPool:
         3. Nonce is correct (replay protection)
         4. Sufficient balance
         5. No duplicate in pool
+
+        SECURITY FIX: Steps 3-5 now use a single DB connection to prevent
+        TOCTOU between get_wallet_nonce and _get_pending_nonces which used
+        separate connections.
         """
         # 1. Verify signature
         if not tx.verify():
@@ -280,28 +284,67 @@ class TransactionPool:
         if derived_addr != tx.from_addr:
             return False, f"Public key does not match from_addr"
 
-        # 3. Check nonce
-        expected_nonce = self.get_wallet_nonce(tx.from_addr) + 1
-        pending_nonces = self._get_pending_nonces(tx.from_addr)
+        # 3-5. Nonce, balance, and duplicate checks in single connection
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
 
-        # Account for pending transactions
-        while expected_nonce in pending_nonces:
-            expected_nonce += 1
+            # 3. Check nonce
+            cursor.execute(
+                "SELECT wallet_nonce FROM balances WHERE wallet = ?",
+                (tx.from_addr,)
+            )
+            result = cursor.fetchone()
+            expected_nonce = (result["wallet_nonce"] if result else 0) + 1
 
-        if tx.nonce != expected_nonce:
-            return False, f"Invalid nonce: expected {expected_nonce}, got {tx.nonce}"
+            cursor.execute(
+                "SELECT nonce FROM pending_transactions WHERE from_addr = ? AND status = 'pending'",
+                (tx.from_addr,)
+            )
+            pending_nonces = {row["nonce"] for row in cursor.fetchall()}
 
-        # 4. Validate amount and check balance
-        if tx.amount_urtc <= 0:
-            return False, "Invalid amount: must be > 0"
+            # Account for pending transactions
+            while expected_nonce in pending_nonces:
+                expected_nonce += 1
 
-        available = self.get_available_balance(tx.from_addr)
-        if tx.amount_urtc > available:
-            return False, f"Insufficient balance: have {available}, need {tx.amount_urtc}"
+            if tx.nonce != expected_nonce:
+                return False, f"Invalid nonce: expected {expected_nonce}, got {tx.nonce}"
 
-        # 5. Check for duplicate
-        if self._tx_exists(tx.tx_hash):
-            return False, "Transaction already exists"
+            # 4. Validate amount and check balance
+            if tx.amount_urtc <= 0:
+                return False, "Invalid amount: must be > 0"
+
+            cursor.execute(
+                "SELECT balance_urtc FROM balances WHERE wallet = ?",
+                (tx.from_addr,)
+            )
+            bal_row = cursor.fetchone()
+            balance = bal_row["balance_urtc"] if bal_row else 0
+
+            cursor.execute(
+                """SELECT COALESCE(SUM(amount_urtc), 0) as pending
+                   FROM pending_transactions
+                   WHERE from_addr = ? AND status = 'pending'""",
+                (tx.from_addr,)
+            )
+            pending_sum = cursor.fetchone()["pending"]
+            available = max(0, balance - pending_sum)
+
+            if tx.amount_urtc > available:
+                return False, f"Insufficient balance: have {available}, need {tx.amount_urtc}"
+
+            # 5. Check for duplicate
+            cursor.execute(
+                "SELECT 1 FROM pending_transactions WHERE tx_hash = ?",
+                (tx.tx_hash,)
+            )
+            if cursor.fetchone():
+                return False, "Transaction already exists"
+            cursor.execute(
+                "SELECT 1 FROM transaction_history WHERE tx_hash = ?",
+                (tx.tx_hash,)
+            )
+            if cursor.fetchone():
+                return False, "Transaction already exists"
 
         return True, ""
 

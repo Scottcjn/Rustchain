@@ -28,7 +28,10 @@ from typing import Dict, List, Tuple, Optional, Any
 from collections import defaultdict
 
 # Configuration constants
-REPLAY_WINDOW_SECONDS = 300  # 5 minutes - fingerprints expire after this
+# SECURITY FIX: Original 5-minute window was far too short for 24-hour
+# epochs — an attacker could replay a valid fingerprint every 5 minutes.
+# Extended to full epoch duration (24 hours) to prevent intra-epoch replay.
+REPLAY_WINDOW_SECONDS = 86400  # 24 hours — matches epoch duration
 MAX_FINGERPRINT_SUBMISSIONS_PER_HOUR = 10  # Rate limit per hardware ID
 ENTROPY_HASH_COLLISION_TOLERANCE = 0.95  # Similarity threshold for collision detection
 
@@ -390,7 +393,9 @@ def check_fingerprint_rate_limit(
         Tuple of (is_allowed: bool, reason: str, details: dict or None)
     """
     if not hardware_id:
-        return True, "no_hardware_id", None  # Can't rate limit without hardware ID
+        # SECURITY FIX: Previously returned True (allowed), letting callers
+        # who omit the optional hardware_id bypass all rate limiting.
+        return False, "hardware_id_required", {"error": "hardware_id is mandatory for rate limiting"}
 
     now = int(time.time())
     window_start = now - 3600  # 1 hour window

@@ -499,8 +499,13 @@ class SecureFounderWallet:
             wallet_path = KEYSTORE_DIR / f"{self.wallet_name.get()}.json"
             with open(wallet_path, 'r') as f:
                 encrypted = json.load(f)
-            RustChainWallet.from_encrypted(encrypted, password)
-            self.show_seed_phrase_dialog(self.wallet.mnemonic)
+            # SECURITY FIX: Use the verified wallet's mnemonic, not
+            # self.wallet.mnemonic.  The original code decrypted the file
+            # to verify the password but then displayed the mnemonic from
+            # a different in-memory wallet object — potentially showing
+            # the wrong seed phrase.
+            verified_wallet = RustChainWallet.from_encrypted(encrypted, password)
+            self.show_seed_phrase_dialog(verified_wallet.mnemonic)
         except Exception:
             messagebox.showerror("Error", "Invalid password")
 

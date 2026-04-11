@@ -73,7 +73,10 @@ def init_app(app, db_path):
         expected = os.environ.get("RC_ADMIN_KEY", "")
         if not expected:
             return jsonify({"error": "Admin key not configured"}), 503
-        if admin_key != expected:
+        # SECURITY FIX (RC-04): Constant-time comparison prevents
+        # timing side-channel leakage of the admin key.
+        import hmac as _hmac
+        if not _hmac.compare_digest(admin_key, expected):
             return jsonify({"error": "Unauthorized — admin key required"}), 401
 
         data = request.get_json(silent=True) or {}
