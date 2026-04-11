@@ -651,27 +651,48 @@ class BFTConsensus:
             self._apply_settlement(pre_prepare.proposal)
 
     def _apply_settlement(self, proposal: Dict):
-        """Apply the consensus settlement to database"""
+        """Apply the consensus settlement to database (idempotent).
+
+        Uses epoch-scoped ledger entries to ensure each epoch's rewards are
+        credited exactly once, even if _apply_settlement is called multiple
+        times for the same epoch (e.g. after a restart before
+        committed_epochs is fully restored).
+        """
         epoch = proposal.get('epoch')
         distribution = proposal.get('distribution', {})
 
         with sqlite3.connect(self.db_path) as conn:
+            # ── Idempotency guard ────────────────────────────────────
+            # If any ledger entry already exists for this epoch, the
+            # settlement was already applied.  Bail out.
+            existing = conn.execute(
+                "SELECT 1 FROM ledger WHERE memo = ? LIMIT 1",
+                (f"epoch_{epoch}_bft",)
+            ).fetchone()
+            if existing:
+                logging.warning(
+                    f"Settlement for epoch {epoch} already applied — skipping "
+                    f"to prevent reward doubling"
+                )
+                return
+
             for miner_id, reward in distribution.items():
-                # Update balance
                 # Store as integer micro-RTC (1 RTC = 1,000,000 uRTC) to avoid
                 # floating-point drift accumulating across many ledger entries.
+                reward_urtc = int(reward * 1_000_000)
+
                 conn.execute("""
                     INSERT INTO balances (miner_id, amount_i64)
                     VALUES (?, ?)
                     ON CONFLICT(miner_id) DO UPDATE SET
                     amount_i64 = amount_i64 + excluded.amount_i64
-                """, (miner_id, int(reward * 1_000_000)))
+                """, (miner_id, reward_urtc))
 
                 # Log in ledger
                 conn.execute("""
                     INSERT INTO ledger (miner_id, delta_i64, tx_type, memo, ts)
                     VALUES (?, ?, 'reward', ?, ?)
-                """, (miner_id, int(reward * 1_000_000), f"epoch_{epoch}_bft", int(time.time())))
+                """, (miner_id, reward_urtc, f"epoch_{epoch}_bft", int(time.time())))
 
             conn.commit()
 
