@@ -194,6 +194,83 @@ class RustChainClient:
         )
         return WalletBalance.from_dict(data)
 
+    async def create_wallet(self, wallet_name: str) -> dict[str, Any]:
+        """
+        Register a new wallet on the RustChain network.
+
+        Args:
+            wallet_name: Unique wallet identifier
+
+        Returns:
+            dict with registration confirmation details
+        """
+        # Try common wallet registration endpoints
+        for endpoint in ["/api/wallet/create", "/wallet/create", "/wallet/register"]:
+            try:
+                data = await self._request(
+                    "POST", endpoint, json_data={"wallet_name": wallet_name}
+                )
+                return data
+            except APIError as e:
+                if e.status_code == 404:
+                    continue
+                raise
+
+        # Fallback: register via miner endpoint
+        try:
+            data = await self._request(
+                "POST","/api/miner/register", json_data={"wallet": wallet_name}
+            )
+            return {"wallet": wallet_name, "registered": True, **(data or {})}
+        except Exception:
+            raise APIError(
+                code="WALLET_EXISTS",
+                message=f"Could not register wallet '{wallet_name}'. "
+                        f"The wallet may already exist or the registration endpoint is unavailable.",
+                status_code=409,
+            )
+
+    async def submit_attestation(
+        self, wallet_name: str, hardware_signature: str
+    ) -> dict[str, Any]:
+        """
+        Submit a hardware fingerprint attestation.
+
+        Args:
+            wallet_name: Wallet/miner name
+            hardware_signature: Hardware fingerprint from fingerprint_checks.py
+
+        Returns:
+            dict with attestation confirmation
+        """
+        # Try common attestation endpoints
+        for endpoint in [
+            "/api/attestation",
+            "/attestation/submit",
+            "/api/miner/attest",
+        ]:
+            try:
+                data = await self._request(
+                    "POST",
+                    endpoint,
+                    json_data={
+                        "wallet": wallet_name,
+                        "hardware_signature": hardware_signature,
+                    },
+                )
+                return data
+            except APIError as e:
+                if e.status_code == 404:
+                    continue
+                raise
+
+        raise APIError(
+            code="ATTESTATION_FAILED",
+            message=f"Could not submit attestation for '{wallet_name}'. "
+                    f"No valid attestation endpoint found on the node.",
+            status_code=503,
+        )
+
     async def query(
         self,
         query_type: str,
