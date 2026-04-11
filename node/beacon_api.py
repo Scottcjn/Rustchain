@@ -629,8 +629,16 @@ def claim_bounty(bounty_id):
 
 @beacon_api.route('/api/bounties/<bounty_id>/complete', methods=['POST'])
 def complete_bounty(bounty_id):
-    """Mark bounty as completed by an agent."""
+    """Mark bounty as completed by an agent (admin-only)."""
     try:
+        import os, hmac
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not admin_key:
+            return jsonify({'error': 'RC_ADMIN_KEY not configured — endpoint disabled'}), 503
+        provided_key = request.headers.get("X-Admin-Key", "")
+        if not hmac.compare_digest(provided_key, admin_key):
+            return jsonify({'error': 'Unauthorized — admin key required to complete bounties'}), 401
+
         data = request.get_json()
         agent_id = data.get('agent_id')
         
@@ -638,14 +646,22 @@ def complete_bounty(bounty_id):
             return jsonify({'error': 'Missing agent_id'}), 400
         
         db = get_db()
+
+        # Verify bounty exists and is in claimable state
+        bounty = db.execute(
+            "SELECT state, claimant_agent FROM beacon_bounties WHERE id = ?",
+            (bounty_id,)
+        ).fetchone()
+        if not bounty:
+            return jsonify({'error': 'Bounty not found'}), 404
+        if bounty['state'] == 'completed':
+            return jsonify({'error': 'Bounty already completed'}), 409
+
         db.execute(
             "UPDATE beacon_bounties SET state = 'completed', completed_by = ?, updated_at = ? WHERE id = ?",
             (agent_id, int(time.time()), bounty_id)
         )
         db.commit()
-        
-        if db.total_changes == 0:
-            return jsonify({'error': 'Bounty not found'}), 404
         
         # Update agent reputation
         rep = db.execute("SELECT * FROM beacon_reputation WHERE agent_id = ?", (agent_id,)).fetchone()
