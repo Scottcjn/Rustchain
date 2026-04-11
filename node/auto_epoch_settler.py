@@ -85,11 +85,20 @@ def get_unsettled_epochs():
         return []
 
 def settle_epoch_via_api(epoch):
-    """Settle an epoch using the node API"""
+    """Settle an epoch using the node API.
+
+    NOTE: The get_unsettled_epochs() check and this API call are NOT atomic.
+    Another settler instance could settle between the check and the call.
+    We rely on the server-side /rewards/settle endpoint's own
+    idempotency guard (epoch_state.settled = 1 check inside
+    BEGIN IMMEDIATE) to prevent double-settlement, and send
+    X-Idempotency-Key so any future middleware can deduplicate too.
+    """
     try:
         resp = requests.post(
             f"{NODE_URL}/rewards/settle",
             json={"epoch": epoch},
+            headers={"X-Idempotency-Key": f"settle-epoch-{epoch}"},
             timeout=30
         )
 
@@ -98,7 +107,8 @@ def settle_epoch_via_api(epoch):
             if data.get("ok"):
                 eligible = data.get("eligible", 0)
                 distributed = data.get("distributed_rtc", 0)
-                print(f"[OK] Settled epoch {epoch}: {eligible} miners, {distributed:.4f} RTC")
+                already = " (already settled)" if data.get("already_settled") else ""
+                print(f"[OK] Settled epoch {epoch}: {eligible} miners, {distributed:.4f} RTC{already}")
                 return True
             else:
                 error = data.get("error", "unknown")

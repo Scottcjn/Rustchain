@@ -176,7 +176,8 @@ def init_app(app, get_db_func):
         expected = os.environ.get("BEACON_ADMIN_KEY", "")
         if not expected:
             return _cors_json({"error": "Admin key not configured"}, 503)
-        if admin_key != expected:
+        import hmac as _hmac
+        if not _hmac.compare_digest(admin_key, expected):
             return _cors_json({"error": "Unauthorized — admin key required"}, 401)
 
         data = request.get_json(silent=True) or {}

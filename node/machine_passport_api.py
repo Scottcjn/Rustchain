@@ -8,6 +8,7 @@ Integrates with Flask applications.
 Issue: #2309
 """
 
+import hmac
 import os
 import json
 import time
@@ -186,9 +187,15 @@ def create_passport():
     """
     # Admin authentication
     admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
-    expected_admin_key = os.environ.get('ADMIN_KEY', '')
+    expected_admin_key = os.environ.get('RC_ADMIN_KEY', '')
     
-    if expected_admin_key and admin_key != expected_admin_key:
+    if not expected_admin_key:
+        return jsonify({
+            'ok': False,
+            'error': 'misconfigured',
+            'message': 'RC_ADMIN_KEY not configured — endpoint disabled',
+        }), 503
+    if not hmac.compare_digest(admin_key, expected_admin_key):
         return jsonify({
             'ok': False,
             'error': 'unauthorized',
@@ -274,7 +281,7 @@ def update_passport(machine_id: str):
     Requires admin authentication or owner verification.
     """
     admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
-    expected_admin_key = os.environ.get('ADMIN_KEY', '')
+    expected_admin_key = os.environ.get('RC_ADMIN_KEY', '')
     
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
@@ -282,17 +289,22 @@ def update_passport(machine_id: str):
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    # Check authorization
-    if expected_admin_key:
-        if admin_key != expected_admin_key:
-            # Allow owner to update their own passport
-            data = request.get_json()
-            if data and data.get('owner_miner_id') != passport.owner_miner_id:
-                return jsonify({
-                    'ok': False,
-                    'error': 'unauthorized',
-                    'message': 'Admin key required or must be owner',
-                }), 401
+    # Check authorization — require admin key or owner match
+    if not expected_admin_key:
+        return jsonify({
+            'ok': False,
+            'error': 'misconfigured',
+            'message': 'RC_ADMIN_KEY not configured — endpoint disabled',
+        }), 503
+    if not hmac.compare_digest(admin_key, expected_admin_key):
+        # Allow owner to update their own passport
+        data = request.get_json()
+        if not data or data.get('owner_miner_id') != passport.owner_miner_id:
+            return jsonify({
+                'ok': False,
+                'error': 'unauthorized',
+                'message': 'Admin key required or must be owner',
+            }), 401
     
     data = request.get_json()
     if not data:
@@ -330,6 +342,14 @@ def add_repair_entry(machine_id: str):
         "notes": "Machine now stable at 1.2V"
     }
     """
+    # Require admin auth for repair log modifications
+    _admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
+    _expected = os.environ.get('RC_ADMIN_KEY', '')
+    if not _expected:
+        return jsonify({'ok': False, 'error': 'RC_ADMIN_KEY not configured'}), 503
+    if not hmac.compare_digest(_admin_key, _expected):
+        return jsonify({'ok': False, 'error': 'unauthorized'}), 401
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
@@ -372,6 +392,14 @@ def add_attestation(machine_id: str):
     
     Typically called automatically during mining attestation.
     """
+    # Require admin auth for attestation recording
+    _admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
+    _expected = os.environ.get('RC_ADMIN_KEY', '')
+    if not _expected:
+        return jsonify({'ok': False, 'error': 'RC_ADMIN_KEY not configured'}), 503
+    if not hmac.compare_digest(_admin_key, _expected):
+        return jsonify({'ok': False, 'error': 'unauthorized'}), 401
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
@@ -416,6 +444,14 @@ def add_benchmark(machine_id: str):
         "entropy_throughput": 500.0
     }
     """
+    # Require admin auth for benchmark recording
+    _admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
+    _expected = os.environ.get('RC_ADMIN_KEY', '')
+    if not _expected:
+        return jsonify({'ok': False, 'error': 'RC_ADMIN_KEY not configured'}), 503
+    if not hmac.compare_digest(_admin_key, _expected):
+        return jsonify({'ok': False, 'error': 'unauthorized'}), 401
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     

@@ -533,7 +533,10 @@ class BlockValidator:
         if expected_producer and block.header.producer != expected_producer:
             return False, f"Wrong producer: expected {expected_producer}, got {block.header.producer}"
 
-        # 3. Check height is sequential
+        # 3. Check height and prev hash in a SINGLE connection to prevent
+        # TOCTOU: if two connections are used, another block can be inserted
+        # between the height check and the prev_hash check, causing the
+        # validator to accept a fork.
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT MAX(height) FROM blocks")
@@ -543,10 +546,8 @@ class BlockValidator:
             if block.height != max_height + 1:
                 return False, f"Invalid height: expected {max_height + 1}, got {block.height}"
 
-        # 4. Check prev hash
-        if block.height > 0:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
+            # 4. Check prev hash (same connection)
+            if block.height > 0:
                 cursor.execute(
                     "SELECT block_hash FROM blocks WHERE height = ?",
                     (block.height - 1,)

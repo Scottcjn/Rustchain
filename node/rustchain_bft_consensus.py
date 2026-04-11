@@ -660,18 +660,21 @@ class BFTConsensus:
                 # Update balance
                 # Store as integer micro-RTC (1 RTC = 1,000,000 uRTC) to avoid
                 # floating-point drift accumulating across many ledger entries.
+                # Use round() before int() to prevent truncation from IEEE 754
+                # representation errors (e.g. 0.1 * 1e6 = 99999.99... → 99999).
+                urtc = int(round(reward * 1_000_000))
                 conn.execute("""
                     INSERT INTO balances (miner_id, amount_i64)
                     VALUES (?, ?)
                     ON CONFLICT(miner_id) DO UPDATE SET
                     amount_i64 = amount_i64 + excluded.amount_i64
-                """, (miner_id, int(reward * 1_000_000)))
+                """, (miner_id, urtc))
 
                 # Log in ledger
                 conn.execute("""
                     INSERT INTO ledger (miner_id, delta_i64, tx_type, memo, ts)
                     VALUES (?, ?, 'reward', ?, ?)
-                """, (miner_id, int(reward * 1_000_000), f"epoch_{epoch}_bft", int(time.time())))
+                """, (miner_id, urtc, f"epoch_{epoch}_bft", int(time.time())))
 
             conn.commit()
 
@@ -746,6 +749,17 @@ class BFTConsensus:
                 logging.warning(
                     f"[VIEW-CHANGE] Rejected stale view {new_view} "
                     f"(<= current {self.current_view})"
+                )
+                return
+
+            # SECURITY: Cap view jumps to prevent leadership hijack.
+            # An attacker requesting view=2^31 would permanently control
+            # leader election.  Allow at most 10 view changes ahead.
+            MAX_VIEW_DELTA = 10
+            if new_view > self.current_view + MAX_VIEW_DELTA:
+                logging.warning(
+                    f"[VIEW-CHANGE] Rejected excessive view delta: "
+                    f"{new_view} > current {self.current_view} + {MAX_VIEW_DELTA}"
                 )
                 return
 
@@ -1005,7 +1019,10 @@ if __name__ == "__main__":
     # Test with mock data
     node_id = sys.argv[1] if len(sys.argv) > 1 else "node-131"
     db_path = "/tmp/bft_test.db"
-    secret_key = "rustchain_bft_testnet_key_2025"
+    secret_key = os.environ.get("RC_BFT_SECRET_KEY", "")
+    if not secret_key:
+        print("ERROR: RC_BFT_SECRET_KEY environment variable must be set", file=sys.stderr)
+        sys.exit(1)
 
     bft = BFTConsensus(node_id, db_path, secret_key)
 

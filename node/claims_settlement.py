@@ -315,23 +315,13 @@ def generate_batch_id() -> str:
     now = datetime.now(timezone.utc)
     timestamp = now.strftime("%Y_%m_%d")
     
-    # Get batch number for today
-    try:
-        import os
-        batch_file = f"/tmp/rustchain_settlement_batch_{timestamp}.txt"
-        if os.path.exists(batch_file):
-            with open(batch_file, 'r') as f:
-                batch_num = int(f.read().strip()) + 1
-        else:
-            batch_num = 1
-        
-        with open(batch_file, 'w') as f:
-            f.write(str(batch_num))
-        
-        return f"batch_{timestamp}_{batch_num:03d}"
-    except Exception:
-        # Fallback: use timestamp
-        return f"batch_{timestamp}_001"
+    # Use a cryptographically random suffix instead of a file-based counter.
+    # The original file-counter was non-atomic: two concurrent processes could
+    # read the same value and produce duplicate batch IDs, leading to
+    # double-payment when both batches are processed.
+    import secrets
+    unique_suffix = secrets.token_hex(4)  # 8-char hex = 32 bits of entropy
+    return f"batch_{timestamp}_{unique_suffix}"
 
 
 def process_claims_batch(

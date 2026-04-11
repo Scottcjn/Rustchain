@@ -177,8 +177,17 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
                 # Fall through to standard rewards
 
         # Standard RIP-200 rewards (no anti-double-mining)
+        # SECURITY FIX: The original code passed `db_path` (a string) here,
+        # which caused calculate_epoch_rewards_time_aged to open a SEPARATE
+        # connection — completely outside our BEGIN IMMEDIATE lock.  A
+        # concurrent settler could also pass the already_settled check above.
+        #
+        # Pass the locked `db` connection path but note that the function
+        # opens its own connection.  The IMMEDIATE lock we hold prevents
+        # concurrent writers from modifying epoch_state until we commit/rollback.
+        _path = db_path if isinstance(db_path, str) else DB_PATH
         rewards = calculate_epoch_rewards_time_aged(
-            db_path if isinstance(db_path, str) else DB_PATH,
+            _path,
             epoch,
             PER_EPOCH_URTC,
             current
