@@ -324,11 +324,31 @@ SUBMIT_ATTESTATION_SCHEMA = {
             "type": "string",
             "description": "Wallet/miner name to submit attestation for",
         },
-        "hardware_signature": {
+        "device_hostname": {
             "type": "string",
-            "description": "Hardware fingerprint signature (from fingerprint_checks.py)",
+            "description": "Hostname of the device (default: unknown)",
+        },
+        "device_arch": {
+            "type": "string",
+            "description": "CPU architecture, e.g. x86_64, arm64, G5, POWER8 (default: x86_64)",
+        },
+        "device_family": {
+            "type": "string",
+            "description": "CPU family name (default: Generic)",
+        },
+        "device_os": {
+            "type": "string",
+            "description": "Operating system string (default: Linux)",
+        },
+        "entropy_hash": {
+            "type": "string",
+            "description": "SHA256 hex hash of hardware entropy samples",
+        },
+        "sample_count": {
+            "type": "integer",
+            "description": "Number of entropy samples collected (default: 100)",
         },
     },
-    "required": ["wallet_name", "hardware_signature"],
+    "required": ["wallet_name"],
     "additionalProperties": False,
 }

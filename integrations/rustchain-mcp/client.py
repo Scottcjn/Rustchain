@@ -199,77 +199,115 @@ class RustChainClient:
         Register a new wallet on the RustChain network.
 
         Args:
-            wallet_name: Unique wallet identifier
+            wallet_name: Unique wallet identifier (agent_id format)
 
         Returns:
-            dict with registration confirmation details
+            dict with wallet_address and confirmation details
         """
-        # Try common wallet registration endpoints
-        for endpoint in ["/api/wallet/create", "/wallet/create", "/wallet/register"]:
-            try:
-                data = await self._request(
-                    "POST", endpoint, json_data={"wallet_name": wallet_name}
-                )
-                return data
-            except APIError as e:
-                if e.status_code == 404:
-                    continue
-                raise
-
-        # Fallback: register via miner endpoint
+        import hashlib
+        wallet_hash = hashlib.sha256(f"agent:{wallet_name}".encode()).hexdigest()[:16]
+        wallet_address = f"agent_{wallet_hash}"
+        payload = {
+            "agent_id": wallet_name,
+            "wallet_address": wallet_address,
+        }
         try:
             data = await self._request(
-                "POST","/api/miner/register", json_data={"wallet": wallet_name}
+                "POST", "/api/agent/wallet/create", json_data=payload
             )
-            return {"wallet": wallet_name, "registered": True, **(data or {})}
-        except Exception:
-            raise APIError(
-                code="WALLET_EXISTS",
-                message=f"Could not register wallet '{wallet_name}'. "
-                        f"The wallet may already exist or the registration endpoint is unavailable.",
-                status_code=409,
-            )
+            return {
+                "wallet": wallet_name,
+                "wallet_address": data.get("wallet_address", wallet_address),
+                "registered": True,
+                **(data or {}),
+            }
+        except APIError as e:
+            if e.status_code == 404:
+                raise APIError(
+                    code="WALLET_ENDPOINT_UNAVAILABLE",
+                    message=f"Wallet creation endpoint unavailable. "
+                            f"Node may not support agent wallet registration.",
+                    status_code=503,
+                )
+            raise
 
     async def submit_attestation(
-        self, wallet_name: str, hardware_signature: str
+        self,
+        wallet_name: str,
+        device_hostname: str = "unknown",
+        device_arch: str = "x86_64",
+        device_family: str = "Generic",
+        device_os: str = "Linux",
+        entropy_hash: str = "",
+        sample_count: int = 100,
     ) -> dict[str, Any]:
         """
         Submit a hardware fingerprint attestation.
 
+        Workflow:
+        1. Get a challenge nonce from /attest/challenge
+        2. Submit attestation to /attest/submit with the nonce
+
         Args:
-            wallet_name: Wallet/miner name
-            hardware_signature: Hardware fingerprint from fingerprint_checks.py
+            wallet_name: Wallet/miner identifier
+            device_hostname: Hostname of the device
+            device_arch: CPU architecture (e.g., x86_64, arm64, G5, POWER8)
+            device_family: CPU family (e.g., Intel x86_64, PowerPC G5)
+            device_os: Operating system string
+            entropy_hash: SHA256 hash of hardware entropy samples
+            sample_count: Number of entropy samples collected
 
         Returns:
-            dict with attestation confirmation
+            dict with attestation confirmation (includes weight and epoch)
         """
-        # Try common attestation endpoints
-        for endpoint in [
-            "/api/attestation",
-            "/attestation/submit",
-            "/api/miner/attest",
-        ]:
-            try:
-                data = await self._request(
-                    "POST",
-                    endpoint,
-                    json_data={
-                        "wallet": wallet_name,
-                        "hardware_signature": hardware_signature,
-                    },
-                )
-                return data
-            except APIError as e:
-                if e.status_code == 404:
-                    continue
-                raise
+        # Step 1: Get a challenge nonce
+        try:
+            challenge = await self._request("POST", "/attest/challenge", json_data={})
+        except APIError as e:
+            raise APIError(
+                code="CHALLENGE_FAILED",
+                message=f"Failed to get attestation challenge: {e}",
+                status_code=502,
+            )
 
-        raise APIError(
-            code="ATTESTATION_FAILED",
-            message=f"Could not submit attestation for '{wallet_name}'. "
-                    f"No valid attestation endpoint found on the node.",
-            status_code=503,
-        )
+        nonce = challenge.get("nonce")
+        if not nonce:
+            raise APIError(
+                code="NO_NONCE",
+                message="Attestation challenge did not return a nonce.",
+                status_code=502,
+            )
+
+        # Step 2: Submit attestation with the nonce
+        payload = {
+            "miner": wallet_name,
+            "report": {"nonce": nonce},
+            "device": {
+                "hostname": device_hostname,
+                "arch": device_arch,
+                "family": device_family,
+                "os": device_os,
+            },
+            "signals": {
+                "entropy_hash": entropy_hash or "0" * 64,
+                "sample_count": sample_count,
+            },
+        }
+
+        try:
+            data = await self._request("POST", "/attest/submit", json_data=payload)
+            return {
+                "attestation": "accepted",
+                "miner": wallet_name,
+                "nonce": nonce,
+                **(data or {}),
+            }
+        except APIError as e:
+            raise APIError(
+                code="ATTESTATION_REJECTED",
+                message=f"Attestation rejected: {e}",
+                status_code=e.status_code,
+            )
 
     async def query(
         self,

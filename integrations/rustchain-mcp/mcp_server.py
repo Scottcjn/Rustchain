@@ -471,20 +471,30 @@ class RustChainMCP:
             }
 
     async def _tool_rustchain_submit_attestation(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Submit hardware fingerprint attestation."""
+        """Submit hardware fingerprint attestation.
+
+        Workflow:
+        1. Get challenge nonce from /attest/challenge
+        2. Submit attestation with nonce, device info, and entropy signals to /attest/submit
+        """
         wallet_name = args.get("wallet_name", "").strip()
-        hardware_signature = args.get("hardware_signature", "").strip()
 
         if not wallet_name:
             return {"error": "wallet_name is required"}
-        if not hardware_signature:
-            return {"error": "hardware_signature is required"}
 
         if not self.client:
             return {"error": "Client not initialized"}
 
         try:
-            result = await self.client.submit_attestation(wallet_name, hardware_signature)
+            result = await self.client.submit_attestation(
+                wallet_name=wallet_name,
+                device_hostname=args.get("device_hostname", "unknown"),
+                device_arch=args.get("device_arch", "x86_64"),
+                device_family=args.get("device_family", "Generic"),
+                device_os=args.get("device_os", "Linux"),
+                entropy_hash=args.get("entropy_hash", ""),
+                sample_count=int(args.get("sample_count", 100)),
+            )
             return {
                 "success": True,
                 "wallet_name": wallet_name,
@@ -495,7 +505,6 @@ class RustChainMCP:
                 "success": False,
                 "wallet_name": wallet_name,
                 "error": str(e),
-                "hint": "Ensure hardware_signature is from rustchain fingerprint_checks.py output",
             }
 
     # Resource implementations
