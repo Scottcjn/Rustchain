@@ -22,6 +22,10 @@ MAX_RETRIES = 3
 MOCK_MODE = True  # Set False for real blockchain integration
 
 class PayoutWorker:
+    # SECURITY FIX: Maximum time (seconds) a withdrawal can stay 'processing'
+    # before it is assumed to be a crash orphan and reset to 'pending'.
+    STALE_PROCESSING_TIMEOUT = 600  # 10 minutes
+
     def __init__(self):
         self.db_path = DB_PATH
         self.stats = {
@@ -29,6 +33,33 @@ class PayoutWorker:
             'failed': 0,
             'total_rtc': 0.0
         }
+        # Recover any withdrawals stuck in 'processing' from a prior crash
+        self._recover_stale_processing()
+
+    def _recover_stale_processing(self):
+        """Reset withdrawals stuck in 'processing' from a prior crash.
+        
+        SECURITY FIX: If the worker crashes after setting status='processing'
+        but before marking completion or failure, the withdrawal is orphaned
+        forever (get_pending_withdrawals only queries 'pending').  This
+        recovery step runs at startup to reset any stale entries.
+        """
+        cutoff = int(time.time()) - self.STALE_PROCESSING_TIMEOUT
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("""
+                    UPDATE withdrawals
+                    SET status = 'pending'
+                    WHERE status = 'processing'
+                      AND created_at < ?
+                """, (cutoff,))
+                if cursor.rowcount > 0:
+                    logger.warning(
+                        f"Recovered {cursor.rowcount} stale 'processing' "
+                        f"withdrawal(s) from prior crash"
+                    )
+        except Exception as e:
+            logger.error(f"Crash recovery failed: {e}")
 
     def get_pending_withdrawals(self, limit: int = BATCH_SIZE) -> List[Dict]:
         """Fetch pending withdrawals from database"""

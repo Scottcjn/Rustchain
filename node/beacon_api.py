@@ -321,7 +321,7 @@ def beacon_atlas():
         
         if status_filter:
             rows = db.execute(
-                """SELECT agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at 
+                """SELECT agent_id, pubkey_hex, name, status, created_at, updated_at 
                    FROM relay_agents 
                    WHERE status = ? 
                    ORDER BY created_at DESC""",
@@ -329,19 +329,22 @@ def beacon_atlas():
             ).fetchall()
         else:
             rows = db.execute(
-                """SELECT agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at 
+                """SELECT agent_id, pubkey_hex, name, status, created_at, updated_at 
                    FROM relay_agents 
                    ORDER BY created_at DESC"""
             ).fetchall()
 
         agents = []
         for row in rows:
+            # SECURITY FIX: Do NOT expose coinbase_address in the public
+            # atlas listing — it is a private payment address.  It remains
+            # available in the per-agent detail endpoint (/beacon/agent/<id>)
+            # which can be auth-gated separately.
             agents.append({
                 'agent_id': row['agent_id'],
                 'pubkey_hex': row['pubkey_hex'],
                 'name': row['name'],
                 'status': row['status'],
-                'coinbase_address': row['coinbase_address'],
                 'created_at': row['created_at'],
                 'updated_at': row['updated_at'],
             })

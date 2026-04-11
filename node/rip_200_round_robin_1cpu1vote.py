@@ -352,8 +352,14 @@ def get_time_aged_multiplier(device_arch: str, chain_age_years: float) -> float:
     """
     base_multiplier = ANTIQUITY_MULTIPLIERS.get(device_arch.lower(), 1.0)
 
-    # Modern hardware doesn't decay (stays 1.0)
-    if base_multiplier <= 1.0:
+    # SECURITY FIX: Sub-1.0 multipliers are spam penalties (e.g., aarch64
+    # NAS/SBC at 0.0005x).  The original code clamped them back to 1.0
+    # here, making the penalty dead code.  Return them as-is.
+    if base_multiplier < 1.0:
+        return base_multiplier
+
+    # Modern hardware at exactly 1.0 doesn't decay (stays 1.0)
+    if base_multiplier == 1.0:
         return 1.0
 
     # Calculate decayed bonus
@@ -368,17 +374,28 @@ def get_attested_miners(db_path: str, current_ts: int) -> List[Tuple[str, str]]:
     Get all currently attested miners (within TTL window)
 
     Returns: List of (miner_id, device_arch) tuples, sorted alphabetically
+
+    SECURITY FIX: Snap the TTL cutoff to the slot boundary instead of
+    using raw wall-clock time.  Without this, two nodes calling this
+    function at slightly different times within the same slot can get
+    different miner lists, making producer selection non-deterministic
+    and causing fork disagreements.
     """
+    # Snap to slot boundary for determinism across nodes
+    slot = current_ts // BLOCK_TIME
+    slot_start = slot * BLOCK_TIME
+    cutoff = slot_start - ATTESTATION_TTL
+
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
 
-        # Get miners with valid attestation (within TTL)
+        # Get miners with valid attestation (within TTL from slot start)
         cursor.execute("""
             SELECT miner, device_arch
             FROM miner_attest_recent
             WHERE ts_ok >= ?
             ORDER BY miner ASC
-        """, (current_ts - ATTESTATION_TTL,))
+        """, (cutoff,))
 
         return cursor.fetchall()
 

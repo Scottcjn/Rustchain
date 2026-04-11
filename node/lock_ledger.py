@@ -757,13 +757,23 @@ def register_lock_ledger_routes(app):
     @app.route('/api/lock/auto-release', methods=['POST'])
     def auto_release_endpoint():
         """Worker: Auto-release expired locks."""
-        # Optional: require worker key
+        import hmac as _hmac
         worker_key = request.headers.get("X-Worker-Key", "")
         expected_worker = os.environ.get("RC_WORKER_KEY", "")
-        if expected_worker and worker_key != expected_worker:
+        # SECURITY FIX: When RC_WORKER_KEY is unset, the original code
+        # silently skipped auth, making this endpoint world-open.
+        # Now require the key unconditionally.
+        if not expected_worker:
+            return jsonify({"error": "RC_WORKER_KEY not configured"}), 503
+        if not _hmac.compare_digest(worker_key, expected_worker):
             return jsonify({"error": "Unauthorized"}), 401
         
-        batch_size = int(request.args.get("batch_size", 100))
+        try:
+            batch_size = int(request.args.get("batch_size", 100))
+        except (ValueError, TypeError):
+            return jsonify({"error": "batch_size must be an integer"}), 400
+        if batch_size < 1 or batch_size > 10000:
+            return jsonify({"error": "batch_size must be 1-10000"}), 400
         
         conn = sqlite3.connect(DB_PATH)
         try:

@@ -105,6 +105,19 @@ def coinbase_create(args):
             "created": __import__("time").strftime("%Y-%m-%dT%H:%M:%SZ", __import__("time").gmtime()),
             "method": "agentkit",
         }
+
+        # SECURITY FIX: Export wallet key material so it survives process
+        # restarts.  Without this the private key exists only in AgentKit's
+        # in-memory state and is lost on exit — making the wallet
+        # permanently unrecoverable.
+        try:
+            export_data = wallet.export_data() if hasattr(wallet, 'export_data') else None
+            if export_data:
+                wallet_data["wallet_export"] = export_data
+        except Exception as ex:
+            print(f"  {YELLOW}Warning: Could not export wallet key material: {ex}{NC}")
+            print(f"  {YELLOW}Back up your CDP API credentials to recover this wallet.{NC}")
+
         _save_coinbase_wallet(wallet_data)
 
         print(f"""

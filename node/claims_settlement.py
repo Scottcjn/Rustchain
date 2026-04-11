@@ -159,7 +159,10 @@ def check_rewards_pool_balance(
             return balance >= required_urtc, balance
     except sqlite3.Error as e:
         print(f"[SETTLEMENT] Error checking pool balance: {e}")
-        return True, required_urtc  # Assume sufficient on error
+        # SECURITY FIX: Fail closed — return False on error so payouts
+        # are blocked until the DB is healthy, rather than silently
+        # approving settlements without funds verification.
+        return False, 0
 
 
 def construct_settlement_transaction(

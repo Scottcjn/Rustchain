@@ -92,7 +92,14 @@ def _cors_json(data, status=200):
     """Return JSON response with CORS headers (matching beacon_chat.py pattern)."""
     resp = jsonify(data) if not isinstance(data, str) else data
     if hasattr(resp, 'headers'):
-        resp.headers["Access-Control-Allow-Origin"] = "*"
+        # SECURITY FIX (RC-06): Wildcard CORS on payment endpoints allowed
+        # any cross-origin page to read payment data.  Restrict to known
+        # RustChain origins.  Operators can override via RC_CORS_ORIGIN env.
+        import os as _os
+        allowed_origin = _os.environ.get(
+            "RC_CORS_ORIGIN", "https://rustchain.org"
+        )
+        resp.headers["Access-Control-Allow-Origin"] = allowed_origin
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-PAYMENT"
         resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, OPTIONS"
     return resp, status
