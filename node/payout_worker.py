@@ -3,7 +3,7 @@
 RustChain Payout Worker
 Processes pending withdrawals from queue → sent → completed
 """
-import time, sqlite3, hashlib, json, logging
+import os, time, sqlite3, hashlib, json, logging
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -19,7 +19,7 @@ DB_PATH = "./rustchain_v2.db"
 BATCH_SIZE = 10
 POLL_INTERVAL = 30  # seconds
 MAX_RETRIES = 3
-MOCK_MODE = True  # Set False for real blockchain integration
+MOCK_MODE = os.environ.get("RUSTCHAIN_MOCK_MODE", "0") == "1"  # Default: production (False)
 
 class PayoutWorker:
     def __init__(self):
