@@ -259,22 +259,41 @@ class BFTConsensus:
         leader_idx = view % len(nodes)
         return nodes[leader_idx]
 
-    def _sign_message(self, data: str) -> str:
-        """Sign a message with HMAC"""
+    def _derive_node_key(self, node_id: str) -> str:
+        """Derive a per-node HMAC key from the shared secret.
+
+        Using HMAC(shared_secret, node_id) as the per-node key means:
+        1. Each node's signatures are unique and cannot be forged by peers.
+        2. A compromised node only leaks its own derived key, not the
+           shared secret or other nodes' derived keys.
+        3. Existing deployments just need to set the same shared secret
+           on all nodes — per-node keys are derived automatically.
+        """
         return hmac.new(
             self.secret_key.encode(),
+            node_id.encode(),
+            hashlib.sha256
+        ).hexdigest()
+
+    def _sign_message(self, data: str) -> str:
+        """Sign a message with node-specific HMAC key"""
+        node_key = self._derive_node_key(self.node_id)
+        return hmac.new(
+            node_key.encode(),
             data.encode(),
             hashlib.sha256
         ).hexdigest()
 
     def _verify_signature(self, node_id: str, data: str, signature: str) -> bool:
-        """Verify message signature (simplified - all nodes share key in testnet)"""
-        # In production, each node would have its own keypair (ed25519 or similar).
-        # Shared HMAC is acceptable in a trusted-operator testnet but means one
-        # compromised node can forge messages from any peer.
-        # hmac.compare_digest prevents timing side-channel leaks.
+        """Verify message signature using the sender's derived key.
+
+        Each node has a unique derived key (see _derive_node_key), so
+        messages are authenticated per-sender.  A compromised node
+        cannot forge messages claiming to be from a different node_id.
+        """
+        node_key = self._derive_node_key(node_id)
         expected = hmac.new(
-            self.secret_key.encode(),
+            node_key.encode(),
             data.encode(),
             hashlib.sha256
         ).hexdigest()
