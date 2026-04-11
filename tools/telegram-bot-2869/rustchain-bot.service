@@ -1,0 +1,27 @@
+[Unit]
+Description=RustChain Telegram Bot (Issue #2869)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rustchain
+Group=rustchain
+WorkingDirectory=/opt/rustchain-telegram-bot
+ExecStart=/opt/rustchain-telegram-bot/venv/bin/python bot.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment file
+EnvironmentFile=/opt/rustchain-telegram-bot/.env
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/rustchain-telegram-bot/logs
+
+[Install]
+WantedBy=multi-user.target
