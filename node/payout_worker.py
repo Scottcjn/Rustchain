@@ -80,7 +80,7 @@ class PayoutWorker:
             pass
 
     def process_withdrawal(self, withdrawal: Dict) -> bool:
-        """Process a single withdrawal"""
+        """Process a single withdrawal with balance deduction before execution."""
         withdrawal_id = withdrawal['withdrawal_id']
 
         try:
@@ -88,15 +88,50 @@ class PayoutWorker:
             logger.info(f"  Amount: {withdrawal['amount']} RTC")
             logger.info(f"  Destination: {withdrawal['destination']}")
 
-            # Mark as processing
+            # ── Atomic balance check + deduction + status update ─────────
+            # All three operations MUST happen in a single transaction so
+            # that a crash between them cannot leave funds deducted without
+            # a matching withdrawal, or vice-versa.
             with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    UPDATE withdrawals
-                    SET status = 'processing'
-                    WHERE withdrawal_id = ?
-                """, (withdrawal_id,))
+                conn.execute("BEGIN IMMEDIATE")
+                try:
+                    # Check sender has sufficient balance
+                    row = conn.execute(
+                        "SELECT balance FROM accounts WHERE public_key = ?",
+                        (withdrawal['miner_pk'],)
+                    ).fetchone()
+                    current_balance = row[0] if row else 0
 
-            # Execute withdrawal
+                    total_deduction = withdrawal['amount'] + withdrawal.get('fee', 0)
+                    if current_balance < total_deduction:
+                        conn.execute(
+                            "UPDATE withdrawals SET status = 'failed', error_msg = ? "
+                            "WHERE withdrawal_id = ?",
+                            (f"Insufficient balance: have {current_balance}, need {total_deduction}",
+                             withdrawal_id)
+                        )
+                        conn.execute("COMMIT")
+                        logger.error(f"✗ Withdrawal {withdrawal_id}: insufficient balance")
+                        self.stats['failed'] += 1
+                        return False
+
+                    # Deduct balance BEFORE broadcasting transaction
+                    conn.execute(
+                        "UPDATE accounts SET balance = balance - ? WHERE public_key = ?",
+                        (total_deduction, withdrawal['miner_pk'])
+                    )
+
+                    # Mark as processing
+                    conn.execute(
+                        "UPDATE withdrawals SET status = 'processing' WHERE withdrawal_id = ?",
+                        (withdrawal_id,)
+                    )
+                    conn.execute("COMMIT")
+                except Exception:
+                    conn.execute("ROLLBACK")
+                    raise
+
+            # Execute withdrawal (broadcast transaction)
             tx_hash = self.execute_withdrawal(withdrawal)
 
             if tx_hash:
@@ -120,14 +155,21 @@ class PayoutWorker:
         except Exception as e:
             logger.error(f"✗ Withdrawal {withdrawal_id} failed: {e}")
 
-            # Mark as failed
+            # Refund balance on broadcast failure and mark as failed
             with sqlite3.connect(self.db_path) as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute(
+                    "UPDATE accounts SET balance = balance + ? WHERE public_key = ?",
+                    (withdrawal['amount'] + withdrawal.get('fee', 0),
+                     withdrawal['miner_pk'])
+                )
                 conn.execute("""
                     UPDATE withdrawals
                     SET status = 'failed',
                         error_msg = ?
                     WHERE withdrawal_id = ?
                 """, (str(e), withdrawal_id))
+                conn.execute("COMMIT")
 
             self.stats['failed'] += 1
             return False
