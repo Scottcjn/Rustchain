@@ -379,11 +379,23 @@ def process_claims_batch(
     # Get pending claims
     pending_claims = get_pending_claims(db_path, max_claims)
     
-    # Also get old verifying claims (auto-approve after timeout)
+    # Log stale verifying claims for manual review — NEVER auto-approve.
+    # Auto-approving claims that failed verification is a fund-theft vector:
+    # an attacker submits a fraudulent claim and waits for the timeout.
     old_verifying = get_verifying_claims(db_path, max_wait_seconds // 2)
-    
-    # Combine and deduplicate
-    all_claims = pending_claims + old_verifying
+    if old_verifying:
+        print(f"[SETTLEMENT] WARNING: {len(old_verifying)} claims stuck in 'verifying' "
+              f"for >{max_wait_seconds // 2}s — flagging for manual review")
+        for claim in old_verifying:
+            update_claim_status(
+                db_path=db_path,
+                claim_id=claim["claim_id"],
+                status="review_required",
+                details={"reason": "verification_timeout", "auto_approved": False}
+            )
+
+    # Only process properly approved claims
+    all_claims = pending_claims
     seen = set()
     unique_claims = []
     for claim in all_claims:
@@ -455,15 +467,8 @@ def process_claims_batch(
         batch_id
     )
     
-    # Auto-approve old verifying claims
-    for claim in old_verifying:
-        if claim["claim_id"] not in [c["claim_id"] for c in claims_to_process]:
-            update_claim_status(
-                db_path=db_path,
-                claim_id=claim["claim_id"],
-                status="approved",
-                details={"auto_approved": True, "reason": "verification_timeout"}
-            )
+    # NOTE: Stale verifying claims are flagged for manual review above.
+    # They are NOT auto-approved — that was a fund-theft vector.
     
     result["processed"] = True
     result["claims_count"] = len(claims_to_process)
