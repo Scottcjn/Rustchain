@@ -16,9 +16,18 @@ Key Changes:
 import logging
 import sqlite3
 import time
+import hashlib
+import random
 from typing import List, Tuple, Dict
 
 logger = logging.getLogger(__name__)
+
+# RIP-309: Measurement nonce and check rotation constants
+FP_CHECK_POOL = [
+    'clock_drift', 'cache_timing', 'simd_bias',
+    'thermal_drift', 'instruction_jitter', 'anti_emulation'
+]
+FP_CHECK_COUNT = 4
 
 # Genesis timestamp (adjust to actual genesis block timestamp)
 GENESIS_TIMESTAMP = 1764706927  # First actual block (Dec 2, 2025)
@@ -470,13 +479,19 @@ def calculate_epoch_rewards_time_aged(
     db_path: str,
     epoch: int,
     total_reward_urtc: int,
-    current_slot: int
+    current_slot: int,
+    prev_block_hash: bytes = None
 ) -> Dict[str, int]:
     """
     Calculate reward distribution for an epoch with time-aged multipliers
 
     Each attested CPU gets rewards weighted by their time-aged antiquity multiplier.
     More miners = smaller individual rewards (anti-pool design).
+
+    RIP-309: Rotating Measurement Freshness
+    --------------------------------------
+    Uses prev_block_hash to derive a measurement nonce. This nonce selects
+    FP_CHECK_COUNT of FP_CHECK_POOL to be weighted for rewards.
 
     FIX (settlement-integrity): Use epoch_enroll as the canonical miner list when
     available, then look up device_arch from miner_attest_recent for the multiplier.
@@ -489,11 +504,20 @@ def calculate_epoch_rewards_time_aged(
         epoch: Epoch number to calculate rewards for
         total_reward_urtc: Total uRTC to distribute
         current_slot: Current blockchain slot (for age calculation)
+        prev_block_hash: Previous epoch's last block hash (seed for rotation)
 
     Returns:
         Dict of {miner_id: reward_urtc}
     """
     chain_age_years = get_chain_age_years(current_slot)
+
+    # RIP-309: Generate measurement nonce and select active checks
+    active_checks = []
+    if prev_block_hash:
+        nonce = hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
+        seed = int.from_bytes(nonce[:4], 'big')
+        active_checks = random.Random(seed).sample(FP_CHECK_POOL, FP_CHECK_COUNT)
+        logger.info(f"RIP-309: Epoch {epoch} active checks: {', '.join(active_checks)}")
 
     epoch_start_slot = epoch * 144
     epoch_end_slot = epoch_start_slot + 143
@@ -514,19 +538,48 @@ def calculate_epoch_rewards_time_aged(
             # Use enrolled miners; look up device_arch from latest attestation.
             epoch_miners = []
             for (miner_pk,) in enrolled:
-                arch_row = cursor.execute(
-                    "SELECT device_arch, COALESCE(fingerprint_passed, 1) "
+                # RIP-309: Fetch full fingerprint data to validate active checks
+                cursor.execute(
+                    "SELECT device_arch, COALESCE(fingerprint_passed, 1), fingerprint "
                     "FROM miner_attest_recent WHERE miner = ? LIMIT 1",
                     (miner_pk,)
-                ).fetchone()
+                )
+                arch_row = cursor.fetchone()
                 if arch_row:
                     device_arch = arch_row[0] or "unknown"
-                    fp = arch_row[1]
+                    fp_passed = arch_row[1]
+                    fp_data_raw = arch_row[2]
                 else:
-                    # No attestation record — treat as unknown arch, fingerprint ok.
                     device_arch = "unknown"
-                    fp = 1
-                epoch_miners.append((miner_pk, device_arch, fp))
+                    fp_passed = 1
+                    fp_data_raw = None
+                
+                # RIP-309: Validation logic for active rotating checks
+                final_fp_ok = fp_passed
+                if active_checks and fp_data_raw:
+                    try:
+                        fp_json = json.loads(fp_data_raw)
+                        checks = fp_json.get('checks', {})
+                        # If ANY active check failed or is missing raw data, fail the weight
+                        for check in active_checks:
+                            check_result = checks.get(check)
+                            if not check_result:
+                                final_fp_ok = 0
+                                break
+                            
+                            # Support both bool and dict formats
+                            if isinstance(check_result, bool):
+                                if not check_result:
+                                    final_fp_ok = 0
+                                    break
+                            elif isinstance(check_result, dict):
+                                if not check_result.get('passed', True) or not check_result.get('data'):
+                                    final_fp_ok = 0
+                                    break
+                    except Exception:
+                        pass # Fallback to fp_passed if JSON parse fails
+
+                epoch_miners.append((miner_pk, device_arch, final_fp_ok))
         else:
             # SECURITY FIX #2159: Fallback for epochs without enrollment
             # records.  This path is vulnerable to the stale-attestation
@@ -544,6 +597,7 @@ def calculate_epoch_rewards_time_aged(
                 WHERE ts_ok >= ? AND ts_ok <= ?
             """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
             epoch_miners = cursor.fetchall()
+            # Note: Fallback path does not support rotation (missing fingerprint blob)
 
     if not epoch_miners:
         return {}
@@ -559,7 +613,7 @@ def calculate_epoch_rewards_time_aged(
         # STRICT: VMs/emulators with failed fingerprint get ZERO weight
         if fingerprint_ok == 0:
             weight = 0.0  # No rewards for failed fingerprint
-            print(f"[REWARD] {miner_id[:20]}... fingerprint=FAIL -> weight=0")
+            print(f"[REWARD] {miner_id[:20]}... fingerprint=FAIL (RIP-309 Active Checks) -> weight=0")
         else:
             weight = get_time_aged_multiplier(device_arch, chain_age_years)
 
