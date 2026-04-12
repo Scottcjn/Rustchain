@@ -334,21 +334,24 @@ DECAY_RATE_PER_YEAR = 0.15  # 15% decay per year (vintage bonus → 0 after ~16.
 
 
 
-def get_rip309_active_checks(prev_block_hash: bytes) -> Tuple[List[str], bytes]:
+
+def get_rip309_active_checks(epoch: int, prev_block_hash: bytes = b"") -> Tuple[List[str], bytes]:
     """
     RIP-309 Phase 1: Fingerprint Check Rotation
     Generates a deterministic rotation of 4 out of 6 fingerprint checks.
     """
-    if not prev_block_hash:
-        # Fallback for genesis or missing hash
-        return ["clock_drift", "cache_timing", "simd_bias", "anti_emulation"], b""
-
-    nonce = hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
     fp_checks = ["clock_drift", "cache_timing", "simd_bias", 
                  "thermal_drift", "instruction_jitter", "anti_emulation"]
+                 
+    if epoch == 0 or not prev_block_hash:
+        # Genesis or missing hash: return first 4 for stability
+        return fp_checks[:4], b""
+
+    nonce = hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
     seed = int.from_bytes(nonce[:4], "big")
     active = random.Random(seed).sample(fp_checks, 4)
     return active, nonce
+
 
 
 def get_chain_age_years(current_slot: int) -> float:
@@ -488,7 +491,8 @@ def calculate_epoch_rewards_time_aged(
     db_path: str,
     epoch: int,
     total_reward_urtc: int,
-    prev_block_hash: bytes,
+    current_slot: int,
+    prev_block_hash: bytes = b"",
     current_slot: int
 ) -> Dict[str, int]:
     """
@@ -574,6 +578,7 @@ def calculate_epoch_rewards_time_aged(
     # RIP-309: Get active checks for this epoch
     active_checks, measurement_nonce = get_rip309_active_checks(prev_block_hash)
     logger.info(f"RIP-309 Active Checks: {active_checks}")
+    # RIP-309: Weight only active checks (Phase 1: fingerprint_ok is the masked aggregate)
 
     for row in epoch_miners:
         miner_id, device_arch = row[0], row[1]
