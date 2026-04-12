@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rustchain-bounties-mcp"
+version = "0.1.0"
+description = "MCP server for RustChain bounties — health, balance, miners, epoch, wallet creation, attestation, and bounties"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+keywords = ["rustchain", "mcp", "blockchain", "bounties", "ai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "aiohttp>=3.9.0",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.0.0"]
+dev = [
+    "mcp>=1.0.0",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+rustchain-bounties-mcp = "rustchain_bounties_mcp.mcp_server:entry"
+
+[project.urls]
+Homepage = "https://github.com/Scottcjn/RustChain"
+Repository = "https://github.com/Scottcjn/RustChain.git"
+Issues = "https://github.com/Scottcjn/RustChain/issues/2859"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rustchain_bounties_mcp*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = ["E", "W", "F", "I", "B"]
+ignore = ["E501", "B008"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
