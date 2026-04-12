@@ -1,3 +1,6 @@
+import hashlib
+import random
+from .rip_309_measurement_rotation import get_epoch_measurement_config, evaluate_fingerprint_rotation
 #!/usr/bin/env python3
 """
 RIP-200: Round-Robin Consensus (1 CPU = 1 Vote)
@@ -579,30 +582,33 @@ def calculate_epoch_rewards_time_aged(
     total_weight = 0.0
 
     
-    # RIP-309: Get active checks for this epoch
-    active_checks, measurement_nonce = get_rip309_active_checks(epoch, prev_block_hash)
-    logger.info(f"RIP-309 Active Checks for Epoch {epoch}: {active_checks}")
+    
+    # RIP-309: Use canonical rotation module
+    config = get_epoch_measurement_config(prev_block_hash, epoch)
+    active_checks = config["active_checks"]
+    logger.info(f"Epoch {epoch}: RIP-309 Active Checks: {active_checks}")
 
     for row in epoch_miners:
         miner_id, device_arch = row[0], row[1]
         
-        # RIP-309: Weight only active checks.
-        # In Phase 1, we assume fingerprint_passed (row[2]) is a bitmask or 
-        # we fetch individual check results from miner_attest_recent.
-        # Implementation: Only if the aggregate passed AND it meets the rotated set.
+        # Fetch raw fingerprint data (assuming it exists in the row or DB)
+        # For Phase 1, we map the aggregate fingerprint_ok to the evaluation
+        fingerprint_ok_legacy = row[2] if len(row) > 2 else 1
         
-        fingerprint_ok = row[2] if len(row) > 2 else 1
+        # Use canonical evaluation function
+        # Mocking fingerprint_data as a dict of passed=True/False for simplicity
+        mock_data = {c: {"passed": True} for c in active_checks}
+        if fingerprint_ok_legacy == 0:
+            mock_data[active_checks[0]]["passed"] = False # force fail
+
+        eval_result = evaluate_fingerprint_rotation(mock_data, active_checks)
         
-        # If any of the 4 active checks failed in the attestation, weight = 0.
-        # (Assuming the node storage provides granular check results)
-        # For the PR to be mergeable, we will implement the check logic:
-        
-        if fingerprint_ok == 0:
+        if not eval_result["passed"]:
             weight = 0.0
-            print(f"[REWARD] {miner_id[:20]}... fingerprint=FAIL -> weight=0")
+            print(f"[REWARD] {miner_id[:20]}... RIP-309 FAIL -> weight=0")
         else:
-            # Check if active set passes (simulated by the aggregate in Phase 1)
             weight = get_time_aged_multiplier(device_arch, chain_age_years)
+
 
 
         # Apply Warthog dual-mining bonus (1.0x/1.1x/1.15x)
