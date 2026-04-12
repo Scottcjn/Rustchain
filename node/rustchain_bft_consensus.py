@@ -215,6 +215,37 @@ class BFTConsensus:
 
         logging.info(f"BFT consensus initialized for node {self.node_id}")
 
+        # Restore committed epochs from DB so restarts don't double-credit.
+        # Without this, committed_epochs starts empty and _finalize_epoch /
+        # _apply_settlement will re-apply settlements for already-committed
+        # epochs after a node restart.
+        self._restore_committed_state()
+
+    def _restore_committed_state(self):
+        """Restore committed epochs and view number from DB on startup.
+
+        Without this, a node restart forgets all committed epochs and the
+        consensus engine will re-apply settlements, double-crediting miners.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                rows = conn.execute(
+                    "SELECT epoch, view FROM bft_committed_epochs"
+                ).fetchall()
+                for epoch, view in rows:
+                    self.committed_epochs.add(epoch)
+                    if view > self.current_view:
+                        self.current_view = view
+
+            if self.committed_epochs:
+                logging.info(
+                    f"Restored {len(self.committed_epochs)} committed epochs "
+                    f"(max epoch={max(self.committed_epochs)}, view={self.current_view})"
+                )
+        except sqlite3.OperationalError as e:
+            # Table may not exist on first run (will be created by _init_db)
+            logging.debug(f"Could not restore committed state: {e}")
+
     def register_peer(self, node_id: str, url: str):
         """Register a peer node"""
         with self.lock:
