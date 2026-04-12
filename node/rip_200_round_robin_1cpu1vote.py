@@ -13,10 +13,12 @@ Key Changes:
 4. Time-aging: Vintage hardware advantage decays over blockchain lifetime
 """
 
+import hashlib
 import logging
+import random as random_module
 import sqlite3
 import time
-from typing import List, Tuple, Dict
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -332,6 +334,65 @@ ANTIQUITY_MULTIPLIERS = {
 # Time decay parameters
 DECAY_RATE_PER_YEAR = 0.15  # 15% decay per year (vintage bonus → 0 after ~16.67 years)
 
+# RIP-309 Phase 1: Fingerprint check rotation
+FINGERPRINT_CHECKS = [
+    "clock_drift",
+    "cache_timing",
+    "simd_bias",
+    "thermal_drift",
+    "instruction_jitter",
+    "anti_emulation",
+]
+ACTIVE_CHECKS_PER_EPOCH = 4  # 4 of 6 checks are active per epoch
+
+
+def get_measurement_nonce(prev_block_hash: bytes) -> bytes:
+    """
+    RIP-309: Generate measurement nonce from previous epoch's block hash.
+
+    The nonce is unpredictable before the epoch starts but verifiable after.
+
+    Args:
+        prev_block_hash: Previous epoch's last block hash (raw bytes)
+
+    Returns:
+        32-byte SHA-256 nonce
+    """
+    return hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
+
+
+def get_active_fingerprint_checks(nonce: bytes) -> List[str]:
+    """
+    RIP-309 Phase 1: Select 4 of 6 fingerprint checks using measurement nonce.
+
+    Deterministic: same nonce always produces the same selection.
+    The nonce is derived from the previous epoch's block hash, so miners
+    cannot predict which checks will be active until the epoch starts.
+
+    Args:
+        nonce: 32-byte measurement nonce from get_measurement_nonce()
+
+    Returns:
+        Sorted list of 4 active fingerprint check names
+    """
+    seed = int.from_bytes(nonce[:4], "big")
+    rng = random_module.Random(seed)
+    active = sorted(rng.sample(FINGERPRINT_CHECKS, ACTIVE_CHECKS_PER_EPOCH))
+    return active
+
+
+def get_inactive_fingerprint_checks(active_checks: List[str]) -> List[str]:
+    """
+    RIP-309 Phase 1: Get the 2 inactive checks (still run, but don't affect rewards).
+
+    Args:
+        active_checks: List of active check names from get_active_fingerprint_checks()
+
+    Returns:
+        Sorted list of 2 inactive fingerprint check names
+    """
+    return sorted(set(FINGERPRINT_CHECKS) - set(active_checks))
+
 
 def get_chain_age_years(current_slot: int) -> float:
     """Calculate blockchain age in years from slot number"""
@@ -470,13 +531,20 @@ def calculate_epoch_rewards_time_aged(
     db_path: str,
     epoch: int,
     total_reward_urtc: int,
-    current_slot: int
+    current_slot: int,
+    prev_block_hash: Optional[bytes] = None,
 ) -> Dict[str, int]:
     """
     Calculate reward distribution for an epoch with time-aged multipliers
 
     Each attested CPU gets rewards weighted by their time-aged antiquity multiplier.
     More miners = smaller individual rewards (anti-pool design).
+
+    RIP-309 Phase 1: When prev_block_hash is provided, derives a measurement
+    nonce that determines which 4 of 6 fingerprint checks are active for this
+    epoch.  The active set is deterministic and logged so auditors can verify
+    which checks were used.  Inactive checks still run (for logging/forensics)
+    but their pass/fail does not affect the epoch reward weight.
 
     FIX (settlement-integrity): Use epoch_enroll as the canonical miner list when
     available, then look up device_arch from miner_attest_recent for the multiplier.
@@ -489,11 +557,30 @@ def calculate_epoch_rewards_time_aged(
         epoch: Epoch number to calculate rewards for
         total_reward_urtc: Total uRTC to distribute
         current_slot: Current blockchain slot (for age calculation)
+        prev_block_hash: Previous epoch's last block hash (for RIP-309 nonce).
+            If None, all fingerprint checks are active (pre-RIP-309 behaviour).
 
     Returns:
         Dict of {miner_id: reward_urtc}
     """
     chain_age_years = get_chain_age_years(current_slot)
+
+    # RIP-309 Phase 1: Determine active fingerprint checks for this epoch
+    if prev_block_hash is not None:
+        nonce = get_measurement_nonce(prev_block_hash)
+        active_checks = get_active_fingerprint_checks(nonce)
+        inactive_checks = get_inactive_fingerprint_checks(active_checks)
+        logger.info(
+            "Epoch %d RIP-309: active_checks=%s, inactive_checks=%s, "
+            "nonce_prefix=%s",
+            epoch, active_checks, inactive_checks, nonce[:8].hex(),
+        )
+        print(f"[RIP-309] Epoch {epoch}: active={active_checks}, "
+              f"inactive={inactive_checks}")
+    else:
+        # Pre-RIP-309: all checks are active
+        active_checks = list(FINGERPRINT_CHECKS)
+        inactive_checks = []
 
     epoch_start_slot = epoch * 144
     epoch_end_slot = epoch_start_slot + 143
@@ -612,7 +699,30 @@ def calculate_epoch_rewards_time_aged(
 
 # Example usage and testing
 if __name__ == "__main__":
-    # Simulate chain aging
+    # === RIP-309 Phase 1 Demo ===
+    print("=== RIP-309 Phase 1: Fingerprint Check Rotation ===\n")
+    test_hash = hashlib.sha256(b"test_block_hash_epoch_100").digest()
+    nonce = get_measurement_nonce(test_hash)
+    active = get_active_fingerprint_checks(nonce)
+    inactive = get_inactive_fingerprint_checks(active)
+    print(f"Block hash: {test_hash.hex()[:16]}...")
+    print(f"Nonce:      {nonce.hex()[:16]}...")
+    print(f"Active:     {active}")
+    print(f"Inactive:   {inactive}")
+    print()
+
+    # Verify determinism: same hash always produces same selection
+    active2 = get_active_fingerprint_checks(get_measurement_nonce(test_hash))
+    assert active == active2, "RIP-309 selection must be deterministic"
+    print("✅ Determinism verified: same hash → same selection")
+
+    # Verify different hashes produce different selections
+    different_hash = hashlib.sha256(b"different_block_hash").digest()
+    active3 = get_active_fingerprint_checks(get_measurement_nonce(different_hash))
+    print(f"Different hash active: {active3}")
+    print()
+
+    # === Original demo: Time-aged multipliers ===
     for years in [0, 2, 5, 10, 15, 17]:
         print(f"\n=== Chain Age: {years} years ===")
         g4_mult = get_time_aged_multiplier("g4", years)
