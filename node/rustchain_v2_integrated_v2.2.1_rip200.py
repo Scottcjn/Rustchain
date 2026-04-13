@@ -7,6 +7,7 @@ import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, gl
 import ipaddress
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect
+import json
 from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, VALID_KINDS
 try:
     # Deployment compatibility: production may run this file as a single script.
@@ -2033,32 +2034,50 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
             _device["machine"] = "ppc64le" if "power8" in _miner_lower else "ppc"
     verified_device = derive_verified_device(_device, fingerprint if isinstance(fingerprint, dict) else {}, fingerprint_passed)
     with sqlite3.connect(DB_PATH) as conn:
-        # Ensure signing_pubkey column exists (idempotent migration)
-        try:
-            conn.execute("ALTER TABLE miner_attest_recent ADD COLUMN signing_pubkey TEXT")
-        except Exception:
-            pass  # Column already exists or table doesn't exist yet
+        # Ensure signing_pubkey and fingerprint_checks_json columns exist (idempotent migrations)
+        for col_stmt in [
+            "ALTER TABLE miner_attest_recent ADD COLUMN signing_pubkey TEXT",
+            "ALTER TABLE miner_attest_recent ADD COLUMN fingerprint_checks_json TEXT",
+            "ALTER TABLE miner_attest_history ADD COLUMN fingerprint_checks_json TEXT",
+        ]:
+            try:
+                conn.execute(col_stmt)
+            except Exception:
+                pass  # Column already exists or table doesn't exist yet
+
+        # Extract per-check results from fingerprint dict for RIP-309 rotation.
+        fp_checks_map = {}
+        if isinstance(fingerprint, dict) and "checks" in fingerprint:
+            for k, v in fingerprint["checks"].items():
+                fp_checks_map[k] = bool(v.get("passed", False)) if isinstance(v, dict) else bool(v)
+        # Also handle top-level flattened results if present
+        for k in ["clock_drift", "cache_timing", "simd_identity", "thermal_drift", "instruction_jitter", "anti_emulation"]:
+            if k in fingerprint:
+                fp_checks_map[k] = bool(fingerprint[k])
+        fingerprint_checks_json = json.dumps(fp_checks_map) if fp_checks_map else '{}'
+
         # FIX: Prevent attestation overwrite from degrading prior fingerprint status.
         # If the miner already has fingerprint_passed=1, a later failed attestation
         # should not downgrade it. We still update ts_ok to keep the attestation fresh.
         new_fp = 1 if fingerprint_passed else 0
         conn.execute("""
-            INSERT INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, source_ip, signing_pubkey)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, source_ip, signing_pubkey, fingerprint_checks_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(miner) DO UPDATE SET
                 ts_ok = excluded.ts_ok,
                 device_family = excluded.device_family,
                 device_arch = excluded.device_arch,
                 source_ip = excluded.source_ip,
                 fingerprint_passed = MAX(miner_attest_recent.fingerprint_passed, excluded.fingerprint_passed),
-                signing_pubkey = excluded.signing_pubkey
-        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, new_fp, source_ip, signing_pubkey))
+                signing_pubkey = excluded.signing_pubkey,
+                fingerprint_checks_json = excluded.fingerprint_checks_json
+        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, new_fp, source_ip, signing_pubkey, fingerprint_checks_json))
         _ = append_fingerprint_snapshot(conn, miner, fingerprint if isinstance(fingerprint, dict) else {}, now)
         # C3 fix: Record attestation history for first_attest tracking
         conn.execute("""
-            INSERT INTO miner_attest_history (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, new_fp))
+            INSERT INTO miner_attest_history (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, fingerprint_checks_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, new_fp, fingerprint_checks_json))
         conn.commit()
 
         # RIP-201: Record fleet immune system signals
@@ -2650,7 +2669,7 @@ def current_slot():
     """Get current slot number"""
     return (int(time.time()) - GENESIS_TIMESTAMP) // BLOCK_TIME
 
-def finalize_epoch(epoch, per_block_rtc):
+def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
     """Finalize epoch and distribute rewards with security hardening"""
     from decimal import Decimal, ROUND_DOWN
 
@@ -2701,10 +2720,52 @@ def finalize_epoch(epoch, per_block_rtc):
             print(f"[SECURITY] No valid miners for epoch {epoch} after filtering")
             return
         
+        # RIP-309: Determine active fingerprint checks for this epoch
+        fp_checks = ['clock_drift', 'cache_timing', 'simd_identity',
+                     'thermal_drift', 'instruction_jitter', 'anti_emulation']
+        if prev_block_hash:
+            nonce = hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
+            seed = int.from_bytes(nonce[:4], 'big')
+            active_checks = set(__import__('random').Random(seed).sample(fp_checks, 4))
+        else:
+            active_checks = set(fp_checks)
+        print(f"[RIP-309] finalize_epoch {epoch} active checks: {sorted(active_checks)}")
+
+        # Adjust weights based on active fingerprint checks
+        adjusted_miners = []
         for pk, weight in miners:
             if weight > MAX_WEIGHT:
                 print(f"[SECURITY] Capping weight {weight} for miner {pk} to {MAX_WEIGHT}")
                 weight = MAX_WEIGHT
+
+            # RIP-309: zero out weight if any active check failed
+            if weight > 0:
+                try:
+                    fp_row = c.execute(
+                        "SELECT fingerprint_checks_json FROM miner_attest_recent WHERE miner = ?",
+                        (pk,)
+                    ).fetchone()
+                    checks_map = {}
+                    if fp_row and fp_row[0]:
+                        try:
+                            checks_map = json.loads(fp_row[0])
+                        except Exception:
+                            pass
+                    active_passed = all(checks_map.get(chk, True) for chk in active_checks)
+                    if not active_passed:
+                        print(f"[RIP-309] {pk[:20]}... failed active check(s) in finalize_epoch -> weight=0")
+                        weight = 0
+                except Exception:
+                    pass
+            adjusted_miners.append((pk, weight))
+
+        # Recompute valid miners after RIP-309 zeroing
+        miners = [(pk, w) for pk, w in adjusted_miners if w > 0]
+        zero_weight_miners += [pk for pk, w in adjusted_miners if w == 0]
+        total_weight = sum(w for _, w in miners)
+        if total_weight == 0:
+            print(f"[SECURITY] No valid miners for epoch {epoch} after RIP-309 filtering")
+            return
 
         # ATOMIC TRANSACTION: Wrap all updates in explicit transaction
         try:
@@ -3759,7 +3820,13 @@ def ingest_signed_header():
             if not settled_row:
                 # Call finalize_epoch to distribute rewards
                 try:
-                    finalize_epoch(current_epoch)
+                    # Compute block hash from the current header message_hex as prev_block_hash
+                    prev_msg = db.execute(
+                        "SELECT message_hex FROM headers WHERE slot = ? ORDER BY slot DESC LIMIT 1",
+                        (slot,)
+                    ).fetchone()
+                    prev_block_hash = hashlib.sha256((prev_msg[0] if prev_msg else str(slot)).encode()).digest() if prev_msg else b""
+                    finalize_epoch(current_epoch, PER_EPOCH_RTC, prev_block_hash)
                     print(f"[EPOCH] Auto-settled epoch {current_epoch} after {blocks_in_epoch} blocks")
                 except Exception as e:
                     print(f"[EPOCH] Settlement failed for epoch {current_epoch}: {e}")

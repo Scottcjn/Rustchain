@@ -181,7 +181,8 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
             db_path if isinstance(db_path, str) else DB_PATH,
             epoch,
             PER_EPOCH_URTC,
-            current
+            current,
+            b""  # prev_block_hash fallback for standard path
         )
 
         if not rewards:

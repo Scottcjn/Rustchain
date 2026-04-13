@@ -1,3 +1,6 @@
+import json
+import random
+import hashlib
 #!/usr/bin/env python3
 """
 RIP-200: Round-Robin Consensus (1 CPU = 1 Vote)
@@ -496,7 +499,8 @@ def calculate_epoch_rewards_time_aged(
     db_path: str,
     epoch: int,
     total_reward_urtc: int,
-    current_slot: int
+    current_slot: int,
+    prev_block_hash: bytes = b"",
 ) -> Dict[str, int]:
     """
     Calculate reward distribution for an epoch with time-aged multipliers
@@ -519,6 +523,18 @@ def calculate_epoch_rewards_time_aged(
     Returns:
         Dict of {miner_id: reward_urtc}
     """
+    # RIP-309: Rotating fingerprint checks (4-of-6 per epoch)
+    fp_checks = ['clock_drift', 'cache_timing', 'simd_identity',
+                 'thermal_drift', 'instruction_jitter', 'anti_emulation']
+    if prev_block_hash:
+        nonce = hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
+        seed = int.from_bytes(nonce[:4], 'big')
+        active_checks = set(random.Random(seed).sample(fp_checks, 4))
+    else:
+        # Fallback when no prev_block_hash provided: all checks active (backward compat)
+        active_checks = set(fp_checks)
+    print(f"[RIP-309] Epoch {epoch} active checks: {sorted(active_checks)} (seed derived from prev_block_hash)")
+
     chain_age_years = get_chain_age_years(current_slot)
 
     epoch_start_slot = epoch * 144
@@ -528,6 +544,10 @@ def calculate_epoch_rewards_time_aged(
 
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
+
+        # Schema compatibility: detect whether fingerprint_checks_json column exists
+        cols = cursor.execute("PRAGMA table_info(miner_attest_recent)").fetchall()
+        has_checks_col = any(col[1] == 'fingerprint_checks_json' for col in cols)
 
         # Primary source: epoch_enroll (per-epoch snapshot, matches finalize_epoch).
         try:
@@ -543,20 +563,25 @@ def calculate_epoch_rewards_time_aged(
             # Use enrolled miners; epoch_enroll.weight is the canonical per-epoch
             # reward weight snapshot and may already include RIP-309 rotation.
             epoch_miners = []
+            check_sql = (
+                ", fingerprint_checks_json " if has_checks_col else ", '{}' as fingerprint_checks_json "
+            )
             for miner_pk, enrolled_weight in enrolled:
                 arch_row = cursor.execute(
-                    "SELECT device_arch, COALESCE(fingerprint_passed, 1) "
+                    "SELECT device_arch, COALESCE(fingerprint_passed, 1)" + check_sql +
                     "FROM miner_attest_recent WHERE miner = ? LIMIT 1",
                     (miner_pk,)
                 ).fetchone()
                 if arch_row:
                     device_arch = arch_row[0] or "unknown"
                     fp = arch_row[1]
+                    checks_json = arch_row[2] or '{}' if has_checks_col else '{}'
                 else:
                     # No attestation record — treat as unknown arch, fingerprint ok.
                     device_arch = "unknown"
                     fp = 1
-                epoch_miners.append((miner_pk, device_arch, fp, enrolled_weight))
+                    checks_json = '{}'
+                epoch_miners.append((miner_pk, device_arch, fp, enrolled_weight, checks_json))
         else:
             # SECURITY FIX #2159: Fallback for epochs without enrollment
             # records.  This path is vulnerable to the stale-attestation
@@ -568,11 +593,20 @@ def calculate_epoch_rewards_time_aged(
                 "miner_attest_recent time-window query (may drop miners "
                 "if settlement is delayed)", epoch
             )
-            cursor.execute("""
-                SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp
-                FROM miner_attest_recent
-                WHERE ts_ok >= ? AND ts_ok <= ?
-            """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
+            if has_checks_col:
+                cursor.execute("""
+                    SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp,
+                           COALESCE(fingerprint_checks_json, '{}') as checks_json
+                    FROM miner_attest_recent
+                    WHERE ts_ok >= ? AND ts_ok <= ?
+                """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
+            else:
+                cursor.execute("""
+                    SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp,
+                           '{}' as checks_json
+                    FROM miner_attest_recent
+                    WHERE ts_ok >= ? AND ts_ok <= ?
+                """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
             epoch_miners = cursor.fetchall()
 
     if not epoch_miners:
@@ -586,7 +620,19 @@ def calculate_epoch_rewards_time_aged(
         miner_id, device_arch = row[0], row[1]
         fingerprint_ok = row[2] if len(row) > 2 else 1
         enrolled_weight = row[3] if len(row) > 3 else None
-        
+        checks_json = row[4] if len(row) > 4 else '{}'
+
+        # RIP-309: Only active checks count toward reward weight.
+        # Inactive checks still run and log, but their pass/fail does not affect reward.
+        try:
+            checks_map = json.loads(checks_json) if checks_json else {}
+        except Exception:
+            checks_map = {}
+        active_passed = all(checks_map.get(c, True) for c in active_checks)
+        if not active_passed:
+            print(f"[RIP-309] {miner_id[:20]}... failed active check(s) -> weight=0")
+            fingerprint_ok = 0
+
         # STRICT: VMs/emulators with failed fingerprint get ZERO weight
         if fingerprint_ok == 0:
             weight = 0.0  # No rewards for failed fingerprint
