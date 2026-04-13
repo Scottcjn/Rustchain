@@ -18,6 +18,7 @@ Endpoints:
 
 import hashlib
 import json
+import logging
 import sqlite3
 import time
 
@@ -41,6 +42,35 @@ _current_slot_fn = None    # current_slot() -> int
 _dual_write: bool = False
 
 
+def _ensure_transfer_nonce_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS transfer_nonces (
+            from_address TEXT NOT NULL,
+            nonce TEXT NOT NULL,
+            used_at INTEGER NOT NULL,
+            PRIMARY KEY (from_address, nonce)
+        )
+        """
+    )
+
+
+
+def _reserve_transfer_nonce(conn: sqlite3.Connection, from_address: str, nonce) -> bool:
+    """Atomically reserve a signed-transfer nonce for replay protection.
+
+    Returns True if the nonce was newly reserved, False if it was already used.
+    The caller is responsible for committing or rolling back the surrounding
+    transaction so failed transfers do not burn the nonce.
+    """
+    _ensure_transfer_nonce_table(conn)
+    conn.execute(
+        "INSERT OR IGNORE INTO transfer_nonces (from_address, nonce, used_at) VALUES (?, ?, ?)",
+        (from_address, str(nonce), int(time.time())),
+    )
+    return conn.execute("SELECT changes()").fetchone()[0] == 1
+
+
 def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
                             verify_sig_fn, addr_from_pk_fn,
                             current_slot_fn, dual_write: bool = False):
@@ -57,6 +87,13 @@ def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
     _addr_from_pk_fn = addr_from_pk_fn
     _current_slot_fn = current_slot_fn
     _dual_write = dual_write
+
+    conn = sqlite3.connect(db_path)
+    try:
+        _ensure_transfer_nonce_table(conn)
+        conn.commit()
+    finally:
+        conn.close()
 
     app.register_blueprint(utxo_bp)
     print(f"[UTXO] Endpoints registered at /utxo/* (dual_write={'ON' if dual_write else 'OFF'})")
@@ -339,9 +376,33 @@ def utxo_transfer():
         'timestamp': int(time.time()),
     }
 
-    ok = _utxo_db.apply_transaction(tx, block_height)
-    if not ok:
-        return jsonify({'error': 'UTXO transaction failed (race condition or validation)'}), 500
+    conn = sqlite3.connect(_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+
+        if not _reserve_transfer_nonce(conn, from_address, nonce):
+            conn.rollback()
+            return jsonify({
+                'error': 'Nonce already used (replay attack detected)',
+                'code': 'REPLAY_DETECTED',
+                'nonce': str(nonce),
+            }), 400
+
+        ok = _utxo_db.apply_transaction(tx, block_height, conn=conn)
+        if not ok:
+            conn.rollback()
+            return jsonify({'error': 'UTXO transaction failed (race condition or validation)'}), 500
+
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
 
     # --- dual-write to account model ----------------------------------------
 
