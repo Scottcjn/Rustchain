@@ -1028,6 +1028,7 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
         ensure_fingerprint_history_table(c)
+        ensure_epoch_fingerprint_rotation_table(c)
 
         # Pending transfers (2-phase commit)
         # NOTE: Production DBs may already have a different balances schema; this table is additive.
@@ -1357,6 +1358,129 @@ def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
         data = item.get("data", {})
         return data if isinstance(data, dict) else {}
     return {}
+
+
+RIP309_ROTATING_FINGERPRINT_CHECKS = (
+    "clock_drift",
+    "cache_timing",
+    "simd_identity",
+    "thermal_drift",
+    "instruction_jitter",
+    "device_age_oracle",
+)
+RIP309_ACTIVE_FINGERPRINT_CHECKS = 4
+RIP309_NONCE_FALLBACK = "0" * 64
+
+
+def derive_measurement_nonce(previous_epoch_block_hash: str) -> str:
+    previous_epoch_block_hash = (previous_epoch_block_hash or RIP309_NONCE_FALLBACK).strip().lower()
+    seed = f"rip-309:{previous_epoch_block_hash}".encode()
+    return hashlib.sha256(seed).hexdigest()
+
+
+def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_count: int = RIP309_ACTIVE_FINGERPRINT_CHECKS) -> tuple:
+    nonce = derive_measurement_nonce(previous_epoch_block_hash)
+    ranked = sorted(
+        RIP309_ROTATING_FINGERPRINT_CHECKS,
+        key=lambda name: hashlib.sha256(f"{nonce}:{name}".encode()).hexdigest(),
+    )
+    return tuple(ranked[:active_count])
+
+
+def _fingerprint_check_passed(check_entry) -> bool:
+    if isinstance(check_entry, bool):
+        return check_entry
+    if isinstance(check_entry, dict):
+        return bool(check_entry.get("passed", True))
+    return False
+
+
+def get_previous_epoch_block_hash(conn, epoch: int) -> str:
+    if epoch <= 0:
+        return RIP309_NONCE_FALLBACK
+
+    prev_epoch_end_height = (epoch * EPOCH_SLOTS) - 1
+    try:
+        row = conn.execute(
+            "SELECT block_hash FROM blocks WHERE height <= ? ORDER BY height DESC LIMIT 1",
+            (prev_epoch_end_height,),
+        ).fetchone()
+    except sqlite3.Error:
+        row = None
+    if row and row[0]:
+        return str(row[0])
+    return RIP309_NONCE_FALLBACK
+
+
+def ensure_epoch_fingerprint_rotation_table(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS epoch_fingerprint_rotation (
+            epoch INTEGER PRIMARY KEY,
+            previous_epoch_block_hash TEXT NOT NULL,
+            measurement_nonce TEXT NOT NULL,
+            active_checks_json TEXT NOT NULL,
+            inactive_checks_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+
+
+def get_epoch_fingerprint_rotation(conn, epoch: int) -> dict:
+    ensure_epoch_fingerprint_rotation_table(conn)
+    previous_epoch_block_hash = get_previous_epoch_block_hash(conn, epoch)
+    active_checks = list(select_active_fingerprint_checks(previous_epoch_block_hash))
+    inactive_checks = [
+        name for name in RIP309_ROTATING_FINGERPRINT_CHECKS
+        if name not in active_checks
+    ]
+    measurement_nonce = derive_measurement_nonce(previous_epoch_block_hash)
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO epoch_fingerprint_rotation (
+            epoch, previous_epoch_block_hash, measurement_nonce,
+            active_checks_json, inactive_checks_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            epoch,
+            previous_epoch_block_hash,
+            measurement_nonce,
+            json.dumps(active_checks, sort_keys=True),
+            json.dumps(inactive_checks, sort_keys=True),
+            int(time.time()),
+        )
+    )
+    return {
+        "epoch": epoch,
+        "previous_epoch_block_hash": previous_epoch_block_hash,
+        "measurement_nonce": measurement_nonce,
+        "active_checks": active_checks,
+        "inactive_checks": inactive_checks,
+    }
+
+
+def evaluate_rotating_fingerprint_checks(conn, epoch: int, fingerprint: dict) -> dict:
+    rotation = get_epoch_fingerprint_rotation(conn, epoch)
+    checks = _fingerprint_checks_map(fingerprint)
+    active_results = {
+        name: _fingerprint_check_passed(checks.get(name))
+        for name in rotation["active_checks"]
+    }
+    passed_active = [name for name, passed in active_results.items() if passed]
+    failed_active = [name for name, passed in active_results.items() if not passed]
+    total_active = len(rotation["active_checks"])
+    active_ratio = (len(passed_active) / total_active) if total_active else 1.0
+    return {
+        **rotation,
+        "active_results": active_results,
+        "passed_active_checks": passed_active,
+        "failed_active_checks": failed_active,
+        "active_pass_count": len(passed_active),
+        "active_total": total_active,
+        "active_ratio": active_ratio,
+    }
 
 
 def _claimed_family_and_arch(device: dict) -> tuple:
@@ -3154,20 +3278,18 @@ def _submit_attestation_impl():
         family = verified_device["device_family"]
         arch_for_weight = verified_device["device_arch"]
         hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight, HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0))
-        
-        # VM miners get minimal weight
-        if not fingerprint_passed:
-            enroll_weight = 0.000000001
-        else:
-            enroll_weight = hw_weight
-
-        # Issue #19 temporal consistency only sets a review flag (no hard-fail).
-        if temporal_review.get("review_flag"):
-            app.logger.warning(f"[TEMPORAL-REVIEW] {miner[:20]}... flags={temporal_review.get('flags', [])}")
-        
         miner_id = data.get("miner_id", miner)
-        
+
         with sqlite3.connect(DB_PATH) as enroll_conn:
+            rotation_eval = evaluate_rotating_fingerprint_checks(
+                enroll_conn,
+                epoch,
+                fingerprint if isinstance(fingerprint, dict) else {},
+            )
+            if not fingerprint_passed:
+                enroll_weight = 0.000000001
+            else:
+                enroll_weight = hw_weight * rotation_eval["active_ratio"]
             enroll_conn.execute(
                 "INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
                 (miner,)
@@ -3185,8 +3307,21 @@ def _submit_attestation_impl():
                 (miner_id, miner)
             )
             enroll_conn.commit()
-        
-        app.logger.info(f"[AUTO-ENROLL] {miner[:20]}... enrolled epoch {epoch} weight={enroll_weight} family={family} arch={arch_for_weight} hw_weight={hw_weight}")
+
+        # Issue #19 temporal consistency only sets a review flag (no hard-fail).
+        if temporal_review.get("review_flag"):
+            app.logger.warning(f"[TEMPORAL-REVIEW] {miner[:20]}... flags={temporal_review.get('flags', [])}")
+
+        app.logger.info(
+            f"[RIP-309] epoch={epoch} miner={miner[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
+            f"prev_hash={rotation_eval['previous_epoch_block_hash'][:16]} "
+            f"active={rotation_eval['active_checks']} passed={rotation_eval['passed_active_checks']} "
+            f"failed={rotation_eval['failed_active_checks']} ratio={rotation_eval['active_ratio']:.3f}"
+        )
+        app.logger.info(
+            f"[AUTO-ENROLL] {miner[:20]}... enrolled epoch {epoch} weight={enroll_weight} family={family} "
+            f"arch={arch_for_weight} hw_weight={hw_weight} active_ratio={rotation_eval['active_ratio']:.3f}"
+        )
     except Exception as e:
         app.logger.error(f"[AUTO-ENROLL] Error enrolling {miner[:20]}...: {e}")
 
@@ -3364,13 +3499,19 @@ def enroll_epoch():
     # RIP-PoA Phase 2: VM miners get minimal (but non-zero) weight
     # VMs can technically earn RTC, but it's economically pointless (1e-9 vs 1.0-2.5 for real hardware)
     fingerprint_failed = check_result.get('fingerprint_failed', False)
-    if fingerprint_failed:
-        weight = 0.000000001  # 9 zeros - technically earns, but ~1 billionth of real hardware
-        print(f"[ENROLL] Miner {miner_pk[:16]}... fingerprint FAILED - VM weight: {weight}")
-    else:
-        weight = hw_weight
 
     with sqlite3.connect(DB_PATH) as c:
+        rotation_eval = evaluate_rotating_fingerprint_checks(
+            c,
+            epoch,
+            data.get('fingerprint') if isinstance(data.get('fingerprint'), dict) else {},
+        )
+        if fingerprint_failed:
+            weight = 0.000000001  # 9 zeros - technically earns, but ~1 billionth of real hardware
+            print(f"[ENROLL] Miner {miner_pk[:16]}... fingerprint FAILED - VM weight: {weight}")
+        else:
+            weight = hw_weight * rotation_eval['active_ratio']
+
         # Ensure miner has balance entry
         c.execute(
             "INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
@@ -3396,6 +3537,13 @@ def enroll_epoch():
             (miner_id, miner_pk)
         )
 
+    app.logger.info(
+        f"[RIP-309] epoch={epoch} miner={miner_pk[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
+        f"prev_hash={rotation_eval['previous_epoch_block_hash'][:16]} active={rotation_eval['active_checks']} "
+        f"passed={rotation_eval['passed_active_checks']} failed={rotation_eval['failed_active_checks']} "
+        f"ratio={rotation_eval['active_ratio']:.3f}"
+    )
+
     # RIP-0149: Track successful enrollment
     global ENROLL_OK
     ENROLL_OK += 1
@@ -3405,6 +3553,10 @@ def enroll_epoch():
         "epoch": epoch,
         "weight": weight,
         "hw_weight": hw_weight if 'hw_weight' in dir() else weight,
+        "measurement_nonce": rotation_eval['measurement_nonce'],
+        "active_fingerprint_checks": rotation_eval['active_checks'],
+        "active_fingerprint_pass_count": rotation_eval['active_pass_count'],
+        "active_fingerprint_total": rotation_eval['active_total'],
         "fingerprint_failed": fingerprint_failed if 'fingerprint_failed' in dir() else False,
         "miner_pk": miner_pk,
         "miner_id": miner_id
