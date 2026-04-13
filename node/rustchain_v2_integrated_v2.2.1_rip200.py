@@ -48,7 +48,7 @@ except ImportError:
         print("[WARN] utxo_db.py not found but UTXO_DUAL_WRITE=1 — disabling")
         UTXO_DUAL_WRITE = False
 from datetime import datetime
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple
 from hashlib import blake2b
 
 # RIP-201: Fleet Detection Immune System
@@ -938,6 +938,111 @@ GENESIS_TIMESTAMP = 1764706927  # First actual block (Dec 2, 2025)
 EPOCH_SLOTS = 144  # 24 hours at 10-min blocks
 PER_EPOCH_RTC = 1.5  # Total RTC distributed per epoch across all miners
 PER_BLOCK_RTC = PER_EPOCH_RTC / EPOCH_SLOTS  # ~0.0104 RTC per block
+
+# RIP-309 Phase 2: deterministic continuity audit observation window.
+# Keep these helpers in this file instead of a separate module because the
+# repo's test/runtime loaders mix direct file loading, root-level imports, and
+# node/ path injection. Inlining avoids brittle clean-clone import failures.
+CONTINUITY_GENESIS_FALLBACK_DOMAIN = "rip309_continuity_genesis"
+CONTINUITY_WINDOW_MIN_HOURS = 6
+CONTINUITY_WINDOW_MAX_HOURS = 168
+CONTINUITY_WINDOW_RANGE_HOURS = (
+    CONTINUITY_WINDOW_MAX_HOURS - CONTINUITY_WINDOW_MIN_HOURS + 1
+)
+
+
+def derive_epoch_nonce(previous_epoch_digest: str) -> bytes:
+    """Derive deterministic epoch nonce bytes from prior-epoch entropy."""
+    digest = str(previous_epoch_digest or "").strip().lower()
+    if not digest:
+        digest = hashlib.sha256(
+            CONTINUITY_GENESIS_FALLBACK_DOMAIN.encode("utf-8")
+        ).hexdigest()
+    return hashlib.sha256(f"rip309:epoch_nonce:{digest}".encode("utf-8")).digest()
+
+
+def get_observation_window_hours(epoch_nonce: bytes) -> int:
+    """Map nonce bytes into the RIP-309 Phase 2 observation window range."""
+    if not isinstance(epoch_nonce, (bytes, bytearray)) or len(epoch_nonce) == 0:
+        raise ValueError("epoch_nonce must be non-empty bytes")
+    value = int.from_bytes(epoch_nonce[:8], "big", signed=False)
+    return CONTINUITY_WINDOW_MIN_HOURS + (value % CONTINUITY_WINDOW_RANGE_HOURS)
+
+
+def _stable_terminal_header_payload(row: Mapping[str, Any]) -> bytes:
+    payload = {
+        "slot": int(row.get("slot") or 0),
+        "miner_id": str(row.get("miner_id") or ""),
+        "message_hex": str(row.get("message_hex") or ""),
+        "signature_hex": str(row.get("signature_hex") or ""),
+        "pubkey_hex": str(row.get("pubkey_hex") or ""),
+        "header_json": str(row.get("header_json") or ""),
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def continuity_terminal_header_digest(row: Optional[Mapping[str, Any]]) -> str:
+    if not row:
+        return hashlib.sha256(
+            CONTINUITY_GENESIS_FALLBACK_DOMAIN.encode("utf-8")
+        ).hexdigest()
+    return hashlib.sha256(_stable_terminal_header_payload(row)).hexdigest()
+
+
+def _fetch_previous_epoch_terminal_header(conn: sqlite3.Connection, epoch: int) -> Optional[Dict[str, Any]]:
+    prev_epoch = int(epoch) - 1
+    if prev_epoch < 0:
+        return None
+
+    start_slot = prev_epoch * EPOCH_SLOTS
+    end_slot = start_slot + EPOCH_SLOTS - 1
+    original_row_factory = conn.row_factory
+    try:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT slot, miner_id, message_hex, signature_hex, pubkey_hex, header_json
+            FROM headers
+            WHERE slot >= ? AND slot <= ?
+            ORDER BY slot DESC
+            LIMIT 1
+            """,
+            (start_slot, end_slot),
+        ).fetchone()
+    except sqlite3.Error:
+        row = None
+    finally:
+        conn.row_factory = original_row_factory
+
+    if not row:
+        return None
+    if isinstance(row, Mapping):
+        return dict(row)
+    if hasattr(row, "keys"):
+        return {key: row[key] for key in row.keys()}
+    return None
+
+
+def get_continuity_audit_window(conn: sqlite3.Connection, epoch: int, epoch_start_ts: int) -> Dict[str, Any]:
+    terminal_header = _fetch_previous_epoch_terminal_header(conn, epoch)
+    previous_epoch_digest = continuity_terminal_header_digest(terminal_header)
+    epoch_nonce = derive_epoch_nonce(previous_epoch_digest)
+    window_hours = get_observation_window_hours(epoch_nonce)
+    window_seconds = int(window_hours * 3600)
+
+    return {
+        "epoch": int(epoch),
+        "nonce": epoch_nonce.hex(),
+        "window_hours": int(window_hours),
+        "window_seconds": window_seconds,
+        "window_starts_at": int(epoch_start_ts),
+        "window_ends_at": int(epoch_start_ts + window_seconds),
+        "window_anchor": "epoch_start",
+        "previous_epoch_terminal_slot": terminal_header.get("slot") if terminal_header else None,
+        "previous_epoch_terminal_digest": previous_epoch_digest,
+        "digest_source": "terminal_header" if terminal_header else "genesis_fallback",
+        "scheduler_ready": True,
+    }
 TOTAL_SUPPLY_RTC = 8_388_608  # Exactly 2**23 — pure binary, immutable
 TOTAL_SUPPLY_URTC = int(TOTAL_SUPPLY_RTC * 1_000_000)  # 8,388,608,000,000 uRTC
 ENFORCE = False  # Start with enforcement off
@@ -3232,12 +3337,14 @@ def get_epoch():
     slot = current_slot()
     epoch = slot_to_epoch(slot)
     epoch_gauge.set(epoch)
+    epoch_start_ts = GENESIS_TIMESTAMP + (epoch * EPOCH_SLOTS * BLOCK_TIME)
 
     with sqlite3.connect(DB_PATH) as c:
         enrolled = c.execute(
             "SELECT COUNT(*) FROM epoch_enroll WHERE epoch = ?",
             (epoch,)
         ).fetchone()[0]
+        continuity_audit = get_continuity_audit_window(c, epoch, epoch_start_ts)
 
     return jsonify({
         "epoch": epoch,
@@ -3245,7 +3352,8 @@ def get_epoch():
         "epoch_pot": PER_EPOCH_RTC,
         "enrolled_miners": enrolled,
         "blocks_per_epoch": EPOCH_SLOTS,
-        "total_supply_rtc": TOTAL_SUPPLY_RTC
+        "total_supply_rtc": TOTAL_SUPPLY_RTC,
+        "continuity_audit": continuity_audit,
     })
 
 @app.route('/epoch/enroll', methods=['POST'])
