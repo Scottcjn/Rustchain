@@ -21,6 +21,23 @@ except ImportError:
     def jsonify(obj):
         return obj
 
+try:
+    from rip_309_measurement_rotation import get_epoch_challenge_plan
+    HAVE_RIP309_CHALLENGE_ROTATION = True
+except ImportError:
+    try:
+        from node.rip_309_measurement_rotation import get_epoch_challenge_plan
+        HAVE_RIP309_CHALLENGE_ROTATION = True
+    except ImportError:
+        HAVE_RIP309_CHALLENGE_ROTATION = False
+
+        def get_epoch_challenge_plan(prev_block_hash, epoch):
+            return {
+                "epoch": epoch,
+                "error": "rip309_challenge_rotation_not_available",
+                "prev_block_hash": prev_block_hash,
+            }
+
 # Import RIP-200 functions
 try:
     # Normal case: this module is imported/run from the RustChain repo where
@@ -380,6 +397,39 @@ def register_rewards_rip200(app, DB_PATH):
             "rotation_size": len(attested_miners),
             "attested_miners": miners_info,
             "chain_age_years": round(chain_age, 2)
+        })
+
+    @app.route('/rip309/challenge_plan', methods=['GET'])
+    def rip309_challenge_plan():
+        """Expose deterministic RIP-309 Phase 4 challenge rotation for inspection."""
+        if not HAVE_RIP309_CHALLENGE_ROTATION:
+            return jsonify({"ok": False, "error": "rip309_challenge_rotation_not_available"}), 503
+
+        epoch_param = request.args.get('epoch')
+        prev_block_hash = (request.args.get('prev_block_hash') or '').strip()
+
+        if not epoch_param:
+            return jsonify({"ok": False, "error": "epoch required"}), 400
+        if not prev_block_hash:
+            return jsonify({"ok": False, "error": "prev_block_hash required"}), 400
+
+        try:
+            epoch = int(epoch_param)
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "epoch must be an integer"}), 400
+
+        try:
+            plan = get_epoch_challenge_plan(prev_block_hash, epoch)
+        except ValueError as e:
+            return jsonify({"ok": False, "error": f"invalid prev_block_hash: {e}"}), 400
+        except Exception as e:
+            return jsonify({"ok": False, "error": f"challenge plan generation failed: {e}"}), 500
+
+        return jsonify({
+            "ok": True,
+            "epoch": epoch,
+            "prev_block_hash": prev_block_hash,
+            "challenge_plan": plan,
         })
 
     print("[RIP-200] Round-robin consensus endpoints registered")
