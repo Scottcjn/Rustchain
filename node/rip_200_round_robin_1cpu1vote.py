@@ -13,12 +13,70 @@ Key Changes:
 4. Time-aging: Vintage hardware advantage decays over blockchain lifetime
 """
 
+import hashlib
 import logging
+import random
 import sqlite3
 import time
 from typing import List, Tuple, Dict
 
 logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────────
+# RIP-309: Fingerprint Check Rotation
+# ─────────────────────────────────────────────────────────────
+
+#: All hardware fingerprint checks that miners can perform.
+ALL_FP_CHECKS: List[str] = [
+    "clock_drift",
+    "cache_timing",
+    "simd_bias",
+    "thermal_drift",
+    "instruction_jitter",
+    "anti_emulation",
+]
+
+#: Number of checks active per epoch (4 of 6).
+ACTIVE_CHECK_COUNT = 4
+
+
+def get_measurement_nonce(prev_block_hash: bytes) -> bytes:
+    """Derive a per-epoch measurement nonce from the previous epoch's block hash.
+
+    The nonce is unpredictable without knowing ``prev_block_hash`` and is
+    deterministic given the same input, making it suitable as a seed for the
+    check-rotation lottery (RIP-309).
+
+    Args:
+        prev_block_hash: Raw bytes of the last block hash from the previous epoch.
+
+    Returns:
+        32-byte SHA-256 digest used as the rotation seed.
+    """
+    return hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
+
+
+def get_active_fingerprint_checks(prev_block_hash: bytes) -> List[str]:
+    """Select the :data:`ACTIVE_CHECK_COUNT` fingerprint checks active for this epoch.
+
+    Selection is:
+    * **Deterministic** — identical ``prev_block_hash`` always yields the same set.
+    * **Unpredictable** — cannot be predicted without knowing the previous block hash.
+
+    All six checks still *run and log results*; only the returned four influence
+    reward weights for this epoch (RIP-309).
+
+    Args:
+        prev_block_hash: Raw bytes of the last block hash from the previous epoch.
+
+    Returns:
+        Sorted list of ``ACTIVE_CHECK_COUNT`` check names drawn from
+        :data:`ALL_FP_CHECKS`.
+    """
+    nonce = get_measurement_nonce(prev_block_hash)
+    seed = int.from_bytes(nonce[:4], "big")
+    selected = random.Random(seed).sample(ALL_FP_CHECKS, ACTIVE_CHECK_COUNT)
+    return sorted(selected)  # canonical order for logging / determinism
 
 # Genesis timestamp (adjust to actual genesis block timestamp)
 GENESIS_TIMESTAMP = 1764706927  # First actual block (Dec 2, 2025)
@@ -470,7 +528,8 @@ def calculate_epoch_rewards_time_aged(
     db_path: str,
     epoch: int,
     total_reward_urtc: int,
-    current_slot: int
+    current_slot: int,
+    active_checks: List[str] | None = None,
 ) -> Dict[str, int]:
     """
     Calculate reward distribution for an epoch with time-aged multipliers
@@ -489,6 +548,10 @@ def calculate_epoch_rewards_time_aged(
         epoch: Epoch number to calculate rewards for
         total_reward_urtc: Total uRTC to distribute
         current_slot: Current blockchain slot (for age calculation)
+        active_checks: RIP-309 — the 4 fingerprint checks active for this epoch.
+            When provided, only these checks influence the fingerprint gate.
+            Miners without per-check data fall back to ``fingerprint_passed``.
+            Pass ``None`` (default) to use the pre-RIP-309 binary gate.
 
     Returns:
         Dict of {miner_id: reward_urtc}
@@ -548,6 +611,22 @@ def calculate_epoch_rewards_time_aged(
     if not epoch_miners:
         return {}
 
+    # RIP-309: pre-load per-check results for active-check gate.
+    # Gracefully degrades to {} when miner_check_results table is absent.
+    check_results_by_miner: Dict[str, Dict[str, bool]] = {}
+    if active_checks:
+        try:
+            with sqlite3.connect(db_path) as _cr_conn:
+                for (miner_pk, *_) in epoch_miners:
+                    rows = _cr_conn.execute(
+                        "SELECT check_name, passed FROM miner_check_results WHERE miner = ?",
+                        (miner_pk,),
+                    ).fetchall()
+                    if rows:
+                        check_results_by_miner[miner_pk] = {r[0]: bool(r[1]) for r in rows}
+        except Exception:
+            pass  # Table absent on pre-RIP-309 nodes — use fingerprint_passed fallback
+
     # Calculate time-aged weights
     weighted_miners = []
     total_weight = 0.0
@@ -555,7 +634,19 @@ def calculate_epoch_rewards_time_aged(
     for row in epoch_miners:
         miner_id, device_arch = row[0], row[1]
         fingerprint_ok = row[2] if len(row) > 2 else 1
-        
+
+        # RIP-309: re-evaluate eligibility using only active checks when available.
+        if active_checks and miner_id in check_results_by_miner:
+            per_check = check_results_by_miner[miner_id]
+            active_passed = all(per_check.get(c, False) for c in active_checks)
+            fingerprint_ok = 1 if active_passed else 0
+            if not active_passed:
+                logger.debug(
+                    "[RIP-309] %s failed active check(s): %s",
+                    miner_id[:20],
+                    [c for c in active_checks if not per_check.get(c, False)],
+                )
+
         # STRICT: VMs/emulators with failed fingerprint get ZERO weight
         if fingerprint_ok == 0:
             weight = 0.0  # No rewards for failed fingerprint

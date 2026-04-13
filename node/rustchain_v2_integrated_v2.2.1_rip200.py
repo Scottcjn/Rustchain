@@ -1232,6 +1232,17 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_attest_history_miner ON miner_attest_history(miner)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_attest_history_ts ON miner_attest_history(miner, ts_ok)")
 
+        # RIP-309: Per-check fingerprint results for active-check rotation.
+        # All 6 checks are stored; which 4 count is decided at reward time.
+        c.execute("""CREATE TABLE IF NOT EXISTS miner_check_results (
+            miner      TEXT    NOT NULL,
+            check_name TEXT    NOT NULL,
+            passed     INTEGER NOT NULL DEFAULT 0,
+            ts         INTEGER NOT NULL,
+            PRIMARY KEY (miner, check_name)
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_mcr_miner ON miner_check_results(miner)")
+
         # Issue #2276: Hardware fingerprint replay defense tables
         if HAVE_REPLAY_DEFENSE:
             init_replay_defense_schema()
@@ -1935,6 +1946,31 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
             INSERT INTO miner_attest_history (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, new_fp))
+
+        # RIP-309: Persist per-check pass/fail so epoch settlement can apply
+        # the active-check rotation without re-running fingerprint probes.
+        # All 6 checks are stored; which 4 count is decided at reward time.
+        if isinstance(fingerprint, dict):
+            checks_dict = fingerprint.get("checks", {})
+            if isinstance(checks_dict, dict):
+                for check_name, check_val in checks_dict.items():
+                    if isinstance(check_val, dict):
+                        passed_int = 1 if check_val.get("passed", False) else 0
+                    elif isinstance(check_val, bool):
+                        passed_int = 1 if check_val else 0
+                    else:
+                        continue
+                    try:
+                        conn.execute(
+                            "INSERT INTO miner_check_results (miner, check_name, passed, ts) "
+                            "VALUES (?, ?, ?, ?) "
+                            "ON CONFLICT(miner, check_name) DO UPDATE SET "
+                            "passed = excluded.passed, ts = excluded.ts",
+                            (miner, check_name, passed_int, now),
+                        )
+                    except Exception:
+                        pass  # Table absent on older nodes — safe to skip
+
         conn.commit()
 
         # RIP-201: Record fleet immune system signals
@@ -2529,6 +2565,7 @@ def current_slot():
 def finalize_epoch(epoch, per_block_rtc):
     """Finalize epoch and distribute rewards with security hardening"""
     from decimal import Decimal, ROUND_DOWN
+    from rip_200_round_robin_1cpu1vote import get_active_fingerprint_checks
 
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
@@ -2540,6 +2577,21 @@ def finalize_epoch(epoch, per_block_rtc):
         if settled and settled[0] == 1:
             print(f"[SECURITY] Epoch {epoch} already settled, skipping to prevent double-reward")
             return
+
+        # RIP-309: derive active checks from the previous epoch's last block hash.
+        # Unpredictable before the epoch closes; deterministic for replay/audit.
+        active_checks = None
+        try:
+            prev_epoch_end_slot = epoch * 144 - 1
+            row = c.execute(
+                "SELECT message_hex FROM headers WHERE slot <= ? ORDER BY slot DESC LIMIT 1",
+                (prev_epoch_end_slot,),
+            ).fetchone()
+            if row and row[0]:
+                active_checks = get_active_fingerprint_checks(bytes.fromhex(row[0]))
+                print(f"[RIP-309] Epoch {epoch}: active checks = {active_checks}")
+        except Exception as _e:
+            print(f"[RIP-309] Warning: could not derive active checks: {_e}")
 
         # Get all enrolled miners
         miners = c.execute(
@@ -2560,6 +2612,29 @@ def finalize_epoch(epoch, per_block_rtc):
 
         # PRECISION: Use Decimal for exact financial calculations
         total_reward = Decimal(str(per_block_rtc)) * Decimal(EPOCH_SLOTS)
+
+        # RIP-309: zero weight for miners that fail the epoch's active checks.
+        if active_checks:
+            try:
+                zeroed = 0
+                adjusted = []
+                for pk, w in miners:
+                    rows = c.execute(
+                        "SELECT check_name, passed FROM miner_check_results WHERE miner = ?",
+                        (pk,),
+                    ).fetchall()
+                    if rows:
+                        per_check = {r[0]: bool(r[1]) for r in rows}
+                        if not all(per_check.get(chk, False) for chk in active_checks):
+                            print(f"[RIP-309] {pk[:20]}... failed active checks — weight zeroed")
+                            w = 0.0
+                            zeroed += 1
+                    adjusted.append((pk, w))
+                if zeroed:
+                    print(f"[RIP-309] Epoch {epoch}: zeroed {zeroed} miner(s) via active-check gate")
+                miners = adjusted
+            except Exception as _e:
+                print(f"[RIP-309] Active-check gate error (skipped): {_e}")
 
         # WEIGHT VALIDATION: Cap maximum weight to prevent drain attacks
         MAX_WEIGHT = 10000
