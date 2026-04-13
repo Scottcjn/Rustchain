@@ -7,6 +7,7 @@ Issue #2295: Added WebSocket real-time feed for Block Explorer
 import os, time, json, secrets, hashlib, sqlite3
 from flask import Flask, request, jsonify
 from datetime import datetime
+from rip_309_measurement_rotation import get_epoch_measurement_config
 
 app = Flask(__name__)
 
@@ -170,6 +171,8 @@ def get_epoch():
         miner_count = int(miners[0]) if miners[0] else 0
         total_weight = float(miners[1]) if miners[1] else 0.0
 
+    measurement_rotation = get_epoch_measurement_config(LAST_HASH_B3, epoch)
+
     return jsonify({
         "epoch": epoch,
         "slots_per_epoch": EPOCH_SLOTS,
@@ -180,7 +183,8 @@ def get_epoch():
         "enrolled_miners": miner_count,
         "total_weight": total_weight,
         "finalized": finalized,
-        "epoch_pot": PER_BLOCK_RTC * blocks
+        "epoch_pot": PER_BLOCK_RTC * blocks,
+        "measurement_rotation": measurement_rotation
     })
 
 @app.post("/epoch/enroll")
