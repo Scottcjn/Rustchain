@@ -1,0 +1,30 @@
+name: RIP-309 Fingerprint Rotation CI
+
+on:
+  push:
+    branches:
+      - feature/rip309-fingerprint-rotation
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  rip309-tests:
+    name: RIP-309 Fingerprint Rotation + Settlement Integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install node dependencies
+        run: pip install -r requirements-node.txt
+
+      - name: Run RIP-309 rotation tests
+        run: python node/tests/test_rip309_fingerprint_rotation.py -v
+
+      - name: Run settlement integrity tests
+        run: python node/tests/test_settlement_integrity.py -v
