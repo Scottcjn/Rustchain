@@ -1,0 +1,64 @@
+name: PoC Audit 2867 - Vote Spoofing + Float Precision
+
+on:
+  push:
+    branches:
+      - audit/poc-2867-vote-spoof-float
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  p2p-vote-spoofing:
+    name: P2P Epoch Vote Spoofing PoC
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install node dependencies
+        run: pip install -r requirements-node.txt
+
+      - name: Run PoC test (expected to fail while bug is present)
+        run: python node/tests/test_p2p_vote_spoofing.py
+        continue-on-error: true
+        id: spoof_test
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2p-spoof-log
+          path: |
+            node/tests/test_p2p_vote_spoofing.py
+
+  utxo-float-precision:
+    name: UTXO Float Precision PoC
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install node dependencies
+        run: pip install -r requirements-node.txt
+
+      - name: Run PoC test (expected to fail while bug is present)
+        run: python node/tests/test_utxo_float_precision_bug.py
+        continue-on-error: true
+        id: float_test
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: utxo-float-log
+          path: |
+            node/tests/test_utxo_float_precision_bug.py
