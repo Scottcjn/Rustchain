@@ -880,10 +880,17 @@ class GossipLayer:
                         logger.error(f"Full sync from {peer_url}: no signature on state response")
                         return
                     state_payload = {"state": data["state"]}
+                    # SECURITY (#2256 Phase D follow-up): sender_id must be the
+                    # responder's canonical node_id, not peer_url. Phase A
+                    # signing includes sender_id in the signed content, so
+                    # using peer_url here causes a signature mismatch against
+                    # the content the responder actually signed.
+                    # _handle_get_state returns its node_id in "sender_id".
+                    responder_id = data.get("sender_id") or peer_url
                     state_msg = GossipMessage(
                         msg_type=MessageType.STATE.value,
-                        msg_id=f"sync:{peer_url}:{timestamp}",
-                        sender_id=peer_url,
+                        msg_id=f"sync:{responder_id}:{timestamp}",
+                        sender_id=responder_id,
                         timestamp=timestamp,
                         ttl=0,
                         signature=signature,
