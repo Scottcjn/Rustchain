@@ -13,12 +13,38 @@ Key Changes:
 4. Time-aging: Vintage hardware advantage decays over blockchain lifetime
 """
 
+import hashlib
 import logging
 import sqlite3
 import time
 from typing import List, Tuple, Dict
 
 logger = logging.getLogger(__name__)
+
+ROTATING_FINGERPRINT_CHECKS = (
+    "clock_drift",
+    "cache_timing",
+    "simd_bias",
+    "thermal_drift",
+    "instruction_jitter",
+    "anti_emulation",
+)
+ACTIVE_FINGERPRINT_CHECK_COUNT = 4
+
+
+def derive_measurement_nonce(previous_epoch_block_hash: str) -> str:
+    previous_epoch_block_hash = (previous_epoch_block_hash or ("0" * 64)).strip().lower()
+    seed = f"rip-309:{previous_epoch_block_hash}".encode()
+    return hashlib.sha256(seed).hexdigest()
+
+
+def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_count: int = ACTIVE_FINGERPRINT_CHECK_COUNT) -> Tuple[str, ...]:
+    nonce = derive_measurement_nonce(previous_epoch_block_hash)
+    ranked = sorted(
+        ROTATING_FINGERPRINT_CHECKS,
+        key=lambda name: hashlib.sha256(f"{nonce}:{name}".encode()).hexdigest(),
+    )
+    return tuple(ranked[:active_count])
 
 # Genesis timestamp (adjust to actual genesis block timestamp)
 GENESIS_TIMESTAMP = 1764706927  # First actual block (Dec 2, 2025)
@@ -504,16 +530,20 @@ def calculate_epoch_rewards_time_aged(
         cursor = conn.cursor()
 
         # Primary source: epoch_enroll (per-epoch snapshot, matches finalize_epoch).
-        cursor.execute(
-            "SELECT miner_pk FROM epoch_enroll WHERE epoch = ?",
-            (epoch,)
-        )
-        enrolled = cursor.fetchall()
+        try:
+            cursor.execute(
+                "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
+                (epoch,)
+            )
+            enrolled = cursor.fetchall()
+        except sqlite3.Error:
+            enrolled = []
 
         if enrolled:
-            # Use enrolled miners; look up device_arch from latest attestation.
+            # Use enrolled miners; epoch_enroll.weight is the canonical per-epoch
+            # reward weight snapshot and may already include RIP-309 rotation.
             epoch_miners = []
-            for (miner_pk,) in enrolled:
+            for miner_pk, enrolled_weight in enrolled:
                 arch_row = cursor.execute(
                     "SELECT device_arch, COALESCE(fingerprint_passed, 1) "
                     "FROM miner_attest_recent WHERE miner = ? LIMIT 1",
@@ -526,7 +556,7 @@ def calculate_epoch_rewards_time_aged(
                     # No attestation record — treat as unknown arch, fingerprint ok.
                     device_arch = "unknown"
                     fp = 1
-                epoch_miners.append((miner_pk, device_arch, fp))
+                epoch_miners.append((miner_pk, device_arch, fp, enrolled_weight))
         else:
             # SECURITY FIX #2159: Fallback for epochs without enrollment
             # records.  This path is vulnerable to the stale-attestation
@@ -555,11 +585,14 @@ def calculate_epoch_rewards_time_aged(
     for row in epoch_miners:
         miner_id, device_arch = row[0], row[1]
         fingerprint_ok = row[2] if len(row) > 2 else 1
+        enrolled_weight = row[3] if len(row) > 3 else None
         
         # STRICT: VMs/emulators with failed fingerprint get ZERO weight
         if fingerprint_ok == 0:
             weight = 0.0  # No rewards for failed fingerprint
             print(f"[REWARD] {miner_id[:20]}... fingerprint=FAIL -> weight=0")
+        elif enrolled_weight is not None:
+            weight = max(float(enrolled_weight or 0.0), 0.0)
         else:
             weight = get_time_aged_multiplier(device_arch, chain_age_years)
 
