@@ -19,6 +19,7 @@ Functions:
 - forfeit_lock() - Forfeit a lock (penalty/slashing)
 """
 
+import hmac
 import sqlite3
 import time
 import os
@@ -696,7 +697,10 @@ def register_lock_ledger_routes(app):
     def release_lock_endpoint():
         """Admin: Release a lock."""
         admin_key = request.headers.get("X-Admin-Key", "")
-        if admin_key != os.environ.get("RC_ADMIN_KEY", ""):
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — admin endpoints disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
         
         data = request.get_json(silent=True)
@@ -727,7 +731,10 @@ def register_lock_ledger_routes(app):
     def forfeit_lock_endpoint():
         """Admin: Forfeit a lock (penalty)."""
         admin_key = request.headers.get("X-Admin-Key", "")
-        if admin_key != os.environ.get("RC_ADMIN_KEY", ""):
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — admin endpoints disabled"}), 503
+        if not hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
         
         data = request.get_json(silent=True)

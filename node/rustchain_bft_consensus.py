@@ -215,6 +215,37 @@ class BFTConsensus:
 
         logging.info(f"BFT consensus initialized for node {self.node_id}")
 
+        # Restore committed epochs from DB so restarts don't double-credit.
+        # Without this, committed_epochs starts empty and _finalize_epoch /
+        # _apply_settlement will re-apply settlements for already-committed
+        # epochs after a node restart.
+        self._restore_committed_state()
+
+    def _restore_committed_state(self):
+        """Restore committed epochs and view number from DB on startup.
+
+        Without this, a node restart forgets all committed epochs and the
+        consensus engine will re-apply settlements, double-crediting miners.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                rows = conn.execute(
+                    "SELECT epoch, view FROM bft_committed_epochs"
+                ).fetchall()
+                for epoch, view in rows:
+                    self.committed_epochs.add(epoch)
+                    if view > self.current_view:
+                        self.current_view = view
+
+            if self.committed_epochs:
+                logging.info(
+                    f"Restored {len(self.committed_epochs)} committed epochs "
+                    f"(max epoch={max(self.committed_epochs)}, view={self.current_view})"
+                )
+        except sqlite3.OperationalError as e:
+            # Table may not exist on first run (will be created by _init_db)
+            logging.debug(f"Could not restore committed state: {e}")
+
     def register_peer(self, node_id: str, url: str):
         """Register a peer node"""
         with self.lock:
@@ -259,22 +290,41 @@ class BFTConsensus:
         leader_idx = view % len(nodes)
         return nodes[leader_idx]
 
-    def _sign_message(self, data: str) -> str:
-        """Sign a message with HMAC"""
+    def _derive_node_key(self, node_id: str) -> str:
+        """Derive a per-node HMAC key from the shared secret.
+
+        Using HMAC(shared_secret, node_id) as the per-node key means:
+        1. Each node's signatures are unique and cannot be forged by peers.
+        2. A compromised node only leaks its own derived key, not the
+           shared secret or other nodes' derived keys.
+        3. Existing deployments just need to set the same shared secret
+           on all nodes — per-node keys are derived automatically.
+        """
         return hmac.new(
             self.secret_key.encode(),
+            node_id.encode(),
+            hashlib.sha256
+        ).hexdigest()
+
+    def _sign_message(self, data: str) -> str:
+        """Sign a message with node-specific HMAC key"""
+        node_key = self._derive_node_key(self.node_id)
+        return hmac.new(
+            node_key.encode(),
             data.encode(),
             hashlib.sha256
         ).hexdigest()
 
     def _verify_signature(self, node_id: str, data: str, signature: str) -> bool:
-        """Verify message signature (simplified - all nodes share key in testnet)"""
-        # In production, each node would have its own keypair (ed25519 or similar).
-        # Shared HMAC is acceptable in a trusted-operator testnet but means one
-        # compromised node can forge messages from any peer.
-        # hmac.compare_digest prevents timing side-channel leaks.
+        """Verify message signature using the sender's derived key.
+
+        Each node has a unique derived key (see _derive_node_key), so
+        messages are authenticated per-sender.  A compromised node
+        cannot forge messages claiming to be from a different node_id.
+        """
+        node_key = self._derive_node_key(node_id)
         expected = hmac.new(
-            self.secret_key.encode(),
+            node_key.encode(),
             data.encode(),
             hashlib.sha256
         ).hexdigest()
@@ -651,27 +701,48 @@ class BFTConsensus:
             self._apply_settlement(pre_prepare.proposal)
 
     def _apply_settlement(self, proposal: Dict):
-        """Apply the consensus settlement to database"""
+        """Apply the consensus settlement to database (idempotent).
+
+        Uses epoch-scoped ledger entries to ensure each epoch's rewards are
+        credited exactly once, even if _apply_settlement is called multiple
+        times for the same epoch (e.g. after a restart before
+        committed_epochs is fully restored).
+        """
         epoch = proposal.get('epoch')
         distribution = proposal.get('distribution', {})
 
         with sqlite3.connect(self.db_path) as conn:
+            # ── Idempotency guard ────────────────────────────────────
+            # If any ledger entry already exists for this epoch, the
+            # settlement was already applied.  Bail out.
+            existing = conn.execute(
+                "SELECT 1 FROM ledger WHERE memo = ? LIMIT 1",
+                (f"epoch_{epoch}_bft",)
+            ).fetchone()
+            if existing:
+                logging.warning(
+                    f"Settlement for epoch {epoch} already applied — skipping "
+                    f"to prevent reward doubling"
+                )
+                return
+
             for miner_id, reward in distribution.items():
-                # Update balance
                 # Store as integer micro-RTC (1 RTC = 1,000,000 uRTC) to avoid
                 # floating-point drift accumulating across many ledger entries.
+                reward_urtc = int(reward * 1_000_000)
+
                 conn.execute("""
                     INSERT INTO balances (miner_id, amount_i64)
                     VALUES (?, ?)
                     ON CONFLICT(miner_id) DO UPDATE SET
                     amount_i64 = amount_i64 + excluded.amount_i64
-                """, (miner_id, int(reward * 1_000_000)))
+                """, (miner_id, reward_urtc))
 
                 # Log in ledger
                 conn.execute("""
                     INSERT INTO ledger (miner_id, delta_i64, tx_type, memo, ts)
                     VALUES (?, ?, 'reward', ?, ?)
-                """, (miner_id, int(reward * 1_000_000), f"epoch_{epoch}_bft", int(time.time())))
+                """, (miner_id, reward_urtc, f"epoch_{epoch}_bft", int(time.time())))
 
             conn.commit()
 

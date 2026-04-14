@@ -371,6 +371,15 @@ class UtxoDB:
         fee = tx.get('fee_nrtc', 0)
         tx_type = tx.get('tx_type', 'transfer')
 
+        # FIX(#2207): Defense-in-depth guard against mining_reward type confusion.
+        # The endpoint layer hardcodes tx_type='transfer', but if any code path
+        # passes user-controlled tx_type, an attacker could mint unlimited coins.
+        # Only the epoch settlement system should create mining_reward transactions.
+        # Require _allow_minting=True (internal flag) to permit mining_reward.
+        MINTING_TX_TYPES = {'mining_reward'}
+        if tx_type in MINTING_TX_TYPES and not tx.get('_allow_minting'):
+            return False
+
         try:
             conn.execute("BEGIN IMMEDIATE")
 

@@ -270,6 +270,15 @@ def register_rewards_rip200(app, DB_PATH):
 
     @app.route('/rewards/settle', methods=['POST'])
     def settle_rewards():
+        # ── Authentication: settlement is a privileged operation ──────
+        import hmac
+        settle_key = os.environ.get("RC_SETTLE_KEY", "")
+        if not settle_key:
+            return jsonify({"error": "RC_SETTLE_KEY not configured — settle endpoint disabled"}), 503
+        provided_key = request.headers.get("X-Admin-Key", "")
+        if not hmac.compare_digest(provided_key, settle_key):
+            return jsonify({"error": "Unauthorized — valid X-Admin-Key header required"}), 401
+
         data = request.json or {}
         epoch = data.get('epoch')
 

@@ -31,12 +31,17 @@ from typing import Optional, Tuple, Dict, Any
 # Import our crypto module
 from rustchain_crypto import RustChainWallet, verify_transaction
 
-# Disable SSL warnings for self-signed certs
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# SSL verification — default to True for production security.
+# Only disable for local development with self-signed certs by setting
+# RUSTCHAIN_VERIFY_SSL=0 in the environment.
+_ssl_env = os.environ.get("RUSTCHAIN_VERIFY_SSL", "1")
+VERIFY_SSL = _ssl_env != "0"
+if not VERIFY_SSL:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    print("[WALLET] WARNING: SSL verification disabled via RUSTCHAIN_VERIFY_SSL=0")
 
 # Configuration
 NODE_URL = "https://rustchain.org"
-VERIFY_SSL = False
 KEYSTORE_DIR = Path.home() / ".rustchain" / "wallets"
 
 # Retry configuration
