@@ -19,7 +19,7 @@ jobs:
     steps:
       - name: Detect BCOS tier
         id: detect
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             if (context.eventName === 'push') {
@@ -113,7 +113,7 @@ jobs:
 
       - name: Comment trust score on PR
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const score = '${{ steps.scan.outputs.score }}';
