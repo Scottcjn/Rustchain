@@ -176,12 +176,31 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
                 print(f"[WARN] Anti-double-mining failed, falling back to standard: {e}")
                 # Fall through to standard rewards
 
+        # RIP-309 Phase 1: Get previous block hash for fingerprint check rotation nonce.
+        # Query the latest block from the DB. If blocks table is empty or unavailable,
+        # leave prev_block_hash=None to fall back to legacy fingerprint_passed behavior.
+        prev_block_hash = None
+        try:
+            _db_path = db_path if isinstance(db_path, str) else DB_PATH
+            with sqlite3.connect(_db_path) as _block_conn:
+                _block_conn.row_factory = sqlite3.Row
+                _cur = _block_conn.execute(
+                    "SELECT block_hash FROM blocks ORDER BY height DESC LIMIT 1"
+                )
+                _row = _cur.fetchone()
+                if _row and _row["block_hash"]:
+                    prev_block_hash = _row["block_hash"]
+                    print(f"[RIP-309] Settlement using prev_block_hash={prev_block_hash[:16]}...")
+        except Exception as e:
+            print(f"[RIP-309] Could not get prev_block_hash for RIP-309: {e}")
+
         # Standard RIP-200 rewards (no anti-double-mining)
         rewards = calculate_epoch_rewards_time_aged(
             db_path if isinstance(db_path, str) else DB_PATH,
             epoch,
             PER_EPOCH_URTC,
-            current
+            current,
+            prev_block_hash=prev_block_hash,
         )
 
         if not rewards:
