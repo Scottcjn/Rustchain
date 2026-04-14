@@ -602,18 +602,27 @@ class GossipLayer:
         """
         payload = msg.payload
         epoch = payload.get("epoch")
-        voter = payload.get("voter")
+        # SECURITY (#2256): bind voter identity to the authenticated sender,
+        # not the spoofable payload["voter"] field. Preserves wire compat —
+        # peers still include payload["voter"] on outbound messages; we just
+        # never trust it inbound.
+        voter = msg.sender_id
         vote = payload.get("vote", "reject")
         proposal_hash = payload.get("proposal_hash")
 
-        if epoch is None or voter is None:
-            return {"status": "error", "reason": "missing epoch or voter"}
+        if epoch is None:
+            return {"status": "error", "reason": "missing epoch"}
 
         # Initialize vote tracking for this epoch if needed
         if not hasattr(self, '_epoch_votes'):
             self._epoch_votes: Dict[int, Dict[str, str]] = {}
         if epoch not in self._epoch_votes:
             self._epoch_votes[epoch] = {}
+
+        # Idempotent per-(epoch, sender): reject duplicate votes from same peer.
+        if voter in self._epoch_votes[epoch]:
+            logger.warning(f"Epoch {epoch}: duplicate vote from {voter} ignored")
+            return {"status": "duplicate", "epoch": epoch, "voter": voter}
 
         # Record the vote
         self._epoch_votes[epoch][voter] = vote
