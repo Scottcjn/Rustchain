@@ -300,6 +300,24 @@ class GossipLayer:
         self.balance_crdt = PNCounter()
         self.epoch_crdt = GSet()
 
+        # Phase F (#2256): per-peer Ed25519 identity, dual-mode signing.
+        # Only loaded/generated when needed by the current signing mode;
+        # legacy "hmac" mode does not require cryptography to be installed.
+        from p2p_identity import (
+            SIGNING_MODE,
+            LocalKeypair,
+            PeerRegistry,
+        )
+        self._signing_mode = SIGNING_MODE
+        self._keypair: Optional[LocalKeypair] = None
+        self._peer_registry: Optional[PeerRegistry] = None
+        if self._signing_mode != "hmac":
+            self._keypair = LocalKeypair()
+            self._peer_registry = PeerRegistry()
+            # Prime the keypair + registry so startup surfaces any issues.
+            _ = self._keypair.pubkey_hex
+            self._peer_registry.load()
+
         # Load initial state from DB
         self._load_state_from_db()
 
@@ -343,20 +361,79 @@ class GossipLayer:
             logger.error(f"Failed to load state from DB: {e}")
 
     def _sign_message(self, content: str) -> Tuple[str, int]:
-        """Generate HMAC signature for message"""
+        """Generate signature (HMAC, Ed25519, or dual) for message.
+
+        Mode-aware per Phase F:
+          - "hmac"     : HMAC only, raw hex (legacy wire format)
+          - "dual"     : HMAC + Ed25519, JSON-packed
+          - "ed25519"  : Ed25519 only, JSON-packed (HMAC still verified if present)
+          - "strict"   : Ed25519 only, JSON-packed (HMAC rejected)
+        """
         timestamp = int(time.time())
         message = f"{content}:{timestamp}"
-        sig = hmac.new(P2P_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
-        return sig, timestamp
+        mode = self._signing_mode
+
+        hmac_sig: Optional[str] = None
+        ed25519_sig: Optional[str] = None
+
+        if mode in ("hmac", "dual"):
+            hmac_sig = hmac.new(
+                P2P_SECRET.encode(), message.encode(), hashlib.sha256
+            ).hexdigest()
+
+        if mode in ("dual", "ed25519", "strict") and self._keypair is not None:
+            ed25519_sig = self._keypair.sign(message.encode())
+
+        from p2p_identity import pack_signature
+        return pack_signature(hmac_sig, ed25519_sig), timestamp
 
     def _verify_signature(self, content: str, signature: str, timestamp: int) -> bool:
-        """Verify HMAC signature"""
-        # Check timestamp freshness
+        """Verify a message signature.
+
+        Phase F: accepts HMAC and/or Ed25519 per current signing mode.
+        Timestamp freshness is always enforced.
+        """
         if abs(time.time() - timestamp) > MESSAGE_EXPIRY:
             return False
         message = f"{content}:{timestamp}"
-        expected = hmac.new(P2P_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(signature, expected)
+        mode = self._signing_mode
+
+        from p2p_identity import unpack_signature, verify_ed25519
+        hmac_sig, ed25519_sig = unpack_signature(signature)
+
+        # "strict" mode: only Ed25519 accepted. HMAC-only sigs are rejected
+        # even if valid (flag-day enforcement).
+        if mode == "strict":
+            if ed25519_sig is None:
+                return False
+            # Find sender's pubkey via the registry.
+            # NOTE: this classmethod-style helper is called with only
+            # (content, sig, ts). For Ed25519, we need sender_id. The handler
+            # that invokes this has the full msg — we expose a public
+            # verify_message() that threads sender_id through. Keep this
+            # method's signature stable for HMAC path.
+            return False  # strict mode must use verify_message()
+
+        # "hmac" mode: only HMAC accepted. Ed25519-only sigs are rejected.
+        if mode == "hmac":
+            if hmac_sig is None:
+                return False
+            expected = hmac.new(
+                P2P_SECRET.encode(), message.encode(), hashlib.sha256
+            ).hexdigest()
+            return hmac.compare_digest(hmac_sig, expected)
+
+        # "dual" or "ed25519" modes: accept either signature type.
+        # HMAC path:
+        if hmac_sig is not None:
+            expected = hmac.new(
+                P2P_SECRET.encode(), message.encode(), hashlib.sha256
+            ).hexdigest()
+            if hmac.compare_digest(hmac_sig, expected):
+                return True
+        # Ed25519 path (cannot run without sender_id; caller should use
+        # verify_message()). Fall through to reject if HMAC also absent.
+        return False
 
     # SECURITY (#2256 + #2272): the signed content now includes sender_id, 
     # msg_id, and ttl so the message metadata cannot be flipped post-sign.
@@ -387,11 +464,42 @@ class GossipLayer:
     def verify_message(self, msg: GossipMessage) -> bool:
         """Verify message signature and freshness.
 
-        SECURITY (#2256 + #2272): verifies sender_id, msg_id, and ttl as 
-        part of the signed content.
+        SECURITY (#2256 + #2272): verifies sender_id, msg_id, and ttl as
+        part of the signed content — any post-sign flip of those fields
+        fails verification.
+
+        Phase F: if an Ed25519 signature is present AND the sender is a
+        registered peer, verify it against their pubkey. HMAC path is a
+        fallback per the current signing mode.
         """
+        if abs(time.time() - msg.timestamp) > MESSAGE_EXPIRY:
+            return False
+
         content = self._signed_content(msg.msg_type, msg.sender_id, msg.msg_id, msg.ttl, msg.payload)
-        return self._verify_signature(content, msg.signature, msg.timestamp)
+        message = f"{content}:{msg.timestamp}"
+        mode = self._signing_mode
+
+        from p2p_identity import unpack_signature, verify_ed25519
+        hmac_sig, ed25519_sig = unpack_signature(msg.signature)
+
+        # 1) Try Ed25519 if available AND peer is registered.
+        if ed25519_sig and self._peer_registry is not None:
+            pubkey = self._peer_registry.get_pubkey(msg.sender_id)
+            if pubkey and verify_ed25519(pubkey, ed25519_sig, message.encode()):
+                return True
+            # In strict mode, Ed25519 must succeed — no fallback.
+            if mode == "strict":
+                return False
+
+        # 2) HMAC fallback (unless strict).
+        if mode == "strict":
+            return False
+        if hmac_sig is None:
+            return False
+        expected = hmac.new(
+            P2P_SECRET.encode(), message.encode(), hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(hmac_sig, expected)
 
     def broadcast(self, msg: GossipMessage, exclude_peer: str = None):
         """Broadcast message to all peers"""
