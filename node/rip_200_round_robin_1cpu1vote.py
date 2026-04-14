@@ -24,10 +24,10 @@ logger = logging.getLogger(__name__)
 ROTATING_FINGERPRINT_CHECKS = (
     "clock_drift",
     "cache_timing",
-    "simd_identity",
+    "simd_bias",
     "thermal_drift",
     "instruction_jitter",
-    "device_age_oracle",
+    "anti_emulation",
 )
 ACTIVE_FINGERPRINT_CHECK_COUNT = 4
 

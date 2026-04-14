@@ -1363,10 +1363,10 @@ def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
 RIP309_ROTATING_FINGERPRINT_CHECKS = (
     "clock_drift",
     "cache_timing",
-    "simd_identity",
+    "simd_bias",
     "thermal_drift",
     "instruction_jitter",
-    "device_age_oracle",
+    "anti_emulation",
 )
 RIP309_ACTIVE_FINGERPRINT_CHECKS = 4
 RIP309_NONCE_FALLBACK = "0" * 64
