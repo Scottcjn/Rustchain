@@ -716,4 +716,4 @@ get_epoch
 
 ---
 
-**Next**: See [glossary.md](./glossary.md) for terminology reference.
+**Next**: See [GLOSSARY.md](./GLOSSARY.md) for terminology reference.
