@@ -93,7 +93,7 @@ curl -sk https://rustchain.org/epoch
 | Active Miners | `https://rustchain.org/api/miners` |
 | Current Epoch | `https://rustchain.org/epoch` |
 | Block Explorer | `https://rustchain.org/explorer` |
-| wRTC Bridge | `https://bottube.ai/bridge` |
+| wRTC Bridge | [https://bottube.ai/bridge](https://bottube.ai/bridge) |
 
 ## RTC Payout Process
 
