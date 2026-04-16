@@ -499,8 +499,10 @@ def check_eligibility_round_robin(
 def calculate_epoch_rewards_time_aged(
     db_path: str,
     epoch: int,
-    total_reward_urtc: int, current_slot: int,
-    current_slot: int, prev_block_hash: bytes = None) -> Dict[str, int]:
+    total_reward_urtc: int,
+    current_slot: int,
+    prev_block_hash: bytes = None
+) -> Dict[str, int]:
     """
     Calculate reward distribution for an epoch with time-aged multipliers
 
