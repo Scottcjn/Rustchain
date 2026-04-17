@@ -596,6 +596,7 @@ def calculate_epoch_rewards_time_aged(
             if has_checks_col:
                 cursor.execute("""
                     SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp,
+                           NULL as enrolled_weight,
                            COALESCE(fingerprint_checks_json, '{}') as checks_json
                     FROM miner_attest_recent
                     WHERE ts_ok >= ? AND ts_ok <= ?
@@ -603,6 +604,7 @@ def calculate_epoch_rewards_time_aged(
             else:
                 cursor.execute("""
                     SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp,
+                           NULL as enrolled_weight,
                            '{}' as checks_json
                     FROM miner_attest_recent
                     WHERE ts_ok >= ? AND ts_ok <= ?
