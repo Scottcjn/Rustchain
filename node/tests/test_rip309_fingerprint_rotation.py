@@ -1,128 +1,194 @@
-#!/usr/bin/env python3
+"""
+RIP-309 Phase 1: Fingerprint Check Rotation Tests
+====================================================
+
+Tests for 4-of-6 rotating fingerprint checks per epoch.
+"""
+
+import hashlib
+import json
 import os
+import random
 import sqlite3
 import sys
 import tempfile
 import unittest
-import importlib.util
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-NODE_DIR = ROOT / "node"
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(NODE_DIR))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-os.environ.setdefault("RC_ADMIN_KEY", "0" * 32)
-os.environ.setdefault("DB_PATH", ":memory:")
+from rip_200_round_robin_1cpu1vote import calculate_epoch_rewards_time_aged, GENESIS_TIMESTAMP, BLOCK_TIME
 
 
-def _load_module(module_name: str, file_name: str, aliases=()):
-    for alias in aliases:
-        if alias in sys.modules:
-            return sys.modules[alias]
-    if module_name in sys.modules:
-        return sys.modules[module_name]
-    spec = importlib.util.spec_from_file_location(module_name, str(NODE_DIR / file_name))
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-rr_mod = _load_module("rr_mod_issue3008", "rip_200_round_robin_1cpu1vote.py", aliases=("rr_mod",))
-integrated_node = _load_module("integrated_node_issue3008", "rustchain_v2_integrated_v2.2.1_rip200.py", aliases=("integrated_node",))
-
-
-class TestRIP309FingerprintRotation(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-        self.db_path = self.tmp.name
-        self.tmp.close()
-        self.conn = sqlite3.connect(self.db_path)
-        self.conn.executescript(
-            """
-            CREATE TABLE epoch_enroll (
-                epoch INTEGER,
-                miner_pk TEXT,
-                weight REAL,
-                PRIMARY KEY (epoch, miner_pk)
-            );
-            CREATE TABLE miner_attest_recent (
-                miner TEXT PRIMARY KEY,
-                device_arch TEXT,
-                fingerprint_passed INTEGER DEFAULT 1,
-                entropy_score REAL DEFAULT 0,
-                ts_ok INTEGER,
-                warthog_bonus REAL DEFAULT 1.0
-            );
-            CREATE TABLE blocks (
-                height INTEGER PRIMARY KEY,
-                block_hash TEXT NOT NULL
-            );
-            """
+def _init_db(conn):
+    conn.execute("""
+        CREATE TABLE epoch_enroll (
+            epoch INTEGER,
+            miner_pk TEXT,
+            weight INTEGER DEFAULT 100
         )
-        integrated_node.ensure_epoch_fingerprint_rotation_table(self.conn)
-        self.conn.commit()
-
-    def tearDown(self):
-        self.conn.close()
-        os.unlink(self.db_path)
-
-    def test_rotation_differs_across_epochs(self):
-        self.conn.execute("INSERT INTO blocks (height, block_hash) VALUES (?, ?)", (143, "a" * 64))
-        self.conn.execute("INSERT INTO blocks (height, block_hash) VALUES (?, ?)", (287, "b" * 64))
-        self.conn.commit()
-
-        epoch1 = integrated_node.get_epoch_fingerprint_rotation(self.conn, 1)
-        epoch2 = integrated_node.get_epoch_fingerprint_rotation(self.conn, 2)
-
-        self.assertEqual(len(epoch1["active_checks"]), 4)
-        self.assertEqual(len(epoch2["active_checks"]), 4)
-        self.assertNotEqual(epoch1["measurement_nonce"], epoch2["measurement_nonce"])
-        self.assertNotEqual(epoch1["active_checks"], epoch2["active_checks"])
-
-    def test_reward_calc_uses_epoch_snapshot_weight(self):
-        epoch = 3
-        current_slot = epoch * integrated_node.EPOCH_SLOTS + 5
-        self.conn.execute("INSERT INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)", (epoch, "rotated", 0.5))
-        self.conn.execute("INSERT INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)", (epoch, "full", 1.0))
-        self.conn.execute(
-            "INSERT INTO miner_attest_recent (miner, device_arch, fingerprint_passed, ts_ok) VALUES (?, ?, ?, ?)",
-            ("rotated", "g4", 1, integrated_node.GENESIS_TIMESTAMP),
+    """)
+    conn.execute("""
+        CREATE TABLE miner_attest_recent (
+            miner TEXT PRIMARY KEY,
+            device_arch TEXT,
+            ts_ok INTEGER,
+            fingerprint_passed INTEGER DEFAULT 1,
+            entropy_score REAL,
+            fingerprint_checks_json TEXT
         )
-        self.conn.execute(
-            "INSERT INTO miner_attest_recent (miner, device_arch, fingerprint_passed, ts_ok) VALUES (?, ?, ?, ?)",
-            ("full", "g4", 1, integrated_node.GENESIS_TIMESTAMP),
-        )
-        self.conn.commit()
+    """)
+    conn.commit()
 
-        rewards = rr_mod.calculate_epoch_rewards_time_aged(
-            self.db_path,
-            epoch,
-            int(1.5 * 1_000_000),
-            current_slot,
-        )
 
-        self.assertEqual(sum(rewards.values()), int(1.5 * 1_000_000))
-        self.assertGreater(rewards["full"], rewards["rotated"])
-        ratio = rewards["full"] / rewards["rotated"]
-        self.assertGreater(ratio, 1.9)
-        self.assertLess(ratio, 2.1)
+def _insert_miner(conn, miner, device_arch="x86_64", passed_all=True, checks=None):
+    ts = GENESIS_TIMESTAMP + 1000
+    if checks is None:
+        checks = {
+            "clock_drift": passed_all,
+            "cache_timing": passed_all,
+            "simd_identity": passed_all,
+            "thermal_drift": passed_all,
+            "instruction_jitter": passed_all,
+            "anti_emulation": passed_all,
+        }
+    conn.execute(
+        "INSERT INTO miner_attest_recent (miner, device_arch, ts_ok, fingerprint_passed, fingerprint_checks_json) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (miner, device_arch, ts, 1 if passed_all else 0, json.dumps(checks))
+    )
+    conn.commit()
 
-    def test_rotation_eval_counts_only_active_checks(self):
-        self.conn.execute("INSERT INTO blocks (height, block_hash) VALUES (?, ?)", (143, "c" * 64))
-        self.conn.commit()
-        rotation = integrated_node.get_epoch_fingerprint_rotation(self.conn, 1)
 
-        fingerprint = {"checks": {name: {"passed": True, "data": {"ok": True}} for name in integrated_node.RIP309_ROTATING_FINGERPRINT_CHECKS}}
-        inactive = next(name for name in integrated_node.RIP309_ROTATING_FINGERPRINT_CHECKS if name not in rotation["active_checks"])
-        fingerprint["checks"][inactive] = {"passed": False, "data": {"ok": False}}
+def _enroll_miner(conn, epoch, miner, weight=100):
+    conn.execute(
+        "INSERT INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+        (epoch, miner, weight)
+    )
+    conn.commit()
 
-        result = integrated_node.evaluate_rotating_fingerprint_checks(self.conn, 1, fingerprint)
-        self.assertEqual(result["active_pass_count"], 4)
-        self.assertEqual(result["active_total"], 4)
-        self.assertEqual(result["failed_active_checks"], [])
-        self.assertEqual(result["active_ratio"], 1.0)
+
+class TestRip309Rotation(unittest.TestCase):
+
+    def _fresh_db(self):
+        fd, path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        conn = sqlite3.connect(path)
+        _init_db(conn)
+        conn.close()
+        return path
+
+    def test_determinism_same_hash(self):
+        """Same block hash must produce the same active check set."""
+        db_path = self._fresh_db()
+        conn = sqlite3.connect(db_path)
+        _enroll_miner(conn, 1, "alice", 100)
+        _insert_miner(conn, "alice", passed_all=True)
+        conn.close()
+
+        prev_hash = b"deadbeef" * 4
+        results = []
+        for _ in range(5):
+            rewards = calculate_epoch_rewards_time_aged(db_path, 1, 1_000_000, 200, prev_hash)
+            results.append(rewards)
+
+        # All identical
+        self.assertEqual(len(set(tuple(sorted(r.items())) for r in results)), 1)
+        os.unlink(db_path)
+
+    def test_unpredictability_different_hashes(self):
+        """Different block hashes should produce different active sets over many trials."""
+        db_path = self._fresh_db()
+        conn = sqlite3.connect(db_path)
+        _enroll_miner(conn, 1, "alice", 100)
+        # 4 passed, 2 failed => possible to select all 4 passed checks
+        checks = {
+            "clock_drift": True, "cache_timing": True, "simd_identity": True,
+            "thermal_drift": True, "instruction_jitter": False, "anti_emulation": False,
+        }
+        _insert_miner(conn, "alice", checks=checks)
+        conn.close()
+
+        selections = set()
+        for i in range(100):
+            h = hashlib.sha256(str(i).encode()).digest()
+            rewards = calculate_epoch_rewards_time_aged(db_path, 1, 1_000_000, 200, h)
+            selections.add(rewards.get("alice", 0))
+
+        self.assertTrue(0 in selections and max(selections) > 0,
+                        f"Expected mixed rewards across hashes, got {selections}")
+        os.unlink(db_path)
+
+    def test_only_active_checks_affect_weight(self):
+        """A miner failing only inactive checks should still receive rewards."""
+        db_path = self._fresh_db()
+        conn = sqlite3.connect(db_path)
+        _enroll_miner(conn, 1, "alice", 100)
+        checks = {
+            "clock_drift": True, "cache_timing": True, "simd_identity": True,
+            "thermal_drift": True, "instruction_jitter": True, "anti_emulation": False,
+        }
+        _insert_miner(conn, "alice", checks=checks)
+        conn.close()
+
+        for i in range(1000):
+            h = hashlib.sha256(str(i).encode()).digest()
+            fp_checks = ['clock_drift', 'cache_timing', 'simd_identity',
+                         'thermal_drift', 'instruction_jitter', 'anti_emulation']
+            seed = int.from_bytes(hashlib.sha256(h + b"measurement_nonce").digest()[:4], 'big')
+            active = set(random.Random(seed).sample(fp_checks, 4))
+            if "anti_emulation" not in active:
+                rewards = calculate_epoch_rewards_time_aged(db_path, 1, 1_000_000, 200, h)
+                self.assertGreater(rewards.get("alice", 0), 0,
+                                   "Alice should receive rewards when failing check is inactive")
+                os.unlink(db_path)
+                return
+
+        os.unlink(db_path)
+        self.fail("Could not find a hash where anti_emulation was inactive in 1000 attempts")
+
+    def test_active_failure_zeroes_reward(self):
+        """A miner failing an active check should get zero rewards."""
+        db_path = self._fresh_db()
+        conn = sqlite3.connect(db_path)
+        _enroll_miner(conn, 1, "alice", 100)
+        checks = {
+            "clock_drift": True, "cache_timing": True, "simd_identity": True,
+            "thermal_drift": True, "instruction_jitter": True, "anti_emulation": False,
+        }
+        _insert_miner(conn, "alice", checks=checks)
+        conn.close()
+
+        for i in range(1000):
+            h = hashlib.sha256(str(i).encode()).digest()
+            fp_checks = ['clock_drift', 'cache_timing', 'simd_identity',
+                         'thermal_drift', 'instruction_jitter', 'anti_emulation']
+            seed = int.from_bytes(hashlib.sha256(h + b"measurement_nonce").digest()[:4], 'big')
+            active = set(random.Random(seed).sample(fp_checks, 4))
+            if "anti_emulation" in active:
+                rewards = calculate_epoch_rewards_time_aged(db_path, 1, 1_000_000, 200, h)
+                self.assertEqual(rewards.get("alice", 0), 0,
+                                 "Alice should get zero rewards when failing check is active")
+                os.unlink(db_path)
+                return
+
+        os.unlink(db_path)
+        self.fail("Could not find a hash where anti_emulation was active in 1000 attempts")
+
+    def test_fallback_all_checks_when_no_prev_hash(self):
+        """When prev_block_hash is empty, all checks are active (backward compat)."""
+        db_path = self._fresh_db()
+        conn = sqlite3.connect(db_path)
+        _enroll_miner(conn, 1, "alice", 100)
+        checks = {
+            "clock_drift": True, "cache_timing": True, "simd_identity": True,
+            "thermal_drift": True, "instruction_jitter": True, "anti_emulation": True,
+        }
+        _insert_miner(conn, "alice", checks=checks)
+        conn.close()
+
+        rewards = calculate_epoch_rewards_time_aged(db_path, 1, 1_000_000, 200, b"")
+        self.assertGreater(rewards.get("alice", 0), 0)
+        os.unlink(db_path)
 
 
 if __name__ == "__main__":
