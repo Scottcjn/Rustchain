@@ -1,13 +1,5 @@
-# Development dependencies for RustChain
-# For node development:
-flask>=2.0.0
-# For miner and SDK:
-requests>=2.25.0
-# For wallet CLI (Ed25519 + AES-GCM):
-cryptography>=41.0
-# For node / Beacon Ed25519 verification:
-PyNaCl>=1.5.0
-# For wallet CLI (BIP39 seed phrases):
-mnemonic>=0.20
-# For running tests:
-pytest>=7.0.0
+anthropic>=0.8.0
+openai>=1.0.0
+PyGithub>=2.0.0
+python-dotenv>=1.0.0
+requests>=2.31.0
