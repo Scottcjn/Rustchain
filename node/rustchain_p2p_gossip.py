@@ -304,9 +304,19 @@ class GossipLayer:
         self._load_state_from_db()
 
     def _load_state_from_db(self):
-        """Load existing state into CRDTs"""
+        """Load existing state into CRDTs and initialize P2P tables"""
         try:
             with sqlite3.connect(self.db_path) as conn:
+                # Initialize P2P seen messages table (Issue #2271)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS p2p_seen_messages (
+                        msg_id TEXT PRIMARY KEY,
+                        ts INTEGER NOT NULL
+                    )
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_p2p_seen_ts ON p2p_seen_messages(ts)")
+                conn.commit()
+
                 # Load attestations
                 rows = conn.execute("""
                     SELECT miner, ts_ok, device_family, device_arch, entropy_score
@@ -348,22 +358,24 @@ class GossipLayer:
         expected = hmac.new(P2P_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
         return hmac.compare_digest(signature, expected)
 
-    # SECURITY (#2256 Phase A): the signed content now includes sender_id so
-    # the peer identity claim cannot be flipped post-sign. Previously the HMAC
-    # covered only msg_type + payload, which let any peer with the cluster
-    # secret forge sender_id on any signed message.
+    # SECURITY (#2256 + #2272): the signed content now includes sender_id, 
+    # msg_id, and ttl so the message metadata cannot be flipped post-sign.
     @staticmethod
-    def _signed_content(msg_type: str, sender_id: str, payload: Dict) -> str:
-        return f"{msg_type}:{sender_id}:{json.dumps(payload, sort_keys=True)}"
+    def _signed_content(msg_type: str, sender_id: str, msg_id: str, ttl: int, payload: Dict) -> str:
+        return f"{msg_type}:{sender_id}:{msg_id}:{ttl}:{json.dumps(payload, sort_keys=True)}"
 
     def create_message(self, msg_type: MessageType, payload: Dict, ttl: int = GOSSIP_TTL) -> GossipMessage:
         """Create a new gossip message"""
-        content = self._signed_content(msg_type.value, self.node_id, payload)
+        # Generate msg_id first for signature binding (Issue #2272)
+        temp_content = f"{msg_type.value}:{self.node_id}:{json.dumps(payload, sort_keys=True)}"
+        msg_id = hashlib.sha256(f"{temp_content}:{time.time()}".encode()).hexdigest()[:24]
+        
+        content = self._signed_content(msg_type.value, self.node_id, msg_id, ttl, payload)
         sig, ts = self._sign_message(content)
 
         msg = GossipMessage(
             msg_type=msg_type.value,
-            msg_id=hashlib.sha256(f"{content}:{ts}".encode()).hexdigest()[:24],
+            msg_id=msg_id,
             sender_id=self.node_id,
             timestamp=ts,
             ttl=ttl,
@@ -375,10 +387,10 @@ class GossipLayer:
     def verify_message(self, msg: GossipMessage) -> bool:
         """Verify message signature and freshness.
 
-        SECURITY (#2256 Phase A): verifies sender_id as part of the signed
-        content — any post-sign flip of sender_id now fails verification.
+        SECURITY (#2256 + #2272): verifies sender_id, msg_id, and ttl as 
+        part of the signed content.
         """
-        content = self._signed_content(msg.msg_type, msg.sender_id, msg.payload)
+        content = self._signed_content(msg.msg_type, msg.sender_id, msg.msg_id, msg.ttl, msg.payload)
         return self._verify_signature(content, msg.signature, msg.timestamp)
 
     def broadcast(self, msg: GossipMessage, exclude_peer: str = None):
@@ -407,20 +419,38 @@ class GossipLayer:
 
     def handle_message(self, msg: GossipMessage) -> Optional[Dict]:
         """Handle received gossip message"""
-        # Deduplication
-        if msg.msg_id in self.seen_messages:
-            return {"status": "duplicate"}
+        # Deduplication (Issue #2271: DB-backed persistent dedup)
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                res = conn.execute("SELECT 1 FROM p2p_seen_messages WHERE msg_id = ?", (msg.msg_id,)).fetchone()
+                if res:
+                    return {"status": "duplicate"}
+        except Exception as e:
+            logger.error(f"P2P dedup DB error: {e}")
+            # Fallback to memory if DB fails
+            if msg.msg_id in self.seen_messages:
+                return {"status": "duplicate"}
 
         # Verify signature
         if not self.verify_message(msg):
             logger.warning(f"Invalid signature from {msg.sender_id}")
             return {"status": "invalid_signature"}
 
-        self.seen_messages.add(msg.msg_id)
+        # Record as seen (Issue #2271: Persistent storage)
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("INSERT OR IGNORE INTO p2p_seen_messages (msg_id, ts) VALUES (?, ?)", 
+                             (msg.msg_id, int(time.time())))
+                # Prune old messages (> 1 hour)
+                conn.execute("DELETE FROM p2p_seen_messages WHERE ts < ?", (int(time.time()) - 3600,))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"P2P save seen DB error: {e}")
+            self.seen_messages.add(msg.msg_id)
 
-        # Limit seen_messages size
-        if len(self.seen_messages) > 10000:
-            self.seen_messages = set(list(self.seen_messages)[-5000:])
+        # Limit memory fallback size
+        if len(self.seen_messages) > 1000:
+            self.seen_messages = set(list(self.seen_messages)[-500:])
 
         # Handle by type
         msg_type = MessageType(msg.msg_type)
