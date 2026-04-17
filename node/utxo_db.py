@@ -361,6 +361,8 @@ class UtxoDB:
         if own:
             conn = self._conn()
 
+        manage_tx = own or not conn.in_transaction
+
         ts = tx.get('timestamp', int(time.time()))
         # NOTE(issue #2085): spending_proof is present on each input dict but
         # is intentionally ignored by this layer.  It is stored for
@@ -381,7 +383,13 @@ class UtxoDB:
             return False
 
         try:
-            conn.execute("BEGIN IMMEDIATE")
+            if manage_tx:
+                conn.execute("BEGIN IMMEDIATE")
+
+            def abort() -> bool:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
+                return False
 
             # -- reject duplicate input box_ids --------------------------------
             # Keyed on box_id alone (the PK of the UTXO being consumed).
@@ -392,8 +400,7 @@ class UtxoDB:
             # today, but only accidentally.  Defense in depth.
             input_box_ids = [i['box_id'] for i in inputs]
             if len(input_box_ids) != len(set(input_box_ids)):
-                conn.execute("ROLLBACK")
-                return False
+                return abort()
 
             # -- validate inputs exist and are unspent -----------------------
             input_total = 0
@@ -404,11 +411,9 @@ class UtxoDB:
                     (inp['box_id'],),
                 ).fetchone()
                 if not row:
-                    conn.execute("ROLLBACK")
-                    return False
+                    return abort()
                 if row['spent_at'] is not None:
-                    conn.execute("ROLLBACK")
-                    return False
+                    return abort()
                 input_total += row['value_nrtc']
 
             # -- conservation check ------------------------------------------
@@ -416,16 +421,14 @@ class UtxoDB:
             # All other transactions must consume at least one input box.
             MINTING_TX_TYPES = {'mining_reward'}
             if not inputs and tx_type not in MINTING_TX_TYPES:
-                conn.execute("ROLLBACK")
-                return False
+                return abort()
 
             # CRITICAL FIX: Reject empty outputs to prevent fund destruction
             # Without this check, outputs=[] bypasses conservation law:
             # output_total=0, fee=0 → (0+0) > input_total → False (bypassed)
             # Result: inputs spent, no outputs created → funds destroyed
             if not outputs and tx_type not in MINTING_TX_TYPES:
-                conn.execute("ROLLBACK")
-                return False
+                return abort()
 
             output_total = sum(o['value_nrtc'] for o in outputs)
 
@@ -434,22 +437,18 @@ class UtxoDB:
             # letting an attacker create more value than the inputs hold.
             for o in outputs:
                 if not isinstance(o['value_nrtc'], int) or o['value_nrtc'] <= 0:
-                    conn.execute("ROLLBACK")
-                    return False
+                    return abort()
 
             # Cap minting (coinbase) output to prevent unbounded fund creation.
             # Without this, any caller that passes tx_type='mining_reward'
             # can mint arbitrary amounts.
             if tx_type in MINTING_TX_TYPES and output_total > MAX_COINBASE_OUTPUT_NRTC:
-                conn.execute("ROLLBACK")
-                return False
+                return abort()
 
             if fee < 0:
-                conn.execute("ROLLBACK")
-                return False
+                return abort()
             if inputs and (output_total + fee) > input_total:
-                conn.execute("ROLLBACK")
-                return False
+                return abort()
 
             # -- compute output box IDs and build tx_id ----------------------
             # We need a preliminary tx_id for box_id computation.
@@ -496,8 +495,7 @@ class UtxoDB:
                     (now, tx_id_hex, inp['box_id']),
                 ).rowcount
                 if updated != 1:
-                    conn.execute("ROLLBACK")
-                    return False
+                    return abort()
 
             # -- create outputs ----------------------------------------------
             for rec in output_records:
@@ -538,12 +536,14 @@ class UtxoDB:
                 ),
             )
 
-            conn.execute("COMMIT")
+            if manage_tx:
+                conn.execute("COMMIT")
             return True
 
         except Exception:
             try:
-                conn.execute("ROLLBACK")
+                if manage_tx:
+                    conn.execute("ROLLBACK")
             except Exception:
                 pass
             raise
@@ -684,7 +684,8 @@ class UtxoDB:
                     (inp['box_id'],),
                 ).fetchone()
                 if existing:
-                    conn.execute("ROLLBACK")
+                    if manage_tx:
+                        conn.execute("ROLLBACK")
                     return False
 
                 # Check box exists and is unspent
@@ -694,7 +695,8 @@ class UtxoDB:
                     (inp['box_id'],),
                 ).fetchone()
                 if not box:
-                    conn.execute("ROLLBACK")
+                    if manage_tx:
+                        conn.execute("ROLLBACK")
                     return False
 
             # -- conservation-of-value check ---------------------------------
@@ -702,13 +704,15 @@ class UtxoDB:
             # apply_transaction(), locking UTXOs until expiry (DoS vector).
             fee = tx.get('fee_nrtc', 0)
             if fee < 0:
-                conn.execute("ROLLBACK")
+                if manage_tx:
+                        conn.execute("ROLLBACK")
                 return False
 
             # MEDIUM FIX: Reject empty outputs to prevent DoS
             outputs = tx.get('outputs', [])
             if not outputs and tx_type not in MINTING_TX_TYPES:
-                conn.execute("ROLLBACK")
+                if manage_tx:
+                        conn.execute("ROLLBACK")
                 return False
 
             input_total = 0
@@ -729,12 +733,14 @@ class UtxoDB:
             for o in outputs:
                 val = o.get('value_nrtc')
                 if not isinstance(val, int) or val <= 0:
-                    conn.execute("ROLLBACK")
+                    if manage_tx:
+                        conn.execute("ROLLBACK")
                     return False
 
             output_total = sum(o['value_nrtc'] for o in outputs)
             if input_total > 0 and (output_total + fee) > input_total:
-                conn.execute("ROLLBACK")
+                if manage_tx:
+                        conn.execute("ROLLBACK")
                 return False
 
             # Insert into mempool
@@ -766,7 +772,8 @@ class UtxoDB:
             return True
         except Exception:
             try:
-                conn.execute("ROLLBACK")
+                if manage_tx:
+                        conn.execute("ROLLBACK")
             except Exception:
                 pass
             return False
