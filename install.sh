@@ -25,7 +25,7 @@ NC='\033[0m' # No Color
 INSTALL_DIR="$HOME/.rustchain"
 MINER_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/rustchain_universal_miner.py"
 FINGERPRINT_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/fingerprint_checks.py"
-NODE_URL="https://50.28.86.131"
+NODE_URL="https://rustchain.org"
 VERSION="1.0.0"
 
 # ─── Parse Arguments ─────────────────────────────────────────────────
