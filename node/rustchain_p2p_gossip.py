@@ -375,6 +375,7 @@ class GossipLayer:
 
         hmac_sig: Optional[str] = None
         ed25519_sig: Optional[str] = None
+        key_version = 1
 
         if mode in ("hmac", "dual"):
             hmac_sig = hmac.new(
@@ -383,9 +384,10 @@ class GossipLayer:
 
         if mode in ("dual", "ed25519", "strict") and self._keypair is not None:
             ed25519_sig = self._keypair.sign(message.encode())
+            key_version = self._keypair.key_version
 
         from p2p_identity import pack_signature
-        return pack_signature(hmac_sig, ed25519_sig), timestamp
+        return pack_signature(hmac_sig, ed25519_sig, key_version), timestamp
 
     def _verify_signature(self, content: str, signature: str, timestamp: int) -> bool:
         """Verify a message signature.
@@ -480,13 +482,23 @@ class GossipLayer:
         mode = self._signing_mode
 
         from p2p_identity import unpack_signature, verify_ed25519
-        hmac_sig, ed25519_sig = unpack_signature(msg.signature)
+        hmac_sig, ed25519_sig, incoming_version = unpack_signature(msg.signature)
 
         # 1) Try Ed25519 if available AND peer is registered.
         if ed25519_sig and self._peer_registry is not None:
-            pubkey = self._peer_registry.get_pubkey(msg.sender_id)
-            if pubkey and verify_ed25519(pubkey, ed25519_sig, message.encode()):
-                return True
+            entry = self._peer_registry.get_entry(msg.sender_id)
+            pubkey = entry.pubkey_hex if entry else None
+            if pubkey:
+                # Item A: Check key version matches registry
+                if incoming_version != entry.key_version:
+                    logger.warning(
+                        f"Peer {msg.sender_id} key version mismatch: "
+                        f"registry expects v{entry.key_version}, got v{incoming_version}"
+                    )
+                    return False
+
+                if verify_ed25519(pubkey, ed25519_sig, message.encode()):
+                    return True
             # In strict mode, Ed25519 must succeed — no fallback.
             if mode == "strict":
                 return False
