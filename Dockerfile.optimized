@@ -1,0 +1,38 @@
+# Build Stage
+FROM rust:latest AS builder
+
+# Install necessary build dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy only the miner directory to avoid bloat
+COPY rustchain-miner /app/rustchain-miner
+
+# Build the release version from the subfolder
+RUN cd rustchain-miner && cargo build --release
+
+# Final Stage
+# Using a newer base image to match the builder's GLIBC version
+FROM debian:trixie-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy binary from builder's target folder inside the subfolder
+COPY --from=builder /app/rustchain-miner/target/release/rustchain-miner /app/rustchain-miner
+
+# Default environment variables
+ENV RUSTCHAIN_NODE_URL="https://50.28.86.131"
+ENV RUSTCHAIN_VERBOSE="false"
+
+# Run the miner
+ENTRYPOINT ["/app/rustchain-miner"]

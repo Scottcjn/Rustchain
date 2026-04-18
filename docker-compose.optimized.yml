@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  miner:
+    build:
+      context: .
+      dockerfile: Dockerfile.optimized
+    environment:
+      - RUSTCHAIN_WALLET=${RUSTCHAIN_WALLET}
+      - RUSTCHAIN_NODE_URL=${RUSTCHAIN_NODE_URL:-https://50.28.86.131}
+      - RUSTCHAIN_VERBOSE=${RUSTCHAIN_VERBOSE:-false}
+    restart: unless-stopped
