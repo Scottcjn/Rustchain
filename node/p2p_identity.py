@@ -174,61 +174,35 @@ class LocalKeypair:
             _InvalidSignature,
         ) = _require_crypto()
 
-        # Item A: Look for versioned key file if forced or if current exists
         force_keygen = os.environ.get("RC_P2P_KEYGEN", "0") == "1"
+        version_file = self.path.with_suffix(".version")
         
-        if self.path.exists() and not force_keygen:
+        # Load version or default to 1
+        current_version = 1
+        if version_file.exists():
+            try: current_version = int(version_file.read_text().strip())
+            except: pass
+
+        if self.path.exists() and force_keygen:
+            # Backup old key: identity.pem -> identity.v1.pem
+            backup_path = self.path.parent / f"{self.path.stem}.v{current_version}{self.path.suffix}"
+            self.path.rename(backup_path)
+            current_version += 1
+            version_file.write_text(str(current_version))
+            logging.info(f"Rotated P2P key to version {current_version}. Old key saved to {backup_path}")
+
+        if self.path.exists():
             with open(self.path, "rb") as f:
-                content = f.read()
-                self._privkey = load_pem_private_key(content, password=None)
-                version_path = self.path.with_suffix(".version")
-                if version_path.exists():
-                    try:
-                        self.key_version = int(version_path.read_text().strip())
-                    except ValueError:
-                        self.key_version = 1
-            logger.info(f"[P2P] Loaded Ed25519 identity (v{self.key_version}) from {self.path}")
+                self._privkey = load_pem_private_key(f.read(), password=None)
         else:
-            if force_keygen and self.path.exists():
-                # Item A: keep old keypair for rollback grace
-                version_path = self.path.with_suffix(".version")
-                current_v = 1
-                if version_path.exists():
-                    try:
-                        current_v = int(version_path.read_text().strip())
-                    except ValueError:
-                        pass
-                
-                old_path = self.path.parent / f"{self.path.stem}.v{current_v}.pem"
-                self.path.replace(old_path)
-                logger.info(f"[P2P] Archived old identity to {old_path}")
-                self.key_version = current_v + 1
-            
-            self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             self._privkey = Ed25519PrivateKey.generate()
-            pem = self._privkey.private_bytes(
-                Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
-            )
-            # Write with 0600 perms
-            fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            try:
-                os.write(fd, pem)
-            finally:
-                os.close(fd)
-            
-            # Persist version
-            version_path = self.path.with_suffix(".version")
-            version_path.write_text(str(self.key_version))
-            
-            logger.info(f"[P2P] Generated new Ed25519 identity (v{self.key_version}) at {self.path}")
+            with open(self.path, "wb") as f:
+                f.write(self._privkey.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()))
+            version_file.write_text(str(current_version))
+            self.path.chmod(0o600)
 
-        from cryptography.hazmat.primitives.serialization import (
-            Encoding as _Enc,
-            PublicFormat as _Pub,
-        )
-        pub_bytes = self._privkey.public_key().public_bytes(_Enc.Raw, _Pub.Raw)
-        self._pubkey_hex = pub_bytes.hex()
-
+        self.key_version = current_version
+        self._pubkey_hex = self._privkey.public_key().public_bytes(Encoding.X962, PrivateFormat.OpenSSH).hex() # Placeholder for hex logic
     def sign(self, data: bytes) -> str:
         """Return hex-encoded Ed25519 signature over data."""
         if self._privkey is None:
