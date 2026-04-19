@@ -7,7 +7,7 @@
 #   curl -fsSL https://rustchain.org/install.sh | bash -s -- --wallet MY_WALLET
 #
 # Or manually:
-#   bash install-rtc-miner.sh --wallet my-wallet-name
+#   bash install.sh --wallet my-wallet-name
 #
 # This installs the RTC miner alongside your existing GPU mining setup.
 # CPU overhead: <0.1% | GPU impact: 0% | RAM: <50MB
