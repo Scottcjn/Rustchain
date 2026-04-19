@@ -319,30 +319,20 @@ class PeerRegistry:
         if not entry:
             return None
 
-        # Item B: Registry expiry / not_before / not_after
-        from datetime import datetime, timezone
+        # Item B: Registry expiry logic
+        from datetime import datetime, timezone, timedelta
         now = datetime.now(timezone.utc)
-        
-        # Clock skew tolerance: ±5 min (300s)
-        SKEW = 300
-        
-        if entry.not_before:
-            try:
-                nb = datetime.fromisoformat(entry.not_before.replace("Z", "+00:00"))
-                if (nb.timestamp() - now.timestamp()) > SKEW:
-                    logger.warning(f"[P2P] Peer {node_id} registry entry not yet valid (not_before={entry.not_before})")
-                    return None
-            except ValueError:
-                logger.warning(f"[P2P] Peer {node_id} has invalid not_before: {entry.not_before}")
+        tolerance = timedelta(minutes=5)
 
+        if entry.not_before:
+            nb = datetime.fromisoformat(entry.not_before.replace('Z', '+00:00'))
+            if now + tolerance < nb:
+                return None
+        
         if entry.not_after:
-            try:
-                na = datetime.fromisoformat(entry.not_after.replace("Z", "+00:00"))
-                if (now.timestamp() - na.timestamp()) > SKEW:
-                    logger.warning(f"[P2P] Peer {node_id} registry entry expired (not_after={entry.not_after})")
-                    return None
-            except ValueError:
-                logger.warning(f"[P2P] Peer {node_id} has invalid not_after: {entry.not_after}")
+            na = datetime.fromisoformat(entry.not_after.replace('Z', '+00:00'))
+            if now - tolerance > na:
+                return None
 
         return entry.pubkey_hex
 
