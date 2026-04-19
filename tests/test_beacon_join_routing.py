@@ -109,10 +109,10 @@ class TestBeaconJoinRouting(unittest.TestCase):
         )
         self.assertEqual(response1.status_code, 200)
 
-        # Update with new data
+        # Update with new data (keep same pubkey_hex per security rule)
         payload2 = {
             'agent_id': 'bcn_upsert_test',
-            'pubkey_hex': '0x1111222233334444555566667777888899990000aaaabbbbccccdddd11112222',
+            'pubkey_hex': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbbccccddddaaaabbbbccccdddd',
             'name': 'Updated Name',
         }
 
@@ -413,10 +413,10 @@ class TestBeaconJoinRouting(unittest.TestCase):
         self.assertEqual(data2['total'], 1)
         self.assertEqual(data2['agents'][0]['name'], 'Workflow Agent v1')
 
-        # Step 3: Update agent
+        # Step 3: Update agent (keep same pubkey_hex)
         payload3 = {
             'agent_id': 'bcn_workflow',
-            'pubkey_hex': '0x2222' + '00' * 30,
+            'pubkey_hex': '0x1111' + '00' * 30,
             'name': 'Workflow Agent v2',
         }
 

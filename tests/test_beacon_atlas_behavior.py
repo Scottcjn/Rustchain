@@ -262,6 +262,9 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
 
     def test_bounty_completion_updates_reputation(self):
         """Completing a bounty increases agent reputation."""
+        # Setup admin key for test
+        os.environ["RC_ADMIN_KEY"] = "test_key_123"
+        
         # Insert test bounty
         with sqlite3.connect(self.test_db_path) as conn:
             conn.execute("""
@@ -275,6 +278,7 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         complete_response = self.client.post(
             '/api/bounties/gh_complete_test/complete',
             data=json.dumps({'agent_id': 'bcn_completer'}),
+            headers={'X-Admin-Key': 'test_key_123'},
             content_type='application/json'
         )
         self.assertEqual(complete_response.status_code, 200)
