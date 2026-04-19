@@ -880,7 +880,7 @@ class GossipLayer:
             "balances": self.balance_crdt.to_dict()
         }
         # Sign the state response so the requester can verify authenticity.
-        # Uses the Phase A signed-content shape (msg_type:sender_id:payload)
+        # Uses the updated signature shape (msg_type:sender_id:msg_id:ttl:payload) per #2256
         # so verify_message() on the requester side accepts it.
         payload = {"state": state_data}
         content = self._signed_content(MessageType.STATE.value, self.node_id, payload)
