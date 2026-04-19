@@ -134,12 +134,33 @@ class LocalKeypair:
     """
 
     def __init__(self, path: Optional[str | Path] = None):
+        import os, logging
         if path is None:
-            self.path = get_default_privkey_path()
+            env_path = os.getenv("RC_P2P_PRIVKEY_PATH")
+            candidates = [Path(env_path)] if env_path else []
+            candidates += [Path("/etc/rustchain/p2p_identity.pem"), Path.home() / ".rustchain" / "p2p_identity.pem"]
+            
+            chosen = None
+            for p in candidates:
+                if p.exists(): chosen = p; break
+            
+            if not chosen:
+                for p in candidates:
+                    try:
+                        p.parent.mkdir(parents=True, exist_ok=True)
+                        with open(p, 'a'): pass # test write access
+                        chosen = p; break
+                    except Exception: pass
+                    
+            if not chosen: raise PermissionError("No writable path found.")
+            
+            self.path = chosen
+            logging.info(f"Chosen P2P path: {self.path}")
         else:
             self.path = Path(path)
-        self.key_version = 1  # Item A: key rotation
-        self._privkey = None  # lazy
+            
+        self.key_version = 1
+        self._privkey = None
         self._pubkey_hex: Optional[str] = None
 
     def _load_or_generate(self):
