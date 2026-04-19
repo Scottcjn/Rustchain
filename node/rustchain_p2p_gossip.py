@@ -880,17 +880,30 @@ class GossipLayer:
             "balances": self.balance_crdt.to_dict()
         }
         # Sign the state response so the requester can verify authenticity.
-        # Uses the Phase A signed-content shape (msg_type:sender_id:payload)
-        # so verify_message() on the requester side accepts it.
+        # Issue #2288: _signed_content requires the 5-arg shape since #2272
+        # (msg_type:sender_id:msg_id:ttl:payload). The previous 3-arg call
+        # raised TypeError on every GET_STATE, so responses were silently
+        # dropped. Generate a synthetic msg_id here and echo it (with ttl)
+        # back to the requester so verify_message() can reconstruct the
+        # exact signed content end-to-end.
         payload = {"state": state_data}
-        content = self._signed_content(MessageType.STATE.value, self.node_id, payload)
+        ttl = 0
+        msg_id = hashlib.sha256(
+            f"{MessageType.STATE.value}:{self.node_id}:"
+            f"{json.dumps(payload, sort_keys=True)}:{time.time()}".encode()
+        ).hexdigest()[:24]
+        content = self._signed_content(
+            MessageType.STATE.value, self.node_id, msg_id, ttl, payload
+        )
         signature, timestamp = self._sign_message(content)
         return {
             "status": "ok",
             "state": state_data,
             "signature": signature,
             "timestamp": timestamp,
-            "sender_id": self.node_id
+            "sender_id": self.node_id,
+            "msg_id": msg_id,
+            "ttl": ttl,
         }
 
     def _handle_state(self, msg: GossipMessage) -> Dict:
@@ -1025,12 +1038,20 @@ class GossipLayer:
                     # the content the responder actually signed.
                     # _handle_get_state returns its node_id in "sender_id".
                     responder_id = data.get("sender_id") or peer_url
+                    # Issue #2288: use the msg_id and ttl echoed back by the
+                    # responder (when present) so the reconstructed signed
+                    # content matches what was actually signed. The fallback
+                    # preserves the old shape for peers that haven't picked
+                    # up the fix yet, though their signatures will fail
+                    # verification regardless because of the arity bug.
+                    resp_msg_id = data.get("msg_id") or f"sync:{responder_id}:{timestamp}"
+                    resp_ttl = data.get("ttl", 0)
                     state_msg = GossipMessage(
                         msg_type=MessageType.STATE.value,
-                        msg_id=f"sync:{responder_id}:{timestamp}",
+                        msg_id=resp_msg_id,
                         sender_id=responder_id,
                         timestamp=timestamp,
-                        ttl=0,
+                        ttl=resp_ttl,
                         signature=signature,
                         payload=state_payload
                     )
