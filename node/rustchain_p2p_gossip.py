@@ -399,7 +399,7 @@ class GossipLayer:
         mode = self._signing_mode
 
         from p2p_identity import unpack_signature, verify_ed25519
-        hmac_sig, ed25519_sig = unpack_signature(signature)
+        hmac_sig, ed25519_sig, _v = unpack_signature(signature)
 
         # "strict" mode: only Ed25519 accepted. HMAC-only sigs are rejected
         # even if valid (flag-day enforcement).
@@ -480,7 +480,7 @@ class GossipLayer:
         mode = self._signing_mode
 
         from p2p_identity import unpack_signature, verify_ed25519
-        hmac_sig, ed25519_sig = unpack_signature(msg.signature)
+        hmac_sig, ed25519_sig, _v = unpack_signature(msg.signature)
 
         # 1) Try Ed25519 if available AND peer is registered.
         if ed25519_sig and self._peer_registry is not None:
@@ -880,16 +880,22 @@ class GossipLayer:
             "balances": self.balance_crdt.to_dict()
         }
         # Sign the state response so the requester can verify authenticity.
-        # Uses the Phase A signed-content shape (msg_type:sender_id:payload)
-        # so verify_message() on the requester side accepts it.
+        # SECURITY (#2272): must include msg_id and ttl for arity compliance.
         payload = {"state": state_data}
-        content = self._signed_content(MessageType.STATE.value, self.node_id, payload)
+        
+        # Generate synthetic msg_id for the response (non-forwarded, ttl=0)
+        import hashlib, time
+        state_msg_id = hashlib.sha256(f"STATE:{self.node_id}:{time.time()}".encode()).hexdigest()[:24]
+        
+        content = self._signed_content(MessageType.STATE.value, self.node_id, state_msg_id, 0, payload)
         signature, timestamp = self._sign_message(content)
         return {
             "status": "ok",
             "state": state_data,
             "signature": signature,
             "timestamp": timestamp,
+            "msg_id": state_msg_id,
+            "ttl": 0,
             "sender_id": self.node_id
         }
 
