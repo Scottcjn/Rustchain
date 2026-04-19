@@ -134,7 +134,7 @@ class RateLimiter:
 
     def __init__(self):
         self.requests = {}  # {peer_url: [(timestamp, endpoint), ...]}
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
         # Rate limits per endpoint (requests per minute)
         self.limits = {
@@ -291,7 +291,7 @@ class SybilProtection:
         self.peer_reputation = {}  # {peer_url: score}
         self.banned_peers = set()
         self.whitelist = set()
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
     def can_add_peer(self, peer_url: str) -> tuple:
         """Check if peer can be added"""
@@ -344,7 +344,7 @@ class SecurePeerManager:
         self.local_port = local_port
         self.local_url = f"http://{local_host}:{local_port}"
         self.peers: Dict[str, Dict] = {}
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
         # Security components
         self.auth_manager = P2PAuthManager()
