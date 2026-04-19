@@ -118,6 +118,9 @@ def _attach_live_challenge(test_client, payload: dict) -> dict:
 
 @pytest.fixture
 def client(monkeypatch):
+    # Set admin key for test context
+    monkeypatch.setenv("RC_ADMIN_KEY", "0" * 32)
+    
     local_tmp_dir = Path(__file__).parent / ".tmp_attestation"
     local_tmp_dir.mkdir(exist_ok=True)
     db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
