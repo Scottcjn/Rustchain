@@ -138,9 +138,25 @@ class LocalKeypair:
             self.path = get_default_privkey_path()
         else:
             self.path = Path(path)
-        self.key_version = 1  # Item A: key rotation
+        self.key_version = 1
         self._privkey = None  # lazy
         self._pubkey_hex: Optional[str] = None
+        self._loaded = False
+
+    def sign(self, data: bytes) -> str:
+        """Return hex-encoded Ed25519 signature over data."""
+        self._ensure_loaded()
+        return self._privkey.sign(data).hex()
+
+    @property
+    def pubkey_hex(self) -> str:
+        self._ensure_loaded()
+        return self._pubkey_hex
+
+    def _ensure_loaded(self):
+        if not self._loaded:
+            self._load_or_generate()
+            self._loaded = True
 
     def _load_or_generate(self):
         (
@@ -155,22 +171,23 @@ class LocalKeypair:
 
         # Item A: Look for versioned key file if forced or if current exists
         force_keygen = os.environ.get("RC_P2P_KEYGEN", "0") == "1"
+        version_path = self.path.with_suffix(".version")
         
         if self.path.exists() and not force_keygen:
             with open(self.path, "rb") as f:
                 content = f.read()
                 self._privkey = load_pem_private_key(content, password=None)
-                version_path = self.path.with_suffix(".version")
-                if version_path.exists():
-                    try:
-                        self.key_version = int(version_path.read_text().strip())
-                    except ValueError:
-                        self.key_version = 1
+            
+            # Item A: Load existing version
+            if version_path.exists():
+                try:
+                    self.key_version = int(version_path.read_text().strip())
+                except ValueError:
+                    self.key_version = 1
             logger.info(f"[P2P] Loaded Ed25519 identity (v{self.key_version}) from {self.path}")
         else:
             if force_keygen and self.path.exists():
                 # Item A: keep old keypair for rollback grace
-                version_path = self.path.with_suffix(".version")
                 current_v = 1
                 if version_path.exists():
                     try:
@@ -207,18 +224,6 @@ class LocalKeypair:
         )
         pub_bytes = self._privkey.public_key().public_bytes(_Enc.Raw, _Pub.Raw)
         self._pubkey_hex = pub_bytes.hex()
-
-    def sign(self, data: bytes) -> str:
-        """Return hex-encoded Ed25519 signature over data."""
-        if self._privkey is None:
-            self._load_or_generate()
-        return self._privkey.sign(data).hex()
-
-    @property
-    def pubkey_hex(self) -> str:
-        if self._pubkey_hex is None:
-            self._load_or_generate()
-        return self._pubkey_hex
 
 
 # ---------------------------------------------------------------------------
@@ -354,16 +359,32 @@ def pack_signature(hmac_sig: Optional[str], ed25519_sig: Optional[str], key_vers
     if hmac_sig:
         bundle["h"] = hmac_sig
     bundle["e"] = ed25519_sig
-    bundle["v"] = key_version
+    if key_version != 1:
+        bundle["v"] = key_version
     return json.dumps(bundle, separators=(",", ":"))
 
 
-def unpack_signature(sig_field: str) -> Tuple[Optional[str], Optional[str], int]:
+def unpack_signature(sig_field: str) -> Tuple[Optional[str], Optional[str]]:
     """Inverse of pack_signature.
 
-    Returns (hmac_sig, ed25519_sig, key_version). Either sig may be None if not present.
-    Treats raw-hex strings as legacy HMAC-only with version 1.
+    Returns (hmac_sig, ed25519_sig). Either sig may be None if not present.
+    Treats raw-hex strings as legacy HMAC-only.
     """
+    if not sig_field:
+        return None, None
+    stripped = sig_field.strip()
+    if stripped.startswith("{"):
+        try:
+            bundle = json.loads(stripped)
+            return bundle.get("h"), bundle.get("e")
+        except json.JSONDecodeError:
+            return None, None
+    # Legacy hex — assume HMAC
+    return stripped, None
+
+
+def unpack_signature_v2(sig_field: str) -> Tuple[Optional[str], Optional[str], int]:
+    """Extended version of unpack_signature including key_version."""
     if not sig_field:
         return None, None, 1
     stripped = sig_field.strip()
@@ -373,7 +394,6 @@ def unpack_signature(sig_field: str) -> Tuple[Optional[str], Optional[str], int]
             return bundle.get("h"), bundle.get("e"), bundle.get("v", 1)
         except json.JSONDecodeError:
             return None, None, 1
-    # Legacy hex — assume HMAC, version 1
     return stripped, None, 1
 
 
