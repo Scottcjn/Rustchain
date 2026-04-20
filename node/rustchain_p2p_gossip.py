@@ -883,14 +883,20 @@ class GossipLayer:
         # Uses the Phase A signed-content shape (msg_type:sender_id:payload)
         # so verify_message() on the requester side accepts it.
         payload = {"state": state_data}
-        content = self._signed_content(MessageType.STATE.value, self.node_id, payload)
+        # FIX #2288: _signed_content requires 5 args (msg_type, sender_id, msg_id, ttl, payload)
+        state_msg_id = hashlib.sha256(
+            f"STATE:{self.node_id}:{json.dumps(payload, sort_keys=True)}:{time.time()}".encode()
+        ).hexdigest()[:24]
+        content = self._signed_content(MessageType.STATE.value, self.node_id, state_msg_id, 0, payload)
         signature, timestamp = self._sign_message(content)
         return {
             "status": "ok",
             "state": state_data,
             "signature": signature,
             "timestamp": timestamp,
-            "sender_id": self.node_id
+            "sender_id": self.node_id,
+            "msg_id": state_msg_id,
+            "ttl": 0
         }
 
     def _handle_state(self, msg: GossipMessage) -> Dict:
