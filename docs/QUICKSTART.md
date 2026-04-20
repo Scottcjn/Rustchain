@@ -223,7 +223,7 @@ hardware's **antiquity multiplier** -- older hardware gets a bigger slice.
 | RISC-V | 1.4x | Open hardware, the future |
 | Apple Silicon (M1-M4) | 1.2x | Modern but welcome |
 | Modern x86 (AMD/Intel) | 0.8x | Baseline |
-| ARM NAS/SBC | 0.0005x | Too cheap, too farmable |
+| ARM NAS/SBC | 0.0005x | Low attestation weight, easily replicated |
 
 **Got a PowerBook G4 gathering dust in a closet?** Plug it in. It earns 2.5x what your
 gaming PC does.
