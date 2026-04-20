@@ -883,14 +883,20 @@ class GossipLayer:
         # Uses the Phase A signed-content shape (msg_type:sender_id:payload)
         # so verify_message() on the requester side accepts it.
         payload = {"state": state_data}
-        content = self._signed_content(MessageType.STATE.value, self.node_id, payload)
+        state_msg_id = hashlib.sha256(
+            f"STATE:{self.node_id}:{json.dumps(payload, sort_keys=True)}:{time.time()}".encode()
+        ).hexdigest()[:24]
+        
+        content = self._signed_content(MessageType.STATE.value, self.node_id, state_msg_id, 0, payload)
         signature, timestamp = self._sign_message(content)
         return {
             "status": "ok",
             "state": state_data,
             "signature": signature,
             "timestamp": timestamp,
-            "sender_id": self.node_id
+            "sender_id": self.node_id,
+            "msg_id": state_msg_id,
+            "ttl": 0
         }
 
     def _handle_state(self, msg: GossipMessage) -> Dict:
@@ -1006,31 +1012,25 @@ class GossipLayer:
             if resp.status_code == 200:
                 data = resp.json()
                 if "state" in data:
-                    # SECURITY FIX #2154: Verify signature on state response.
+                    # SECURITY FIX #2154 & #2288: Verify signature on state response.
                     # The responder signs over {"state": <state_data>} (see
-                    # _handle_get_state), so the payload we feed into the
-                    # GossipMessage must match exactly — NOT the full HTTP
-                    # response which also contains "status", "signature", and
-                    # "timestamp" keys.
+                    # _handle_get_state), including msg_id and ttl for arity.
                     signature = data.get("signature", "")
                     timestamp = data.get("timestamp", int(time.time()))
+                    msg_id = data.get("msg_id", f"sync:{self.node_id}:{timestamp}")
+                    ttl = data.get("ttl", 0)
+
                     if not signature:
                         logger.error(f"Full sync from {peer_url}: no signature on state response")
                         return
                     state_payload = {"state": data["state"]}
-                    # SECURITY (#2256 Phase D follow-up): sender_id must be the
-                    # responder's canonical node_id, not peer_url. Phase A
-                    # signing includes sender_id in the signed content, so
-                    # using peer_url here causes a signature mismatch against
-                    # the content the responder actually signed.
-                    # _handle_get_state returns its node_id in "sender_id".
                     responder_id = data.get("sender_id") or peer_url
                     state_msg = GossipMessage(
                         msg_type=MessageType.STATE.value,
-                        msg_id=f"sync:{responder_id}:{timestamp}",
+                        msg_id=msg_id,
                         sender_id=responder_id,
                         timestamp=timestamp,
-                        ttl=0,
+                        ttl=ttl,
                         signature=signature,
                         payload=state_payload
                     )
