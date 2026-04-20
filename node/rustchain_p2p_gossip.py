@@ -480,7 +480,7 @@ class GossipLayer:
         mode = self._signing_mode
 
         from p2p_identity import unpack_signature, verify_ed25519
-        hmac_sig, ed25519_sig = unpack_signature(msg.signature)
+        hmac_sig, ed25519_sig, _key_ver = unpack_signature(msg.signature)
 
         # 1) Try Ed25519 if available AND peer is registered.
         if ed25519_sig and self._peer_registry is not None:
@@ -579,6 +579,8 @@ class GossipLayer:
             return self._handle_get_state(msg)
         elif msg_type == MessageType.STATE:
             return self._handle_state(msg)
+        elif msg_type == MessageType.EPOCH_COMMIT:
+            return self._handle_epoch_commit(msg)
 
         # Forward if TTL > 0
         if msg.ttl > 0:
@@ -871,6 +873,28 @@ class GossipLayer:
             return {"status": "rejected", "epoch": epoch, "reject_count": reject_count}
 
         return {"status": "ok", "epoch": epoch, "votes_so_far": len(votes_for_proposal)}
+
+    def _handle_epoch_commit(self, msg: GossipMessage) -> Dict:
+        """Handle epoch commit broadcast — update local epoch_crdt so all nodes converge.
+
+        Without this handler, EPOCH_COMMIT falls through to the forward block and is
+        re-broadcast but never applied locally, leaving non-originating nodes with stale
+        epoch state (they never see the epoch as finalized).
+        """
+        epoch = msg.payload.get("epoch")
+        proposal_hash = msg.payload.get("proposal_hash")
+
+        if epoch is None or proposal_hash is None:
+            logger.warning(f"EPOCH_COMMIT from {msg.sender_id} missing epoch or proposal_hash")
+            return {"status": "invalid", "reason": "missing_fields"}
+
+        if self.epoch_crdt.contains(epoch):
+            return {"status": "duplicate", "epoch": epoch}
+
+        self.epoch_crdt.add(epoch, {"proposal_hash": proposal_hash, "finalized": True})
+        logger.info(f"Epoch {epoch} committed via gossip from {msg.sender_id} "
+                    f"(proposal={proposal_hash[:12]})")
+        return {"status": "committed", "epoch": epoch}
 
     def _handle_get_state(self, msg: GossipMessage) -> Dict:
         """Handle state request - return full CRDT state with signature"""
