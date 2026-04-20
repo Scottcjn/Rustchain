@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 RustChain Keeper Explorer - Unified Web Explorer & Faucet
 ---------------------------------------------------------
