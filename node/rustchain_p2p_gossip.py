@@ -479,8 +479,8 @@ class GossipLayer:
         message = f"{content}:{msg.timestamp}"
         mode = self._signing_mode
 
-        from p2p_identity import unpack_signature_v2, verify_ed25519
-        hmac_sig, ed25519_sig, _ = unpack_signature_v2(msg.signature)
+        from p2p_identity import unpack_signature, verify_ed25519
+        hmac_sig, ed25519_sig, _ = unpack_signature(msg.signature)
 
         # 1) Try Ed25519 if available AND peer is registered.
         if ed25519_sig and self._peer_registry is not None:

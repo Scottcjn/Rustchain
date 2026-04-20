@@ -364,27 +364,12 @@ def pack_signature(hmac_sig: Optional[str], ed25519_sig: Optional[str], key_vers
     return json.dumps(bundle, separators=(",", ":"))
 
 
-def unpack_signature(sig_field: str) -> Tuple[Optional[str], Optional[str]]:
+def unpack_signature(sig_field: str) -> Tuple[Optional[str], Optional[str], int]:
     """Inverse of pack_signature.
 
-    Returns (hmac_sig, ed25519_sig). Either sig may be None if not present.
-    Treats raw-hex strings as legacy HMAC-only.
+    Returns (hmac_sig, ed25519_sig, key_version). Either sig may be None if not present.
+    Treats raw-hex strings as legacy HMAC-only (version 1).
     """
-    if not sig_field:
-        return None, None
-    stripped = sig_field.strip()
-    if stripped.startswith("{"):
-        try:
-            bundle = json.loads(stripped)
-            return bundle.get("h"), bundle.get("e")
-        except json.JSONDecodeError:
-            return None, None
-    # Legacy hex — assume HMAC
-    return stripped, None
-
-
-def unpack_signature_v2(sig_field: str) -> Tuple[Optional[str], Optional[str], int]:
-    """Extended version of unpack_signature including key_version."""
     if not sig_field:
         return None, None, 1
     stripped = sig_field.strip()
@@ -394,7 +379,13 @@ def unpack_signature_v2(sig_field: str) -> Tuple[Optional[str], Optional[str], i
             return bundle.get("h"), bundle.get("e"), bundle.get("v", 1)
         except json.JSONDecodeError:
             return None, None, 1
+    # Legacy hex — assume HMAC, version 1
     return stripped, None, 1
+
+
+def unpack_signature_v2(sig_field: str) -> Tuple[Optional[str], Optional[str], int]:
+    """Deprecated alias for unpack_signature."""
+    return unpack_signature(sig_field)
 
 
 # ---------------------------------------------------------------------------
