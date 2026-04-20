@@ -879,17 +879,23 @@ class GossipLayer:
             "epochs": self.epoch_crdt.to_dict(),
             "balances": self.balance_crdt.to_dict()
         }
-        # Sign the state response so the requester can verify authenticity.
-        # Uses the Phase A signed-content shape (msg_type:sender_id:payload)
-        # so verify_message() on the requester side accepts it.
         payload = {"state": state_data}
-        content = self._signed_content(MessageType.STATE.value, self.node_id, payload)
+        
+        # FIX: Generate a synthetic msg_id and use a static ttl (Issue #2288)
+        state_msg_id = hashlib.sha256(
+            f"STATE:{self.node_id}:{json.dumps(payload, sort_keys=True)}:{time.time()}".encode()
+        ).hexdigest()[:24]
+        
+        content = self._signed_content(MessageType.STATE.value, self.node_id, state_msg_id, 0, payload)
         signature, timestamp = self._sign_message(content)
+        
         return {
             "status": "ok",
             "state": state_data,
             "signature": signature,
             "timestamp": timestamp,
+            "msg_id": state_msg_id,
+            "ttl": 0,
             "sender_id": self.node_id
         }
 
@@ -1025,12 +1031,15 @@ class GossipLayer:
                     # the content the responder actually signed.
                     # _handle_get_state returns its node_id in "sender_id".
                     responder_id = data.get("sender_id") or peer_url
+                    msg_id = data.get("msg_id") or f"sync:{responder_id}:{timestamp}"
+                    ttl = data.get("ttl", 0)
+                    
                     state_msg = GossipMessage(
                         msg_type=MessageType.STATE.value,
-                        msg_id=f"sync:{responder_id}:{timestamp}",
+                        msg_id=msg_id,
                         sender_id=responder_id,
                         timestamp=timestamp,
-                        ttl=0,
+                        ttl=ttl,
                         signature=signature,
                         payload=state_payload
                     )
