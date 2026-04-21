@@ -36,6 +36,7 @@ This skips the interactive wallet prompt and uses the specified wallet name.
 
 **Architectures:**
 - x86_64 (Intel/AMD 64-bit)
+- aarch64 (ARM64, e.g. Raspberry Pi)
 - ppc64le (PowerPC 64-bit Little-Endian)
 - ppc (PowerPC 32-bit)
 
@@ -56,7 +57,7 @@ This skips the interactive wallet prompt and uses the specified wallet name.
 ## Requirements
 
 ### System Requirements
-- Python 3.6+ (or Python 2.5+ for vintage PowerPC systems)
+- Python 3.8+ (or Python 2.5+ for vintage PowerPC systems)
 - curl or wget
 - 50 MB disk space
 - Internet connection
