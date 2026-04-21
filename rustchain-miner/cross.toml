@@ -1,0 +1,44 @@
+# Cross-compilation configuration for RustChain Miner
+# Supports RISC-V and other architectures
+
+[build]
+# Default target (can be overridden via CLI)
+# target = "riscv64gc-unknown-linux-gnu"
+
+[target.riscv64gc-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/riscv64gc-unknown-linux-gnu:main"
+pre-build = ["./scripts/cross-pre-build-riscv.sh"]
+env.passthrough = [
+    "OPENSSL_INCLUDE_DIR=/usr/include/openssl",
+    "OPENSSL_LIB_DIR=/usr/lib/riscv64-linux-gnu",
+    "PKG_CONFIG_ALLOW_CROSS=1",
+    "CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER=riscv64-linux-gnu-gcc",
+]
+env.vars = { CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_RUNNER = "qemu-riscv64 -L /usr/riscv64-linux-gnu" }
+
+[target.riscv64gc-unknown-linux-musl]
+image = "ghcr.io/cross-rs/riscv64gc-unknown-linux-musl:main"
+pre-build = ["./scripts/cross-pre-build-riscv-musl.sh"]
+env.passthrough = [
+    "PKG_CONFIG_ALLOW_CROSS=1",
+    "CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_MUSL_LINKER=riscv64-linux-musl-gcc",
+]
+
+# Additional architectures for reference
+[target.aarch64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main"
+
+[target.aarch64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:main"
+
+[target.x86_64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main"
+
+[target.x86_64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:main"
+
+[target.powerpc64le-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/powerpc64le-unknown-linux-gnu:main"
+
+[target.s390x-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/s390x-unknown-linux-gnu:main"
