@@ -305,7 +305,7 @@ curl -sk https://rustchain.org/api/miners
 curl -sk https://rustchain.org/api/nodes
 
 # Block explorer (web UI)
-open https://rustchain.org/explorer
+open https://rustchain.org/explorer/
 ```
 
 ---

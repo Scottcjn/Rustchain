@@ -199,7 +199,7 @@ is running.
 
 You can also see the full network, all miners, and your rewards at:
 
-**https://rustchain.org/explorer**
+**https://rustchain.org/explorer/**
 
 ---
 
@@ -280,7 +280,7 @@ Even fixing a single typo in the README earns RTC.
 
 See all miners, blocks, and balances at:
 
-**https://rustchain.org/explorer**
+**https://rustchain.org/explorer/**
 
 ### API Endpoints (for the curious)
 
@@ -382,7 +382,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 | **Miner** | The software running on your machine that attests to the network and earns RTC. |
 | **Fingerprint** | 6 hardware measurements (clock drift, cache timing, SIMD identity, thermal drift, instruction jitter, anti-emulation) that prove your machine is real. |
 | **wRTC** | Wrapped RTC on Solana. You can swap between RTC and wRTC using the bridge at bottube.ai/bridge. |
-| **Block Explorer** | A web page showing all network activity: miners, balances, epochs. Visit rustchain.org/explorer. |
+| **Block Explorer** | A web page showing all network activity: miners, balances, epochs. Visit rustchain.org/explorer/. |
 
 ---
 

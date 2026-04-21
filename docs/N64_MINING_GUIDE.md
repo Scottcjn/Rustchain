@@ -362,4 +362,4 @@ The achievement bridge runs alongside the mining relay. Both use the same Pico s
 - [Boudreaux Computing Principles](Boudreaux_COMPUTING_PRINCIPLES.md) -- the philosophy behind Proof of Antiquity
 - [Legend of Elya N64 Repository](https://github.com/Scottcjn/legend-of-elya-n64/mining/)
 - [RustChain Arcade Achievement Bridge](https://github.com/Scottcjn/rustchain-arcade)
-- [RustChain Explorer](https://rustchain.org/explorer) -- see your miner live on the network
+- [RustChain Explorer](https://rustchain.org/explorer/) -- see your miner live on the network

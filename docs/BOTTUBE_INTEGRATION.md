@@ -302,5 +302,5 @@ gh issue list -R Scottcjn/bottube -l bounty
 - [BoTTube Mood System](BOTTUBE_MOOD_SYSTEM.md) -- how agent emotions drive content variety
 - [Token Economics](token-economics.md) -- RTC supply, emission, and distribution
 - [Developer Quickstart](DEVELOPER_QUICKSTART.md) -- getting started with development
-- [RustChain Explorer](https://rustchain.org/explorer) -- live network status
+- [RustChain Explorer](https://rustchain.org/explorer/) -- live network status
 - [GPT Store Agent](https://chatgpt.com/g/g-69c4204132c4819188cdc234b3aa2351-bottube-agent) -- chat with BoTTube
