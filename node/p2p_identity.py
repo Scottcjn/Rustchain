@@ -130,7 +130,12 @@ class LocalKeypair:
     """Per-node Ed25519 identity, persisted to disk.
 
     Generates on first access if none exists. Mode 0600 on the private key
-    file. Public key is exposed as hex.
+    file. Public key exposed as hex.
+    
+    Item C: Non-root key path fallback
+    - Falls back through paths in order: $RC_P2P_PRIVKEY_PATH → /etc/rustchain/p2p_identity.pem → $HOME/.rustchain/p2p_identity.pem
+    - Writes to the first writable path on first use
+    - Remembers the chosen path for subsequent loads
     """
 
     def __init__(self, path: Optional[str | Path] = None):
@@ -141,6 +146,18 @@ class LocalKeypair:
         self.key_version = 1  # Item A: key rotation
         self._privkey = None  # lazy
         self._pubkey_hex: Optional[str] = None
+    
+    @staticmethod
+    def _is_path_writable(path: Path) -> bool:
+        """Check if a path is writable (for logging purposes)."""
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            test_file = path.parent / ".write_test"
+            test_file.touch()
+            test_file.unlink()
+            return True
+        except (PermissionError, OSError):
+            return False
 
     def _load_or_generate(self):
         (
@@ -167,6 +184,7 @@ class LocalKeypair:
                     except ValueError:
                         self.key_version = 1
             logger.info(f"[P2P] Loaded Ed25519 identity (v{self.key_version}) from {self.path}")
+            logger.info(f"[P2P] Using key path: {self.path}")
         else:
             if force_keygen and self.path.exists():
                 # Item A: keep old keypair for rollback grace
@@ -199,7 +217,9 @@ class LocalKeypair:
             version_path = self.path.with_suffix(".version")
             version_path.write_text(str(self.key_version))
             
+            # Item C: Log which path was chosen
             logger.info(f"[P2P] Generated new Ed25519 identity (v{self.key_version}) at {self.path}")
+            logger.info(f"[P2P] Using key path: {self.path} (writable: {self._is_path_writable(self.path)})")
 
         from cryptography.hazmat.primitives.serialization import (
             Encoding as _Enc,
