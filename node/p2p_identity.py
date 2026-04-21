@@ -10,11 +10,11 @@ RC_P2P_VERSION_FILE = "p2p_identity.version"
 
 @dataclass
 class PeerEntry:
-    pubkey: bytes
+    public_key: bytes
     not_before: int
     not_after: int
 
-class LocalKeypair:
+class P2PIdentityKeypair:
     def __init__(self, path: str = RC_P2P_PRIVKEY_PATH, force_keygen: bool = False):
         self.path = path
         self.key_version = 1
@@ -42,23 +42,23 @@ class LocalKeypair:
             self.key_version += 1
             self._save_version()
 
-        privkey = ed25519.Ed25519PrivateKey.generate()
+        priv_key = ed25519.Ed25519PrivateKey.generate()
         with open(self.path, "wb") as f:
-            f.write(privkey.private_bytes(
+            f.write(priv_key.private_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PrivateFormat.PKCS8,
                 encryption_algorithm=serialization.NoEncryption()
             ))
-        self.privkey = privkey
-        self.pubkey = privkey.public_key().public_bytes(
+        self.private_key = priv_key
+        self.public_key = priv_key.public_key().public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         )
 
     def _load_keypair(self):
         with open(self.path, "rb") as f:
-            self.privkey = serialization.load_pem_private_key(f.read(), password=None)
-        self.pubkey = self.privkey.public_key().public_bytes(
+            self.private_key = serialization.load_pem_private_key(f.read(), password=None)
+        self.public_key = self.private_key.public_key().public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         )
