@@ -94,10 +94,16 @@ class TestBeaconJoinRouting(unittest.TestCase):
         self.assertIn('timestamp', data)
 
     def test_join_upsert_duplicate_agent(self):
-        """POST /beacon/join upserts (updates) duplicate agent_id without error."""
+        """POST /beacon/join upserts mutable fields for duplicate agent_id.
+
+        Per security patch 03bf96a, pubkey_hex is immutable after first
+        registration (prevents identity takeover). Re-sending the same
+        pubkey_hex with a changed name updates the mutable field only.
+        """
+        pubkey = '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbbccccddddaaaabbbbccccdddd'
         payload1 = {
             'agent_id': 'bcn_upsert_test',
-            'pubkey_hex': '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbbccccddddaaaabbbbccccdddd',
+            'pubkey_hex': pubkey,
             'name': 'Original Name',
         }
 
@@ -109,10 +115,10 @@ class TestBeaconJoinRouting(unittest.TestCase):
         )
         self.assertEqual(response1.status_code, 200)
 
-        # Update with new data
+        # Update mutable field only (name). pubkey_hex must stay the same.
         payload2 = {
             'agent_id': 'bcn_upsert_test',
-            'pubkey_hex': '0x1111222233334444555566667777888899990000aaaabbbbccccdddd11112222',
+            'pubkey_hex': pubkey,
             'name': 'Updated Name',
         }
 
@@ -135,6 +141,47 @@ class TestBeaconJoinRouting(unittest.TestCase):
                 ('bcn_upsert_test',)
             ).fetchone()[0]
             self.assertEqual(count, 1)
+
+    def test_join_pubkey_takeover_rejected(self):
+        """POST /beacon/join rejects pubkey_hex change for existing agent (403).
+
+        Security invariant from patch 03bf96a: an attacker sending a join
+        request with a victim's agent_id and their own public key must be
+        rejected, not silently overwrite the victim's identity.
+        """
+        payload1 = {
+            'agent_id': 'bcn_takeover_target',
+            'pubkey_hex': '0x1111' + '00' * 30,
+            'name': 'Victim',
+        }
+        r1 = self.client.post(
+            '/beacon/join',
+            data=json.dumps(payload1),
+            content_type='application/json',
+        )
+        self.assertEqual(r1.status_code, 200)
+
+        # Attacker attempts takeover with different pubkey_hex
+        payload2 = {
+            'agent_id': 'bcn_takeover_target',
+            'pubkey_hex': '0x2222' + '00' * 30,
+            'name': 'Attacker',
+        }
+        r2 = self.client.post(
+            '/beacon/join',
+            data=json.dumps(payload2),
+            content_type='application/json',
+        )
+        self.assertEqual(r2.status_code, 403)
+
+        # Verify pubkey was NOT overwritten
+        with sqlite3.connect(self.test_db_path) as conn:
+            row = conn.execute(
+                "SELECT pubkey_hex, name FROM relay_agents WHERE agent_id = ?",
+                ('bcn_takeover_target',)
+            ).fetchone()
+            self.assertEqual(row[0], payload1['pubkey_hex'])
+            self.assertEqual(row[1], 'Victim')
 
     def test_join_invalid_pubkey_hex_returns_400(self):
         """POST /beacon/join returns 400 for invalid pubkey_hex."""
@@ -391,11 +438,17 @@ class TestBeaconJoinRouting(unittest.TestCase):
     # ============================================================
 
     def test_full_join_then_atlas_workflow(self):
-        """Full workflow: join agent, verify in atlas, update, verify update."""
+        """Full workflow: join agent, verify in atlas, update mutable field, verify update.
+
+        pubkey_hex is immutable after first registration (security patch 03bf96a),
+        so the "update" step changes the name while keeping the same pubkey_hex.
+        """
+        pubkey = '0x1111' + '00' * 30
+
         # Step 1: Register agent
         payload1 = {
             'agent_id': 'bcn_workflow',
-            'pubkey_hex': '0x1111' + '00' * 30,
+            'pubkey_hex': pubkey,
             'name': 'Workflow Agent v1',
         }
 
@@ -413,10 +466,10 @@ class TestBeaconJoinRouting(unittest.TestCase):
         self.assertEqual(data2['total'], 1)
         self.assertEqual(data2['agents'][0]['name'], 'Workflow Agent v1')
 
-        # Step 3: Update agent
+        # Step 3: Update mutable field (name) — same pubkey_hex
         payload3 = {
             'agent_id': 'bcn_workflow',
-            'pubkey_hex': '0x2222' + '00' * 30,
+            'pubkey_hex': pubkey,
             'name': 'Workflow Agent v2',
         }
 
@@ -433,7 +486,7 @@ class TestBeaconJoinRouting(unittest.TestCase):
         data4 = json.loads(response4.data)
         self.assertEqual(data4['total'], 1)
         self.assertEqual(data4['agents'][0]['name'], 'Workflow Agent v2')
-        self.assertEqual(data4['agents'][0]['pubkey_hex'], payload3['pubkey_hex'])
+        self.assertEqual(data4['agents'][0]['pubkey_hex'], pubkey)
 
 
 class TestBeaconJoinValidation(unittest.TestCase):
