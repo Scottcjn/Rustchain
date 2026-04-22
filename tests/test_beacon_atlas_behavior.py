@@ -271,11 +271,12 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             """, ('gh_complete_test', 'Complete Me (100 RTC)', 100.0, 'HARD', 'claimed', int(time.time())))
             conn.commit()
         
-        # Complete bounty
+        # Complete bounty (admin-only per security patch 93dc968 — requires X-Admin-Key)
         complete_response = self.client.post(
             '/api/bounties/gh_complete_test/complete',
             data=json.dumps({'agent_id': 'bcn_completer'}),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']},
         )
         self.assertEqual(complete_response.status_code, 200)
         
