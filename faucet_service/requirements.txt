@@ -5,7 +5,7 @@
 Flask>=2.3.0
 
 # CORS support
-flask-cors>=4.0.0
+flask-cors>=6.0.2
 
 # Configuration
 PyYAML>=6.0
