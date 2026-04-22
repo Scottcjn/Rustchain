@@ -295,7 +295,10 @@ def test_public_apis_do_not_expose_spoofed_claim_as_vintage(attest_client):
     assert miner_row["device_family"] == "x86_64"
     assert miner_row["device_arch"] == "default"
     assert miner_row["hardware_type"] == "x86-64 (Modern)"
-    assert miner_row["antiquity_multiplier"] == 1.0
+    # Modern x86_64 baseline multiplier per RIP-200 expanded multiplier table
+    # (rip_200_round_robin_1cpu1vote.py: {"modern": 0.8, "x86_64": 0.8}).
+    # Spoofer claiming G4 (2.5x) is downgraded to this baseline — no vintage bonus.
+    assert miner_row["antiquity_multiplier"] == 0.8
 
 
 def test_verified_server_side_classification_blocks_10x_reward_gain():
