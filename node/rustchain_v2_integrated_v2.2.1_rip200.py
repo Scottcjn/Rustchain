@@ -1758,15 +1758,39 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
         return {"device_family": "ARM", "device_arch": arm_arch}
 
     # PowerPC / POWER detection
-    # Check machine field first — ppc64le/ppc64 is definitive
+    # Check machine field first — ppc64le/ppc64 is suggestive, not definitive.
+    # A spoofer can set machine='ppc' trivially; the cpu brand and SIMD fingerprint
+    # cannot be faked cheaply. Require corroborating evidence before trusting the claim.
+    # RIP-201: spoofed claims must be downgraded to x86_64/default in public APIs,
+    # not just reward-throttled.
     machine_field = str(device.get("machine") or "").lower()
     if machine_field in ("ppc64le", "ppc64", "ppc", "powerpc", "powerpc64"):
+        cpu_brand_lower = cpu_brand.lower()
+        has_x86_tokens = _has_any_token(cpu_brand, X86_CPU_BRANDS)
+        has_ppc_tokens = any(
+            token in cpu_brand_lower
+            for token in ("powerpc", "ppc", "ibm power", "g3", "g4", "g5",
+                          "7447", "7450", "7455", "7448", "970", "power8", "power9", "altivec")
+        )
+        has_ppc_fp = fingerprint_passed and _has_powerpc_simd_evidence(fingerprint)
+
+        # Hard reject: cpu brand is clearly x86 — downgrade regardless of machine claim.
+        if has_x86_tokens and not has_ppc_tokens:
+            print(f"[PPC_DETECT] REJECT spoof: machine={machine_field} but cpu_brand has x86 tokens ({cpu_brand[:40]}) -> x86_64/default")
+            return {"device_family": "x86_64", "device_arch": "default"}
+
+        # Soft reject: no corroborating evidence at all (empty brand + failed fingerprint).
+        # Real PowerPC miners will have either a brand token or a passing SIMD fingerprint.
+        if not has_ppc_tokens and not has_ppc_fp:
+            print(f"[PPC_DETECT] REJECT unverified: machine={machine_field} no brand/fp evidence (brand={cpu_brand[:40]!r}) -> x86_64/default")
+            return {"device_family": "x86_64", "device_arch": "default"}
+
         ppc_arch = arch.upper() if arch.lower() in ("g3", "g4", "g5", "power8", "power9") else "default"
-        if "power8" in cpu_brand.lower() or "8286" in cpu_brand.lower():
+        if "power8" in cpu_brand_lower or "8286" in cpu_brand_lower:
             ppc_arch = "POWER8"
-        elif "power9" in cpu_brand.lower():
+        elif "power9" in cpu_brand_lower:
             ppc_arch = "POWER9"
-        print(f"[PPC_DETECT] machine={machine_field}, brand={cpu_brand[:30]} -> PowerPC/{ppc_arch}")
+        print(f"[PPC_DETECT] VERIFIED: machine={machine_field}, brand={cpu_brand[:30]} -> PowerPC/{ppc_arch}")
         return {"device_family": "PowerPC", "device_arch": ppc_arch}
 
     if _claims_powerpc(device):
