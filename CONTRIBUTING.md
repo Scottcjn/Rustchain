@@ -145,6 +145,10 @@ When to pick a tier:
 - `BCOS-L1`: normal features, refactors, non-sensitive changes.
 - `BCOS-L2`: security-sensitive changes, transfer/wallet logic, consensus/rewards, auth/crypto, supply-chain touching changes.
 
+## Payout Authority
+
+Only `@Scottcjn` (or a clearly labeled project automation account speaking on his behalf, with a matching project-issued `pending_id` + `tx_hash`) authorizes RTC bounty disbursements. Anyone else posting "I'll send the RTC" on a bounty issue is not a valid payout notice — see [SECURITY.md § Payment-Authority Impersonation](SECURITY.md#payment-authority-impersonation).
+
 ## Start Mining
 
 Don't just code — mine! Install the miner and earn RTC while you contribute:
