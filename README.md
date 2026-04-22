@@ -283,7 +283,7 @@ launchctl list | grep rustchain
 tail -f ~/.rustchain/miner.log
 ```
 
-**New to RustChain?** Read the [step-by-step Beginner Quickstart](docs/QUICKSTART.md) -- covers everything from install to your first RTC, with every command explained.
+**New to RustChain?** Read the [step-by-step Beginner Quickstart](docs/QUICKSTART.md) — covers everything from install to your first RTC, with every command explained.
 
 ---
 
