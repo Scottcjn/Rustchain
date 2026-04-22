@@ -1,7 +1,7 @@
 # Boot Chime Proof-of-Iron Dependencies
 
 # Core dependencies
-numpy>=1.21.0
+numpy>=2.0.0
 flask>=2.0.0
 flask-cors>=3.0.0
 

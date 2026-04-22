@@ -1,7 +1,7 @@
 # CRT Light Attestation - Python Dependencies
 
 # Core dependencies
-numpy>=1.21.0
+numpy>=2.0.0
 scipy>=1.7.0
 
 # Optional: For webcam capture
