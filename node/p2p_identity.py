@@ -333,6 +333,28 @@ class PeerRegistry:
             return None
         return self._by_node_id.get(node_id)
 
+    def get_entry_with_version(self, node_id: str, sig_version: int) -> Optional[PeerEntry]:
+        """Item A: Get peer entry only if signature version matches registry.
+        
+        Returns None if:
+        - Entry not found
+        - Entry expired (per get_pubkey)
+        - Signature version doesn't match registry version
+        """
+        entry = self.get_entry(node_id)
+        if entry is None:
+            return None
+        
+        # Item A: Key rotation — verify version match
+        if entry.key_version != sig_version:
+            logger.warning(
+                f"[P2P] Peer {node_id} signature version ({sig_version}) != "
+                f"registry version ({entry.key_version}) — possible stale key"
+            )
+            return None
+        
+        return entry
+
     def __len__(self) -> int:
         if not self._loaded:
             self.load()
