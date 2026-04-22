@@ -16,4 +16,4 @@ python-engineio>=4.8.0
 
 # Development
 pytest>=7.0.0
-pytest-asyncio>=0.21.0
+pytest-asyncio>=0.24.0
