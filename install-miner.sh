@@ -56,7 +56,7 @@ detect_platform() {
     local arch=$(uname -m)
     case "$os" in
         Linux)
-            [ "$arch" != "aarch64" ] && [ "$arch" != "x86_64" ] && [ "$arch" != "ppc64le" ] && { echo -e "${RED}[!] Unsupported architecture: $arch (ARM64 only for Pi)${NC}"; exit 1; }
+            [ "$arch" != "aarch64" ] && [ "$arch" != "x86_64" ] && [ "$arch" != "ppc64le" ] && { echo -e "${RED}[!] Unsupported architecture: $arch (Supported: aarch64, x86_64, ppc64le)${NC}"; exit 1; }
             if grep -qi "raspberry" /proc/cpuinfo 2>/dev/null; then echo "rpi"; else echo "linux"; fi ;;
         Darwin) echo "macos" ;;
         *) echo "unknown"; exit 1 ;;
