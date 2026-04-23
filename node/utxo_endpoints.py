@@ -202,7 +202,7 @@ def utxo_integrity():
 
 @utxo_bp.route('/mempool')
 def utxo_mempool():
-    """View pending mempool transactions."""
+    """View current UTXO mempool pending transactions (limit 50)."""
     candidates = _utxo_db.mempool_get_block_candidates(max_count=50)
     return jsonify({
         'count': len(candidates),
