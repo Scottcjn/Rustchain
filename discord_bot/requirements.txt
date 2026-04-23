@@ -1,7 +1,7 @@
 # RustChain Discord Bot Requirements
 
 # Discord.py with slash commands support
-discord.py>=2.3.0
+discord.py>=2.7.1
 
 # Async HTTP client
 httpx>=0.24.0
