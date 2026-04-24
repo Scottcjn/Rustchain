@@ -7,6 +7,7 @@ import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, gl
 import ipaddress
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect
+import json
 from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, VALID_KINDS
 try:
     # Deployment compatibility: production may run this file as a single script.
@@ -1028,6 +1029,7 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
         ensure_fingerprint_history_table(c)
+        ensure_epoch_fingerprint_rotation_table(c)
 
         # Pending transfers (2-phase commit)
         # NOTE: Production DBs may already have a different balances schema; this table is additive.
@@ -1359,6 +1361,129 @@ def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
     return {}
 
 
+RIP309_ROTATING_FINGERPRINT_CHECKS = (
+    "clock_drift",
+    "cache_timing",
+    "simd_bias",
+    "thermal_drift",
+    "instruction_jitter",
+    "anti_emulation",
+)
+RIP309_ACTIVE_FINGERPRINT_CHECKS = 4
+RIP309_NONCE_FALLBACK = "0" * 64
+
+
+def derive_measurement_nonce(previous_epoch_block_hash: str) -> str:
+    previous_epoch_block_hash = (previous_epoch_block_hash or RIP309_NONCE_FALLBACK).strip().lower()
+    seed = f"rip-309:{previous_epoch_block_hash}".encode()
+    return hashlib.sha256(seed).hexdigest()
+
+
+def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_count: int = RIP309_ACTIVE_FINGERPRINT_CHECKS) -> tuple:
+    nonce = derive_measurement_nonce(previous_epoch_block_hash)
+    ranked = sorted(
+        RIP309_ROTATING_FINGERPRINT_CHECKS,
+        key=lambda name: hashlib.sha256(f"{nonce}:{name}".encode()).hexdigest(),
+    )
+    return tuple(ranked[:active_count])
+
+
+def _fingerprint_check_passed(check_entry) -> bool:
+    if isinstance(check_entry, bool):
+        return check_entry
+    if isinstance(check_entry, dict):
+        return bool(check_entry.get("passed", True))
+    return False
+
+
+def get_previous_epoch_block_hash(conn, epoch: int) -> str:
+    if epoch <= 0:
+        return RIP309_NONCE_FALLBACK
+
+    prev_epoch_end_height = (epoch * EPOCH_SLOTS) - 1
+    try:
+        row = conn.execute(
+            "SELECT block_hash FROM blocks WHERE height <= ? ORDER BY height DESC LIMIT 1",
+            (prev_epoch_end_height,),
+        ).fetchone()
+    except sqlite3.Error:
+        row = None
+    if row and row[0]:
+        return str(row[0])
+    return RIP309_NONCE_FALLBACK
+
+
+def ensure_epoch_fingerprint_rotation_table(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS epoch_fingerprint_rotation (
+            epoch INTEGER PRIMARY KEY,
+            previous_epoch_block_hash TEXT NOT NULL,
+            measurement_nonce TEXT NOT NULL,
+            active_checks_json TEXT NOT NULL,
+            inactive_checks_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+
+
+def get_epoch_fingerprint_rotation(conn, epoch: int) -> dict:
+    ensure_epoch_fingerprint_rotation_table(conn)
+    previous_epoch_block_hash = get_previous_epoch_block_hash(conn, epoch)
+    active_checks = list(select_active_fingerprint_checks(previous_epoch_block_hash))
+    inactive_checks = [
+        name for name in RIP309_ROTATING_FINGERPRINT_CHECKS
+        if name not in active_checks
+    ]
+    measurement_nonce = derive_measurement_nonce(previous_epoch_block_hash)
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO epoch_fingerprint_rotation (
+            epoch, previous_epoch_block_hash, measurement_nonce,
+            active_checks_json, inactive_checks_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            epoch,
+            previous_epoch_block_hash,
+            measurement_nonce,
+            json.dumps(active_checks, sort_keys=True),
+            json.dumps(inactive_checks, sort_keys=True),
+            int(time.time()),
+        )
+    )
+    return {
+        "epoch": epoch,
+        "previous_epoch_block_hash": previous_epoch_block_hash,
+        "measurement_nonce": measurement_nonce,
+        "active_checks": active_checks,
+        "inactive_checks": inactive_checks,
+    }
+
+
+def evaluate_rotating_fingerprint_checks(conn, epoch: int, fingerprint: dict) -> dict:
+    rotation = get_epoch_fingerprint_rotation(conn, epoch)
+    checks = _fingerprint_checks_map(fingerprint)
+    active_results = {
+        name: _fingerprint_check_passed(checks.get(name))
+        for name in rotation["active_checks"]
+    }
+    passed_active = [name for name, passed in active_results.items() if passed]
+    failed_active = [name for name, passed in active_results.items() if not passed]
+    total_active = len(rotation["active_checks"])
+    active_ratio = (len(passed_active) / total_active) if total_active else 1.0
+    return {
+        **rotation,
+        "active_results": active_results,
+        "passed_active_checks": passed_active,
+        "failed_active_checks": failed_active,
+        "active_pass_count": len(passed_active),
+        "active_total": total_active,
+        "active_ratio": active_ratio,
+    }
+
+
 def _claimed_family_and_arch(device: dict) -> tuple:
     """
     Extract the claimed device family and architecture from a device dict.
@@ -1633,15 +1758,39 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
         return {"device_family": "ARM", "device_arch": arm_arch}
 
     # PowerPC / POWER detection
-    # Check machine field first — ppc64le/ppc64 is definitive
+    # Check machine field first — ppc64le/ppc64 is suggestive, not definitive.
+    # A spoofer can set machine='ppc' trivially; the cpu brand and SIMD fingerprint
+    # cannot be faked cheaply. Require corroborating evidence before trusting the claim.
+    # RIP-201: spoofed claims must be downgraded to x86_64/default in public APIs,
+    # not just reward-throttled.
     machine_field = str(device.get("machine") or "").lower()
     if machine_field in ("ppc64le", "ppc64", "ppc", "powerpc", "powerpc64"):
+        cpu_brand_lower = cpu_brand.lower()
+        has_x86_tokens = _has_any_token(cpu_brand, X86_CPU_BRANDS)
+        has_ppc_tokens = any(
+            token in cpu_brand_lower
+            for token in ("powerpc", "ppc", "ibm power", "g3", "g4", "g5",
+                          "7447", "7450", "7455", "7448", "970", "power8", "power9", "altivec")
+        )
+        has_ppc_fp = fingerprint_passed and _has_powerpc_simd_evidence(fingerprint)
+
+        # Hard reject: cpu brand is clearly x86 — downgrade regardless of machine claim.
+        if has_x86_tokens and not has_ppc_tokens:
+            print(f"[PPC_DETECT] REJECT spoof: machine={machine_field} but cpu_brand has x86 tokens ({cpu_brand[:40]}) -> x86_64/default")
+            return {"device_family": "x86_64", "device_arch": "default"}
+
+        # Soft reject: no corroborating evidence at all (empty brand + failed fingerprint).
+        # Real PowerPC miners will have either a brand token or a passing SIMD fingerprint.
+        if not has_ppc_tokens and not has_ppc_fp:
+            print(f"[PPC_DETECT] REJECT unverified: machine={machine_field} no brand/fp evidence (brand={cpu_brand[:40]!r}) -> x86_64/default")
+            return {"device_family": "x86_64", "device_arch": "default"}
+
         ppc_arch = arch.upper() if arch.lower() in ("g3", "g4", "g5", "power8", "power9") else "default"
-        if "power8" in cpu_brand.lower() or "8286" in cpu_brand.lower():
+        if "power8" in cpu_brand_lower or "8286" in cpu_brand_lower:
             ppc_arch = "POWER8"
-        elif "power9" in cpu_brand.lower():
+        elif "power9" in cpu_brand_lower:
             ppc_arch = "POWER9"
-        print(f"[PPC_DETECT] machine={machine_field}, brand={cpu_brand[:30]} -> PowerPC/{ppc_arch}")
+        print(f"[PPC_DETECT] VERIFIED: machine={machine_field}, brand={cpu_brand[:30]} -> PowerPC/{ppc_arch}")
         return {"device_family": "PowerPC", "device_arch": ppc_arch}
 
     if _claims_powerpc(device):
@@ -1909,32 +2058,50 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
             _device["machine"] = "ppc64le" if "power8" in _miner_lower else "ppc"
     verified_device = derive_verified_device(_device, fingerprint if isinstance(fingerprint, dict) else {}, fingerprint_passed)
     with sqlite3.connect(DB_PATH) as conn:
-        # Ensure signing_pubkey column exists (idempotent migration)
-        try:
-            conn.execute("ALTER TABLE miner_attest_recent ADD COLUMN signing_pubkey TEXT")
-        except Exception:
-            pass  # Column already exists or table doesn't exist yet
+        # Ensure signing_pubkey and fingerprint_checks_json columns exist (idempotent migrations)
+        for col_stmt in [
+            "ALTER TABLE miner_attest_recent ADD COLUMN signing_pubkey TEXT",
+            "ALTER TABLE miner_attest_recent ADD COLUMN fingerprint_checks_json TEXT",
+            "ALTER TABLE miner_attest_history ADD COLUMN fingerprint_checks_json TEXT",
+        ]:
+            try:
+                conn.execute(col_stmt)
+            except Exception:
+                pass  # Column already exists or table doesn't exist yet
+
+        # Extract per-check results from fingerprint dict for RIP-309 rotation.
+        fp_checks_map = {}
+        if isinstance(fingerprint, dict) and "checks" in fingerprint:
+            for k, v in fingerprint["checks"].items():
+                fp_checks_map[k] = bool(v.get("passed", False)) if isinstance(v, dict) else bool(v)
+        # Also handle top-level flattened results if present
+        for k in ["clock_drift", "cache_timing", "simd_identity", "thermal_drift", "instruction_jitter", "anti_emulation"]:
+            if k in fingerprint:
+                fp_checks_map[k] = bool(fingerprint[k])
+        fingerprint_checks_json = json.dumps(fp_checks_map) if fp_checks_map else '{}'
+
         # FIX: Prevent attestation overwrite from degrading prior fingerprint status.
         # If the miner already has fingerprint_passed=1, a later failed attestation
         # should not downgrade it. We still update ts_ok to keep the attestation fresh.
         new_fp = 1 if fingerprint_passed else 0
         conn.execute("""
-            INSERT INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, source_ip, signing_pubkey)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, source_ip, signing_pubkey, fingerprint_checks_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(miner) DO UPDATE SET
                 ts_ok = excluded.ts_ok,
                 device_family = excluded.device_family,
                 device_arch = excluded.device_arch,
                 source_ip = excluded.source_ip,
                 fingerprint_passed = MAX(miner_attest_recent.fingerprint_passed, excluded.fingerprint_passed),
-                signing_pubkey = excluded.signing_pubkey
-        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, new_fp, source_ip, signing_pubkey))
+                signing_pubkey = excluded.signing_pubkey,
+                fingerprint_checks_json = excluded.fingerprint_checks_json
+        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, new_fp, source_ip, signing_pubkey, fingerprint_checks_json))
         _ = append_fingerprint_snapshot(conn, miner, fingerprint if isinstance(fingerprint, dict) else {}, now)
         # C3 fix: Record attestation history for first_attest tracking
         conn.execute("""
-            INSERT INTO miner_attest_history (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, new_fp))
+            INSERT INTO miner_attest_history (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, fingerprint_checks_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, new_fp, fingerprint_checks_json))
         conn.commit()
 
         # RIP-201: Record fleet immune system signals
@@ -2526,7 +2693,7 @@ def current_slot():
     """Get current slot number"""
     return (int(time.time()) - GENESIS_TIMESTAMP) // BLOCK_TIME
 
-def finalize_epoch(epoch, per_block_rtc):
+def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
     """Finalize epoch and distribute rewards with security hardening"""
     from decimal import Decimal, ROUND_DOWN
 
@@ -2577,10 +2744,52 @@ def finalize_epoch(epoch, per_block_rtc):
             print(f"[SECURITY] No valid miners for epoch {epoch} after filtering")
             return
         
+        # RIP-309: Determine active fingerprint checks for this epoch
+        fp_checks = ['clock_drift', 'cache_timing', 'simd_identity',
+                     'thermal_drift', 'instruction_jitter', 'anti_emulation']
+        if prev_block_hash:
+            nonce = hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
+            seed = int.from_bytes(nonce[:4], 'big')
+            active_checks = set(__import__('random').Random(seed).sample(fp_checks, 4))
+        else:
+            active_checks = set(fp_checks)
+        print(f"[RIP-309] finalize_epoch {epoch} active checks: {sorted(active_checks)}")
+
+        # Adjust weights based on active fingerprint checks
+        adjusted_miners = []
         for pk, weight in miners:
             if weight > MAX_WEIGHT:
                 print(f"[SECURITY] Capping weight {weight} for miner {pk} to {MAX_WEIGHT}")
                 weight = MAX_WEIGHT
+
+            # RIP-309: zero out weight if any active check failed
+            if weight > 0:
+                try:
+                    fp_row = c.execute(
+                        "SELECT fingerprint_checks_json FROM miner_attest_recent WHERE miner = ?",
+                        (pk,)
+                    ).fetchone()
+                    checks_map = {}
+                    if fp_row and fp_row[0]:
+                        try:
+                            checks_map = json.loads(fp_row[0])
+                        except Exception:
+                            pass
+                    active_passed = all(checks_map.get(chk, True) for chk in active_checks)
+                    if not active_passed:
+                        print(f"[RIP-309] {pk[:20]}... failed active check(s) in finalize_epoch -> weight=0")
+                        weight = 0
+                except Exception:
+                    pass
+            adjusted_miners.append((pk, weight))
+
+        # Recompute valid miners after RIP-309 zeroing
+        miners = [(pk, w) for pk, w in adjusted_miners if w > 0]
+        zero_weight_miners += [pk for pk, w in adjusted_miners if w == 0]
+        total_weight = sum(w for _, w in miners)
+        if total_weight == 0:
+            print(f"[SECURITY] No valid miners for epoch {epoch} after RIP-309 filtering")
+            return
 
         # ATOMIC TRANSACTION: Wrap all updates in explicit transaction
         try:
@@ -2590,17 +2799,26 @@ def finalize_epoch(epoch, per_block_rtc):
             for pk, weight in miners:
                 # Use Decimal arithmetic to avoid float precision loss
                 amount_decimal = total_reward * Decimal(weight) / Decimal(total_weight)
-                amount_i64 = int(amount_decimal * Decimal(1000000))
+                amount_i64 = int(amount_decimal * Decimal(100000000))
 
                 # OVERFLOW PROTECTION: Ensure amount_i64 fits in signed 64-bit int
                 if amount_i64 >= 2**63:
                     raise ValueError(f"Reward overflow for miner {pk}: {amount_i64}")
 
                 c.execute(
-                    "UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?",
+                    "UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 100000000.0 WHERE miner_id = ?",
                     (amount_i64, amount_i64, pk)
                 )
 
+                # Sync to UTXO layer (Atomic Dual-Write)
+                from utxo_db import UtxoDB
+                utxo_tx = {
+                    "tx_type": "mining_reward",
+                    "inputs": [],
+                    "outputs": [{"address": pk, "value_nrtc": amount_i64}],
+                    "_allow_minting": True
+                }
+                UtxoDB().apply_transaction(utxo_tx, epoch * 144, conn=conn)
                 # Update metrics with decimal value for accuracy
                 balance_gauge.labels(miner_pk=pk).set(float(amount_decimal))
 
@@ -2627,7 +2845,7 @@ def openapi_spec():
     """Return OpenAPI 3.0.3 specification"""
     return jsonify(OPENAPI)
 
-@app.route('/explorer', methods=['GET'])
+@app.route(['/explorer', '/explorer/'], methods=['GET'])
 def explorer():
     """Real-time block explorer dashboard (Tier 1 + Tier 2 views).
     Serves from tools/explorer/index.html if available, otherwise falls back to inline HTML."""
@@ -3154,20 +3372,18 @@ def _submit_attestation_impl():
         family = verified_device["device_family"]
         arch_for_weight = verified_device["device_arch"]
         hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight, HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0))
-        
-        # VM miners get minimal weight
-        if not fingerprint_passed:
-            enroll_weight = 0.000000001
-        else:
-            enroll_weight = hw_weight
-
-        # Issue #19 temporal consistency only sets a review flag (no hard-fail).
-        if temporal_review.get("review_flag"):
-            app.logger.warning(f"[TEMPORAL-REVIEW] {miner[:20]}... flags={temporal_review.get('flags', [])}")
-        
         miner_id = data.get("miner_id", miner)
-        
+
         with sqlite3.connect(DB_PATH) as enroll_conn:
+            rotation_eval = evaluate_rotating_fingerprint_checks(
+                enroll_conn,
+                epoch,
+                fingerprint if isinstance(fingerprint, dict) else {},
+            )
+            if not fingerprint_passed:
+                enroll_weight = 0.000000001
+            else:
+                enroll_weight = hw_weight * rotation_eval["active_ratio"]
             enroll_conn.execute(
                 "INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
                 (miner,)
@@ -3185,8 +3401,21 @@ def _submit_attestation_impl():
                 (miner_id, miner)
             )
             enroll_conn.commit()
-        
-        app.logger.info(f"[AUTO-ENROLL] {miner[:20]}... enrolled epoch {epoch} weight={enroll_weight} family={family} arch={arch_for_weight} hw_weight={hw_weight}")
+
+        # Issue #19 temporal consistency only sets a review flag (no hard-fail).
+        if temporal_review.get("review_flag"):
+            app.logger.warning(f"[TEMPORAL-REVIEW] {miner[:20]}... flags={temporal_review.get('flags', [])}")
+
+        app.logger.info(
+            f"[RIP-309] epoch={epoch} miner={miner[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
+            f"prev_hash={rotation_eval['previous_epoch_block_hash'][:16]} "
+            f"active={rotation_eval['active_checks']} passed={rotation_eval['passed_active_checks']} "
+            f"failed={rotation_eval['failed_active_checks']} ratio={rotation_eval['active_ratio']:.3f}"
+        )
+        app.logger.info(
+            f"[AUTO-ENROLL] {miner[:20]}... enrolled epoch {epoch} weight={enroll_weight} family={family} "
+            f"arch={arch_for_weight} hw_weight={hw_weight} active_ratio={rotation_eval['active_ratio']:.3f}"
+        )
     except Exception as e:
         app.logger.error(f"[AUTO-ENROLL] Error enrolling {miner[:20]}...: {e}")
 
@@ -3364,13 +3593,19 @@ def enroll_epoch():
     # RIP-PoA Phase 2: VM miners get minimal (but non-zero) weight
     # VMs can technically earn RTC, but it's economically pointless (1e-9 vs 1.0-2.5 for real hardware)
     fingerprint_failed = check_result.get('fingerprint_failed', False)
-    if fingerprint_failed:
-        weight = 0.000000001  # 9 zeros - technically earns, but ~1 billionth of real hardware
-        print(f"[ENROLL] Miner {miner_pk[:16]}... fingerprint FAILED - VM weight: {weight}")
-    else:
-        weight = hw_weight
 
     with sqlite3.connect(DB_PATH) as c:
+        rotation_eval = evaluate_rotating_fingerprint_checks(
+            c,
+            epoch,
+            data.get('fingerprint') if isinstance(data.get('fingerprint'), dict) else {},
+        )
+        if fingerprint_failed:
+            weight = 0.000000001  # 9 zeros - technically earns, but ~1 billionth of real hardware
+            print(f"[ENROLL] Miner {miner_pk[:16]}... fingerprint FAILED - VM weight: {weight}")
+        else:
+            weight = hw_weight * rotation_eval['active_ratio']
+
         # Ensure miner has balance entry
         c.execute(
             "INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
@@ -3396,6 +3631,13 @@ def enroll_epoch():
             (miner_id, miner_pk)
         )
 
+    app.logger.info(
+        f"[RIP-309] epoch={epoch} miner={miner_pk[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
+        f"prev_hash={rotation_eval['previous_epoch_block_hash'][:16]} active={rotation_eval['active_checks']} "
+        f"passed={rotation_eval['passed_active_checks']} failed={rotation_eval['failed_active_checks']} "
+        f"ratio={rotation_eval['active_ratio']:.3f}"
+    )
+
     # RIP-0149: Track successful enrollment
     global ENROLL_OK
     ENROLL_OK += 1
@@ -3405,6 +3647,10 @@ def enroll_epoch():
         "epoch": epoch,
         "weight": weight,
         "hw_weight": hw_weight if 'hw_weight' in dir() else weight,
+        "measurement_nonce": rotation_eval['measurement_nonce'],
+        "active_fingerprint_checks": rotation_eval['active_checks'],
+        "active_fingerprint_pass_count": rotation_eval['active_pass_count'],
+        "active_fingerprint_total": rotation_eval['active_total'],
         "fingerprint_failed": fingerprint_failed if 'fingerprint_failed' in dir() else False,
         "miner_pk": miner_pk,
         "miner_id": miner_id
@@ -3447,7 +3693,7 @@ def vrf_is_selected(miner_pk: str, slot: int) -> bool:
 
     # Calculate cumulative weights
     total_weight = sum(w for _, w in all_miners)
-    threshold = (rand_val % int(total_weight * 1000000)) / 1000000.0
+    threshold = (rand_val % int(total_weight * 1000000)) / 100000000.0
 
     cumulative = 0.0
     for pk, w in all_miners:
@@ -3607,7 +3853,13 @@ def ingest_signed_header():
             if not settled_row:
                 # Call finalize_epoch to distribute rewards
                 try:
-                    finalize_epoch(current_epoch)
+                    # Compute block hash from the current header message_hex as prev_block_hash
+                    prev_msg = db.execute(
+                        "SELECT message_hex FROM headers WHERE slot = ? ORDER BY slot DESC LIMIT 1",
+                        (slot,)
+                    ).fetchone()
+                    prev_block_hash = hashlib.sha256((prev_msg[0] if prev_msg else str(slot)).encode()).digest() if prev_msg else b""
+                    finalize_epoch(current_epoch, PER_EPOCH_RTC, prev_block_hash)
                     print(f"[EPOCH] Auto-settled epoch {current_epoch} after {blocks_in_epoch} blocks")
                 except Exception as e:
                     print(f"[EPOCH] Settlement failed for epoch {current_epoch}: {e}")
@@ -5062,7 +5314,7 @@ def bounty_multiplier():
             ("founder_community",)
         ).fetchone()
         total_paid_urtc = row[0] if row else 0
-        total_paid_rtc = total_paid_urtc / 1000000.0
+        total_paid_rtc = total_paid_urtc / 100000000.0
 
         # Current balance
         bal_row = c.execute(
@@ -6368,7 +6620,7 @@ def confirm_pending():
                 # Execute the actual transfer
                 c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (to_m,))
                 c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?", (amount, from_m))
-                c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?", (amount, amount, to_m))
+                c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 100000000.0 WHERE miner_id = ?", (amount, amount, to_m))
                 
                 # Log to IMMUTABLE ledger (the real chain!)
                 c.execute("""
@@ -6506,7 +6758,7 @@ def wallet_transfer_OLD():
 
         c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (to_miner,))
         c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?", (amount_i64, from_miner))
-        c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?", (amount_i64, amount_i64, to_miner))
+        c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 100000000.0 WHERE miner_id = ?", (amount_i64, amount_i64, to_miner))
 
         sender_new = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_miner,)).fetchone()[0]
         recipient_new = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (to_miner,)).fetchone()[0]
