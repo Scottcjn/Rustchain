@@ -45,7 +45,7 @@ curl -sk https://rustchain.org/epoch | jq .
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │  Vintage Miner  │────▶│ Attestation Node │────▶│  Ergo Anchor    │
-│  (G4/G5/SPARC)  │     │  (50.28.86.131)  │     │ (Immutability)  │
+│  (G4/G5/SPARC)  │     │  (https://rustchain.org)  │     │ (Immutability)  │
 └─────────────────┘     └──────────────────┘     └─────────────────┘
         │                        │
         │ Hardware Fingerprint   │ Epoch Settlement
