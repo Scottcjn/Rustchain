@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # CONSTANTS
 # =============================================================================
 
-GENESIS_TIMESTAMP = 1728000000  # Oct 4, 2024 00:00:00 UTC
+GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
 BLOCK_TIME = 600  # 10 minutes (600 seconds)
 MAX_TXS_PER_BLOCK = 1000
 ATTESTATION_TTL = 600  # 10 minutes
@@ -459,13 +459,29 @@ class BlockProducer:
                     int(time.time())
                 ))
 
-                # Confirm transactions
+                # Confirm transactions — pass the same connection so the
+                # entire block save + all confirmations are a single atomic
+                # transaction.  If any confirmation fails, roll back the
+                # whole block to avoid partial state.
                 for tx in block.body.transactions:
-                    self.tx_pool.confirm_transaction(
+                    ok = self.tx_pool.confirm_transaction(
                         tx.tx_hash,
                         block.height,
-                        block.hash
+                        block.hash,
+                        conn=conn
                     )
+                    if not ok:
+                        # SECURITY FIX #2156: Explicit rollback so the block
+                        # INSERT and any partial confirmations are discarded.
+                        # Without this, the `with` context manager would call
+                        # conn.commit() on clean exit, persisting an
+                        # inconsistent partial block.
+                        conn.rollback()
+                        logger.error(
+                            f"Block save aborted: confirmation failed for "
+                            f"tx {tx.tx_hash[:16]}... at block {block.height}"
+                        )
+                        return False
 
                 conn.commit()
 
@@ -555,6 +571,65 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
     """Create Flask routes for block API"""
     from flask import request, jsonify
 
+    def _get_pagination_params():
+        """Helper to extract and validate pagination parameters"""
+        limit_raw = request.args.get('limit', '10')
+        offset_raw = request.args.get('offset', '0')
+        
+        # Scenario: Non-integer parameter (expect 400)
+        if not limit_raw.lstrip('-').isdigit() or not offset_raw.lstrip('-').isdigit():
+            return None, None, ("limit and offset must be integers", 400)
+            
+        limit = int(limit_raw)
+        offset = int(offset_raw)
+        
+        # Scenario: Negative limit (expect 400)
+        if limit < 0:
+            return None, None, ("limit cannot be negative", 400)
+            
+        # Scenario: Limit exceeding cap (verify capped)
+        limit = min(limit, 1000)
+        # Scenario: Negative offset (verify capped to 0)
+        offset = max(0, offset)
+        
+        return limit, offset, None
+
+    @app.route('/api/blocks', methods=['GET'])
+    def list_blocks():
+        """List recent blocks with pagination"""
+        limit, offset, error = _get_pagination_params()
+        if error:
+            return jsonify({"error": error[0]}), error[1]
+            
+        with sqlite3.connect(producer.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM blocks ORDER BY height DESC LIMIT ? OFFSET ?",
+                (limit, offset)
+            )
+            return jsonify([dict(row) for row in cursor.fetchall()])
+
+    @app.route('/api/transactions', methods=['GET'])
+    def list_transactions():
+        """List recent transactions with pagination"""
+        limit, offset, error = _get_pagination_params()
+        if error:
+            return jsonify({"error": error[0]}), error[1]
+            
+        with sqlite3.connect(producer.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "SELECT * FROM transactions ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+                    (limit, offset)
+                )
+                return jsonify([dict(row) for row in cursor.fetchall()])
+            except sqlite3.OperationalError:
+                # Fallback if table doesn't exist yet
+                return jsonify([])
+
     @app.route('/block/latest', methods=['GET'])
     def get_latest_block():
         """Get latest block"""
@@ -575,6 +650,54 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
             if row:
                 return jsonify(dict(row))
             return jsonify({"error": "Block not found"}), 404
+
+    @app.route('/block/hash/<block_hash>', methods=['GET'])
+    def get_block_by_hash(block_hash: str):
+        """Get block by hash"""
+        with sqlite3.connect(producer.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM blocks WHERE block_hash = ?", (block_hash,))
+            row = cursor.fetchone()
+
+            if row:
+                return jsonify(dict(row))
+            return jsonify({"error": "Block not found"}), 404
+
+    @app.route('/block/slot', methods=['GET'])
+    def get_current_slot():
+        """Get current slot info"""
+        slot = producer.get_current_slot()
+        expected_producer = producer.get_round_robin_producer(slot)
+        slot_start = producer.get_slot_start_time(slot)
+        slot_end = slot_start + BLOCK_TIME
+
+        return jsonify({
+            "slot": slot,
+            "expected_producer": expected_producer,
+            "slot_start": slot_start,
+            "slot_end": slot_end,
+            "time_remaining": max(0, slot_end - int(time.time())),
+            "is_my_turn": producer.is_my_turn(slot)
+        })
+
+    @app.route('/block/producers', methods=['GET'])
+    def list_producers():
+        """List current block producers"""
+        current_ts = int(time.time())
+        miners = producer.get_attested_miners(current_ts)
+
+        return jsonify({
+            "count": len(miners),
+            "producers": [
+                {
+                    "wallet": m[0],
+                    "arch": m[1],
+                    "device_info": m[2]
+                }
+                for m in miners
+            ]
+        })
 
     @app.route('/block/hash/<block_hash>', methods=['GET'])
     def get_block_by_hash(block_hash: str):

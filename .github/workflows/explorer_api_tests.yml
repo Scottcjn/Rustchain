@@ -1,0 +1,17 @@
+name: Explorer API Tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: |
+          pip install pytest flask hypothesis
+      - name: Run tests
+        run: |
+          pytest tests/test_explorer_api.py --hypothesis-show-statistics
