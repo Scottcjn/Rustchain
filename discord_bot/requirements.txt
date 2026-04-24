@@ -4,7 +4,7 @@
 discord.py>=2.3.0
 
 # Async HTTP client
-httpx>=0.24.0
+httpx>=0.28.1
 
 # Testing
 pytest>=7.0.0
