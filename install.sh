@@ -7,7 +7,7 @@
 #   curl -fsSL https://rustchain.org/install.sh | bash -s -- --wallet MY_WALLET
 #
 # Or manually:
-#   bash install.sh --wallet my-wallet-name
+#   bash install-rtc-miner.sh --wallet my-wallet-name
 #
 # This installs the RTC miner alongside your existing GPU mining setup.
 # CPU overhead: <0.1% | GPU impact: 0% | RAM: <50MB
@@ -23,8 +23,8 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 INSTALL_DIR="$HOME/.rustchain"
-MINER_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/rustchain_universal_miner.py"
-FINGERPRINT_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/fingerprint_checks.py"
+MINER_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/rustchain_linux_miner.py"
+FINGERPRINT_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/fingerprint_checks.py"
 NODE_URL="https://50.28.86.131"
 VERSION="1.0.0"
 
