@@ -400,3 +400,7 @@ Named after a 486 laptop with oxidized serial ports that still boots to DOS and 
 
 ## Contributing
 Please read the [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and the [Bounty Board](https://github.com/Scottcjn/rustchain-bounties) for active tasks and rewards.
+
+
+---
+*Documentation improved for readability.*
