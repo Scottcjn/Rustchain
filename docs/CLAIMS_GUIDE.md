@@ -20,7 +20,7 @@ This guide explains how to claim your RustChain mining rewards using the web-bas
 
 ## Quick Start
 
-1. Navigate to `/claims` on your RustChain node
+1. Navigate to `/claims` on your RustChain node (Note: web UI not yet deployed — use CLI or API directly)
 2. Enter your **Miner ID**
 3. Click **Check Eligibility**
 4. Select an **Epoch** to claim
@@ -44,7 +44,7 @@ Before claiming rewards, ensure you have:
 
 If you don't have a wallet address:
 
-1. Download the [RustChain Wallet](/wallet)
+1. Download the [RustChain Wallet](/wallet) (Note: wallet download page not yet live — use `pip install clawrtc` or build from source)
 2. Generate a new address
 3. Save your private key securely (never share it!)
 4. Copy the public address (starts with `RTC`)
@@ -65,7 +65,7 @@ Your Miner ID is shown in:
 Example Miner ID: `n64-scott-unit1`
 
 **Enter Miner ID:**
-1. Go to `/claims`
+1. Go to `/claims` (web UI coming soon — use CLI or API directly)
 2. Type or paste your Miner ID into the input field
 3. Click **Check Eligibility**
 
