@@ -162,7 +162,7 @@ launchctl list | grep rustchain
 
 RTC (RustChain Token) 是 RustChain 的原生加密货币。
 
-- **参考汇率：** 1 RTC = $0.10 USD
+- **参考汇率：** 1 RTC = ~$0.01 USD (value varies; check current rates)
 - **wRTC：** RTC 在 Solana 上的封装版本
 
 ### 如何获取 RTC？
