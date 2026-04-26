@@ -6,6 +6,9 @@
 #   curl -fsSL https://rustchain.org/install.sh | bash
 #   curl -fsSL https://rustchain.org/install.sh | bash -s -- --wallet MY_WALLET
 #
+# The --wallet option is optional; when omitted, the installer uses
+# a default wallet name based on <hostname>-<arch>.
+#
 # Or manually:
 #   bash install-rtc-miner.sh --wallet my-wallet-name
 #
@@ -45,7 +48,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --wallet, -w NAME    Set wallet name (prompted if not given)"
+            echo "  --wallet, -w NAME    Set wallet name (optional; defaults to <hostname>-<arch>)"
             echo "  --silent, -s         Run miner in background (daemon mode)"
             echo "  --dry-run            Show what would be installed without doing it"
             echo "  --help, -h           Show this help"
