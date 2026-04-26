@@ -56,16 +56,16 @@ class Bounty:
             paid_at = datetime.fromisoformat(paid_at_val) if paid_at_val else None
 
             return cls(
-                issue_number=data["issue_number"],
-                title=data["title"],
-                description=data["description"],
+                issue_number=int(data["issue_number"]),
+                title=str(data["title"]),
+                description=str(data["description"]),
                 reward_rtc=int(data["reward_rtc"]),  # Ensure integer conversion
-                status=data.get("status", "open"),
-                claimant=data.get("claimant"),
+                status=str(data.get("status", "open")),
+                claimant=str(data.get("claimant")) if data.get("claimant") is not None else None,
                 claimed_at=claimed_at,
                 paid_at=paid_at,
-                pr_url=data.get("pr_url"),
-                labels=data.get("labels", []),
+                pr_url=str(data.get("pr_url")) if data.get("pr_url") is not None else None,
+                labels=list(data.get("labels", [])),
             )
         except (KeyError, ValueError, TypeError) as e:
             raise ValueError(f"Invalid data for Bounty: {e}") from e
