@@ -65,7 +65,7 @@ class Bounty:
                 claimed_at=claimed_at,
                 paid_at=paid_at,
                 pr_url=str(data.get("pr_url")) if data.get("pr_url") is not None else None,
-                labels=list(data.get("labels", [])),
+                labels=[str(label) for label in data.get("labels", [])],
             )
         except (KeyError, ValueError, TypeError) as e:
             raise ValueError(f"Invalid data for Bounty: {e}") from e
