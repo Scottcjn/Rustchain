@@ -1,4 +1,7 @@
+// File: integrations/rustchain-bounties/bounty_tracker.py
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+
 """
 RustChain Bounty Tracker
 
