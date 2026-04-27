@@ -5,4 +5,4 @@
 | @ryan-the-zilla | RyanX#0000 | AI automation, bounty hunting, and software development |
 | @afu20260324 | 闃跨#0000 | AI automation, bounty hunting, documentation, and open source contributions |
 | @HuiNeng6 | HuiNeng | AI agents, automation, blockchain development |
-| @lam1688 | lam1688#0000 | AI automation, bounty hunting, RustChain ecosystem, Python development |
+| @lam1688 | lam1688#0000 | AI automation, bounty hunting, RustChain ecosystem, Python development || @haoyousun60-create | iKun#0000 | AI automation, bounty hunting, documentation, open source contributions |
