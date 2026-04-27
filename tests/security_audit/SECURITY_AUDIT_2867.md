@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Security Audit Report — Bounty #2867 (Red Team Security Audit)
 
 **Auditor:** @BossChaos  
