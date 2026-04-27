@@ -48,10 +48,8 @@ class Bounty:
     def from_dict(cls, data: Dict) -> "Bounty":
         claimed_at_val = data.get("claimed_at")
         claimed_at = datetime.fromisoformat(claimed_at_val) if claimed_at_val else None
-
         paid_at_val = data.get("paid_at")
         paid_at = datetime.fromisoformat(paid_at_val) if paid_at_val else None
-
         return cls(
             issue_number=data["issue_number"],
             title=data["title"],
@@ -67,135 +65,164 @@ class Bounty:
 
 
 class BountyTracker:
-    """Manages persistence and state of bounties"""
+    """Manages lifecycle of bounties via GitHub and internal state"""
+    
+    def __init__(self, github_token: str, repo: str, state_file: Path):
+        self.github_token = github_token
+        self.repo = repo
+        self.state_file = state_file
+        self.bounties: Dict[int, Bounty] = self._load_state()
 
-    def __init__(self, data_file: str = "bounties.json"):
-        self.data_file = Path(data_file)
-        self.bounties: Dict[int, Bounty] = {}
-        self.load()
-
-    def load(self):
-        """Load bounties from disk"""
-        if not self.data_file.exists():
-            return
-
+    def _load_state(self) -> Dict[int, Bounty]:
+        """Load bounty state from JSON file"""
+        if not self.state_file.exists():
+            return {}
         try:
-            with open(self.data_file, "r") as f:
-                data = json.load(f)
-                for item in data:
-                    bounty = Bounty.from_dict(item)
-                    self.bounties[bounty.issue_number] = bounty
-        except (json.JSONDecodeError, OSError) as e:
-            print(f"⚠️ Failed to load bounty data: {e}")
+            data = json.loads(self.state_file.read_text())
+            return {item["issue_number"]: Bounty.from_dict(item) for item in data}
+        except (json.JSONDecodeError, KeyError, OSError) as e:
+            print(f"⚠️ Failed to load bounty state: {e}")
+            return {}
 
-    def save(self):
-        """Persist bounties to disk"""
+    def _save_state(self):
+        """Persist current bounties to disk"""
+        data = [b.to_dict() for b in self.bounties.values()]
+        self.state_file.write_text(json.dumps(data, indent=2))
+
+    def fetch_issue(self, issue_number: int) -> Optional[Dict[str, Any]]:
+        """Fetch issue details from GitHub API"""
+        url = f"https://api.github.com/repos/{self.repo}/issues/{issue_number}"
+        request = Request(url)
+        request.add_header("Authorization", f"token {self.github_token}")
+        request.add_header("Accept", "application/vnd.github.v3+json")
         try:
-            with open(self.data_file, "w") as f:
-                json.dump([b.to_dict() for b in self.bounties.values()], f, indent=2)
-        except OSError as e:
-            print(f"⚠️ Failed to save bounty data: {e}")
+            with urlopen(request) as response:
+                return json.load(response)
+        except HTTPError as e:
+            print(f"⚠️ GitHub API error: {e}")
+            return None
 
-    def get_bounty(self, issue_number: int) -> Optional[Bounty]:
-        return self.bounties.get(issue_number)
+    def create_bounty(self, issue_number: int) -> bool:
+        """Create a new bounty from an issue"""
+        issue = self.fetch_issue(issue_number)
+        if not issue:
+            return False
+        if issue_number in self.bounties:
+            print(f"⚠️ Bounty already exists for issue #{issue_number}")
+            return False
+        labels = [label["name"] for label in issue.get("labels", [])]
+        bounty = Bounty(
+            issue_number=issue_number,
+            title=issue["title"],
+            description=issue["body"] or "",
+            reward_rtc=self._parse_reward_from_labels(labels),
+            labels=labels,
+        )
+        self.bounties[issue_number] = bounty
+        self._save_state()
+        print(f"✅ Created bounty for issue #{issue_number}")
+        return True
 
-    def add_bounty(self, bounty: Bounty):
-        self.bounties[bounty.issue_number] = bounty
-        self.save()
+    def _parse_reward_from_labels(self, labels: List[str]) -> int:
+        """Extract RTC reward from label (e.g., 'bounty-500')"""
+        for label in labels:
+            if label.startswith("bounty-"):
+                try:
+                    return int(label.split("-")[1])
+                except ValueError:
+                    continue
+        return 0
 
-    def update_bounty(self, bounty: Bounty):
-        if bounty.issue_number not in self.bounties:
-            raise ValueError(f"Bounty {bounty.issue_number} does not exist")
-        self.bounties[bounty.issue_number] = bounty
-        self.save()
+    def claim_bounty(self, issue_number: int, claimant: str) -> bool:
+        """Claim an open bounty"""
+        bounty = self.bounties.get(issue_number)
+        if not bounty:
+            print(f"⚠️ No bounty found for issue #{issue_number}")
+            return False
+        if bounty.status != "open":
+            print(f"⚠️ Bounty #{issue_number} is not open (status: {bounty.status})")
+            return False
+        bounty.status = "claimed"
+        bounty.claimant = claimant
+        bounty.claimed_at = datetime.now(timezone.utc)
+        self._save_state()
+        print(f"✅ {claimant} claimed bounty #{issue_number}")
+        return True
+
+    def complete_bounty(self, issue_number: int, pr_url: str) -> bool:
+        """Mark bounty as completed with PR reference"""
+        bounty = self.bounties.get(issue_number)
+        if not bounty:
+            print(f"⚠️ No bounty found for issue #{issue_number}")
+            return False
+        if bounty.status != "claimed":
+            print(f"⚠️ Bounty #{issue_number} is not claimed (status: {bounty.status})")
+            return False
+        bounty.status = "completed"
+        bounty.pr_url = pr_url
+        self._save_state()
+        print(f"✅ Bounty #{issue_number} completed with PR {pr_url}")
+        return True
+
+    def pay_bounty(self, issue_number: int) -> bool:
+        """Mark bounty as paid and record payout time"""
+        bounty = self.bounties.get(issue_number)
+        if not bounty:
+            print(f"⚠️ No bounty found for issue #{issue_number}")
+            return False
+        if bounty.status != "completed":
+            print(f"⚠️ Bounty #{issue_number} is not completed (status: {bounty.status})")
+            return False
+        bounty.status = "paid"
+        bounty.paid_at = datetime.now(timezone.utc)
+        self._save_state()
+        print(f"✅ Bounty #{issue_number} paid to {bounty.claimant}")
+        return True
 
 
 def main():
-    """Sync bounties with GitHub and process claims"""
-    node_url = os.environ.get("INPUT_NODE_URL", "https://rustchain.org")
-    repo = os.environ.get("REPO", "")
+    """Main entry point for bounty tracker"""
     github_token = os.environ.get("GITHUB_TOKEN", "")
+    repo = os.environ.get("REPO", "rust-lang/rust")
+    state_file_path = os.environ.get("STATE_FILE", "./bounties.json")
 
-    if not repo or not github_token:
-        print("⚠️ Missing REPO or GITHUB_TOKEN. Skipping bounty sync.")
+    if not github_token:
+        print("⚠️ GITHUB_TOKEN environment variable is required")
         return
 
-    tracker = BountyTracker()
+    state_file = Path(state_file_path)
+    tracker = BountyTracker(github_token, repo, state_file)
 
-    # Fetch open bounty issues from GitHub
-    headers = {
-        "Authorization": f"token {github_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    url = f"https://api.github.com/repos/{repo}/issues"
-    req = Request(url, headers=headers)
-    
+    command = os.environ.get("COMMAND")
+    if not command:
+        print("⚠️ COMMAND environment variable is required")
+        return
+
+    issue_number_str = os.environ.get("ISSUE_NUMBER")
+    if not issue_number_str:
+        print("⚠️ ISSUE_NUMBER environment variable is required")
+        return
     try:
-        with urlopen(req) as response:
-            issues = json.load(response)
-    except HTTPError as e:
-        print(f"⚠️ Failed to fetch issues: {e}")
+        issue_number = int(issue_number_str)
+    except ValueError:
+        print("⚠️ ISSUE_NUMBER must be an integer")
         return
 
-    # Process each issue with bounty label
-    for issue in issues:
-        if "bounty" not in [label["name"] for label in issue.get("labels", [])]:
-            continue
-
-        issue_number = issue["number"]
-        title = issue["title"]
-        body = issue["body"] or ""
-        reward_rtc = 100  # Default reward; could be parsed from body
-
-        # Extract reward from body if specified
-        for line in body.splitlines():
-            if "Reward:" in line:
-                try:
-                    reward_rtc = int(line.split("Reward:")[1].strip().split()[0])
-                except (IndexError, ValueError):
-                    pass
-                break
-
-        if issue_number not in tracker.bounties:
-            bounty = Bounty(
-                issue_number=issue_number,
-                title=title,
-                description=body,
-                reward_rtc=reward_rtc,
-                labels=[label["name"] for label in issue.get("labels", [])],
-            )
-            tracker.add_bounty(bounty)
-        else:
-            bounty = tracker.get_bounty(issue_number)
-            if bounty and bounty.status == "open" and bounty.claimant:
-                # If claimant has submitted a PR, mark as completed
-                if bounty.pr_url:
-                    bounty.status = "completed"
-                    tracker.update_bounty(bounty)
-
-    # Payout completed bounties via RustChain
-    for bounty in tracker.bounties.values():
-        if bounty.status != "completed" or not bounty.claimant or bounty.paid_at:
-            continue
-
-        payout_data = {
-            "to": bounty.claimant,
-            "amount": bounty.reward_rtc,
-            "reason": f"Bounty for issue #{bounty.issue_number}",
-            "issue_number": bounty.issue_number,
-            "schema": "bounty-payout/v1",
-        }
-
-        payout_url = f"{node_url}/api/payout"
-        req = Request(payout_url, data=json.dumps(payout_data).encode(), headers=headers, method="POST")
-
-        try:
-            with urlopen(req) as response:
-                result = json.load(response)
-                if response.status == 200:
-                    bounty.status = "paid"
-                    bounty.paid_at = datetime.now(timezone.utc)
-                    tracker.update_bounty(bounty)
-                    print(f"✅ Paid {bounty.reward_rtc} RTC to {bounty.claimant} for issue #{bounty.issue_number}")
-        except HTTPError as e:
-            print(f"⚠️ Payout failed for issue #{bounty.issue_number}: {e}")
+    if command == "create":
+        tracker.create_bounty(issue_number)
+    elif command == "claim":
+        claimant = os.environ.get("CLAIMANT")
+        if not claimant:
+            print("⚠️ CLAIMANT environment variable is required for claim")
+            return
+        tracker.claim_bounty(issue_number, claimant)
+    elif command == "complete":
+        pr_url = os.environ.get("PR_URL")
+        if not pr_url:
+            print("⚠️ PR_URL environment variable is required for completion")
+            return
+        tracker.complete_bounty(issue_number, pr_url)
+    elif command == "pay":
+        tracker.pay_bounty(issue_number)
+    else:
+        print(f"⚠️ Unknown command: {command}")
