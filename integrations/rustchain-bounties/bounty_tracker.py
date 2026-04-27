@@ -65,144 +65,123 @@ class Bounty:
 
 
 class BountyTracker:
-    """Manages persistence and operations on bounties"""
+    """Manages persistence and state of bounties"""
     def __init__(self, storage_path: str):
         self.storage_path = Path(storage_path)
         self.bounties: Dict[int, Bounty] = {}
-        self._load()
+        self.load()
 
-    def _load(self):
+    def load(self):
         """Load bounties from JSON file"""
         if not self.storage_path.exists():
             return
         try:
             data = json.loads(self.storage_path.read_text())
-            for item in data:
-                bounty = Bounty.from_dict(item)
-                self.bounties[bounty.issue_number] = bounty
+            self.bounties = {item["issue_number"]: Bounty.from_dict(item) for item in data}
         except (json.JSONDecodeError, KeyError, OSError) as e:
-            print(f"❌ Failed to load bounty data: {e}")
-            raise
+            print(f"⚠️ Failed to load bounty data: {e}")
+            self.bounties = {}
 
-    def _save(self):
+    def save(self):
         """Persist bounties to JSON file"""
         try:
             serialized = [b.to_dict() for b in self.bounties.values()]
             self.storage_path.write_text(json.dumps(serialized, indent=2))
-        except (OSError, TypeError) as e:
-            print(f"❌ Failed to save bounty data: {e}")
+        except OSError as e:
+            print(f"⚠️ Failed to save bounty data: {e}")
             raise
 
     def get_bounty(self, issue_number: int) -> Optional[Bounty]:
         return self.bounties.get(issue_number)
 
-    def create_bounty(self, bounty: Bounty):
-        if bounty.issue_number in self.bounties:
-            raise ValueError(f"Bounty for issue #{bounty.issue_number} already exists")
+    def add_bounty(self, bounty: Bounty):
         self.bounties[bounty.issue_number] = bounty
-        self._save()
+        self.save()
 
     def update_bounty(self, bounty: Bounty):
         if bounty.issue_number not in self.bounties:
-            raise ValueError(f"No bounty found for issue #{bounty.issue_number}")
+            raise ValueError(f"Bounty {bounty.issue_number} does not exist")
         self.bounties[bounty.issue_number] = bounty
-        self._save()
+        self.save()
 
     def list_bounties(self, status: Optional[str] = None) -> List[Bounty]:
-        filtered = self.bounties.values()
+        bounties = list(self.bounties.values())
         if status is not None:
-            filtered = [b for b in filtered if b.status == status]
-        return sorted(filtered, key=lambda b: b.issue_number)
-
-
-def post_bounty_update(bounty: Bounty, webhook_url: str):
-    """Send bounty update to external webhook"""
-    payload = bounty.to_dict()
-    req = Request(webhook_url, data=json.dumps(payload).encode(), method="POST")
-    req.add_header("Content-Type", "application/json")
-    try:
-        with urlopen(req) as res:
-            res.read()
-    except HTTPError as e:
-        print(f"❌ Webhook delivery failed: {e}")
-        raise
+            bounties = [b for b in bounties if b.status == status]
+        return bounties
 
 
 def main():
-    """Run bounty tracker operations based on environment inputs"""
-    # Get inputs from environment
-    mode = os.environ.get("MODE", "")
-    storage_path = os.environ.get("STORAGE_PATH", "bounties.json")
-    webhook_url = os.environ.get("WEBHOOK_URL", "")
+    """Sync bounties from GitHub and update tracker state"""
+    node_url = os.environ.get("INPUT_NODE_URL", "https://rustchain.org")
+    repo = os.environ.get("REPO", "rustchain/bounties")
+    token = os.environ.get("GITHUB_TOKEN")
 
-    tracker = BountyTracker(storage_path)
+    if not token:
+        print("⚠️ GITHUB_TOKEN is required")
+        return
 
-    if mode == "create":
-        issue_number = int(os.environ["ISSUE_NUMBER"])
-        title = os.environ["TITLE"]
-        description = os.environ["DESCRIPTION"]
-        reward_rtc = int(os.environ["REWARD_RTC"])
-        labels = os.environ.get("LABELS", "").split(",") if os.environ.get("LABELS") else []
+    tracker_path = os.environ.get("TRACKER_PATH", "bounties.json")
+    tracker = BountyTracker(tracker_path)
 
-        bounty = Bounty(
-            issue_number=issue_number,
-            title=title,
-            description=description,
-            reward_rtc=reward_rtc,
-            labels=[label.strip() for label in labels if label.strip()]
-        )
-        tracker.create_bounty(bounty)
-        if webhook_url:
-            post_bounty_update(bounty, webhook_url)
+    # Fetch open bounty issues from GitHub
+    issues_url = f"https://api.github.com/repos/{repo}/issues"
+    request = Request(issues_url)
+    request.add_header("Authorization", f"token {token}")
+    request.add_header("Accept", "application/vnd.github.v3+json")
 
-    elif mode == "claim":
-        issue_number = int(os.environ["ISSUE_NUMBER"])
-        claimant = os.environ["CLAIMANT"]
-        bounty = tracker.get_bounty(issue_number)
-        if not bounty:
-            raise ValueError(f"No bounty found for issue #{issue_number}")
-        if bounty.status != "open":
-            raise ValueError(f"Bounty #{issue_number} is not open")
-        bounty.status = "claimed"
-        bounty.claimant = claimant
-        bounty.claimed_at = datetime.now(timezone.utc)
-        tracker.update_bounty(bounty)
-        if webhook_url:
-            post_bounty_update(bounty, webhook_url)
+    try:
+        response = urlopen(request)
+        issues = json.load(response)
+    except HTTPError as e:
+        print(f"⚠️ Failed to fetch issues: {e}")
+        return
 
-    elif mode == "complete":
-        issue_number = int(os.environ["ISSUE_NUMBER"])
-        pr_url = os.environ["PR_URL"]
-        bounty = tracker.get_bounty(issue_number)
-        if not bounty:
-            raise ValueError(f"No bounty found for issue #{issue_number}")
-        if bounty.status != "claimed":
-            raise ValueError(f"Bounty #{issue_number} is not claimed")
-        bounty.status = "completed"
-        bounty.pr_url = pr_url
-        tracker.update_bounty(bounty)
-        if webhook_url:
-            post_bounty_update(bounty, webhook_url)
+    updated = False
+    for issue in issues:
+        if "bounty" not in [label.get("name", "").lower() for label in issue.get("labels", [])]:
+            continue
 
-    elif mode == "pay":
-        issue_number = int(os.environ["ISSUE_NUMBER"])
-        bounty = tracker.get_bounty(issue_number)
-        if not bounty:
-            raise ValueError(f"No bounty found for issue #{issue_number}")
-        if bounty.status != "completed":
-            raise ValueError(f"Bounty #{issue_number} is not completed")
-        bounty.status = "paid"
-        bounty.paid_at = datetime.now(timezone.utc)
-        tracker.update_bounty(bounty)
-        if webhook_url:
-            post_bounty_update(bounty, webhook_url)
+        issue_number = issue["number"]
+        existing = tracker.get_bounty(issue_number)
 
-    elif mode == "list":
-        status_filter = os.environ.get("FILTER_STATUS")
-        bounties = tracker.list_bounties(status=status_filter)
-        for b in bounties:
-            print(f"#{b.issue_number} {b.title} [{b.status}] ({b.reward_rtc} RTC)")
+        # Extract bounty amount from title: "[Bounty: 500] Fix login bug"
+        reward_rtc = 0
+        title = issue["title"]
+        if "[bounty:" in title.lower():
+            try:
+                reward_part = title.split("[bounty:")[1].split("]")[0]
+                reward_rtc = int(reward_part.strip())
+            except (IndexError, ValueError):
+                pass
 
+        # Create or update bounty
+        if not existing:
+            bounty = Bounty(
+                issue_number=issue_number,
+                title=title,
+                description=issue.get("body", "")[:500],
+                reward_rtc=reward_rtc,
+                labels=[label["name"] for label in issue.get("labels", [])],
+            )
+            tracker.add_bounty(bounty)
+            updated = True
+        else:
+            # Sync labels and title in case of edits
+            if existing.title != title or set(existing.labels) != {label["name"] for label in issue.get("labels", [])}:
+                existing.title = title
+                existing.labels = [label["name"] for label in issue.get("labels", [])]
+                # Re-extract reward if title changed
+                if "[bounty:" in title.lower():
+                    try:
+                        reward_part = title.split("[bounty:")[1].split("]")[0]
+                        existing.reward_rtc = int(reward_part.strip())
+                    except (IndexError, ValueError):
+                        pass
+                tracker.update_bounty(existing)
+                updated = True
+
+    if updated:
+        print("✅ Bounty tracker updated")
     else:
-        print(f"❌ Unknown mode: {mode}")
-        exit(1)
+        print("✅ Bounty tracker is up to date")
