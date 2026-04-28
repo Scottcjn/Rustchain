@@ -30,6 +30,8 @@ Current `clawrtc` releases do **not** ship `wallet new`, `wallet show`, or `wall
 ### Check Balance
 
 ```bash
+# Query the RustChain network for your wallet's RTC balance
+# Replace YOUR_WALLET with your actual miner/wallet ID
 curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 ```
 
