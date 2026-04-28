@@ -1,0 +1,43 @@
+name: 'RTC Pull Request Reward'
+description: 'Automatically awards RTC tokens when a PR is merged — any open source repo earns crypto for contributors'
+author: 'universe7creator'
+inputs:
+  github-token:
+    description: 'GitHub token for API access (GITHUB_TOKEN or repo PAT)'
+    required: true
+    default: ${{ github.token }}
+  node-url:
+    description: 'RustChain node RPC URL'
+    required: false
+    default: 'https://50.28.86.131'
+  amount:
+    description: 'RTC amount to award per merged PR'
+    required: false
+    default: '5'
+  wallet-from:
+    description: 'Sender wallet miner_id (from registry, not raw key)'
+    required: false
+    default: ''
+  admin-key:
+    description: 'Admin key for RPC transfers (WARNING: prefer wallet-from with pre-registered wallet)'
+    required: false
+  dry-run:
+    description: 'Simulate without making real transfers'
+    required: false
+    default: 'false'
+  cooldowns-minutes:
+    description: 'Minimum minutes between transfers to same wallet to prevent abuse'
+    required: false
+    default: '60'
+  registry-url:
+    description: 'Registry API for wallet lookups'
+    required: false
+    default: 'https://50.28.86.131/wallet/registry'
+
+runs:
+  using: 'node20'
+  main: 'tip.js'
+
+branding:
+  icon: 'award'
+  color: 'green'
