@@ -2046,7 +2046,7 @@ def _projected_multiplier_growth(current_mult: float, device_arch: str) -> dict:
     }
 
 
-def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False, source_ip: str = None, signals: dict = None, fingerprint: dict = None, signing_pubkey: str = None):
+def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False, source_ip: str = None, signals: dict = None, fingerprint: dict = None, signing_pubkey: str = None, entropy_score: float = 0.0):
     now = int(time.time())
     # Miner-name platform hints — helps detect Apple Silicon / POWER8 when client doesn't send rich device info
     _device = dict(device or {})
@@ -2095,13 +2095,13 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
                 fingerprint_passed = MAX(miner_attest_recent.fingerprint_passed, excluded.fingerprint_passed),
                 signing_pubkey = excluded.signing_pubkey,
                 fingerprint_checks_json = excluded.fingerprint_checks_json
-        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, new_fp, source_ip, signing_pubkey, fingerprint_checks_json))
+        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], entropy_score, new_fp, source_ip, signing_pubkey, fingerprint_checks_json))
         _ = append_fingerprint_snapshot(conn, miner, fingerprint if isinstance(fingerprint, dict) else {}, now)
         # C3 fix: Record attestation history for first_attest tracking
         conn.execute("""
             INSERT INTO miner_attest_history (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, fingerprint_checks_json)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], 0.0, new_fp, fingerprint_checks_json))
+        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], entropy_score, new_fp, fingerprint_checks_json))
         conn.commit()
 
         # RIP-201: Record fleet immune system signals
@@ -3329,7 +3329,16 @@ def _submit_attestation_impl():
 
     # Record successful attestation (with fingerprint status)
     # Store the Ed25519 signing pubkey for enrollment signature verification
-    record_attestation_success(miner, device, fingerprint_passed, client_ip, signals=signals, fingerprint=fingerprint, signing_pubkey=pubkey_hex or None)
+    # Compute entropy score for museum/antiquity system
+    entropy_score = 0.0
+    if HW_PROOF_AVAILABLE:
+        try:
+            _, proof_result = server_side_validation(data)
+            entropy_score = proof_result.get("entropy_score", 0.0)
+        except Exception:
+            pass
+
+    record_attestation_success(miner, device, fingerprint_passed, client_ip, signals=signals, fingerprint=fingerprint, signing_pubkey=pubkey_hex or None, entropy_score=entropy_score)
 
     temporal_review = {"score": 1.0, "review_flag": False, "reason": "insufficient_history", "flags": [], "check_scores": {}}
     try:
@@ -5260,16 +5269,7 @@ def get_balance(miner_pk):
         else:
             # Legacy schema: balances(miner_pk, balance_rtc)
             row = cur.execute("SELECT COALESCE(balance_rtc, 0.0) FROM balances WHERE miner_pk = ?", (miner_pk,)).fetchone()
-            bal_rtc = float(row[0]) if row else 0.0
-            balance_i64 = int(round(bal_rtc * UNIT))
-
-        return jsonify({
-            "miner_pk": miner_pk,
-            "balance_rtc": balance_i64 / UNIT,
-            "amount_i64": balance_i64
-        })
-
-@app.route('/api/stats', methods=['GET'])
+    return jsonify(miners)
 def get_stats():
     """Get system statistics"""
     epoch = slot_to_epoch(current_slot())
