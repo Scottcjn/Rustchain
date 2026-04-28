@@ -162,7 +162,7 @@ def _normalize_check_data(data: Dict) -> Dict:
     normalized = {}
     for key, value in data.items():
         # Skip highly volatile fields that change between submissions
-        if key in ('samples', 'timestamp', 'elapsed_ns', 'mean_ns'):
+        if key in ('samples', 'timestamp', 'elapsed_ns', 'mean_ns', 'variance', 'stdev', 'drift_mean', 'drift_variance', 'seq_variance', 'rand_variance', 'vector_variance', 'sleep_mean_ns', 'sleep_variance', 'jitter_cv'):
             continue
         # Include stable entropy fields
         if isinstance(value, (int, float, str, bool)):
@@ -191,7 +191,9 @@ def compute_entropy_profile_hash(fingerprint: Dict) -> str:
     # Extract clock drift entropy
     clock_data = checks.get('clock_drift', {}).get('data', {})
     if isinstance(clock_data, dict):
-        entropy_values['clock_cv'] = clock_data.get('cv', 0)
+        # Round volatile floats to prevent bypass by slight modification
+        cv = clock_data.get('cv', 0)
+        entropy_values['clock_cv'] = round(cv, 6) if isinstance(cv, (int, float)) else 0
         entropy_values['clock_drift_hash'] = clock_data.get('drift_hash', '')
     
     # Extract cache timing entropy
@@ -204,12 +206,14 @@ def compute_entropy_profile_hash(fingerprint: Dict) -> str:
     # Extract thermal drift entropy
     thermal_data = checks.get('thermal_drift', {}).get('data', {})
     if isinstance(thermal_data, dict):
-        entropy_values['thermal_ratio'] = thermal_data.get('ratio', 0)
+        ratio = thermal_data.get('ratio', 0)
+        entropy_values['thermal_ratio'] = round(ratio, 4) if isinstance(ratio, (int, float)) else 0
     
     # Extract jitter entropy
     jitter_data = checks.get('instruction_jitter', {}).get('data', {})
     if isinstance(jitter_data, dict):
-        entropy_values['jitter_cv'] = jitter_data.get('cv', 0)
+        cv = jitter_data.get('cv', 0)
+        entropy_values['jitter_cv'] = round(cv, 4) if isinstance(cv, (int, float)) else 0
         jitter_map = jitter_data.get('jitter_map', {})
         if isinstance(jitter_map, dict):
             # Hash the jitter map for compact representation
