@@ -42,14 +42,23 @@ class RustChainClient:
         self,
         base_url: str = "https://50.28.86.131",
         timeout: float = 30.0,
+        verify: Optional[bool] = None,
     ):
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._client: Optional[httpx.AsyncClient] = None
         # Use pinned cert if available, else system CA bundle
         import os
-        cert = os.path.expanduser("~/.rustchain/node_cert.pem")
-        self._tls_verify = cert if os.path.exists(cert) else True
+        if verify is not None:
+            self._tls_verify = verify
+        else:
+            cert = os.path.expanduser("~/.rustchain/node_cert.pem")
+            if os.path.exists(cert):
+                self._tls_verify = cert
+            else:
+                import logging
+                logging.warning("RustChain node cert not found at ~/.rustchain/node_cert.pem. Falling back to system CA (SSL verification may fail for self-signed nodes). Set verify=False or use R_CA_CERT= to override.")
+                self._tls_verify = True
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Lazily create the HTTP client."""
