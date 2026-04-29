@@ -8,17 +8,17 @@
 **And all hardware becomes old. It's just a matter of time.**
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
-[![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer)
+[![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer/)
 [![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
-[![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+[![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
 [![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.19442753.svg)](https://doi.org/10.5281/zenodo.19442753)
 
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
 
-[Explorer](https://rustchain.org/explorer) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+[Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
 
 </div>
 
@@ -244,7 +244,7 @@ curl -sk https://rustchain.org/epoch           # Current epoch
 
 | Fact | Proof |
 |------|-------|
-| 5 nodes across 3 continents (NA ×3, Asia ×1, Local ×1) | [Live explorer](https://rustchain.org/explorer) |
+| 5 nodes across 3 continents (NA ×3, Asia ×1, Local ×1) | [Live explorer](https://rustchain.org/explorer/) |
 | 26+ miners attesting | `curl -sk https://rustchain.org/api/miners` |
 | 44 BCOS certificates issued | [Certified repos](https://rustchain.org/bcos/) |
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
@@ -283,7 +283,7 @@ launchctl list | grep rustchain
 tail -f ~/.rustchain/miner.log
 ```
 
-**New to RustChain?** Read the [step-by-step Beginner Quickstart](docs/QUICKSTART.md) -- covers everything from install to your first RTC, with every command explained.
+**New to RustChain?** Read the [step-by-step Beginner Quickstart](docs/QUICKSTART.md) — covers everything from install to your first RTC, with every command explained.
 
 ---
 
@@ -303,7 +303,7 @@ Epoch: 10 minutes  |  Pool: 1.5 RTC/epoch  |  Split by antiquity weight
 
 G4 Mac (2.5x):     0.30 RTC  ████████████████████
 G5 Mac (2.0x):     0.24 RTC  ████████████████
-Modern PC (0.8x):  0.12 RTC  ████████
+Modern PC (1.0x):  0.12 RTC  ████████
 ```
 
 ### Anti-VM Enforcement
@@ -400,3 +400,7 @@ Named after a 486 laptop with oxidized serial ports that still boots to DOS and 
 
 ## Contributing
 Please read the [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and the [Bounty Board](https://github.com/Scottcjn/rustchain-bounties) for active tasks and rewards.
+
+
+---
+*Documentation improved for readability.*
