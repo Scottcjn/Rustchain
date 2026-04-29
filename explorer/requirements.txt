@@ -12,7 +12,7 @@ flask-socketio>=5.6.1
 
 # WebSocket support
 python-socketio>=5.10.0
-python-engineio>=4.8.0
+python-engineio>=4.13.1
 
 # Development
 pytest>=7.0.0
