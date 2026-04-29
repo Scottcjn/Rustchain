@@ -403,7 +403,7 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=my-miner-id"
 
 ## 📚 Additional Resources
 
-- [RustChain Whitepaper](RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+- [RustChain Whitepaper](RustChain_Whitepaper_Flameholder_v0.97.pdf)
 - [Protocol Specification](./PROTOCOL.md)
 - [API Reference](./API.md)
 - [Wallet User Guide](./WALLET_USER_GUIDE.md)

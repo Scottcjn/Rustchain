@@ -274,7 +274,7 @@ miners/
 
 - [Homebrew Formula Cookbook](https://docs.brew.sh/Formula-Cookbook)
 - [RustChain Repository](https://github.com/Scottcjn/Rustchain)
-- [RustChain Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+- [RustChain Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
 - [Issue #1612](https://github.com/rustchain-bounties/rustchain-bounties/issues/1612)
 
 ---

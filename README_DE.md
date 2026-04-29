@@ -13,7 +13,7 @@
 
 *Dein PowerPC G4 verdient mehr als ein moderner Threadripper. Genau das ist der Punkt.*
 
-[Website](https://rustchain.org) • [Live Explorer](https://rustchain.org/explorer) • [wRTC tauschen](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Schnellstart](docs/wrtc.md) • [wRTC Tutorial](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia Ref](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [Schnellstart](#-schnellstart) • [Funktionsweise](#-wie-proof-of-antiquity-funktioniert)
+[Website](https://rustchain.org) • [Live Explorer](https://rustchain.org/explorer) • [wRTC tauschen](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Schnellstart](docs/wrtc.md) • [wRTC Tutorial](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia Ref](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [Schnellstart](#-schnellstart) • [Funktionsweise](#-wie-proof-of-antiquity-funktioniert)
 
 </div>
 
