@@ -1218,10 +1218,53 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
     """Register P2P synchronization endpoints on Flask app"""
 
     from flask import request, jsonify
+    from collections import deque
+    from threading import Lock
+
+    # FIX(#2867 M5): Per-IP rate limit on /p2p/gossip POST.
+    # The endpoint does signature verification + CRDT merge + SQLite I/O on
+    # every request. Without throttling it's a cheap DoS amplifier — one
+    # attacker can saturate the node by hammering this with junk messages.
+    #
+    # Token bucket: 10 requests per IP per 1-second window.
+    # That's well above legitimate gossip traffic (peers normally send
+    # < 1 msg/sec each) but caps a single misbehaving IP at ~10x the
+    # background rate.
+    GOSSIP_RATE_WINDOW_S = 1.0
+    GOSSIP_RATE_LIMIT = 10
+    _gossip_rate: Dict[str, deque] = {}
+    _gossip_rate_lock = Lock()
+
+    def _gossip_rate_check(remote_ip: str) -> bool:
+        """Returns True if the IP is within rate limit, False if over."""
+        now = time.monotonic()
+        with _gossip_rate_lock:
+            q = _gossip_rate.get(remote_ip)
+            if q is None:
+                q = deque()
+                _gossip_rate[remote_ip] = q
+            # Evict timestamps outside the window
+            cutoff = now - GOSSIP_RATE_WINDOW_S
+            while q and q[0] < cutoff:
+                q.popleft()
+            if len(q) >= GOSSIP_RATE_LIMIT:
+                return False
+            q.append(now)
+            # Periodic pruning: if the dict gets large, drop empty queues
+            if len(_gossip_rate) > 10_000:
+                empties = [ip for ip, dq in _gossip_rate.items() if not dq]
+                for ip in empties:
+                    del _gossip_rate[ip]
+            return True
 
     @app.route('/p2p/gossip', methods=['POST'])
     def receive_gossip():
         """Receive and process gossip message"""
+        # FIX(#2867 M5): per-IP rate limit BEFORE expensive verify+CRDT work.
+        remote_ip = request.headers.get('X-Forwarded-For', request.remote_addr or 'unknown').split(',')[0].strip()
+        if not _gossip_rate_check(remote_ip):
+            return jsonify({"error": "rate_limited", "limit": f"{GOSSIP_RATE_LIMIT}/{GOSSIP_RATE_WINDOW_S}s"}), 429
+
         data = request.get_json()
         result = p2p_node.handle_gossip(data)
         return jsonify(result)
