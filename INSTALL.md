@@ -374,4 +374,4 @@ https://github.com/Scottcjn/Rustchain
 
 ## License
 
-RustChain is licensed under the MIT License. See LICENSE file for details.
+RustChain is licensed under the Apache License 2.0. See LICENSE file for details.
