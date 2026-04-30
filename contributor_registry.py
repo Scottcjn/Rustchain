@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 # SPDX-License-Identifier: MIT
 
 from flask import Flask, request, redirect, url_for, flash
