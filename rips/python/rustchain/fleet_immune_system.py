@@ -991,9 +991,12 @@ def register_fleet_endpoints(app, DB_PATH):
 
     @app.route('/admin/fleet/report', methods=['GET'])
     def fleet_report():
-        admin_key = request.headers.get("X-Admin-Key", "")
-        import os
-        if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
+        import os, hmac
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not admin_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        provided_key = request.headers.get("X-Admin-Key", "")
+        if not hmac.compare_digest(provided_key, admin_key):
             return jsonify({"error": "Unauthorized"}), 401
 
         epoch = request.args.get('epoch', type=int)
@@ -1007,9 +1010,12 @@ def register_fleet_endpoints(app, DB_PATH):
 
     @app.route('/admin/fleet/scores', methods=['GET'])
     def fleet_scores():
-        admin_key = request.headers.get("X-Admin-Key", "")
-        import os
-        if admin_key != os.environ.get("RC_ADMIN_KEY", "rustchain_admin_key_2025_secure64"):
+        import os, hmac
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not admin_key:
+            return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+        provided_key = request.headers.get("X-Admin-Key", "")
+        if not hmac.compare_digest(provided_key, admin_key):
             return jsonify({"error": "Unauthorized"}), 401
 
         miner = request.args.get('miner')
