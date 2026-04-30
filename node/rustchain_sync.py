@@ -7,6 +7,7 @@ import hashlib
 import json
 import time
 import logging
+import threading
 from typing import List, Dict, Any, Optional
 
 
@@ -36,6 +37,7 @@ class RustChainSyncManager:
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger("RustChainSync")
         self._schema_cache: Dict[str, Dict[str, Any]] = {}
+        self._sync_lock = threading.Lock()  # Prevent concurrent sync race conditions
 
     def _get_connection(self):
         """Open and return a new SQLite connection to the node database.
@@ -165,96 +167,97 @@ class RustChainSyncManager:
 
     def apply_sync_payload(self, table_name: str, remote_data: List[Dict[str, Any]]):
         """Merges remote data into local database with conflict resolution and schema hardening."""
-        if table_name not in self.SYNC_TABLES:
-            return False
+        with self._sync_lock:  # Prevent concurrent sync race conditions
+            if table_name not in self.SYNC_TABLES:
+                return False
 
-        schema = self._load_table_schema(table_name)
-        if not schema:
-            return False
+            schema = self._load_table_schema(table_name)
+            if not schema:
+                return False
 
-        allowed_columns = set(schema["columns"])
-        pk = schema["pk"]
-        if not pk:
-            self.logger.error(f"No PK found for {table_name}, skipping sync")
-            return False
+            allowed_columns = set(schema["columns"])
+            pk = schema["pk"]
+            if not pk:
+                self.logger.error(f"No PK found for {table_name}, skipping sync")
+                return False
 
-        conn = self._get_connection()
-        cursor = conn.cursor()
+            conn = self._get_connection()
+            cursor = conn.cursor()
 
-        try:
-            for row in remote_data:
-                if not isinstance(row, dict):
-                    continue
+            try:
+                for row in remote_data:
+                    if not isinstance(row, dict):
+                        continue
 
-                if pk not in row:
-                    continue
+                    if pk not in row:
+                        continue
 
-                sanitized = {k: v for k, v in row.items() if k in allowed_columns}
-                if pk not in sanitized:
-                    continue
+                    sanitized = {k: v for k, v in row.items() if k in allowed_columns}
+                    if pk not in sanitized:
+                        continue
 
-                # Conflict resolution: Latest timestamp wins for attestations
-                if table_name == "miner_attest_recent":
-                    if "last_attest" in sanitized:
-                        cursor.execute(f"SELECT last_attest FROM {table_name} WHERE {pk} = ?", (sanitized[pk],))
-                        local_row = cursor.fetchone()
-                        if local_row and local_row["last_attest"] is not None and local_row["last_attest"] >= sanitized["last_attest"]:
-                            continue
-
-                # SECURITY: Balances must NEVER be updated via peer sync.
-                # Balance state is authoritative: it can only change through
-                # local transaction processing (mining rewards, signed
-                # transfers, epoch settlements).  Accepting balance data from
-                # peers — even "increases only" — lets a single compromised
-                # node inflate any wallet to an arbitrary value.
-                if table_name == "balances":
-                    candidate_balance_col = None
-                    for c in ("amount_i64", "balance_i64", "balance_urtc", "amount_rtc"):
-                        if c in allowed_columns:
-                            candidate_balance_col = c
-                            break
-
-                    if candidate_balance_col and candidate_balance_col in sanitized:
-                        cursor.execute(
-                            f"SELECT {candidate_balance_col} FROM {table_name} WHERE {pk} = ?",
-                            (sanitized[pk],),
-                        )
-                        local_row = cursor.fetchone()
-                        if local_row and local_row[0] is not None:
-                            remote_val = int(sanitized[candidate_balance_col])
-                            local_val = int(local_row[0])
-                            if remote_val != local_val:
-                                self.logger.warning(
-                                    f"Rejected sync: Balance modification for "
-                                    f"{sanitized[pk]} (local={local_val}, "
-                                    f"remote={remote_val})"
-                                )
+                    # Conflict resolution: Latest timestamp wins for attestations
+                    if table_name == "miner_attest_recent":
+                        if "last_attest" in sanitized:
+                            cursor.execute(f"SELECT last_attest FROM {table_name} WHERE {pk} = ?", (sanitized[pk],))
+                            local_row = cursor.fetchone()
+                            if local_row and local_row["last_attest"] is not None and local_row["last_attest"] >= sanitized["last_attest"]:
                                 continue
 
-                # Safe upsert (avoid INSERT OR REPLACE data loss semantics)
-                columns = list(sanitized.keys())
-                placeholders = ", ".join(["?"] * len(columns))
-                update_cols = [c for c in columns if c != pk]
+                    # SECURITY: Balances must NEVER be updated via peer sync.
+                    # Balance state is authoritative: it can only change through
+                    # local transaction processing (mining rewards, signed
+                    # transfers, epoch settlements).  Accepting balance data from
+                    # peers — even "increases only" — lets a single compromised
+                    # node inflate any wallet to an arbitrary value.
+                    if table_name == "balances":
+                        candidate_balance_col = None
+                        for c in ("amount_i64", "balance_i64", "balance_urtc", "amount_rtc"):
+                            if c in allowed_columns:
+                                candidate_balance_col = c
+                                break
 
-                if not update_cols:
-                    # PK-only row: ignore
-                    continue
+                        if candidate_balance_col and candidate_balance_col in sanitized:
+                            cursor.execute(
+                                f"SELECT {candidate_balance_col} FROM {table_name} WHERE {pk} = ?",
+                                (sanitized[pk],),
+                            )
+                            local_row = cursor.fetchone()
+                            if local_row and local_row[0] is not None:
+                                remote_val = int(sanitized[candidate_balance_col])
+                                local_val = int(local_row[0])
+                                if remote_val != local_val:
+                                    self.logger.warning(
+                                        f"Rejected sync: Balance modification for "
+                                        f"{sanitized[pk]} (local={local_val}, "
+                                        f"remote={remote_val})"
+                                    )
+                                    continue
 
-                update_expr = ", ".join([f"{c}=excluded.{c}" for c in update_cols])
-                sql = (
-                    f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders}) "
-                    f"ON CONFLICT({pk}) DO UPDATE SET {update_expr}"
-                )
-                cursor.execute(sql, [sanitized[c] for c in columns])
+                    # Safe upsert (avoid INSERT OR REPLACE data loss semantics)
+                    columns = list(sanitized.keys())
+                    placeholders = ", ".join(["?"] * len(columns))
+                    update_cols = [c for c in columns if c != pk]
 
-            conn.commit()
-            return True
-        except Exception as e:
-            self.logger.error(f"Sync error on {table_name}: {e}")
-            conn.rollback()
-            return False
-        finally:
-            conn.close()
+                    if not update_cols:
+                        # PK-only row: ignore
+                        continue
+
+                    update_expr = ", ".join([f"{c}=excluded.{c}" for c in update_cols])
+                    sql = (
+                        f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders}) "
+                        f"ON CONFLICT({pk}) DO UPDATE SET {update_expr}"
+                    )
+                    cursor.execute(sql, [sanitized[c] for c in columns])
+
+                conn.commit()
+                return True
+            except Exception as e:
+                self.logger.error(f"Sync error on {table_name}: {e}")
+                conn.rollback()
+                return False
+            finally:
+                conn.close()
 
     def get_sync_status(self) -> Dict[str, Any]:
         """Returns metadata about the current state of synced tables."""
