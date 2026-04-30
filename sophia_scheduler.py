@@ -64,7 +64,7 @@ class SophiaScheduler:
             conn.close()
 
         results = []
-        for miner_id in miner_ids:
+        for i, miner_id in enumerate(miner_ids):
             try:
                 fp = self._fetch_fingerprint(miner_id)
                 result = self.inspector.inspect(
@@ -77,6 +77,11 @@ class SophiaScheduler:
                 )
             except Exception as exc:
                 logger.error("Batch inspection failed for %s: %s", miner_id, exc)
+            
+            # Rate limiting: pause every 10 items to avoid overwhelming downstream services
+            if (i + 1) % 10 == 0 and i < len(miner_ids) - 1:
+                time.sleep(1.0)
+                logger.info("Rate limit pause: processed %d/%d miners", i + 1, len(miner_ids))
 
         logger.info("Batch complete: %d/%d inspected", len(results), len(miner_ids))
         return results
