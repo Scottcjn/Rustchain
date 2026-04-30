@@ -497,16 +497,29 @@ def register_agent_economy(app: Flask, db_path: str):
             fee_i64 = j["platform_fee_i64"]
             escrow_i64 = j["escrow_i64"]
 
-            # Release escrow: pay worker + platform fee
-            _adjust_balance(c, ESCROW_WALLET, -escrow_i64)
-            _adjust_balance(c, worker, reward_i64)
-            _adjust_balance(c, PLATFORM_FEE_WALLET, fee_i64)
-
+            # FIX(#2867 F2 / 15183848750): Atomic state transition.
+            # Update FIRST, with WHERE status=? guard. If the row was
+            # already moved (e.g., concurrent /cancel or /accept), rows-
+            # affected = 0 and we abort BEFORE touching balances. This
+            # prevents the read-check-then-mutate race where two requests
+            # both pass the `if status` check and both apply escrow moves.
             c.execute("""
                 UPDATE agent_jobs
                 SET status = 'completed', completed_at = ?
-                WHERE job_id = ?
-            """, (now, job_id))
+                WHERE job_id = ? AND status = ?
+            """, (now, job_id, STATUS_DELIVERED))
+            if c.rowcount == 0:
+                conn.rollback()
+                return jsonify({
+                    "error": "Job state changed under concurrent request — please retry",
+                    "code": "STATE_RACE",
+                }), 409
+
+            # Release escrow: pay worker + platform fee (only after the
+            # status transition has been atomically claimed above).
+            _adjust_balance(c, ESCROW_WALLET, -escrow_i64)
+            _adjust_balance(c, worker, reward_i64)
+            _adjust_balance(c, PLATFORM_FEE_WALLET, fee_i64)
 
             # Update reputation
             _update_reputation(c, poster, "jobs_completed_as_poster")
@@ -648,11 +661,24 @@ def register_agent_economy(app: Flask, db_path: str):
                     "error": f"Can only cancel open or disputed jobs (current: {j['status']})"
                 }), 409
 
-            # Refund escrow to poster
-            _refund_escrow(c, j)
+            # FIX(#2867 F2 / 15183848750): Atomic state transition.
+            # Move status FIRST with WHERE-clause guard; if rows-affected
+            # is 0, another request already claimed this job (concurrent
+            # /accept or another /cancel) and we must abort before
+            # touching balances.
+            c.execute("""
+                UPDATE agent_jobs SET status = 'cancelled' WHERE job_id = ?
+                  AND status IN (?, ?)
+            """, (job_id, STATUS_OPEN, STATUS_DISPUTED))
+            if c.rowcount == 0:
+                conn.rollback()
+                return jsonify({
+                    "error": "Job state changed under concurrent request — please retry",
+                    "code": "STATE_RACE",
+                }), 409
 
-            c.execute("UPDATE agent_jobs SET status = 'cancelled' WHERE job_id = ?",
-                     (job_id,))
+            # Refund escrow only after status transition is atomically claimed.
+            _refund_escrow(c, j)
             _log_job_action(c, job_id, "cancelled", poster)
             conn.commit()
 
