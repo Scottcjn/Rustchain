@@ -651,6 +651,9 @@ class UtxoDB:
         Validates inputs exist and aren't claimed by another pending TX.
         Returns False if double-spend detected or pool full.
         """
+        # Clean up expired transactions before adding new ones
+        self.mempool_clear_expired()
+        
         conn = self._conn()
         try:
             # Check pool size
