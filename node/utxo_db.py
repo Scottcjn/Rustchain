@@ -652,6 +652,13 @@ class UtxoDB:
         Returns False if double-spend detected or pool full.
         """
         conn = self._conn()
+        # FIX(#2867 C1): mempool_add() always opens its own connection and
+        # begins its own BEGIN IMMEDIATE transaction below. The 7 ROLLBACK
+        # paths reference manage_tx, which was previously undefined — every
+        # ROLLBACK raised NameError, swallowed by the bare-except at the
+        # bottom, causing ALL mempool admissions to silently fail in error
+        # paths and leak the transaction-in-progress lock.
+        manage_tx = True
         try:
             # Check pool size
             row = conn.execute(
