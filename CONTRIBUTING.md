@@ -36,10 +36,11 @@ New to RustChain? Get 10 RTC for your **first merged PR** — even for small imp
 ## Quick Start
 
 1. **Browse open bounties**: Check [Issues](https://github.com/Scottcjn/Rustchain/issues?q=is%3Aissue+is%3Aopen+label%3Abounty) labeled `bounty`
-2. **Comment on the issue** you want to work on (prevents duplicate work)
-3. **Fork the repo** and create a feature branch
-4. **Submit a PR** referencing the issue number
-5. **Get paid** in RTC on merge
+2. **Find Good First Issues**: Check [Good First Issues](https://github.com/Scottcjn/Rustchain/issues?q=is%3Aissue+is%3Aopen+label%3A"good+first-issue") labeled `good-first-issue`
+3. **Comment on the issue** you want to work on (prevents duplicate work)
+4. **Fork the repo** and create a feature branch
+5. **Submit a PR** referencing the issue number
+6. **Get paid** in RTC on merge
 
 ## Bounty Tiers
 
@@ -98,10 +99,10 @@ curl -sk https://rustchain.org/epoch
 ## RTC Payout Process
 
 1. PR gets reviewed and merged
-2. We comment asking for your wallet address
-3. RTC is transferred from the community fund
-4. Bridge RTC to wRTC (Solana) via [bottube.ai/bridge](https://bottube.ai/bridge)
-5. Trade on [Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X)
+3. We comment asking for your wallet address
+4. RTC is transferred from the community fund
+5. Bridge RTC to wRTC (Solana) via [bottube.ai/bridge](https://bottube.ai/bridge)
+6. Trade on [Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X)
 
 
 ## Documentation Quality Checklist
