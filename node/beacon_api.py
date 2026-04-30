@@ -4,6 +4,7 @@ Beacon Atlas API - Flask routes for 3D visualization backend
 Provides endpoints for agents, contracts, bounties, reputation, and chat.
 """
 import json
+import os
 import time
 import hashlib
 import sqlite3
@@ -536,10 +537,13 @@ def sync_bounties():
         
         all_bounties = []
         
-        # Create SSL context that doesn't verify (for demo)
+        # SSL verification: enabled by default, set RC_DISABLE_SSL_VERIFY=1 to skip
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
+        if os.environ.get('RC_DISABLE_SSL_VERIFY', '0') == '1':
+            import logging
+            logging.warning('[beacon_api] SSL verification disabled via RC_DISABLE_SSL_VERIFY — not recommended for production')
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
         
         for repo in repos:
             try:
@@ -625,8 +629,16 @@ def sync_bounties():
 
 @beacon_api.route('/api/bounties/<bounty_id>/claim', methods=['POST'])
 def claim_bounty(bounty_id):
-    """Claim a bounty for an agent."""
+    """Claim a bounty for an agent (admin-only)."""
     try:
+        import os, hmac
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not admin_key:
+            return jsonify({'error': 'RC_ADMIN_KEY not configured — endpoint disabled'}), 503
+        provided_key = request.headers.get("X-Admin-Key", "")
+        if not hmac.compare_digest(provided_key, admin_key):
+            return jsonify({'error': 'Unauthorized — admin key required to claim bounties'}), 401
+
         data = request.get_json()
         agent_id = data.get('agent_id')
         
