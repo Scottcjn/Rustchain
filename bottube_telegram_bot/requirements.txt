@@ -2,7 +2,7 @@
 # Issue #2299 - Dependencies
 
 # Telegram Bot API
-python-telegram-bot>=20.0
+python-telegram-bot>=22.7
 
 # Environment variable management
 python-dotenv>=1.0.0
