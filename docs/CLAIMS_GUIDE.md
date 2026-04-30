@@ -102,7 +102,7 @@ The system will display:
 **Wallet Address Requirements:**
 
 - Must start with `RTC`
-- Minimum 23 characters total
+- Minimum 40 characters for the hex portion (43 total: `RTC` prefix + 40 hex characters)
 - Alphanumeric only (no special characters)
 
 **Update Wallet Address:**
