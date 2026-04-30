@@ -337,16 +337,26 @@ def check_eligibility():
 
     rep = _engine.get(agent_id)
     max_val = rep["max_job_value_rtc"]
+    level = rep["level"]
+
+    # Check basic job value limit
     eligible = job_value <= max_val
+    reason = None if eligible else f"{level} level agents can only claim jobs up to {max_val} RTC"
+
+    # Check high-value job posting permission
+    if eligible and job_value > 100 and level not in CAN_POST_HIGH_VALUE:
+        eligible = False
+        reason = f"{level} level agents cannot post high-value jobs (>100 RTC). Only {', '.join(CAN_POST_HIGH_VALUE)} can."
 
     return jsonify({
         "agent_id": agent_id,
         "job_value_rtc": job_value,
         "eligible": eligible,
         "reputation_score": rep["reputation_score"],
-        "level": rep["level"],
+        "level": level,
         "max_job_value_rtc": max_val,
-        "reason": None if eligible else f"{rep['level']} level agents can only claim jobs up to {max_val} RTC",
+        "can_post_high_value": level in CAN_POST_HIGH_VALUE,
+        "reason": reason,
     })
 
 
