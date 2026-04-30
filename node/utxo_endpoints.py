@@ -16,15 +16,61 @@ Endpoints:
     POST /utxo/transfer            - UTXO-native signed transfer
 """
 
+import decimal
 import hashlib
 import json
 import logging
 import sqlite3
 import time
+from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, request, jsonify
 
 from utxo_db import UtxoDB, coin_select, address_to_proposition, UNIT
+
+# FIX(#2867 M2): Reject inputs that would overflow int64 (signed) or
+# represent absurd amounts. Total RTC supply is bounded; cap at 2^53 RTC
+# which is far above any realistic balance and well within int64.
+_MAX_RTC_AMOUNT = Decimal(2) ** 53
+
+
+def _parse_rtc_amount(raw) -> Decimal:
+    """
+    Parse an RTC amount as Decimal with bounds checking.
+
+    Rejects:
+      - non-numeric input that can't parse to Decimal
+      - negative or zero (callers should check positivity separately for amount;
+        we allow zero here so fee_rtc can default to 0)
+      - amounts above 2^53 RTC (overflow guard for int(amount * UNIT) below)
+      - non-finite (Infinity, NaN) which would silently corrupt downstream math
+
+    Returns:
+      Decimal value of the amount.
+
+    Raises:
+      ValueError if amount is non-finite or out of bounds.
+      decimal.InvalidOperation if amount can't parse as Decimal.
+    """
+    # Normalize int/float/str through string to avoid float-binary surprises.
+    # Decimal(float(x)) keeps the float's binary noise; Decimal(str(x)) is exact
+    # for decimal literals like "0.29".
+    if isinstance(raw, (int, float)):
+        amount = Decimal(str(raw))
+    elif isinstance(raw, str):
+        amount = Decimal(raw.strip())
+    elif isinstance(raw, Decimal):
+        amount = raw
+    else:
+        raise ValueError(f"unsupported amount type: {type(raw).__name__}")
+
+    if not amount.is_finite():
+        raise ValueError("amount must be finite (got Infinity or NaN)")
+    if amount < 0:
+        raise ValueError("amount cannot be negative")
+    if amount > _MAX_RTC_AMOUNT:
+        raise ValueError(f"amount exceeds maximum ({_MAX_RTC_AMOUNT})")
+    return amount
 
 # Account-model balances store amount_i64 at 6 decimals (micro-RTC).
 # This MUST match the multiplier used in rustchain_v2_integrated_v2.2.1_rip200.py
@@ -278,12 +324,16 @@ def utxo_transfer():
 
     from_address = (data.get('from_address') or '').strip()
     to_address = (data.get('to_address') or '').strip()
-    amount_rtc = float(data.get('amount_rtc', 0))
     public_key = (data.get('public_key') or '').strip()
     signature = (data.get('signature') or '').strip()
     nonce = data.get('nonce')
     memo = data.get('memo', '')
-    fee_rtc = float(data.get('fee_rtc', 0))
+    # FIX(#2867 M2): exact Decimal parsing with bounds check (was float()).
+    try:
+        amount_rtc = _parse_rtc_amount(data.get('amount_rtc', 0))
+        fee_rtc = _parse_rtc_amount(data.get('fee_rtc', 0))
+    except (ValueError, InvalidOperation) as e:
+        return jsonify({'error': f'Invalid amount: {e}'}), 400
 
     # --- validation ---------------------------------------------------------
 
@@ -342,6 +392,9 @@ def utxo_transfer():
 
     # --- UTXO transaction ---------------------------------------------------
 
+    # FIX(#2867 M2): Decimal arithmetic preserves precision through quantization.
+    # int(Decimal) truncates toward zero (no float-binary noise like 0.29 →
+    # 28999999.999... → 28999999 lost-rtc bug).
     amount_nrtc = int(amount_rtc * UNIT)
     fee_nrtc = int(fee_rtc * UNIT)
     target_nrtc = amount_nrtc + fee_nrtc
