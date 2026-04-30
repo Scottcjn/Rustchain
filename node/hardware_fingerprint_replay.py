@@ -248,19 +248,21 @@ def check_fingerprint_replay(
         Tuple of (is_replay: bool, reason: str, details: dict or None)
     """
     now = int(time.time())
-    window_start = now - REPLAY_WINDOW_SECONDS
 
     with sqlite3.connect(get_db_path()) as conn:
         c = conn.cursor()
         
         # Check 1: Exact fingerprint hash replay (same fingerprint, different nonce)
+        # FIX(#2783): Check against ENTIRE history, not just recent window.
+        # The previous time-window check (submitted_at > ?) allowed attackers
+        # to bypass replay defense by waiting 301+ seconds.
         c.execute('''
             SELECT wallet_address, miner_id, submitted_at, nonce
             FROM fingerprint_submissions
-            WHERE fingerprint_hash = ? AND submitted_at > ?
+            WHERE fingerprint_hash = ?
             ORDER BY submitted_at DESC
             LIMIT 10
-        ''', (fingerprint_hash, window_start))
+        ''', (fingerprint_hash,))
         
         recent_submissions = c.fetchall()
         
@@ -286,11 +288,12 @@ def check_fingerprint_replay(
                     }
         
         # Check 2: Same nonce used twice (direct replay)
+        # FIX(#2783): Check against ENTIRE history, not just recent window.
         c.execute('''
             SELECT wallet_address, miner_id, submitted_at
             FROM fingerprint_submissions
-            WHERE nonce = ? AND submitted_at > ?
-        ''', (nonce, window_start))
+            WHERE nonce = ?
+        ''', (nonce,))
         
         nonce_usage = c.fetchone()
         if nonce_usage:
@@ -328,20 +331,19 @@ def check_entropy_collision(
         Tuple of (is_collision: bool, reason: str, details: dict or None)
     """
     now = int(time.time())
-    window_start = now - (REPLAY_WINDOW_SECONDS * 12)  # 1 hour window
 
     with sqlite3.connect(get_db_path()) as conn:
         c = conn.cursor()
         
-        # Find recent submissions with similar entropy profile
+        # FIX(#2783): Check against ENTIRE history for entropy collisions.
+        # Previous time-window check allowed collision bypass after window expired.
         c.execute('''
             SELECT DISTINCT wallet_address, miner_id, submitted_at
             FROM fingerprint_submissions
             WHERE entropy_profile_hash = ? 
-            AND submitted_at > ?
             AND wallet_address != ?
             LIMIT 5
-        ''', (entropy_profile_hash, window_start, wallet_address))
+        ''', (entropy_profile_hash, wallet_address))
         
         collisions = c.fetchall()
         
