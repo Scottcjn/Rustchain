@@ -3,10 +3,34 @@
 from flask import Flask, request, redirect, url_for, flash
 import sqlite3
 import os
+import secrets
 from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = 'rustchain_contributor_secret_2024'
+
+# Security fix: load secret_key from environment variable.
+# If unset, fall back to a cryptographically random key (warns on first start).
+# If set to the known placeholder, refuse to run (prevents accidental deployment
+# with the compromised default secret).
+SECRET_KEY = os.environ.get('CONTRIBUTOR_SECRET_KEY', '')
+if not SECRET_KEY:
+    import warnings
+    SECRET_KEY = secrets.token_hex(32)
+    warnings.warn(
+        "CONTRIBUTOR_SECRET_KEY not set. "
+        "Using a random key — sessions will NOT persist across restarts. "
+        "Set the environment variable before deployment.",
+        UserWarning
+    )
+elif SECRET_KEY == 'rustchain_contributor_secret_2024':
+    import warnings
+    warnings.warn(
+        "CONTRIBUTOR_SECRET_KEY is set to the known placeholder value. "
+        "Please set a new, secure secret before deployment.",
+        UserWarning
+    )
+
+app.secret_key = SECRET_KEY
 
 DB_PATH = 'contributors.db'
 
