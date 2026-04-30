@@ -1,0 +1,7 @@
+Code compiles at dawn
+Blockchain miners hash away
+Digital gold rises
+
+archetype: vintage_powerpc
+hardware: 1.67 GHz Power Mac G5
+wallet: 0xB7729D3927d507E4f1687B6f462F1eA3c654C8Fe

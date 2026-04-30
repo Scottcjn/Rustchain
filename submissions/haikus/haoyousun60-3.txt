@@ -1,0 +1,7 @@
+Hash rate climbing high
+ASICs hum their sacred song
+Blocks confirm with grace
+
+archetype: power_server
+hardware: Intel Xeon E5-2699 v4
+wallet: 0xB7729D3927d507E4f1687B6f462F1eA3c654C8Fe

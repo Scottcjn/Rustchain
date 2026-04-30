@@ -1,0 +1,7 @@
+Silicon whispers
+Proof of work burns bright through night
+Fortune favors bold
+
+archetype: exotic_arm
+hardware: Raspberry Pi 4 ARM Cortex-A72
+wallet: 0xB7729D3927d507E4f1687B6f462F1eA3c654C8Fe
