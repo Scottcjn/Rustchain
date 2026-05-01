@@ -249,7 +249,7 @@ python3 tools/validate_vintage_submission.py \
 ## Mining Setup
 - Profile: [e.g., pentium_ii]
 - Miner ID: [e.g., pentium-ii-350-miner]
-- Node URL: https://50.28.86.131
+- Node URL: https://rustchain.org
 
 ## Evidence
 - [ ] Photo: `evidence/photo.jpg`
