@@ -21,6 +21,7 @@ from tkinter import ttk, messagebox, simpledialog, filedialog
 import requests
 import json
 import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 import urllib3
@@ -406,8 +407,17 @@ class SecureFounderWallet:
             encrypted["name"] = name
 
             wallet_path = KEYSTORE_DIR / f"{name}.json"
-            with open(wallet_path, 'w') as f:
-                json.dump(encrypted, f, indent=2)
+            # FIX(#2867 M1): Atomic write — temp file + fsync + rename
+            fd, tmp_path = tempfile.mkstemp(dir=str(KEYSTORE_DIR), suffix='.tmp')
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    json.dump(encrypted, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, str(wallet_path))
+            except:
+                os.unlink(tmp_path)
+                raise
 
             # Update UI
             self.wallet_name.set(name)
@@ -550,8 +560,17 @@ class SecureFounderWallet:
                 encrypted["name"] = name
 
                 wallet_path = KEYSTORE_DIR / f"{name}.json"
-                with open(wallet_path, 'w') as f:
-                    json.dump(encrypted, f, indent=2)
+                # FIX(#2867 M1): Atomic write — temp file + fsync + rename
+                fd, tmp_path = tempfile.mkstemp(dir=str(KEYSTORE_DIR), suffix='.tmp')
+                try:
+                    with os.fdopen(fd, 'w') as f:
+                        json.dump(encrypted, f, indent=2)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.replace(tmp_path, str(wallet_path))
+                except:
+                    os.unlink(tmp_path)
+                    raise
 
                 self.wallet_name.set(name)
                 self.address.set(wallet.address)
