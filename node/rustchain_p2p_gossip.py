@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 from typing import Dict, List, Optional, Set, Tuple, Any
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import logging
 import requests
 
@@ -32,6 +32,62 @@ import requests
 # strong, randomly generated secret (≥ 32 hex chars recommended).
 # ---------------------------------------------------------------------------
 _P2P_SECRET_RAW = os.environ.get("RC_P2P_SECRET", "").strip()
+
+
+# =============================================================================
+# TTL Cache for message deduplication (Issue #2755: Memory leak fix)
+# =============================================================================
+
+class TTLCache:
+    """Time-based LRU cache for message deduplication.
+    
+    Replaces the unbounded set with automatic TTL-based eviction.
+    Uses OrderedDict for O(1) operations and LRU eviction.
+    """
+    
+    def __init__(self, ttl: int = 3600, max_size: int = 10000):
+        """
+        Args:
+            ttl: Time-to-live in seconds (default: 1 hour, matching DB cleanup)
+            max_size: Maximum number of entries before LRU eviction kicks in
+        """
+        self._cache = OrderedDict()  # msg_id -> timestamp
+        self._ttl = ttl
+        self._max_size = max_size
+    
+    def contains(self, key: str) -> bool:
+        """Check if key exists and is not expired."""
+        self._cleanup_expired()
+        return key in self._cache
+    
+    def add(self, key: str) -> None:
+        """Add key with current timestamp. Evicts LRU if at capacity."""
+        self._cleanup_expired()
+        if key in self._cache:
+            self._cache.move_to_end(key)
+        else:
+            if len(self._cache) >= self._max_size:
+                self._cache.popitem(last=False)
+            self._cache[key] = time.time()
+    
+    def _cleanup_expired(self) -> None:
+        """Remove expired entries."""
+        now = time.time()
+        expired = [k for k, ts in self._cache.items() if now - ts > self._ttl]
+        for k in expired:
+            del self._cache[k]
+    
+    def __len__(self) -> int:
+        """Return number of entries (including expired)."""
+        return len(self._cache)
+    
+    def cleanup(self) -> int:
+        """Force cleanup of expired entries. Returns count of removed entries."""
+        before = len(self._cache)
+        self._cleanup_expired()
+        return before - len(self._cache)
+
+
 
 # Known insecure placeholders that must never be accepted in production.
 _INSECURE_DEFAULTS = {
@@ -291,7 +347,7 @@ class GossipLayer:
         self.node_id = node_id
         self.peers = peers  # peer_id -> url
         self.db_path = db_path
-        self.seen_messages: Set[str] = set()
+        self.seen_messages: TTLCache = TTLCache(ttl=3600, max_size=10000)
         self.message_queue: List[GossipMessage] = []
         self.lock = threading.Lock()
 
@@ -536,7 +592,7 @@ class GossipLayer:
         except Exception as e:
             logger.error(f"P2P dedup DB error: {e}")
             # Fallback to memory if DB fails
-            if msg.msg_id in self.seen_messages:
+            if self.seen_messages.contains(msg.msg_id):
                 return {"status": "duplicate"}
 
         # Verify signature
@@ -556,9 +612,7 @@ class GossipLayer:
             logger.error(f"P2P save seen DB error: {e}")
             self.seen_messages.add(msg.msg_id)
 
-        # Limit memory fallback size
-        if len(self.seen_messages) > 1000:
-            self.seen_messages = set(list(self.seen_messages)[-500:])
+        # TTLCache handles automatic eviction (TTL + LRU)
 
         # Handle by type
         msg_type = MessageType(msg.msg_type)
