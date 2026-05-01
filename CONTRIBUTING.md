@@ -4,6 +4,9 @@ Thanks for your interest in contributing to RustChain! We pay bounties in RTC to
 
 ## First-Time Contributor Quick Guide (10 RTC Bonus)
 
+> **Pro-tip:** Star the repo first! Starring repos is free and helps the community grow.
+> After your first PR is merged, you'll earn 10 RTC (≈ $1.00)!
+
 New to RustChain? Get 10 RTC for your **first merged PR** — even for small improvements:
 
 ### 5-Minute Wins That Count
@@ -164,3 +167,20 @@ Vintage hardware (PowerPC G4/G5, POWER8) earns **2-2.5x** more than modern PCs.
 ## Questions?
 
 Open an issue or join the community. We're friendly.
+
+
+## Code Review Guidelines
+
+When reviewing PRs or preparing your own:
+
+- **Keep it small**: Small PRs get reviewed faster
+- **Test locally**: Run tests before submitting
+- **Document changes**: Update docs if behavior changes
+- **Be respectful**: Code reviews are about the code, not the person
+
+### Review Checklist
+
+- [ ] Code follows project style
+- [ ] Tests added/updated for changes
+- [ ] Documentation updated if needed
+- [ ] No unrelated changes in the PR
