@@ -11,7 +11,7 @@ flask-cors>=6.0.2
 flask-socketio>=5.6.1
 
 # WebSocket support
-python-socketio>=5.10.0
+python-socketio>=5.16.1
 python-engineio>=4.13.1
 
 # Development
