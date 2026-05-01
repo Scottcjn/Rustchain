@@ -222,7 +222,7 @@ RustChain's live mining fleet includes:
 | Multiple G4 PowerBooks | PowerPC G4 | 2.5x each | Moss Bluff, LA |
 
 **4 attestation nodes:**
-- Node 1: 50.28.86.131 (LiquidWeb VPS, primary)
+- Node 1: rustchain.org (LiquidWeb VPS, primary)
 - Node 2: 50.28.86.153 (LiquidWeb VPS, Ergo anchor)
 - Node 3: 76.8.228.245 (Ryan's Proxmox, Houma LA -- first external node)
 - Node 4: 38.76.217.189 (CognetCloud, Hong Kong -- first Asian node)
