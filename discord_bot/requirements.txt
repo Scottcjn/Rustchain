@@ -7,5 +7,5 @@ discord.py>=2.7.1
 httpx>=0.28.1
 
 # Testing
-pytest>=7.0.0
+pytest>=7.4.4
 pytest-asyncio>=0.26.0
