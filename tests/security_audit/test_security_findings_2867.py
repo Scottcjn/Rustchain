@@ -21,7 +21,13 @@ import tempfile
 _node_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             '..', '..', 'node'))
 sys.path.insert(0, _node_dir)
-os.chdir(_node_dir)
+# NOTE: previous version used os.chdir(_node_dir) at module scope which
+# ran during pytest collection, mutating cwd for ALL subsequent test
+# modules collected in the same session. This broke tests that use
+# relative paths after import (e.g., tests/test_vintage_hardware_attestation.py
+# uses sys.path.insert(0, 'vintage_miner') which requires cwd=repo-root).
+# The PoC tests below do not actually need cwd=node — they take db_path
+# arguments and use absolute paths from tempfile.mkstemp().
 
 
 # ============================================================
