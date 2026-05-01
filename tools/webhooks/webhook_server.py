@@ -478,6 +478,8 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
     """Simple HTTP handler for managing webhook subscriptions."""
 
     store: SubscriberStore  # injected via class attribute
+    # FIX(#2867 M3): API key for admin endpoints, read from env var
+    ADMIN_API_KEY: str = os.environ.get("WEBHOOK_ADMIN_API_KEY", "")
 
     def log_message(self, fmt, *args):
         log.debug(fmt, *args)
@@ -497,7 +499,19 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length)
         return json.loads(raw)
 
+    # FIX(#2867 M3): Authenticate admin API requests
+    def _check_api_key(self) -> bool:
+        if not self.ADMIN_API_KEY:
+            return True  # No key configured — allow (development mode)
+        provided = self.headers.get("X-Admin-API-Key", "")
+        if not hmac.compare_digest(provided, self.ADMIN_API_KEY):
+            self._send_json(401, {"error": "invalid or missing API key"})
+            return False
+        return True
+
     def do_GET(self):
+        if not self._check_api_key():
+            return
         if self.path == "/webhooks":
             subs = self.store.list_all()
             self._send_json(200, {
@@ -516,6 +530,8 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "not found"})
 
     def do_POST(self):
+        if not self._check_api_key():
+            return
         if self.path == "/webhooks/subscribe":
             self._handle_subscribe()
         elif self.path == "/webhooks/unsubscribe":
