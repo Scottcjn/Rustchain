@@ -360,11 +360,18 @@ def utxo_transfer():
     # FIX(#2202): Include fee in signed data to prevent MITM fee manipulation.
     # Backward-compatible: try new format (with fee) first, fall back to legacy
     # (without fee) with a deprecation warning. Remove fallback after 2026-07-01.
+    #
+    # FIX(#2867 M2 follow-up): the M2 fix parses amount as Decimal internally
+    # for precision-safe int conversion, but Decimal isn't JSON-serializable.
+    # Clients sign with float-shaped amount, so cast back to float here to
+    # keep the signed-payload bytes byte-identical to what the wallet computed.
+    amount_for_sig = float(amount_rtc)
+    fee_for_sig = float(fee_rtc)
     tx_data_v2 = {
         'from': from_address,
         'to': to_address,
-        'amount': amount_rtc,
-        'fee': fee_rtc,
+        'amount': amount_for_sig,
+        'fee': fee_for_sig,
         'memo': memo,
         'nonce': nonce,
     }
@@ -373,7 +380,7 @@ def utxo_transfer():
     tx_data_legacy = {
         'from': from_address,
         'to': to_address,
-        'amount': amount_rtc,
+        'amount': amount_for_sig,
         'memo': memo,
         'nonce': nonce,
     }
@@ -514,8 +521,9 @@ def utxo_transfer():
         'ok': True,
         'from_address': from_address,
         'to_address': to_address,
-        'amount_rtc': amount_rtc,
-        'fee_rtc': fee_rtc,
+        # FIX(#2867 M2 follow-up): Decimal isn't JSON-serializable; cast to float.
+        'amount_rtc': float(amount_rtc),
+        'fee_rtc': float(fee_rtc),
         'inputs_consumed': len(selected),
         'outputs_created': len(outputs),
         'change_nrtc': change_nrtc,
