@@ -13,7 +13,7 @@
 
 *你的 PowerPC G4 賺得比最新的 Threadripper 還多。這就是重點。*
 
-[官網](https://rustchain.org) • [區塊瀏覽器](https://rustchain.org/explorer) • [交換 wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [價格圖表](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC 快速入門](docs/wrtc.md) • [wRTC 教學](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia 參考](https://grokipedia.com/search?q=RustChain) • [白皮書](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [快速開始](#-快速開始) • [運作原理](#-古董證明如何運作)
+[官網](https://rustchain.org) • [區塊瀏覽器](https://rustchain.org/explorer) • [交換 wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [價格圖表](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC 快速入門](docs/wrtc.md) • [wRTC 教學](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia 參考](https://grokipedia.com/search?q=RustChain) • [白皮書](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [快速開始](#-快速開始) • [運作原理](#-古董證明如何運作)
 
 </div>
 
