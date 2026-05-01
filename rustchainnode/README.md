@@ -125,7 +125,7 @@ Config is stored at `~/.rustchainnode/config.json`:
   "threads": 4,
   "arch_type": "modern_x86",
   "antiquity_multiplier": 1.0,
-  "node_url": "https://50.28.86.131",
+  "node_url": "https://rustchain.org",
   "testnet": false,
   "auto_configured": true
 }
