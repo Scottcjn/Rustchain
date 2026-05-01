@@ -10,4 +10,4 @@ PyNaCl>=1.6.2
 # For wallet CLI (BIP39 seed phrases):
 mnemonic>=0.20
 # For running tests:
-pytest>=7.0.0
+pytest>=7.4.4
