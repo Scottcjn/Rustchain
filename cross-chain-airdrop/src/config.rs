@@ -72,7 +72,7 @@ pub struct AirdropConfig {
 }
 
 fn default_node_url() -> String {
-    "https://50.28.86.131".to_string()
+    std::env::var("RUSTCHAIN_NODE_URL").unwrap_or_else(|_| "http://localhost:8332".to_string())
 }
 
 fn default_bridge_url() -> String {
