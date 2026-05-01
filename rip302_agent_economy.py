@@ -195,6 +195,13 @@ def _log_job_action(c: sqlite3.Cursor, job_id: str, action: str,
 def _update_reputation(c: sqlite3.Cursor, wallet_id: str, field: str,
                        increment: int = 1):
     """Increment a reputation field for an agent."""
+    # FIX(#2867 H4): Whitelist allowed fields to prevent SQL injection via f-string
+    ALLOWED_REP_FIELDS = frozenset({
+        "jobs_posted", "jobs_completed_as_poster",
+        "jobs_completed_as_worker", "jobs_disputed", "jobs_expired",
+    })
+    if field not in ALLOWED_REP_FIELDS:
+        return
     now = int(time.time())
     c.execute("""
         INSERT INTO agent_reputation (wallet_id, first_seen, last_active)
