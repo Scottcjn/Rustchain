@@ -58,7 +58,8 @@ curl -sk https://rustchain.org/epoch | jq .
   "enrolled_miners": 2,
   "epoch": 62,
   "epoch_pot": 1.5,
-  "slot": 9010
+  "slot": 9010,
+  "total_supply_rtc": 8388608
 }
 ```
 
@@ -69,6 +70,7 @@ curl -sk https://rustchain.org/epoch | jq .
 | `blocks_per_epoch` | integer | Slots per epoch (144 = ~24h) |
 | `epoch_pot` | float | RTC to distribute this epoch |
 | `enrolled_miners` | integer | Miners eligible for rewards |
+| `total_supply_rtc` | integer | Total RTC supply in circulation |
 
 ---
 

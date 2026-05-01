@@ -5,7 +5,7 @@ No dedicated SDK package is required — the API is a straightforward REST
 interface.
 
 **Nodes:**
-- `http://50.28.86.131:8088` — primary attestation node
+- `http://rustchain.org:8088` — primary attestation node
 - `http://50.28.86.153:8088` — ergo anchor node
 
 ---
@@ -27,7 +27,7 @@ attestation submissions. Read-only queries need only `requests`.
 import requests
 import time
 
-BASE_URL = "http://50.28.86.131:8088"   # primary node
+BASE_URL = "http://rustchain.org:8088"   # primary node
 FALLBACK_URL = "http://50.28.86.153:8088"  # anchor node
 
 class RustChainClient:
@@ -325,4 +325,4 @@ if __name__ == "__main__":
 
 ---
 
-*Tutorial covers RustChain v2.2.1-rip200 · Nodes: http://50.28.86.131:8088, http://50.28.86.153:8088*
+*Tutorial covers RustChain v2.2.1-rip200 · Nodes: http://rustchain.org:8088, http://50.28.86.153:8088*
