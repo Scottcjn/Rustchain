@@ -2845,7 +2845,7 @@ def openapi_spec():
     """Return OpenAPI 3.0.3 specification"""
     return jsonify(OPENAPI)
 
-@app.route('/explorer', methods=['GET'])
+@app.route('/explorer', methods=['GET'], strict_slashes=False)
 def explorer():
     """Real-time block explorer dashboard (Tier 1 + Tier 2 views).
     Serves from tools/explorer/index.html if available, otherwise falls back to inline HTML."""
