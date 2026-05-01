@@ -124,7 +124,9 @@ def test_withdrawal_race_condition():
     
     Fix: Use BEGIN IMMEDIATE or conditional UPDATE.
     """
-    db_path = tempfile.mktemp(suffix='.db')
+    # bandit B306: avoid deprecated/insecure mktemp; use mkstemp + close fd.
+    fd, db_path = tempfile.mkstemp(suffix='.db')
+    os.close(fd)
     conn = sqlite3.connect(db_path)
     conn.execute('''CREATE TABLE balances (
         miner_pk TEXT PRIMARY KEY, balance_rtc REAL NOT NULL DEFAULT 0)''')
