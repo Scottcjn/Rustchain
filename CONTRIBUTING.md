@@ -36,7 +36,7 @@ New to RustChain? Get 10 RTC for your **first merged PR** — even for small imp
 ## Quick Start
 
 1. **Browse open bounties**: Check [Issues](https://github.com/Scottcjn/Rustchain/issues?q=is%3Aissue+is%3Aopen+label%3Abounty) labeled `bounty`
-2. **Find Good First Issues**: Check [Good First Issues](https://github.com/Scottcjn/Rustchain/issues?q=is%3Aissue+is%3Aopen+label%3A"good+first-issue") labeled `good-first-issue`
+2. **Find Good First Issues**: Check [Good First Issues](https://github.com/Scottcjn/Rustchain/issues?q=is%3Aissue+is%3Aopen+label%3A"good+first-issue") labeled `good first issue`
 3. **Comment on the issue** you want to work on (prevents duplicate work)
 4. **Fork the repo** and create a feature branch
 5. **Submit a PR** referencing the issue number
