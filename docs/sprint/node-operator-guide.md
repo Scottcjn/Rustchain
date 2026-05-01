@@ -4,7 +4,7 @@ This guide covers running a RustChain attestation node: hardware requirements,
 installation, configuration, monitoring, and ongoing maintenance.
 
 **Node endpoints (reference):**
-- Primary: `http://50.28.86.131:8088`
+- Primary: `http://rustchain.org:8088`
 - Anchor:  `http://50.28.86.153:8088`
 
 ---
@@ -334,7 +334,7 @@ curl http://localhost:8088/health | jq .
 ```bash
 # Download DB snapshot from a trusted peer (admin required on peer)
 curl -H "X-Admin-Key: PEER_ADMIN_KEY" \
-     http://50.28.86.131:8088/admin/db-snapshot \
+     http://rustchain.org:8088/admin/db-snapshot \
      -o /opt/rustchain/data/rustchain.db
 sudo systemctl start rustchain-node
 ```
@@ -350,4 +350,4 @@ echo "New admin key: $NEW_KEY"   # store securely
 
 ---
 
-*Guide covers RustChain v2.2.1-rip200 · Reference nodes: http://50.28.86.131:8088, http://50.28.86.153:8088*
+*Guide covers RustChain v2.2.1-rip200 · Reference nodes: http://rustchain.org:8088, http://50.28.86.153:8088*
