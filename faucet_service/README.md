@@ -349,7 +349,7 @@ Configure allowed origins:
 security:
   cors_origins:
     - "https://rustchain.org"
-    - "https://docs.rustchain.org"
+    - "https://rustchain.org/docs"
 ```
 
 ### Rate Limiting
@@ -446,6 +446,6 @@ See CONTRIBUTING.md for contribution guidelines.
 
 ## Support
 
-- Documentation: https://docs.rustchain.org/faucet
+- Documentation: https://rustchain.org/docs/faucet
 - Issues: https://github.com/rustchain-bounties/rustchain-bounties/issues
 - Discord: https://discord.gg/rustchain
