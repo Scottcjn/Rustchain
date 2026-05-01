@@ -37,45 +37,64 @@ sys.path.insert(0, _node_dir)
 
 def test_mempool_add_manage_tx_undefined():
     """
-    CRITICAL: mempool_add() references manage_tx 7 times but never defines it.
-    apply_transaction() (line 364) sets manage_tx = own or not conn.in_transaction,
-    but mempool_add() (line 648) omits this entirely.
-    
-    Fix: Add manage_tx = True at line 654 after conn = self._conn().
+    REGRESSION GUARD: This was the original C1 bug — mempool_add() referenced
+    manage_tx 7 times in error/rollback paths without ever defining it,
+    causing every error path to raise NameError (swallowed by bare-except).
+
+    Fixed via PR #2812 (manage_tx = True at top of mempool_add).
+
+    This test now asserts the FIX is in place, not the bug:
+      - mempool_add MUST define manage_tx (was: must NOT define it)
+      - mempool_add can be called without raising NameError
     """
     from utxo_db import UtxoDB
 
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            '..', '..', 'node', 'utxo_db.py')) as f:
         lines = f.readlines()
-    
-    # apply_transaction defines manage_tx
+
+    # apply_transaction defines manage_tx based on conn ownership
     found_define = False
     for i, line in enumerate(lines[350:400], 351):
         if 'manage_tx = ' in line and 'own' in line:
             found_define = True
             break
-    
-    # mempool_add does NOT define it
+
+    # mempool_add MUST now define manage_tx (#2812 fix)
     in_mempool_add = False
     mempool_refs = []
     mempool_define = False
-    for i, line in enumerate(lines[647:782], 648):
+    for i, line in enumerate(lines[647:790], 648):
         if 'def mempool_add' in line:
             in_mempool_add = True
-        if in_mempool_add and 'manage_tx = ' in line and 'own' in line:
+        if in_mempool_add and line.strip().startswith('manage_tx = '):
             mempool_define = True
-        if 'manage_tx' in line:
+        if in_mempool_add and 'manage_tx' in line:
             mempool_refs.append((i, line.strip()))
-    
+
     assert found_define, "apply_transaction should define manage_tx"
-    assert not mempool_define, "mempool_add should NOT define manage_tx (this is the bug)"
-    assert len(mempool_refs) == 7, \
-        f"Expected 7 manage_tx refs in mempool_add, got {len(mempool_refs)}"
-    
-    print(f"[FINDING 1] PASS: manage_tx undefined in mempool_add()")
-    print(f"  {len(mempool_refs)} references at lines: "
-          f"{', '.join(str(r[0]) for r in mempool_refs)}")
+    assert mempool_define, \
+        "mempool_add MUST define manage_tx (#2812 fix); originally undefined → NameError"
+    # Original bug had exactly 7 ROLLBACK refs. After fix we add the assignment
+    # plus a comment; both contain 'manage_tx'. So expect ≥ 7 refs (regression
+    # guard: the 7 ROLLBACK paths must remain intact).
+    assert len(mempool_refs) >= 7, \
+        f"Expected ≥7 manage_tx refs in mempool_add, got {len(mempool_refs)}"
+
+    # Smoke test: instantiate and call mempool_add with invalid input.
+    # Must return False cleanly without raising NameError (the original bug).
+    db = UtxoDB(':memory:')
+    db.init_tables()
+    result = db.mempool_add({
+        'tx_id': 'regression-test',
+        'tx_type': 'transfer',
+        'inputs': [{'box_id': 'nonexistent'}],
+        'outputs': [{'address': 'a', 'value_nrtc': 100}],
+    })
+    assert result is False, "mempool_add should return False on invalid input, not raise"
+
+    print(f"[FINDING 1] PASS: #2812 fix in place — mempool_add defines manage_tx")
+    print(f"  {len(mempool_refs)} references in mempool_add (≥7 ROLLBACK paths intact)")
     return True
 
 
