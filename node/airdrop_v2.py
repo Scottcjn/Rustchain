@@ -181,7 +181,10 @@ CREATE TABLE IF NOT EXISTS airdrop_claims (
     tx_signature TEXT,
     status TEXT DEFAULT 'pending',
     created_at INTEGER DEFAULT (strftime('%s', 'now')),
-    UNIQUE(github_username, wallet_address, chain)
+    -- FIX: Ensure a GitHub account can only claim once across ALL chains
+    -- and a wallet can only claim once across ALL chains.
+    UNIQUE(github_username),
+    UNIQUE(wallet_address)
 );
 
 -- Bridge lock ledger
@@ -660,16 +663,17 @@ class AirdropV2:
     def _has_claimed(
         self, github_username: str, wallet_address: str, chain: str
     ) -> bool:
-        """Check if user already claimed airdrop."""
+        """Check if user or wallet already claimed airdrop across any chain."""
         conn = self._get_conn()
         cursor = conn.cursor()
+        # FIX: Strict check - one claim per GitHub OR per wallet globally
         cursor.execute(
             """
             SELECT 1 FROM airdrop_claims
-            WHERE github_username = ? AND wallet_address = ? AND chain = ?
+            WHERE (github_username = ? OR wallet_address = ?)
             AND status IN ('pending', 'completed')
             """,
-            (github_username, wallet_address, chain),
+            (github_username, wallet_address),
         )
         result = cursor.fetchone() is not None
         self._close_conn(conn)
