@@ -647,6 +647,16 @@ def health_diagnostics():
     except (ImportError, Exception):
         pass
 
+    # Check TCP health
+    tcp_conns = 0
+    try:
+        # FIX: Track active TCP connections to monitor P2P and API saturation.
+        import psutil
+        process = psutil.Process(os.getpid())
+        tcp_conns = len(process.connections(kind='tcp'))
+    except (ImportError, Exception):
+        pass
+
     return jsonify({
         "status": "ok" if db_ok else "degraded",
         "version": APP_VERSION,
@@ -656,6 +666,7 @@ def health_diagnostics():
         "memory": memory_stats,
         "swap": swap_stats,
         "disk": disk_stats,
+        "tcp_connections": tcp_conns,
         "open_files": open_files,
         "mempool": {
             "pending_inputs": mempool_count
