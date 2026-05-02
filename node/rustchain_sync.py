@@ -297,14 +297,39 @@ class RustChainSyncManager:
             }
         return status
 
-    def _get_count(self, table_name: str) -> int:
-        if table_name not in self.SYNC_TABLES:
-            return 0
+    def integrity_check(self, expected_total: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Check integrity of the local database state.
+        FIX: More detailed integrity report with row counts and balance validation.
+        """
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
-            count = cursor.fetchone()[0]
-            return int(count)
+            
+            # 1. Total balance check
+            cursor.execute("SELECT COALESCE(SUM(amount_i64), 0) FROM balances")
+            total_bal = cursor.fetchone()[0]
+            
+            # 2. Row counts for main tables
+            counts = {}
+            for t in self.SYNC_TABLES:
+                cursor.execute(f"SELECT COUNT(*) FROM {t}")
+                counts[t] = cursor.fetchone()[0]
+            
+            result = {
+                "ok": True,
+                "total_balance_i64": total_bal,
+                "table_counts": counts,
+                "timestamp": time.time()
+            }
+            
+            if expected_total is not None:
+                result["expected_total"] = expected_total
+                result["balance_match"] = (total_bal == expected_total)
+                if not result["balance_match"]:
+                    result["ok"] = False
+                    result["diff"] = total_bal - expected_total
+                    
+            return result
         finally:
             conn.close()
