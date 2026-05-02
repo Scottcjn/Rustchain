@@ -397,6 +397,16 @@ def update_device_flags(serial_hash: str, flags: str) -> bool:
     except sqlite3.Error:
         return False
 
+def increment_bind_count(serial_hash: str) -> bool:
+    """Increment the total number of successful bindings for a device."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("UPDATE hardware_bindings_v2 SET attestation_count = attestation_count + 1 WHERE serial_hash = ?", (serial_hash,))
+            conn.commit()
+            return True
+    except sqlite3.Error:
+        return False
+
 def _norm_model(model: str) -> str:
     """Normalize hardware model name for consistent lookup."""
     if not model: return "unknown"
