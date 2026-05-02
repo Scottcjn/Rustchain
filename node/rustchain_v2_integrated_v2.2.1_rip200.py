@@ -7228,6 +7228,15 @@ if __name__ == "__main__":
         print("", file=sys.stderr)
         print("=" * 70, file=sys.stderr)
 
+    # FIX: Robust startup validation
+    print(f"[INIT] RustChain v2 Integrated Server v{APP_VERSION} starting...")
+    
+    if not os.path.exists(DB_PATH):
+        print(f"[INIT] [CRITICAL] Database NOT FOUND at {DB_PATH}")
+        print("[INIT] [HINT] Ensure the database is initialized before running the server.")
+        # Fail-safe: Create directory if missing
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
     init_db()
 
     # UTXO Transaction Engine (Phase 3)
