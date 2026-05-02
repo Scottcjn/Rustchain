@@ -433,6 +433,16 @@ def process_claims_batch(
     tx_data = construct_settlement_transaction(claims_to_process)
     tx_data["batch_id"] = batch_id
     
+    # Update claims to 'settling' status BEFORE broadcasting to prevent double settlement
+    # if the server crashes after broadcast but before final status update.
+    for claim in claims_to_process:
+        update_claim_status(
+            db_path=db_path,
+            claim_id=claim["claim_id"],
+            status="settling",
+            details={"batch_id": batch_id}
+        )
+
     # Sign and broadcast
     success, tx_hash, error = sign_and_broadcast_transaction(tx_data, db_path)
     
