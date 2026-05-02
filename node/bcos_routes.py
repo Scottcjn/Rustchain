@@ -428,6 +428,9 @@ def bcos_directory():
 
             if sort_by == "score":
                 query += " ORDER BY trust_score DESC, created_at DESC"
+            elif sort_by == "tier":
+                # FIX: Sort by tier hierarchy (L3 > L2 > L1)
+                query += " ORDER BY CASE tier WHEN 'L3' THEN 3 WHEN 'L2' THEN 2 WHEN 'L1' THEN 1 ELSE 0 END DESC, created_at DESC"
             else:
                 query += " ORDER BY created_at DESC"
                 
