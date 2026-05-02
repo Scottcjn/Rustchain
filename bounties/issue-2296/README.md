@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Issue #2296: Red Team Attestation Replay Cross-Node Attack
 
 ## Executive Summary
