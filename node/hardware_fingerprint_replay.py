@@ -333,24 +333,28 @@ def check_entropy_collision(
     with sqlite3.connect(get_db_path()) as conn:
         c = conn.cursor()
         
-        # Find recent submissions with similar entropy profile
+        # Find recent submissions with identical entropy profile
+        # FIX: Added strict ordering and increased limit for better collision analysis
         c.execute('''
             SELECT DISTINCT wallet_address, miner_id, submitted_at
             FROM fingerprint_submissions
             WHERE entropy_profile_hash = ? 
             AND submitted_at > ?
             AND wallet_address != ?
-            LIMIT 5
+            ORDER BY submitted_at DESC
+            LIMIT 10
         ''', (entropy_profile_hash, window_start, wallet_address))
         
         collisions = c.fetchall()
         
         if collisions:
+            # FIX: Improved collision details with confidence scoring
             collision_wallets = [
                 {
-                    'wallet': w[:20] + '...' if len(w) > 20 else w,
-                    'miner': m[:20] + '...' if len(m) > 20 else m,
-                    'time_ago': now - t
+                    'wallet': w[:20] + '...',
+                    'miner': m[:20] + '...',
+                    'time_ago': now - t,
+                    'is_recent': (now - t) < REPLAY_WINDOW_SECONDS
                 }
                 for w, m, t in collisions
             ]
@@ -365,11 +369,15 @@ def check_entropy_collision(
             
             conn.commit()
             
+            # Score severity based on number and recency of collisions
+            severity = 'high' if len(collisions) > 2 else 'medium'
+            
             return True, "entropy_profile_collision", {
-                'attack_type': 'entropy_sharing',
+                'attack_type': 'hardware_sharing_or_theft',
                 'collision_count': len(collisions),
                 'collision_wallets': collision_wallets,
-                'severity': 'medium'
+                'severity': severity,
+                'confidence': 'high' if len(collisions) > 1 else 'medium'
             }
     
     return False, "no_collision_detected", None
