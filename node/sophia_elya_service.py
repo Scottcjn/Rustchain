@@ -202,6 +202,20 @@ def internal_error(error):
     }), 500
 
 
+ADMIN_KEY = os.getenv("RC_ADMIN_KEY", "")
+
+def _is_admin(req):
+    got = req.headers.get("X-Admin-Key", "")
+    return bool(ADMIN_KEY and got == ADMIN_KEY)
+
+@app.post("/api/stats/reset")
+def api_stats_reset():
+    if not _is_admin(request):
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    _stats_cache["data"] = None
+    _stats_cache["ts"] = 0
+    return jsonify({"ok": True, "message": "Stats cache reset"})
+
 _stats_cache = {"data": None, "ts": 0}
 
 @app.get("/api/stats")
