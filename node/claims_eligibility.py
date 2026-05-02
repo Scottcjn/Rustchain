@@ -379,6 +379,41 @@ def calculate_epoch_reward(
             return 0
 
 
+def is_ip_blacklisted(
+    db_path: str,
+    ip_address: str
+) -> bool:
+    """Check if an IP address is blacklisted."""
+    if not ip_address:
+        return False
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            # Assuming a 'blacklisted_ips' table exists
+            cursor.execute("SELECT 1 FROM blacklisted_ips WHERE ip_address = ?", (ip_address,))
+            return cursor.fetchone() is not None
+    except sqlite3.OperationalError:
+        return False # Table doesn't exist
+    except sqlite3.Error:
+        return False
+
+def get_miner_ip(
+    db_path: str,
+    miner_id: str
+) -> Optional[str]:
+    """Get the latest IP address for a miner."""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT source_ip FROM miner_attest_recent
+                WHERE miner = ? ORDER BY ts_ok DESC LIMIT 1
+            """, (miner_id,))
+            row = cursor.fetchone()
+            return row[0] if row else None
+    except sqlite3.Error:
+        return None
+
 def check_claim_eligibility(
     db_path: str,
     miner_id: str,
@@ -454,6 +489,13 @@ def check_claim_eligibility(
         return result
     result["checks"]["epoch_settled"] = True
     
+    # Check IP Blacklist
+    miner_ip = get_miner_ip(db_path, miner_id)
+    if miner_ip and is_ip_blacklisted(db_path, miner_ip):
+        result["eligible"] = False
+        result["reason"] = "ip_address_blacklisted"
+        return result
+
     # Check current attestation
     attestation = get_miner_attestation(db_path, miner_id, current_ts)
     if not attestation:
