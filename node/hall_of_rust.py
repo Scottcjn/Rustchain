@@ -311,12 +311,18 @@ def set_eulogy(fingerprint):
         params = []
         
         if 'nickname' in data:
+            # FIX: Sanitize user-provided nickname to prevent XSS
+            import html
+            clean_nickname = html.escape(str(data['nickname']))[:64]
             updates.append('nickname = ?')
-            params.append(data['nickname'][:64])
+            params.append(clean_nickname)
         
         if 'eulogy' in data:
+            # FIX: Sanitize user-provided eulogy to prevent XSS
+            import html
+            clean_eulogy = html.escape(str(data['eulogy']))[:500]
             updates.append('eulogy = ?')
-            params.append(data['eulogy'][:500])
+            params.append(clean_eulogy)
         
         if 'is_deceased' in data and data['is_deceased']:
             updates.append('is_deceased = 1')
