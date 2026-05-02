@@ -300,15 +300,19 @@ def attest_submit():
     # Broadcast attestation event via WebSocket (Issue #2295)
     if WS_ENABLED and report.get("miner_id"):
         try:
+            # FIX: Validate and sanitize data before broadcasting to WebSocket clients
+            s_miner_id = str(report.get("miner_id", "unknown"))[:128]
+            s_arch = str(device.get("arch", "unknown"))[:32]
+            
             current_slot = int(time.time() // BLOCK_TIME)
             current_epoch = slot_to_epoch(current_slot)
             broadcast_attestation(
-                miner_id=report.get("miner_id", "unknown"),
-                device_arch=device.get("arch", "unknown"),
-                multiplier=hw_weight,
+                miner_id=s_miner_id,
+                device_arch=s_arch,
+                multiplier=float(hw_weight),
                 epoch=current_epoch,
-                weight=hw_weight,
-                ticket_id=ticket_id
+                weight=float(hw_weight),
+                ticket_id=str(ticket_id)
             )
         except Exception as e:
             print(f"[WebSocket] Failed to broadcast attestation: {e}")
