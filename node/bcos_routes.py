@@ -443,6 +443,13 @@ def bcos_directory():
             else:
                 query += " ORDER BY created_at DESC"
                 
+            # FIX: Ensure limit/offset are valid integers
+            try:
+                limit = max(1, min(int(request.args.get("limit", 100)), 500))
+                offset = max(0, int(request.args.get("offset", 0)))
+            except (TypeError, ValueError):
+                limit, offset = 100, 0
+
             query += " LIMIT ? OFFSET ?"
             params.extend([limit, offset])
 
