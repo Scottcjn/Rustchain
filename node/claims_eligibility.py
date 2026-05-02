@@ -26,8 +26,11 @@ Usage:
 
 import sqlite3
 import time
+import logging
 from typing import Dict, Optional, Tuple, Any
 from datetime import datetime
+
+logger = logging.getLogger("claims-eligibility")
 
 # Import RIP-200 modules for compatibility
 try:
@@ -164,7 +167,7 @@ def get_miner_attestation(
                 "warthog_bonus": row["warthog_bonus"] if "warthog_bonus" in row.keys() else 1.0
             }
     except sqlite3.Error as e:
-        print(f"[CLAIMS] Database error getting attestation: {e}")
+        logger.error(f"[CLAIMS] Database error getting attestation: {e}")
         return None
 
 
@@ -221,7 +224,7 @@ def check_epoch_participation(
                 "entropy_score": row["entropy_score"] if "entropy_score" in row.keys() else 0.0
             }
     except sqlite3.Error as e:
-        print(f"[CLAIMS] Database error checking epoch participation: {e}")
+        logger.error(f"[CLAIMS] Database error checking epoch participation: {e}")
         return False, None
 
 
