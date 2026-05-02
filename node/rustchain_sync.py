@@ -177,9 +177,18 @@ class RustChainSyncManager:
         return None
 
     def apply_sync_payload(self, table_name: str, remote_data: List[Dict[str, Any]]):
-        """Merges remote data into local database with conflict resolution and strict validation."""
+        """Merges remote data into local database with integrity verification and conflict resolution."""
         if not self._is_table_allowed(table_name):
             self.logger.error(f"Sync attempt on unauthorized table: {table_name}")
+            return False
+
+        # FIX: Implement basic payload integrity check (size and type validation)
+        # to prevent processing massive or malformed payloads before DB connection.
+        if not isinstance(remote_data, list):
+            return False
+            
+        if len(remote_data) > 2000: # Match pull limit to prevent overflow
+            self.logger.warning(f"Rejected oversized sync payload for {table_name}: {len(remote_data)} rows")
             return False
 
         schema = self._load_table_schema(table_name)
