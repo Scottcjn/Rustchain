@@ -46,7 +46,8 @@ class RustChainSyncManager:
         Open and return an optimized SQLite connection to the node database.
         FIX: Added PRAGMAs to optimize for bulk sync workloads.
         """
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        # FIX: Increased timeout to 60s to handle concurrent sync writes
+        conn = sqlite3.connect(self.db_path, timeout=60)
         conn.row_factory = sqlite3.Row
         
         # Performance tuning for high-volume synchronization
