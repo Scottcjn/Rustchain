@@ -96,47 +96,54 @@ class PayoutWorker:
             pass
 
     def process_withdrawal(self, withdrawal: Dict) -> bool:
-        """Process a single withdrawal"""
+        """Process a single withdrawal with retry logic."""
         withdrawal_id = withdrawal['withdrawal_id']
+        retries = 0
 
-        try:
-            logger.info(f"Executing withdrawal {withdrawal_id} ({withdrawal['amount']} RTC)")
+        while retries < MAX_RETRIES:
+            try:
+                logger.info(f"Executing withdrawal {withdrawal_id} (Attempt {retries + 1}/{MAX_RETRIES})")
 
-            # Execute withdrawal
-            tx_hash = self.execute_withdrawal(withdrawal)
+                # Execute withdrawal
+                tx_hash = self.execute_withdrawal(withdrawal)
 
-            if tx_hash:
-                # Mark as completed
-                with sqlite3.connect(self.db_path) as conn:
-                    conn.execute("""
-                        UPDATE withdrawals
-                        SET status = 'completed',
-                            processed_at = ?,
-                            tx_hash = ?
-                        WHERE withdrawal_id = ?
-                    """, (int(time.time()), tx_hash, withdrawal_id))
+                if tx_hash:
+                    # Mark as completed
+                    with sqlite3.connect(self.db_path) as conn:
+                        conn.execute("""
+                            UPDATE withdrawals
+                            SET status = 'completed',
+                                processed_at = ?,
+                                tx_hash = ?,
+                                retry_count = ?
+                            WHERE withdrawal_id = ?
+                        """, (int(time.time()), tx_hash, retries, withdrawal_id))
 
-                logger.info(f"[OK] Withdrawal {withdrawal_id} completed: {tx_hash}")
-                self.stats['processed'] += 1
-                self.stats['total_rtc'] += withdrawal['amount']
-                return True
-            else:
-                raise Exception("No transaction hash returned")
+                    logger.info(f"[OK] Withdrawal {withdrawal_id} completed: {tx_hash}")
+                    self.stats['processed'] += 1
+                    self.stats['total_rtc'] += withdrawal['amount']
+                    return True
+                else:
+                    raise Exception("No transaction hash returned")
 
-        except Exception as e:
-            logger.error(f"✗ Withdrawal {withdrawal_id} failed: {e}")
-
-            # Mark as failed
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    UPDATE withdrawals
-                    SET status = 'failed',
-                        error_msg = ?
-                    WHERE withdrawal_id = ?
-                """, (str(e), withdrawal_id))
-
-            self.stats['failed'] += 1
-            return False
+            except Exception as e:
+                retries += 1
+                logger.error(f"Attempt {retries} failed for {withdrawal_id}: {e}")
+                if retries < MAX_RETRIES:
+                    time.sleep(2 ** retries) # Exponential backoff
+                else:
+                    # Final failure
+                    with sqlite3.connect(self.db_path) as conn:
+                        conn.execute("""
+                            UPDATE withdrawals
+                            SET status = 'failed',
+                                error_msg = ?,
+                                retry_count = ?
+                            WHERE withdrawal_id = ?
+                        """, (str(e), retries, withdrawal_id))
+                    self.stats['failed'] += 1
+                    return False
+        return False
 
     def process_batch(self) -> int:
         """Process a batch of withdrawals"""
