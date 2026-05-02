@@ -305,7 +305,8 @@ def attest_submit():
         return jsonify({"error": "missing_commitment"}), 400
 
     # Create ticket
-    ticket_id = secrets.token_hex(8)
+    # FIX: Increase ticket_id length to 16 bytes for better collision resistance
+    ticket_id = secrets.token_hex(16)
     device = report.get("device", {})
     hw_weight = get_hardware_weight(device)
     ticket = {
