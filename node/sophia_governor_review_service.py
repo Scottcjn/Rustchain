@@ -339,11 +339,21 @@ def _build_prompt(data: dict[str, Any]) -> str:
         return str(review_prompt).strip()
 
     entry = _coerce_entry(data)
-    event_type = str(data.get("event_type") or entry.get("event_type") or "unknown").strip()
-    risk_level = str(data.get("risk_level") or entry.get("risk_level") or "unknown").strip()
-    stance = str(data.get("stance") or entry.get("stance") or "watch").strip()
-    source = str(entry.get("source") or data.get("source") or "governor-inbox").strip()
-    summary = _review_summary(data, entry, event_type)
+    
+    # FIX: Sanitize all input fields to prevent prompt injection attacks
+    def _sanitize(v: Any) -> str:
+        s = str(v or "").strip().replace("\n", " ").replace("\r", " ")
+        # Escape potential prompt delimiters if needed
+        return s[:500]
+
+    event_type = _sanitize(data.get("event_type") or entry.get("event_type") or "unknown")
+    risk_level = _sanitize(data.get("risk_level") or entry.get("risk_level") or "unknown")
+    stance = _sanitize(data.get("stance") or entry.get("stance") or "watch")
+    source = _sanitize(entry.get("source") or data.get("source") or "governor-inbox")
+    summary = _sanitize(_review_summary(data, entry, event_type))
+    
+    payload_json = _safe_json_dumps(entry.get('payload') or data.get('payload') or {})
+    
     return (
         "You are Sophia Elya reviewing a RustChain governor escalation.\n"
         "Be concise, safety-minded, and practical.\n"
@@ -357,7 +367,7 @@ def _build_prompt(data: dict[str, Any]) -> str:
         f"Stance: {stance}\n"
         f"Source: {source}\n"
         f"Summary: {summary}\n"
-        f"Payload: {_safe_json_dumps(entry.get('payload') or data.get('payload') or {})}"
+        f"Payload: {payload_json}"
     )
 
 
