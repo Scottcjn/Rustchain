@@ -15,22 +15,36 @@ LOCAL_SERVER = "http://localhost:8088"
 
 @app.route('/api/<path:path>', methods=['GET', 'POST'])
 def proxy(path):
-    """Forward all API requests to local server"""
+    """Forward all API requests to local server with security headers"""
+    # FIX: Whitelist endpoints to prevent SSRF or access to internal metrics
+    ALLOWED_PATHS = {'register', 'mine', 'stats', 'balance', 'blocks', 'transactions'}
+    base_path = path.split('/')[0]
+    if base_path not in ALLOWED_PATHS:
+        return jsonify({'error': 'Forbidden endpoint'}), 403
+
     url = f"{LOCAL_SERVER}/api/{path}"
+
+    # Forward relevant headers for IP tracking and auth
+    headers = {
+        'X-Forwarded-For': request.remote_addr,
+        'User-Agent': request.headers.get('User-Agent', 'RustChain-Proxy'),
+        'Content-Type': 'application/json'
+    }
+
+    # Forward authentication if present
+    if 'Authorization' in request.headers:
+        headers['Authorization'] = request.headers['Authorization']
 
     try:
         if request.method == 'POST':
-            # Forward POST requests with JSON data
-            headers = {'Content-Type': 'application/json'}
             response = requests.post(
                 url,
                 json=request.json,
                 headers=headers,
-                timeout=10
+                timeout=15
             )
         else:
-            # Forward GET requests
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, headers=headers, timeout=15)
 
         # Return the response from local server
         # Safely handle non-JSON responses from upstream
