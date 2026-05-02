@@ -291,7 +291,10 @@ class GossipLayer:
         self.node_id = node_id
         self.peers = peers  # peer_id -> url
         self.db_path = db_path
+        # FIX: Use a bounded set/list for seen messages to prevent memory spikes
+        # and improve cleanup performance.
         self.seen_messages: Set[str] = set()
+        self._seen_messages_fifo = [] 
         self.message_queue: List[GossipMessage] = []
         self.lock = threading.Lock()
 
@@ -405,10 +408,14 @@ class GossipLayer:
             return {"status": "invalid_signature"}
 
         self.seen_messages.add(msg.msg_id)
+        self._seen_messages_fifo.append(msg.msg_id)
 
-        # Limit seen_messages size
-        if len(self.seen_messages) > 10000:
-            self.seen_messages = set(list(self.seen_messages)[-5000:])
+        # FIX: Efficient cleanup using FIFO list instead of rebuilding the entire set
+        if len(self._seen_messages_fifo) > 10000:
+            to_remove = self._seen_messages_fifo[:5000]
+            self._seen_messages_fifo = self._seen_messages_fifo[5000:]
+            for mid in to_remove:
+                self.seen_messages.discard(mid)
 
         # Handle by type
         msg_type = MessageType(msg.msg_type)
