@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # RIP-302 Agent-to-Agent Transaction Test Challenge
 
 > **Bounty #684**: Reproducible Agent-to-Agent transaction test challenge artifacts for Beacon + Grazer + RIP-302
