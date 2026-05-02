@@ -370,6 +370,14 @@ def check_ip_bind_limit(client_ip: str) -> bool:
     """
     return True
 
+def check_arch_compatibility(claimed_arch: str, detected_arch: str) -> bool:
+    """
+    Check if a claimed architecture is compatible with the detected one.
+    FIX: Added architectural stub for cross-validation of device metadata.
+    """
+    return str(claimed_arch).lower() == str(detected_arch).lower()
+ 
+
 # Initialize on import.
 # If DB path is explicitly configured and init fails, fail fast (safer for prod).
 # If using the default Linux path on non-Linux / local dev, don't crash the whole node.
