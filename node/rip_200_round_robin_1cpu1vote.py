@@ -644,16 +644,28 @@ def calculate_epoch_rewards_time_aged(
     # Distribute rewards proportionally by weight
     rewards = {}
     remaining = total_reward_urtc
-
-    for i, (miner_id, weight) in enumerate(eligible_miners):
-        if i == len(eligible_miners) - 1:
-            # Last miner gets remainder (prevents rounding issues)
+    
+    # SECURITY (Issue #3012): Floating point precision & fairness.
+    # To prevent 'Last-Miner Advantage' where the last miner captures all 
+    # rounding remainders, we track the cumulative ideal share vs cumulative 
+    # actual share. This ensures every miner gets their fair share ± 1 uRTC.
+    cumulative_ideal = 0.0
+    cumulative_actual = 0
+    
+    for miner_id, weight in eligible_miners:
+        cumulative_ideal += (weight / total_weight) * total_reward_urtc
+        ideal_share = int(round(cumulative_ideal))
+        
+        # Share is the difference needed to reach current ideal total
+        share = ideal_share - cumulative_actual
+        
+        # Ensure we don't over-distribute
+        if share > remaining:
             share = remaining
-        else:
-            share = int((weight / total_weight) * total_reward_urtc)
-            remaining -= share
-
+            
         rewards[miner_id] = share
+        remaining -= share
+        cumulative_actual += share
 
     return rewards
 
