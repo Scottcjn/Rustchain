@@ -309,7 +309,7 @@ def bcos_verify(cert_id):
                 row["commitment"], row["signature"], row["signer_pubkey"]
             )
 
-        return jsonify({
+        resp = jsonify({
             "ok": True,
             "verified": commitment_valid and (sig_valid is not False),
             "cert_id": row["cert_id"],
@@ -330,6 +330,8 @@ def bcos_verify(cert_id):
             "badge_url": f"https://50.28.86.131/bcos/badge/{cert_id}.svg",
             "pdf_url": f"https://50.28.86.131/bcos/cert/{cert_id}.pdf",
         })
+        resp.headers["Cache-Control"] = "public, max-age=600"
+        return resp
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
