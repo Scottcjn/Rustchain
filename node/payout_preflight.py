@@ -69,8 +69,13 @@ def validate_wallet_transfer_admin(payload: Any) -> PreflightResult:
     )
 
 
+def is_valid_evm_address(address: str) -> bool:
+    """Validate EVM (Ethereum/Base) address format."""
+    import re
+    return bool(re.match(r"^0x[a-fA-F0-9]{40}$", address))
+
 def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
-    """Validate POST /wallet/transfer/signed payload shape (client-signed)."""
+    """Validate POST /wallet/transfer/signed payload shape (client-signed) with multi-chain support."""
     data, err = _as_dict(payload)
     if err:
         return PreflightResult(ok=False, error=err, details={})
@@ -82,6 +87,8 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
 
     from_address = str(data.get("from_address", "")).strip()
     to_address = str(data.get("to_address", "")).strip()
+    chain = str(data.get("chain", "rustchain")).lower().strip()
+    
     amount_rtc_dec, aerr = _safe_decimal(data.get("amount_rtc", 0))
     if aerr:
         return PreflightResult(ok=False, error=aerr, details={})
@@ -96,10 +103,18 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
             details={"amount_rtc": float(amount_rtc_dec), "min_rtc": 0.000001},
         )
 
-    if not (from_address.startswith("RTC") and len(from_address) == 43):
-        return PreflightResult(ok=False, error="invalid_from_address_format", details={})
-    if not (to_address.startswith("RTC") and len(to_address) == 43):
-        return PreflightResult(ok=False, error="invalid_to_address_format", details={})
+    # Chain-specific format validation
+    if chain == "rustchain":
+        if not (from_address.startswith("RTC") and len(from_address) == 43):
+            return PreflightResult(ok=False, error="invalid_from_address_format", details={"chain": "rustchain"})
+        if not (to_address.startswith("RTC") and len(to_address) == 43):
+            return PreflightResult(ok=False, error="invalid_to_address_format", details={"chain": "rustchain"})
+    elif chain in ("base", "ethereum"):
+        if not is_valid_evm_address(from_address):
+            return PreflightResult(ok=False, error="invalid_from_address_format", details={"chain": chain})
+        if not is_valid_evm_address(to_address):
+            return PreflightResult(ok=False, error="invalid_to_address_format", details={"chain": chain})
+    
     if from_address == to_address:
         return PreflightResult(ok=False, error="from_to_must_differ", details={})
 
