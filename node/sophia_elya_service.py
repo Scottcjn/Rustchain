@@ -496,6 +496,17 @@ def discover_peers():
     random.shuffle(bootstrap)
     return bootstrap
 
+def update_peers_loop():
+    """Background loop to refresh peers with jitter to prevent synchronization spikes."""
+    import random
+    while True:
+        try:
+            discover_peers()
+        except Exception:
+            pass
+        # FIX: Poll every 5 minutes with randomized jitter (+/- 30s)
+        time.sleep(300 + random.randint(-30, 30))
+
 if __name__ == "__main__":
     init_db()
     print("RustChain v2 RIP-0005 - Epoch Pro-Rata Rewards")
