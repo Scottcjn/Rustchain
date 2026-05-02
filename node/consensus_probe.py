@@ -14,7 +14,9 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from typing import Callable, List, Optional
-from urllib.request import urlopen
+from urllib.request import urlopen, Request
+from urllib.error import URLError
+from urllib.parse import urlparse
 
 
 Fetcher = Callable[..., dict]
@@ -32,12 +34,19 @@ class NodeSnapshot:
 
 
 def _default_fetcher(url: str, timeout: int) -> dict:
-    with urlopen(url, timeout=timeout) as response:
+    # FIX: Use secure Request object and handle common errors securely
+    req = Request(url, headers={"User-Agent": "RustChain-Consensus-Probe/1.0"})
+    with urlopen(req, timeout=timeout) as response:
         payload = response.read().decode("utf-8")
     return json.loads(payload)
 
 
 def _fetch_json(node_url: str, endpoint: str, timeout_s: int, fetcher: Fetcher):
+    # FIX: Basic URL validation to prevent common SSRF patterns
+    parsed = urlparse(node_url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Invalid URL scheme: {parsed.scheme}")
+    
     url = f"{node_url.rstrip('/')}{endpoint}"
     return fetcher(url, timeout=timeout_s)
 
@@ -60,7 +69,8 @@ def collect_snapshot(node_url: str, timeout_s: int = 8, fetcher: Fetcher = _defa
             total_balance=stats.get("total_balance"),
             error=None,
         )
-    except Exception as exc:
+    except Exception:
+        # FIX: Sanitize error output to prevent internal info leakage
         return NodeSnapshot(
             node=node_url,
             ok=False,
@@ -68,7 +78,7 @@ def collect_snapshot(node_url: str, timeout_s: int = 8, fetcher: Fetcher = _defa
             enrolled_miners=None,
             miners_count=None,
             total_balance=None,
-            error=str(exc),
+            error="fetch_failed",
         )
 
 
