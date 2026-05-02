@@ -206,14 +206,15 @@ class PayoutWorker:
             """, (cutoff,)).fetchone()[0]
 
             if count > 0:
-                # Archive to file (in production, send to cold storage)
-                rows = conn.execute("""
-                    SELECT * FROM withdrawals
-                    WHERE status = 'completed' AND processed_at < ?
-                """, (cutoff,)).fetchall()
-
-                archive_file = f"withdrawal_archive_{datetime.now().strftime('%Y%m%d')}.json"
+                # Archive to file securely
+                archive_dir = "archives"
+                os.makedirs(archive_dir, exist_ok=True, mode=0o700) # Owner only access
+                
+                archive_file = os.path.join(archive_dir, f"withdrawal_archive_{datetime.now().strftime('%Y%m%d')}.json")
+                
                 with open(archive_file, 'a') as f:
+                    # FIX: Set restrictive permissions on the archive file immediately
+                    os.chmod(archive_file, 0o600) 
                     for row in rows:
                         json.dump({
                             'withdrawal_id': row[0],
