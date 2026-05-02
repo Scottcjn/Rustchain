@@ -20,9 +20,7 @@ Design principle: "Trust infrastructure that distrusts itself on a schedule."
 import hashlib
 import logging
 import random
-import sqlite3
-import time
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +51,7 @@ SPIKE_MIN_HISTORY = 10
 
 # Observation window modes (bimodal, not uniform)
 # Fast mode catches sudden changes; slow mode catches gradual drift
-WINDOW_FAST_RANGE = (6, 24)    # hours
+WINDOW_FAST_RANGE = (6, 24)  # hours
 WINDOW_SLOW_RANGE = (72, 168)  # hours
 WINDOW_FAST_PROBABILITY = 0.6  # 60% chance of fast window
 
@@ -77,9 +75,7 @@ def derive_epoch_nonce(prev_block_hash: str) -> bytes:
         logger.warning("RIP-309: No prev_block_hash, using genesis fallback nonce")
         return hashlib.sha256(b"rip309_genesis_fallback").digest()
 
-    return hashlib.sha256(
-        bytes.fromhex(prev_block_hash) + b"rip309_measurement_nonce"
-    ).digest()
+    return hashlib.sha256(bytes.fromhex(prev_block_hash) + b"rip309_measurement_nonce").digest()
 
 
 def get_active_fp_checks(nonce: bytes) -> List[str]:
@@ -96,7 +92,9 @@ def get_active_fp_checks(nonce: bytes) -> List[str]:
         Sorted list of 4 active check names
     """
     seed = int.from_bytes(nonce[:4], "big")
-    active = random.Random(seed).sample(ALL_FP_CHECKS, ACTIVE_FP_COUNT)
+    # FIX: Deterministic sampling is required for consensus agreement across nodes.
+    # We use a seeded Random instance to ensure all nodes select the same checks.
+    active = random.Random(seed).sample(ALL_FP_CHECKS, ACTIVE_FP_COUNT)  # nosec B311
     return sorted(active)
 
 
@@ -117,7 +115,7 @@ def get_observation_window_hours(nonce: bytes) -> int:
         Observation window in hours
     """
     seed = int.from_bytes(nonce[8:12], "big")
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # nosec B311
 
     if rng.random() < WINDOW_FAST_PROBABILITY:
         return rng.randint(*WINDOW_FAST_RANGE)
@@ -190,7 +188,7 @@ def compute_ema_score(
         age = current_epoch - epoch_num
         if age < 0:
             continue
-        w = decay ** age
+        w = decay**age
         weighted_sum += score * w
         weight_sum += w
 
@@ -242,7 +240,7 @@ def detect_score_spike(
             return True, float("inf")
         return False, 0.0
 
-    std_dev = variance ** 0.5
+    std_dev = variance**0.5
     z_score = (current_score - mean) / std_dev
 
     is_spike = abs(z_score) > threshold_sigma
@@ -274,9 +272,7 @@ def get_epoch_measurement_config(
         "epoch": epoch,
         "nonce": nonce.hex(),
         "active_fingerprints": active_fp,
-        "inactive_fingerprints": sorted(
-            set(ALL_FP_CHECKS) - set(active_fp)
-        ),
+        "inactive_fingerprints": sorted(set(ALL_FP_CHECKS) - set(active_fp)),
         "observation_window_hours": window_hours,
         "window_mode": "fast" if window_hours <= 24 else "slow",
     }
@@ -310,25 +306,24 @@ if __name__ == "__main__":
         inactive = config["inactive_fingerprints"]
         window = config["observation_window_hours"]
         mode = config["window_mode"]
-        print(f"  Epoch {i:2d}: {config['active_fingerprints']}  "
-              f"window={window}h ({mode})")
+        print(f"  Epoch {i:2d}: {config['active_fingerprints']}  window={window}h ({mode})")
 
-    print(f"\nCheck activation counts over 20 epochs:")
+    print("\nCheck activation counts over 20 epochs:")
     for check, count in sorted(check_counts.items()):
         bar = "#" * count
-        print(f"  {check:20s}: {count:2d}/20 ({count/20*100:.0f}%) {bar}")
+        print(f"  {check:20s}: {count:2d}/20 ({count / 20 * 100:.0f}%) {bar}")
 
     # Test EMA scoring
     print("\n=== EMA Scoring ===")
     # Simulate: low scores for 10 epochs, then improvement
     scores = [(i, 0.3) for i in range(10)] + [(i, 0.9) for i in range(10, 20)]
     for epoch in [10, 12, 15, 19]:
-        ema = compute_ema_score(scores[:epoch+1], epoch)
+        ema = compute_ema_score(scores[: epoch + 1], epoch)
         print(f"  Epoch {epoch}: EMA={ema:.3f}")
 
     # Test spike detection
     print("\n=== Spike Detection ===")
-    honest_scores = [(i, 0.8 + random.Random(42).gauss(0, 0.05)) for i in range(20)]
+    honest_scores = [(i, 0.8 + random.Random(42).gauss(0, 0.05)) for i in range(20)]  # nosec B311
     # Epoch 20: sudden drop (gaming attempt)
     is_spike, z = detect_score_spike(honest_scores, 20, 0.2)
     print(f"  Honest streak then drop to 0.2: spike={is_spike}, z={z:.2f}")
@@ -349,4 +344,4 @@ if __name__ == "__main__":
             slow += 1
     print(f"  Fast (6-24h):   {fast}%")
     print(f"  Slow (72-168h): {slow}%")
-    print(f"  (Expected: ~60/40)")
+    print("  (Expected: ~60/40)")

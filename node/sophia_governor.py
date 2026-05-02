@@ -247,13 +247,15 @@ def _build_llm_prompt(event_type: str, payload: dict[str, Any], heuristic: dict[
         f"Event payload: {_safe_json_dumps(payload)}",
     ]
     if continuity.get("loaded"):
-        prompt_lines.extend([
-            "",
-            "Continuity anchors:",
-            continuity["bootstrap_block"],
-            continuity["elyan_prime_brief"],
-            continuity["runtime_governance_brief"],
-        ])
+        prompt_lines.extend(
+            [
+                "",
+                "Continuity anchors:",
+                continuity["bootstrap_block"],
+                continuity["elyan_prime_brief"],
+                continuity["runtime_governance_brief"],
+            ]
+        )
     return "\n".join(line for line in prompt_lines if line)
 
 
@@ -427,19 +429,23 @@ def _heuristic_review(event_type: str, payload: dict[str, Any]) -> dict[str, Any
             route = ROUTE_IMMEDIATE_PHONE_HOME
             stance = "hold"
             signals.extend(critical_hits)
-            recommended_actions.extend([
-                "pause autonomous execution for this proposal",
-                "request big-Sophia review before endorsement or rollout",
-            ])
+            recommended_actions.extend(
+                [
+                    "pause autonomous execution for this proposal",
+                    "request big-Sophia review before endorsement or rollout",
+                ]
+            )
         elif medium_hits:
             risk_level = "medium"
             route = ROUTE_LOCAL_THEN_PHONE_HOME
             stance = "watch"
             signals.extend(medium_hits)
-            recommended_actions.extend([
-                "log the proposal in governor memory",
-                "send a summary upstairs for architectural review",
-            ])
+            recommended_actions.extend(
+                [
+                    "log the proposal in governor memory",
+                    "send a summary upstairs for architectural review",
+                ]
+            )
         else:
             recommended_actions.append("keep proposal on local watchlist")
 
@@ -453,19 +459,23 @@ def _heuristic_review(event_type: str, payload: dict[str, Any]) -> dict[str, Any
             route = ROUTE_IMMEDIATE_PHONE_HOME
             stance = "hold"
             signals.append(f"amount>={_transfer_critical_rtc():.2f}rtc")
-            recommended_actions.extend([
-                "retain transfer in pending state",
-                "page bigger Sophia agents immediately",
-            ])
+            recommended_actions.extend(
+                [
+                    "retain transfer in pending state",
+                    "page bigger Sophia agents immediately",
+                ]
+            )
         elif amount_rtc >= _transfer_warning_rtc():
             risk_level = "high"
             route = ROUTE_LOCAL_THEN_PHONE_HOME
             stance = "watch"
             signals.append(f"amount>={_transfer_warning_rtc():.2f}rtc")
-            recommended_actions.extend([
-                "keep extra audit trail for the transfer",
-                "send upstream summary before confirmation window closes",
-            ])
+            recommended_actions.extend(
+                [
+                    "keep extra audit trail for the transfer",
+                    "send upstream summary before confirmation window closes",
+                ]
+            )
         if any(term in reason_text for term in ("override", "manual", "hotfix", "urgent", "bridge")):
             risk_level = _strongest_risk(risk_level, "high")
             route = ROUTE_LOCAL_THEN_PHONE_HOME if route == ROUTE_LOCAL_ONLY else route
@@ -482,10 +492,12 @@ def _heuristic_review(event_type: str, payload: dict[str, Any]) -> dict[str, Any
             route = ROUTE_IMMEDIATE_PHONE_HOME
             stance = "escalate"
             signals.append(verdict.lower())
-            recommended_actions.extend([
-                "lock deeper review onto the affected miner",
-                "notify higher Sophia security agents",
-            ])
+            recommended_actions.extend(
+                [
+                    "lock deeper review onto the affected miner",
+                    "notify higher Sophia security agents",
+                ]
+            )
         elif verdict == "CAUTIOUS":
             risk_level = "medium"
             route = ROUTE_LOCAL_THEN_PHONE_HOME
@@ -502,10 +514,12 @@ def _heuristic_review(event_type: str, payload: dict[str, Any]) -> dict[str, Any
             route = ROUTE_LOCAL_THEN_PHONE_HOME
             stance = "watch"
             signals.append(status or "degraded")
-            recommended_actions.extend([
-                "collect fresh node diagnostics",
-                "notify bigger Sophia agents if outage persists",
-            ])
+            recommended_actions.extend(
+                [
+                    "collect fresh node diagnostics",
+                    "notify bigger Sophia agents if outage persists",
+                ]
+            )
         else:
             recommended_actions.append("health looks normal")
 
@@ -648,7 +662,9 @@ def _phone_home_headers() -> dict[str, str]:
     return headers
 
 
-def _build_phone_home_envelope(event_id: int, event_type: str, source: str, payload: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
+def _build_phone_home_envelope(
+    event_id: int, event_type: str, source: str, payload: dict[str, Any], decision: dict[str, Any]
+) -> dict[str, Any]:
     return {
         "event_id": event_id,
         "event_type": event_type,
@@ -878,9 +894,7 @@ def get_governor_status(db_path: str | None = None) -> dict[str, Any]:
     init_sophia_governor_schema(db)
     with sqlite3.connect(db) as conn:
         total = conn.execute("SELECT COUNT(*) FROM sophia_governor_events").fetchone()[0]
-        escalated = conn.execute(
-            "SELECT COUNT(*) FROM sophia_governor_events WHERE needs_escalation = 1"
-        ).fetchone()[0]
+        escalated = conn.execute("SELECT COUNT(*) FROM sophia_governor_events WHERE needs_escalation = 1").fetchone()[0]
         delivered = conn.execute(
             "SELECT COUNT(*) FROM sophia_governor_events WHERE escalation_status = 'delivered'"
         ).fetchone()[0]
@@ -947,10 +961,12 @@ def register_sophia_governor_endpoints(app, db_path: str | None = None) -> None:
     @app.route("/sophia/governor/recent", methods=["GET"])
     def sophia_governor_recent():
         limit = request.args.get("limit", 20)
-        return jsonify({
-            "ok": True,
-            "events": get_recent_governor_events(db_path=db, limit=int(limit)),
-        })
+        return jsonify(
+            {
+                "ok": True,
+                "events": get_recent_governor_events(db_path=db, limit=int(limit)),
+            }
+        )
 
     @app.route("/sophia/governor/review", methods=["POST"])
     def sophia_governor_review():

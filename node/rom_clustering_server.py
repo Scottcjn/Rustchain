@@ -11,12 +11,10 @@ they're likely VMs using the same ROM pack - flag them.
 import sqlite3
 import time
 from typing import Dict, List, Optional, Tuple
+
 from rom_fingerprint_db import (
     identify_rom,
     is_known_emulator_rom,
-    AMIGA_KICKSTART_SHA1,
-    MAC_68K_CHECKSUMS,
-    MAC_PPC_MD5,
 )
 
 # =============================================================================
@@ -94,11 +92,7 @@ class ROMClusteringServer:
         return sqlite3.connect(self.db_path)
 
     def process_rom_report(
-        self,
-        miner_id: str,
-        rom_hash: str,
-        hash_type: str = "sha1",
-        platform: str = None
+        self, miner_id: str, rom_hash: str, hash_type: str = "sha1", platform: str = None
     ) -> Tuple[bool, str, Optional[Dict]]:
         """
         Process a ROM hash report from a miner.
@@ -117,11 +111,14 @@ class ROMClusteringServer:
             rom_info = identify_rom(rom_hash, hash_type)
 
             # Flag the miner
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT OR REPLACE INTO miner_rom_flags
                 (miner_id, flag_reason, flagged_at)
                 VALUES (?, ?, ?)
-            """, (miner_id, f"known_emulator_rom:{rom_info}", now))
+            """,
+                (miner_id, f"known_emulator_rom:{rom_info}", now),
+            )
 
             conn.commit()
             conn.close()
@@ -129,20 +126,26 @@ class ROMClusteringServer:
             return False, "known_emulator_rom", rom_info
 
         # Check 2: Record the report
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO miner_rom_reports
             (miner_id, rom_hash, hash_type, platform, first_seen, last_seen, report_count)
             VALUES (?, ?, ?, ?, ?, ?, 1)
             ON CONFLICT(miner_id, rom_hash) DO UPDATE SET
                 last_seen = excluded.last_seen,
                 report_count = report_count + 1
-        """, (miner_id, rom_hash_lower, hash_type, platform, now, now))
+        """,
+            (miner_id, rom_hash_lower, hash_type, platform, now, now),
+        )
 
         # Check 3: Look for clustering
-        cur.execute("""
+        cur.execute(
+            """
             SELECT miner_id FROM miner_rom_reports
             WHERE rom_hash = ? AND miner_id != ?
-        """, (rom_hash_lower, miner_id))
+        """,
+            (rom_hash_lower, miner_id),
+        )
 
         other_miners = [row[0] for row in cur.fetchall()]
 
@@ -152,7 +155,9 @@ class ROMClusteringServer:
 
             # Record the cluster
             import json
-            cur.execute("""
+
+            cur.execute(
+                """
                 INSERT INTO rom_clusters
                 (rom_hash, hash_type, miners, cluster_size, first_detected, last_updated)
                 VALUES (?, ?, ?, ?, ?, ?)
@@ -160,30 +165,35 @@ class ROMClusteringServer:
                     miners = excluded.miners,
                     cluster_size = excluded.cluster_size,
                     last_updated = excluded.last_updated
-            """, (
-                rom_hash_lower, hash_type,
-                json.dumps(all_miners), len(all_miners),
-                now, now
-            ))
+            """,
+                (rom_hash_lower, hash_type, json.dumps(all_miners), len(all_miners), now, now),
+            )
 
             cluster_id = cur.lastrowid
 
             # Flag all miners in the cluster
             for m in all_miners:
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT OR REPLACE INTO miner_rom_flags
                     (miner_id, flag_reason, cluster_id, flagged_at)
                     VALUES (?, ?, ?, ?)
-                """, (m, f"rom_cluster:{len(all_miners)}_miners", cluster_id, now))
+                """,
+                    (m, f"rom_cluster:{len(all_miners)}_miners", cluster_id, now),
+                )
 
             conn.commit()
             conn.close()
 
-            return False, "rom_clustering", {
-                "cluster_size": len(all_miners),
-                "other_miners": other_miners,
-                "rom_hash": rom_hash_lower,
-            }
+            return (
+                False,
+                "rom_clustering",
+                {
+                    "cluster_size": len(all_miners),
+                    "other_miners": other_miners,
+                    "rom_hash": rom_hash_lower,
+                },
+            )
 
         conn.commit()
         conn.close()
@@ -195,10 +205,13 @@ class ROMClusteringServer:
         conn = self._get_conn()
         cur = conn.cursor()
 
-        cur.execute("""
+        cur.execute(
+            """
             SELECT flag_reason FROM miner_rom_flags
             WHERE miner_id = ? AND resolved = 0
-        """, (miner_id,))
+        """,
+            (miner_id,),
+        )
 
         row = cur.fetchone()
         conn.close()
@@ -222,18 +235,21 @@ class ROMClusteringServer:
         """)
 
         import json
+
         clusters = []
         for row in cur.fetchall():
-            clusters.append({
-                "rom_hash": row[0],
-                "hash_type": row[1],
-                "miners": json.loads(row[2]),
-                "cluster_size": row[3],
-                "is_known_emulator": bool(row[4]),
-                "known_rom_info": json.loads(row[5]) if row[5] else None,
-                "first_detected": row[6],
-                "last_updated": row[7],
-            })
+            clusters.append(
+                {
+                    "rom_hash": row[0],
+                    "hash_type": row[1],
+                    "miners": json.loads(row[2]),
+                    "cluster_size": row[3],
+                    "is_known_emulator": bool(row[4]),
+                    "known_rom_info": json.loads(row[5]) if row[5] else None,
+                    "first_detected": row[6],
+                    "last_updated": row[7],
+                }
+            )
 
         conn.close()
         return clusters
@@ -252,12 +268,14 @@ class ROMClusteringServer:
 
         flagged = []
         for row in cur.fetchall():
-            flagged.append({
-                "miner_id": row[0],
-                "reason": row[1],
-                "cluster_id": row[2],
-                "flagged_at": row[3],
-            })
+            flagged.append(
+                {
+                    "miner_id": row[0],
+                    "reason": row[1],
+                    "cluster_id": row[2],
+                    "flagged_at": row[3],
+                }
+            )
 
         conn.close()
         return flagged
@@ -293,10 +311,7 @@ class ROMClusteringServer:
         }
 
 
-def integrate_with_attestation(
-    attestation_data: Dict,
-    rom_server: ROMClusteringServer
-) -> Tuple[bool, str]:
+def integrate_with_attestation(attestation_data: Dict, rom_server: ROMClusteringServer) -> Tuple[bool, str]:
     """
     Integrate ROM checking with miner attestation.
 
@@ -333,9 +348,7 @@ def integrate_with_attestation(
             hash_type = "sha1"  # Default
 
         if hash_val:
-            is_valid, reason, details = rom_server.process_rom_report(
-                miner_id, hash_val, hash_type, platform
-            )
+            is_valid, reason, details = rom_server.process_rom_report(miner_id, hash_val, hash_type, platform)
 
             if not is_valid:
                 return False, f"{reason}:{details}"
@@ -344,14 +357,16 @@ def integrate_with_attestation(
 
 
 if __name__ == "__main__":
-    import tempfile
     import os
 
     print("ROM Clustering Server - Test")
     print("=" * 50)
 
     # Create temp database
-    db_path = "/tmp/test_rom_clustering.db"
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
     if os.path.exists(db_path):
         os.remove(db_path)
 
@@ -363,29 +378,19 @@ if __name__ == "__main__":
         "fake-amiga-miner",
         "891e9a547772fe0c6c19b610baf8bc4ea7fcb785",  # Kickstart 1.3
         "sha1",
-        "amiga"
+        "amiga",
     )
     print(f"  Result: {result}")
 
     # Test 2: Unique ROM
     print("\n[Test 2] Unique ROM:")
-    result = server.process_rom_report(
-        "real-vintage-mac",
-        "abcd1234unique5678hash",
-        "apple",
-        "mac_68k"
-    )
+    result = server.process_rom_report("real-vintage-mac", "abcd1234unique5678hash", "apple", "mac_68k")
     print(f"  Result: {result}")
 
     # Test 3: Clustering detection
     print("\n[Test 3] ROM Clustering:")
     for i in range(3):
-        result = server.process_rom_report(
-            f"suspicious-miner-{i}",
-            "deadbeef1234same5678hash",
-            "md5",
-            "mac_ppc"
-        )
+        result = server.process_rom_report(f"suspicious-miner-{i}", "deadbeef1234same5678hash", "md5", "mac_ppc")
         print(f"  Miner {i}: {result}")
 
     # Stats

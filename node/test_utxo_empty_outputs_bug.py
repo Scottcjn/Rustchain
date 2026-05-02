@@ -8,15 +8,15 @@ This test demonstrates a CRITICAL vulnerability where empty outputs
 result in complete fund destruction.
 """
 
-import unittest
-import tempfile
 import os
 import sys
+import tempfile
 import time
+import unittest
 
-sys.path.insert(0, '/tmp/Rustchain_utxo/node')
+sys.path.insert(0, "/tmp/Rustchain_utxo/node")
 
-from utxo_db import UtxoDB, UNIT
+from utxo_db import UNIT, UtxoDB
 
 
 class TestUTXOEmptyOutputsBug(unittest.TestCase):
@@ -37,7 +37,7 @@ class TestUTXOEmptyOutputsBug(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.tmp.close()
         self.db = UtxoDB(self.tmp.name)
         self.db.init_tables()
@@ -56,51 +56,52 @@ class TestUTXOEmptyOutputsBug(unittest.TestCase):
         4. Verify balance is preserved
         """
         # Step 1: Create initial UTXO with 100 RTC
-        ok = self.db.apply_transaction({
-            'tx_type': 'mining_reward',
-            'inputs': [],
-            'outputs': [{'address': 'alice', 'value_nrtc': 100 * UNIT}],
-            'fee_nrtc': 0,
-            'timestamp': int(time.time()),
-        }, block_height=1)
+        ok = self.db.apply_transaction(
+            {
+                "tx_type": "mining_reward",
+                "inputs": [],
+                "outputs": [{"address": "alice", "value_nrtc": 100 * UNIT}],
+                "fee_nrtc": 0,
+                "timestamp": int(time.time()),
+            },
+            block_height=1,
+        )
         self.assertTrue(ok, "Coinbase should succeed")
 
         # Verify Alice has 100 RTC
-        alice_before = self.db.get_balance('alice')
+        alice_before = self.db.get_balance("alice")
         self.assertEqual(alice_before, 100 * UNIT, "Alice should have 100 RTC")
 
         # Get the UTXO
-        boxes = self.db.get_unspent_for_address('alice')
+        boxes = self.db.get_unspent_for_address("alice")
         self.assertEqual(len(boxes), 1, "Alice should have 1 UTXO")
-        box_id = boxes[0]['box_id']
+        box_id = boxes[0]["box_id"]
 
         # Step 2: EXPLOIT - Try to spend with empty outputs
-        ok = self.db.apply_transaction({
-            'tx_type': 'transfer',
-            'inputs': [{'box_id': box_id, 'spending_proof': 'sig'}],
-            'outputs': [],  # EMPTY - This is the vulnerability!
-            'fee_nrtc': 0,
-            'timestamp': int(time.time()),
-        }, block_height=2)
+        ok = self.db.apply_transaction(
+            {
+                "tx_type": "transfer",
+                "inputs": [{"box_id": box_id, "spending_proof": "sig"}],
+                "outputs": [],  # EMPTY - This is the vulnerability!
+                "fee_nrtc": 0,
+                "timestamp": int(time.time()),
+            },
+            block_height=2,
+        )
 
         # Step 3: Transaction MUST be rejected
-        self.assertFalse(ok,
-            "CRITICAL: Empty outputs should be rejected to prevent fund destruction!")
+        self.assertFalse(ok, "CRITICAL: Empty outputs should be rejected to prevent fund destruction!")
 
         # Step 4: Balance must be preserved
-        alice_after = self.db.get_balance('alice')
-        self.assertEqual(alice_after, 100 * UNIT,
-            "Balance should not change if transaction is rejected")
+        alice_after = self.db.get_balance("alice")
+        self.assertEqual(alice_after, 100 * UNIT, "Balance should not change if transaction is rejected")
 
         # Verify no funds were destroyed
-        total_supply = self.db.get_balance('alice') + \
-                      self.db.get_balance('bob') + \
-                      self.db.get_balance('charlie')
-        self.assertEqual(total_supply, 100 * UNIT,
-            "Total supply should remain 100 RTC - no funds destroyed")
+        total_supply = self.db.get_balance("alice") + self.db.get_balance("bob") + self.db.get_balance("charlie")
+        self.assertEqual(total_supply, 100 * UNIT, "Total supply should remain 100 RTC - no funds destroyed")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(TestUTXOEmptyOutputsBug)
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)

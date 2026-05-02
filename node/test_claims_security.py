@@ -6,7 +6,6 @@ Tests for CRIT-CLAIMS-1 (signature bypass) and MED-CLAIMS-2 (UNIT mismatch).
 import os
 import sys
 import unittest
-from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -17,6 +16,7 @@ class TestClaimsSignatureBypass(unittest.TestCase):
     def test_no_nacl_rejects_signature(self):
         """When HAVE_NACL=False, signatures must be REJECTED, not accepted."""
         import claims_submission as cs
+
         original = cs.HAVE_NACL
         try:
             cs.HAVE_NACL = False
@@ -33,6 +33,7 @@ class TestClaimsSignatureBypass(unittest.TestCase):
     def test_nacl_available_verifies_properly(self):
         """When HAVE_NACL=True, bad signatures must be rejected."""
         import claims_submission as cs
+
         if not cs.HAVE_NACL:
             self.skipTest("PyNaCl not installed, skipping real verify test")
 

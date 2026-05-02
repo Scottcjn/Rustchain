@@ -20,13 +20,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from typing import Optional
 
 from .beacon_identity import (
-    DEFAULT_KEY_TTL,
     DB_PATH,
+    DEFAULT_KEY_TTL,
     expire_old_keys,
     get_key_info,
     list_keys,
@@ -34,10 +33,10 @@ from .beacon_identity import (
     rotate_key,
 )
 
-
 # ---------------------------------------------------------------------------
 # Command handlers
 # ---------------------------------------------------------------------------
+
 
 def cmd_keys_list(args: argparse.Namespace) -> int:
     """beacon keys list — print known keys in a table or JSON."""
@@ -143,11 +142,17 @@ def cmd_keys_expire(args: argparse.Namespace) -> int:
 # Argument parser
 # ---------------------------------------------------------------------------
 
+
 def build_parser(prog: str = "beacon keys") -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog=prog, description="Beacon agent key management (TOFU)")
     p.add_argument("--db", default=DB_PATH, metavar="PATH", help="SQLite DB path")
-    p.add_argument("--ttl", type=int, default=DEFAULT_KEY_TTL, metavar="SECONDS",
-                   help=f"Key TTL in seconds (default: {DEFAULT_KEY_TTL})")
+    p.add_argument(
+        "--ttl",
+        type=int,
+        default=DEFAULT_KEY_TTL,
+        metavar="SECONDS",
+        help=f"Key TTL in seconds (default: {DEFAULT_KEY_TTL})",
+    )
 
     sub = p.add_subparsers(dest="sub", required=True)
 
@@ -173,8 +178,12 @@ def build_parser(prog: str = "beacon keys") -> argparse.ArgumentParser:
     sp = sub.add_parser("rotate", help="Rotate key (requires old-key signature)")
     sp.add_argument("--agent-id", required=True, dest="agent_id", help="Agent ID")
     sp.add_argument("--new-pubkey", required=True, metavar="HEX", help="New public key (hex)")
-    sp.add_argument("--sig", required=True, metavar="HEX",
-                    help="Ed25519 signature of 'rotate:<agent_id>:<new_pubkey_hex>' by old key")
+    sp.add_argument(
+        "--sig",
+        required=True,
+        metavar="HEX",
+        help="Ed25519 signature of 'rotate:<agent_id>:<new_pubkey_hex>' by old key",
+    )
     sp.set_defaults(func=cmd_keys_rotate)
 
     # expire

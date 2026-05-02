@@ -3,17 +3,20 @@
 RustChain Automatic Epoch Settlement Daemon
 Runs in background and automatically settles completed epochs
 """
-import time
+
 import sqlite3
-import requests
 import sys
+import time
 from datetime import datetime
+
+import requests
 
 # Configuration
 NODE_URL = "http://localhost:8088"
 DB_PATH = "/root/rustchain/rustchain_v2.db"
 CHECK_INTERVAL = 300  # Check every 5 minutes
 SLOTS_PER_EPOCH = 144
+
 
 def get_current_slot():
     """Get current slot from node API"""
@@ -28,6 +31,7 @@ def get_current_slot():
         print(f"Error getting current slot: {e}")
     return None
 
+
 def get_current_epoch_from_db():
     """Get current epoch by checking max slot in headers table"""
     try:
@@ -39,6 +43,7 @@ def get_current_epoch_from_db():
     except Exception as e:
         print(f"Error querying database: {e}")
     return None
+
 
 def get_unsettled_epochs():
     """Get list of epochs that should be settled but aren't"""
@@ -62,16 +67,13 @@ def get_unsettled_epochs():
                 # Check if epoch has any headers
                 headers = db.execute(
                     "SELECT COUNT(*) FROM headers WHERE slot BETWEEN ? AND ?",
-                    (epoch * SLOTS_PER_EPOCH, (epoch + 1) * SLOTS_PER_EPOCH - 1)
+                    (epoch * SLOTS_PER_EPOCH, (epoch + 1) * SLOTS_PER_EPOCH - 1),
                 ).fetchone()
 
                 has_headers = headers and headers[0] > 0
 
                 # Check if settled
-                settled = db.execute(
-                    "SELECT settled FROM epoch_state WHERE epoch=?",
-                    (epoch,)
-                ).fetchone()
+                settled = db.execute("SELECT settled FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
 
                 is_settled = settled and int(settled[0]) == 1
 
@@ -84,14 +86,11 @@ def get_unsettled_epochs():
         print(f"Error finding unsettled epochs: {e}")
         return []
 
+
 def settle_epoch_via_api(epoch):
     """Settle an epoch using the node API"""
     try:
-        resp = requests.post(
-            f"{NODE_URL}/rewards/settle",
-            json={"epoch": epoch},
-            timeout=30
-        )
+        resp = requests.post(f"{NODE_URL}/rewards/settle", json={"epoch": epoch}, timeout=30)
 
         if resp.status_code == 200:
             data = resp.json()
@@ -111,16 +110,17 @@ def settle_epoch_via_api(epoch):
 
     return False
 
+
 def auto_settle_loop():
     """Main settlement loop"""
-    print("="*70)
+    print("=" * 70)
     print("RustChain Automatic Epoch Settler")
-    print("="*70)
+    print("=" * 70)
     print(f"Node: {NODE_URL}")
     print(f"Database: {DB_PATH}")
     print(f"Check interval: {CHECK_INTERVAL} seconds")
     print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("="*70)
+    print("=" * 70)
 
     while True:
         try:
@@ -151,6 +151,7 @@ def auto_settle_loop():
             print(f"Error in settlement loop: {e}")
             print(f"Retrying in {CHECK_INTERVAL} seconds...")
             time.sleep(CHECK_INTERVAL)
+
 
 if __name__ == "__main__":
     auto_settle_loop()

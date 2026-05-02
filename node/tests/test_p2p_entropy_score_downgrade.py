@@ -27,14 +27,13 @@ Fix:
 """
 
 import os
-import sys
 import sqlite3
-import unittest
+import sys
 import tempfile
-import time
+import unittest
 
 # Add node directory to path
-NODE_DIR = os.path.join(os.path.dirname(__file__), '..', 'node')
+NODE_DIR = os.path.join(os.path.dirname(__file__), "..", "node")
 sys.path.insert(0, NODE_DIR)
 
 
@@ -42,7 +41,7 @@ class TestP2PEntropyScoreDowngrade(unittest.TestCase):
     """Validate that P2P-synced attestations cannot downgrade entropy_score."""
 
     def setUp(self):
-        self.db_fd, self.db_path = tempfile.mkstemp(suffix='.db')
+        self.db_fd, self.db_path = tempfile.mkstemp(suffix=".db")
         self._init_db()
 
     def tearDown(self):
@@ -79,11 +78,11 @@ class TestP2PEntropyScoreDowngrade(unittest.TestCase):
     # Simulate the OLD (vulnerable) P2P save behaviour
     # ------------------------------------------------------------------
 
-    def _p2p_save_old(self, miner, ts_ok, device_family="unknown",
-                      device_arch="unknown", entropy_score=0):
+    def _p2p_save_old(self, miner, ts_ok, device_family="unknown", device_arch="unknown", entropy_score=0):
         """OLD: unconditional entropy_score overwrite — vulnerable."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO miner_attest_recent
                     (miner, ts_ok, device_family, device_arch, entropy_score)
                 VALUES (?, ?, ?, ?, ?)
@@ -96,18 +95,20 @@ class TestP2PEntropyScoreDowngrade(unittest.TestCase):
                         MAX(COALESCE(miner_attest_recent.fingerprint_passed, 0),
                             COALESCE(excluded.fingerprint_passed, miner_attest_recent.fingerprint_passed)),
                         miner_attest_recent.fingerprint_passed)
-            """, (miner, ts_ok, device_family, device_arch, entropy_score))
+            """,
+                (miner, ts_ok, device_family, device_arch, entropy_score),
+            )
             conn.commit()
 
     # ------------------------------------------------------------------
     # Simulate the FIXED P2P save behaviour
     # ------------------------------------------------------------------
 
-    def _p2p_save_fixed(self, miner, ts_ok, device_family="unknown",
-                        device_arch="unknown", entropy_score=0):
+    def _p2p_save_fixed(self, miner, ts_ok, device_family="unknown", device_arch="unknown", entropy_score=0):
         """FIXED: MAX() protects entropy_score from downgrade."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO miner_attest_recent
                     (miner, ts_ok, device_family, device_arch, entropy_score)
                 VALUES (?, ?, ?, ?, ?)
@@ -122,7 +123,9 @@ class TestP2PEntropyScoreDowngrade(unittest.TestCase):
                         MAX(COALESCE(miner_attest_recent.fingerprint_passed, 0),
                             COALESCE(excluded.fingerprint_passed, miner_attest_recent.fingerprint_passed)),
                         miner_attest_recent.fingerprint_passed)
-            """, (miner, ts_ok, device_family, device_arch, entropy_score))
+            """,
+                (miner, ts_ok, device_family, device_arch, entropy_score),
+            )
             conn.commit()
 
     # ------------------------------------------------------------------
@@ -132,7 +135,8 @@ class TestP2PEntropyScoreDowngrade(unittest.TestCase):
     def _local_set_entropy(self, miner, entropy_score, ts_ok=1000):
         """Simulate local node recording a legitimate high-entropy attestation."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO miner_attest_recent
                     (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed)
                 VALUES (?, ?, ?, ?, ?, 1)
@@ -140,15 +144,14 @@ class TestP2PEntropyScoreDowngrade(unittest.TestCase):
                     ts_ok = excluded.ts_ok,
                     entropy_score = excluded.entropy_score,
                     fingerprint_passed = MAX(miner_attest_recent.fingerprint_passed, excluded.fingerprint_passed)
-            """, (miner, ts_ok, "powerpc", "ppc", entropy_score))
+            """,
+                (miner, ts_ok, "powerpc", "ppc", entropy_score),
+            )
             conn.commit()
 
     def _get_entropy(self, miner):
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                "SELECT entropy_score FROM miner_attest_recent WHERE miner=?",
-                (miner,)
-            ).fetchone()
+            row = conn.execute("SELECT entropy_score FROM miner_attest_recent WHERE miner=?", (miner,)).fetchone()
             return row[0] if row else None
 
     # ------------------------------------------------------------------
@@ -164,8 +167,7 @@ class TestP2PEntropyScoreDowngrade(unittest.TestCase):
         # Malicious P2P peer sends attestation with entropy_score=0
         self._p2p_save_old(miner, ts_ok=1001, entropy_score=0)
         score = self._get_entropy(miner)
-        self.assertEqual(score, 0,
-            "BUG: P2P peer erased entropy_score from 0.95 → 0 via unconditional overwrite")
+        self.assertEqual(score, 0, "BUG: P2P peer erased entropy_score from 0.95 → 0 via unconditional overwrite")
 
     def test_old_p2p_partial_downgrade(self):
         """OLD: attacker sends moderate score to reduce victim's ranking."""
@@ -175,8 +177,7 @@ class TestP2PEntropyScoreDowngrade(unittest.TestCase):
         # Attacker sends lower but non-zero score
         self._p2p_save_old(miner, ts_ok=1001, entropy_score=0.3)
         score = self._get_entropy(miner)
-        self.assertEqual(score, 0.3,
-            "BUG: P2P peer downgraded entropy_score from 0.95 → 0.3")
+        self.assertEqual(score, 0.3, "BUG: P2P peer downgraded entropy_score from 0.95 → 0.3")
 
     # ------------------------------------------------------------------
     # Tests — verify the fix
@@ -189,8 +190,7 @@ class TestP2PEntropyScoreDowngrade(unittest.TestCase):
 
         self._p2p_save_fixed(miner, ts_ok=1001, entropy_score=0)
         score = self._get_entropy(miner)
-        self.assertEqual(score, 0.95,
-            "FIX: entropy_score=0.95 should be preserved despite P2P peer sending 0")
+        self.assertEqual(score, 0.95, "FIX: entropy_score=0.95 should be preserved despite P2P peer sending 0")
 
     def test_fixed_p2p_lower_score_cannot_downgrade(self):
         """FIXED: P2P peer sends lower score, original preserved."""
@@ -199,8 +199,7 @@ class TestP2PEntropyScoreDowngrade(unittest.TestCase):
 
         self._p2p_save_fixed(miner, ts_ok=1001, entropy_score=0.3)
         score = self._get_entropy(miner)
-        self.assertEqual(score, 0.95,
-            "FIX: entropy_score=0.95 should be preserved despite P2P peer sending 0.3")
+        self.assertEqual(score, 0.95, "FIX: entropy_score=0.95 should be preserved despite P2P peer sending 0.3")
 
     def test_fixed_p2p_higher_score_allowed_to_upgrade(self):
         """FIXED: if P2P peer sends a HIGHER score, it should be accepted."""
@@ -209,32 +208,37 @@ class TestP2PEntropyScoreDowngrade(unittest.TestCase):
 
         self._p2p_save_fixed(miner, ts_ok=1001, entropy_score=0.95)
         score = self._get_entropy(miner)
-        self.assertEqual(score, 0.95,
-            "FIX: higher entropy_score from P2P peer should be accepted (0.5 → 0.95)")
+        self.assertEqual(score, 0.95, "FIX: higher entropy_score from P2P peer should be accepted (0.5 → 0.95)")
 
     def test_fixed_p2p_first_attestation_still_works(self):
         """FIXED: first attestation (no prior record) should still set entropy_score."""
         miner = "n64-new-miner"
         self._p2p_save_fixed(miner, ts_ok=1000, entropy_score=0.7)
         score = self._get_entropy(miner)
-        self.assertEqual(score, 0.7,
-            "FIX: first attestation should set entropy_score normally")
+        self.assertEqual(score, 0.7, "FIX: first attestation should set entropy_score normally")
 
     def test_fixed_p2p_null_entropy_treated_as_zero(self):
         """FIXED: NULL entropy_score in existing record treated as 0 for MAX()."""
         miner = "n64-null-entropy"
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO miner_attest_recent
                     (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed)
                 VALUES (?, ?, ?, ?, NULL, 1)
-            """, (miner, 999, "x86", "modern",))
+            """,
+                (
+                    miner,
+                    999,
+                    "x86",
+                    "modern",
+                ),
+            )
             conn.commit()
 
         self._p2p_save_fixed(miner, ts_ok=1000, entropy_score=0.5)
         score = self._get_entropy(miner)
-        self.assertEqual(score, 0.5,
-            "FIX: NULL → 0 via COALESCE, so 0.5 should be accepted")
+        self.assertEqual(score, 0.5, "FIX: NULL → 0 via COALESCE, so 0.5 should be accepted")
 
     # ------------------------------------------------------------------
     # End-to-end: anti-double-mining canonical selection impact
@@ -250,11 +254,14 @@ class TestP2PEntropyScoreDowngrade(unittest.TestCase):
         self._local_set_entropy(legit, entropy_score=0.95, ts_ok=1000)
         # Spoofed attestation with low entropy
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO miner_attest_recent
                     (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed)
                 VALUES (?, ?, ?, ?, ?, 0)
-            """, (spoof, 1001, "x86", "modern", 0.1))
+            """,
+                (spoof, 1001, "x86", "modern", 0.1),
+            )
             conn.commit()
 
         # Before P2P attack: legit has highest entropy
@@ -266,8 +273,7 @@ class TestP2PEntropyScoreDowngrade(unittest.TestCase):
         # Now spoof has higher entropy (0.1 > 0.0) — wrong canonical miner
         legit_score = self._get_entropy(legit)
         spoof_score = self._get_entropy(spoof)
-        self.assertLess(legit_score, spoof_score,
-            "BUG: after P2P downgrade, spoof has higher entropy than legit")
+        self.assertLess(legit_score, spoof_score, "BUG: after P2P downgrade, spoof has higher entropy than legit")
 
     def test_fixed_behaviour_canonical_miner_preserved(self):
         """FIXED: legit miner keeps highest entropy despite P2P attack."""
@@ -276,11 +282,14 @@ class TestP2PEntropyScoreDowngrade(unittest.TestCase):
 
         self._local_set_entropy(legit, entropy_score=0.95, ts_ok=1000)
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO miner_attest_recent
                     (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed)
                 VALUES (?, ?, ?, ?, ?, 0)
-            """, (spoof, 1001, "x86", "modern", 0.1))
+            """,
+                (spoof, 1001, "x86", "modern", 0.1),
+            )
             conn.commit()
 
         # Attacker sends P2P attestation with entropy_score=0 for legit
@@ -288,9 +297,8 @@ class TestP2PEntropyScoreDowngrade(unittest.TestCase):
 
         legit_score = self._get_entropy(legit)
         spoof_score = self._get_entropy(spoof)
-        self.assertGreater(legit_score, spoof_score,
-            "FIX: legit miner should still have highest entropy (0.95 > 0.1)")
+        self.assertGreater(legit_score, spoof_score, "FIX: legit miner should still have highest entropy (0.95 > 0.1)")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

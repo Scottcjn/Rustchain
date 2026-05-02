@@ -294,11 +294,7 @@ def _normalize_review_text(review_text: str, data: dict[str, Any]) -> str:
         next_step = _default_next_step(stance)
     next_step = _clean_review_text(next_step, limit=240)
 
-    return (
-        f"Assessment: {assessment}\n"
-        f"Risk: {risk}\n"
-        f"Next step: {next_step}"
-    )
+    return f"Assessment: {assessment}\nRisk: {risk}\nNext step: {next_step}"
 
 
 def _build_recommended_resolution(review_text: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -368,11 +364,7 @@ def _fallback_review_text(data: dict[str, Any]) -> str:
     stance = str(data.get("stance") or entry.get("stance") or "watch").strip()
     summary = _text_excerpt(_review_summary(data, entry, event_type), 500)
     next_step = _default_next_step(stance)
-    return (
-        f"Assessment: {summary}\n"
-        f"Risk: {risk_level}.\n"
-        f"Next step: {next_step}"
-    )
+    return f"Assessment: {summary}\nRisk: {risk_level}.\nNext step: {next_step}"
 
 
 def _call_ollama(prompt: str) -> tuple[str, str]:
@@ -517,7 +509,7 @@ def _rebuild_review_row(review_id: int, request_json: str, db_path: str | None =
     try:
         raw_review_text, model_used = _call_ollama(prompt)
         review_text = _normalize_review_text(raw_review_text, data)
-    except Exception as exc:
+    except Exception:
         review_text = _normalize_review_text(_fallback_review_text(data), data)
         model_used = f"{OLLAMA_MODEL}@error"
     recommended_resolution = _build_recommended_resolution(review_text, data)
@@ -538,10 +530,7 @@ def _rebuild_review_row(review_id: int, request_json: str, db_path: str | None =
 
 def backfill_missing_reviews(limit: int = 25, db_path: str | None = None) -> list[dict[str, Any]]:
     missing = _reviews_missing_text(limit=limit, db_path=db_path)
-    return [
-        _rebuild_review_row(int(row["id"]), str(row["request_json"]), db_path=db_path)
-        for row in missing
-    ]
+    return [_rebuild_review_row(int(row["id"]), str(row["request_json"]), db_path=db_path) for row in missing]
 
 
 def _recent_review_rows(limit: int = 25, db_path: str | None = None) -> list[dict[str, Any]]:

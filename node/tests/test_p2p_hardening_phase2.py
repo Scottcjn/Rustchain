@@ -7,6 +7,7 @@ Covers:
 - Phase D: _handle_state future-ts rejection + balance namespace scoping
 - Phase E: _handle_attestation future-ts + schema validation
 """
+
 import importlib.util
 import os
 import sqlite3
@@ -110,12 +111,9 @@ def test_phase_c_mixed_proposals_dont_aggregate_to_quorum():
     # node2 votes accept on proposal_hash="A"
     # node3 votes accept on proposal_hash="B"
     # node4 votes accept on proposal_hash="A"
-    msg_a1 = voters[0].create_message(mod.MessageType.EPOCH_VOTE,
-        {"epoch": 9, "proposal_hash": "A", "vote": "accept"})
-    msg_b = voters[1].create_message(mod.MessageType.EPOCH_VOTE,
-        {"epoch": 9, "proposal_hash": "B", "vote": "accept"})
-    msg_a2 = voters[2].create_message(mod.MessageType.EPOCH_VOTE,
-        {"epoch": 9, "proposal_hash": "A", "vote": "accept"})
+    msg_a1 = voters[0].create_message(mod.MessageType.EPOCH_VOTE, {"epoch": 9, "proposal_hash": "A", "vote": "accept"})
+    msg_b = voters[1].create_message(mod.MessageType.EPOCH_VOTE, {"epoch": 9, "proposal_hash": "B", "vote": "accept"})
+    msg_a2 = voters[2].create_message(mod.MessageType.EPOCH_VOTE, {"epoch": 9, "proposal_hash": "A", "vote": "accept"})
 
     target.handle_message(msg_a1)
     target.handle_message(msg_b)

@@ -13,8 +13,8 @@ Updated Antiquity Multiplier System:
 
 import sqlite3
 import time
-from typing import List, Tuple, Dict
 from datetime import datetime
+from typing import Dict, List, Tuple
 
 # Genesis timestamp
 GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
@@ -29,19 +29,17 @@ CURRENT_YEAR = datetime.now().year
 # Base multipliers by architecture class
 BASE_MULTIPLIERS = {
     # PowerPC - True Vintage (pre-2006)
-    "g4": 2.5,           # PowerPC G4 (2001-2005) - Most valuable
-    "g5": 2.0,           # PowerPC G5 (2003-2006) - High value
-
+    "g4": 2.5,  # PowerPC G4 (2001-2005) - Most valuable
+    "g5": 2.0,  # PowerPC G5 (2003-2006) - High value
     # Apple Silicon - Modern Premium
     "apple_silicon": 1.2,  # M1/M2/M3 (2020+) - Premium but modern
     "m1": 1.2,
     "m2": 1.2,
     "m3": 1.2,
-
     # Placeholders - calculated dynamically
-    "intel_mac": None,     # Calculated based on model year
-    "server_x86": None,    # Calculated based on age
-    "modern_x86": 0.1,     # Base rate, can earn loyalty bonus
+    "intel_mac": None,  # Calculated based on model year
+    "server_x86": None,  # Calculated based on age
+    "modern_x86": 0.1,  # Base rate, can earn loyalty bonus
 }
 
 # Intel Mac model years (for sliding scale)
@@ -51,8 +49,8 @@ INTEL_MAC_MODELS = {
     "MacPro3,1": 2008,
     "MacPro4,1": 2009,
     "MacPro5,1": 2010,
-    "MacPro6,1": 2013,    # Trash can Mac Pro
-    "MacPro7,1": 2019,    # Cheese grater Mac Pro
+    "MacPro6,1": 2013,  # Trash can Mac Pro
+    "MacPro7,1": 2019,  # Cheese grater Mac Pro
     "iMacPro1,1": 2017,
     "Macmini6,1": 2012,
     "Macmini6,2": 2012,
@@ -143,10 +141,13 @@ def get_loyalty_bonus(miner_id: str, db_path: str, base_multiplier: float) -> fl
             cursor = conn.cursor()
 
             # Get first attestation timestamp for this miner
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT MIN(ts_ok) FROM miner_attest_history
                 WHERE miner = ?
-            """, (miner_id,))
+            """,
+                (miner_id,),
+            )
 
             result = cursor.fetchone()
             if not result or not result[0]:
@@ -249,6 +250,7 @@ def get_time_aged_multiplier(device_arch: str, chain_age_years: float, device_in
 # ROUND-ROBIN CONSENSUS FUNCTIONS
 # =============================================================================
 
+
 def get_chain_age_years(current_slot: int) -> float:
     """Calculate blockchain age in years from slot number"""
     chain_age_seconds = current_slot * BLOCK_TIME
@@ -264,12 +266,15 @@ def get_attested_miners(db_path: str, current_ts: int) -> List[Tuple[str, str, D
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT miner, device_arch, device_family, device_model, device_year
             FROM miner_attest_recent
             WHERE ts_ok >= ?
             ORDER BY miner ASC
-        """, (current_ts - ATTESTATION_TTL,))
+        """,
+            (current_ts - ATTESTATION_TTL,),
+        )
 
         results = []
         for row in cursor.fetchall():
@@ -278,7 +283,7 @@ def get_attested_miners(db_path: str, current_ts: int) -> List[Tuple[str, str, D
                 "arch": arch or "modern_x86",
                 "family": family or "",
                 "model": model or "",
-                "year": year or CURRENT_YEAR
+                "year": year or CURRENT_YEAR,
             }
             results.append((miner_id, arch, device_info))
 
@@ -293,12 +298,7 @@ def get_round_robin_producer(slot: int, attested_miners: List) -> str:
     return attested_miners[producer_index][0]
 
 
-def calculate_epoch_rewards_v2(
-    db_path: str,
-    epoch: int,
-    total_reward_urtc: int,
-    current_slot: int
-) -> Dict[str, int]:
+def calculate_epoch_rewards_v2(db_path: str, epoch: int, total_reward_urtc: int, current_slot: int) -> Dict[str, int]:
     """
     Calculate reward distribution with v2 multiplier system
     """
@@ -312,11 +312,14 @@ def calculate_epoch_rewards_v2(
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT DISTINCT miner, device_arch, device_family, device_model, device_year
             FROM miner_attest_recent
             WHERE ts_ok >= ? AND ts_ok <= ?
-        """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
+        """,
+            (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts),
+        )
 
         epoch_miners = cursor.fetchall()
 
@@ -333,10 +336,10 @@ def calculate_epoch_rewards_v2(
             "arch": arch or "modern_x86",
             "family": family or "",
             "model": model or "",
-            "year": year or CURRENT_YEAR
+            "year": year or CURRENT_YEAR,
         }
 
-        base_mult = get_device_multiplier(device_info, db_path, miner_id)
+        get_device_multiplier(device_info, db_path, miner_id)
         weight = get_time_aged_multiplier(arch, chain_age_years, device_info)
 
         weighted_miners.append((miner_id, weight, device_info))

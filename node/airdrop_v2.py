@@ -28,17 +28,15 @@ Allocation:
   - Solana: 30,000 wRTC
   - Base: 20,000 wRTC
 """
+
 from __future__ import annotations
 
 import hashlib
-import hmac
-import json
 import logging
 import os
-import re
 import sqlite3
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
@@ -51,7 +49,9 @@ logger = logging.getLogger(__name__)
 
 # Token contracts (to be deployed)
 SOLANA_WRTC_MINT = os.environ.get("SOLANA_WRTC_MINT", "")  # SPL token mint
-BASE_WRTC_CONTRACT = os.environ.get("BASE_WRTC_CONTRACT", "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6")  # ERC-20 on Base
+BASE_WRTC_CONTRACT = os.environ.get(
+    "BASE_WRTC_CONTRACT", "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"
+)  # ERC-20 on Base
 
 # Network configuration
 SOLANA_NETWORK = os.environ.get("SOLANA_NETWORK", "mainnet-beta")  # or "devnet"
@@ -79,6 +79,7 @@ CLAIM_COOLDOWN_SECONDS = 86400 * 30  # 30 days between claims
 
 class EligibilityTier(Enum):
     """Airdrop eligibility tiers."""
+
     STARGAZER = ("stargazer", 25 * 1_000_000, "10+ repos starred")
     CONTRIBUTOR = ("contributor", 50 * 1_000_000, "1+ merged PR")
     BUILDER = ("builder", 100 * 1_000_000, "3+ merged PRs")
@@ -94,6 +95,7 @@ class EligibilityTier(Enum):
 
 class Chain(Enum):
     """Supported chains for airdrop."""
+
     SOLANA = "solana"
     BASE = "base"
 
@@ -101,6 +103,7 @@ class Chain(Enum):
 @dataclass
 class EligibilityResult:
     """Result of eligibility check."""
+
     eligible: bool
     tier: Optional[str] = None
     reward_uwrtc: int = 0
@@ -120,6 +123,7 @@ class EligibilityResult:
 @dataclass
 class ClaimRecord:
     """Record of an airdrop claim."""
+
     claim_id: str
     github_username: str
     wallet_address: str
@@ -134,15 +138,14 @@ class ClaimRecord:
     def to_dict(self) -> Dict[str, Any]:
         result = asdict(self)
         result["amount_wrtc"] = self.amount_uwrtc / 1_000_000
-        result["timestamp_iso"] = datetime.fromtimestamp(
-            self.timestamp, tz=timezone.utc
-        ).isoformat()
+        result["timestamp_iso"] = datetime.fromtimestamp(self.timestamp, tz=timezone.utc).isoformat()
         return result
 
 
 @dataclass
 class BridgeLock:
     """Record of a bridge lock."""
+
     lock_id: str
     from_address: str
     to_address: str
@@ -158,9 +161,7 @@ class BridgeLock:
     def to_dict(self) -> Dict[str, Any]:
         result = asdict(self)
         result["amount_wrtc"] = self.amount_uwrtc / 1_000_000
-        result["timestamp_iso"] = datetime.fromtimestamp(
-            self.timestamp, tz=timezone.utc
-        ).isoformat()
+        result["timestamp_iso"] = datetime.fromtimestamp(self.timestamp, tz=timezone.utc).isoformat()
         return result
 
 
@@ -264,26 +265,26 @@ class AirdropV2:
         """Initialize database schema."""
         conn = self._get_conn()
         conn.executescript(AIRDROP_SCHEMA)
-        
+
         # Initialize allocations
         cursor = conn.cursor()
         cursor.executemany(
             "INSERT OR IGNORE INTO airdrop_allocation (chain, total_uwrtc, claimed_uwrtc) VALUES (?, ?, ?)",
             AIRDROP_INITIAL_ALLOCATIONS,
         )
-        
+
         # Create indexes
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_claims_github ON airdrop_claims(github_username)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_claims_wallet ON airdrop_claims(wallet_address)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_locks_from ON bridge_locks(from_address)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_locks_to ON bridge_locks(to_address)")
-        
+
         conn.commit()
-        
+
         # Don't close in-memory database connection
         if self.db_path != ":memory:":
             self._close_conn(conn)
-        
+
         logger.info("Airdrop V2 database initialized")
 
     def _generate_id(self, prefix: str, *args: str) -> str:
@@ -336,9 +337,7 @@ class AirdropV2:
         # Anti-Sybil checks (can be skipped for testing)
         if not skip_antisybil:
             # Check GitHub account
-            github_ok, github_info = self._check_github_account(
-                github_username, github_token
-            )
+            github_ok, github_info = self._check_github_account(github_username, github_token)
             checks["github_valid"] = github_ok
             if not github_ok:
                 return EligibilityResult(
@@ -348,9 +347,7 @@ class AirdropV2:
                 )
 
             # Check wallet
-            wallet_ok, wallet_info = self._check_wallet(
-                wallet_address, chain_lower
-            )
+            wallet_ok, wallet_info = self._check_wallet(wallet_address, chain_lower)
             checks["wallet_valid"] = wallet_ok
             if not wallet_ok:
                 return EligibilityResult(
@@ -388,9 +385,7 @@ class AirdropV2:
             chain=chain_lower,
         )
 
-    def _check_github_account(
-        self, username: str, token: Optional[str] = None
-    ) -> Tuple[bool, str]:
+    def _check_github_account(self, username: str, token: Optional[str] = None) -> Tuple[bool, str]:
         """
         Check GitHub account meets anti-Sybil requirements.
 
@@ -419,9 +414,7 @@ class AirdropV2:
             user_data = resp.json()
 
             # Check account age
-            created_at = datetime.fromisoformat(
-                user_data["created_at"].replace("Z", "+00:00")
-            )
+            created_at = datetime.fromisoformat(user_data["created_at"].replace("Z", "+00:00"))
             age_days = (datetime.now(timezone.utc) - created_at).days
 
             if age_days < MIN_GITHUB_AGE_DAYS:
@@ -440,6 +433,7 @@ class AirdropV2:
             total_stars = 0
             if "Link" in stars_resp.headers:
                 import re
+
                 link_header = stars_resp.headers["Link"]
                 match = re.search(r'page=(\d+)>; rel="last"', link_header)
                 if match:
@@ -462,9 +456,7 @@ class AirdropV2:
             logger.warning(f"GitHub check error for {username}: {e}")
             return False, f"Check error: {e}"
 
-    def _check_wallet(
-        self, address: str, chain: str
-    ) -> Tuple[bool, str]:
+    def _check_wallet(self, address: str, chain: str) -> Tuple[bool, str]:
         """
         Check wallet meets anti-Sybil requirements.
 
@@ -517,7 +509,7 @@ class AirdropV2:
             if balance < MIN_SOL_BALANCE_LAMPORTS:
                 return (
                     False,
-                    f"Insufficient SOL balance ({balance_sol:.4f} SOL, need {MIN_SOL_BALANCE_LAMPORTS/1e9})",
+                    f"Insufficient SOL balance ({balance_sol:.4f} SOL, need {MIN_SOL_BALANCE_LAMPORTS / 1e9})",
                 )
 
             self._cache_sybil_check(
@@ -565,7 +557,7 @@ class AirdropV2:
             if balance_wei < MIN_ETH_BALANCE_WEI:
                 return (
                     False,
-                    f"Insufficient ETH balance ({balance_eth:.6f} ETH, need {MIN_ETH_BALANCE_WEI/1e18})",
+                    f"Insufficient ETH balance ({balance_eth:.6f} ETH, need {MIN_ETH_BALANCE_WEI / 1e18})",
                 )
 
             self._cache_sybil_check(
@@ -580,9 +572,7 @@ class AirdropV2:
         except requests.RequestException as e:
             return False, f"Base RPC unavailable: {e}"
 
-    def _determine_tier(
-        self, github_username: str, token: Optional[str] = None
-    ) -> Optional[EligibilityTier]:
+    def _determine_tier(self, github_username: str, token: Optional[str] = None) -> Optional[EligibilityTier]:
         """
         Determine airdrop tier based on GitHub activity.
 
@@ -609,7 +599,7 @@ class AirdropV2:
             # Get contributions (PRs merged)
             # Use GitHub search API for contributions
             contrib_resp = requests.get(
-                f"https://api.github.com/search/commits",
+                "https://api.github.com/search/commits",
                 headers={
                     **headers,
                     "Accept": "application/vnd.github.cloak-preview",
@@ -636,6 +626,7 @@ class AirdropV2:
             total_stars = 0
             if "Link" in stars_resp.headers:
                 import re
+
                 link_header = stars_resp.headers["Link"]
                 match = re.search(r'page=(\d+)>; rel="last"', link_header)
                 if match:
@@ -657,9 +648,7 @@ class AirdropV2:
             logger.warning(f"Tier determination failed for {github_username}: {e}")
             return None
 
-    def _has_claimed(
-        self, github_username: str, wallet_address: str, chain: str
-    ) -> bool:
+    def _has_claimed(self, github_username: str, wallet_address: str, chain: str) -> bool:
         """Check if user already claimed airdrop."""
         conn = self._get_conn()
         cursor = conn.cursor()
@@ -762,11 +751,11 @@ class AirdropV2:
             tier_enum = getattr(EligibilityTier, tier.upper(), None)
             if not tier_enum:
                 return False, f"Invalid tier: {tier}", None
-            
+
             # Still check allocation
             if not self._has_allocation(chain_lower, tier_enum.reward_uwrtc):
                 return False, f"Airdrop allocation exhausted for {chain_lower}", None
-            
+
             result = EligibilityResult(
                 eligible=True,
                 tier=tier_enum.tier_id,
@@ -780,9 +769,7 @@ class AirdropV2:
             )
         else:
             # Verify eligibility
-            result = self.check_eligibility(
-                github_username, wallet_address, chain_lower, github_token, skip_antisybil
-            )
+            result = self.check_eligibility(github_username, wallet_address, chain_lower, github_token, skip_antisybil)
 
             if not result.eligible:
                 return False, result.reason, None
@@ -852,7 +839,7 @@ class AirdropV2:
 
             return True, "Claim created successfully", claim
 
-        except sqlite3.IntegrityError as e:
+        except sqlite3.IntegrityError:
             conn.rollback()
             return False, "Claim already exists for this wallet/github pair", None
         except Exception as e:
@@ -862,9 +849,7 @@ class AirdropV2:
         finally:
             self._close_conn(conn)
 
-    def finalize_claim(
-        self, claim_id: str, tx_signature: str
-    ) -> Tuple[bool, str]:
+    def finalize_claim(self, claim_id: str, tx_signature: str) -> Tuple[bool, str]:
         """
         Mark claim as completed with transaction signature.
 
@@ -934,9 +919,7 @@ class AirdropV2:
             return False, "Amount must be positive", None
 
         # Generate lock ID
-        lock_id = self._generate_id(
-            "bridge", from_address, to_address, from_chain, to_chain
-        )
+        lock_id = self._generate_id("bridge", from_address, to_address, from_chain, to_chain)
 
         # Create lock record
         lock = BridgeLock(
@@ -976,8 +959,7 @@ class AirdropV2:
             )
             conn.commit()
             logger.info(
-                f"Bridge lock created: {lock_id} - "
-                f"{amount_uwrtc / 1_000_000} wRTC from {from_chain} to {to_chain}"
+                f"Bridge lock created: {lock_id} - {amount_uwrtc / 1_000_000} wRTC from {from_chain} to {to_chain}"
             )
             return True, "Bridge lock created", lock
 
@@ -988,9 +970,7 @@ class AirdropV2:
         finally:
             self._close_conn(conn)
 
-    def confirm_bridge_lock(
-        self, lock_id: str, source_tx: str
-    ) -> Tuple[bool, str]:
+    def confirm_bridge_lock(self, lock_id: str, source_tx: str) -> Tuple[bool, str]:
         """
         Confirm bridge lock with source transaction.
 
@@ -1021,9 +1001,7 @@ class AirdropV2:
         self._close_conn(conn)
         return True, "Lock confirmed"
 
-    def release_bridge_lock(
-        self, lock_id: str, dest_tx: str
-    ) -> Tuple[bool, str]:
+    def release_bridge_lock(self, lock_id: str, dest_tx: str) -> Tuple[bool, str]:
         """
         Release bridge lock with destination transaction.
 
@@ -1062,9 +1040,7 @@ class AirdropV2:
         """Get claim by ID."""
         conn = self._get_conn()
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM airdrop_claims WHERE claim_id = ?", (claim_id,)
-        )
+        cursor.execute("SELECT * FROM airdrop_claims WHERE claim_id = ?", (claim_id,))
         row = cursor.fetchone()
         self._close_conn(conn)
 
@@ -1084,9 +1060,7 @@ class AirdropV2:
             status=row["status"],
         )
 
-    def get_claims_by_github(
-        self, github_username: str
-    ) -> List[ClaimRecord]:
+    def get_claims_by_github(self, github_username: str) -> List[ClaimRecord]:
         """Get all claims for a GitHub user."""
         conn = self._get_conn()
         cursor = conn.cursor()
@@ -1117,9 +1091,7 @@ class AirdropV2:
         """Get bridge lock by ID."""
         conn = self._get_conn()
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM bridge_locks WHERE lock_id = ?", (lock_id,)
-        )
+        cursor.execute("SELECT * FROM bridge_locks WHERE lock_id = ?", (lock_id,))
         row = cursor.fetchone()
         self._close_conn(conn)
 
@@ -1152,10 +1124,8 @@ class AirdropV2:
             row["chain"]: {
                 "total_wrtc": row["total_uwrtc"] / 1_000_000,
                 "claimed_wrtc": row["claimed_uwrtc"] / 1_000_000,
-                "remaining_wrtc": (row["total_uwrtc"] - row["claimed_uwrtc"])
-                / 1_000_000,
-                "percent_claimed": (row["claimed_uwrtc"] / row["total_uwrtc"])
-                * 100,
+                "remaining_wrtc": (row["total_uwrtc"] - row["claimed_uwrtc"]) / 1_000_000,
+                "percent_claimed": (row["claimed_uwrtc"] / row["total_uwrtc"]) * 100,
             }
             for row in rows
         }
@@ -1177,8 +1147,7 @@ class AirdropV2:
             """
         )
         by_tier = {
-            row["tier"]: {"count": row["count"], "total_wrtc": row["total"] / 1_000_000}
-            for row in cursor.fetchall()
+            row["tier"]: {"count": row["count"], "total_wrtc": row["total"] / 1_000_000} for row in cursor.fetchall()
         }
 
         # Claims by chain
@@ -1189,8 +1158,7 @@ class AirdropV2:
             """
         )
         by_chain = {
-            row["chain"]: {"count": row["count"], "total_wrtc": row["total"] / 1_000_000}
-            for row in cursor.fetchall()
+            row["chain"]: {"count": row["count"], "total_wrtc": row["total"] / 1_000_000} for row in cursor.fetchall()
         }
 
         # Bridge locks
@@ -1244,9 +1212,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         if not chain:
             return jsonify({"ok": False, "error": "missing_chain"}), 400
 
-        result = airdrop.check_eligibility(
-            github_username, wallet_address, chain, github_token, skip_antisybil=False
-        )
+        result = airdrop.check_eligibility(github_username, wallet_address, chain, github_token, skip_antisybil=False)
 
         return jsonify({"ok": result.eligible, **result.to_dict()})
 
@@ -1275,9 +1241,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
                 400,
             )
 
-        success, message, claim = airdrop.claim_airdrop(
-            github_username, wallet_address, chain, tier, github_token
-        )
+        success, message, claim = airdrop.claim_airdrop(github_username, wallet_address, chain, tier, github_token)
 
         if success:
             return jsonify({"ok": True, "message": message, "claim": claim.to_dict()})
@@ -1376,6 +1340,6 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
 
 # Import Flask dependencies if available
 try:
-    from flask import request, jsonify
+    from flask import jsonify, request
 except ImportError:
     pass  # Flask not available, routes won't be registered

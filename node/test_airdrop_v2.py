@@ -10,26 +10,22 @@ Tests cover:
 - Allocation tracking
 - Database persistence
 """
-import json
+
 import os
-import sqlite3
 import tempfile
 import time
 import unittest
-from datetime import datetime, timezone, timedelta
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 # Import airdrop module
 from airdrop_v2 import (
-    AirdropV2,
-    EligibilityTier,
-    EligibilityResult,
-    ClaimRecord,
-    BridgeLock,
-    Chain,
-    AIRDROP_SCHEMA,
-    TOTAL_SOLANA_ALLOCATION,
     TOTAL_BASE_ALLOCATION,
+    TOTAL_SOLANA_ALLOCATION,
+    AirdropV2,
+    BridgeLock,
+    ClaimRecord,
+    EligibilityResult,
+    EligibilityTier,
 )
 
 
@@ -66,9 +62,7 @@ class TestAirdropV2Database(unittest.TestCase):
         cursor = conn.cursor()
 
         # Check tables exist
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        )
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         tables = {row[0] for row in cursor.fetchall()}
 
         self.assertIn("airdrop_claims", tables)
@@ -120,9 +114,7 @@ class TestEligibilityChecks(unittest.TestCase):
         # Mock starred repos response
         mock_stars = Mock()
         mock_stars.status_code = 200
-        mock_stars.headers = {
-            "Link": '<https://api.github.com/user/starred?page=5>; rel="last"'
-        }
+        mock_stars.headers = {"Link": '<https://api.github.com/user/starred?page=5>; rel="last"'}
         mock_stars.json.return_value = []
 
         # Mock contributions response
@@ -396,7 +388,8 @@ class TestAllocationTracking(unittest.TestCase):
         # Check allocation updated
         updated = self.airdrop.get_allocation_status()
         self.assertEqual(
-            updated["base"]["claimed_wrtc"], initial_claimed + 50  # 50 wRTC for contributor
+            updated["base"]["claimed_wrtc"],
+            initial_claimed + 50,  # 50 wRTC for contributor
         )
 
     def test_allocation_exhaustion(self):
@@ -404,9 +397,7 @@ class TestAllocationTracking(unittest.TestCase):
         # Manually exhaust allocation
         conn = self.airdrop._get_conn()
         cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE airdrop_allocation SET claimed_uwrtc = total_uwrtc WHERE chain = 'base'"
-        )
+        cursor.execute("UPDATE airdrop_allocation SET claimed_uwrtc = total_uwrtc WHERE chain = 'base'")
         conn.commit()
         conn.close()
 

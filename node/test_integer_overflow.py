@@ -13,85 +13,84 @@ Actual (with bug): SQLite error → Node crash
 """
 
 import os
+import sqlite3
 import sys
 import tempfile
-import sqlite3
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from node.utxo_db import UtxoDB, compute_box_id, address_to_proposition
+from node.utxo_db import UtxoDB, address_to_proposition, compute_box_id
 
 
 def test_fee_overflow():
     """
     Test that extremely large fees are rejected.
-    
+
     Steps:
     1. Create a UTXO box with balance
     2. Attempt to spend it with fee_nrtc = 2^63 - 1
     3. Verify transaction is rejected (not crash)
     """
-    
-    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
-    
+
     try:
         # Initialize database
         db = UtxoDB(db_path)
         db.init_tables()
-        
+
         # Create a test UTXO
         conn = db._conn()
         test_box_id = compute_box_id(
             1000_000_000,  # 10 RTC
-            address_to_proposition('RTC_TEST'),
-            0, 'test_tx', 0
+            address_to_proposition("RTC_TEST"),
+            0,
+            "test_tx",
+            0,
         )
-        
+
         conn.execute(
             """INSERT INTO utxo_boxes
                (box_id, value_nrtc, proposition, owner_address,
                 creation_height, transaction_id, output_index,
                 created_at)
                VALUES (?,?,?,?,?,?,?,?)""",
-            (test_box_id, 1000_000_000, address_to_proposition('RTC_TEST'),
-             'RTC_TEST', 0, 'test_tx', 0, 1234567890)
+            (test_box_id, 1000_000_000, address_to_proposition("RTC_TEST"), "RTC_TEST", 0, "test_tx", 0, 1234567890),
         )
         conn.commit()
         conn.close()
-        
+
         # Attempt malicious transaction with overflow fee
         malicious_tx = {
-            'tx_type': 'transfer',
-            'inputs': [{'box_id': test_box_id, 'spending_proof': 'test'}],
-            'outputs': [
-                {'address': 'RTC_ATTACKER', 'value_nrtc': 1_000_000}
-            ],
-            'fee_nrtc': 2**63 - 1,  # 9,223,372,036,854,775,807
-            'timestamp': int(time.time())
+            "tx_type": "transfer",
+            "inputs": [{"box_id": test_box_id, "spending_proof": "test"}],
+            "outputs": [{"address": "RTC_ATTACKER", "value_nrtc": 1_000_000}],
+            "fee_nrtc": 2**63 - 1,  # 9,223,372,036,854,775,807
+            "timestamp": int(time.time()),
         }
-        
+
         print("\n=== Testing Fee Overflow ===")
         print(f"Fee: {malicious_tx['fee_nrtc']}")
-        
+
         try:
             result = db.apply_transaction(malicious_tx, block_height=1)
             print(f"Transaction result: {result}")
-            
+
             if result:
                 print("🔴 BUG: Overflow fee accepted!")
                 return False
             else:
                 print("✅ PASS: Transaction rejected safely")
                 return True
-                
+
         except sqlite3.IntegrityError as e:
             print(f"🔴 BUG: Database error (DoS): {e}")
             return False
         except Exception as e:
             print(f"🔴 BUG: Unexpected error (DoS): {e}")
             return False
-            
+
     finally:
         if os.path.exists(db_path):
             os.unlink(db_path)
@@ -101,62 +100,55 @@ def test_timestamp_overflow():
     """
     Test that extremely large timestamps are rejected.
     """
-    
-    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
-    
+
     try:
         db = UtxoDB(db_path)
         db.init_tables()
-        
+
         # Create test UTXO
         conn = db._conn()
-        test_box_id = compute_box_id(
-            1000_000_000,
-            address_to_proposition('RTC_TEST'),
-            0, 'test_tx', 0
-        )
-        
+        test_box_id = compute_box_id(1000_000_000, address_to_proposition("RTC_TEST"), 0, "test_tx", 0)
+
         conn.execute(
             """INSERT INTO utxo_boxes
                (box_id, value_nrtc, proposition, owner_address,
                 creation_height, transaction_id, output_index,
                 created_at)
                VALUES (?,?,?,?,?,?,?,?)""",
-            (test_box_id, 1000_000_000, address_to_proposition('RTC_TEST'),
-             'RTC_TEST', 0, 'test_tx', 0, 1234567890)
+            (test_box_id, 1000_000_000, address_to_proposition("RTC_TEST"), "RTC_TEST", 0, "test_tx", 0, 1234567890),
         )
         conn.commit()
         conn.close()
-        
+
         # Malicious transaction with overflow timestamp
         malicious_tx = {
-            'tx_type': 'transfer',
-            'inputs': [{'box_id': test_box_id, 'spending_proof': 'test'}],
-            'outputs': [
-                {'address': 'RTC_ATTACKER', 'value_nrtc': 500_000_000}
-            ],
-            'fee_nrtc': 0,
-            'timestamp': 10**20  # Extremely large
+            "tx_type": "transfer",
+            "inputs": [{"box_id": test_box_id, "spending_proof": "test"}],
+            "outputs": [{"address": "RTC_ATTACKER", "value_nrtc": 500_000_000}],
+            "fee_nrtc": 0,
+            "timestamp": 10**20,  # Extremely large
         }
-        
+
         print("\n=== Testing Timestamp Overflow ===")
         print(f"Timestamp: {malicious_tx['timestamp']}")
-        
+
         try:
             result = db.apply_transaction(malicious_tx, block_height=1)
-            
+
             if result:
                 print("🔴 BUG: Overflow timestamp accepted!")
                 return False
             else:
                 print("✅ PASS: Transaction rejected safely")
                 return True
-                
+
         except Exception as e:
             print(f"🔴 BUG: Error (DoS): {e}")
             return False
-            
+
     finally:
         if os.path.exists(db_path):
             os.unlink(db_path)
@@ -166,78 +158,71 @@ def test_negative_fee():
     """
     Test that negative fees are rejected.
     """
-    
-    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
-    
+
     try:
         db = UtxoDB(db_path)
         db.init_tables()
-        
+
         # Create test UTXO
         conn = db._conn()
-        test_box_id = compute_box_id(
-            1000_000_000,
-            address_to_proposition('RTC_TEST'),
-            0, 'test_tx', 0
-        )
-        
+        test_box_id = compute_box_id(1000_000_000, address_to_proposition("RTC_TEST"), 0, "test_tx", 0)
+
         conn.execute(
             """INSERT INTO utxo_boxes
                (box_id, value_nrtc, proposition, owner_address,
                 creation_height, transaction_id, output_index,
                 created_at)
                VALUES (?,?,?,?,?,?,?,?)""",
-            (test_box_id, 1000_000_000, address_to_proposition('RTC_TEST'),
-             'RTC_TEST', 0, 'test_tx', 0, 1234567890)
+            (test_box_id, 1000_000_000, address_to_proposition("RTC_TEST"), "RTC_TEST", 0, "test_tx", 0, 1234567890),
         )
         conn.commit()
         conn.close()
-        
+
         # Malicious transaction with negative fee
         malicious_tx = {
-            'tx_type': 'transfer',
-            'inputs': [{'box_id': test_box_id, 'spending_proof': 'test'}],
-            'outputs': [
-                {'address': 'RTC_ATTACKER', 'value_nrtc': 2_000_000_000}
-            ],
-            'fee_nrtc': -1_000_000_000,  # Negative fee = fund creation
-            'timestamp': int(time.time())
+            "tx_type": "transfer",
+            "inputs": [{"box_id": test_box_id, "spending_proof": "test"}],
+            "outputs": [{"address": "RTC_ATTACKER", "value_nrtc": 2_000_000_000}],
+            "fee_nrtc": -1_000_000_000,  # Negative fee = fund creation
+            "timestamp": int(time.time()),
         }
-        
+
         print("\n=== Testing Negative Fee ===")
         print(f"Fee: {malicious_tx['fee_nrtc']}")
-        
+
         try:
             result = db.apply_transaction(malicious_tx, block_height=1)
-            
+
             if result:
                 print("🔴 BUG: Negative fee accepted (fund creation)!")
                 return False
             else:
                 print("✅ PASS: Negative fee rejected")
                 return True
-                
+
         except Exception as e:
             print(f"🔴 BUG: Error: {e}")
             return False
-            
+
     finally:
         if os.path.exists(db_path):
             os.unlink(db_path)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import time
-    
+
     print("=" * 60)
     print("Testing Integer Overflow Protection")
     print("=" * 60)
-    
+
     result1 = test_fee_overflow()
     result2 = test_timestamp_overflow()
     result3 = test_negative_fee()
-    
+
     print("\n" + "=" * 60)
     if result1 and result2 and result3:
         print("✅ ALL TESTS PASSED")

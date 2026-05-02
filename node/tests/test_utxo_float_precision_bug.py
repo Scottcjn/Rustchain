@@ -24,14 +24,14 @@ def test_float_precision_loss():
 
     test_cases = [
         # (amount_rtc, expected_nrtc) — values known to trigger IEEE-754 precision loss
-        (0.1,     10_000_000),       # safe baseline
-        (0.3,     30_000_000),       # safe baseline
-        (0.000_000_03, 3),           # 3 nanoRTC  -> float gives 2
-        (0.000_000_06, 6),           # 6 nanoRTC  -> float gives 5
-        (0.000_000_12, 12),          # 12 nanoRTC -> float gives 11
-        (0.000_000_29, 29),          # 29 nanoRTC -> float gives 28
-        (0.000_000_58, 58),          # 58 nanoRTC -> float gives 57
-        (0.000_001_05, 105),         # 105 nanoRTC -> float gives 104
+        (0.1, 10_000_000),  # safe baseline
+        (0.3, 30_000_000),  # safe baseline
+        (0.000_000_03, 3),  # 3 nanoRTC  -> float gives 2
+        (0.000_000_06, 6),  # 6 nanoRTC  -> float gives 5
+        (0.000_000_12, 12),  # 12 nanoRTC -> float gives 11
+        (0.000_000_29, 29),  # 29 nanoRTC -> float gives 28
+        (0.000_000_58, 58),  # 58 nanoRTC -> float gives 57
+        (0.000_001_05, 105),  # 105 nanoRTC -> float gives 104
     ]
 
     failures = []
@@ -39,7 +39,9 @@ def test_float_precision_loss():
         actual = current_buggy_conversion(amount_rtc)
         diff = expected_nrtc - actual
         status = "PASS" if diff == 0 else "FAIL"
-        print(f"  amount_rtc={amount_rtc:>12} -> expected={expected_nrtc:>16} actual={actual:>16} diff={diff:>6} [{status}]")
+        print(
+            f"  amount_rtc={amount_rtc:>12} -> expected={expected_nrtc:>16} actual={actual:>16} diff={diff:>6} [{status}]"
+        )
         if diff != 0:
             failures.append((amount_rtc, expected_nrtc, actual, diff))
 
@@ -48,7 +50,7 @@ def test_float_precision_loss():
         print(f"❌ PRECISION LOSS CONFIRMED on {len(failures)} test cases.")
         for amount_rtc, expected, actual, diff in failures:
             print(f"   - {amount_rtc} RTC loses {diff} nanoRTC (expected {expected}, got {actual})")
-        assert False, f"Float precision bug reproduced on {len(failures)} cases."
+        raise AssertionError(f"Float precision bug reproduced on {len(failures)} cases.")
     else:
         print("✅ No precision loss detected.")
 

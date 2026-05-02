@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """RustChain Ergo Anchor Service Runner"""
+
 import os
 import sys
-import time
 
 from rustchain_ergo_anchor import AnchorService, ErgoClient
 
@@ -29,11 +29,11 @@ if not ERGO_API_KEY:
 service = AnchorService(
     db_path=DB_PATH,
     ergo_client=client,
-    interval_blocks=144  # Anchor every 144 RC blocks
+    interval_blocks=144,  # Anchor every 144 RC blocks
 )
 
 print(f"DB: {DB_PATH}")
-print(f"Anchor interval: 144 blocks")
+print("Anchor interval: 144 blocks")
 print("Starting service loop...")
 print("=" * 60)
 

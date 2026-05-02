@@ -22,7 +22,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-
 HERE = Path(__file__).resolve().parent
 PROFILE_DIR = HERE / "fingerprint_reference_profiles"
 
@@ -127,10 +126,7 @@ def compare_to_profile(results: Dict[str, Any], profile: Dict[str, Any]) -> Dict
     return {
         "profile": profile.get("name", profile.get("id", "unknown")),
         "ok": len(failed) == 0,
-        "failed": [
-            {"key": c.key, "expected": c.expected, "got": c.got, "reason": c.reason}
-            for c in failed
-        ],
+        "failed": [{"key": c.key, "expected": c.expected, "got": c.got, "reason": c.reason} for c in failed],
         "total_checks": len(checks),
         "failed_checks": len(failed),
     }
@@ -148,15 +144,23 @@ def _recommendations(results: Dict[str, Any]) -> List[str]:
         if key == "anti_emulation":
             recs.append(f"[anti_emulation] VM indicators detected ({reason}). Run on bare metal; disable hypervisor.")
         elif key == "clock_drift":
-            recs.append(f"[clock_drift] Timing looked synthetic ({reason}). Ensure no CPU pinning/turbo lock; try higher load.")
+            recs.append(
+                f"[clock_drift] Timing looked synthetic ({reason}). Ensure no CPU pinning/turbo lock; try higher load."
+            )
         elif key == "cache_timing":
-            recs.append(f"[cache_timing] Cache hierarchy not detected ({reason}). Ensure native execution; avoid emulators/containers.")
+            recs.append(
+                f"[cache_timing] Cache hierarchy not detected ({reason}). Ensure native execution; avoid emulators/containers."
+            )
         elif key == "simd_identity":
-            recs.append(f"[simd_identity] SIMD features missing ({reason}). Verify architecture detection and /proc/sysctl access.")
+            recs.append(
+                f"[simd_identity] SIMD features missing ({reason}). Verify architecture detection and /proc/sysctl access."
+            )
         elif key == "thermal_drift":
             recs.append(f"[thermal_drift] No thermal variance ({reason}). Try running longer; ensure CPU can heat up.")
         elif key == "instruction_jitter":
-            recs.append(f"[instruction_jitter] No jitter variance ({reason}). Ensure native execution; avoid deterministic runtimes.")
+            recs.append(
+                f"[instruction_jitter] No jitter variance ({reason}). Ensure native execution; avoid deterministic runtimes."
+            )
         else:
             recs.append(f"[{key}] failed ({reason}).")
 
@@ -253,4 +257,3 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

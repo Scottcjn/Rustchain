@@ -27,8 +27,7 @@ class TestBridgeFloatPrecision(unittest.TestCase):
         for amount_rtc in [1.0, 5.5, 10.0, 100.0, 0.5, 2.01]:
             result = int(Decimal(str(amount_rtc)) * BRIDGE_UNIT)
             expected = round(amount_rtc * BRIDGE_UNIT)
-            self.assertEqual(result, expected,
-                             f"Bridge amount {amount_rtc} RTC must convert exactly")
+            self.assertEqual(result, expected, f"Bridge amount {amount_rtc} RTC must convert exactly")
 
 
 if __name__ == "__main__":

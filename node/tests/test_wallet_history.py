@@ -14,7 +14,7 @@ import os
 import sys
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 NODE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 MODULE_PATH = os.path.join(NODE_DIR, "rustchain_v2_integrated_v2.2.1_rip200.py")
@@ -35,9 +35,7 @@ class TestWalletHistoryEndpoint(unittest.TestCase):
         if NODE_DIR not in sys.path:
             sys.path.insert(0, NODE_DIR)
 
-        spec = importlib.util.spec_from_file_location(
-            "rustchain_integrated_wallet_history_test", MODULE_PATH
-        )
+        spec = importlib.util.spec_from_file_location("rustchain_integrated_wallet_history_test", MODULE_PATH)
         cls.mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.mod)
         cls.client = cls.mod.app.test_client()
@@ -223,9 +221,48 @@ class TestWalletHistoryEndpoint(unittest.TestCase):
         with patch.object(self.mod.sqlite3, "connect") as mock_connect:
             mock_conn = mock_connect.return_value.__enter__.return_value
             mock_conn.execute.return_value.fetchall.return_value = [
-                (3, 1700003000, "alice", "bob", 300000, None, "confirmed", 1700003000, 1700089400, 1700089500, "tx3", None),
-                (2, 1700002000, "carol", "alice", 200000, None, "confirmed", 1700002000, 1700088400, 1700088500, "tx2", None),
-                (1, 1700001000, "alice", "dave", 100000, None, "confirmed", 1700001000, 1700087400, 1700087500, "tx1", None),
+                (
+                    3,
+                    1700003000,
+                    "alice",
+                    "bob",
+                    300000,
+                    None,
+                    "confirmed",
+                    1700003000,
+                    1700089400,
+                    1700089500,
+                    "tx3",
+                    None,
+                ),
+                (
+                    2,
+                    1700002000,
+                    "carol",
+                    "alice",
+                    200000,
+                    None,
+                    "confirmed",
+                    1700002000,
+                    1700088400,
+                    1700088500,
+                    "tx2",
+                    None,
+                ),
+                (
+                    1,
+                    1700001000,
+                    "alice",
+                    "dave",
+                    100000,
+                    None,
+                    "confirmed",
+                    1700001000,
+                    1700087400,
+                    1700087500,
+                    "tx1",
+                    None,
+                ),
             ]
 
             resp = self.client.get("/wallet/history?miner_id=alice")
@@ -471,12 +508,24 @@ class TestWalletHistoryEndpoint(unittest.TestCase):
             body = resp.get_json()
 
             required_fields = [
-                "tx_id", "from_addr", "to_addr", "amount",
-                "timestamp", "status", "direction", "counterparty"
+                "tx_id",
+                "from_addr",
+                "to_addr",
+                "amount",
+                "timestamp",
+                "status",
+                "direction",
+                "counterparty",
             ]
             optional_fields = [
-                "amount_i64", "amount_rtc", "memo", "confirmed_at",
-                "confirms_at", "raw_status", "status_reason", "confirmations"
+                "amount_i64",
+                "amount_rtc",
+                "memo",
+                "confirmed_at",
+                "confirms_at",
+                "raw_status",
+                "status_reason",
+                "confirmations",
             ]
 
             tx = body[0]
@@ -502,8 +551,7 @@ class TestWalletHistoryEndpoint(unittest.TestCase):
             with patch.object(self.mod.sqlite3, "connect") as mock_connect:
                 mock_conn = mock_connect.return_value.__enter__.return_value
                 mock_conn.execute.return_value.fetchall.return_value = [
-                    (1, 1700000000, "alice", "bob", 1000000, None, raw_status,
-                     1700000000, 1700086400, None, "tx", None)
+                    (1, 1700000000, "alice", "bob", 1000000, None, raw_status, 1700000000, 1700086400, None, "tx", None)
                 ]
 
                 resp = self.client.get("/wallet/history?miner_id=alice")
@@ -520,16 +568,40 @@ class TestWalletHistoryEndpoint(unittest.TestCase):
 
             # Test sent
             mock_conn.execute.return_value.fetchall.return_value = [
-                (1, 1700000000, "alice", "bob", 1000000, None, "confirmed",
-                 1700000000, 1700086400, 1700086500, "tx", None)
+                (
+                    1,
+                    1700000000,
+                    "alice",
+                    "bob",
+                    1000000,
+                    None,
+                    "confirmed",
+                    1700000000,
+                    1700086400,
+                    1700086500,
+                    "tx",
+                    None,
+                )
             ]
             resp = self.client.get("/wallet/history?miner_id=alice")
             self.assertIn(resp.get_json()[0]["direction"], valid_directions)
 
             # Test received
             mock_conn.execute.return_value.fetchall.return_value = [
-                (1, 1700000000, "bob", "alice", 1000000, None, "confirmed",
-                 1700000000, 1700086400, 1700086500, "tx", None)
+                (
+                    1,
+                    1700000000,
+                    "bob",
+                    "alice",
+                    1000000,
+                    None,
+                    "confirmed",
+                    1700000000,
+                    1700086400,
+                    1700086500,
+                    "tx",
+                    None,
+                )
             ]
             resp = self.client.get("/wallet/history?miner_id=alice")
             self.assertIn(resp.get_json()[0]["direction"], valid_directions)

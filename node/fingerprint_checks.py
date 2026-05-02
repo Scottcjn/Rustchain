@@ -27,15 +27,17 @@ from typing import Dict, List, Optional, Tuple
 # Import ROM fingerprint database if available
 try:
     from rom_fingerprint_db import (
-        identify_rom,
-        is_known_emulator_rom,
         compute_file_hash,
         detect_platform_roms,
         get_real_hardware_rom_signature,
+        identify_rom,
+        is_known_emulator_rom,
     )
+
     ROM_DB_AVAILABLE = True
 except ImportError:
     ROM_DB_AVAILABLE = False
+
 
 def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict]:
     """Check 1: Clock-Skew & Oscillator Drift"""
@@ -56,7 +58,7 @@ def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict]:
     stdev_ns = statistics.stdev(intervals)
     cv = stdev_ns / mean_ns if mean_ns > 0 else 0
 
-    drift_pairs = [intervals[i] - intervals[i-1] for i in range(1, len(intervals))]
+    drift_pairs = [intervals[i] - intervals[i - 1] for i in range(1, len(intervals))]
     drift_stdev = statistics.stdev(drift_pairs) if len(drift_pairs) > 1 else 0
 
     data = {
@@ -141,10 +143,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
 
     if not flags:
         try:
-            result = subprocess.run(
-                ["sysctl", "-a"],
-                capture_output=True, text=True, timeout=5
-            )
+            result = subprocess.run(["sysctl", "-a"], capture_output=True, text=True, timeout=5)
             for line in result.stdout.split("\n"):
                 if "feature" in line.lower() or "altivec" in line.lower():
                     flags.append(line.split(":")[-1].strip())
@@ -217,17 +216,18 @@ def check_thermal_drift(samples: int = 50) -> Tuple[bool, Dict]:
 
 def check_instruction_jitter(samples: int = 100) -> Tuple[bool, Dict]:
     """Check 5: Instruction Path Jitter"""
+
     def measure_int_ops(count: int = 10000) -> float:
         start = time.perf_counter_ns()
         x = 1
-        for i in range(count):
+        for _i in range(count):
             x = (x * 7 + 13) % 65537
         return time.perf_counter_ns() - start
 
     def measure_fp_ops(count: int = 10000) -> float:
         start = time.perf_counter_ns()
         x = 1.5
-        for i in range(count):
+        for _i in range(count):
             x = (x * 1.414 + 0.5) % 1000.0
         return time.perf_counter_ns() - start
 
@@ -520,30 +520,49 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
     # --- VM and cloud provider strings to match ---
     vm_strings = [
         # Traditional hypervisors
-        "vmware", "virtualbox", "kvm", "qemu", "xen",
-        "hyperv", "hyper-v", "parallels", "bhyve",
+        "vmware",
+        "virtualbox",
+        "kvm",
+        "qemu",
+        "xen",
+        "hyperv",
+        "hyper-v",
+        "parallels",
+        "bhyve",
         # AWS EC2 (Nitro and Xen instances)
-        "amazon", "amazon ec2", "ec2", "nitro",
+        "amazon",
+        "amazon ec2",
+        "ec2",
+        "nitro",
         # Google Cloud Platform
-        "google", "google compute engine", "gce",
+        "google",
+        "google compute engine",
+        "gce",
         # Microsoft Azure
-        "microsoft corporation", "azure",
+        "microsoft corporation",
+        "azure",
         # DigitalOcean
         "digitalocean",
         # Linode (now Akamai)
-        "linode", "akamai",
+        "linode",
+        "akamai",
         # Vultr
         "vultr",
         # Hetzner
         "hetzner",
         # Oracle Cloud
-        "oracle", "oraclecloud",
+        "oracle",
+        "oraclecloud",
         # OVH
-        "ovh", "ovhcloud",
+        "ovh",
+        "ovhcloud",
         # Alibaba Cloud
-        "alibaba", "alicloud",
+        "alibaba",
+        "alicloud",
         # Generic cloud/VM indicators
-        "bochs", "innotek", "seabios",
+        "bochs",
+        "innotek",
+        "seabios",
     ]
 
     for path in vm_paths:
@@ -557,10 +576,17 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
             pass
 
     # --- Environment variable checks ---
-    for key in ["KUBERNETES", "DOCKER", "VIRTUAL", "container",
-                "AWS_EXECUTION_ENV", "ECS_CONTAINER_METADATA_URI",
-                "GOOGLE_CLOUD_PROJECT", "AZURE_FUNCTIONS_ENVIRONMENT",
-                "WEBSITE_INSTANCE_ID"]:
+    for key in [
+        "KUBERNETES",
+        "DOCKER",
+        "VIRTUAL",
+        "container",
+        "AWS_EXECUTION_ENV",
+        "ECS_CONTAINER_METADATA_URI",
+        "GOOGLE_CLOUD_PROJECT",
+        "AZURE_FUNCTIONS_ENVIRONMENT",
+        "WEBSITE_INSTANCE_ID",
+    ]:
         if key in os.environ:
             vm_indicators.append("ENV:{}".format(key))
 
@@ -586,10 +612,8 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
     # AWS, GCP, Azure, DigitalOcean all use 169.254.169.254
     try:
         import urllib.request
-        req = urllib.request.Request(
-            "http://169.254.169.254/",
-            headers={"Metadata": "true"}
-        )
+
+        req = urllib.request.Request("http://169.254.169.254/", headers={"Metadata": "true"})
         resp = urllib.request.urlopen(req, timeout=1)
         cloud_body = resp.read(512).decode("utf-8", errors="replace").lower()
         cloud_provider = "unknown_cloud"
@@ -604,10 +628,11 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
     # --- AWS IMDSv2 check (token-based, t3/t4 Nitro instances) ---
     try:
         import urllib.request
+
         token_req = urllib.request.Request(
             "http://169.254.169.254/latest/api/token",
             headers={"X-aws-ec2-metadata-token-ttl-seconds": "5"},
-            method="PUT"
+            method="PUT",
         )
         token_resp = urllib.request.urlopen(token_req, timeout=1)
         if token_resp.status == 200:
@@ -617,9 +642,7 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
 
     # --- systemd-detect-virt (if available) ---
     try:
-        result = subprocess.run(
-            ["systemd-detect-virt"], capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run(["systemd-detect-virt"], capture_output=True, text=True, timeout=5)
         virt_type = result.stdout.strip().lower()
         if virt_type and virt_type != "none":
             vm_indicators.append("systemd_detect_virt:{}".format(virt_type))
@@ -637,7 +660,6 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
         data["fail_reason"] = "vm_detected"
 
     return valid, data
-
 
 
 def check_rom_fingerprint() -> Tuple[bool, Dict]:
@@ -671,11 +693,13 @@ def check_rom_fingerprint() -> Tuple[bool, Dict]:
                     if is_known_emulator_rom(rom_hash, "md5"):
                         emulator_detected = True
                         rom_info = identify_rom(rom_hash, "md5")
-                        detection_details.append({
-                            "platform": platform_name,
-                            "hash": rom_hash,
-                            "known_as": rom_info,
-                        })
+                        detection_details.append(
+                            {
+                                "platform": platform_name,
+                                "hash": rom_hash,
+                                "known_as": rom_info,
+                            }
+                        )
 
     # Check for 68K (Amiga, Atari ST, old Mac)
     elif "m68k" in arch or "68000" in arch:
@@ -685,20 +709,24 @@ def check_rom_fingerprint() -> Tuple[bool, Dict]:
                 if is_known_emulator_rom(rom_hash, "sha1"):
                     emulator_detected = True
                     rom_info = identify_rom(rom_hash, "sha1")
-                    detection_details.append({
-                        "platform": platform_name,
-                        "hash": rom_hash,
-                        "known_as": rom_info,
-                    })
+                    detection_details.append(
+                        {
+                            "platform": platform_name,
+                            "hash": rom_hash,
+                            "known_as": rom_info,
+                        }
+                    )
             elif "mac" in platform_name.lower():
                 if is_known_emulator_rom(rom_hash, "apple"):
                     emulator_detected = True
                     rom_info = identify_rom(rom_hash, "apple")
-                    detection_details.append({
-                        "platform": platform_name,
-                        "hash": rom_hash,
-                        "known_as": rom_info,
-                    })
+                    detection_details.append(
+                        {
+                            "platform": platform_name,
+                            "hash": rom_hash,
+                            "known_as": rom_info,
+                        }
+                    )
 
     # For modern hardware, report "N/A" but pass
     else:
@@ -903,6 +931,7 @@ def validate_all_checks(include_rom_check: bool = True) -> Tuple[bool, Dict]:
 
 if __name__ == "__main__":
     import json
+
     passed, results = validate_all_checks()
     print("\n\nDetailed Results:")
     print(json.dumps(results, indent=2, default=str))

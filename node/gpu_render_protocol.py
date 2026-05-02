@@ -21,13 +21,12 @@ Endpoints:
   GET  /render/escrow/<id>  — Get escrow status
 """
 
+import json
+import logging
+import os
 import sqlite3
 import time
 import uuid
-import json
-import os
-import logging
-from functools import wraps
 
 logger = logging.getLogger("gpu_render_protocol")
 
@@ -97,9 +96,7 @@ class GPURenderProtocol:
 
     def __init__(self, db_path=None):
         if db_path is None:
-            db_path = os.path.join(
-                os.path.dirname(__file__), "..", "data", "gpu_render.db"
-            )
+            db_path = os.path.join(os.path.dirname(__file__), "..", "data", "gpu_render.db")
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self.db_path = db_path
         self._init_db()
@@ -135,6 +132,7 @@ class GPURenderProtocol:
         # Generate hardware fingerprint from GPU specs
         fp_data = f"{miner_id}:{gpu_info['gpu_model']}:{gpu_info['vram_gb']}"
         import hashlib
+
         fingerprint = hashlib.sha256(fp_data.encode()).hexdigest()[:16]
 
         conn = self._get_conn()
@@ -222,8 +220,9 @@ class GPURenderProtocol:
     # Escrow operations
     # -------------------------------------------------------------------
 
-    def create_escrow(self, job_type: str, from_wallet: str, to_wallet: str,
-                      amount_rtc: float, metadata: dict = None) -> dict:
+    def create_escrow(
+        self, job_type: str, from_wallet: str, to_wallet: str, amount_rtc: float, metadata: dict = None
+    ) -> dict:
         """Lock RTC in escrow for a compute job."""
         valid_types = ("render", "tts", "stt", "llm")
         if job_type not in valid_types:
@@ -241,8 +240,7 @@ class GPURenderProtocol:
                    (job_id, job_type, from_wallet, to_wallet, amount_rtc,
                     status, created_at, metadata)
                    VALUES (?,?,?,?,?,'locked',?,?)""",
-                (job_id, job_type, from_wallet, to_wallet, amount_rtc,
-                 int(time.time()), json.dumps(metadata or {})),
+                (job_id, job_type, from_wallet, to_wallet, amount_rtc, int(time.time()), json.dumps(metadata or {})),
             )
             conn.commit()
             return {
@@ -260,9 +258,7 @@ class GPURenderProtocol:
         """Release escrowed RTC to the GPU provider on job completion."""
         conn = self._get_conn()
         try:
-            row = conn.execute(
-                "SELECT * FROM render_escrow WHERE job_id=?", (job_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM render_escrow WHERE job_id=?", (job_id,)).fetchone()
             if not row:
                 return {"error": "Job not found"}
             if row["status"] != "locked":
@@ -288,9 +284,7 @@ class GPURenderProtocol:
         """Refund escrowed RTC to the requester on job failure."""
         conn = self._get_conn()
         try:
-            row = conn.execute(
-                "SELECT * FROM render_escrow WHERE job_id=?", (job_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM render_escrow WHERE job_id=?", (job_id,)).fetchone()
             if not row:
                 return {"error": "Job not found"}
             if row["status"] != "locked":
@@ -316,9 +310,7 @@ class GPURenderProtocol:
         """Get escrow status for a job."""
         conn = self._get_conn()
         try:
-            row = conn.execute(
-                "SELECT * FROM render_escrow WHERE job_id=?", (job_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM render_escrow WHERE job_id=?", (job_id,)).fetchone()
             if not row:
                 return {"error": "Job not found"}
             result = dict(row)
@@ -335,9 +327,7 @@ class GPURenderProtocol:
         """Calculate fair market rates from active GPU node pricing."""
         conn = self._get_conn()
         try:
-            nodes = conn.execute(
-                "SELECT * FROM gpu_attestations WHERE status='active'"
-            ).fetchall()
+            nodes = conn.execute("SELECT * FROM gpu_attestations WHERE status='active'").fetchall()
 
             if not nodes:
                 return {"error": "No active GPU nodes", "rates": {}}
@@ -361,8 +351,11 @@ class GPURenderProtocol:
                         "min": round(min(prices), 6),
                         "max": round(max(prices), 6),
                         "providers": len(prices),
-                        "unit": "RTC/minute" if jt in ("render", "stt") else
-                                "RTC/1k_chars" if jt == "tts" else "RTC/1k_tokens",
+                        "unit": "RTC/minute"
+                        if jt in ("render", "stt")
+                        else "RTC/1k_chars"
+                        if jt == "tts"
+                        else "RTC/1k_tokens",
                     }
 
                     # Record to pricing history
@@ -371,8 +364,15 @@ class GPURenderProtocol:
                            (job_type, device_arch, avg_price, min_price,
                             max_price, sample_count, recorded_at)
                            VALUES (?,?,?,?,?,?,?)""",
-                        (jt, "all", rates[jt]["avg"], rates[jt]["min"],
-                         rates[jt]["max"], len(prices), int(time.time())),
+                        (
+                            jt,
+                            "all",
+                            rates[jt]["avg"],
+                            rates[jt]["min"],
+                            rates[jt]["max"],
+                            len(prices),
+                            int(time.time()),
+                        ),
                     )
 
             conn.commit()
@@ -389,18 +389,16 @@ class GPURenderProtocol:
         r = rates["rates"][job_type]
         # Flag if price is >3x the average or <0.1x the minimum
         if proposed_price > r["avg"] * 3:
-            return {"manipulated": True, "reason": "price_too_high",
-                    "proposed": proposed_price, "market_avg": r["avg"]}
+            return {"manipulated": True, "reason": "price_too_high", "proposed": proposed_price, "market_avg": r["avg"]}
         if proposed_price < r["min"] * 0.1:
-            return {"manipulated": True, "reason": "price_too_low",
-                    "proposed": proposed_price, "market_min": r["min"]}
-        return {"manipulated": False, "proposed": proposed_price,
-                "market_avg": r["avg"]}
+            return {"manipulated": True, "reason": "price_too_low", "proposed": proposed_price, "market_min": r["min"]}
+        return {"manipulated": False, "proposed": proposed_price, "market_avg": r["avg"]}
 
 
 # ---------------------------------------------------------------------------
 # Flask route registration (integrates with existing RustChain node)
 # ---------------------------------------------------------------------------
+
 
 def register_routes(app):
     """Register GPU Render Protocol routes with a Flask app."""
@@ -408,7 +406,8 @@ def register_routes(app):
 
     @app.route("/gpu/attest", methods=["POST"])
     def gpu_attest():
-        from flask import request, jsonify
+        from flask import jsonify, request
+
         data = request.get_json(force=True)
         miner_id = data.get("miner_id")
         if not miner_id:
@@ -419,7 +418,8 @@ def register_routes(app):
 
     @app.route("/gpu/nodes", methods=["GET"])
     def gpu_nodes():
-        from flask import request, jsonify
+        from flask import jsonify, request
+
         job_type = request.args.get("job_type")
         device_arch = request.args.get("device_arch")
         nodes = protocol.list_gpu_nodes(job_type, device_arch)
@@ -429,7 +429,8 @@ def register_routes(app):
     @app.route("/voice/escrow", methods=["POST"])
     @app.route("/llm/escrow", methods=["POST"])
     def create_escrow():
-        from flask import request, jsonify
+        from flask import jsonify, request
+
         data = request.get_json(force=True)
         # Infer job_type from path
         path = request.path
@@ -454,7 +455,8 @@ def register_routes(app):
     @app.route("/voice/release", methods=["POST"])
     @app.route("/llm/release", methods=["POST"])
     def release_escrow():
-        from flask import request, jsonify
+        from flask import jsonify, request
+
         data = request.get_json(force=True)
         result = protocol.release_escrow(data.get("job_id", ""))
         status_code = 200 if "error" not in result else 400
@@ -462,7 +464,8 @@ def register_routes(app):
 
     @app.route("/render/refund", methods=["POST"])
     def refund_escrow():
-        from flask import request, jsonify
+        from flask import jsonify, request
+
         data = request.get_json(force=True)
         result = protocol.refund_escrow(data.get("job_id", ""))
         status_code = 200 if "error" not in result else 400
@@ -471,20 +474,23 @@ def register_routes(app):
     @app.route("/render/escrow/<job_id>", methods=["GET"])
     def get_escrow(job_id):
         from flask import jsonify
+
         result = protocol.get_escrow(job_id)
         status_code = 200 if "error" not in result else 404
         return jsonify(result), status_code
 
     @app.route("/render/pricing", methods=["GET"])
     def get_pricing():
-        from flask import request, jsonify
+        from flask import jsonify, request
+
         job_type = request.args.get("job_type")
         result = protocol.get_fair_market_rates(job_type)
         return jsonify(result)
 
     @app.route("/render/pricing/check", methods=["POST"])
     def check_pricing():
-        from flask import request, jsonify
+        from flask import jsonify, request
+
         data = request.get_json(force=True)
         result = protocol.detect_price_manipulation(
             data.get("job_type", "render"),

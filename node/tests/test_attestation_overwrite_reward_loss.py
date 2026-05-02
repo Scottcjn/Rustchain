@@ -22,14 +22,14 @@ Fix:
 """
 
 import os
-import sys
 import sqlite3
-import unittest
+import sys
 import tempfile
 import time
+import unittest
 
 # Add node directory to path
-NODE_DIR = os.path.join(os.path.dirname(__file__), '..', 'node')
+NODE_DIR = os.path.join(os.path.dirname(__file__), "..", "node")
 sys.path.insert(0, NODE_DIR)
 
 
@@ -38,7 +38,7 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
     and that the fix prevents it."""
 
     def setUp(self):
-        self.db_fd, self.db_path = tempfile.mkstemp(suffix='.db')
+        self.db_fd, self.db_path = tempfile.mkstemp(suffix=".db")
         self._init_db()
 
     def tearDown(self):
@@ -96,30 +96,39 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
     # Helpers that mirror the node's record_attestation_success and enroll
     # ------------------------------------------------------------------
 
-    def _record_attestation_old(self, miner: str, device_arch: str = "modern",
-                                device_family: str = "x86", fingerprint_passed: bool = True):
+    def _record_attestation_old(
+        self, miner: str, device_arch: str = "modern", device_family: str = "x86", fingerprint_passed: bool = True
+    ):
         """OLD behaviour: INSERT OR REPLACE — vulnerable to overwrite."""
         now = int(time.time())
         new_fp = 1 if fingerprint_passed else 0
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO miner_attest_recent
                 (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, source_ip)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (miner, now, device_family, device_arch, 0.0, new_fp, "127.0.0.1"))
-            conn.execute("""
+            """,
+                (miner, now, device_family, device_arch, 0.0, new_fp, "127.0.0.1"),
+            )
+            conn.execute(
+                """
                 INSERT INTO miner_attest_history (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (miner, now, device_family, device_arch, 0.0, new_fp))
+            """,
+                (miner, now, device_family, device_arch, 0.0, new_fp),
+            )
             conn.commit()
 
-    def _record_attestation_fixed(self, miner: str, device_arch: str = "modern",
-                                  device_family: str = "x86", fingerprint_passed: bool = True):
+    def _record_attestation_fixed(
+        self, miner: str, device_arch: str = "modern", device_family: str = "x86", fingerprint_passed: bool = True
+    ):
         """FIXED behaviour: ON CONFLICT DO UPDATE with MAX(fingerprint_passed)."""
         now = int(time.time())
         new_fp = 1 if fingerprint_passed else 0
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, source_ip)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(miner) DO UPDATE SET
@@ -128,11 +137,16 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
                     device_arch = excluded.device_arch,
                     source_ip = excluded.source_ip,
                     fingerprint_passed = MAX(miner_attest_recent.fingerprint_passed, excluded.fingerprint_passed)
-            """, (miner, now, device_family, device_arch, 0.0, new_fp, "127.0.0.1"))
-            conn.execute("""
+            """,
+                (miner, now, device_family, device_arch, 0.0, new_fp, "127.0.0.1"),
+            )
+            conn.execute(
+                """
                 INSERT INTO miner_attest_history (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (miner, now, device_family, device_arch, 0.0, new_fp))
+            """,
+                (miner, now, device_family, device_arch, 0.0, new_fp),
+            )
             conn.commit()
 
     def _enroll_miner_replace(self, epoch: int, miner_pk: str, weight: float = 1.0):
@@ -141,7 +155,7 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
             conn.execute("INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)", (miner_pk,))
             conn.execute(
                 "INSERT OR REPLACE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
-                (epoch, miner_pk, weight)
+                (epoch, miner_pk, weight),
             )
             conn.commit()
 
@@ -151,7 +165,7 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
             conn.execute("INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)", (miner_pk,))
             conn.execute(
                 "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
-                (epoch, miner_pk, weight)
+                (epoch, miner_pk, weight),
             )
             conn.commit()
 
@@ -173,9 +187,12 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
         self._record_attestation_old(miner, fingerprint_passed=False)
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute("SELECT fingerprint_passed FROM miner_attest_recent WHERE miner=?", (miner,)).fetchone()
-            self.assertEqual(row[0], 0,
+            self.assertEqual(
+                row[0],
+                0,
                 "BUG: fingerprint_passed was downgraded from 1 to 0 by INSERT OR REPLACE. "
-                "Epoch settlement will assign ZERO weight to this miner.")
+                "Epoch settlement will assign ZERO weight to this miner.",
+            )
 
     def test_old_behaviour_epoch_enroll_weight_downgrade(self):
         """With INSERT OR REPLACE on epoch_enroll, a later low-weight attestation overwrites prior high weight."""
@@ -185,15 +202,20 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
         # First enrollment: high weight (fingerprint passed)
         self._enroll_miner_replace(epoch, miner, weight=2.5)
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute("SELECT weight FROM epoch_enroll WHERE epoch=? AND miner_pk=?", (epoch, miner)).fetchone()
+            row = conn.execute(
+                "SELECT weight FROM epoch_enroll WHERE epoch=? AND miner_pk=?", (epoch, miner)
+            ).fetchone()
             self.assertEqual(row[0], 2.5)
 
         # Second enrollment: near-zero weight (fingerprint failed)
         self._enroll_miner_replace(epoch, miner, weight=0.000000001)
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute("SELECT weight FROM epoch_enroll WHERE epoch=? AND miner_pk=?", (epoch, miner)).fetchone()
-            self.assertAlmostEqual(row[0], 0.000000001,
-                msg="BUG: epoch_enroll weight was downgraded from 2.5 to ~0 by INSERT OR REPLACE.")
+            row = conn.execute(
+                "SELECT weight FROM epoch_enroll WHERE epoch=? AND miner_pk=?", (epoch, miner)
+            ).fetchone()
+            self.assertAlmostEqual(
+                row[0], 0.000000001, msg="BUG: epoch_enroll weight was downgraded from 2.5 to ~0 by INSERT OR REPLACE."
+            )
 
     # ------------------------------------------------------------------
     # Tests — verify the fix
@@ -210,8 +232,9 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
 
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute("SELECT fingerprint_passed FROM miner_attest_recent WHERE miner=?", (miner,)).fetchone()
-            self.assertEqual(row[0], 1,
-                "FIX: fingerprint_passed=1 should be preserved despite later failed attestation.")
+            self.assertEqual(
+                row[0], 1, "FIX: fingerprint_passed=1 should be preserved despite later failed attestation."
+            )
 
     def test_fixed_behaviour_fp_upgrade_allowed(self):
         """If first attestation fails FP but second passes, it should upgrade to 1."""
@@ -222,8 +245,9 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
 
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute("SELECT fingerprint_passed FROM miner_attest_recent WHERE miner=?", (miner,)).fetchone()
-            self.assertEqual(row[0], 1,
-                "FIX: fingerprint_passed should upgrade from 0 to 1 on successful re-attestation.")
+            self.assertEqual(
+                row[0], 1, "FIX: fingerprint_passed should upgrade from 0 to 1 on successful re-attestation."
+            )
 
     def test_fixed_behaviour_epoch_enroll_preserved(self):
         """With INSERT OR IGNORE, prior epoch enrollment is preserved."""
@@ -236,9 +260,12 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
         self._enroll_miner_ignore(epoch, miner, weight=0.000000001)
 
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute("SELECT weight FROM epoch_enroll WHERE epoch=? AND miner_pk=?", (epoch, miner)).fetchone()
-            self.assertEqual(row[0], 2.5,
-                "FIX: epoch_enroll weight=2.5 should be preserved; later INSERT OR IGNORE is a no-op.")
+            row = conn.execute(
+                "SELECT weight FROM epoch_enroll WHERE epoch=? AND miner_pk=?", (epoch, miner)
+            ).fetchone()
+            self.assertEqual(
+                row[0], 2.5, "FIX: epoch_enroll weight=2.5 should be preserved; later INSERT OR IGNORE is a no-op."
+            )
 
     def test_fixed_behaviour_new_epoch_allows_enroll(self):
         """INSERT OR IGNORE should still allow enrollment in a NEW epoch."""
@@ -276,17 +303,16 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
 
         # Simulate settlement: read miner_attest_recent for fingerprint status
         with sqlite3.connect(self.db_path) as conn:
-            fp = conn.execute(
-                "SELECT fingerprint_passed FROM miner_attest_recent WHERE miner=?", (miner,)
-            ).fetchone()[0]
+            fp = conn.execute("SELECT fingerprint_passed FROM miner_attest_recent WHERE miner=?", (miner,)).fetchone()[
+                0
+            ]
             weight = conn.execute(
                 "SELECT weight FROM epoch_enroll WHERE epoch=? AND miner_pk=?", (epoch, miner)
             ).fetchone()[0]
 
             # With old behaviour, both are degraded
             self.assertEqual(fp, 0, "fingerprint_passed should be 0 (downgraded)")
-            self.assertAlmostEqual(weight, 0.000000001,
-                msg="weight should be ~0 (downgraded)")
+            self.assertAlmostEqual(weight, 0.000000001, msg="weight should be ~0 (downgraded)")
 
     def test_end_to_end_fixed_behaviour_reward_preserved(self):
         """Full scenario with fix: miner's reward eligibility is preserved despite later failed attestation."""
@@ -304,9 +330,9 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
         self._enroll_miner_ignore(epoch, miner, weight=0.000000001)
 
         with sqlite3.connect(self.db_path) as conn:
-            fp = conn.execute(
-                "SELECT fingerprint_passed FROM miner_attest_recent WHERE miner=?", (miner,)
-            ).fetchone()[0]
+            fp = conn.execute("SELECT fingerprint_passed FROM miner_attest_recent WHERE miner=?", (miner,)).fetchone()[
+                0
+            ]
             weight = conn.execute(
                 "SELECT weight FROM epoch_enroll WHERE epoch=? AND miner_pk=?", (epoch, miner)
             ).fetchone()[0]
@@ -325,7 +351,6 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
         /epoch/enroll with a victim's pubkey and overwrite their weight."""
         epoch = 300
         victim = "n64-legit-miner"
-        attacker = "external-actor"
 
         # Victim auto-enrolls with high weight (fingerprint passed)
         self._enroll_miner_replace(epoch, victim, weight=2.5)
@@ -342,8 +367,11 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
             row = conn.execute(
                 "SELECT weight FROM epoch_enroll WHERE epoch=? AND miner_pk=?", (epoch, victim)
             ).fetchone()
-            self.assertAlmostEqual(row[0], 0.000000001,
-                msg="BUG: external actor downgraded victim's weight from 2.5 to ~0 via INSERT OR REPLACE")
+            self.assertAlmostEqual(
+                row[0],
+                0.000000001,
+                msg="BUG: external actor downgraded victim's weight from 2.5 to ~0 via INSERT OR REPLACE",
+            )
 
     def test_external_enroll_downgrade_fixed(self):
         """With INSERT OR IGNORE, an external /epoch/enroll call is a no-op
@@ -360,8 +388,9 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
             row = conn.execute(
                 "SELECT weight FROM epoch_enroll WHERE epoch=? AND miner_pk=?", (epoch, victim)
             ).fetchone()
-            self.assertEqual(row[0], 2.5,
-                "FIX: victim's weight=2.5 should be preserved; external INSERT OR IGNORE is a no-op")
+            self.assertEqual(
+                row[0], 2.5, "FIX: victim's weight=2.5 should be preserved; external INSERT OR IGNORE is a no-op"
+            )
 
     def test_first_enroll_wins_fixed(self):
         """With INSERT OR IGNORE, the FIRST enrollment wins regardless of source.
@@ -381,11 +410,14 @@ class TestAttestationOverwriteRewardLoss(unittest.TestCase):
                 "SELECT weight FROM epoch_enroll WHERE epoch=? AND miner_pk=?", (epoch, victim)
             ).fetchone()
             # First enrollment wins — this is the expected behavior with INSERT OR IGNORE
-            self.assertAlmostEqual(row[0], 0.000000001,
+            self.assertAlmostEqual(
+                row[0],
+                0.000000001,
                 "FIX: first enrollment wins; victim's later enroll is a no-op. "
                 "This is acceptable because the attacker would need the victim's pubkey "
-                "and would be sacrificing their own rewards.")
+                "and would be sacrificing their own rewards.",
+            )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -13,26 +13,21 @@ Phase 6 Implementation:
 Run this script ONCE to migrate from testnet to mainnet.
 """
 
-import os
-import sys
 import json
-import sqlite3
-import shutil
-import time
 import logging
-import hashlib
+import os
+import shutil
+import sqlite3
+import sys
+import time
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict
 
 # Import mainnet modules
-from rustchain_crypto import blake2b256_hex, canonical_json, generate_wallet_keypair
-from rustchain_genesis_premine import PremineManager, TOTAL_PREMINE_RTC, FOUNDER_ALLOCATIONS
-from rustchain_tx_handler import TransactionPool
+from rustchain_crypto import blake2b256_hex, canonical_json
+from rustchain_genesis_premine import FOUNDER_ALLOCATIONS, TOTAL_PREMINE_RTC, PremineManager
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [MIGRATE] %(levelname)s: %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [MIGRATE] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -58,16 +53,14 @@ RESET_BALANCES = True  # Reset to premine only
 # MIGRATION STEPS
 # =============================================================================
 
+
 class RustChainMigration:
     """
     Handles testnet -> mainnet migration.
     """
 
     def __init__(
-        self,
-        testnet_db: str = TESTNET_DB_PATH,
-        mainnet_db: str = MAINNET_DB_PATH,
-        backup_dir: str = BACKUP_DIR
+        self, testnet_db: str = TESTNET_DB_PATH, mainnet_db: str = MAINNET_DB_PATH, backup_dir: str = BACKUP_DIR
     ):
         self.testnet_db = testnet_db
         self.mainnet_db = mainnet_db
@@ -77,11 +70,7 @@ class RustChainMigration:
 
     def log(self, message: str, level: str = "INFO"):
         """Log migration step"""
-        entry = {
-            "timestamp": datetime.now().isoformat(),
-            "level": level,
-            "message": message
-        }
+        entry = {"timestamp": datetime.now().isoformat(), "level": level, "message": message}
         self.migration_log.append(entry)
 
         if level == "ERROR":
@@ -322,18 +311,24 @@ class RustChainMigration:
             cursor.execute("CREATE INDEX idx_blocks_hash ON blocks(block_hash)")
 
             # Insert metadata
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO chain_metadata (key, value, updated_at) VALUES
                 ('version', ?, ?),
                 ('genesis_timestamp', ?, ?),
                 ('network', 'mainnet', ?),
                 ('migration_date', ?, ?)
-            """, (
-                MIGRATION_VERSION, int(time.time()),
-                str(GENESIS_TIMESTAMP), int(time.time()),
-                int(time.time()),
-                datetime.now().isoformat(), int(time.time())
-            ))
+            """,
+                (
+                    MIGRATION_VERSION,
+                    int(time.time()),
+                    str(GENESIS_TIMESTAMP),
+                    int(time.time()),
+                    int(time.time()),
+                    datetime.now().isoformat(),
+                    int(time.time()),
+                ),
+            )
 
             conn.commit()
 
@@ -363,11 +358,14 @@ class RustChainMigration:
                 cursor = mainnet_conn.cursor()
 
                 for att in attestations:
-                    cursor.execute("""
+                    cursor.execute(
+                        """
                         INSERT INTO miner_attest_recent
                         (miner, device_arch, device_family, ts_ok)
                         VALUES (?, ?, ?, ?)
-                    """, (att["miner"], att["device_arch"], att["device_family"], att["ts_ok"]))
+                    """,
+                        (att["miner"], att["device_arch"], att["device_family"], att["ts_ok"]),
+                    )
 
                 mainnet_conn.commit()
 
@@ -386,7 +384,7 @@ class RustChainMigration:
         self.log(f"Total premine: {TOTAL_PREMINE_RTC:,} RTC")
         self.log(f"Allocations created: {len(result['allocations'])}")
 
-        for alloc in result['allocations']:
+        for alloc in result["allocations"]:
             self.log(f"  {alloc['name']}: {alloc['amount_rtc']:,} RTC -> {alloc['wallet'][:20]}...")
 
         return result
@@ -408,49 +406,53 @@ class RustChainMigration:
             "producer_sig": "0" * 128,
             "tx_count": 0,
             "attestation_count": 0,
-            "body_json": json.dumps({
-                "transactions": [],
-                "attestations": [],
-                "premine": {
-                    "total_rtc": TOTAL_PREMINE_RTC,
-                    "allocations": list(FOUNDER_ALLOCATIONS.keys())
+            "body_json": json.dumps(
+                {
+                    "transactions": [],
+                    "attestations": [],
+                    "premine": {"total_rtc": TOTAL_PREMINE_RTC, "allocations": list(FOUNDER_ALLOCATIONS.keys())},
                 }
-            })
+            ),
         }
 
         # Compute genesis hash
-        genesis_data = canonical_json({
-            "height": genesis["height"],
-            "prev_hash": genesis["prev_hash"],
-            "timestamp": genesis["timestamp"],
-            "merkle_root": genesis["merkle_root"],
-            "producer": genesis["producer"]
-        })
+        genesis_data = canonical_json(
+            {
+                "height": genesis["height"],
+                "prev_hash": genesis["prev_hash"],
+                "timestamp": genesis["timestamp"],
+                "merkle_root": genesis["merkle_root"],
+                "producer": genesis["producer"],
+            }
+        )
         genesis["block_hash"] = blake2b256_hex(genesis_data)
 
         with sqlite3.connect(self.mainnet_db) as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO blocks
                 (height, block_hash, prev_hash, timestamp, merkle_root, state_root,
                  attestations_hash, producer, producer_sig, tx_count, attestation_count,
                  body_json, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                genesis["height"],
-                genesis["block_hash"],
-                genesis["prev_hash"],
-                genesis["timestamp"],
-                genesis["merkle_root"],
-                genesis["state_root"],
-                genesis["attestations_hash"],
-                genesis["producer"],
-                genesis["producer_sig"],
-                genesis["tx_count"],
-                genesis["attestation_count"],
-                genesis["body_json"],
-                int(time.time())
-            ))
+            """,
+                (
+                    genesis["height"],
+                    genesis["block_hash"],
+                    genesis["prev_hash"],
+                    genesis["timestamp"],
+                    genesis["merkle_root"],
+                    genesis["state_root"],
+                    genesis["attestations_hash"],
+                    genesis["producer"],
+                    genesis["producer_sig"],
+                    genesis["tx_count"],
+                    genesis["attestation_count"],
+                    genesis["body_json"],
+                    int(time.time()),
+                ),
+            )
             conn.commit()
 
         self.log(f"Genesis block created: {genesis['block_hash'][:16]}...")
@@ -530,7 +532,7 @@ class RustChainMigration:
             "backup_path": None,
             "genesis_hash": None,
             "premine": None,
-            "errors": []
+            "errors": [],
         }
 
         try:
@@ -574,7 +576,7 @@ class RustChainMigration:
 
         # Save migration log
         log_path = os.path.join(self.backup_dir, f"migration_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
-        with open(log_path, 'w') as f:
+        with open(log_path, "w") as f:
             json.dump(result, f, indent=2)
         self.log(f"Migration log saved: {log_path}")
 
@@ -584,6 +586,7 @@ class RustChainMigration:
 # =============================================================================
 # CLI
 # =============================================================================
+
 
 def main():
     """CLI entry point"""
@@ -606,11 +609,7 @@ def main():
         print(f"Loaded {len(wallet_addresses)} wallet addresses")
 
     # Create migration instance
-    migration = RustChainMigration(
-        testnet_db=args.testnet_db,
-        mainnet_db=args.mainnet_db,
-        backup_dir=args.backup_dir
-    )
+    migration = RustChainMigration(testnet_db=args.testnet_db, mainnet_db=args.mainnet_db, backup_dir=args.backup_dir)
 
     if args.dry_run:
         print("DRY RUN - Validation only")
@@ -628,19 +627,19 @@ def main():
     print(f"Genesis Hash: {result.get('genesis_hash', 'N/A')}")
     print(f"Backup: {result.get('backup_path', 'N/A')}")
 
-    if result.get('premine', {}).get('generated_wallets'):
+    if result.get("premine", {}).get("generated_wallets"):
         print("\nGENERATED WALLETS (SAVE THESE SECURELY!):")
-        for alloc_id, wallet in result['premine']['generated_wallets'].items():
+        for alloc_id, wallet in result["premine"]["generated_wallets"].items():
             print(f"\n{alloc_id}:")
             print(f"  Address: {wallet['address']}")
             print(f"  Private Key: {wallet['private_key']}")
 
-    if result.get('errors'):
+    if result.get("errors"):
         print(f"\nErrors: {len(result['errors'])}")
-        for err in result['errors']:
+        for err in result["errors"]:
             print(f"  - {err}")
 
-    sys.exit(0 if result['success'] else 1)
+    sys.exit(0 if result["success"] else 1)
 
 
 if __name__ == "__main__":

@@ -20,8 +20,8 @@ Bonus tiers:
 Replay prevention: one proof per miner per epoch.
 """
 
-import time
 import sqlite3
+import time
 from typing import Tuple
 
 # Warthog bonus tier constants — intentionally modest.
@@ -65,9 +65,7 @@ def init_warthog_tables(conn):
 
     # Safely add warthog_bonus column to miner_attest_recent
     try:
-        conn.execute(
-            "ALTER TABLE miner_attest_recent ADD COLUMN warthog_bonus REAL DEFAULT 1.0"
-        )
+        conn.execute("ALTER TABLE miner_attest_recent ADD COLUMN warthog_bonus REAL DEFAULT 1.0")
     except Exception:
         pass  # Column already exists
 
@@ -173,26 +171,29 @@ def record_warthog_proof(conn, miner_id, epoch, proof, verified, bonus_tier, rea
     pool = proof.get("pool") or {}
 
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT OR REPLACE INTO warthog_mining_proofs
             (miner, epoch, proof_type, wart_address, wart_node_height,
              wart_balance, pool_url, pool_hashrate, bonus_tier,
              verified, verified_reason, submitted_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            miner_id,
-            epoch,
-            proof.get("proof_type", "none"),
-            proof.get("wart_address", ""),
-            node.get("height"),
-            proof.get("balance"),
-            pool.get("url"),
-            pool.get("hashrate"),
-            bonus_tier,
-            1 if verified else 0,
-            reason,
-            int(time.time()),
-        ))
+        """,
+            (
+                miner_id,
+                epoch,
+                proof.get("proof_type", "none"),
+                proof.get("wart_address", ""),
+                node.get("height"),
+                proof.get("balance"),
+                pool.get("url"),
+                pool.get("hashrate"),
+                bonus_tier,
+                1 if verified else 0,
+                reason,
+                int(time.time()),
+            ),
+        )
         conn.commit()
     except Exception as e:
         print(f"[WARTHOG] Error recording proof: {e}")
@@ -210,10 +211,7 @@ def get_warthog_bonus(conn, miner_id):
         Float bonus multiplier (1.0 if no Warthog)
     """
     try:
-        row = conn.execute(
-            "SELECT warthog_bonus FROM miner_attest_recent WHERE miner = ?",
-            (miner_id,)
-        ).fetchone()
+        row = conn.execute("SELECT warthog_bonus FROM miner_attest_recent WHERE miner = ?", (miner_id,)).fetchone()
         if row and row[0] and row[0] > 1.0:
             return row[0]
     except Exception:
@@ -234,54 +232,68 @@ if __name__ == "__main__":
     assert tier == 1.0
 
     # Test 2: Valid own node (modern machine with GPU running Warthog full node)
-    ok, tier, reason = verify_warthog_proof({
-        "enabled": True,
-        "wart_address": "wart1qtest123456789",
-        "proof_type": "own_node",
-        "node": {"height": 500000, "synced": True, "hash": "abc123"},
-        "balance": "42.5",
-        "collected_at": int(time.time()),
-    }, "test-miner")
+    ok, tier, reason = verify_warthog_proof(
+        {
+            "enabled": True,
+            "wart_address": "wart1qtest123456789",
+            "proof_type": "own_node",
+            "node": {"height": 500000, "synced": True, "hash": "abc123"},
+            "balance": "42.5",
+            "collected_at": int(time.time()),
+        },
+        "test-miner",
+    )
     print(f"[2] Own node:     ok={ok}, tier={tier}, reason={reason}")
     assert tier == 1.15
 
     # Test 3: Node but no balance (new miner, hasn't earned yet — downgrade to pool tier)
-    ok, tier, reason = verify_warthog_proof({
-        "enabled": True,
-        "wart_address": "wart1qtest123456789",
-        "proof_type": "own_node",
-        "node": {"height": 500000, "synced": True},
-        "balance": "0",
-        "collected_at": int(time.time()),
-    }, "test-miner")
+    ok, tier, reason = verify_warthog_proof(
+        {
+            "enabled": True,
+            "wart_address": "wart1qtest123456789",
+            "proof_type": "own_node",
+            "node": {"height": 500000, "synced": True},
+            "balance": "0",
+            "collected_at": int(time.time()),
+        },
+        "test-miner",
+    )
     print(f"[3] No balance:   ok={ok}, tier={tier}, reason={reason}")
     assert tier == 1.1  # Downgraded to pool
 
     # Test 4: Pool mining
-    ok, tier, reason = verify_warthog_proof({
-        "enabled": True,
-        "wart_address": "wart1qtest123456789",
-        "proof_type": "pool",
-        "pool": {"url": "https://acc-pool.pw", "hashrate": 150.5, "shares": 42},
-        "collected_at": int(time.time()),
-    }, "test-miner")
+    ok, tier, reason = verify_warthog_proof(
+        {
+            "enabled": True,
+            "wart_address": "wart1qtest123456789",
+            "proof_type": "pool",
+            "pool": {"url": "https://acc-pool.pw", "hashrate": 150.5, "shares": 42},
+            "collected_at": int(time.time()),
+        },
+        "test-miner",
+    )
     print(f"[4] Pool mining:  ok={ok}, tier={tier}, reason={reason}")
     assert tier == 1.1
 
     # Test 5: Stale proof
-    ok, tier, reason = verify_warthog_proof({
-        "enabled": True,
-        "wart_address": "wart1qtest123456789",
-        "proof_type": "own_node",
-        "node": {"height": 500000, "synced": True},
-        "balance": "42.5",
-        "collected_at": int(time.time()) - 3600,  # 1 hour old
-    }, "test-miner")
+    ok, tier, reason = verify_warthog_proof(
+        {
+            "enabled": True,
+            "wart_address": "wart1qtest123456789",
+            "proof_type": "own_node",
+            "node": {"height": 500000, "synced": True},
+            "balance": "42.5",
+            "collected_at": int(time.time()) - 3600,  # 1 hour old
+        },
+        "test-miner",
+    )
     print(f"[5] Stale proof:  ok={ok}, tier={tier}, reason={reason}")
     assert tier == 1.0  # Rejected
 
     # Test 6: DB operations
-    import tempfile, os
+    import os
+    import tempfile
+
     db_path = os.path.join(tempfile.gettempdir(), "wart_test.db")
     with sqlite3.connect(db_path) as conn:
         conn.execute("""CREATE TABLE IF NOT EXISTS miner_attest_recent (
@@ -290,13 +302,23 @@ if __name__ == "__main__":
             fingerprint_passed INTEGER DEFAULT 0, source_ip TEXT
         )""")
         init_warthog_tables(conn)
-        record_warthog_proof(conn, "test-miner", 100, {
-            "proof_type": "own_node", "wart_address": "wart1qtest",
-            "node": {"height": 500000}, "balance": "42.5",
-        }, True, 1.15, "own_node_verified")
+        record_warthog_proof(
+            conn,
+            "test-miner",
+            100,
+            {
+                "proof_type": "own_node",
+                "wart_address": "wart1qtest",
+                "node": {"height": 500000},
+                "balance": "42.5",
+            },
+            True,
+            1.15,
+            "own_node_verified",
+        )
         conn.execute(
             "INSERT OR REPLACE INTO miner_attest_recent (miner, ts_ok, warthog_bonus) VALUES (?, ?, ?)",
-            ("test-miner", int(time.time()), 1.15)
+            ("test-miner", int(time.time()), 1.15),
         )
         bonus = get_warthog_bonus(conn, "test-miner")
         print(f"[6] DB bonus:     {bonus}")

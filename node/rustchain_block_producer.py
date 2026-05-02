@@ -12,28 +12,25 @@ Phase 1 & 2 Implementation:
 Implements secure block production for Proof of Antiquity consensus.
 """
 
-import sqlite3
-import time
-import threading
-import logging
 import json
-from typing import Dict, List, Optional, Tuple
+import logging
+import sqlite3
+import threading
+import time
 from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
 
 from rustchain_crypto import (
     CanonicalBlockHeader,
+    Ed25519Signer,
     MerkleTree,
     SignedTransaction,
-    Ed25519Signer,
     blake2b256_hex,
-    canonical_json
+    canonical_json,
 )
 from rustchain_tx_handler import TransactionPool
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [BLOCK] %(levelname)s: %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [BLOCK] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -51,11 +48,13 @@ ATTESTATION_TTL = 600  # 10 minutes
 # BLOCK BODY
 # =============================================================================
 
+
 @dataclass
 class BlockBody:
     """
     Block body containing transactions and attestations.
     """
+
     transactions: List[SignedTransaction] = field(default_factory=list)
     attestations: List[Dict] = field(default_factory=list)
     _merkle_tree: Optional[MerkleTree] = None
@@ -86,10 +85,7 @@ class BlockBody:
             return "0" * 64
 
         # Canonical JSON of attestations
-        attestations_bytes = canonical_json(sorted(
-            self.attestations,
-            key=lambda a: a.get("miner", "")
-        ))
+        attestations_bytes = canonical_json(sorted(self.attestations, key=lambda a: a.get("miner", "")))
         return blake2b256_hex(attestations_bytes)
 
     def to_dict(self) -> Dict:
@@ -100,7 +96,7 @@ class BlockBody:
             "merkle_root": self.merkle_root,
             "attestations_hash": self.compute_attestations_hash(),
             "tx_count": len(self.transactions),
-            "attestation_count": len(self.attestations)
+            "attestation_count": len(self.attestations),
         }
 
     @classmethod
@@ -117,11 +113,13 @@ class BlockBody:
 # FULL BLOCK
 # =============================================================================
 
+
 @dataclass
 class Block:
     """
     Complete block with header and body.
     """
+
     header: CanonicalBlockHeader
     body: BlockBody
 
@@ -137,19 +135,12 @@ class Block:
 
     def to_dict(self) -> Dict:
         """Convert to dictionary"""
-        return {
-            "header": self.header.to_dict(),
-            "body": self.body.to_dict(),
-            "hash": self.hash
-        }
+        return {"header": self.header.to_dict(), "body": self.body.to_dict(), "hash": self.hash}
 
     @classmethod
     def from_dict(cls, d: Dict) -> "Block":
         """Create from dictionary"""
-        return cls(
-            header=CanonicalBlockHeader.from_dict(d["header"]),
-            body=BlockBody.from_dict(d["body"])
-        )
+        return cls(header=CanonicalBlockHeader.from_dict(d["header"]), body=BlockBody.from_dict(d["body"]))
 
     def validate_structure(self) -> Tuple[bool, str]:
         """
@@ -180,6 +171,7 @@ class Block:
 # BLOCK PRODUCER
 # =============================================================================
 
+
 class BlockProducer:
     """
     Produces blocks in the PoA round-robin consensus.
@@ -190,7 +182,7 @@ class BlockProducer:
         db_path: str,
         tx_pool: TransactionPool,
         signer: Optional[Ed25519Signer] = None,
-        wallet_address: Optional[str] = None
+        wallet_address: Optional[str] = None,
     ):
         self.db_path = db_path
         self.tx_pool = tx_pool
@@ -217,12 +209,15 @@ class BlockProducer:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT miner, device_arch, device_family, device_model, device_year, ts_ok
                 FROM miner_attest_recent
                 WHERE ts_ok >= ?
                 ORDER BY miner ASC
-            """, (current_ts - ATTESTATION_TTL,))
+            """,
+                (current_ts - ATTESTATION_TTL,),
+            )
 
             results = []
             for row in cursor.fetchall():
@@ -230,7 +225,7 @@ class BlockProducer:
                     "arch": row["device_arch"] or "modern_x86",
                     "family": row["device_family"] or "",
                     "model": row["device_model"] if "device_model" in row.keys() else "",
-                    "year": row["device_year"] if "device_year" in row.keys() else 2025
+                    "year": row["device_year"] if "device_year" in row.keys() else 2025,
                 }
                 results.append((row["miner"], row["device_arch"], device_info))
 
@@ -297,11 +292,13 @@ class BlockProducer:
 
             state = []
             for row in cursor.fetchall():
-                state.append({
-                    "wallet": row["wallet"],
-                    "balance": row["balance_urtc"],
-                    "nonce": row["wallet_nonce"] if "wallet_nonce" in row.keys() else 0
-                })
+                state.append(
+                    {
+                        "wallet": row["wallet"],
+                        "balance": row["balance_urtc"],
+                        "nonce": row["wallet_nonce"] if "wallet_nonce" in row.keys() else 0,
+                    }
+                )
 
             return blake2b256_hex(canonical_json(state))
 
@@ -313,19 +310,22 @@ class BlockProducer:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT miner, device_arch, device_family, ts_ok
                 FROM miner_attest_recent
                 WHERE ts_ok >= ?
                 ORDER BY ts_ok DESC
-            """, (current_ts - ATTESTATION_TTL,))
+            """,
+                (current_ts - ATTESTATION_TTL,),
+            )
 
             return [
                 {
                     "miner": row["miner"],
                     "arch": row["device_arch"],
                     "family": row["device_family"],
-                    "timestamp": row["ts_ok"]
+                    "timestamp": row["ts_ok"],
                 }
                 for row in cursor.fetchall()
             ]
@@ -386,7 +386,7 @@ class BlockProducer:
                     merkle_root=body.merkle_root,
                     state_root=state_root,
                     attestations_hash=body.compute_attestations_hash(),
-                    producer=self.wallet_address
+                    producer=self.wallet_address,
                 )
 
                 # Sign header
@@ -401,8 +401,10 @@ class BlockProducer:
                     logger.error(f"Block validation failed: {error}")
                     return None
 
-                logger.info(f"Produced block {new_height}: {block.hash[:16]}... "
-                           f"txs={len(body.transactions)} attestations={len(body.attestations)}")
+                logger.info(
+                    f"Produced block {new_height}: {block.hash[:16]}... "
+                    f"txs={len(body.transactions)} attestations={len(body.attestations)}"
+                )
 
                 return block
 
@@ -436,40 +438,38 @@ class BlockProducer:
                 """)
 
                 # Insert block
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO blocks (
                         height, block_hash, prev_hash, timestamp,
                         merkle_root, state_root, attestations_hash,
                         producer, producer_sig, tx_count, attestation_count,
                         body_json, created_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    block.height,
-                    block.hash,
-                    block.header.prev_hash,
-                    block.header.timestamp,
-                    block.header.merkle_root,
-                    block.header.state_root,
-                    block.header.attestations_hash,
-                    block.header.producer,
-                    block.header.producer_sig,
-                    len(block.body.transactions),
-                    len(block.body.attestations),
-                    json.dumps(block.body.to_dict()),
-                    int(time.time())
-                ))
+                """,
+                    (
+                        block.height,
+                        block.hash,
+                        block.header.prev_hash,
+                        block.header.timestamp,
+                        block.header.merkle_root,
+                        block.header.state_root,
+                        block.header.attestations_hash,
+                        block.header.producer,
+                        block.header.producer_sig,
+                        len(block.body.transactions),
+                        len(block.body.attestations),
+                        json.dumps(block.body.to_dict()),
+                        int(time.time()),
+                    ),
+                )
 
                 # Confirm transactions — pass the same connection so the
                 # entire block save + all confirmations are a single atomic
                 # transaction.  If any confirmation fails, roll back the
                 # whole block to avoid partial state.
                 for tx in block.body.transactions:
-                    ok = self.tx_pool.confirm_transaction(
-                        tx.tx_hash,
-                        block.height,
-                        block.hash,
-                        conn=conn
-                    )
+                    ok = self.tx_pool.confirm_transaction(tx.tx_hash, block.height, block.hash, conn=conn)
                     if not ok:
                         # SECURITY FIX #2156: Explicit rollback so the block
                         # INSERT and any partial confirmations are discarded.
@@ -500,6 +500,7 @@ class BlockProducer:
 # BLOCK VALIDATOR
 # =============================================================================
 
+
 class BlockValidator:
     """
     Validates blocks according to consensus rules.
@@ -509,10 +510,7 @@ class BlockValidator:
         self.db_path = db_path
 
     def validate_block(
-        self,
-        block: Block,
-        expected_producer: str = None,
-        producer_pubkey: bytes = None
+        self, block: Block, expected_producer: str = None, producer_pubkey: bytes = None
     ) -> Tuple[bool, str]:
         """
         Validate a block.
@@ -547,13 +545,10 @@ class BlockValidator:
         if block.height > 0:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT block_hash FROM blocks WHERE height = ?",
-                    (block.height - 1,)
-                )
+                cursor.execute("SELECT block_hash FROM blocks WHERE height = ?", (block.height - 1,))
                 result = cursor.fetchone()
                 if result and result[0] != block.header.prev_hash:
-                    return False, f"Invalid prev_hash"
+                    return False, "Invalid prev_hash"
 
         # 5. Validate producer signature (if we have pubkey)
         if producer_pubkey:
@@ -567,11 +562,12 @@ class BlockValidator:
 # API ROUTES
 # =============================================================================
 
+
 def create_block_api_routes(app, producer: BlockProducer, validator: BlockValidator):
     """Create Flask routes for block API"""
-    from flask import request, jsonify
+    from flask import jsonify
 
-    @app.route('/block/latest', methods=['GET'])
+    @app.route("/block/latest", methods=["GET"])
     def get_latest_block():
         """Get latest block"""
         latest = producer.get_latest_block()
@@ -579,7 +575,7 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
             return jsonify(latest)
         return jsonify({"error": "No blocks found"}), 404
 
-    @app.route('/block/<int:height>', methods=['GET'])
+    @app.route("/block/<int:height>", methods=["GET"])
     def get_block_by_height(height: int):
         """Get block by height"""
         with sqlite3.connect(producer.db_path) as conn:
@@ -592,7 +588,7 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
                 return jsonify(dict(row))
             return jsonify({"error": "Block not found"}), 404
 
-    @app.route('/block/hash/<block_hash>', methods=['GET'])
+    @app.route("/block/hash/<block_hash>", methods=["GET"])
     def get_block_by_hash(block_hash: str):
         """Get block by hash"""
         with sqlite3.connect(producer.db_path) as conn:
@@ -605,7 +601,7 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
                 return jsonify(dict(row))
             return jsonify({"error": "Block not found"}), 404
 
-    @app.route('/block/slot', methods=['GET'])
+    @app.route("/block/slot", methods=["GET"])
     def get_current_slot():
         """Get current slot info"""
         slot = producer.get_current_slot()
@@ -613,32 +609,26 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
         slot_start = producer.get_slot_start_time(slot)
         slot_end = slot_start + BLOCK_TIME
 
-        return jsonify({
-            "slot": slot,
-            "expected_producer": expected_producer,
-            "slot_start": slot_start,
-            "slot_end": slot_end,
-            "time_remaining": max(0, slot_end - int(time.time())),
-            "is_my_turn": producer.is_my_turn(slot)
-        })
+        return jsonify(
+            {
+                "slot": slot,
+                "expected_producer": expected_producer,
+                "slot_start": slot_start,
+                "slot_end": slot_end,
+                "time_remaining": max(0, slot_end - int(time.time())),
+                "is_my_turn": producer.is_my_turn(slot),
+            }
+        )
 
-    @app.route('/block/producers', methods=['GET'])
+    @app.route("/block/producers", methods=["GET"])
     def list_producers():
         """List current block producers"""
         current_ts = int(time.time())
         miners = producer.get_attested_miners(current_ts)
 
-        return jsonify({
-            "count": len(miners),
-            "producers": [
-                {
-                    "wallet": m[0],
-                    "arch": m[1],
-                    "device_info": m[2]
-                }
-                for m in miners
-            ]
-        })
+        return jsonify(
+            {"count": len(miners), "producers": [{"wallet": m[0], "arch": m[1], "device_info": m[2]} for m in miners]}
+        )
 
 
 # =============================================================================
@@ -646,15 +636,15 @@ def create_block_api_routes(app, producer: BlockProducer, validator: BlockValida
 # =============================================================================
 
 if __name__ == "__main__":
-    import tempfile
     import os
+    import tempfile
 
     print("=" * 70)
     print("RustChain Block Producer - Test Suite")
     print("=" * 70)
 
     # Create temporary database
-    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
 
     try:
@@ -667,14 +657,14 @@ if __name__ == "__main__":
         addr, pub, priv = generate_wallet_keypair()
         signer = Ed25519Signer(bytes.fromhex(priv))
 
-        print(f"\n=== Test Wallet ===")
+        print("\n=== Test Wallet ===")
         print(f"Address: {addr}")
 
         # Seed balance
         with sqlite3.connect(db_path) as conn:
             conn.execute(
                 "INSERT INTO balances (wallet, balance_urtc, wallet_nonce) VALUES (?, ?, ?)",
-                (addr, 1000_000_000_000, 0)  # 10000 RTC
+                (addr, 1000_000_000_000, 0),  # 10000 RTC
             )
 
             # Add fake attestation for this wallet
@@ -688,25 +678,20 @@ if __name__ == "__main__":
             """)
             conn.execute(
                 "INSERT INTO miner_attest_recent VALUES (?, ?, ?, ?)",
-                (addr, "test_arch", "Test Device", int(time.time()))
+                (addr, "test_arch", "Test Device", int(time.time())),
             )
 
         # Create producer
-        producer = BlockProducer(
-            db_path=db_path,
-            tx_pool=tx_pool,
-            signer=signer,
-            wallet_address=addr
-        )
+        producer = BlockProducer(db_path=db_path, tx_pool=tx_pool, signer=signer, wallet_address=addr)
 
-        print(f"\n=== Slot Info ===")
+        print("\n=== Slot Info ===")
         slot = producer.get_current_slot()
         print(f"Current slot: {slot}")
         print(f"Expected producer: {producer.get_round_robin_producer(slot)}")
         print(f"Is my turn: {producer.is_my_turn()}")
 
         # Create a test transaction
-        print(f"\n=== Creating Test Transaction ===")
+        print("\n=== Creating Test Transaction ===")
         addr2, _, _ = generate_wallet_keypair()
 
         tx = SignedTransaction(
@@ -715,7 +700,7 @@ if __name__ == "__main__":
             amount_urtc=100_000_000,  # 1 RTC
             nonce=1,
             timestamp=int(time.time() * 1000),
-            memo="Test"
+            memo="Test",
         )
         tx.sign(signer)
 
@@ -723,7 +708,7 @@ if __name__ == "__main__":
         print(f"TX submitted: {success}, {result}")
 
         # Produce block
-        print(f"\n=== Producing Block ===")
+        print("\n=== Producing Block ===")
         block = producer.produce_block()
 
         if block:
@@ -735,12 +720,12 @@ if __name__ == "__main__":
             print(f"Attestation count: {len(block.body.attestations)}")
 
             # Save block
-            print(f"\n=== Saving Block ===")
+            print("\n=== Saving Block ===")
             saved = producer.save_block(block)
             print(f"Saved: {saved}")
 
             # Validate
-            print(f"\n=== Validating Block ===")
+            print("\n=== Validating Block ===")
             validator = BlockValidator(db_path)
             # Need to fake the expected producer since we only have one attester
             is_valid, error = block.validate_structure()
@@ -748,7 +733,7 @@ if __name__ == "__main__":
 
             # Check block in DB
             latest = producer.get_latest_block()
-            print(f"\n=== Latest Block in DB ===")
+            print("\n=== Latest Block in DB ===")
             print(f"Height: {latest['height']}")
             print(f"Hash: {latest['block_hash'][:32]}...")
 

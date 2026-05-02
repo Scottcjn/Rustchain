@@ -164,10 +164,7 @@ def _should_auto_apply_recommended_resolution(value: Any) -> bool:
         return False
     resolution_type = recommendation.get("resolution_type")
     target_status = recommendation.get("target_inbox_status")
-    return (
-        resolution_type in {"approve", "dismiss"}
-        and target_status in {"resolved", "dismissed"}
-    )
+    return resolution_type in {"approve", "dismiss"} and target_status in {"resolved", "dismissed"}
 
 
 def _parse_csv_env(name: str) -> list[str]:
@@ -587,17 +584,12 @@ def _should_queue_scott_notification(entry: dict[str, Any], phase: str) -> bool:
         resolution = _normalize_recommended_resolution(entry.get("recommended_resolution"))
         resolution_type = str(resolution.get("resolution_type", "") or "").lower()
         return bool(
-            resolution
-            and (
-                resolution.get("requires_human")
-                or resolution_type in {"hold", "escalate", "watch"}
-            )
+            resolution and (resolution.get("requires_human") or resolution_type in {"hold", "escalate", "watch"})
         )
 
-    return (
-        str(entry.get("risk_level", "medium") or "medium").lower() in {"high", "critical"}
-        or str(entry.get("stance", "watch") or "watch").lower() in {"hold", "escalate"}
-    )
+    return str(entry.get("risk_level", "medium") or "medium").lower() in {"high", "critical"} or str(
+        entry.get("stance", "watch") or "watch"
+    ).lower() in {"hold", "escalate"}
 
 
 def _build_scott_notification_payload(entry: dict[str, Any], phase: str) -> dict[str, Any]:
@@ -724,9 +716,7 @@ def _queue_scott_notification_for_entry(
     return {
         "status": "queued",
         "phase": phase,
-        "notification_id": str(
-            dict(response_data.get("notification") or {}).get("notification_id", "") or ""
-        ),
+        "notification_id": str(dict(response_data.get("notification") or {}).get("notification_id", "") or ""),
         "response_code": response.status_code,
     }
 
@@ -1052,9 +1042,10 @@ def forward_governor_inbox_entry(
             review_service = _text_excerpt(parsed_response.get("service"), 200)
             if review_service:
                 latest_assigned_agent = review_service
-            latest_recommended_resolution = _normalize_recommended_resolution(
-                parsed_response.get("recommended_resolution")
-            ) or latest_recommended_resolution
+            latest_recommended_resolution = (
+                _normalize_recommended_resolution(parsed_response.get("recommended_resolution"))
+                or latest_recommended_resolution
+            )
 
     if delivered:
         updated_entry = update_governor_inbox_entry(

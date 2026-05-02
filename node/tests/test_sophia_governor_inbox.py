@@ -1,10 +1,9 @@
 import os
+import sys
 import tempfile
 
 import pytest
 from flask import Flask
-
-import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -326,7 +325,8 @@ def test_auto_forward_on_ingest_uses_configured_targets(client, monkeypatch):
             '{"service":"sophia-governor-review-service","review":"Assessment: watch. Risk: medium. '
             'Next step: verify.","recommended_resolution":{"target_inbox_status":"resolved",'
             '"resolution_type":"watch","requires_human":true,"auto_apply":false,'
-            '"operator_action":"Verify intent before confirmation.","summary":"Pending transfer reviewed at high risk."}}'
+            '"operator_action":"Verify intent before confirmation.",'
+            '"summary":"Pending transfer reviewed at high risk."}}'
         )
 
     def fake_post(url, json=None, headers=None, timeout=None):

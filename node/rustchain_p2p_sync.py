@@ -4,17 +4,19 @@ RustChain v2 - P2P Synchronization Module
 Enables multi-node blockchain synchronization with peer discovery and block gossip
 """
 
-import requests
-import sqlite3
-import time
 import json
+import sqlite3
 import threading
-from datetime import datetime
-from typing import List, Dict, Optional
+import time
+from typing import Dict, List
+
+import requests
+from flask import jsonify, request
 
 # ============================================================================
 # PEER DISCOVERY & MANAGEMENT
 # ============================================================================
+
 
 class PeerManager:
     """Manages peer nodes and their status"""
@@ -59,11 +61,14 @@ class PeerManager:
 
             with self.lock:
                 with sqlite3.connect(self.db_path) as conn:
-                    conn.execute("""
+                    conn.execute(
+                        """
                         INSERT OR REPLACE INTO peers
                         (peer_url, peer_host, peer_port, last_seen, is_active, added_at)
                         VALUES (?, ?, ?, ?, 1, ?)
-                    """, (peer_url, peer_host, peer_port, int(time.time()), int(time.time())))
+                    """,
+                        (peer_url, peer_host, peer_port, int(time.time()), int(time.time())),
+                    )
                     conn.commit()
 
                 self.peers[peer_url] = {
@@ -71,7 +76,7 @@ class PeerManager:
                     "host": peer_host,
                     "port": peer_port,
                     "last_seen": int(time.time()),
-                    "active": True
+                    "active": True,
                 }
 
             print(f"[P2P] Added peer: {peer_url}")
@@ -85,11 +90,14 @@ class PeerManager:
         """Get list of active peer URLs"""
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
-                rows = conn.execute("""
+                rows = conn.execute(
+                    """
                     SELECT peer_url FROM peers
                     WHERE is_active = 1
                     AND last_seen > ?
-                """, (int(time.time()) - 300,)).fetchall()  # 5 minute timeout
+                """,
+                    (int(time.time()) - 300,),
+                ).fetchall()  # 5 minute timeout
 
                 return [row[0] for row in rows]
 
@@ -98,26 +106,35 @@ class PeerManager:
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
                 if block_height is not None:
-                    conn.execute("""
+                    conn.execute(
+                        """
                         UPDATE peers
                         SET last_seen = ?, last_block_height = ?, is_active = 1
                         WHERE peer_url = ?
-                    """, (int(time.time()), block_height, peer_url))
+                    """,
+                        (int(time.time()), block_height, peer_url),
+                    )
                 else:
-                    conn.execute("""
+                    conn.execute(
+                        """
                         UPDATE peers
                         SET last_seen = ?, is_active = 1
                         WHERE peer_url = ?
-                    """, (int(time.time()), peer_url))
+                    """,
+                        (int(time.time()), peer_url),
+                    )
                 conn.commit()
 
     def mark_peer_inactive(self, peer_url: str):
         """Mark peer as inactive"""
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
+                conn.execute(
+                    """
                     UPDATE peers SET is_active = 0 WHERE peer_url = ?
-                """, (peer_url,))
+                """,
+                    (peer_url,),
+                )
                 conn.commit()
 
         print(f"[P2P] Marked peer inactive: {peer_url}")
@@ -126,6 +143,7 @@ class PeerManager:
 # ============================================================================
 # BLOCK SYNCHRONIZATION
 # ============================================================================
+
 
 class BlockSync:
     """Synchronizes blocks between nodes"""
@@ -146,9 +164,7 @@ class BlockSync:
         """Fetch blocks from a peer node"""
         try:
             response = requests.get(
-                f"{peer_url}/api/blocks",
-                params={"start": start_height, "limit": limit},
-                timeout=10
+                f"{peer_url}/api/blocks", params={"start": start_height, "limit": limit}, timeout=10
             )
 
             if response.ok:
@@ -221,7 +237,7 @@ class BlockSync:
                 data = block.get("data", {})
 
                 if height is None or block_hash is None:
-                    print(f"[P2P] Skipping malformed block (missing height or hash)")
+                    print("[P2P] Skipping malformed block (missing height or hash)")
                     continue
 
                 # 1. Verify block hash matches content
@@ -233,64 +249,65 @@ class BlockSync:
                     # Also accept blake2b if available
                     try:
                         import hashlib as _hl
-                        computed_blake = _hl.blake2b(
-                            hash_fields.encode(), digest_size=32
-                        ).hexdigest()
+
+                        computed_blake = _hl.blake2b(hash_fields.encode(), digest_size=32).hexdigest()
                     except Exception:
                         computed_blake = None
 
                     if block_hash != computed_hash and block_hash != computed_blake:
-                        print(f"[P2P] REJECTED block {height}: hash mismatch "
-                              f"(got {block_hash[:16]}..., expected {computed_hash[:16]}...)")
+                        print(
+                            f"[P2P] REJECTED block {height}: hash mismatch "
+                            f"(got {block_hash[:16]}..., expected {computed_hash[:16]}...)"
+                        )
                         continue
 
                 # 2. Check parent hash chain
                 prev_hash = header.get("prev_hash", data.get("prev_hash", ""))
                 if height > 0:
-                    row = conn.execute(
-                        "SELECT block_hash FROM blocks WHERE height = ?",
-                        (height - 1,)
-                    ).fetchone()
+                    row = conn.execute("SELECT block_hash FROM blocks WHERE height = ?", (height - 1,)).fetchone()
                     if row is None:
                         print(f"[P2P] Skipping block {height}: parent block {height - 1} not found locally")
                         continue
                     if row[0] != prev_hash:
-                        print(f"[P2P] REJECTED block {height}: prev_hash mismatch "
-                              f"(expected {row[0][:16]}..., got {prev_hash[:16]}...)")
+                        print(
+                            f"[P2P] REJECTED block {height}: prev_hash mismatch "
+                            f"(expected {row[0][:16]}..., got {prev_hash[:16]}...)"
+                        )
                         continue
 
                 # 3. Check if block already exists
-                existing = conn.execute(
-                    "SELECT 1 FROM blocks WHERE height = ?", (height,)
-                ).fetchone()
+                existing = conn.execute("SELECT 1 FROM blocks WHERE height = ?", (height,)).fetchone()
                 if existing:
                     print(f"[P2P] Block {height} already exists, skipping")
                     continue
 
                 # 4. Insert into blocks table
                 try:
-                    conn.execute("""
+                    conn.execute(
+                        """
                         INSERT INTO blocks (
                             height, block_hash, prev_hash, timestamp,
                             merkle_root, state_root, attestations_hash,
                             producer, producer_sig, tx_count, attestation_count,
                             body_json, created_at
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        height,
-                        block_hash,
-                        prev_hash,
-                        header.get("timestamp", int(time.time())),
-                        header.get("merkle_root", "0" * 64),
-                        header.get("state_root", "0" * 64),
-                        header.get("attestations_hash", "0" * 64),
-                        header.get("producer", "unknown"),
-                        header.get("producer_sig", ""),
-                        data.get("body", {}).get("tx_count", 0),
-                        data.get("body", {}).get("attestation_count", 0),
-                        json.dumps(data.get("body", {})),
-                        int(time.time())
-                    ))
+                    """,
+                        (
+                            height,
+                            block_hash,
+                            prev_hash,
+                            header.get("timestamp", int(time.time())),
+                            header.get("merkle_root", "0" * 64),
+                            header.get("state_root", "0" * 64),
+                            header.get("attestations_hash", "0" * 64),
+                            header.get("producer", "unknown"),
+                            header.get("producer_sig", ""),
+                            data.get("body", {}).get("tx_count", 0),
+                            data.get("body", {}).get("attestation_count", 0),
+                            json.dumps(data.get("body", {})),
+                            int(time.time()),
+                        ),
+                    )
                     conn.commit()
                     print(f"[P2P] Inserted block {height} ({block_hash[:16]}...)")
                 except sqlite3.IntegrityError as e:
@@ -324,6 +341,7 @@ class BlockSync:
 # TRANSACTION GOSSIP
 # ============================================================================
 
+
 class TransactionGossip:
     """Gossips transactions to peer nodes"""
 
@@ -336,11 +354,7 @@ class TransactionGossip:
 
         for peer_url in peers:
             try:
-                response = requests.post(
-                    f"{peer_url}/tx/submit_fast",
-                    json=tx_data,
-                    timeout=5
-                )
+                response = requests.post(f"{peer_url}/tx/submit_fast", json=tx_data, timeout=5)
 
                 if response.ok:
                     print(f"[P2P] Broadcasted tx to {peer_url}")
@@ -354,6 +368,7 @@ class TransactionGossip:
 # ============================================================================
 # HEALTH CHECK SYSTEM
 # ============================================================================
+
 
 class HealthChecker:
     """Checks peer health via periodic pings"""
@@ -402,14 +417,15 @@ class HealthChecker:
 # FLASK INTEGRATION
 # ============================================================================
 
+
 def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
     """Add P2P endpoints to Flask app"""
 
-    @app.route('/p2p/announce', methods=['POST'])
+    @app.route("/p2p/announce", methods=["POST"])
     def announce_peer():
         """Endpoint for peer nodes to announce themselves"""
         data = request.get_json()
-        peer_url = data.get('peer_url')
+        peer_url = data.get("peer_url")
 
         if peer_url:
             success = peer_manager.add_peer(peer_url)
@@ -417,31 +433,31 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
         else:
             return jsonify({"ok": False, "error": "peer_url required"}), 400
 
-    @app.route('/p2p/peers', methods=['GET'])
+    @app.route("/p2p/peers", methods=["GET"])
     def get_peers():
         """Get list of active peers"""
         peers = peer_manager.get_active_peers()
         return jsonify({"ok": True, "peers": peers, "count": len(peers)})
 
-    @app.route('/api/blocks', methods=['GET'])
+    @app.route("/api/blocks", methods=["GET"])
     def get_blocks():
         """Get blocks for sync (start height, limit)"""
-        start = request.args.get('start', 0, type=int)
-        limit = request.args.get('limit', 100, type=int)
+        start = request.args.get("start", 0, type=int)
+        limit = request.args.get("limit", 100, type=int)
 
         # Fetch blocks from database
         with sqlite3.connect(peer_manager.db_path) as conn:
-            rows = conn.execute("""
+            rows = conn.execute(
+                """
                 SELECT height, hash, data FROM blocks
                 WHERE height >= ?
                 ORDER BY height ASC
                 LIMIT ?
-            """, (start, limit)).fetchall()
+            """,
+                (start, limit),
+            ).fetchall()
 
-            blocks = [
-                {"height": row[0], "hash": row[1], "data": json.loads(row[2])}
-                for row in rows
-            ]
+            blocks = [{"height": row[0], "hash": row[1], "data": json.loads(row[2])} for row in rows]
 
         return jsonify({"ok": True, "blocks": blocks, "count": len(blocks)})
 
@@ -449,6 +465,7 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
 # ============================================================================
 # P2P MANAGER (Main Entry Point)
 # ============================================================================
+
 
 class RustChainP2P:
     """Main P2P coordination class"""
@@ -488,11 +505,7 @@ class RustChainP2P:
 
         for peer_url in peers:
             try:
-                response = requests.post(
-                    f"{peer_url}/p2p/announce",
-                    json={"peer_url": local_url},
-                    timeout=5
-                )
+                response = requests.post(f"{peer_url}/p2p/announce", json={"peer_url": local_url}, timeout=5)
 
                 if response.ok:
                     print(f"[P2P] Announced to {peer_url}")
@@ -504,12 +517,12 @@ class RustChainP2P:
 # EXAMPLE USAGE
 # ============================================================================
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Example: Initialize P2P for node at 50.28.86.131
     p2p = RustChainP2P(
         db_path="/root/rustchain/rustchain_v2.db",
         local_host="50.28.86.131",
-        bootstrap_peers=["http://50.28.86.153:8088"]
+        bootstrap_peers=["http://50.28.86.153:8088"],
     )
 
     # Start P2P services

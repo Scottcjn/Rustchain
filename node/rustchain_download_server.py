@@ -4,8 +4,7 @@ RustChain Miner Download Server
 Serves miners via HTTP on port 8090
 """
 
-from flask import Flask, send_from_directory, render_template_string
-import os
+from flask import Flask, render_template_string, send_from_directory
 
 app = Flask(__name__)
 DOWNLOAD_DIR = "/root/rustchain/downloads"
@@ -90,7 +89,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <h1>🦀 RustChain Miner Downloads</h1>
-    
+
     <div class="stats">
         <p><strong>Node</strong>: rustchain.org</p>
         <p><strong>Version</strong>: 2.2.1</p>
@@ -109,7 +108,7 @@ HTML_TEMPLATE = """
     </div>
 
     <h2>💻 Individual Miners</h2>
-    
+
     <div class="download-section">
         <h3>PowerPC G4/G5 Mac (2.5x Mining Power!)</h3>
         <a href="/downloads/rustchain_powerpc_g4_miner.py" class="download-link">
@@ -164,13 +163,13 @@ HTML_TEMPLATE = """
     <div class="download-section">
         <h3>1. Install Python 3</h3>
         <p>Most systems come with Python. Test: <code>python3 --version</code></p>
-        
+
         <h3>2. Install requests library</h3>
         <p><code>pip3 install requests</code></p>
-        
+
         <h3>3. Run your miner</h3>
         <p><code>python3 rustchain_linux_miner.py</code></p>
-        
+
         <h3>4. Specify wallet (optional)</h3>
         <p><code>python3 rustchain_linux_miner.py --wallet YOUR_WALLET_HERE</code></p>
     </div>
@@ -195,16 +194,19 @@ HTML_TEMPLATE = """
 </html>
 """
 
-@app.route('/')
+
+@app.route("/")
 def index():
     return render_template_string(HTML_TEMPLATE)
 
-@app.route('/downloads/<path:filename>')
+
+@app.route("/downloads/<path:filename>")
 def download_file(filename):
     return send_from_directory(DOWNLOAD_DIR, filename, as_attachment=True)
 
-if __name__ == '__main__':
-    print(f"🦀 RustChain Download Server starting on port 8090...")
+
+if __name__ == "__main__":
+    print("🦀 RustChain Download Server starting on port 8090...")
     print(f"📁 Serving files from: {DOWNLOAD_DIR}")
-    print(f"🌐 Access at: https://rustchain.org:8090")
-    app.run(host='0.0.0.0', port=8090, debug=False)
+    print("🌐 Access at: https://rustchain.org:8090")
+    app.run(host="0.0.0.0", port=8090, debug=False)

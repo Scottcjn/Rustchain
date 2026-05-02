@@ -99,7 +99,9 @@ class TestRewardsSettleRace(unittest.TestCase):
                     rows = db.execute("SELECT miner_id, amount_i64 FROM balances ORDER BY miner_id").fetchall()
                     self.assertEqual(rows, [("m1", 100), ("m2", 200)])
 
-                    rewards_rows = db.execute("SELECT epoch, miner_id, share_i64 FROM epoch_rewards ORDER BY miner_id").fetchall()
+                    rewards_rows = db.execute(
+                        "SELECT epoch, miner_id, share_i64 FROM epoch_rewards ORDER BY miner_id"
+                    ).fetchall()
                     self.assertEqual(rewards_rows, [(0, "m1", 100), (0, "m2", 200)])
 
                     st = db.execute("SELECT settled FROM epoch_state WHERE epoch=0").fetchone()
@@ -158,7 +160,7 @@ class TestFutureEpochRejection(unittest.TestCase):
         # Freeze "current slot" so epoch 10 is the present.
         # current_slot = (now - GENESIS) / 600  =>  epoch = slot // 144
         # For epoch 10: slot = 10 * 144 = 1440  =>  now = GENESIS + 1440*600
-        fake_now = rip200.GENESIS_TIMESTAMP + 1440 * rip200.BLOCK_TIME
+        rip200.GENESIS_TIMESTAMP + 1440 * rip200.BLOCK_TIME
         rip200.current_slot = lambda: 1440  # epoch 10
 
         with tempfile.TemporaryDirectory() as td:
@@ -248,7 +250,7 @@ class TestFutureEpochRejection(unittest.TestCase):
         # Freeze "current slot" so epoch 10 is the present.
         # current_slot = (now - GENESIS) / 600  =>  epoch = slot // 144
         # For epoch 10: slot = 10 * 144 = 1440  =>  now = GENESIS + 1440*600
-        fake_now = rip200.GENESIS_TIMESTAMP + 1440 * rip200.BLOCK_TIME
+        rip200.GENESIS_TIMESTAMP + 1440 * rip200.BLOCK_TIME
         rip200.current_slot = lambda: 1440  # epoch 10
 
         with tempfile.TemporaryDirectory() as td:
@@ -368,9 +370,7 @@ class TestAntiDoubleMiningSettleRace(unittest.TestCase):
                 db.execute("BEGIN IMMEDIATE")
 
             try:
-                st = db.execute(
-                    "SELECT settled FROM epoch_state WHERE epoch=?", (epoch,)
-                ).fetchone()
+                st = db.execute("SELECT settled FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
                 if st and int(st[0]) == 1:
                     if own_conn:
                         db.rollback()
@@ -380,19 +380,19 @@ class TestAntiDoubleMiningSettleRace(unittest.TestCase):
                     db.execute(
                         "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?) "
                         "ON CONFLICT(miner_id) DO UPDATE SET amount_i64 = amount_i64 + ?",
-                        (miner_id, share, share)
+                        (miner_id, share, share),
                     )
                     db.execute(
                         "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
-                        (int(time.time()), epoch, miner_id, share, f"epoch_{epoch}_reward")
+                        (int(time.time()), epoch, miner_id, share, f"epoch_{epoch}_reward"),
                     )
                     db.execute(
                         "INSERT INTO epoch_rewards (epoch, miner_id, share_i64) VALUES (?, ?, ?)",
-                        (epoch, miner_id, share)
+                        (epoch, miner_id, share),
                     )
                 db.execute(
                     "INSERT OR REPLACE INTO epoch_state (epoch, settled, settled_ts) VALUES (?, 1, ?)",
-                    (epoch, int(time.time()))
+                    (epoch, int(time.time())),
                 )
                 if own_conn:
                     db.commit()
@@ -433,9 +433,7 @@ class TestAntiDoubleMiningSettleRace(unittest.TestCase):
                 self.assertEqual(len(results), 2)
 
                 with sqlite3.connect(db_path) as db:
-                    rows = db.execute(
-                        "SELECT miner_id, amount_i64 FROM balances ORDER BY miner_id"
-                    ).fetchall()
+                    rows = db.execute("SELECT miner_id, amount_i64 FROM balances ORDER BY miner_id").fetchall()
                     self.assertEqual(rows, [("m1", 100), ("m2", 200)])
 
                     st = db.execute("SELECT settled FROM epoch_state WHERE epoch=0").fetchone()

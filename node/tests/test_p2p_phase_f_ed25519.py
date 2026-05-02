@@ -10,7 +10,7 @@ Covers:
 - Strict mode rejects HMAC-only messages
 - Unknown-peer Ed25519 message rejected
 """
-import importlib.util
+
 import json
 import os
 import sqlite3
@@ -39,6 +39,7 @@ def _reload_modules(signing_mode: str, privkey_path: str, registry_path: str):
             del sys.modules[mod]
     import p2p_identity  # noqa: F401
     import rustchain_p2p_gossip  # noqa: F401
+
     return sys.modules["p2p_identity"], sys.modules["rustchain_p2p_gossip"]
 
 
@@ -66,8 +67,7 @@ def _make_layer(ident, gossip, node_id, peers=None, tmpdir=None):
 # Unit tests — signature packing
 # -----------------------------------------------------------------------------
 def test_pack_legacy_hmac_only():
-    ident, _ = _reload_modules("hmac", tempfile.mkdtemp() + "/pk.pem",
-                               tempfile.mkdtemp() + "/reg.json")
+    ident, _ = _reload_modules("hmac", tempfile.mkdtemp() + "/pk.pem", tempfile.mkdtemp() + "/reg.json")
     packed = ident.pack_signature("abc123", None)
     assert packed == "abc123"
     h, e = ident.unpack_signature(packed)
@@ -75,8 +75,7 @@ def test_pack_legacy_hmac_only():
 
 
 def test_pack_dual_bundle():
-    ident, _ = _reload_modules("hmac", tempfile.mkdtemp() + "/pk.pem",
-                               tempfile.mkdtemp() + "/reg.json")
+    ident, _ = _reload_modules("hmac", tempfile.mkdtemp() + "/pk.pem", tempfile.mkdtemp() + "/reg.json")
     packed = ident.pack_signature("h_hex", "e_hex")
     bundle = json.loads(packed)
     assert bundle == {"h": "h_hex", "e": "e_hex"}
@@ -85,8 +84,7 @@ def test_pack_dual_bundle():
 
 
 def test_pack_ed25519_only():
-    ident, _ = _reload_modules("hmac", tempfile.mkdtemp() + "/pk.pem",
-                               tempfile.mkdtemp() + "/reg.json")
+    ident, _ = _reload_modules("hmac", tempfile.mkdtemp() + "/pk.pem", tempfile.mkdtemp() + "/reg.json")
     packed = ident.pack_signature(None, "e_hex")
     assert packed == '{"e":"e_hex"}'
     h, e = ident.unpack_signature(packed)
@@ -123,10 +121,13 @@ def test_keypair_file_perms_are_0600():
 def test_peer_registry_load():
     tmpdir = tempfile.mkdtemp()
     reg_path = tmpdir + "/reg.json"
-    data = {"version": 1, "peers": [
-        {"node_id": "n1", "pubkey_hex": "aa" * 32},
-        {"node_id": "n2", "pubkey_hex": "bb" * 32},
-    ]}
+    data = {
+        "version": 1,
+        "peers": [
+            {"node_id": "n1", "pubkey_hex": "aa" * 32},
+            {"node_id": "n2", "pubkey_hex": "bb" * 32},
+        ],
+    }
     with open(reg_path, "w") as f:
         json.dump(data, f)
     ident, _ = _reload_modules("dual", tmpdir + "/pk.pem", reg_path)
@@ -142,9 +143,7 @@ def test_peer_registry_load():
 def test_dual_mode_hmac_still_works():
     """Dual mode: HMAC signature alone (legacy peer) still verifies."""
     tmpdir = tempfile.mkdtemp()
-    ident, gossip = _reload_modules("dual",
-                                    tmpdir + "/pk.pem",
-                                    tmpdir + "/reg.json")
+    ident, gossip = _reload_modules("dual", tmpdir + "/pk.pem", tmpdir + "/reg.json")
     layer = _make_layer(ident, gossip, "node1", {})
     # Force HMAC-only signing for this message (simulate legacy peer)
     msg = layer.create_message(gossip.MessageType.PING, {"hello": "world"})
@@ -164,14 +163,13 @@ def test_dual_mode_ed25519_verifies_against_registered_peer():
     sender_pk_path = tmpdir + "/sender.pem"
     _, _ = _reload_modules("dual", sender_pk_path, tmpdir + "/reg.json")
     from p2p_identity import LocalKeypair
+
     sender_kp = LocalKeypair(sender_pk_path)
     sender_pubkey = sender_kp.pubkey_hex
     # Build registry containing sender's pubkey under id "node-sender"
     reg_path = tmpdir + "/reg.json"
     with open(reg_path, "w") as f:
-        json.dump({"version": 1, "peers": [
-            {"node_id": "node-sender", "pubkey_hex": sender_pubkey}
-        ]}, f)
+        json.dump({"version": 1, "peers": [{"node_id": "node-sender", "pubkey_hex": sender_pubkey}]}, f)
 
     # Re-init both layers with dual mode
     ident, gossip = _reload_modules("dual", sender_pk_path, reg_path)
@@ -197,22 +195,19 @@ def test_strict_mode_rejects_hmac_only():
     sender_pk = tmpdir + "/sender.pem"
     _, _ = _reload_modules("hmac", sender_pk, tmpdir + "/reg.json")
     # First, produce an HMAC-only message with mode=hmac
-    from rustchain_p2p_gossip import GossipLayer as _, MessageType  # noqa: F401
+    from rustchain_p2p_gossip import GossipLayer as _  # noqa: F401
+
     ident_hmac, gossip_hmac = _reload_modules("hmac", sender_pk, tmpdir + "/reg.json")
     hmac_sender = _make_layer(ident_hmac, gossip_hmac, "node-legacy", {})
     hmac_msg = hmac_sender.create_message(gossip_hmac.MessageType.PING, {"ping": 1})
     assert ident_hmac.unpack_signature(hmac_msg.signature)[1] is None  # no Ed25519
 
     # Now receiver runs in strict mode with an empty registry
-    ident_strict, gossip_strict = _reload_modules("strict",
-                                                  tmpdir + "/new_rcvr.pem",
-                                                  tmpdir + "/empty.json")
+    ident_strict, gossip_strict = _reload_modules("strict", tmpdir + "/new_rcvr.pem", tmpdir + "/empty.json")
     # Build empty registry file
     with open(tmpdir + "/empty.json", "w") as f:
         json.dump({"version": 1, "peers": []}, f)
-    ident_strict, gossip_strict = _reload_modules("strict",
-                                                  tmpdir + "/new_rcvr.pem",
-                                                  tmpdir + "/empty.json")
+    ident_strict, gossip_strict = _reload_modules("strict", tmpdir + "/new_rcvr.pem", tmpdir + "/empty.json")
     strict_receiver = _make_layer(ident_strict, gossip_strict, "node-strict", {})
     # Message from HMAC-only sender must be rejected
     assert strict_receiver.verify_message(hmac_msg) is False
@@ -228,8 +223,7 @@ def test_ed25519_unknown_peer_rejected():
 
     ident, gossip = _reload_modules("dual", sender_pk, empty_reg)
     sender = _make_layer(ident, gossip, "node-unknown", {})
-    receiver = _make_layer(ident, gossip, "node-receiver",
-                           {"node-unknown": "http://x"})
+    receiver = _make_layer(ident, gossip, "node-receiver", {"node-unknown": "http://x"})
     msg = sender.create_message(gossip.MessageType.PING, {"ping": 1})
     # Strip HMAC so Ed25519 is the only path
     _, e = ident.unpack_signature(msg.signature)

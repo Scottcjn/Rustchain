@@ -3,16 +3,19 @@
 RustChain Payout Worker
 Processes pending withdrawals from queue → sent → completed
 """
-import os, time, sqlite3, hashlib, json, logging
+
+import hashlib
+import json
+import logging
+import os
+import sqlite3
+import time
 from datetime import datetime
-from typing import Optional, Dict, List
+from typing import Dict, List, Optional
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger('payout_worker')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("payout_worker")
 
 # Configuration
 DB_PATH = "./rustchain_v2.db"
@@ -21,36 +24,38 @@ POLL_INTERVAL = 30  # seconds
 MAX_RETRIES = 3
 MOCK_MODE = os.environ.get("RUSTCHAIN_MOCK_MODE", "0") == "1"  # Default: production (False)
 
+
 class PayoutWorker:
     def __init__(self):
         self.db_path = DB_PATH
-        self.stats = {
-            'processed': 0,
-            'failed': 0,
-            'total_rtc': 0.0
-        }
+        self.stats = {"processed": 0, "failed": 0, "total_rtc": 0.0}
 
     def get_pending_withdrawals(self, limit: int = BATCH_SIZE) -> List[Dict]:
         """Fetch pending withdrawals from database"""
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute("""
+            rows = conn.execute(
+                """
                 SELECT withdrawal_id, miner_pk, amount, fee, destination, created_at
                 FROM withdrawals
                 WHERE status = 'pending'
                 ORDER BY created_at ASC
                 LIMIT ?
-            """, (limit,)).fetchall()
+            """,
+                (limit,),
+            ).fetchall()
 
             withdrawals = []
             for row in rows:
-                withdrawals.append({
-                    'withdrawal_id': row[0],
-                    'miner_pk': row[1],
-                    'amount': row[2],
-                    'fee': row[3],
-                    'destination': row[4],
-                    'created_at': row[5]
-                })
+                withdrawals.append(
+                    {
+                        "withdrawal_id": row[0],
+                        "miner_pk": row[1],
+                        "amount": row[2],
+                        "fee": row[3],
+                        "destination": row[4],
+                        "created_at": row[5],
+                    }
+                )
 
             return withdrawals
 
@@ -66,6 +71,7 @@ class PayoutWorker:
 
             # Random failure for testing (5% chance)
             import random
+
             if random.random() < 0.05:
                 raise Exception("Mock transaction failed")
 
@@ -81,7 +87,7 @@ class PayoutWorker:
 
     def process_withdrawal(self, withdrawal: Dict) -> bool:
         """Process a single withdrawal with balance deduction before execution."""
-        withdrawal_id = withdrawal['withdrawal_id']
+        withdrawal_id = withdrawal["withdrawal_id"]
 
         try:
             logger.info(f"Processing withdrawal {withdrawal_id}")
@@ -97,34 +103,30 @@ class PayoutWorker:
                 try:
                     # Check sender has sufficient balance
                     row = conn.execute(
-                        "SELECT balance FROM accounts WHERE public_key = ?",
-                        (withdrawal['miner_pk'],)
+                        "SELECT balance FROM accounts WHERE public_key = ?", (withdrawal["miner_pk"],)
                     ).fetchone()
                     current_balance = row[0] if row else 0
 
-                    total_deduction = withdrawal['amount'] + withdrawal.get('fee', 0)
+                    total_deduction = withdrawal["amount"] + withdrawal.get("fee", 0)
                     if current_balance < total_deduction:
                         conn.execute(
-                            "UPDATE withdrawals SET status = 'failed', error_msg = ? "
-                            "WHERE withdrawal_id = ?",
-                            (f"Insufficient balance: have {current_balance}, need {total_deduction}",
-                             withdrawal_id)
+                            "UPDATE withdrawals SET status = 'failed', error_msg = ? WHERE withdrawal_id = ?",
+                            (f"Insufficient balance: have {current_balance}, need {total_deduction}", withdrawal_id),
                         )
                         conn.execute("COMMIT")
                         logger.error(f"✗ Withdrawal {withdrawal_id}: insufficient balance")
-                        self.stats['failed'] += 1
+                        self.stats["failed"] += 1
                         return False
 
                     # Deduct balance BEFORE broadcasting transaction
                     conn.execute(
                         "UPDATE accounts SET balance = balance - ? WHERE public_key = ?",
-                        (total_deduction, withdrawal['miner_pk'])
+                        (total_deduction, withdrawal["miner_pk"]),
                     )
 
                     # Mark as processing
                     conn.execute(
-                        "UPDATE withdrawals SET status = 'processing' WHERE withdrawal_id = ?",
-                        (withdrawal_id,)
+                        "UPDATE withdrawals SET status = 'processing' WHERE withdrawal_id = ?", (withdrawal_id,)
                     )
                     conn.execute("COMMIT")
                 except Exception:
@@ -137,17 +139,20 @@ class PayoutWorker:
             if tx_hash:
                 # Mark as completed
                 with sqlite3.connect(self.db_path) as conn:
-                    conn.execute("""
+                    conn.execute(
+                        """
                         UPDATE withdrawals
                         SET status = 'completed',
                             processed_at = ?,
                             tx_hash = ?
                         WHERE withdrawal_id = ?
-                    """, (int(time.time()), tx_hash, withdrawal_id))
+                    """,
+                        (int(time.time()), tx_hash, withdrawal_id),
+                    )
 
                 logger.info(f"[OK] Withdrawal {withdrawal_id} completed: {tx_hash}")
-                self.stats['processed'] += 1
-                self.stats['total_rtc'] += withdrawal['amount']
+                self.stats["processed"] += 1
+                self.stats["total_rtc"] += withdrawal["amount"]
                 return True
             else:
                 raise Exception("No transaction hash returned")
@@ -160,18 +165,20 @@ class PayoutWorker:
                 conn.execute("BEGIN IMMEDIATE")
                 conn.execute(
                     "UPDATE accounts SET balance = balance + ? WHERE public_key = ?",
-                    (withdrawal['amount'] + withdrawal.get('fee', 0),
-                     withdrawal['miner_pk'])
+                    (withdrawal["amount"] + withdrawal.get("fee", 0), withdrawal["miner_pk"]),
                 )
-                conn.execute("""
+                conn.execute(
+                    """
                     UPDATE withdrawals
                     SET status = 'failed',
                         error_msg = ?
                     WHERE withdrawal_id = ?
-                """, (str(e), withdrawal_id))
+                """,
+                    (str(e), withdrawal_id),
+                )
                 conn.execute("COMMIT")
 
-            self.stats['failed'] += 1
+            self.stats["failed"] += 1
             return False
 
     def process_batch(self) -> int:
@@ -229,67 +236,72 @@ class PayoutWorker:
 
         with sqlite3.connect(self.db_path) as conn:
             # Count old withdrawals
-            count = conn.execute("""
+            count = conn.execute(
+                """
                 SELECT COUNT(*) FROM withdrawals
                 WHERE status = 'completed' AND processed_at < ?
-            """, (cutoff,)).fetchone()[0]
+            """,
+                (cutoff,),
+            ).fetchone()[0]
 
             if count > 0:
                 # Archive to file (in production, send to cold storage)
-                rows = conn.execute("""
+                rows = conn.execute(
+                    """
                     SELECT * FROM withdrawals
                     WHERE status = 'completed' AND processed_at < ?
-                """, (cutoff,)).fetchall()
+                """,
+                    (cutoff,),
+                ).fetchall()
 
                 archive_file = f"withdrawal_archive_{datetime.now().strftime('%Y%m%d')}.json"
-                with open(archive_file, 'a') as f:
+                with open(archive_file, "a") as f:
                     for row in rows:
-                        json.dump({
-                            'withdrawal_id': row[0],
-                            'miner_pk': row[1],
-                            'amount': row[2],
-                            'destination': row[4],
-                            'tx_hash': row[8],
-                            'processed_at': row[7]
-                        }, f)
-                        f.write('\n')
+                        json.dump(
+                            {
+                                "withdrawal_id": row[0],
+                                "miner_pk": row[1],
+                                "amount": row[2],
+                                "destination": row[4],
+                                "tx_hash": row[8],
+                                "processed_at": row[7],
+                            },
+                            f,
+                        )
+                        f.write("\n")
 
                 # Delete from database
-                conn.execute("""
+                conn.execute(
+                    """
                     DELETE FROM withdrawals
                     WHERE status = 'completed' AND processed_at < ?
-                """, (cutoff,))
+                """,
+                    (cutoff,),
+                )
 
                 logger.info(f"Archived {count} old withdrawals to {archive_file}")
 
     def get_stats(self) -> Dict:
         """Get worker statistics"""
         with sqlite3.connect(self.db_path) as conn:
-            pending = conn.execute(
-                "SELECT COUNT(*) FROM withdrawals WHERE status = 'pending'"
-            ).fetchone()[0]
+            pending = conn.execute("SELECT COUNT(*) FROM withdrawals WHERE status = 'pending'").fetchone()[0]
 
-            processing = conn.execute(
-                "SELECT COUNT(*) FROM withdrawals WHERE status = 'processing'"
-            ).fetchone()[0]
+            processing = conn.execute("SELECT COUNT(*) FROM withdrawals WHERE status = 'processing'").fetchone()[0]
 
-            completed = conn.execute(
-                "SELECT COUNT(*) FROM withdrawals WHERE status = 'completed'"
-            ).fetchone()[0]
+            completed = conn.execute("SELECT COUNT(*) FROM withdrawals WHERE status = 'completed'").fetchone()[0]
 
-            failed = conn.execute(
-                "SELECT COUNT(*) FROM withdrawals WHERE status = 'failed'"
-            ).fetchone()[0]
+            failed = conn.execute("SELECT COUNT(*) FROM withdrawals WHERE status = 'failed'").fetchone()[0]
 
         return {
-            'pending': pending,
-            'processing': processing,
-            'completed': completed,
-            'failed': failed,
-            'session_processed': self.stats['processed'],
-            'session_failed': self.stats['failed'],
-            'session_total_rtc': self.stats['total_rtc']
+            "pending": pending,
+            "processing": processing,
+            "completed": completed,
+            "failed": failed,
+            "session_processed": self.stats["processed"],
+            "session_failed": self.stats["failed"],
+            "session_total_rtc": self.stats["total_rtc"],
         }
+
 
 def main():
     """Main entry point"""
@@ -308,6 +320,7 @@ def main():
         return 1
 
     return 0
+
 
 if __name__ == "__main__":
     exit(main())

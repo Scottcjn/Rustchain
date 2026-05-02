@@ -9,10 +9,8 @@ Implements: https://github.com/Scottcjn/rustchain-bounties/issues/17
 Bounty: 50 RTC
 """
 
-import json
-import os
 import statistics
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any, Dict, List, Optional, Tuple
 
 # ─────────────────────────────────────────────────────────────────
 # Architecture Profile Database
@@ -26,7 +24,16 @@ ARCHITECTURE_PROFILES = {
         "thermal_drift_range": (0.5, 15.0),
         "clock_drift_magnitude": "medium",
         "expected_cpu_brands": ["motorola", "freescale", "nxp"],
-        "disqualifying_features": ["has_sse", "has_sse2", "has_sse3", "has_sse4", "has_avx", "has_avx2", "has_avx512", "has_neon"],
+        "disqualifying_features": [
+            "has_sse",
+            "has_sse2",
+            "has_sse3",
+            "has_sse4",
+            "has_avx",
+            "has_avx2",
+            "has_avx512",
+            "has_neon",
+        ],
         "cache_tone_min": 0.8,
         "cache_tone_max": 8.0,
     },
@@ -38,7 +45,16 @@ ARCHITECTURE_PROFILES = {
         "thermal_drift_range": (0.3, 12.0),
         "clock_drift_magnitude": "low",
         "expected_cpu_brands": ["motorola", "ibm"],
-        "disqualifying_features": ["has_sse", "has_sse2", "has_sse3", "has_sse4", "has_avx", "has_avx2", "has_avx512", "has_neon"],
+        "disqualifying_features": [
+            "has_sse",
+            "has_sse2",
+            "has_sse3",
+            "has_sse4",
+            "has_avx",
+            "has_avx2",
+            "has_avx512",
+            "has_neon",
+        ],
         "cache_tone_min": 0.7,
         "cache_tone_max": 10.0,
     },
@@ -50,7 +66,17 @@ ARCHITECTURE_PROFILES = {
         "thermal_drift_range": (0.3, 18.0),
         "clock_drift_magnitude": "high",
         "expected_cpu_brands": ["motorola", "freescale"],
-        "disqualifying_features": ["has_altivec", "has_sse", "has_sse2", "has_sse3", "has_sse4", "has_avx", "has_avx2", "has_avx512", "has_neon"],
+        "disqualifying_features": [
+            "has_altivec",
+            "has_sse",
+            "has_sse2",
+            "has_sse3",
+            "has_sse4",
+            "has_avx",
+            "has_avx2",
+            "has_avx512",
+            "has_neon",
+        ],
         "cache_tone_min": 0.5,
         "cache_tone_max": 6.0,
     },
@@ -75,7 +101,16 @@ ARCHITECTURE_PROFILES = {
         "thermal_drift_range": (0.1, 4.0),
         "clock_drift_magnitude": "very_low",
         "expected_cpu_brands": ["apple"],
-        "disqualifying_features": ["has_altivec", "has_sse", "has_sse2", "has_sse3", "has_sse4", "has_avx", "has_avx2", "has_avx512"],
+        "disqualifying_features": [
+            "has_altivec",
+            "has_sse",
+            "has_sse2",
+            "has_sse3",
+            "has_sse4",
+            "has_avx",
+            "has_avx2",
+            "has_avx512",
+        ],
         "cache_tone_min": 0.4,
         "cache_tone_max": 4.0,
         "required_features": ["has_neon"],
@@ -88,7 +123,16 @@ ARCHITECTURE_PROFILES = {
         "thermal_drift_range": (0.1, 6.0),
         "clock_drift_magnitude": "low",
         "expected_cpu_brands": [],
-        "disqualifying_features": ["has_altivec", "has_sse", "has_sse2", "has_sse3", "has_sse4", "has_avx", "has_avx2", "has_avx512"],
+        "disqualifying_features": [
+            "has_altivec",
+            "has_sse",
+            "has_sse2",
+            "has_sse3",
+            "has_sse4",
+            "has_avx",
+            "has_avx2",
+            "has_avx512",
+        ],
         "cache_tone_min": 0.4,
         "cache_tone_max": 6.0,
     },
@@ -112,7 +156,16 @@ ARCHITECTURE_PROFILES = {
         "thermal_drift_range": (0.5, 15.0),
         "clock_drift_magnitude": "high",
         "expected_cpu_brands": ["intel", "amd", "cyrix", "nexgen"],
-        "disqualifying_features": ["has_altivec", "has_sse2", "has_sse3", "has_sse4", "has_avx", "has_avx2", "has_avx512", "has_neon"],
+        "disqualifying_features": [
+            "has_altivec",
+            "has_sse2",
+            "has_sse3",
+            "has_sse4",
+            "has_avx",
+            "has_avx2",
+            "has_avx512",
+            "has_neon",
+        ],
         "cache_tone_min": 0.3,
         "cache_tone_max": 4.0,
     },
@@ -124,7 +177,16 @@ ARCHITECTURE_PROFILES = {
         "thermal_drift_range": (0.1, 5.0),
         "clock_drift_magnitude": "low",
         "expected_cpu_brands": ["ibm"],
-        "disqualifying_features": ["has_sse", "has_sse2", "has_sse3", "has_sse4", "has_avx", "has_avx2", "has_avx512", "has_neon"],
+        "disqualifying_features": [
+            "has_sse",
+            "has_sse2",
+            "has_sse3",
+            "has_sse4",
+            "has_avx",
+            "has_avx2",
+            "has_avx512",
+            "has_neon",
+        ],
         "cache_tone_min": 0.5,
         "cache_tone_max": 6.0,
     },
@@ -136,7 +198,17 @@ ARCHITECTURE_PROFILES = {
         "thermal_drift_range": (0.3, 10.0),
         "clock_drift_magnitude": "medium",
         "expected_cpu_brands": ["sun", "oracle"],
-        "disqualifying_features": ["has_altivec", "has_sse", "has_sse2", "has_sse3", "has_sse4", "has_avx", "has_avx2", "has_avx512", "has_neon"],
+        "disqualifying_features": [
+            "has_altivec",
+            "has_sse",
+            "has_sse2",
+            "has_sse3",
+            "has_sse4",
+            "has_avx",
+            "has_avx2",
+            "has_avx512",
+            "has_neon",
+        ],
         "cache_tone_min": 0.5,
         "cache_tone_max": 7.0,
     },
@@ -148,7 +220,17 @@ ARCHITECTURE_PROFILES = {
         "thermal_drift_range": (1.0, 20.0),
         "clock_drift_magnitude": "very_high",
         "expected_cpu_brands": ["motorola"],
-        "disqualifying_features": ["has_altivec", "has_sse", "has_sse2", "has_sse3", "has_sse4", "has_avx", "has_avx2", "has_avx512", "has_neon"],
+        "disqualifying_features": [
+            "has_altivec",
+            "has_sse",
+            "has_sse2",
+            "has_sse3",
+            "has_sse4",
+            "has_avx",
+            "has_avx2",
+            "has_avx512",
+            "has_neon",
+        ],
         "cache_tone_min": 0.2,
         "cache_tone_max": 3.0,
     },
@@ -160,7 +242,17 @@ ARCHITECTURE_PROFILES = {
         "thermal_drift_range": (1.0, 20.0),
         "clock_drift_magnitude": "very_high",
         "expected_cpu_brands": ["motorola"],
-        "disqualifying_features": ["has_altivec", "has_sse", "has_sse2", "has_sse3", "has_sse4", "has_avx", "has_avx2", "has_avx512", "has_neon"],
+        "disqualifying_features": [
+            "has_altivec",
+            "has_sse",
+            "has_sse2",
+            "has_sse3",
+            "has_sse4",
+            "has_avx",
+            "has_avx2",
+            "has_avx512",
+            "has_neon",
+        ],
         "cache_tone_min": 0.2,
         "cache_tone_max": 3.5,
     },
@@ -172,27 +264,62 @@ ARCHITECTURE_PROFILES = {
         "thermal_drift_range": (0.2, 8.0),
         "clock_drift_magnitude": "low",
         "expected_cpu_brands": [],
-        "disqualifying_features": ["has_altivec", "has_sse", "has_sse2", "has_sse3", "has_sse4", "has_avx", "has_avx2", "has_avx512", "has_neon"],
+        "disqualifying_features": [
+            "has_altivec",
+            "has_sse",
+            "has_sse2",
+            "has_sse3",
+            "has_sse4",
+            "has_avx",
+            "has_avx2",
+            "has_avx512",
+            "has_neon",
+        ],
         "cache_tone_min": 0.4,
         "cache_tone_max": 6.0,
     },
 }
 
 ARCH_ALIASES = {
-    "powerpc": "g3", "ppc": "g3", "powerpc g4": "g4", "power macintosh": "g4", "powerbook": "g4",
-    "imac": "g3", "powerpc g5": "g5", "power mac g5": "g5", "xserve g5": "g5",
-    "apple m1": "apple_silicon", "apple m2": "apple_silicon", "apple m3": "apple_silicon",
-    "m1": "apple_silicon", "m2": "apple_silicon", "m3": "apple_silicon",
+    "powerpc": "g3",
+    "ppc": "g3",
+    "powerpc g4": "g4",
+    "power macintosh": "g4",
+    "powerbook": "g4",
+    "imac": "g3",
+    "powerpc g5": "g5",
+    "power mac g5": "g5",
+    "xserve g5": "g5",
+    "apple m1": "apple_silicon",
+    "apple m2": "apple_silicon",
+    "apple m3": "apple_silicon",
+    "m1": "apple_silicon",
+    "m2": "apple_silicon",
+    "m3": "apple_silicon",
     "apple_silicon": "apple_silicon",
-    "aarch64": "arm64", "arm64": "arm64", "arm": "arm64",
-    "x86_64": "modern_x86", "x86-64": "modern_x86", "amd64": "modern_x86",
-    "i386": "vintage_x86", "i486": "vintage_x86",
-    "i686": "retro_x86", "pentium": "retro_x86", "pentium 4": "retro_x86", "core 2": "retro_x86",
-    "sparc": "sparc", "sun": "sparc",
-    "68k": "68k", "m68k": "68k", "motorola 68k": "68k",
+    "aarch64": "arm64",
+    "arm64": "arm64",
+    "arm": "arm64",
+    "x86_64": "modern_x86",
+    "x86-64": "modern_x86",
+    "amd64": "modern_x86",
+    "i386": "vintage_x86",
+    "i486": "vintage_x86",
+    "i686": "retro_x86",
+    "pentium": "retro_x86",
+    "pentium 4": "retro_x86",
+    "core 2": "retro_x86",
+    "sparc": "sparc",
+    "sun": "sparc",
+    "68k": "68k",
+    "m68k": "68k",
+    "motorola 68k": "68k",
     "amiga": "amiga_68k",
-    "power8": "power8", "power9": "power8", "powerpc 970": "g5",
-    "riscv": "riscv", "rv64": "riscv",
+    "power8": "power8",
+    "power9": "power8",
+    "powerpc 970": "g5",
+    "riscv": "riscv",
+    "rv64": "riscv",
 }
 
 
@@ -217,8 +344,19 @@ def extract_simd_features(simd_data: Dict) -> Dict[str, bool]:
     if not isinstance(data, dict):
         data = simd_data
     features = {}
-    for feat in ["has_sse", "has_sse2", "has_sse3", "has_sse4", "has_avx", "has_avx2", "has_avx512",
-                 "has_x87", "has_mmx", "has_neon", "has_altivec"]:
+    for feat in [
+        "has_sse",
+        "has_sse2",
+        "has_sse3",
+        "has_sse4",
+        "has_avx",
+        "has_avx2",
+        "has_avx512",
+        "has_x87",
+        "has_mmx",
+        "has_neon",
+        "has_altivec",
+    ]:
         if data.get(feat) is not None:
             features[feat] = bool(data.get(feat))
     simd_type = data.get("simd_type", "")
@@ -279,9 +417,12 @@ def extract_all_features(fingerprint: Dict) -> Dict[str, Any]:
     all_features = {}
     checks = fingerprint.get("checks", {}) if isinstance(fingerprint, dict) else {}
     if not checks and isinstance(fingerprint, dict):
-        checks = {k: v for k, v in fingerprint.items()
-                  if k in ("clock_drift", "cache_timing", "simd_identity", "thermal_drift",
-                           "instruction_jitter", "anti_emulation")}
+        checks = {
+            k: v
+            for k, v in fingerprint.items()
+            if k
+            in ("clock_drift", "cache_timing", "simd_identity", "thermal_drift", "instruction_jitter", "anti_emulation")
+        }
     if isinstance(checks, dict):
         for check_name, check_value in checks.items():
             if isinstance(check_value, dict):
@@ -433,9 +574,7 @@ def score_cpu_brand_consistency(claimed_arch: str, device_info: Dict) -> Tuple[f
 
 
 def validate_arch_consistency(
-    fingerprint: Dict,
-    claimed_arch: str,
-    device_info: Optional[Dict] = None
+    fingerprint: Dict, claimed_arch: str, device_info: Optional[Dict] = None
 ) -> Tuple[float, Dict[str, Any]]:
     """
     Main architecture cross-validation function.
@@ -467,7 +606,9 @@ def validate_arch_consistency(
     clock_features = extract_clock_features(clock_data)
     thermal_features = extract_thermal_features(thermal_data)
     simd_score, simd_issues = score_simd_consistency(claimed_arch, simd_features)
-    cache_score, cache_issues = score_cache_consistency(claimed_arch, cache_features, clock_cv=clock_features.get("cv", 0))
+    cache_score, cache_issues = score_cache_consistency(
+        claimed_arch, cache_features, clock_cv=clock_features.get("cv", 0)
+    )
     clock_score, clock_issues = score_clock_consistency(claimed_arch, clock_features)
     thermal_score, thermal_issues = score_thermal_consistency(claimed_arch, thermal_features)
     brand_score, brand_issues = score_cpu_brand_consistency(claimed_arch, device_info)
@@ -480,8 +621,13 @@ def validate_arch_consistency(
     }
     all_issues = simd_issues + cache_issues + clock_issues + thermal_issues + brand_issues
     details["issues"] = all_issues
-    weights = {"simd_consistency": 0.30, "cache_consistency": 0.25, "clock_consistency": 0.20,
-               "thermal_consistency": 0.15, "cpu_brand_consistency": 0.10}
+    weights = {
+        "simd_consistency": 0.30,
+        "cache_consistency": 0.25,
+        "clock_consistency": 0.20,
+        "thermal_consistency": 0.15,
+        "cpu_brand_consistency": 0.10,
+    }
     overall_score = sum(details["scores"][key] * weights[key] for key in weights)
     overall_score = round(overall_score, 3)
     details["overall_score"] = overall_score
@@ -515,56 +661,122 @@ if __name__ == "__main__":
             "claimed_arch": "g4",
             "fingerprint": {
                 "checks": {
-                    "simd_identity": {"passed": True, "data": {"has_altivec": True, "has_sse": False, "has_neon": False, "simd_type": "altivec"}},
+                    "simd_identity": {
+                        "passed": True,
+                        "data": {"has_altivec": True, "has_sse": False, "has_neon": False, "simd_type": "altivec"},
+                    },
                     "clock_drift": {"passed": True, "data": {"cv": 0.05, "samples": 200}},
-                    "cache_timing": {"passed": True, "data": {"latencies": {"4KB": {"random_ns": 1.0}, "32KB": {"random_ns": 2.0}, "256KB": {"random_ns": 5.0}, "1024KB": {"random_ns": 10.0}}, "tone_ratios": [2.0, 2.5, 2.0]}},
-                    "thermal_drift": {"passed": True, "data": {"thermal_drift_pct": 5.0}}
+                    "cache_timing": {
+                        "passed": True,
+                        "data": {
+                            "latencies": {
+                                "4KB": {"random_ns": 1.0},
+                                "32KB": {"random_ns": 2.0},
+                                "256KB": {"random_ns": 5.0},
+                                "1024KB": {"random_ns": 10.0},
+                            },
+                            "tone_ratios": [2.0, 2.5, 2.0],
+                        },
+                    },
+                    "thermal_drift": {"passed": True, "data": {"thermal_drift_pct": 5.0}},
                 }
-            }
+            },
         },
         {
             "name": "G4 claim but x86 fingerprints (spoofing)",
             "claimed_arch": "g4",
             "fingerprint": {
                 "checks": {
-                    "simd_identity": {"passed": True, "data": {"has_sse2": True, "has_avx": True, "has_altivec": False, "simd_type": "sse_avx"}},
+                    "simd_identity": {
+                        "passed": True,
+                        "data": {"has_sse2": True, "has_avx": True, "has_altivec": False, "simd_type": "sse_avx"},
+                    },
                     "clock_drift": {"passed": True, "data": {"cv": 0.001, "samples": 200}},
-                    "cache_timing": {"passed": True, "data": {"latencies": {"4KB": {"random_ns": 1.0}, "32KB": {"random_ns": 1.5}, "256KB": {"random_ns": 3.0}, "4096KB": {"random_ns": 15.0}}, "tone_ratios": [1.5, 2.0, 5.0]}},
+                    "cache_timing": {
+                        "passed": True,
+                        "data": {
+                            "latencies": {
+                                "4KB": {"random_ns": 1.0},
+                                "32KB": {"random_ns": 1.5},
+                                "256KB": {"random_ns": 3.0},
+                                "4096KB": {"random_ns": 15.0},
+                            },
+                            "tone_ratios": [1.5, 2.0, 5.0],
+                        },
+                    },
                 }
-            }
+            },
         },
         {
             "name": "Modern x86 correct",
             "claimed_arch": "modern_x86",
             "fingerprint": {
                 "checks": {
-                    "simd_identity": {"passed": True, "data": {"has_sse2": True, "has_avx2": True, "has_altivec": False, "has_neon": False, "simd_type": "sse_avx"}},
+                    "simd_identity": {
+                        "passed": True,
+                        "data": {
+                            "has_sse2": True,
+                            "has_avx2": True,
+                            "has_altivec": False,
+                            "has_neon": False,
+                            "simd_type": "sse_avx",
+                        },
+                    },
                     "clock_drift": {"passed": True, "data": {"cv": 0.002, "samples": 200}},
-                    "cache_timing": {"passed": True, "data": {"latencies": {"4KB": {"random_ns": 1.0}, "32KB": {"random_ns": 1.5}, "256KB": {"random_ns": 3.0}, "1024KB": {"random_ns": 8.0}, "4096KB": {"random_ns": 20.0}}, "tone_ratios": [1.5, 2.0, 2.5, 2.5]}},
+                    "cache_timing": {
+                        "passed": True,
+                        "data": {
+                            "latencies": {
+                                "4KB": {"random_ns": 1.0},
+                                "32KB": {"random_ns": 1.5},
+                                "256KB": {"random_ns": 3.0},
+                                "1024KB": {"random_ns": 8.0},
+                                "4096KB": {"random_ns": 20.0},
+                            },
+                            "tone_ratios": [1.5, 2.0, 2.5, 2.5],
+                        },
+                    },
                 }
-            }
+            },
         },
         {
             "name": "Apple Silicon correct",
             "claimed_arch": "apple_silicon",
             "fingerprint": {
                 "checks": {
-                    "simd_identity": {"passed": True, "data": {"has_neon": True, "has_altivec": False, "has_sse": False, "simd_type": "neon"}},
+                    "simd_identity": {
+                        "passed": True,
+                        "data": {"has_neon": True, "has_altivec": False, "has_sse": False, "simd_type": "neon"},
+                    },
                     "clock_drift": {"passed": True, "data": {"cv": 0.003, "samples": 200}},
-                    "cache_timing": {"passed": True, "data": {"latencies": {"4KB": {"random_ns": 1.0}, "32KB": {"random_ns": 1.2}, "256KB": {"random_ns": 2.5}, "1024KB": {"random_ns": 6.0}, "4096KB": {"random_ns": 12.0}}, "tone_ratios": [1.2, 2.0, 2.4, 2.0]}},
+                    "cache_timing": {
+                        "passed": True,
+                        "data": {
+                            "latencies": {
+                                "4KB": {"random_ns": 1.0},
+                                "32KB": {"random_ns": 1.2},
+                                "256KB": {"random_ns": 2.5},
+                                "1024KB": {"random_ns": 6.0},
+                                "4096KB": {"random_ns": 12.0},
+                            },
+                            "tone_ratios": [1.2, 2.0, 2.4, 2.0],
+                        },
+                    },
                 }
-            }
+            },
         },
     ]
     for i, tc in enumerate(test_cases):
         score, details = validate_arch_consistency(tc["fingerprint"], tc["claimed_arch"])
-        print(f"\nTest {i+1}: {tc['name']}")
+        print(f"\nTest {i + 1}: {tc['name']}")
         print(f"  Claimed: {tc['claimed_arch']} -> normalized: {details['normalized_arch']}")
         print(f"  Overall score: {score}")
         print(f"  Interpretation: {details.get('interpretation', 'N/A')}")
-        print(f"  Sub-scores: simd={details['scores']['simd_consistency']}, "
-              f"cache={details['scores']['cache_consistency']}, "
-              f"clock={details['scores']['clock_consistency']}")
+        print(
+            f"  Sub-scores: simd={details['scores']['simd_consistency']}, "
+            f"cache={details['scores']['cache_consistency']}, "
+            f"clock={details['scores']['clock_consistency']}"
+        )
         if details["issues"]:
             print(f"  Issues: {details['issues']}")
     print("\n" + "=" * 60)

@@ -14,7 +14,6 @@ Closes: Scottcjn/rustchain-bounties#392
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import sqlite3
@@ -80,6 +79,7 @@ def init_identity_tables(db_path: str = DB_PATH) -> None:
 # Agent ID derivation (matches beacon_anchor.py convention)
 # ---------------------------------------------------------------------------
 
+
 def agent_id_from_pubkey(pubkey_bytes: bytes) -> str:
     """Derive canonical Beacon agent ID: ``bcn_`` + first 12 hex chars of SHA-256."""
     return "bcn_" + hashlib.sha256(pubkey_bytes).hexdigest()[:12]
@@ -88,6 +88,7 @@ def agent_id_from_pubkey(pubkey_bytes: bytes) -> str:
 # ---------------------------------------------------------------------------
 # Ed25519 signature verification
 # ---------------------------------------------------------------------------
+
 
 def _verify_ed25519(pubkey_hex: str, signature_hex: str, message: bytes) -> bool:
     """Verify an Ed25519 signature.  Returns False if cryptography is not installed."""
@@ -106,13 +107,12 @@ def _verify_ed25519(pubkey_hex: str, signature_hex: str, message: bytes) -> bool
 # Core key-store operations
 # ---------------------------------------------------------------------------
 
+
 def load_key(agent_id: str, db_path: str = DB_PATH) -> Optional[Dict[str, Any]]:
     """Fetch a single key record by agent_id, or None."""
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM beacon_known_keys WHERE agent_id = ?", (agent_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM beacon_known_keys WHERE agent_id = ?", (agent_id,)).fetchone()
     return dict(row) if row else None
 
 
@@ -120,9 +120,7 @@ def load_all_keys(db_path: str = DB_PATH) -> List[Dict[str, Any]]:
     """Return all key records."""
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT * FROM beacon_known_keys ORDER BY first_seen ASC"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM beacon_known_keys ORDER BY first_seen ASC").fetchall()
     return [dict(r) for r in rows]
 
 
@@ -165,9 +163,8 @@ def _upsert_key(rec: Dict[str, Any], db_path: str = DB_PATH) -> None:
 # TOFU: learn key from an incoming envelope
 # ---------------------------------------------------------------------------
 
-def learn_key_from_envelope(
-    envelope: Dict[str, Any], db_path: str = DB_PATH
-) -> Tuple[bool, str]:
+
+def learn_key_from_envelope(envelope: Dict[str, Any], db_path: str = DB_PATH) -> Tuple[bool, str]:
     """
     Trust-On-First-Use key learning.
 
@@ -233,6 +230,7 @@ def learn_key_from_envelope(
 # TTL / expiration
 # ---------------------------------------------------------------------------
 
+
 def is_key_expired(agent_id: str, ttl: int = DEFAULT_KEY_TTL, db_path: str = DB_PATH) -> bool:
     """Return True if the key has not been seen within *ttl* seconds."""
     rec = load_key(agent_id, db_path)
@@ -243,9 +241,7 @@ def is_key_expired(agent_id: str, ttl: int = DEFAULT_KEY_TTL, db_path: str = DB_
     return (time.time() - rec["last_seen"]) > ttl
 
 
-def expire_old_keys(
-    ttl: int = DEFAULT_KEY_TTL, dry_run: bool = True, db_path: str = DB_PATH
-) -> List[str]:
+def expire_old_keys(ttl: int = DEFAULT_KEY_TTL, dry_run: bool = True, db_path: str = DB_PATH) -> List[str]:
     """Return (and optionally delete) keys that have exceeded *ttl* without a heartbeat."""
     cutoff = time.time() - ttl
     with sqlite3.connect(db_path) as conn:
@@ -257,7 +253,7 @@ def expire_old_keys(
         if not dry_run and expired_ids:
             placeholders = ",".join("?" for _ in expired_ids)
             conn.execute(
-                f"DELETE FROM beacon_known_keys WHERE agent_id IN ({placeholders})",
+                f"DELETE FROM beacon_known_keys WHERE agent_id IN ({placeholders})",  # nosec B608
                 expired_ids,
             )
             conn.commit()
@@ -268,9 +264,8 @@ def expire_old_keys(
 # Revocation
 # ---------------------------------------------------------------------------
 
-def revoke_key(
-    agent_id: str, reason: Optional[str] = None, db_path: str = DB_PATH
-) -> Tuple[bool, str]:
+
+def revoke_key(agent_id: str, reason: Optional[str] = None, db_path: str = DB_PATH) -> Tuple[bool, str]:
     """
     Permanently revoke a known key.
 
@@ -298,6 +293,7 @@ def revoke_key(
 # ---------------------------------------------------------------------------
 # Key rotation
 # ---------------------------------------------------------------------------
+
 
 def rotate_key(
     agent_id: str,
@@ -362,6 +358,7 @@ def rotate_key(
 # Listing / info
 # ---------------------------------------------------------------------------
 
+
 def list_keys(
     include_revoked: bool = True,
     include_expired: bool = True,
@@ -421,8 +418,7 @@ def get_key_info(agent_id: str, db_path: str = DB_PATH) -> Optional[Dict[str, An
         "previous_key": rec.get("previous_key"),
         "is_revoked": is_revoked,
         "revoked_at": (
-            datetime.fromtimestamp(rec["revoked_at"], tz=timezone.utc).isoformat()
-            if rec.get("revoked_at") else None
+            datetime.fromtimestamp(rec["revoked_at"], tz=timezone.utc).isoformat() if rec.get("revoked_at") else None
         ),
         "revoked_reason": rec.get("revoked_reason"),
         "is_expired": is_expired,

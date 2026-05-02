@@ -1,12 +1,11 @@
 import os
 import sqlite3
+import sys
 import tempfile
 import types
 
 import pytest
 from flask import Flask
-
-import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 

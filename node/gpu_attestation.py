@@ -1,13 +1,10 @@
-import hashlib
-import json
-import os
-import subprocess
 from typing import Dict, Tuple
+
 
 def validate_gpu_fingerprint(fingerprint_data: Dict) -> Tuple[bool, str]:
     """
     Server-side validation of GPU fingerprint data (RIP-0308).
-    
+
     Checks for:
     1. Silicon identity consistency (Compute Capability vs VRAM vs Arch)
     2. Physical property variance (Jitter, Thermal Ramp, Latency Spread)
@@ -18,12 +15,12 @@ def validate_gpu_fingerprint(fingerprint_data: Dict) -> Tuple[bool, str]:
         gpu_name = fingerprint_data.get("gpu_name", "").lower()
         vram = fingerprint_data.get("vram_mb", 0)
         cap = fingerprint_data.get("compute_capability", "0.0")
-        
+
         # known H100 SXM5 signature
         if "h100" in gpu_name and "sxm" in gpu_name:
             if cap != "9.0" or vram < 80000:
                 return False, "identity_mismatch: H100 SXM requires sm_9.0 and 80GB VRAM"
-        
+
         # 2. Channel 8c: Warp Jitter (Scheduling Variance)
         # Real hardware has jitter (CV > 0.005). Perfect 0 is a sign of emulation.
         ch8c = next((ch for ch in fingerprint_data.get("channels", []) if "8c" in ch["name"]), None)
@@ -42,7 +39,7 @@ def validate_gpu_fingerprint(fingerprint_data: Dict) -> Tuple[bool, str]:
             fp16_ratio = ratios.get("fp16_to_fp32", 0)
             # Ampere/Ada Tensor Core ratio is typically > 2.0
             if "rtx" in gpu_name and fp16_ratio < 1.1:
-                 return False, "alu_mismatch: Tensor core throughput not detected"
+                return False, "alu_mismatch: Tensor core throughput not detected"
 
         # 4. Channel 8i: iGPU Coherence (if applicable)
         ch8i = next((ch for ch in fingerprint_data.get("channels", []) if "8i" in ch["name"]), None)
@@ -56,31 +53,33 @@ def validate_gpu_fingerprint(fingerprint_data: Dict) -> Tuple[bool, str]:
     except Exception as e:
         return False, f"validation_error: {str(e)}"
 
+
 def get_gpu_attestation_payload(device_index=0) -> Dict:
     """
     Run appropriate GPU fingerprinting and return the structured payload.
     """
-    import torch
     from miners.gpu_fingerprint import run_gpu_fingerprint
     from miners.tensor_core_fingerprint import run_tensor_core_fingerprint
-    
+
     # Run main multi-channel fingerprint
     fp = run_gpu_fingerprint(device_index=device_index)
     payload = fp.to_dict()
-    
+
     # Add Channel 8f (Tensor Core LSB Signature) for deep silicon identity
     try:
         if fp.compute_capability >= "7.0":
             tc_fp = run_tensor_core_fingerprint(device_index=device_index)
-            payload["channels"].append({
-                "name": "8f: Tensor Core Precision Drift",
-                "passed": tc_fp.all_passed,
-                "data": {
-                    "precision_hash": tc_fp.precision_hash,
-                    "lsb_signature": tc_fp.precision_hash # Use LSB composite
+            payload["channels"].append(
+                {
+                    "name": "8f: Tensor Core Precision Drift",
+                    "passed": tc_fp.all_passed,
+                    "data": {
+                        "precision_hash": tc_fp.precision_hash,
+                        "lsb_signature": tc_fp.precision_hash,  # Use LSB composite
+                    },
                 }
-            })
+            )
     except Exception:
         pass
-        
+
     return payload

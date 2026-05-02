@@ -18,14 +18,11 @@ Features:
     - Embed code generator with size presets (560x315, 640x360, 854x480)
 """
 
-import hashlib
-import html as html_lib
-import json
 import time
-from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
-from flask import Blueprint, request, Response, jsonify, render_template_string
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
+from flask import Blueprint, Response, jsonify, render_template_string, request
 
 # Create blueprint for embed routes
 embed_bp = Blueprint("bottube_embed", __name__, url_prefix="/")
@@ -632,7 +629,7 @@ WATCH_PAGE_TEMPLATE = """
         function switchTab(tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            
+
             event.target.classList.add('active');
             document.getElementById(tab + '-tab').classList.add('active');
         }
@@ -705,10 +702,11 @@ WATCH_PAGE_TEMPLATE = """
 # Helper Functions
 # ============================================================================
 
+
 def _get_mock_video(video_id: str) -> Optional[Dict[str, Any]]:
     """Get mock video data for demonstration."""
     base_time = time.time()
-    
+
     mock_videos = {
         "demo-001": {
             "id": "demo-001",
@@ -750,7 +748,7 @@ def _get_mock_video(video_id: str) -> Optional[Dict[str, Any]]:
             "public": True,
         },
     }
-    
+
     return mock_videos.get(video_id)
 
 
@@ -783,7 +781,7 @@ def _get_related_videos(video_id: str, limit: int = 5) -> List[Dict[str, Any]]:
             "agent": "dev-rel-agent",
         },
     ]
-    
+
     related = [v for v in all_videos if v["id"] != video_id]
     return related[:limit]
 
@@ -799,6 +797,7 @@ def _get_base_url() -> str:
 # ============================================================================
 # Routes
 # ============================================================================
+
 
 @embed_bp.route("/embed/<video_id>", methods=["GET"])
 def embed_player(video_id: str):
@@ -845,16 +844,16 @@ def embed_player(video_id: str):
 def oembed():
     """
     oEmbed endpoint for auto-discovery.
-    
+
     Enables platforms like Discord, Slack, and WordPress to automatically
     embed BoTTube videos when a URL is shared.
-    
+
     Query Parameters:
         url     - The BoTTube video URL (required)
         format  - Response format (json only)
         maxwidth - Maximum width (optional)
         maxheight - Maximum height (optional)
-        
+
     Returns:
         JSON oEmbed response
     """
@@ -862,36 +861,30 @@ def oembed():
     format_param = request.args.get("format", "json")
     maxwidth = request.args.get("maxwidth", 854)
     maxheight = request.args.get("maxheight", 480)
-    
+
     # Validate format
     if format_param != "json":
-        return jsonify({
-            "error": "Unsupported format. Only JSON is supported."
-        }), 400
-    
+        return jsonify({"error": "Unsupported format. Only JSON is supported."}), 400
+
     # Extract video ID from URL
     video_id = None
     if "/watch/" in url:
         video_id = url.split("/watch/")[-1].split("?")[0].split("/")[0]
     elif "/embed/" in url:
         video_id = url.split("/embed/")[-1].split("?")[0].split("/")[0]
-    
+
     if not video_id:
-        return jsonify({
-            "error": "Invalid URL. Must be a BoTTube video URL."
-        }), 400
-    
+        return jsonify({"error": "Invalid URL. Must be a BoTTube video URL."}), 400
+
     # Get video data
     video = _get_mock_video(video_id)
-    
+
     if not video:
-        return jsonify({
-            "error": "Video not found"
-        }), 404
-    
+        return jsonify({"error": "Video not found"}), 404
+
     base_url = _get_base_url()
     embed_url = f"{base_url}/embed/{video_id}"
-    
+
     # Calculate dimensions
     try:
         maxwidth = int(maxwidth)
@@ -899,23 +892,23 @@ def oembed():
     except (ValueError, TypeError):
         maxwidth = 854
         maxheight = 480
-    
+
     # Maintain 16:9 aspect ratio
     width = min(maxwidth, 854)
     height = int(width * 9 / 16)
     if height > maxheight:
         height = maxheight
         width = int(height * 16 / 9)
-    
+
     # Generate embed HTML
     embed_html = (
         f'<iframe width="{width}" height="{height}" '
         f'src="{embed_url}" '
         f'frameborder="0" '
         f'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" '
-        f'allowfullscreen></iframe>'
+        f"allowfullscreen></iframe>"
     )
-    
+
     response = {
         "version": "1.0",
         "type": "video",
@@ -931,7 +924,7 @@ def oembed():
         "thumbnail_width": 480,
         "thumbnail_height": 360,
     }
-    
+
     return jsonify(response)
 
 
@@ -976,9 +969,9 @@ def watch_page(video_id: str):
         publish_date = datetime.fromtimestamp(created_at).strftime("%b %d, %Y")
     except (ValueError, TypeError, OSError):
         publish_date = "Unknown"
-    
+
     related_videos = _get_related_videos(video_id)
-    
+
     return render_template_string(
         WATCH_PAGE_TEMPLATE,
         video_id=video_id,
@@ -998,13 +991,14 @@ def watch_page(video_id: str):
 # Initialization
 # ============================================================================
 
+
 def init_embed_routes(app):
     """
     Initialize and register embed routes with Flask app.
-    
+
     Args:
         app: Flask application instance
-        
+
     Usage:
         from bottube_embed import init_embed_routes
         init_embed_routes(app)

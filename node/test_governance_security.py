@@ -30,16 +30,14 @@ class TestGovernanceSQLHardening(unittest.TestCase):
             "unknown",
         ]
         for val in malicious_values:
-            self.assertNotIn(val, VOTE_CHOICES,
-                             f"'{val}' must not be in VOTE_CHOICES")
+            self.assertNotIn(val, VOTE_CHOICES, f"'{val}' must not be in VOTE_CHOICES")
 
     def test_valid_column_names_constructed(self):
         """f'votes_{{choice}}' must produce only known column names."""
         valid_columns = {"votes_for", "votes_against", "votes_abstain"}
         for choice in VOTE_CHOICES:
             col = f"votes_{choice}"
-            self.assertIn(col, valid_columns,
-                          f"Column '{col}' must be in the valid set")
+            self.assertIn(col, valid_columns, f"Column '{col}' must be in the valid set")
 
 
 if __name__ == "__main__":

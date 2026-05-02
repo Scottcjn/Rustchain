@@ -26,9 +26,8 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask
-
-from utxo_db import UtxoDB, UNIT
-from utxo_endpoints import register_utxo_blueprint, ACCOUNT_UNIT
+from utxo_db import UNIT, UtxoDB
+from utxo_endpoints import ACCOUNT_UNIT, register_utxo_blueprint
 
 
 # Mock crypto functions for testing
@@ -48,7 +47,7 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
     """Dual-write must not drive the shadow ledger negative."""
 
     def setUp(self):
-        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.tmp.close()
         self.db_path = self.tmp.name
 
@@ -70,9 +69,11 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
         self.utxo_db.init_tables()
 
         self.app = Flask(__name__)
-        self.app.config['TESTING'] = True
+        self.app.config["TESTING"] = True
         register_utxo_blueprint(
-            self.app, self.utxo_db, self.db_path,
+            self.app,
+            self.utxo_db,
+            self.db_path,
             verify_sig_fn=mock_verify_sig,
             addr_from_pk_fn=mock_addr_from_pk,
             current_slot_fn=mock_current_slot,
@@ -84,30 +85,30 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
         os.unlink(self.db_path)
 
     def _seed_coinbase(self, address, value_nrtc, height=1):
-        self.utxo_db.apply_transaction({
-            'tx_type': 'mining_reward',
-            'inputs': [],
-            'outputs': [{'address': address, 'value_nrtc': value_nrtc}],
-            'timestamp': int(time.time()),
-        }, block_height=height)
+        self.utxo_db.apply_transaction(
+            {
+                "tx_type": "mining_reward",
+                "inputs": [],
+                "outputs": [{"address": address, "value_nrtc": value_nrtc}],
+                "timestamp": int(time.time()),
+            },
+            block_height=height,
+        )
 
     def _get_account_balance_i64(self, miner_id):
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT amount_i64 FROM balances WHERE miner_id = ?",
-            (miner_id,)
-        ).fetchone()
+        row = conn.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (miner_id,)).fetchone()
         conn.close()
-        return row['amount_i64'] if row else 0
+        return row["amount_i64"] if row else 0
 
     # -- Core guard tests ----------------------------------------------------
 
     def test_dual_write_skipped_when_shadow_balance_insufficient(self):
         """If sender shadow balance < transfer amount, dual-write must be
         skipped (not drive amount_i64 negative)."""
-        sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        sender = "RTC_test_aabbccdd"
+        recipient = "RTC_test_eeffgghh"
 
         # Seed UTXO with 100 RTC
         self._seed_coinbase(sender, 100 * UNIT)
@@ -122,17 +123,20 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
         conn.close()
 
         # Try to transfer 10 RTC — UTXO has enough, shadow does not
-        r = self.client.post('/utxo/transfer', json={
-            'from_address': sender,
-            'to_address': recipient,
-            'amount_rtc': 10.0,
-            'public_key': 'aabbccdd' * 8,
-            'signature': 'sig' * 22,
-            'nonce': int(time.time() * 1000),
-        })
+        r = self.client.post(
+            "/utxo/transfer",
+            json={
+                "from_address": sender,
+                "to_address": recipient,
+                "amount_rtc": 10.0,
+                "public_key": "aabbccdd" * 8,
+                "signature": "sig" * 22,
+                "nonce": int(time.time() * 1000),
+            },
+        )
         data = r.get_json()
         self.assertEqual(r.status_code, 200)
-        self.assertTrue(data['ok'])  # UTXO tx still succeeds
+        self.assertTrue(data["ok"])  # UTXO tx still succeeds
 
         # Shadow balance must be unchanged (dual-write was skipped)
         sender_i64 = self._get_account_balance_i64(sender)
@@ -145,24 +149,27 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
     def test_dual_write_skipped_when_sender_missing_from_shadow(self):
         """If sender has no row in balances at all, dual-write must be
         skipped (shadow_balance = 0 < amount)."""
-        sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        sender = "RTC_test_aabbccdd"
+        recipient = "RTC_test_eeffgghh"
 
         self._seed_coinbase(sender, 100 * UNIT)
 
         # Do NOT insert sender into balances — shadow balance = 0
 
-        r = self.client.post('/utxo/transfer', json={
-            'from_address': sender,
-            'to_address': recipient,
-            'amount_rtc': 10.0,
-            'public_key': 'aabbccdd' * 8,
-            'signature': 'sig' * 22,
-            'nonce': int(time.time() * 1000),
-        })
+        r = self.client.post(
+            "/utxo/transfer",
+            json={
+                "from_address": sender,
+                "to_address": recipient,
+                "amount_rtc": 10.0,
+                "public_key": "aabbccdd" * 8,
+                "signature": "sig" * 22,
+                "nonce": int(time.time() * 1000),
+            },
+        )
         data = r.get_json()
         self.assertEqual(r.status_code, 200)
-        self.assertTrue(data['ok'])
+        self.assertTrue(data["ok"])
 
         # No shadow mutation for sender
         sender_i64 = self._get_account_balance_i64(sender)
@@ -174,8 +181,8 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
 
     def test_dual_write_succeeds_when_shadow_sufficient(self):
         """Normal dual-write path still works when shadow balance is enough."""
-        sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        sender = "RTC_test_aabbccdd"
+        recipient = "RTC_test_eeffgghh"
 
         self._seed_coinbase(sender, 100 * UNIT)
 
@@ -188,17 +195,20 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        r = self.client.post('/utxo/transfer', json={
-            'from_address': sender,
-            'to_address': recipient,
-            'amount_rtc': 10.0,
-            'public_key': 'aabbccdd' * 8,
-            'signature': 'sig' * 22,
-            'nonce': int(time.time() * 1000),
-        })
+        r = self.client.post(
+            "/utxo/transfer",
+            json={
+                "from_address": sender,
+                "to_address": recipient,
+                "amount_rtc": 10.0,
+                "public_key": "aabbccdd" * 8,
+                "signature": "sig" * 22,
+                "nonce": int(time.time() * 1000),
+            },
+        )
         data = r.get_json()
         self.assertEqual(r.status_code, 200)
-        self.assertTrue(data['ok'])
+        self.assertTrue(data["ok"])
 
         sender_i64 = self._get_account_balance_i64(sender)
         recipient_i64 = self._get_account_balance_i64(recipient)
@@ -208,8 +218,8 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
 
     def test_dual_write_exact_balance_goes_to_zero(self):
         """Transferring exactly the shadow balance should succeed (goes to 0)."""
-        sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        sender = "RTC_test_aabbccdd"
+        recipient = "RTC_test_eeffgghh"
 
         self._seed_coinbase(sender, 100 * UNIT)
 
@@ -221,16 +231,19 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        r = self.client.post('/utxo/transfer', json={
-            'from_address': sender,
-            'to_address': recipient,
-            'amount_rtc': 10.0,
-            'public_key': 'aabbccdd' * 8,
-            'signature': 'sig' * 22,
-            'nonce': int(time.time() * 1000),
-        })
+        r = self.client.post(
+            "/utxo/transfer",
+            json={
+                "from_address": sender,
+                "to_address": recipient,
+                "amount_rtc": 10.0,
+                "public_key": "aabbccdd" * 8,
+                "signature": "sig" * 22,
+                "nonce": int(time.time() * 1000),
+            },
+        )
         data = r.get_json()
-        self.assertTrue(data['ok'])
+        self.assertTrue(data["ok"])
 
         sender_i64 = self._get_account_balance_i64(sender)
         self.assertEqual(sender_i64, 0)
@@ -238,8 +251,8 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
     def test_no_leder_entries_when_dual_write_skipped(self):
         """When dual-write is skipped due to insufficient shadow balance,
         no ledger entries should be created."""
-        sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        sender = "RTC_test_aabbccdd"
+        recipient = "RTC_test_eeffgghh"
 
         self._seed_coinbase(sender, 100 * UNIT)
 
@@ -252,14 +265,17 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        self.client.post('/utxo/transfer', json={
-            'from_address': sender,
-            'to_address': recipient,
-            'amount_rtc': 10.0,
-            'public_key': 'aabbccdd' * 8,
-            'signature': 'sig' * 22,
-            'nonce': int(time.time() * 1000),
-        })
+        self.client.post(
+            "/utxo/transfer",
+            json={
+                "from_address": sender,
+                "to_address": recipient,
+                "amount_rtc": 10.0,
+                "public_key": "aabbccdd" * 8,
+                "signature": "sig" * 22,
+                "nonce": int(time.time() * 1000),
+            },
+        )
 
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -276,7 +292,7 @@ class TestDualWriteShadowBalanceGuardDisabled(unittest.TestCase):
     """Verify guard doesn't affect dual_write=False path."""
 
     def setUp(self):
-        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.tmp.close()
         self.db_path = self.tmp.name
 
@@ -297,9 +313,11 @@ class TestDualWriteShadowBalanceGuardDisabled(unittest.TestCase):
         self.utxo_db.init_tables()
 
         self.app = Flask(__name__)
-        self.app.config['TESTING'] = True
+        self.app.config["TESTING"] = True
         register_utxo_blueprint(
-            self.app, self.utxo_db, self.db_path,
+            self.app,
+            self.utxo_db,
+            self.db_path,
             verify_sig_fn=mock_verify_sig,
             addr_from_pk_fn=mock_addr_from_pk,
             current_slot_fn=mock_current_slot,
@@ -311,36 +329,42 @@ class TestDualWriteShadowBalanceGuardDisabled(unittest.TestCase):
         os.unlink(self.db_path)
 
     def _seed_coinbase(self, address, value_nrtc, height=1):
-        self.utxo_db.apply_transaction({
-            'tx_type': 'mining_reward',
-            'inputs': [],
-            'outputs': [{'address': address, 'value_nrtc': value_nrtc}],
-            'timestamp': int(time.time()),
-        }, block_height=height)
+        self.utxo_db.apply_transaction(
+            {
+                "tx_type": "mining_reward",
+                "inputs": [],
+                "outputs": [{"address": address, "value_nrtc": value_nrtc}],
+                "timestamp": int(time.time()),
+            },
+            block_height=height,
+        )
 
     def test_utxo_succeeds_when_dual_write_disabled(self):
         """UTXO transfer succeeds regardless of shadow balance when
         dual_write=False."""
-        sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        sender = "RTC_test_aabbccdd"
+        recipient = "RTC_test_eeffgghh"
         self._seed_coinbase(sender, 100 * UNIT)
 
-        r = self.client.post('/utxo/transfer', json={
-            'from_address': sender,
-            'to_address': recipient,
-            'amount_rtc': 50.0,
-            'public_key': 'aabbccdd' * 8,
-            'signature': 'sig' * 22,
-            'nonce': int(time.time() * 1000),
-        })
+        r = self.client.post(
+            "/utxo/transfer",
+            json={
+                "from_address": sender,
+                "to_address": recipient,
+                "amount_rtc": 50.0,
+                "public_key": "aabbccdd" * 8,
+                "signature": "sig" * 22,
+                "nonce": int(time.time() * 1000),
+            },
+        )
         data = r.get_json()
         self.assertEqual(r.status_code, 200)
-        self.assertTrue(data['ok'])
+        self.assertTrue(data["ok"])
 
         # UTXO balance updated correctly
         self.assertEqual(self.utxo_db.get_balance(sender), 50 * UNIT)
         self.assertEqual(self.utxo_db.get_balance(recipient), 50 * UNIT)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

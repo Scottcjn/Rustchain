@@ -3,7 +3,6 @@ import sys
 import unittest
 from unittest import mock
 
-
 try:
     import fingerprint_checks
 except ModuleNotFoundError:
@@ -26,8 +25,9 @@ class TestDeviceAgeOracle(unittest.TestCase):
                 return cpuinfo
             return None
 
-        with mock.patch.object(fingerprint_checks, "_read_text_file", side_effect=fake_read), mock.patch.object(
-            fingerprint_checks.platform, "machine", return_value="x86_64"
+        with (
+            mock.patch.object(fingerprint_checks, "_read_text_file", side_effect=fake_read),
+            mock.patch.object(fingerprint_checks.platform, "machine", return_value="x86_64"),
         ):
             passed, data = fingerprint_checks.check_device_age_oracle()
 
@@ -49,8 +49,9 @@ class TestDeviceAgeOracle(unittest.TestCase):
                 return cpuinfo
             return None
 
-        with mock.patch.object(fingerprint_checks, "_read_text_file", side_effect=fake_read), mock.patch.object(
-            fingerprint_checks.platform, "machine", return_value="x86_64"
+        with (
+            mock.patch.object(fingerprint_checks, "_read_text_file", side_effect=fake_read),
+            mock.patch.object(fingerprint_checks.platform, "machine", return_value="x86_64"),
         ):
             passed, data = fingerprint_checks.check_device_age_oracle()
 
@@ -70,8 +71,9 @@ class TestDeviceAgeOracle(unittest.TestCase):
                 return cpuinfo
             return None
 
-        with mock.patch.object(fingerprint_checks, "_read_text_file", side_effect=fake_read), mock.patch.object(
-            fingerprint_checks.platform, "machine", return_value="x86_64"
+        with (
+            mock.patch.object(fingerprint_checks, "_read_text_file", side_effect=fake_read),
+            mock.patch.object(fingerprint_checks.platform, "machine", return_value="x86_64"),
         ):
             passed, data = fingerprint_checks.check_device_age_oracle()
 
@@ -84,9 +86,11 @@ class TestDeviceAgeOracle(unittest.TestCase):
             # Simulate non-Linux environment
             return None
 
-        with mock.patch.object(fingerprint_checks, "_read_text_file", side_effect=fake_read), mock.patch.object(
-            fingerprint_checks, "_run_cmd", return_value="Apple M2"
-        ), mock.patch.object(fingerprint_checks.platform, "machine", return_value="arm64"):
+        with (
+            mock.patch.object(fingerprint_checks, "_read_text_file", side_effect=fake_read),
+            mock.patch.object(fingerprint_checks, "_run_cmd", return_value="Apple M2"),
+            mock.patch.object(fingerprint_checks.platform, "machine", return_value="arm64"),
+        ):
             passed, data = fingerprint_checks.check_device_age_oracle()
 
         self.assertTrue(passed)

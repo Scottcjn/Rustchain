@@ -19,13 +19,13 @@ import unittest
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(__file__))
 
+from utxo_db import UtxoDB
 from utxo_genesis_migration import (
+    GENESIS_HEIGHT,
+    check_existing_genesis,
     migrate,
     rollback_genesis,
-    check_existing_genesis,
-    GENESIS_HEIGHT,
 )
-from utxo_db import UtxoDB, UNIT
 
 
 class TestRollbackAtomicity(unittest.TestCase):
@@ -46,9 +46,9 @@ class TestRollbackAtomicity(unittest.TestCase):
         """)
         # Insert test wallets
         test_wallets = [
-            ("wallet_a", 1000000),   # 1.0 RTC
-            ("wallet_b", 500000),    # 0.5 RTC
-            ("wallet_c", 250000),    # 0.25 RTC
+            ("wallet_a", 1000000),  # 1.0 RTC
+            ("wallet_b", 500000),  # 0.5 RTC
+            ("wallet_c", 250000),  # 0.25 RTC
         ]
         conn.executemany(
             "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
@@ -62,7 +62,7 @@ class TestRollbackAtomicity(unittest.TestCase):
         if os.path.exists(self.db_path):
             os.unlink(self.db_path)
         # Remove WAL and SHM files
-        for ext in ['-wal', '-shm']:
+        for ext in ["-wal", "-shm"]:
             path = self.db_path + ext
             if os.path.exists(path):
                 os.unlink(path)
@@ -72,8 +72,8 @@ class TestRollbackAtomicity(unittest.TestCase):
     def test_01_migrate_creates_genesis(self):
         """Verify migration creates genesis boxes."""
         result = migrate(self.db_path, dry_run=False)
-        self.assertEqual(result['wallets_migrated'], 3)
-        self.assertEqual(result['boxes_created'], 3)
+        self.assertEqual(result["wallets_migrated"], 3)
+        self.assertEqual(result["boxes_created"], 3)
         self.assertTrue(check_existing_genesis(UtxoDB(self.db_path)))
 
     def test_02_rollback_removes_all_genesis(self):
@@ -116,15 +116,15 @@ class TestRollbackAtomicity(unittest.TestCase):
         """Verify migration can be re-run after rollback without corruption."""
         # First migration
         result1 = migrate(self.db_path, dry_run=False)
-        self.assertEqual(result1['boxes_created'], 3)
+        self.assertEqual(result1["boxes_created"], 3)
 
         # Rollback
         rollback_genesis(self.db_path)
 
         # Re-migrate should succeed (not fail due to partial state)
         result2 = migrate(self.db_path, dry_run=False)
-        self.assertEqual(result2['boxes_created'], 3)
-        self.assertEqual(result1['state_root'], result2['state_root'])
+        self.assertEqual(result2["boxes_created"], 3)
+        self.assertEqual(result1["state_root"], result2["state_root"])
 
     def test_05_atomic_no_partial_state(self):
         """
@@ -188,5 +188,5 @@ class TestRollbackAtomicity(unittest.TestCase):
             conn.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main(verbosity=2)

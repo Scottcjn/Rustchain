@@ -6,7 +6,9 @@ import hashlib
 import hmac
 import os
 import time
-from flask import request, jsonify
+
+from flask import jsonify, request
+
 from node.rustchain_sync import RustChainSyncManager
 
 
