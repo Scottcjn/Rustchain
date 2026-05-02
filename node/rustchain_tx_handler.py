@@ -385,13 +385,25 @@ class TransactionPool:
                     f"{self.MAX_PENDING_PER_WALLET}. Wait for confirmations."
                 )
 
-            # Check nonce
+            # Check nonce across both confirmed and pending states
             cursor.execute(
                 "SELECT wallet_nonce FROM balances WHERE wallet = ?",
                 (tx.from_addr,)
             )
             nonce_row = cursor.fetchone()
-            expected_nonce = (nonce_row["wallet_nonce"] if nonce_row else 0) + 1
+            confirmed_nonce = nonce_row["wallet_nonce"] if nonce_row else 0
+            
+            # FIX: Ensure next nonce is strictly greater than the highest ever used nonce
+            # checking transaction_history as a fallback for consistency.
+            cursor.execute(
+                "SELECT MAX(nonce) as max_h FROM transaction_history WHERE from_addr = ?",
+                (tx.from_addr,)
+            )
+            h_row = cursor.fetchone()
+            history_nonce = h_row["max_h"] if h_row and h_row["max_h"] else 0
+            
+            base_nonce = max(confirmed_nonce, history_nonce)
+            expected_nonce = base_nonce + 1
 
             cursor.execute(
                 "SELECT nonce FROM pending_transactions WHERE from_addr = ? AND status = 'pending'",
