@@ -33,8 +33,11 @@ LAST_EPOCH = None
 DB_PATH = "./rustchain_v2.db"
 
 def init_db():
-    """Initialize database with epoch tables"""
-    with sqlite3.connect(DB_PATH) as c:
+    """Initialize database with durable settings"""
+    with sqlite3.connect(DB_PATH, timeout=20) as c:
+        # FIX: Optimize for concurrent access
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA synchronous=NORMAL")
         # Existing tables
         c.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
