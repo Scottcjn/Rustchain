@@ -607,6 +607,20 @@ def health_diagnostics():
     except (ImportError, Exception):
         pass
 
+    # Check Disk health
+    disk_stats = {}
+    try:
+        # FIX: Added disk usage monitoring for the DB partition to prevent
+        # node crashes due to full storage.
+        usage = os.statvfs(os.path.dirname(os.path.abspath(DB_PATH)))
+        disk_stats = {
+            "total_gb": round((usage.f_blocks * usage.f_frsize) / (1024**3), 2),
+            "free_gb": round((usage.f_bavail * usage.f_frsize) / (1024**3), 2),
+            "percent_full": round(100 * (1 - usage.f_bavail / usage.f_blocks), 2)
+        }
+    except (AttributeError, OSError):
+        pass
+
     return jsonify({
         "status": "ok" if db_ok else "degraded",
         "version": APP_VERSION,
@@ -614,6 +628,7 @@ def health_diagnostics():
         "timestamp": int(now),
         "load_avg": cpu_load,
         "memory": memory_stats,
+        "disk": disk_stats,
         "mempool": {
             "pending_inputs": mempool_count
         },
