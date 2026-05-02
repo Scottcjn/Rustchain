@@ -380,64 +380,75 @@ def check_fingerprint_rate_limit(
     wallet_address: str
 ) -> Tuple[bool, str, Optional[Dict]]:
     """
-    Check if a hardware ID is submitting fingerprints too frequently.
-    
-    Args:
-        hardware_id: Unique hardware identifier
-        wallet_address: The wallet submitting
-        
-    Returns:
-        Tuple of (is_allowed: bool, reason: str, details: dict or None)
+    Check if a hardware ID is submitting fingerprints too frequently using atomic transactions.
     """
     if not hardware_id:
-        return True, "no_hardware_id", None  # Can't rate limit without hardware ID
+        return True, "no_hardware_id", None
 
     now = int(time.time())
-    window_start = now - 3600  # 1 hour window
+    window_start = now - 3600
 
-    with sqlite3.connect(get_db_path()) as conn:
-        c = conn.cursor()
-        
-        # Get or create rate limit record
-        c.execute('''
-            SELECT submission_count, window_start, last_submission
-            FROM fingerprint_rate_limits
-            WHERE hardware_id = ?
-        ''', (hardware_id,))
-        
-        row = c.fetchone()
-        
-        if row is None:
-            # First submission from this hardware
+    try:
+        with sqlite3.connect(get_db_path(), timeout=20) as conn:
+            # FIX: Use BEGIN IMMEDIATE to prevent race conditions during rate limit checks
+            conn.execute("BEGIN IMMEDIATE")
+            c = conn.cursor()
+            
             c.execute('''
-                INSERT INTO fingerprint_rate_limits
-                (hardware_id, submission_count, window_start, last_submission)
-                VALUES (?, 1, ?, ?)
-            ''', (hardware_id, now, now))
-            conn.commit()
-            return True, "first_submission", None
-        
-        count, prev_window_start, last_submission = row
-        
-        # Reset counter if window expired
-        if now - prev_window_start > 3600:
+                SELECT submission_count, window_start, last_submission
+                FROM fingerprint_rate_limits
+                WHERE hardware_id = ?
+            ''', (hardware_id,))
+            
+            row = c.fetchone()
+            
+            if row is None:
+                # First submission from this hardware
+                c.execute('''
+                    INSERT INTO fingerprint_rate_limits
+                    (hardware_id, submission_count, window_start, last_submission)
+                    VALUES (?, 1, ?, ?)
+                ''', (hardware_id, now, now))
+                conn.commit()
+                return True, "first_submission", None
+            
+            count, prev_window_start, last_submission = row
+            
+            # Reset counter if window expired
+            if now - prev_window_start > 3600:
+                c.execute('''
+                    UPDATE fingerprint_rate_limits
+                    SET submission_count = 1, window_start = ?, last_submission = ?
+                    WHERE hardware_id = ?
+                ''', (now, now, hardware_id))
+                conn.commit()
+                return True, "window_reset", None
+            
+            # Check if limit exceeded
+            if count >= MAX_FINGERPRINT_SUBMISSIONS_PER_HOUR:
+                conn.rollback()
+                return False, "rate_limit_exceeded", {
+                    'limit': MAX_FINGERPRINT_SUBMISSIONS_PER_HOUR,
+                    'current_count': count,
+                    'window_start': prev_window_start,
+                    'retry_after_seconds': 3600 - (now - prev_window_start),
+                    'severity': 'low'
+                }
+            
+            # Update counter
             c.execute('''
                 UPDATE fingerprint_rate_limits
-                SET submission_count = 1, window_start = ?, last_submission = ?
+                SET submission_count = submission_count + 1, last_submission = ?
                 WHERE hardware_id = ?
-            ''', (now, now, hardware_id))
+            ''', (now, hardware_id))
             conn.commit()
-            return True, "window_reset", None
-        
-        # Check if limit exceeded
-        if count >= MAX_FINGERPRINT_SUBMISSIONS_PER_HOUR:
-            return False, "rate_limit_exceeded", {
-                'limit': MAX_FINGERPRINT_SUBMISSIONS_PER_HOUR,
-                'current_count': count,
-                'window_start': prev_window_start,
-                'retry_after_seconds': 3600 - (now - prev_window_start),
-                'severity': 'low'
+            
+            return True, "within_limit", {
+                'remaining': MAX_FINGERPRINT_SUBMISSIONS_PER_HOUR - count - 1,
+                'window_reset_in_seconds': 3600 - (now - prev_window_start)
             }
+    except sqlite3.Error as e:
+        return True, "db_error_fallback_allow", {'error': str(e)}
         
         # Update counter
         c.execute('''
