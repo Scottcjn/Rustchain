@@ -366,6 +366,8 @@ def _parse_verdict(response_text: str) -> Tuple[str, float, str]:
                 confidence = 0.5
 
             reasoning = str(data.get("reasoning", "No reasoning provided"))
+            # FIX: Truncate reasoning to prevent database bloat
+            reasoning = reasoning[:1000].strip()
             return verdict, confidence, reasoning
 
         except json.JSONDecodeError:
