@@ -54,15 +54,16 @@ def load_account_balances(db_path: str) -> list:
         ).fetchall()
         return [(r['miner_id'], r['amount_i64']) for r in rows]
     except sqlite3.OperationalError:
-        # Try alternate column names
+        # Try alternate column names with Decimal for precision
+        from decimal import Decimal
         rows = conn.execute(
-            """SELECT miner_pk AS miner_id,
-                      CAST(balance_rtc * 1000000 AS INTEGER) AS amount_i64
+            """SELECT miner_pk AS miner_id, balance_rtc
                FROM balances
                WHERE balance_rtc > 0
                ORDER BY miner_pk ASC"""
         ).fetchall()
-        return [(r['miner_id'], r['amount_i64']) for r in rows]
+        # Precise conversion to micro-RTC (1,000,000 units)
+        return [(r['miner_id'], int(Decimal(str(r['balance_rtc'])) * Decimal("1000000"))) for r in rows]
     finally:
         conn.close()
 
