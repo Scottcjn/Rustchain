@@ -219,8 +219,16 @@ class WebSocketFeed:
 
         @self.socketio.on('subscribe')
         def handle_subscribe(data):
-            """Subscribe to specific event channels"""
-            room = data.get('room', 'all')
+            """Subscribe to specific event channels with basic room validation."""
+            room = str(data.get('room', 'all')).strip()
+            
+            # FIX: Only allow subscribing to predefined public rooms to prevent
+            # unauthorized access to potential private or internal rooms.
+            ALLOWED_ROOMS = {'all', 'blocks', 'attestations', 'settlements'}
+            if room not in ALLOWED_ROOMS:
+                emit('error', {'message': f'Unauthorized or invalid room: {room}'})
+                return
+
             join_room(room)
             logger.info(f"[WebSocket] Client subscribed to room: {room}")
             emit('subscribed', {'room': room})
