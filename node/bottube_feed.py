@@ -270,13 +270,17 @@ class RSSFeedBuilder:
         if item.get("category"):
             lines.append(f"  <category>{xml_escape(item['category'])}</category>")
         
-        # Enclosure (media file)
+        # Media content with duration metadata
         if item.get("enclosure_url"):
             enc_attrs = f'url="{xml_escape(item["enclosure_url"])}"'
             enc_attrs += f' type="{item["enclosure_type"]}"'
             if item.get("enclosure_length", 0) > 0:
                 enc_attrs += f' length="{item["enclosure_length"]}"'
-            lines.append(f"  <enclosure {enc_attrs}/>")
+            
+            # FIX: Include media:content with duration for better compatibility with 
+            # modern podcast/video aggregators.
+            duration = item.get("duration", 0)
+            lines.append(f'  <media:content {enc_attrs} duration="{duration}"/>')
         
         # Thumbnail (media:content extension)
         if item.get("thumbnail_url"):
