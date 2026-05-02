@@ -14,6 +14,7 @@ log = logging.getLogger("x402")
 
 # --- x402 Constants ---
 X402_NETWORK = "eip155:8453"                     # Base mainnet (CAIP-2)
+X402_CHAIN_ID = 8453                              # FIX: Explicit chain ID for replay protection
 USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"   # Native USDC on Base
 WRTC_BASE = "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"   # wRTC on Base
 AERODROME_POOL = "0x4C2A0b915279f0C22EA766D58F9B815Ded2d2A3F"  # wRTC/WETH pool
