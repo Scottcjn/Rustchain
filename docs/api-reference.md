@@ -537,12 +537,32 @@ curl -sk -X POST https://rustchain.org/rewards/settle \
 
 These endpoints support the x402 payment protocol (currently free during beta).
 
+### Deployment verification checklist
+
+Use this checklist when testing a live deployment or bounty report. A working
+x402 route should return either a successful JSON response or a payment
+challenge such as `402 Payment Required`. A plain `404` usually means the route
+is not mounted on that host or the public prefix changed.
+
+| Surface | Command | Expected when mounted |
+|---------|---------|-----------------------|
+| BoTTube status | `curl -sk https://bottube.ai/api/x402/status` | JSON status or x402 challenge |
+| BoTTube videos | `curl -sk https://bottube.ai/api/premium/videos` | JSON export or x402 challenge |
+| BoTTube analytics | `curl -sk https://bottube.ai/api/premium/analytics/sophia-elya` | JSON analytics or x402 challenge |
+| Beacon status | `curl -sk https://rustchain.org/beacon/api/x402/status` | JSON status or x402 challenge |
+| Beacon reputation | `curl -sk https://rustchain.org/beacon/api/premium/reputation` | JSON export or x402 challenge |
+| Beacon contracts | `curl -sk https://rustchain.org/beacon/api/premium/contracts/export` | JSON export or x402 challenge |
+| RustChain swap info | `curl -sk https://rustchain.org/wallet/swap-info` | JSON swap guidance |
+
+Keep the raw `curl -skv` output when filing a deployment issue. It shows the
+HTTP status, server headers, and whether the request reached the x402 handler.
+
 ### GET /api/premium/videos
 
 Bulk video export (BoTTube integration).
 
 ```bash
-curl -sk https://rustchain.org/api/premium/videos
+curl -sk https://bottube.ai/api/premium/videos
 ```
 
 ---
@@ -552,7 +572,7 @@ curl -sk https://rustchain.org/api/premium/videos
 Deep agent analytics.
 
 ```bash
-curl -sk https://rustchain.org/api/premium/analytics/scott
+curl -sk https://bottube.ai/api/premium/analytics/scott
 ```
 
 ---
