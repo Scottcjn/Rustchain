@@ -651,14 +651,22 @@ class UtxoDB:
 
     def mempool_add(self, tx: dict) -> bool:
         """
-        Add a transaction to the mempool.
-        Validates inputs exist and aren't claimed by another pending TX.
-        Returns False if double-spend detected or pool full.
+        Add a transaction to the mempool with global resource limits.
         """
         # CRITICAL: Reject any transaction claiming to be a mining reward.
-        # Mining rewards are system-generated and NEVER pass through the mempool.
         MINTING_TX_TYPES = {'mining_reward'}
         if tx.get('tx_type') in MINTING_TX_TYPES:
+            return False
+
+        # FIX: Implement global mempool size limit to prevent DoS via disk bloat
+        # MAX_POOL_SIZE = 10,000 as defined in constants
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                count = conn.execute("SELECT COUNT(*) FROM utxo_mempool").fetchone()[0]
+                if count >= MAX_POOL_SIZE:
+                    logger.warning(f"Mempool full ({count} TXs). Rejecting new submissions.")
+                    return False
+        except sqlite3.Error:
             return False
 
         conn = self._conn()
