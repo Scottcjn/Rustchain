@@ -500,9 +500,14 @@ def inspect_miner(miner_id: str, device: dict = None, fingerprint: dict = None,
     verdict, confidence, reasoning = _parse_verdict(response_text)
     used_model = MODEL
 
-    # ESCALATION: If regular Sophia flags SUSPICIOUS, escalate to GPT-OSS 120B
-    # on POWER8 for a deeper second opinion with the big model.
-    if verdict == VERDICT_SUSPICIOUS and confidence < 0.6:
+    # ESCALATION: If regular Sophia flags SUSPICIOUS or REJECTED with low confidence, 
+    # escalate to GPT-OSS 120B on POWER8 for a deeper second opinion.
+    should_escalate = (
+        (verdict == VERDICT_SUSPICIOUS and confidence < 0.8) or 
+        (verdict == VERDICT_REJECTED and confidence < 0.95)
+    )
+    
+    if should_escalate:
         deep_prompt = (
             f"You are a senior hardware forensics analyst reviewing an attestation flagged as SUSPICIOUS.\n\n"
             f"Miner: {miner_id}\n"
