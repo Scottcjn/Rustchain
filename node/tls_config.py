@@ -16,20 +16,32 @@ _CERT_PATH = os.path.expanduser("~/.rustchain/node_cert.pem")
 
 
 def get_tls_verify() -> Union[str, bool]:
-    """Return the appropriate TLS verify parameter for requests/httpx with permission checks."""
+    """Return the appropriate TLS verify parameter with permission and expiry checks."""
     if os.path.exists(_CERT_PATH):
         # FIX: Security check - Ensure the pinned certificate file is only readable by the owner
-        # to prevent unauthorized modification in shared environments (MitM risk).
         try:
             mode = os.stat(_CERT_PATH).st_mode
-            # Check if group or others have write permissions (0022 bits)
             if mode & 0o022:
                 import logging
-                logging.getLogger("tls.config").warning(
-                    f"INSECURE PERMISSIONS on pinned cert {_CERT_PATH}. "
-                    "Falling back to system CA bundle."
-                )
+                logging.getLogger("tls.config").warning(f"INSECURE PERMISSIONS on pinned cert {_CERT_PATH}. Fallback to system CA.")
                 return True
+            
+            # FIX: Basic check for certificate expiry if cryptography is available
+            try:
+                from cryptography import x509
+                from datetime import datetime, timezone
+                with open(_CERT_PATH, "rb") as f:
+                    cert_data = f.read()
+                cert = x509.load_pem_x509_certificate(cert_data)
+                if cert.not_valid_after_utc < datetime.now(timezone.utc):
+                    import logging
+                    logging.getLogger("tls.config").error(f"EXPIRED pinned certificate at {_CERT_PATH}. Fallback to system CA.")
+                    return True
+            except ImportError:
+                pass # Cryptography not available, skip expiry check
+            except Exception:
+                pass # Invalid cert format or other error, fallback managed by requests later
+                
             return _CERT_PATH
         except Exception:
             return True
