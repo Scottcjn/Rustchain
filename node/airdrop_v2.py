@@ -739,29 +739,60 @@ class AirdropV2:
     # Claim Processing
     # ========================================================================
 
+    def _verify_wallet_signature(
+        self, address: str, chain: str, message: str, signature: str
+    ) -> bool:
+        """Verify message signature for Solana or Base wallets."""
+        try:
+            if chain == "solana":
+                # Solana Ed25519 signature verification
+                import base58
+                from nacl.signing import VerifyKey
+                
+                vk = VerifyKey(base58.b58decode(address))
+                vk.verify(message.encode(), base58.b58decode(signature))
+                return True
+                
+            elif chain == "base":
+                # Base (EVM) EIP-191 signature verification
+                from eth_account.messages import encode_defunct
+                from eth_account import Account
+                
+                msg = encode_defunct(text=message)
+                recovered_addr = Account.recover_message(msg, signature=signature)
+                return recovered_addr.lower() == address.lower()
+                
+            return False
+        except Exception as e:
+            logger.warning(f"Signature verification failed: {e}")
+            return False
+
     def claim_airdrop(
         self,
         github_username: str,
         wallet_address: str,
         chain: str,
         tier: str,
+        signature: Optional[str] = None, # Added signature parameter
         github_token: Optional[str] = None,
         skip_antisybil: bool = False,
     ) -> Tuple[bool, str, Optional[ClaimRecord]]:
         """
-        Process airdrop claim.
-
-        Args:
-            github_username: GitHub username
-            wallet_address: Wallet address
-            chain: Chain name
-            tier: Eligibility tier
-            github_token: Optional GitHub API token
-            skip_antisybil: Skip anti-Sybil checks (testing only)
-
-        Returns:
-            (success, message, claim_record)
+        Process airdrop claim with mandatory wallet signature verification.
         """
+        chain_lower = chain.lower()
+        
+        # FIX: Mandatory signature verification to prevent wallet hijacking
+        if not skip_antisybil:
+            if not signature:
+                return False, "Missing wallet signature", None
+            
+            # Message to be signed: "claim_airdrop:<github_username>:<wallet_address>"
+            message = f"claim_airdrop:{github_username}:{wallet_address}"
+            if not self._verify_wallet_signature(wallet_address, chain_lower, message, signature):
+                return False, "Invalid wallet signature", None
+
+        # ... (rest of logic)
         chain_lower = chain.lower()
 
         # When skip_antisybil is True (testing), use provided tier directly
@@ -1259,7 +1290,7 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
 
     @app.route("/api/airdrop/claim", methods=["POST"])
     def claim_airdrop():
-        """Submit airdrop claim."""
+        """Submit airdrop claim with wallet signature."""
         data = request.get_json(silent=True)
         if not data:
             return jsonify({"ok": False, "error": "invalid_json"}), 400
@@ -1268,22 +1299,23 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         wallet_address = data.get("wallet_address", "").strip()
         chain = data.get("chain", "").strip()
         tier = data.get("tier", "").strip()
+        signature = data.get("signature") # Expect signature in request
         github_token = data.get("github_token")
 
-        if not all([github_username, wallet_address, chain, tier]):
+        if not all([github_username, wallet_address, chain, tier, signature]):
             return (
                 jsonify(
                     {
                         "ok": False,
                         "error": "missing_required_fields",
-                        "required": ["github_username", "wallet_address", "chain", "tier"],
+                        "required": ["github_username", "wallet_address", "chain", "tier", "signature"],
                     }
                 ),
                 400,
             )
 
         success, message, claim = airdrop.claim_airdrop(
-            github_username, wallet_address, chain, tier, github_token
+            github_username, wallet_address, chain, tier, signature, github_token
         )
 
         if success:
