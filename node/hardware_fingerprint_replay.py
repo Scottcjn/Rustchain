@@ -577,15 +577,16 @@ def detect_fingerprint_anomalies(
                 'description': 'Miner submitting many different fingerprints rapidly'
             })
         
-        # Check 2: Wallet hopping (same miner, different wallets)
-        unique_wallets = set(h[3] for h in history[:10])
-        if len(unique_wallets) > 3:  # More than 3 wallets in 10 submissions
+                # Check 2: Wallet hopping (same miner, different wallets)
+        # FIX: Implement stricter wallet hopping detection for high-reputation miners
+        unique_wallets = set(h[3] for h in history[:20]) # Analyze last 20 submissions
+        if len(unique_wallets) > 2:  # More than 2 wallets in 20 submissions is highly suspicious
             anomalies.append({
                 'type': 'wallet_hopping',
                 'unique_wallets': len(unique_wallets),
-                'submissions_analyzed': 10,
-                'severity': 'high',
-                'description': 'Miner associated with many different wallets'
+                'submissions_analyzed': 20,
+                'severity': 'critical',
+                'description': 'Miner ID associated with multiple distinct wallets in short sequence'
             })
         
         # Check 3: Fingerprint reuse after long gap (possible replay)
