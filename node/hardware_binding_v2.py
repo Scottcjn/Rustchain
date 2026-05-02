@@ -16,6 +16,14 @@ ENTROPY_TOLERANCE = float(os.getenv("HW_ENTROPY_TOLERANCE", "0.30"))  # 30% tole
 MIN_COMPARABLE_FIELDS = 3  # require at least 3 non-zero entropy fields for quality
 CORE_ENTROPY_FIELDS = ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']
 
+def format_binding_date(timestamp: float) -> str:
+    """
+    Format a binding timestamp into a human-readable string.
+    FIX: Added helper for consistent date presentation in audits.
+    """
+    from datetime import datetime
+    return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S UTC")
+
 def init_hardware_bindings_v2():
     """Create the v2 bindings table with entropy profiles."""
     try:
