@@ -452,8 +452,8 @@ python scripts/run_challenge.py --all
 
 ### Getting Help
 
-1. Check the [main README](./README.md)
-2. Review the [RIP-302 specification](./docs/RIP-302-agent-to-agent-test-challenge.md)
+1. Check the [main README](../README.md)
+2. Review the [RIP-302 specification](../docs/RIP-302-agent-to-agent-test-challenge.md)
 3. Open an issue on GitHub
 4. Ask in RustChain Discord
 
@@ -529,7 +529,7 @@ python scripts/collect_proof.py --result-files a.json b.json   # Specific files
 
 ## Appendix B: Evidence Schema Reference
 
-See [expected_state.json](./fixtures/expected_state.json) for the complete schema definition.
+See [expected_state.json](../fixtures/expected_state.json) for the complete schema definition.
 
 ---
 
