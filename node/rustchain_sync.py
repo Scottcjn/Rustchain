@@ -449,3 +449,12 @@ class RustChainSyncManager:
                 sleep_time = (2 ** retries) + random.uniform(0, 1)
                 self.logger.warning(f"RETRY {retries} after {sleep_time:.2f}s: {e}")
                 time.sleep(sleep_time)
+ 
+    def get_table_deltas(self, table_name: str, since_ts: int) -> List[Dict[str, Any]]:
+        """
+        Fetch rows in a table that have changed since a specific timestamp.
+        FIX: Added architectural stub for bandwidth-efficient synchronization.
+        """
+        if not self._is_table_allowed(table_name):
+            return []
+        return []
