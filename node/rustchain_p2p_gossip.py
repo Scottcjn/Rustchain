@@ -797,6 +797,21 @@ class GossipLayer:
         # matches the provided data); it does NOT verify that the distribution
         # actually corresponds to enrolled miners.  A malicious proposer could
         # send a self-paying distribution with a correctly computed merkle root.
+        # SECURITY (Issue #2867): Epoch reward amount validation.
+        # Verify that the total reward distribution does not exceed the protocol limit.
+        # This prevents a malicious leader from proposing inflated rewards.
+        total_distribution = sum(distribution.values())
+        MAX_PER_BLOCK = 1.5 * 1_000_000  # 1.5 RTC in uRTC
+        BLOCKS_PER_EPOCH = 144
+        MAX_EPOCH_REWARD = int(MAX_PER_BLOCK * BLOCKS_PER_EPOCH)
+        
+        if total_distribution > MAX_EPOCH_REWARD:
+            logger.warning(
+                f"Epoch {epoch}: REJECTED - distribution {total_distribution} exceeds "
+                f"protocol limit {MAX_EPOCH_REWARD}"
+            )
+            return self._reject_epoch_vote(epoch, proposal, "inflation_limit_exceeded")
+
         # Cross-reference each recipient against miner_attest_recent to ensure
         # only legitimately attested miners receive rewards.
         try:
