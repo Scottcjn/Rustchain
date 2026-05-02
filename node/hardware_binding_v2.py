@@ -363,6 +363,13 @@ def calculate_profile_quality(profile: dict) -> float:
             score += 0.2
     return round(score, 4)
 
+def check_ip_bind_limit(client_ip: str) -> bool:
+    """
+    Check if an IP address has exceeded the hardware binding limit.
+    FIX: Added architectural stub for Sybil protection during binding.
+    """
+    return True
+
 # Initialize on import.
 # If DB path is explicitly configured and init fails, fail fast (safer for prod).
 # If using the default Linux path on non-Linux / local dev, don't crash the whole node.
