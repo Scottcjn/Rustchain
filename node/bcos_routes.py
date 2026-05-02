@@ -375,7 +375,10 @@ def bcos_badge_svg(cert_id):
             svg = _generate_badge_svg(row["tier"], row["trust_score"])
 
         return Response(svg, mimetype="image/svg+xml",
-                        headers={"Cache-Control": "max-age=300"})
+                        headers={
+                            "Cache-Control": "public, max-age=3600, stale-while-revalidate=600",
+                            "X-Content-Type-Options": "nosniff"
+                        })
     except Exception as e:
         return Response(
             _generate_badge_svg("ERR", 0),
