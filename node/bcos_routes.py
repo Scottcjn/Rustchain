@@ -208,6 +208,12 @@ def bcos_attest():
     signer_pubkey = data.get("signer_pubkey", report.get("signer_pubkey", ""))
 
     # Validation
+    if not repo:
+        return jsonify({"error": "repo name required"}), 400
+    if not commit_sha:
+        return jsonify({"error": "commit_sha required"}), 400
+    if not commitment:
+        return jsonify({"error": "commitment hash required"}), 400
     if not cert_id or not commitment:
         return jsonify({"error": "cert_id and commitment required"}), 400
     if not repo:
