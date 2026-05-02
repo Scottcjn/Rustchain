@@ -408,12 +408,18 @@ def api_submit_block():
 
 @app.get("/health")
 def health():
-    """Health check endpoint"""
+    """Health check endpoint with WebSocket status."""
     return jsonify({
         "ok": True,
         "service": "rustchain_v2_rip5",
         "enforce": ENFORCE,
-        "epoch_system": "active"
+        "epoch_system": "active",
+        "websocket": {
+            "enabled": WS_ENABLED,
+            "status": "connected" if (ws_feed and WS_ENABLED) else "disabled"
+        },
+        "timestamp": int(time.time()),
+        "version": "2.2.1-ws"
     })
 
 def get_hardware_tier(fingerprint):
