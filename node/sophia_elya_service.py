@@ -60,6 +60,15 @@ def save_state_snapshot():
         c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
 
+def cleanup_expired_tickets():
+    """Remove expired tickets from memory with logging."""
+    now = int(time.time())
+    to_del = [tid for tid, t in tickets_db.items() if t["expires_at"] < now]
+    for tid in to_del:
+        del tickets_db[tid]
+    if to_del:
+        print(f"[CLEANUP] Purged {len(to_del)} expired tickets")
+
 # Hardware multipliers
 HARDWARE_WEIGHTS = {
     "PowerPC": {"G4": 2.5, "G5": 2.0},
