@@ -32,8 +32,22 @@ class NodeSnapshot:
 
 
 def _default_fetcher(url: str, timeout: int) -> dict:
+    """
+    Fetch JSON from a URL with a mandatory size limit to prevent memory DoS.
+    FIX: Enforce 2MB limit on response size.
+    """
+    MAX_SIZE = 2 * 1024 * 1024  # 2MB
     with urlopen(url, timeout=timeout) as response:
-        payload = response.read().decode("utf-8")
+        # Check Content-Length header if available
+        content_length = response.headers.get('Content-Length')
+        if content_length and int(content_length) > MAX_SIZE:
+            raise ValueError(f"Response too large: {content_length} bytes")
+            
+        payload_bytes = response.read(MAX_SIZE + 1)
+        if len(payload_bytes) > MAX_SIZE:
+            raise ValueError(f"Response exceeded size limit of {MAX_SIZE} bytes")
+            
+        payload = payload_bytes.decode("utf-8")
     return json.loads(payload)
 
 
