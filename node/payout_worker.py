@@ -100,15 +100,19 @@ class PayoutWorker:
             tx_hash = self.execute_withdrawal(withdrawal)
 
             if tx_hash:
-                # Mark as completed
+                # FIX: Mark as completed with an atomic status check to prevent race conditions
                 with sqlite3.connect(self.db_path) as conn:
-                    conn.execute("""
+                    updated = conn.execute("""
                         UPDATE withdrawals
                         SET status = 'completed',
                             processed_at = ?,
                             tx_hash = ?
-                        WHERE withdrawal_id = ?
-                    """, (int(time.time()), tx_hash, withdrawal_id))
+                        WHERE withdrawal_id = ? AND status = 'processing'
+                    """, (int(time.time()), tx_hash, withdrawal_id)).rowcount
+                    
+                    if updated != 1:
+                        logger.error(f"[SECURITY] Withdrawal {withdrawal_id} state conflict detected. Already processed?")
+                        return False
 
                 logger.info(f"[OK] Withdrawal {withdrawal_id} completed: {tx_hash}")
                 self.stats['processed'] += 1
