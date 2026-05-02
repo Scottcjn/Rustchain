@@ -441,14 +441,15 @@ class TransactionPool:
             try:
                 cursor.execute(
                     """INSERT INTO pending_transactions
-                       (tx_hash, from_addr, to_addr, amount_urtc, nonce,
+                       (tx_hash, from_addr, to_addr, amount_urtc, fee_urtc, nonce,
                         timestamp, memo, signature, public_key, created_at, status)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')""",
                     (
                         tx.tx_hash,
                         tx.from_addr,
                         tx.to_addr,
                         tx.amount_urtc,
+                        getattr(tx, 'fee_urtc', 1000),
                         tx.nonce,
                         tx.timestamp,
                         tx.memo,
