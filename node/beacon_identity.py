@@ -14,6 +14,7 @@ Closes: Scottcjn/rustchain-bounties#392
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -189,7 +190,8 @@ def learn_key_from_envelope(
     except ValueError:
         return False, "invalid_pubkey_encoding"
 
-    if expected_id != agent_id:
+    # FIX: Use constant-time comparison for identity identifiers to prevent timing side-channel attacks
+    if not hmac.compare_digest(expected_id, agent_id):
         return False, "agent_id_pubkey_mismatch"
 
     init_identity_tables(db_path)
