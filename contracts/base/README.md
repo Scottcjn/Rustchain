@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # RIP-305: wRTC ERC-20 on Base L2
 
 ## Overview
@@ -73,4 +74,3 @@ PRIVATE_KEY=0x... BASESCAN_API_KEY=... npx hardhat run scripts/deploy.js --netwo
 - [ ] Deployed to Base Sepolia (pending testnet ETH)
 - [ ] Verified on BaseScan
 - [ ] Deployed to Base Mainnet
-
