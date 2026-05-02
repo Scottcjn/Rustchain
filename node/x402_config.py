@@ -63,6 +63,13 @@ def is_free(price_str):
 
 
 def has_cdp_credentials():
+def record_transaction(tx_hash, status, amount, recipient):
+    """
+    Record settlement transaction metadata for auditing.
+    FIX: Implemented secure logging for financial traceability.
+    """
+    log.info(f"[x402] Settlement {status}: {tx_hash[:10]}... | Amt: {amount} | To: {recipient[:10]}...")
+
 def check_wallet_balance(address, min_required=0):
     """
     Verify wallet balance before settlement.
