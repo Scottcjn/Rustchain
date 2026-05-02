@@ -238,15 +238,19 @@ def release_lock(
         }
     
     try:
-        # Update lock status
-        cursor.execute("""
+        # FIX: Atomic update with status check to prevent race conditions and double-unlocking
+        updated = cursor.execute("""
             UPDATE lock_ledger
             SET status = 'released',
                 unlocked_at = ?,
                 released_by = ?,
                 release_tx_hash = ?
-            WHERE id = ?
-        """, (now, released_by, release_tx_hash, lock_id))
+            WHERE id = ? AND status = 'locked'
+        """, (now, released_by, release_tx_hash, lock_id)).rowcount
+        
+        if updated != 1:
+            db_conn.rollback()
+            return False, {"error": "Lock state conflict (potentially already released)"}
         
         db_conn.commit()
         
