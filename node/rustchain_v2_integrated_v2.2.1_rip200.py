@@ -3524,6 +3524,14 @@ def _submit_attestation_impl():
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
 
+    # SECURITY (Issue #2418): Cross-node replay protection.
+    # Bind the attestation to the node that issued the challenge.
+    # We add this field to the data object before gossip so other nodes can verify.
+    if 'node_peer_id' not in data:
+        # If not provided by miner, we set it to the current node ID.
+        # In a multi-node setup, the node ID should be globally unique.
+        data['node_peer_id'] = os.environ.get("RC_NODE_ID", "standalone_node")
+
     # Extract attestation data
     miner = _attest_valid_miner(data.get("miner")) or _attest_valid_miner(data.get("miner_id"))
     report = _normalize_attestation_report(data.get("report"))

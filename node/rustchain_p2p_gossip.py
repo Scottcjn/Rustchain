@@ -684,6 +684,17 @@ class GossipLayer:
             )
             return {"status": "error", "reason": "future_timestamp"}
 
+        # SECURITY (Issue #2418): Cross-node replay protection.
+        # Verify that the attestation was generated for THIS node.
+        # This prevents an attacker from replaying a valid attestation from node A to node B.
+        target_node = attestation.get("node_peer_id")
+        if target_node and target_node != self.node_id:
+            logger.warning(
+                f"Attestation from {msg.sender_id} for miner {miner_id[:16]}: "
+                f"REJECTED - origin node mismatch (target={target_node}, self={self.node_id})"
+            )
+            return {"status": "error", "reason": "node_mismatch"}
+
         # Update CRDT
         if self.attestation_crdt.set(miner_id, attestation, int(ts_ok)):
             # Also update database
