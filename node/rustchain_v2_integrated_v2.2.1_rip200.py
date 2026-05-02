@@ -583,11 +583,20 @@ def health_diagnostics():
         "avg_latency_ms": 0 # Stub
     }
 
+    # Check CPU health
+    cpu_load = [0.0, 0.0, 0.0]
+    try:
+        # FIX: Added system load average to diagnostics to monitor node saturation
+        cpu_load = list(os.getloadavg())
+    except (AttributeError, OSError):
+        pass
+
     return jsonify({
         "status": "ok" if db_ok else "degraded",
         "version": APP_VERSION,
         "uptime_seconds": int(uptime),
         "timestamp": int(now),
+        "load_avg": cpu_load,
         "mempool": {
             "pending_inputs": mempool_count
         },
