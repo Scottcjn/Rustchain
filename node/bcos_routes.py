@@ -204,8 +204,14 @@ def bcos_attest():
             "hint": "Use X-Admin-Key header or sign the commitment with Ed25519",
         }), 401
 
-    # Verify commitment matches report
+    # FIX: Crucial security check - verify commitment actually matches the provided report
+    # This prevents an attacker from signing one commitment and sending a different report body.
     report_json_str = json.dumps(report, sort_keys=True, separators=(",", ":"))
+    if not _verify_commitment(report_json_str, commitment):
+        return jsonify({
+            "error": "Commitment mismatch - the provided commitment does not match the report content",
+            "recomputed": blake2b(report_json_str.encode(), digest_size=32).hexdigest()
+        }), 400
 
     # Store
     now = int(time.time())
