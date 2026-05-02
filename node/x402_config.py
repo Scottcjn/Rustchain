@@ -8,8 +8,13 @@ Change values when ready to charge real USDC.
 
 import os
 import logging
+import re
 
 log = logging.getLogger("x402")
+
+def is_valid_evm_address(address):
+    """Validate EVM address format."""
+    return bool(re.match(r"^0x[a-fA-F0-9]{40}$", address))
 
 # --- x402 Constants ---
 X402_NETWORK = "eip155:8453"                     # Base mainnet (CAIP-2)
@@ -17,13 +22,15 @@ USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"   # Native USDC on Base
 WRTC_BASE = "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"   # wRTC on Base
 AERODROME_POOL = "0x4C2A0b915279f0C22EA766D58F9B815Ded2d2A3F"  # wRTC/WETH pool
 
-# --- Facilitator ---
-FACILITATOR_URL = "https://x402-facilitator.cdp.coinbase.com"  # Coinbase hosted
-# Free tier: 1,000 tx/month
-
 # --- Treasury Addresses (receive x402 payments) ---
-BOTTUBE_TREASURY = os.environ.get("BOTTUBE_X402_ADDRESS", "")
-BEACON_TREASURY = os.environ.get("BEACON_X402_ADDRESS", "")
+BOTTUBE_TREASURY = os.environ.get("BOTTUBE_X402_ADDRESS", "").strip()
+BEACON_TREASURY = os.environ.get("BEACON_X402_ADDRESS", "").strip()
+
+# Security Check: Ensure treasury addresses are valid if configured
+if BOTTUBE_TREASURY and not is_valid_evm_address(BOTTUBE_TREASURY):
+    log.error("CRITICAL: Invalid BOTTUBE_X402_ADDRESS configured")
+if BEACON_TREASURY and not is_valid_evm_address(BEACON_TREASURY):
+    log.error("CRITICAL: Invalid BEACON_X402_ADDRESS configured")
 
 # --- Pricing (in USDC atomic units, 6 decimals) ---
 # ALL SET TO "0" INITIALLY — prove the flow works, charge later
