@@ -689,6 +689,7 @@ def health_diagnostics():
         "open_files": open_files,
         "thread_count": __import__("threading").active_count(),
         "open_sockets": len(__import__("psutil").Process().connections()),
+        "open_handles": __import__("psutil").Process().num_fds() if hasattr(__import__("psutil").Process(), "num_fds") else 0,
         "mempool": {
             "pending_inputs": mempool_count
         },
