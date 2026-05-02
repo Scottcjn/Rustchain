@@ -42,12 +42,12 @@ SCHEMA_UPGRADE_SQL = """
 -- Upgrade balances table to include nonce
 ALTER TABLE balances ADD COLUMN wallet_nonce INTEGER DEFAULT 0;
 
--- Create pending transactions table
+-- Create pending transactions table with amount validation
 CREATE TABLE IF NOT EXISTS pending_transactions (
     tx_hash TEXT PRIMARY KEY,
     from_addr TEXT NOT NULL,
     to_addr TEXT NOT NULL,
-    amount_urtc INTEGER NOT NULL,
+    amount_urtc INTEGER NOT NULL CHECK(amount_urtc > 0),
     nonce INTEGER NOT NULL,
     timestamp INTEGER NOT NULL,
     memo TEXT DEFAULT '',
@@ -57,12 +57,12 @@ CREATE TABLE IF NOT EXISTS pending_transactions (
     status TEXT DEFAULT 'pending'
 );
 
--- Create transaction history table
+-- Create transaction history table with amount validation
 CREATE TABLE IF NOT EXISTS transaction_history (
     tx_hash TEXT PRIMARY KEY,
     from_addr TEXT NOT NULL,
     to_addr TEXT NOT NULL,
-    amount_urtc INTEGER NOT NULL,
+    amount_urtc INTEGER NOT NULL CHECK(amount_urtc > 0),
     nonce INTEGER NOT NULL,
     timestamp INTEGER NOT NULL,
     memo TEXT DEFAULT '',
