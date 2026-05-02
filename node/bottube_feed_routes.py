@@ -70,22 +70,24 @@ def _fetch_videos(
             
             # Check if bottube_videos table exists
             cursor_obj.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='bottube_videos'"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                ("bottube_videos",)
             )
             if not cursor_obj.fetchone():
                 conn.close()
                 return _get_mock_videos(limit, agent), None
             
-            # Build query
+            # Build query with strict parameter binding
+            # FIX: Enforced parameterized queries to prevent potential injection vectors
             query = "SELECT * FROM bottube_videos WHERE public = 1"
             params = []
             
             if agent:
                 query += " AND agent = ?"
-                params.append(agent)
+                params.append(str(agent))
             
             query += " ORDER BY created_at DESC LIMIT ?"
-            params.append(limit)
+            params.append(int(limit))
             
             cursor_obj.execute(query, params)
             rows = cursor_obj.fetchall()
