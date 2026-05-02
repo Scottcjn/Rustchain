@@ -116,6 +116,7 @@ def compare_entropy_profiles(stored: Dict, current: Dict) -> Tuple[bool, float, 
             count += 1
             
             if diff > field_tol:
+                print(f"[HW_COMPARE] Field mismatch: {key} (Diff: {diff:.1%}, Tol: {field_tol:.1%})")
                 differences.append(f'{key}:{diff:.1%}')
                 # Only stable fields count as hard failures
                 if field_tol <= ENTROPY_TOLERANCE:
