@@ -554,11 +554,24 @@ def health_diagnostics():
     except Exception:
         pass
 
+    # Check Mempool health
+    mempool_count = 0
+    if HAVE_UTXO:
+        try:
+            with sqlite3.connect(DB_PATH) as conn:
+                row = conn.execute("SELECT COUNT(*) FROM utxo_mempool_inputs").fetchone()
+                mempool_count = row[0] if row else 0
+        except Exception:
+            pass
+
     return jsonify({
         "status": "ok" if db_ok else "degraded",
         "version": APP_VERSION,
         "uptime_seconds": int(uptime),
         "timestamp": int(now),
+        "mempool": {
+            "pending_inputs": mempool_count
+        },
         "modules": {
             "rewards": HAVE_REWARDS,
             "utxo": HAVE_UTXO,
