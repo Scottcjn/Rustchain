@@ -201,14 +201,18 @@ class GPURenderProtocol:
             conn.close()
 
     def list_gpu_nodes(self, job_type=None, device_arch=None) -> list:
-        """List active GPU nodes, optionally filtered by capability or arch."""
+        """List active GPU nodes securely with whitelisted capability filtering."""
         conn = self._get_conn()
         try:
             query = "SELECT * FROM gpu_attestations WHERE status='active'"
             params = []
-            if job_type:
+            
+            # FIX: Use whitelist to prevent SQL injection via dynamic column names
+            ALLOWED_JOB_TYPES = {'render', 'tts', 'stt', 'llm'}
+            if job_type and job_type in ALLOWED_JOB_TYPES:
                 col = f"supports_{job_type}"
                 query += f" AND {col}=1"
+            
             if device_arch:
                 query += " AND device_arch=?"
                 params.append(device_arch)
