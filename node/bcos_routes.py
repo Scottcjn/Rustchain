@@ -208,6 +208,8 @@ def bcos_attest():
     signer_pubkey = data.get("signer_pubkey", report.get("signer_pubkey", ""))
 
     # Validation
+    if not cert_id or len(cert_id) < 10:
+        return jsonify({"error": "cert_id too short or missing"}), 400
     if not repo:
         return jsonify({"error": "repo name required"}), 400
     if not commit_sha:
