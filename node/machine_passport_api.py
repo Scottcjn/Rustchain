@@ -503,92 +503,90 @@ def add_lineage_note(machine_id: str):
 def generate_qr(machine_id: str):
     """
     Generate a QR code for the machine passport.
-    
-    Returns PNG image or error if library not available.
+    FIX: Added caching to prevent resource exhaustion from redundant generation.
     """
-    import tempfile
+    import os
     import base64
-    from io import BytesIO
+    from flask import current_app
     
+    # Simple file cache
+    cache_dir = os.path.join(os.path.dirname(PASSPORT_DB_PATH), 'passport_cache', 'qr')
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_path = os.path.join(cache_dir, f"{machine_id}.png")
+    
+    if os.path.exists(cache_path):
+        with open(cache_path, 'rb') as f:
+            qr_data = base64.b64encode(f.read()).decode()
+        return jsonify({
+            'ok': True, 'machine_id': machine_id,
+            'qr_code': f'data:image/png;base64,{qr_data}',
+            'cached': True
+        })
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
-    
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    # Generate QR code
     passport_url = f"{request.host_url.rstrip('/')}passport/{machine_id}"
     
-    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-        tmp_path = tmp.name
-    
     try:
-        success, msg = generate_qr_code(passport_url, tmp_path)
-        
+        success, msg = generate_qr_code(passport_url, cache_path)
         if not success:
-            return jsonify({
-                'ok': False,
-                'error': 'generation_failed',
-                'message': msg,
-            }), 500
+            return jsonify({'ok': False, 'error': 'gen_failed', 'message': msg}), 500
         
-        # Read and return as base64
-        with open(tmp_path, 'rb') as f:
+        with open(cache_path, 'rb') as f:
             qr_data = base64.b64encode(f.read()).decode()
-        
+            
         return jsonify({
-            'ok': True,
-            'machine_id': machine_id,
+            'ok': True, 'machine_id': machine_id,
             'qr_code': f'data:image/png;base64,{qr_data}',
-            'passport_url': passport_url,
+            'cached': False
         })
-    finally:
-        import os
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 @machine_passport_bp.route('/<machine_id>/pdf', methods=['GET'])
 def generate_pdf(machine_id: str):
     """
     Generate a printable PDF passport.
-    
-    Returns PDF file or error if library not available.
+    FIX: Added file-based caching to prevent CPU/Disk DoS from on-the-fly generation.
     """
-    import tempfile
+    import os
+    from flask import send_file
     
+    # Simple file cache
+    cache_dir = os.path.join(os.path.dirname(PASSPORT_DB_PATH), 'passport_cache', 'pdf')
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_path = os.path.join(cache_dir, f"{machine_id}.pdf")
+    
+    if os.path.exists(cache_path):
+        return send_file(
+            cache_path,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'{machine_id}_passport.pdf'
+        )
+
     ledger = get_ledger()
     data = ledger.export_passport_full(machine_id)
-    
     if not data:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
-        tmp_path = tmp.name
-    
     try:
-        success, msg = generate_passport_pdf(data, tmp_path)
-        
+        success, msg = generate_passport_pdf(data, cache_path)
         if not success:
-            return jsonify({
-                'ok': False,
-                'error': 'generation_failed',
-                'message': msg,
-            }), 500
+            return jsonify({'ok': False, 'error': 'gen_failed', 'message': msg}), 500
         
-        # Return PDF file
-        from flask import send_file
         return send_file(
-            tmp_path,
+            cache_path,
             mimetype='application/pdf',
             as_attachment=True,
-            download_name=f'{machine_id}_passport.pdf',
+            download_name=f'{machine_id}_passport.pdf'
         )
-    finally:
-        import os
-        # Delay cleanup - send_file needs the file
-        import threading
-        threading.Timer(1.0, lambda p: os.path.exists(p) and os.unlink(p), [tmp_path]).start()
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 @machine_passport_bp.route('/compute-machine-id', methods=['POST'])
