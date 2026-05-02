@@ -12,6 +12,9 @@ Issue #1449: Anti-Double-Mining Enforcement
 import sqlite3
 import time
 import os
+import logging
+
+logger = logging.getLogger("rewards-rip200")
 try:
     from flask import request, jsonify
 except ImportError:
@@ -246,13 +249,14 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
             "miners": miners_data,
             "chain_age_years": round(get_chain_age_years(current), 2)
         }
-    except Exception:
+    except Exception as e:
         # Any failure after BEGIN IMMEDIATE should release the lock and avoid partial writes.
+        logger.error(f"CRITICAL: Settlement failure for epoch {epoch}: {e}")
         try:
             db.rollback()
-        except Exception:
-            pass
-        raise
+        except Exception as rollback_err:
+            logger.error(f"Rollback failed: {rollback_err}")
+        return {"ok": False, "error": "internal_settlement_failure", "details": str(e)}
     finally:
         if own_conn:
             db.close()
