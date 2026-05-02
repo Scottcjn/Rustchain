@@ -42,12 +42,13 @@ SCHEMA_UPGRADE_SQL = """
 -- Upgrade balances table to include nonce
 ALTER TABLE balances ADD COLUMN wallet_nonce INTEGER DEFAULT 0;
 
--- Create pending transactions table with amount validation
+-- Create pending transactions table with amount and fee validation
 CREATE TABLE IF NOT EXISTS pending_transactions (
     tx_hash TEXT PRIMARY KEY,
     from_addr TEXT NOT NULL,
     to_addr TEXT NOT NULL,
     amount_urtc INTEGER NOT NULL CHECK(amount_urtc > 0),
+    fee_urtc INTEGER NOT NULL DEFAULT 1000 CHECK(fee_urtc >= 0),
     nonce INTEGER NOT NULL,
     timestamp INTEGER NOT NULL,
     memo TEXT DEFAULT '',
@@ -466,32 +467,18 @@ class TransactionPool:
             except sqlite3.IntegrityError as e:
                 return False, f"Transaction already exists: {e}"
 
-    def get_pending_transactions(self, limit: int = 100) -> List[SignedTransaction]:
-        """Get pending transactions ordered by nonce"""
+    def get_pending_transactions(self, limit: int = 100) -> List[Dict]:
+        """Get pending transactions ordered by fee (desc) then nonce (asc)"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """SELECT * FROM pending_transactions
                    WHERE status = 'pending'
-                   ORDER BY nonce ASC
+                   ORDER BY fee_urtc DESC, nonce ASC
                    LIMIT ?""",
                 (limit,)
             )
-
-            return [
-                SignedTransaction(
-                    from_addr=row["from_addr"],
-                    to_addr=row["to_addr"],
-                    amount_urtc=row["amount_urtc"],
-                    nonce=row["nonce"],
-                    timestamp=row["timestamp"],
-                    memo=row["memo"],
-                    signature=row["signature"],
-                    public_key=row["public_key"],
-                    tx_hash=row["tx_hash"]
-                )
-                for row in cursor.fetchall()
-            ]
+            return [dict(row) for row in cursor.fetchall()]
 
     def confirm_transaction(
         self,
