@@ -371,7 +371,12 @@ def utxo_transfer():
 
     ok = _utxo_db.apply_transaction(tx, block_height)
     if not ok:
-        return jsonify({'error': 'UTXO transaction failed (race condition or validation)'}), 500
+        # FIX: Provide more specific error feedback for UTXO application failures
+        # while avoiding leaking internal DB state.
+        return jsonify({
+            'error': 'transaction_application_failed',
+            'message': 'The UTXO transaction could not be applied. This may be due to a double-spend race or validation failure.'
+        }), 409 # Conflict is more appropriate than 500 for most failures here
 
     # --- dual-write to account model ----------------------------------------
 
