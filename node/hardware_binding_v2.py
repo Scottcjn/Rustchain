@@ -44,8 +44,11 @@ def init_hardware_bindings_v2():
 
 def compute_serial_hash(serial: str, arch: str) -> str:
     """Hash serial + arch for privacy and cross-platform uniqueness."""
-    data = f'{serial.strip().upper()}|{arch.lower()}'
-    return hashlib.sha256(data.encode()).hexdigest()[:40]
+    # FIX: Use HMAC with salt for better identity privacy
+    pepper = b"rustchain_poa_v2_identity"
+    import hmac
+    data = f"{serial.strip().upper()}|{arch.lower()}".encode()
+    return hmac.new(pepper, data, hashlib.sha256).hexdigest()[:40]
 
 def extract_entropy_profile(fingerprint: dict) -> Dict:
     """Extract comparable entropy values from fingerprint data."""
@@ -383,7 +386,7 @@ def _norm_model(model: str) -> str:
     import re
     m = str(model).lower().replace("(r)", "").replace("(tm)", "")
     return re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9 ]', '', m)).strip()
- Riverside
+ 
  
 
 # Initialize on import.
