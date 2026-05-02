@@ -18,6 +18,7 @@ import sqlite3
 import time
 import hashlib
 import os
+import secrets
 from typing import Optional, Tuple, Dict, Any
 from decimal import Decimal
 from dataclasses import dataclass
@@ -230,9 +231,9 @@ def generate_bridge_tx_hash(
     dest_address: str,
     amount_i64: int
 ) -> str:
-    """Generate unique transaction hash for bridge transfer."""
-    data = f"{direction}:{source_chain}:{dest_chain}:{source_address}:{dest_address}:{amount_i64}:{time.time()}:{os.urandom(8).hex()}"
-    return hashlib.sha256(data.encode()).hexdigest()[:32]
+    """Generate cryptographically secure transaction hash for bridge transfer."""
+    data = f"{direction}:{source_chain}:{dest_chain}:{source_address}:{dest_address}:{amount_i64}:{time.time()}:{secrets.token_hex(16)}"
+    return hashlib.sha256(data.encode()).hexdigest()
 
 
 def check_miner_balance(db_conn: sqlite3.Connection, miner_id: str, amount_i64: int) -> Tuple[bool, int, int]:
@@ -270,10 +271,12 @@ def create_bridge_transfer(
     admin_initiated: bool = False
 ) -> Tuple[bool, Dict[str, Any]]:
     """
-    Create a new bridge transfer entry.
+    Create a new bridge transfer entry with atomic balance check.
     
     Returns: (success, result_dict)
     """
+    # FIX: Use a transaction with IMMEDIATE to prevent race conditions
+    db_conn.execute("BEGIN IMMEDIATE")
     cursor = db_conn.cursor()
     now = int(time.time())
     current_epoch = slot_to_epoch(current_slot())
@@ -290,14 +293,12 @@ def create_bridge_transfer(
     
     # Calculate unlock time based on direction
     if request.direction == "deposit":
-        # Deposit: lock until external confirmations
         unlock_at = now + BRIDGE_LOCK_EXPIRY_SECONDS
     else:
-        # Withdraw: shorter lock (RustChain confirmation)
         unlock_at = now + (6 * 600)  # 6 slots = 1 hour
     
     try:
-        # For deposits, check balance and create lock
+        # For deposits, check balance and create lock (inside transaction)
         if request.direction == "deposit" and not admin_initiated:
             has_balance, available, pending = check_miner_balance(
                 db_conn, 
@@ -305,6 +306,7 @@ def create_bridge_transfer(
                 amount_i64
             )
             if not has_balance:
+                db_conn.rollback()
                 return False, {
                     "error": "Insufficient available balance",
                     "available_rtc": available / BRIDGE_UNIT,
