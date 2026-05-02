@@ -165,11 +165,25 @@ def utxo_integrity():
 
 @utxo_bp.route('/mempool')
 def utxo_mempool():
-    """View pending mempool transactions."""
+    """View pending mempool transactions with RTC conversions."""
     candidates = _utxo_db.mempool_get_block_candidates(max_count=50)
+    
+    # Enrichment: Add RTC values for display
+    enriched = []
+    for tx in candidates:
+        tx_copy = dict(tx)
+        if 'fee_nrtc' in tx_copy:
+            tx_copy['fee_rtc'] = tx_copy['fee_nrtc'] / UNIT
+        # Handle outputs
+        if 'outputs' in tx_copy:
+            for out in tx_copy['outputs']:
+                if 'value_nrtc' in out:
+                    out['value_rtc'] = out['value_nrtc'] / UNIT
+        enriched.append(tx_copy)
+
     return jsonify({
-        'count': len(candidates),
-        'transactions': candidates,
+        'count': len(enriched),
+        'transactions': enriched,
     })
 
 
