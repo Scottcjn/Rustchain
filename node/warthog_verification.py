@@ -123,16 +123,21 @@ def verify_warthog_proof(proof, miner_id) -> Tuple[bool, float, str]:
             return False, WART_BONUS_NONE, f"implausible_height_{height}"
 
         # Balance must be non-zero (proves actual mining activity)
-        balance_str = proof.get("balance", "0")
+        balance_str = str(proof.get("balance", "0")).strip()
         try:
-            balance = float(balance_str)
-        except (ValueError, TypeError):
-            balance = 0.0
-
-        if balance <= 0:
-            # Node running but no balance — downgrade to pool tier
-            # (they're contributing hashpower but haven't earned yet)
-            return True, WART_BONUS_POOL, "node_no_balance_downgraded"
+            # FIX: Use Decimal for precision and validate range
+            from decimal import Decimal
+            balance = Decimal(balance_str)
+            if balance <= 0:
+                return True, WART_BONUS_POOL, "node_no_balance_downgraded"
+            
+            # Additional safety: CAP the recognized balance to prevent overflow 
+            # or extreme weighting issues if the multiplier logic changes.
+            if balance > Decimal("1000000000"):
+                balance = Decimal("1000000000")
+                
+        except Exception:
+            return True, WART_BONUS_POOL, "invalid_balance_format_downgraded"
 
         return True, WART_BONUS_NODE, "own_node_verified"
 
