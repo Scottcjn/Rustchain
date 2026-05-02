@@ -340,6 +340,7 @@ def bcos_verify(cert_id):
             "reviewer": row["reviewer"],
             "anchored_epoch": row["anchored_epoch"],
             "created_at": row["created_at"],
+                "created_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"])),
             "score_breakdown": report.get("score_breakdown", {}),
             "checks": report.get("checks", {}),
             "engine_version": report.get("engine_version", "unknown"),
@@ -479,6 +480,7 @@ def bcos_directory():
                 "reviewer": row["reviewer"],
                 "anchored_epoch": row["anchored_epoch"],
                 "created_at": row["created_at"],
+                "created_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(row["created_at"])),
                 "verify_url": f"https://rustchain.org/bcos/verify/{row['cert_id']}",
                 "badge_url": f"https://50.28.86.131/bcos/badge/{row['cert_id']}.svg",
             })
