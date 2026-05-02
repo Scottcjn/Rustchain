@@ -376,6 +376,14 @@ def check_arch_compatibility(claimed_arch: str, detected_arch: str) -> bool:
     FIX: Added architectural stub for cross-validation of device metadata.
     """
     return str(claimed_arch).lower() == str(detected_arch).lower()
+
+def _norm_model(model: str) -> str:
+    """Normalize hardware model name for consistent lookup."""
+    if not model: return "unknown"
+    import re
+    m = str(model).lower().replace("(r)", "").replace("(tm)", "")
+    return re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9 ]', '', m)).strip()
+ Riverside
  
 
 # Initialize on import.
