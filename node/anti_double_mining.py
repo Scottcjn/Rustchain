@@ -140,46 +140,20 @@ def detect_duplicate_identities(
 ) -> List[MachineIdentity]:
     """
     Detect machines with multiple miner IDs in the same epoch.
-
-    Returns a list of MachineIdentity objects for machines that have
-    multiple miner IDs associated with them.
-
-    FIX (settlement-integrity): Prefer epoch_enroll as the canonical miner list
-    (per-epoch snapshot, matches finalize_epoch).  Fall back to miner_attest_recent
-    time-window query only when epoch_enroll has no rows.
+    Now includes IP-based corroboration.
     """
     cursor = conn.cursor()
 
     # Primary source: epoch_enroll (per-epoch snapshot).
-    cursor.execute(
-        "SELECT miner_pk FROM epoch_enroll WHERE epoch = ?",
-        (epoch,)
-    )
+    # FIX: Join with miner_attest_recent to get IP information for better grouping
+    cursor.execute("""
+        SELECT e.miner_pk, m.device_arch, m.fingerprint_passed, m.entropy_score, m.source_ip,
+        (SELECT profile_json FROM miner_fingerprint_history mfh WHERE mfh.miner = e.miner_pk ORDER BY mfh.ts DESC LIMIT 1)
+        FROM epoch_enroll e
+        JOIN miner_attest_recent m ON e.miner_pk = m.miner
+        WHERE e.epoch = ?
+    """, (epoch,))
     enrolled = cursor.fetchall()
-
-    if enrolled:
-        rows = []
-        for (miner_pk,) in enrolled:
-            profile_row = cursor.execute(
-                "SELECT profile_json FROM miner_fingerprint_history mfh "
-                "WHERE mfh.miner = ? ORDER BY mfh.ts DESC LIMIT 1",
-                (miner_pk,)
-            ).fetchone()
-            profile_json = profile_row[0] if profile_row else None
-            arch_row = cursor.execute(
-                "SELECT device_arch, fingerprint_passed, entropy_score "
-                "FROM miner_attest_recent WHERE miner = ? LIMIT 1",
-                (miner_pk,)
-            ).fetchone()
-            if arch_row:
-                device_arch = arch_row[0] or "unknown"
-                fingerprint_passed = arch_row[1]
-                entropy_score = arch_row[2]
-            else:
-                device_arch = "unknown"
-                fingerprint_passed = 1
-                entropy_score = 0.0
-            rows.append((miner_pk, device_arch, fingerprint_passed, entropy_score, profile_json))
     else:
         # SECURITY FIX #2159: Fallback for epochs without enrollment records.
         # Vulnerable to stale-attestation drop when settlement is delayed.
