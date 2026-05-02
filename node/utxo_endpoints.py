@@ -360,6 +360,21 @@ def utxo_transfer():
 
     # Build and apply UTXO transaction
     block_height = _current_slot_fn()
+    
+    # FIX: Pre-check mempool size before attempting transaction application
+    # to provide immediate feedback and prevent DB contention.
+    try:
+        conn = _utxo_db._conn()
+        count = conn.execute("SELECT COUNT(*) FROM utxo_mempool").fetchone()[0]
+        conn.close()
+        if count >= 10000: # Match MAX_POOL_SIZE in utxo_db.py
+            return jsonify({
+                'error': 'mempool_full',
+                'message': 'The transaction pool is currently full. Please try again later.'
+            }), 503
+    except Exception:
+        pass
+
     tx = {
         'tx_type': 'transfer',
         'inputs': [{'box_id': u['box_id'], 'spending_proof': signature}
