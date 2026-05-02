@@ -235,17 +235,22 @@ def extract_cache_features(cache_data: Dict) -> Dict[str, Any]:
         data = cache_data
     features = {}
     latencies = data.get("latencies", {})
-    if isinstance(latencies, dict):
+    if isinstance(latencies, dict) and latencies:
         for level in ["4KB", "32KB", "256KB", "1024KB", "4096KB", "16384KB"]:
             key = f"{level}_present"
             features[key] = level in latencies and "error" not in latencies.get(level, {})
+        
         tone_ratios = data.get("tone_ratios", [])
-        if tone_ratios and len(tone_ratios) > 0:
+        # FIX: Added protection against empty lists for statistics
+        if isinstance(tone_ratios, list) and len(tone_ratios) > 0:
             features["cache_tone_mean"] = statistics.mean(tone_ratios)
             features["cache_tone_stdev"] = statistics.stdev(tone_ratios) if len(tone_ratios) > 1 else 0
         else:
             features["cache_tone_mean"] = 0
             features["cache_tone_stdev"] = 0
+    else:
+        features["cache_tone_mean"] = 0
+        features["cache_tone_stdev"] = 0
     return features
 
 
