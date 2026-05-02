@@ -372,12 +372,15 @@ def attest_ensure_tables(conn):
 
 
 def attest_cleanup_expired(conn, now_ts: Optional[int] = None):
-    """Remove expired challenge and used-nonce rows."""
+    """Remove expired challenge and used-nonce rows with robust handling."""
     now_ts = int(time.time()) if now_ts is None else int(now_ts)
     attest_ensure_tables(conn)
-    conn.execute("DELETE FROM nonces WHERE expires_at < ?", (now_ts,))
-    conn.execute("DELETE FROM used_nonces WHERE expires_at < ?", (now_ts,))
-    conn.commit()
+    try:
+        conn.execute("DELETE FROM nonces WHERE expires_at < ?", (now_ts,))
+        conn.execute("DELETE FROM used_nonces WHERE expires_at < ?", (now_ts,))
+        conn.commit()
+    except sqlite3.Error:
+        pass
 
 
 def attest_validate_challenge(conn, nonce: str, now_ts: Optional[int] = None):
