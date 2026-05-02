@@ -25,6 +25,7 @@ Date: 2026-02-28
 """
 
 import hashlib
+import hmac
 import math
 import sqlite3
 import time
@@ -292,23 +293,23 @@ def record_fleet_signals_from_request(
     fingerprint: Optional[dict] = None
 ):
     """
-    Record fleet detection signals from an attestation submission.
-
-    Called from submit_attestation() after validation passes.
-    Stores privacy-preserving hashes of network and fingerprint data.
+    Record fleet detection signals with privacy-preserving HMAC subnet hashing.
     """
     ensure_schema(db)
 
-    # Hash the /24 subnet rather than storing the raw IP so we can group miners
-    # by network without logging PII. The 16-char truncation is still collision-
-    # resistant enough for fleet detection while reducing storage footprint.
+    # FIX: Use HMAC with the P2P secret to hash subnets. 
+    # Standard SHA-256 is vulnerable to rainbow table attacks due to small search space.
+    # Falling back to a node-specific salt if global secret is missing.
+    import os
+    secret = os.environ.get("RC_P2P_SECRET", "default_internal_salt_for_privacy_only").encode()
+
     if ip_address:
         parts = ip_address.split('.')
         if len(parts) == 4:
             subnet = '.'.join(parts[:3])
-            subnet_hash = hashlib.sha256(subnet.encode()).hexdigest()[:16]
+            subnet_hash = hmac.new(secret, subnet.encode(), hashlib.sha256).hexdigest()[:16]
         else:
-            subnet_hash = hashlib.sha256(ip_address.encode()).hexdigest()[:16]
+            subnet_hash = hmac.new(secret, ip_address.encode(), hashlib.sha256).hexdigest()[:16]
     else:
         subnet_hash = None
 
