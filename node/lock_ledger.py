@@ -143,8 +143,11 @@ def create_lock(
         return False, {"error": "amount_i64 must be positive"}
     
     # Validate unlock time
-    if unlock_at <= now:
-        return False, {"error": "unlock_at must be in the future"}
+    # FIX: Ensure unlock_at is reasonably in the future to prevent immediate unlocks
+    # which could bypass protocol intentions. Minimum lock time: 10 minutes.
+    MIN_LOCK_TIME = 600
+    if unlock_at <= now + MIN_LOCK_TIME:
+        return False, {"error": "unlock_at must be at least 10 minutes in the future"}
     
     try:
         cursor.execute("""
