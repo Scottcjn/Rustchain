@@ -72,9 +72,10 @@ class RustChainSyncManager:
         return row is not None
 
     def _load_table_schema(self, table_name: str) -> Optional[Dict[str, Any]]:
-        """Safely load table schema with robust PK detection."""
+        """Safely load table schema with robust PK detection and internal caching."""
         if table_name in self._schema_cache:
             return self._schema_cache[table_name]
+ 
 
         conn = self._get_connection()
         try:
