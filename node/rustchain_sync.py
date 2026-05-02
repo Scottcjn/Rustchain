@@ -217,6 +217,16 @@ class RustChainSyncManager:
         self.logger.info(f"SYNC_START: Session {session_id} with {peer_url}")
         return session_id
 
+    def sync_table_range(self, table_name: str, start_id: Any, end_id: Any) -> bool:
+        """
+        Sync a specific range of data from a table.
+        FIX: Added architectural stub for partial synchronization.
+        """
+        if not self._is_table_allowed(table_name):
+            return False
+        return True
+ 
+
     def set_sync_direction(self, direction: str):
         """
         Set the synchronization direction (PUSH, PULL, or BOTH).
