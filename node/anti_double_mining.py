@@ -62,7 +62,8 @@ def compute_machine_identity_hash(device_arch: str, fingerprint_profile: Dict[st
     
     # Hash the canonical representation
     profile_json = json.dumps(canonical_profile, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(profile_json.encode()).hexdigest()[:16]
+    # FIX: Use full hash to prevent collision attacks and ensure unique identity
+    return hashlib.sha256(profile_json.encode()).hexdigest()
 
 
 def normalize_fingerprint(fingerprint_data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
