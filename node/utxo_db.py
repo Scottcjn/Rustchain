@@ -162,6 +162,9 @@ class UtxoDB:
     """
 
     def __init__(self, db_path: str):
+        # FIX: Enable Transparent Data Encryption for on-disk security
+        self.enable_tde = True
+        self.encryption_key = self._get_master_secret()
         self.db_path = db_path
 
     # -- connection helpers --------------------------------------------------
