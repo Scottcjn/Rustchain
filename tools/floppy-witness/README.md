@@ -44,7 +44,7 @@ cargo build --release
 
 ## Documentation
 
-See [BOUNTY_2313_IMPLEMENTATION.md](../docs/BOUNTY_2313_IMPLEMENTATION.md) for complete documentation.
+See BOUNTY_2313_IMPLEMENTATION.md (in docs/) for complete documentation.
 
 ## Tests
 
