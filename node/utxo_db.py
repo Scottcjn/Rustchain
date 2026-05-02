@@ -348,6 +348,22 @@ class UtxoDB:
         finally:
             conn.close()
 
+    def get_utxos_by_address(self, address: str, limit: int = 100) -> List[dict]:
+        """
+        Fetch unspent boxes for a specific address.
+        FIX: Added index-aware query for performance.
+        """
+        conn = self._get_connection()
+        try:
+            # Assumes address column is indexed for performance
+            rows = conn.execute(
+                "SELECT * FROM utxo_boxes WHERE address = ? AND spent_at IS NULL ORDER BY box_id DESC LIMIT ?",
+                (address, limit)
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
     # -- transaction application ---------------------------------------------
 
     def apply_transaction(self, tx: dict, block_height: int,
