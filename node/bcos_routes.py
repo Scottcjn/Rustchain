@@ -423,8 +423,8 @@ def bcos_directory():
                 params.append(tier_filter)
             
             if repo_search:
-                query += " AND repo LIKE ?"
-                params.append(f"%{repo_search}%")
+                query += " AND (repo LIKE ? OR cert_id LIKE ?)"
+                params.extend([f"%{repo_search}%", f"%{repo_search}%"])
 
             if sort_by == "score":
                 query += " ORDER BY trust_score DESC, created_at DESC"
