@@ -221,7 +221,7 @@ def rss_feed():
         
         # Get base URL
         base_url = request.host_url.rstrip("/")
-        if request.headers.get("X-Forwarded-Host"):
+        if request.headers.get("X-Forwarded-Host") and current_app.config.get("TRUST_PROXY", False):
             base_url = f"https://{request.headers['X-Forwarded-Host']}"
         
         # Build RSS feed
@@ -277,7 +277,7 @@ def atom_feed():
         
         # Get base URL
         base_url = request.host_url.rstrip("/")
-        if request.headers.get("X-Forwarded-Host"):
+        if request.headers.get("X-Forwarded-Host") and current_app.config.get("TRUST_PROXY", False):
             base_url = f"https://{request.headers['X-Forwarded-Host']}"
         
         # Build Atom feed
@@ -344,7 +344,7 @@ def feed_index():
     
     # Get base URL
     base_url = request.host_url.rstrip("/")
-    if request.headers.get("X-Forwarded-Host"):
+    if request.headers.get("X-Forwarded-Host") and current_app.config.get("TRUST_PROXY", False):
         base_url = f"https://{request.headers['X-Forwarded-Host']}"
     
     # Auto-detect format
