@@ -925,6 +925,22 @@ def update_governor_inbox_entry(
                 inbox_id,
             ),
         )
+        
+        # FIX: Add audit entry for the manual/agent update to maintain traceability
+        conn.execute(
+            """
+            INSERT INTO sophia_governor_inbox_forward (inbox_id, target, transport, request_json, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                inbox_id,
+                "internal",
+                "manual_update",
+                _safe_json_dumps({"status": next_status, "agent": next_assigned_agent}),
+                "updated",
+                _now(),
+            ),
+        )
         conn.commit()
 
     updated = get_governor_inbox_entry(inbox_id, db_path=db)
