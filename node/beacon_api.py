@@ -455,31 +455,51 @@ def create_contract():
         return jsonify({'error': str(e)}), 500
 
 
+def _verify_agent_signature(agent_id, action, data):
+    """Verify that the request is signed by the agent_id's owner."""
+    # Internal helper to verify signatures using the agent's registered pubkey
+    signature = data.get('signature')
+    timestamp = data.get('timestamp')
+    if not signature or not timestamp:
+        return False
+        
+    # Prevent replay attacks (5 minute window)
+    if abs(time.time() - int(timestamp)) > 300:
+        return False
+        
+    db = get_db()
+    agent = db.execute("SELECT pubkey_hex FROM relay_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+    if not agent:
+        return False
+        
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        pubkey = Ed25519PublicKey.from_public_bytes(bytes.fromhex(agent['pubkey_hex']))
+        message = f"{action}:{agent_id}:{timestamp}".encode()
+        pubkey.verify(bytes.fromhex(signature), message)
+        return True
+    except Exception:
+        return False
+
 @beacon_api.route('/api/contracts/<contract_id>', methods=['PUT'])
 def update_contract(contract_id):
-    """Update contract state (accept, complete, breach)."""
+    """Update contract state with authentication."""
     try:
         data = request.get_json()
         new_state = data.get('state')
+        agent_id = data.get('agent_id') # The agent performing the action
         
-        if not new_state:
-            return jsonify({'error': 'Missing state field'}), 400
+        if not new_state or not agent_id:
+            return jsonify({'error': 'Missing state or agent_id'}), 400
+            
+        if not _verify_agent_signature(agent_id, f"update_contract:{contract_id}", data):
+            return jsonify({'error': 'Invalid signature or unauthorized'}), 401
         
-        valid_states = {'offered', 'active', 'renewed', 'completed', 'breached', 'expired'}
-        if new_state not in valid_states:
-            return jsonify({'error': f'Invalid state: {new_state}'}), 400
-        
+        # Verify agent is party to the contract
         db = get_db()
-        db.execute(
-            "UPDATE beacon_contracts SET state = ?, updated_at = ? WHERE id = ?",
-            (new_state, int(time.time()), contract_id)
-        )
-        db.commit()
-        
-        if db.total_changes == 0:
-            return jsonify({'error': 'Contract not found'}), 404
-        
-        return jsonify({'ok': True, 'contract_id': contract_id, 'state': new_state})
+        contract = db.execute("SELECT from_agent, to_agent FROM beacon_contracts WHERE id = ?", (contract_id,)).fetchone()
+        if not contract or agent_id not in [contract['from_agent'], contract['to_agent']]:
+            return jsonify({'error': 'Not authorized for this contract'}), 403
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -625,13 +645,16 @@ def sync_bounties():
 
 @beacon_api.route('/api/bounties/<bounty_id>/claim', methods=['POST'])
 def claim_bounty(bounty_id):
-    """Claim a bounty for an agent."""
+    """Claim a bounty with authentication."""
     try:
         data = request.get_json()
         agent_id = data.get('agent_id')
         
         if not agent_id:
             return jsonify({'error': 'Missing agent_id'}), 400
+            
+        if not _verify_agent_signature(agent_id, f"claim_bounty:{bounty_id}", data):
+            return jsonify({'error': 'Invalid signature'}), 401
         
         db = get_db()
         db.execute(
