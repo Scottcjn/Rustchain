@@ -57,6 +57,8 @@ class P2PAuthManager:
         self._current_key = os.environ.get("RC_P2P_KEY", secrets.token_hex(32))
         self._previous_key = None
         self.rotation_interval = rotation_interval
+        self._used_signatures = {}  # {signature: expiry_timestamp}
+        self._lock = threading.Lock()
         self._start_key_rotation()
 
     def _start_key_rotation(self):
@@ -64,28 +66,40 @@ class P2PAuthManager:
             while True:
                 time.sleep(self.rotation_interval)
                 self._rotate_keys()
+                self._cleanup_signatures()
 
         rotation_thread = threading.Thread(target=rotate_keys, daemon=True)
         rotation_thread.start()
 
-    def _rotate_keys(self):
-        """Rotate API keys periodically"""
-        self._previous_key = self._current_key
-        self._current_key = os.environ.get("RC_P2P_KEY", secrets.token_hex(32))
-        logging.info(f"P2P keys rotated at {datetime.now()}")
+    def _cleanup_signatures(self):
+        """Remove expired signatures to save memory"""
+        with self._lock:
+            now = time.time()
+            self._used_signatures = {
+                sig: exp for sig, exp in self._used_signatures.items()
+                if exp > now
+            }
 
-    def verify_peer_signature(self, signature: str, message: str, timestamp: str) -> bool:
-        """Verify HMAC signature from peer"""
+    def verify_peer_signature(self, signature: str, message: str, timestamp: str, nonce: str = "") -> bool:
+        """Verify HMAC signature from peer with replay protection and optional nonce"""
         # Check timestamp freshness (within 5 minutes)
         try:
             msg_time = int(timestamp)
-            if abs(time.time() - msg_time) > 300:
+            now = time.time()
+            if abs(now - msg_time) > 300:
                 return False
         except ValueError:
             return False
 
+        # Replay protection: Check if signature was already used
+        with self._lock:
+            if signature in self._used_signatures:
+                logging.warning(f"Replay attack detected: {signature}")
+                return False
+            self._used_signatures[signature] = msg_time + 300
+
         # Try both current and previous keys
-        message_bytes = f"{message}{timestamp}".encode()
+        message_bytes = f"{message}{timestamp}{nonce}".encode()
 
         for key in [self._current_key, self._previous_key]:
             if key is None:
@@ -103,9 +117,10 @@ class P2PAuthManager:
         return False
 
     def generate_signature(self, message: str) -> tuple:
-        """Generate signature for outgoing messages"""
+        """Generate signature for outgoing messages with nonce"""
         timestamp = str(int(time.time()))
-        message_bytes = f"{message}{timestamp}".encode()
+        nonce = secrets.token_hex(8)
+        message_bytes = f"{message}{timestamp}{nonce}".encode()
 
         signature = hmac.new(
             self._current_key.encode(),
@@ -113,7 +128,7 @@ class P2PAuthManager:
             hashlib.sha256
         ).hexdigest()
 
-        return signature, timestamp
+        return signature, timestamp, nonce
 
     def get_current_key(self) -> str:
         """Get current API key for peer distribution"""
@@ -254,7 +269,7 @@ class BlockValidator:
             return False, f"Validation error: {str(e)}"
 
     def _validate_block_hash(self, block_data: Dict) -> bool:
-        """Verify block hash is correctly computed"""
+        """Verify block hash is correctly computed with deterministic JSON"""
         # Reconstruct hash from block data
         block_string = json.dumps({
             'block_index': block_data['block_index'],
@@ -262,10 +277,10 @@ class BlockValidator:
             'timestamp': block_data['timestamp'],
             'miner': block_data['miner'],
             'transactions': block_data['transactions']
-        }, sort_keys=True)
+        }, sort_keys=True, separators=(',', ':'))
 
         computed_hash = hashlib.sha256(block_string.encode()).hexdigest()
-        return computed_hash == block_data.get('hash')
+        return hmac.compare_digest(computed_hash, block_data.get('hash', ''))
 
     def _validate_transaction(self, tx: Dict) -> bool:
         """Validate transaction structure"""
@@ -475,14 +490,15 @@ class SecureBlockSync:
 
                 # Generate auth signature
                 message = f"get_blocks:{peer_url}"
-                signature, timestamp = self.peer_manager.auth_manager.generate_signature(message)
+                signature, timestamp, nonce = self.peer_manager.auth_manager.generate_signature(message)
 
                 # Request blocks with authentication
                 response = requests.get(
                     f"{peer_url}/p2p/blocks",
                     headers={
                         'X-Peer-Signature': signature,
-                        'X-Peer-Timestamp': timestamp
+                        'X-Peer-Timestamp': timestamp,
+                        'X-Peer-Nonce': nonce
                     },
                     timeout=10
                 )
@@ -575,13 +591,14 @@ def create_p2p_auth_middleware(auth_manager: P2PAuthManager):
                 
             signature = request.headers.get('X-Peer-Signature')
             timestamp = request.headers.get('X-Peer-Timestamp')
+            nonce = request.headers.get('X-Peer-Nonce', '')
 
             if not signature or not timestamp:
                 return jsonify({'error': 'Missing authentication headers'}), 401
 
             body = request.get_data().decode()
 
-            if not auth_manager.verify_peer_signature(signature, body, timestamp):
+            if not auth_manager.verify_peer_signature(signature, body, timestamp, nonce):
                 return jsonify({'error': 'Invalid signature'}), 401
 
             return f(*args, **kwargs)
