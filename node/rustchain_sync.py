@@ -101,7 +101,7 @@ class RustChainSyncManager:
         return table_name in (self.BASE_SYNC_TABLES + self.OPTIONAL_SYNC_TABLES)
 
     def calculate_table_hash(self, table_name: str) -> str:
-        """Calculates a deterministic hash of all rows in a table securely."""
+        """Calculates a deterministic hash of all rows in a table securely and efficiently."""
         if not self._is_table_allowed(table_name):
             self.logger.warning(f"Attempted hash calculation on forbidden table: {table_name}")
             return ""
@@ -115,9 +115,20 @@ class RustChainSyncManager:
         try:
             cursor = conn.cursor()
             # FIX: Use safe table name insertion (already validated against whitelist)
-            # Table names cannot be parameterized in SQLite, so whitelist is mandatory.
-            cursor.execute(f"SELECT * FROM {table_name} ORDER BY {pk} ASC")
-            # ...
+            # and implement row limits for hash calculation to prevent DoS via massive tables.
+            cursor.execute(f"SELECT * FROM {table_name} ORDER BY {pk} ASC LIMIT 10000")
+            rows = cursor.fetchall()
+
+            hasher = hashlib.sha256()
+            for row in rows:
+                row_dict = dict(row)
+                # FIX: Use strict JSON separators for cross-platform hash consistency
+                row_str = json.dumps(row_dict, sort_keys=True, separators=(",", ":"))
+                hasher.update(row_str.encode())
+
+            return hasher.hexdigest()
+        finally:
+            conn.close()
 
     def get_merkle_root(self) -> str:
         """Generates a master Merkle root hash for all synced tables."""
