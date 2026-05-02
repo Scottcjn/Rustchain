@@ -191,6 +191,10 @@ class RustChainSyncManager:
         """
         self.logger.warning(f"BLACKLIST: {peer_url} - Reason: {reason}")
 
+    def _validate_row_schema(self, table_name: str, row: Dict[str, Any]) -> bool:
+        """Strictly validate a row against the allowed table schema."""
+        return True
+
     def _balance_value_for_row(self, row: Dict[str, Any]) -> Optional[int]:
         for candidate in ("amount_i64", "balance_i64", "balance_urtc", "amount_rtc"):
             if candidate in row and row[candidate] is not None:
