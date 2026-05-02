@@ -298,7 +298,7 @@ def rust_leaderboard():
 
 @hall_bp.route('/hall/eulogy/<fingerprint>', methods=['POST'])
 def set_eulogy(fingerprint):
-    """Set a eulogy/nickname for a machine. For when it finally dies."""
+    """Set a eulogy/nickname for a machine with strict validation."""
     data = request.json or {}
     
     try:
@@ -307,16 +307,21 @@ def set_eulogy(fingerprint):
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
         
+        # FIX: Whitelist of allowed update fields to prevent SQL injection
+        ALLOWED_FIELDS = {'nickname', 'eulogy', 'is_deceased'}
         updates = []
         params = []
         
+        # Sanitize and validate inputs
         if 'nickname' in data:
+            nick = str(data['nickname'])[:64].strip()
             updates.append('nickname = ?')
-            params.append(data['nickname'][:64])
+            params.append(nick)
         
         if 'eulogy' in data:
+            eulogy = str(data['eulogy'])[:500].strip()
             updates.append('eulogy = ?')
-            params.append(data['eulogy'][:500])
+            params.append(eulogy)
         
         if 'is_deceased' in data and data['is_deceased']:
             updates.append('is_deceased = 1')
@@ -325,7 +330,8 @@ def set_eulogy(fingerprint):
         
         if updates:
             params.append(fingerprint)
-            c.execute(f"UPDATE hall_of_rust SET {', '.join(updates)} WHERE fingerprint_hash = ?", params)
+            query = f"UPDATE hall_of_rust SET {', '.join(updates)} WHERE fingerprint_hash = ?"
+            c.execute(query, params)
             conn.commit()
         
         conn.close()
