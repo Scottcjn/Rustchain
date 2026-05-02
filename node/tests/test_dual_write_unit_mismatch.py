@@ -10,7 +10,6 @@ amount_rtc * 1_000_000 (6 decimals).
 Run: python3 -m pytest tests/test_dual_write_unit_mismatch.py -v
 """
 
-import json
 import os
 import sqlite3
 import sys
@@ -22,9 +21,8 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask
-
-from utxo_db import UtxoDB, UNIT
-from utxo_endpoints import register_utxo_blueprint, ACCOUNT_UNIT
+from utxo_db import UNIT, UtxoDB
+from utxo_endpoints import ACCOUNT_UNIT, register_utxo_blueprint
 
 
 # Mock crypto functions for testing
@@ -44,7 +42,7 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
     """Verify that dual-write uses the correct unit (6 decimals, not 9)."""
 
     def setUp(self):
-        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.tmp.close()
         self.db_path = self.tmp.name
 
@@ -66,9 +64,11 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         self.utxo_db.init_tables()
 
         self.app = Flask(__name__)
-        self.app.config['TESTING'] = True
+        self.app.config["TESTING"] = True
         register_utxo_blueprint(
-            self.app, self.utxo_db, self.db_path,
+            self.app,
+            self.utxo_db,
+            self.db_path,
             verify_sig_fn=mock_verify_sig,
             addr_from_pk_fn=mock_addr_from_pk,
             current_slot_fn=mock_current_slot,
@@ -80,22 +80,22 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         os.unlink(self.db_path)
 
     def _seed_coinbase(self, address, value_nrtc, height=1):
-        self.utxo_db.apply_transaction({
-            'tx_type': 'mining_reward',
-            'inputs': [],
-            'outputs': [{'address': address, 'value_nrtc': value_nrtc}],
-            'timestamp': int(time.time()),
-        }, block_height=height)
+        self.utxo_db.apply_transaction(
+            {
+                "tx_type": "mining_reward",
+                "inputs": [],
+                "outputs": [{"address": address, "value_nrtc": value_nrtc}],
+                "timestamp": int(time.time()),
+            },
+            block_height=height,
+        )
 
     def _get_account_balance_i64(self, miner_id):
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT amount_i64 FROM balances WHERE miner_id = ?",
-            (miner_id,)
-        ).fetchone()
+        row = conn.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (miner_id,)).fetchone()
         conn.close()
-        return row['amount_i64'] if row else 0
+        return row["amount_i64"] if row else 0
 
     # -- Core unit correctness tests -----------------------------------------
 
@@ -106,8 +106,8 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
 
     def test_dual_write_10_rtc_equals_10_million_uRTC(self):
         """Transferring 10 RTC should write 10_000_000 uRTC, not 10_000_000_000."""
-        sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        sender = "RTC_test_aabbccdd"
+        recipient = "RTC_test_eeffgghh"
         self._seed_coinbase(sender, 100 * UNIT)
 
         # Seed shadow balance so dual-write can proceed (security guard requires it)
@@ -119,17 +119,20 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        r = self.client.post('/utxo/transfer', json={
-            'from_address': sender,
-            'to_address': recipient,
-            'amount_rtc': 10.0,
-            'public_key': 'aabbccdd' * 8,
-            'signature': 'sig' * 22,
-            'nonce': int(time.time() * 1000),
-        })
+        r = self.client.post(
+            "/utxo/transfer",
+            json={
+                "from_address": sender,
+                "to_address": recipient,
+                "amount_rtc": 10.0,
+                "public_key": "aabbccdd" * 8,
+                "signature": "sig" * 22,
+                "nonce": int(time.time() * 1000),
+            },
+        )
         self.assertEqual(r.status_code, 200)
         data = r.get_json()
-        self.assertTrue(data['ok'])
+        self.assertTrue(data["ok"])
 
         # Account model balance should be 10 * 1_000_000 = 10_000_000
         recipient_i64 = self._get_account_balance_i64(recipient)
@@ -145,8 +148,8 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
 
     def test_dual_write_debit_matches_credit(self):
         """Sender debit and recipient credit must use the same unit."""
-        sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        sender = "RTC_test_aabbccdd"
+        recipient = "RTC_test_eeffgghh"
         self._seed_coinbase(sender, 100 * UNIT)
 
         # Pre-seed sender in balances table with sufficient shadow balance
@@ -158,14 +161,17 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        self.client.post('/utxo/transfer', json={
-            'from_address': sender,
-            'to_address': recipient,
-            'amount_rtc': 25.5,
-            'public_key': 'aabbccdd' * 8,
-            'signature': 'sig' * 22,
-            'nonce': int(time.time() * 1000),
-        })
+        self.client.post(
+            "/utxo/transfer",
+            json={
+                "from_address": sender,
+                "to_address": recipient,
+                "amount_rtc": 25.5,
+                "public_key": "aabbccdd" * 8,
+                "signature": "sig" * 22,
+                "nonce": int(time.time() * 1000),
+            },
+        )
 
         sender_i64 = self._get_account_balance_i64(sender)
         recipient_i64 = self._get_account_balance_i64(recipient)
@@ -177,8 +183,8 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
 
     def test_dual_write_fractional_rtc(self):
         """Transferring 0.001 RTC should write 1000 uRTC, not 1_000_000."""
-        sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        sender = "RTC_test_aabbccdd"
+        recipient = "RTC_test_eeffgghh"
         self._seed_coinbase(sender, 10 * UNIT)
 
         # Seed shadow balance so dual-write can proceed
@@ -190,14 +196,17 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        self.client.post('/utxo/transfer', json={
-            'from_address': sender,
-            'to_address': recipient,
-            'amount_rtc': 0.001,
-            'public_key': 'aabbccdd' * 8,
-            'signature': 'sig' * 22,
-            'nonce': int(time.time() * 1000),
-        })
+        self.client.post(
+            "/utxo/transfer",
+            json={
+                "from_address": sender,
+                "to_address": recipient,
+                "amount_rtc": 0.001,
+                "public_key": "aabbccdd" * 8,
+                "signature": "sig" * 22,
+                "nonce": int(time.time() * 1000),
+            },
+        )
 
         recipient_i64 = self._get_account_balance_i64(recipient)
         expected_i64 = int(0.001 * ACCOUNT_UNIT)  # 1000
@@ -208,8 +217,8 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
 
     def test_dual_write_large_amount_no_overflow(self):
         """Transferring 1_000_000 RTC should write 1_000_000_000_000 uRTC."""
-        sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        sender = "RTC_test_aabbccdd"
+        recipient = "RTC_test_eeffgghh"
         self._seed_coinbase(sender, 2_000_000 * UNIT)
 
         # Seed shadow balance so dual-write can proceed
@@ -221,14 +230,17 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        self.client.post('/utxo/transfer', json={
-            'from_address': sender,
-            'to_address': recipient,
-            'amount_rtc': 1_000_000.0,
-            'public_key': 'aabbccdd' * 8,
-            'signature': 'sig' * 22,
-            'nonce': int(time.time() * 1000),
-        })
+        self.client.post(
+            "/utxo/transfer",
+            json={
+                "from_address": sender,
+                "to_address": recipient,
+                "amount_rtc": 1_000_000.0,
+                "public_key": "aabbccdd" * 8,
+                "signature": "sig" * 22,
+                "nonce": int(time.time() * 1000),
+            },
+        )
 
         recipient_i64 = self._get_account_balance_i64(recipient)
         expected_i64 = int(1_000_000.0 * ACCOUNT_UNIT)  # 1_000_000_000_000
@@ -239,8 +251,8 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
     def test_integrity_matches_after_dual_write(self):
         """After a dual-write, /utxo/integrity should report models_agree=true
         when UTXO and account totals match (after unit conversion)."""
-        sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        sender = "RTC_test_aabbccdd"
+        recipient = "RTC_test_eeffgghh"
         self._seed_coinbase(sender, 100 * UNIT)
 
         # Seed shadow balance so dual-write can proceed
@@ -252,40 +264,43 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        self.client.post('/utxo/transfer', json={
-            'from_address': sender,
-            'to_address': recipient,
-            'amount_rtc': 50.0,
-            'public_key': 'aabbccdd' * 8,
-            'signature': 'sig' * 22,
-            'nonce': int(time.time() * 1000),
-        })
+        self.client.post(
+            "/utxo/transfer",
+            json={
+                "from_address": sender,
+                "to_address": recipient,
+                "amount_rtc": 50.0,
+                "public_key": "aabbccdd" * 8,
+                "signature": "sig" * 22,
+                "nonce": int(time.time() * 1000),
+            },
+        )
 
-        r = self.client.get('/utxo/integrity')
+        r = self.client.get("/utxo/integrity")
         data = r.get_json()
         self.assertEqual(r.status_code, 200)
 
         # The integrity check should now correctly compare units
         # Both UTXO and account should total 100 RTC (transfers are zero-sum)
-        if 'models_agree' in data:
+        if "models_agree" in data:
             # models_agree may be False if the account model had pre-existing
             # balances from other sources, but the conversion must be correct
-            account_nrtc = data.get('account_total_nrtc', 0)
-            utxo_nrtc = data.get('total_unspent_nrtc', 0)
+            account_nrtc = data.get("account_total_nrtc", 0)
+            data.get("total_unspent_nrtc", 0)
             # Account total in nrtc should be in the same ballpark as UTXO total
             # (they may differ if account model has entries from non-UTXO sources)
             self.assertGreaterEqual(account_nrtc, 0)
 
     def test_integrity_unit_conversion(self):
         """Verify that account_total_nrtc = account_total_i64 * (UNIT/ACCOUNT_UNIT)."""
-        sender = 'RTC_test_aabbccdd'
+        sender = "RTC_test_aabbccdd"
         self._seed_coinbase(sender, 50 * UNIT)
 
-        r = self.client.get('/utxo/integrity')
+        r = self.client.get("/utxo/integrity")
         data = r.get_json()
 
-        account_i64 = data.get('account_total_i64', 0)
-        account_nrtc = data.get('account_total_nrtc', 0)
+        account_i64 = data.get("account_total_i64", 0)
+        account_nrtc = data.get("account_total_nrtc", 0)
 
         if account_i64 != 0:
             expected_nrtc = account_i64 * (UNIT // ACCOUNT_UNIT)
@@ -295,8 +310,8 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
 
     def test_ledger_entries_use_correct_unit(self):
         """Ledger delta_i64 should match ACCOUNT_UNIT, not 1000x larger."""
-        sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        sender = "RTC_test_aabbccdd"
+        recipient = "RTC_test_eeffgghh"
         self._seed_coinbase(sender, 100 * UNIT)
 
         # Seed shadow balance so dual-write can proceed
@@ -308,20 +323,21 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        self.client.post('/utxo/transfer', json={
-            'from_address': sender,
-            'to_address': recipient,
-            'amount_rtc': 7.5,
-            'public_key': 'aabbccdd' * 8,
-            'signature': 'sig' * 22,
-            'nonce': int(time.time() * 1000),
-        })
+        self.client.post(
+            "/utxo/transfer",
+            json={
+                "from_address": sender,
+                "to_address": recipient,
+                "amount_rtc": 7.5,
+                "public_key": "aabbccdd" * 8,
+                "signature": "sig" * 22,
+                "nonce": int(time.time() * 1000),
+            },
+        )
 
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT miner_id, delta_i64, reason FROM ledger ORDER BY rowid"
-        ).fetchall()
+        rows = conn.execute("SELECT miner_id, delta_i64, reason FROM ledger ORDER BY rowid").fetchall()
         conn.close()
 
         self.assertEqual(len(rows), 2)
@@ -329,20 +345,20 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         expected_delta = int(7.5 * ACCOUNT_UNIT)  # 7_500_000
 
         # Find sender and recipient ledger entries
-        sender_entries = [r for r in rows if r['miner_id'] == sender]
-        recipient_entries = [r for r in rows if r['miner_id'] == recipient]
+        sender_entries = [r for r in rows if r["miner_id"] == sender]
+        recipient_entries = [r for r in rows if r["miner_id"] == recipient]
 
         self.assertEqual(len(sender_entries), 1)
         self.assertEqual(len(recipient_entries), 1)
-        self.assertEqual(sender_entries[0]['delta_i64'], -expected_delta)
-        self.assertEqual(recipient_entries[0]['delta_i64'], expected_delta)
+        self.assertEqual(sender_entries[0]["delta_i64"], -expected_delta)
+        self.assertEqual(recipient_entries[0]["delta_i64"], expected_delta)
 
 
 class TestDualWriteDisabled(unittest.TestCase):
     """Verify that when dual_write=False, account model is untouched."""
 
     def setUp(self):
-        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.tmp.close()
         self.db_path = self.tmp.name
 
@@ -363,9 +379,11 @@ class TestDualWriteDisabled(unittest.TestCase):
         self.utxo_db.init_tables()
 
         self.app = Flask(__name__)
-        self.app.config['TESTING'] = True
+        self.app.config["TESTING"] = True
         register_utxo_blueprint(
-            self.app, self.utxo_db, self.db_path,
+            self.app,
+            self.utxo_db,
+            self.db_path,
             verify_sig_fn=mock_verify_sig,
             addr_from_pk_fn=mock_addr_from_pk,
             current_slot_fn=mock_current_slot,
@@ -377,36 +395,40 @@ class TestDualWriteDisabled(unittest.TestCase):
         os.unlink(self.db_path)
 
     def _seed_coinbase(self, address, value_nrtc, height=1):
-        self.utxo_db.apply_transaction({
-            'tx_type': 'mining_reward',
-            'inputs': [],
-            'outputs': [{'address': address, 'value_nrtc': value_nrtc}],
-            'timestamp': int(time.time()),
-        }, block_height=height)
+        self.utxo_db.apply_transaction(
+            {
+                "tx_type": "mining_reward",
+                "inputs": [],
+                "outputs": [{"address": address, "value_nrtc": value_nrtc}],
+                "timestamp": int(time.time()),
+            },
+            block_height=height,
+        )
 
     def test_no_account_write_when_dual_write_false(self):
         """When dual_write=False, balances table should remain untouched."""
-        sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        sender = "RTC_test_aabbccdd"
+        recipient = "RTC_test_eeffgghh"
         self._seed_coinbase(sender, 100 * UNIT)
 
-        self.client.post('/utxo/transfer', json={
-            'from_address': sender,
-            'to_address': recipient,
-            'amount_rtc': 50.0,
-            'public_key': 'aabbccdd' * 8,
-            'signature': 'sig' * 22,
-            'nonce': int(time.time() * 1000),
-        })
+        self.client.post(
+            "/utxo/transfer",
+            json={
+                "from_address": sender,
+                "to_address": recipient,
+                "amount_rtc": 50.0,
+                "public_key": "aabbccdd" * 8,
+                "signature": "sig" * 22,
+                "nonce": int(time.time() * 1000),
+            },
+        )
 
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT COALESCE(SUM(amount_i64), 0) FROM balances"
-        ).fetchone()
+        row = conn.execute("SELECT COALESCE(SUM(amount_i64), 0) FROM balances").fetchone()
         conn.close()
         self.assertEqual(row[0], 0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

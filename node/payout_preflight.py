@@ -115,4 +115,3 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
             "nonce": nonce_int,
         },
     )
-

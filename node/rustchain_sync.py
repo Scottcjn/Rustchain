@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: MIT
 # Author: @createkr (RayBot AI)
 # BCOS-Tier: L1
-import sqlite3
 import hashlib
 import json
-import time
 import logging
-from typing import List, Dict, Any, Optional
+import sqlite3
+import time
+from typing import Any, Dict, List, Optional
 
 
 class RustChainSyncManager:
@@ -198,7 +198,11 @@ class RustChainSyncManager:
                     if "last_attest" in sanitized:
                         cursor.execute(f"SELECT last_attest FROM {table_name} WHERE {pk} = ?", (sanitized[pk],))
                         local_row = cursor.fetchone()
-                        if local_row and local_row["last_attest"] is not None and local_row["last_attest"] >= sanitized["last_attest"]:
+                        if (
+                            local_row
+                            and local_row["last_attest"] is not None
+                            and local_row["last_attest"] >= sanitized["last_attest"]
+                        ):
                             continue
 
                 # SECURITY: Balances must NEVER be updated via peer sync.

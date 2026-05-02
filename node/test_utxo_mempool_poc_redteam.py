@@ -29,15 +29,15 @@ Three newly discovered vulnerabilities in mempool_add():
    - Or provide empty tx_id '', making all such transactions share one key
 """
 
-import unittest
-import tempfile
 import os
-import time
 import sys
+import tempfile
+import time
+import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from utxo_db import UtxoDB, UNIT
+from utxo_db import UNIT, UtxoDB
 
 
 class TestMempoolZeroValueOutputBug(unittest.TestCase):
@@ -50,7 +50,7 @@ class TestMempoolZeroValueOutputBug(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.tmp.close()
         self.db = UtxoDB(self.tmp.name)
         self.db.init_tables()
@@ -61,57 +61,65 @@ class TestMempoolZeroValueOutputBug(unittest.TestCase):
     def test_mempool_rejects_zero_value_output(self):
         """mempool should reject outputs with value_nrtc=0"""
         # Create UTXO
-        self.db.apply_transaction({
-            'tx_type': 'mining_reward',
-            'inputs': [],
-            'outputs': [{'address': 'alice', 'value_nrtc': 100 * UNIT}],
-            'fee_nrtc': 0,
-            'timestamp': int(time.time()),
-        }, block_height=1)
+        self.db.apply_transaction(
+            {
+                "tx_type": "mining_reward",
+                "inputs": [],
+                "outputs": [{"address": "alice", "value_nrtc": 100 * UNIT}],
+                "fee_nrtc": 0,
+                "timestamp": int(time.time()),
+            },
+            block_height=1,
+        )
 
-        boxes = self.db.get_unspent_for_address('alice')
-        box_id = boxes[0]['box_id']
+        boxes = self.db.get_unspent_for_address("alice")
+        box_id = boxes[0]["box_id"]
 
         # EXPLOIT: Push tx with zero-value output into mempool
-        ok = self.db.mempool_add({
-            'tx_id': 'tx_zero_value',
-            'tx_type': 'transfer',
-            'inputs': [{'box_id': box_id, 'spending_proof': 'sig'}],
-            'outputs': [{'address': 'bob', 'value_nrtc': 0}],  # ZERO VALUE
-            'fee_nrtc': 0,
-        })
+        ok = self.db.mempool_add(
+            {
+                "tx_id": "tx_zero_value",
+                "tx_type": "transfer",
+                "inputs": [{"box_id": box_id, "spending_proof": "sig"}],
+                "outputs": [{"address": "bob", "value_nrtc": 0}],  # ZERO VALUE
+                "fee_nrtc": 0,
+            }
+        )
 
         # EXPECT: Should be rejected (will never be mineable)
         # ACTUAL: Accepted, locking Alice's UTXO until mempool expiry
-        self.assertFalse(ok,
-            "MEDIUM: mempool should reject zero-value outputs "
-            "(unmineable tx locks UTXOs)")
+        self.assertFalse(ok, "MEDIUM: mempool should reject zero-value outputs (unmineable tx locks UTXOs)")
 
     def test_mempool_rejects_missing_value_key(self):
         """mempool should reject outputs where value_nrtc key is missing"""
-        self.db.apply_transaction({
-            'tx_type': 'mining_reward',
-            'inputs': [],
-            'outputs': [{'address': 'alice', 'value_nrtc': 100 * UNIT}],
-            'fee_nrtc': 0,
-            'timestamp': int(time.time()),
-        }, block_height=1)
+        self.db.apply_transaction(
+            {
+                "tx_type": "mining_reward",
+                "inputs": [],
+                "outputs": [{"address": "alice", "value_nrtc": 100 * UNIT}],
+                "fee_nrtc": 0,
+                "timestamp": int(time.time()),
+            },
+            block_height=1,
+        )
 
-        boxes = self.db.get_unspent_for_address('alice')
-        box_id = boxes[0]['box_id']
+        boxes = self.db.get_unspent_for_address("alice")
+        box_id = boxes[0]["box_id"]
 
         # EXPLOIT: Push tx with missing value_nrtc (defaults to 0)
-        ok = self.db.mempool_add({
-            'tx_id': 'tx_missing_value',
-            'tx_type': 'transfer',
-            'inputs': [{'box_id': box_id, 'spending_proof': 'sig'}],
-            'outputs': [{'address': 'bob'}],  # NO value_nrtc key
-            'fee_nrtc': 0,
-        })
+        ok = self.db.mempool_add(
+            {
+                "tx_id": "tx_missing_value",
+                "tx_type": "transfer",
+                "inputs": [{"box_id": box_id, "spending_proof": "sig"}],
+                "outputs": [{"address": "bob"}],  # NO value_nrtc key
+                "fee_nrtc": 0,
+            }
+        )
 
-        self.assertFalse(ok,
-            "MEDIUM: mempool should reject outputs without value_nrtc "
-            "(defaults to 0, creates unmineable tx)")
+        self.assertFalse(
+            ok, "MEDIUM: mempool should reject outputs without value_nrtc (defaults to 0, creates unmineable tx)"
+        )
 
 
 class TestMempoolDuplicateTxIdInputClaimBug(unittest.TestCase):
@@ -126,7 +134,7 @@ class TestMempoolDuplicateTxIdInputClaimBug(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.tmp.close()
         self.db = UtxoDB(self.tmp.name)
         self.db.init_tables()
@@ -137,45 +145,51 @@ class TestMempoolDuplicateTxIdInputClaimBug(unittest.TestCase):
     def test_duplicate_tx_id_does_not_claim_inputs(self):
         """Duplicate tx_id should not create orphan input claims"""
         # Create UTXO
-        self.db.apply_transaction({
-            'tx_type': 'mining_reward',
-            'inputs': [],
-            'outputs': [{'address': 'alice', 'value_nrtc': 100 * UNIT}],
-            'fee_nrtc': 0,
-            'timestamp': int(time.time()),
-        }, block_height=1)
+        self.db.apply_transaction(
+            {
+                "tx_type": "mining_reward",
+                "inputs": [],
+                "outputs": [{"address": "alice", "value_nrtc": 100 * UNIT}],
+                "fee_nrtc": 0,
+                "timestamp": int(time.time()),
+            },
+            block_height=1,
+        )
 
-        boxes = self.db.get_unspent_for_address('alice')
-        box_id = boxes[0]['box_id']
+        boxes = self.db.get_unspent_for_address("alice")
+        box_id = boxes[0]["box_id"]
 
         # First mempool add succeeds
-        ok1 = self.db.mempool_add({
-            'tx_id': 'duplicate_tx',
-            'tx_type': 'transfer',
-            'inputs': [{'box_id': box_id, 'spending_proof': 'sig'}],
-            'outputs': [{'address': 'bob', 'value_nrtc': 50 * UNIT}],
-            'fee_nrtc': 0,
-        })
+        ok1 = self.db.mempool_add(
+            {
+                "tx_id": "duplicate_tx",
+                "tx_type": "transfer",
+                "inputs": [{"box_id": box_id, "spending_proof": "sig"}],
+                "outputs": [{"address": "bob", "value_nrtc": 50 * UNIT}],
+                "fee_nrtc": 0,
+            }
+        )
         self.assertTrue(ok1)
 
         # Remove first tx from mempool to free the input
-        self.db.mempool_remove('duplicate_tx')
+        self.db.mempool_remove("duplicate_tx")
 
         # Now add again with same tx_id - should succeed cleanly
-        ok2 = self.db.mempool_add({
-            'tx_id': 'duplicate_tx',
-            'tx_type': 'transfer',
-            'inputs': [{'box_id': box_id, 'spending_proof': 'sig'}],
-            'outputs': [{'address': 'carol', 'value_nrtc': 50 * UNIT}],
-            'fee_nrtc': 0,
-        })
+        self.db.mempool_add(
+            {
+                "tx_id": "duplicate_tx",
+                "tx_type": "transfer",
+                "inputs": [{"box_id": box_id, "spending_proof": "sig"}],
+                "outputs": [{"address": "carol", "value_nrtc": 50 * UNIT}],
+                "fee_nrtc": 0,
+            }
+        )
 
         # Verify no orphan entries: mempool should have exactly one tx
         candidates = self.db.mempool_get_block_candidates()
         # If INSERT OR IGNORE silently fails but inputs are claimed,
         # we get a phantom entry
-        self.assertEqual(len(candidates), 1,
-            "MEDIUM: Duplicate tx_id should not create orphan entries")
+        self.assertEqual(len(candidates), 1, "MEDIUM: Duplicate tx_id should not create orphan entries")
 
 
 class TestMempoolCallerProvidedTxIdCollision(unittest.TestCase):
@@ -190,7 +204,7 @@ class TestMempoolCallerProvidedTxIdCollision(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.tmp.close()
         self.db = UtxoDB(self.tmp.name)
         self.db.init_tables()
@@ -200,29 +214,32 @@ class TestMempoolCallerProvidedTxIdCollision(unittest.TestCase):
 
     def test_mempool_rejects_empty_tx_id(self):
         """mempool should reject transactions with empty tx_id"""
-        self.db.apply_transaction({
-            'tx_type': 'mining_reward',
-            'inputs': [],
-            'outputs': [{'address': 'alice', 'value_nrtc': 100 * UNIT}],
-            'fee_nrtc': 0,
-            'timestamp': int(time.time()),
-        }, block_height=1)
+        self.db.apply_transaction(
+            {
+                "tx_type": "mining_reward",
+                "inputs": [],
+                "outputs": [{"address": "alice", "value_nrtc": 100 * UNIT}],
+                "fee_nrtc": 0,
+                "timestamp": int(time.time()),
+            },
+            block_height=1,
+        )
 
-        boxes = self.db.get_unspent_for_address('alice')
-        box_id = boxes[0]['box_id']
+        boxes = self.db.get_unspent_for_address("alice")
+        box_id = boxes[0]["box_id"]
 
-        ok = self.db.mempool_add({
-            'tx_id': '',  # EMPTY tx_id
-            'tx_type': 'transfer',
-            'inputs': [{'box_id': box_id, 'spending_proof': 'sig'}],
-            'outputs': [{'address': 'bob', 'value_nrtc': 50 * UNIT}],
-            'fee_nrtc': 0,
-        })
+        ok = self.db.mempool_add(
+            {
+                "tx_id": "",  # EMPTY tx_id
+                "tx_type": "transfer",
+                "inputs": [{"box_id": box_id, "spending_proof": "sig"}],
+                "outputs": [{"address": "bob", "value_nrtc": 50 * UNIT}],
+                "fee_nrtc": 0,
+            }
+        )
 
-        self.assertFalse(ok,
-            "HIGH: mempool should reject empty tx_id "
-            "(allows multiple txs to share same key)")
+        self.assertFalse(ok, "HIGH: mempool should reject empty tx_id (allows multiple txs to share same key)")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -10,7 +10,6 @@ Usage in rustchain server:
 import logging
 import os
 import sqlite3
-import time
 
 from flask import jsonify, request
 
@@ -19,8 +18,10 @@ log = logging.getLogger("rustchain.x402")
 # Import shared config
 try:
     import sys
+
     sys.path.insert(0, "/root/shared")
-    from x402_config import SWAP_INFO, WRTC_BASE, USDC_BASE, AERODROME_POOL
+    from x402_config import AERODROME_POOL, SWAP_INFO, USDC_BASE, WRTC_BASE
+
     X402_CONFIG_OK = True
 except ImportError:
     log.warning("x402_config not found — using inline swap info")
@@ -86,14 +87,10 @@ def init_app(app, db_path):
             return jsonify({"error": "Invalid Base address (must be 0x + 40 hex chars)"}), 400
 
         conn = sqlite3.connect(db_path)
-        row = conn.execute(
-            "SELECT miner_id FROM balances WHERE miner_id = ?", (miner_id,)
-        ).fetchone()
+        row = conn.execute("SELECT miner_id FROM balances WHERE miner_id = ?", (miner_id,)).fetchone()
         if not row:
             # Try miner_pk
-            row = conn.execute(
-                "SELECT miner_id FROM balances WHERE miner_pk = ?", (miner_id,)
-            ).fetchone()
+            row = conn.execute("SELECT miner_id FROM balances WHERE miner_pk = ?", (miner_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": f"Miner '{miner_id}' not found in balances"}), 404
@@ -106,11 +103,13 @@ def init_app(app, db_path):
         conn.commit()
         conn.close()
 
-        return jsonify({
-            "ok": True,
-            "miner_id": actual_id,
-            "coinbase_address": coinbase_address,
-            "network": "Base (eip155:8453)",
-        })
+        return jsonify(
+            {
+                "ok": True,
+                "miner_id": actual_id,
+                "coinbase_address": coinbase_address,
+                "network": "Base (eip155:8453)",
+            }
+        )
 
     log.info("RustChain x402 module initialized")

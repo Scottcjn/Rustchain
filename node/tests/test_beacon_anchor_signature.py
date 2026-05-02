@@ -4,13 +4,12 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from copy import deepcopy
 from hashlib import blake2b
 from pathlib import Path
-from copy import deepcopy
 from typing import Optional
 
 from nacl.signing import SigningKey
-
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "beacon_anchor.py"
 SPEC = importlib.util.spec_from_file_location("beacon_anchor", MODULE_PATH)
@@ -95,9 +94,7 @@ class BeaconAnchorSignatureTests(unittest.TestCase):
             self.assertTrue(result["ok"])
             self.assertEqual(digest["count"], 1)
             with sqlite3.connect(db_path) as conn:
-                row = conn.execute(
-                    "SELECT agent_id, kind, nonce, payload_hash FROM beacon_envelopes"
-                ).fetchone()
+                row = conn.execute("SELECT agent_id, kind, nonce, payload_hash FROM beacon_envelopes").fetchone()
             self.assertEqual(row[0], agent_id)
             self.assertEqual(row[1], "heartbeat")
             self.assertEqual(row[2], "beacon-nonce-123456")

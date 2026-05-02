@@ -22,16 +22,12 @@ class PayoutPreflightTests(unittest.TestCase):
         self.assertTrue(r.ok)
 
     def test_admin_rejects_sub_micro_amount(self):
-        r = validate_wallet_transfer_admin(
-            {"from_miner": "a", "to_miner": "b", "amount_rtc": 0.0000001}
-        )
+        r = validate_wallet_transfer_admin({"from_miner": "a", "to_miner": "b", "amount_rtc": 0.0000001})
         self.assertFalse(r.ok)
         self.assertEqual(r.error, "amount_too_small_after_quantization")
 
     def test_admin_accepts_min_quantized_amount(self):
-        r = validate_wallet_transfer_admin(
-            {"from_miner": "a", "to_miner": "b", "amount_rtc": 0.000001}
-        )
+        r = validate_wallet_transfer_admin({"from_miner": "a", "to_miner": "b", "amount_rtc": 0.000001})
         self.assertTrue(r.ok)
         self.assertEqual(r.details.get("amount_i64"), 1)
 

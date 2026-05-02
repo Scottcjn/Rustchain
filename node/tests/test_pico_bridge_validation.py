@@ -6,8 +6,8 @@ Tests for Pico Serial Bridge Validation (RIP-304)
 Tests the check_pico_bridge_attestation function in fingerprint_checks.py
 """
 
-import sys
 import os
+import sys
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,19 +20,11 @@ def test_pico_bridge_valid_attestation():
     fingerprint_data = {
         "bridge_type": "pico_serial",
         "checks": {
-            "ctrl_port_timing": {
-                "data": {"cv": 0.005, "samples": 500}
-            },
-            "rom_execution_timing": {
-                "data": {"hash_time_us": 847000}
-            },
-            "bus_jitter": {
-                "data": {"jitter_stdev_ns": 1250}
-            },
-            "anti_emulation": {
-                "data": {"emulator_indicators": []}
-            }
-        }
+            "ctrl_port_timing": {"data": {"cv": 0.005, "samples": 500}},
+            "rom_execution_timing": {"data": {"hash_time_us": 847000}},
+            "bus_jitter": {"data": {"jitter_stdev_ns": 1250}},
+            "anti_emulation": {"data": {"emulator_indicators": []}},
+        },
     }
 
     passed, data = check_pico_bridge_attestation(fingerprint_data)
@@ -55,16 +47,10 @@ def test_pico_bridge_emulation_detected_low_cv():
             "ctrl_port_timing": {
                 "data": {"cv": 0.00005, "samples": 500}  # Below 0.0001 threshold
             },
-            "rom_execution_timing": {
-                "data": {"hash_time_us": 847000}
-            },
-            "bus_jitter": {
-                "data": {"jitter_stdev_ns": 1250}
-            },
-            "anti_emulation": {
-                "data": {"emulator_indicators": ["low_timing_cv"]}
-            }
-        }
+            "rom_execution_timing": {"data": {"hash_time_us": 847000}},
+            "bus_jitter": {"data": {"jitter_stdev_ns": 1250}},
+            "anti_emulation": {"data": {"emulator_indicators": ["low_timing_cv"]}},
+        },
     }
 
     passed, data = check_pico_bridge_attestation(fingerprint_data)
@@ -80,19 +66,13 @@ def test_pico_bridge_rom_timing_too_fast():
     fingerprint_data = {
         "bridge_type": "pico_serial",
         "checks": {
-            "ctrl_port_timing": {
-                "data": {"cv": 0.005, "samples": 500}
-            },
+            "ctrl_port_timing": {"data": {"cv": 0.005, "samples": 500}},
             "rom_execution_timing": {
                 "data": {"hash_time_us": 50000}  # 50ms - too fast for console
             },
-            "bus_jitter": {
-                "data": {"jitter_stdev_ns": 1250}
-            },
-            "anti_emulation": {
-                "data": {"emulator_indicators": []}
-            }
-        }
+            "bus_jitter": {"data": {"jitter_stdev_ns": 1250}},
+            "anti_emulation": {"data": {"emulator_indicators": []}},
+        },
     }
 
     passed, data = check_pico_bridge_attestation(fingerprint_data)
@@ -108,19 +88,13 @@ def test_pico_bridge_rom_timing_too_slow():
     fingerprint_data = {
         "bridge_type": "pico_serial",
         "checks": {
-            "ctrl_port_timing": {
-                "data": {"cv": 0.005, "samples": 500}
-            },
+            "ctrl_port_timing": {"data": {"cv": 0.005, "samples": 500}},
             "rom_execution_timing": {
                 "data": {"hash_time_us": 15000000}  # 15s - too slow
             },
-            "bus_jitter": {
-                "data": {"jitter_stdev_ns": 1250}
-            },
-            "anti_emulation": {
-                "data": {"emulator_indicators": []}
-            }
-        }
+            "bus_jitter": {"data": {"jitter_stdev_ns": 1250}},
+            "anti_emulation": {"data": {"emulator_indicators": []}},
+        },
     }
 
     passed, data = check_pico_bridge_attestation(fingerprint_data)
@@ -135,19 +109,13 @@ def test_pico_bridge_no_bus_jitter():
     fingerprint_data = {
         "bridge_type": "pico_serial",
         "checks": {
-            "ctrl_port_timing": {
-                "data": {"cv": 0.005, "samples": 500}
-            },
-            "rom_execution_timing": {
-                "data": {"hash_time_us": 847000}
-            },
+            "ctrl_port_timing": {"data": {"cv": 0.005, "samples": 500}},
+            "rom_execution_timing": {"data": {"hash_time_us": 847000}},
             "bus_jitter": {
                 "data": {"jitter_stdev_ns": 50}  # Below 100ns threshold
             },
-            "anti_emulation": {
-                "data": {"emulator_indicators": []}
-            }
-        }
+            "anti_emulation": {"data": {"emulator_indicators": []}},
+        },
     }
 
     passed, data = check_pico_bridge_attestation(fingerprint_data)
@@ -163,19 +131,11 @@ def test_pico_bridge_emulator_indicators_present():
     fingerprint_data = {
         "bridge_type": "pico_serial",
         "checks": {
-            "ctrl_port_timing": {
-                "data": {"cv": 0.005, "samples": 500}
-            },
-            "rom_execution_timing": {
-                "data": {"hash_time_us": 847000}
-            },
-            "bus_jitter": {
-                "data": {"jitter_stdev_ns": 1250}
-            },
-            "anti_emulation": {
-                "data": {"emulator_indicators": ["perfect_timing_loop", "quantized_timing"]}
-            }
-        }
+            "ctrl_port_timing": {"data": {"cv": 0.005, "samples": 500}},
+            "rom_execution_timing": {"data": {"hash_time_us": 847000}},
+            "bus_jitter": {"data": {"jitter_stdev_ns": 1250}},
+            "anti_emulation": {"data": {"emulator_indicators": ["perfect_timing_loop", "quantized_timing"]}},
+        },
     }
 
     passed, data = check_pico_bridge_attestation(fingerprint_data)
@@ -194,16 +154,10 @@ def test_pico_bridge_insufficient_samples():
             "ctrl_port_timing": {
                 "data": {"cv": 0.005, "samples": 50}  # Below 100 sample minimum
             },
-            "rom_execution_timing": {
-                "data": {"hash_time_us": 847000}
-            },
-            "bus_jitter": {
-                "data": {"jitter_stdev_ns": 1250}
-            },
-            "anti_emulation": {
-                "data": {"emulator_indicators": []}
-            }
-        }
+            "rom_execution_timing": {"data": {"hash_time_us": 847000}},
+            "bus_jitter": {"data": {"jitter_stdev_ns": 1250}},
+            "anti_emulation": {"data": {"emulator_indicators": []}},
+        },
     }
 
     passed, data = check_pico_bridge_attestation(fingerprint_data)
@@ -217,7 +171,7 @@ def test_pico_bridge_not_pico_skip():
     """Test that non-Pico bridge types are skipped."""
     fingerprint_data = {
         "bridge_type": "usb_serial",  # Not pico_serial
-        "checks": {}
+        "checks": {},
     }
 
     passed, data = check_pico_bridge_attestation(fingerprint_data)
@@ -233,19 +187,11 @@ def test_pico_bridge_explicit_bridge_type_override():
     fingerprint_data = {
         "bridge_type": "usb_serial",  # Wrong type
         "checks": {
-            "ctrl_port_timing": {
-                "data": {"cv": 0.005, "samples": 500}
-            },
-            "rom_execution_timing": {
-                "data": {"hash_time_us": 847000}
-            },
-            "bus_jitter": {
-                "data": {"jitter_stdev_ns": 1250}
-            },
-            "anti_emulation": {
-                "data": {"emulator_indicators": []}
-            }
-        }
+            "ctrl_port_timing": {"data": {"cv": 0.005, "samples": 500}},
+            "rom_execution_timing": {"data": {"hash_time_us": 847000}},
+            "bus_jitter": {"data": {"jitter_stdev_ns": 1250}},
+            "anti_emulation": {"data": {"emulator_indicators": []}},
+        },
     }
 
     # Override with explicit pico_serial
@@ -267,13 +213,9 @@ def test_pico_bridge_n64_profile():
             "rom_execution_timing": {
                 "data": {"hash_time_us": 847000}  # Reference: Legend of Elya
             },
-            "bus_jitter": {
-                "data": {"jitter_stdev_ns": 1250}
-            },
-            "anti_emulation": {
-                "data": {"emulator_indicators": []}
-            }
-        }
+            "bus_jitter": {"data": {"jitter_stdev_ns": 1250}},
+            "anti_emulation": {"data": {"emulator_indicators": []}},
+        },
     }
 
     passed, data = check_pico_bridge_attestation(fingerprint_data)
@@ -295,13 +237,9 @@ def test_pico_bridge_nes_profile():
             "rom_execution_timing": {
                 "data": {"hash_time_us": 4500000}  # Slow 6502
             },
-            "bus_jitter": {
-                "data": {"jitter_stdev_ns": 1500}
-            },
-            "anti_emulation": {
-                "data": {"emulator_indicators": []}
-            }
-        }
+            "bus_jitter": {"data": {"jitter_stdev_ns": 1500}},
+            "anti_emulation": {"data": {"emulator_indicators": []}},
+        },
     }
 
     passed, data = check_pico_bridge_attestation(fingerprint_data)
@@ -318,13 +256,11 @@ def test_pico_bridge_boundary_cv_threshold():
     fingerprint_data_above = {
         "bridge_type": "pico_serial",
         "checks": {
-            "ctrl_port_timing": {
-                "data": {"cv": 0.00011, "samples": 500}
-            },
+            "ctrl_port_timing": {"data": {"cv": 0.00011, "samples": 500}},
             "rom_execution_timing": {"data": {"hash_time_us": 847000}},
             "bus_jitter": {"data": {"jitter_stdev_ns": 1250}},
-            "anti_emulation": {"data": {"emulator_indicators": []}}
-        }
+            "anti_emulation": {"data": {"emulator_indicators": []}},
+        },
     }
 
     passed, data = check_pico_bridge_attestation(fingerprint_data_above)
@@ -334,13 +270,11 @@ def test_pico_bridge_boundary_cv_threshold():
     fingerprint_data_below = {
         "bridge_type": "pico_serial",
         "checks": {
-            "ctrl_port_timing": {
-                "data": {"cv": 0.00009, "samples": 500}
-            },
+            "ctrl_port_timing": {"data": {"cv": 0.00009, "samples": 500}},
             "rom_execution_timing": {"data": {"hash_time_us": 847000}},
             "bus_jitter": {"data": {"jitter_stdev_ns": 1250}},
-            "anti_emulation": {"data": {"emulator_indicators": []}}
-        }
+            "anti_emulation": {"data": {"emulator_indicators": []}},
+        },
     }
 
     passed, data = check_pico_bridge_attestation(fingerprint_data_below)

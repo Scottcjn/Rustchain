@@ -29,14 +29,16 @@ from flask import Blueprint, Response, jsonify, request, send_file
 # Try to import PDF generator (optional — only needed for cert endpoint)
 try:
     from bcos_pdf import generate_certificate
+
     HAVE_PDF = True
 except ImportError:
     HAVE_PDF = False
 
 # Try to import Ed25519 verification
 try:
-    from nacl.signing import VerifyKey
     from nacl.exceptions import BadSignatureError
+    from nacl.signing import VerifyKey
+
     HAVE_NACL = True
 except ImportError:
     HAVE_NACL = False
@@ -59,8 +61,7 @@ def _verify_commitment(report_json_str: str, claimed_commitment: str) -> bool:
         report = json.loads(report_json_str)
         # Remove cert_id and commitment before recomputing
         # (they were added after the commitment was computed)
-        report_copy = {k: v for k, v in report.items()
-                       if k not in ("cert_id", "commitment")}
+        report_copy = {k: v for k, v in report.items() if k not in ("cert_id", "commitment")}
         canonical = json.dumps(report_copy, sort_keys=True, separators=(",", ":"))
         computed = blake2b(canonical.encode(), digest_size=32).hexdigest()
         return computed == claimed_commitment
@@ -82,6 +83,7 @@ def _verify_ed25519(commitment: str, signature_hex: str, pubkey_hex: str) -> boo
 
 # ── Database ──────────────────────────────────────────────────────
 
+
 def init_bcos_table(conn):
     """Create bcos_attestations table. Call from init_db()."""
     conn.execute("""
@@ -101,12 +103,8 @@ def init_bcos_table(conn):
             created_at INTEGER NOT NULL
         )
     """)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_bcos_repo ON bcos_attestations(repo)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_bcos_commit ON bcos_attestations(commit_sha)"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_bcos_repo ON bcos_attestations(repo)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_bcos_commit ON bcos_attestations(commit_sha)")
 
 
 # ── SVG Badge Template ────────────────────────────────────────────
@@ -135,9 +133,9 @@ def _generate_badge_svg(tier: str, score: int) -> str:
     """Generate SVG badge for a BCOS certification."""
     # Color by tier
     colors = {
-        "L0": "#4c1",     # Green
-        "L1": "#08c",     # Blue
-        "L2": "#93c",     # Purple
+        "L0": "#4c1",  # Green
+        "L1": "#08c",  # Blue
+        "L2": "#93c",  # Purple
     }
     if score < 40:
         color = "#e05d44"  # Red
@@ -159,6 +157,7 @@ def _generate_badge_svg(tier: str, score: int) -> str:
 
 
 # ── Routes ────────────────────────────────────────────────────────
+
 
 @bcos_bp.route("/bcos/attest", methods=["POST"])
 def bcos_attest():
@@ -199,10 +198,12 @@ def bcos_attest():
         sig_valid = _verify_ed25519(commitment, signature, signer_pubkey)
 
     if not is_admin and not sig_valid:
-        return jsonify({
-            "error": "Unauthorized - admin key or valid Ed25519 signature required",
-            "hint": "Use X-Admin-Key header or sign the commitment with Ed25519",
-        }), 401
+        return jsonify(
+            {
+                "error": "Unauthorized - admin key or valid Ed25519 signature required",
+                "hint": "Use X-Admin-Key header or sign the commitment with Ed25519",
+            }
+        ), 401
 
     # Verify commitment matches report
     report_json_str = json.dumps(report, sort_keys=True, separators=(",", ":"))
@@ -215,35 +216,49 @@ def bcos_attest():
             epoch = None
             try:
                 from rip_200_round_robin_1cpu1vote import current_slot
+
                 epoch = current_slot()
             except Exception:
                 pass
 
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO bcos_attestations
                 (cert_id, commitment, repo, commit_sha, tier, trust_score,
                  reviewer, report_json, signature, signer_pubkey,
                  anchored_epoch, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                cert_id, commitment, repo, commit_sha, tier, trust_score,
-                reviewer, report_json_str,
-                signature or None, signer_pubkey or None,
-                epoch, now,
-            ))
+            """,
+                (
+                    cert_id,
+                    commitment,
+                    repo,
+                    commit_sha,
+                    tier,
+                    trust_score,
+                    reviewer,
+                    report_json_str,
+                    signature or None,
+                    signer_pubkey or None,
+                    epoch,
+                    now,
+                ),
+            )
             conn.commit()
 
-        return jsonify({
-            "ok": True,
-            "cert_id": cert_id,
-            "commitment": commitment,
-            "repo": repo,
-            "tier": tier,
-            "trust_score": trust_score,
-            "anchored_epoch": epoch,
-            "verify_url": f"https://rustchain.org/bcos/verify/{cert_id}",
-            "badge_url": f"https://50.28.86.131/bcos/badge/{cert_id}.svg",
-        })
+        return jsonify(
+            {
+                "ok": True,
+                "cert_id": cert_id,
+                "commitment": commitment,
+                "repo": repo,
+                "tier": tier,
+                "trust_score": trust_score,
+                "anchored_epoch": epoch,
+                "verify_url": f"https://rustchain.org/bcos/verify/{cert_id}",
+                "badge_url": f"https://50.28.86.131/bcos/badge/{cert_id}.svg",
+            }
+        )
     except sqlite3.IntegrityError:
         return jsonify({"error": f"Certificate {cert_id} already exists"}), 409
     except Exception as e:
@@ -256,22 +271,20 @@ def bcos_verify(cert_id):
     try:
         with sqlite3.connect(_DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT * FROM bcos_attestations WHERE cert_id = ?",
-                (cert_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM bcos_attestations WHERE cert_id = ?", (cert_id,)).fetchone()
 
         if not row:
-            return jsonify({
-                "ok": False,
-                "error": f"No certificate found for {cert_id}",
-                "hint": "Check the cert_id format: BCOS-xxxxxxxx",
-            }), 404
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": f"No certificate found for {cert_id}",
+                    "hint": "Check the cert_id format: BCOS-xxxxxxxx",
+                }
+            ), 404
 
         # Recompute commitment from stored report
         report = json.loads(row["report_json"])
-        report_copy = {k: v for k, v in report.items()
-                       if k not in ("cert_id", "commitment")}
+        report_copy = {k: v for k, v in report.items() if k not in ("cert_id", "commitment")}
         canonical = json.dumps(report_copy, sort_keys=True, separators=(",", ":"))
         recomputed = blake2b(canonical.encode(), digest_size=32).hexdigest()
         commitment_valid = recomputed == row["commitment"]
@@ -279,31 +292,31 @@ def bcos_verify(cert_id):
         # Verify Ed25519 signature if present
         sig_valid = None
         if row["signature"] and row["signer_pubkey"]:
-            sig_valid = _verify_ed25519(
-                row["commitment"], row["signature"], row["signer_pubkey"]
-            )
+            sig_valid = _verify_ed25519(row["commitment"], row["signature"], row["signer_pubkey"])
 
-        return jsonify({
-            "ok": True,
-            "verified": commitment_valid and (sig_valid is not False),
-            "cert_id": row["cert_id"],
-            "commitment": row["commitment"],
-            "commitment_valid": commitment_valid,
-            "signature_valid": sig_valid,
-            "repo": row["repo"],
-            "commit_sha": row["commit_sha"],
-            "tier": row["tier"],
-            "trust_score": row["trust_score"],
-            "tier_met": row["trust_score"] >= {"L0": 40, "L1": 60, "L2": 80}.get(row["tier"], 60),
-            "reviewer": row["reviewer"],
-            "anchored_epoch": row["anchored_epoch"],
-            "created_at": row["created_at"],
-            "score_breakdown": report.get("score_breakdown", {}),
-            "checks": report.get("checks", {}),
-            "engine_version": report.get("engine_version", "unknown"),
-            "badge_url": f"https://50.28.86.131/bcos/badge/{cert_id}.svg",
-            "pdf_url": f"https://50.28.86.131/bcos/cert/{cert_id}.pdf",
-        })
+        return jsonify(
+            {
+                "ok": True,
+                "verified": commitment_valid and (sig_valid is not False),
+                "cert_id": row["cert_id"],
+                "commitment": row["commitment"],
+                "commitment_valid": commitment_valid,
+                "signature_valid": sig_valid,
+                "repo": row["repo"],
+                "commit_sha": row["commit_sha"],
+                "tier": row["tier"],
+                "trust_score": row["trust_score"],
+                "tier_met": row["trust_score"] >= {"L0": 40, "L1": 60, "L2": 80}.get(row["tier"], 60),
+                "reviewer": row["reviewer"],
+                "anchored_epoch": row["anchored_epoch"],
+                "created_at": row["created_at"],
+                "score_breakdown": report.get("score_breakdown", {}),
+                "checks": report.get("checks", {}),
+                "engine_version": report.get("engine_version", "unknown"),
+                "badge_url": f"https://50.28.86.131/bcos/badge/{cert_id}.svg",
+                "pdf_url": f"https://50.28.86.131/bcos/cert/{cert_id}.pdf",
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -317,10 +330,7 @@ def bcos_certificate_pdf(cert_id):
     try:
         with sqlite3.connect(_DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT * FROM bcos_attestations WHERE cert_id = ?",
-                (cert_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM bcos_attestations WHERE cert_id = ?", (cert_id,)).fetchone()
 
         if not row:
             return jsonify({"error": f"Certificate {cert_id} not found"}), 404
@@ -358,8 +368,7 @@ def bcos_badge_svg(cert_id):
         with sqlite3.connect(_DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT tier, trust_score FROM bcos_attestations WHERE cert_id = ?",
-                (cert_id,)
+                "SELECT tier, trust_score FROM bcos_attestations WHERE cert_id = ?", (cert_id,)
             ).fetchone()
 
         if not row:
@@ -368,9 +377,8 @@ def bcos_badge_svg(cert_id):
         else:
             svg = _generate_badge_svg(row["tier"], row["trust_score"])
 
-        return Response(svg, mimetype="image/svg+xml",
-                        headers={"Cache-Control": "max-age=300"})
-    except Exception as e:
+        return Response(svg, mimetype="image/svg+xml", headers={"Cache-Control": "max-age=300"})
+    except Exception:
         return Response(
             _generate_badge_svg("ERR", 0),
             mimetype="image/svg+xml",
@@ -403,37 +411,40 @@ def bcos_directory():
             params.extend([limit, offset])
 
             rows = conn.execute(query, params).fetchall()
-            total = conn.execute(
-                "SELECT COUNT(*) FROM bcos_attestations"
-            ).fetchone()[0]
+            total = conn.execute("SELECT COUNT(*) FROM bcos_attestations").fetchone()[0]
 
         certs = []
         for row in rows:
-            certs.append({
-                "cert_id": row["cert_id"],
-                "repo": row["repo"],
-                "commit_sha": row["commit_sha"][:12],
-                "tier": row["tier"],
-                "trust_score": row["trust_score"],
-                "reviewer": row["reviewer"],
-                "anchored_epoch": row["anchored_epoch"],
-                "created_at": row["created_at"],
-                "verify_url": f"https://rustchain.org/bcos/verify/{row['cert_id']}",
-                "badge_url": f"https://50.28.86.131/bcos/badge/{row['cert_id']}.svg",
-            })
+            certs.append(
+                {
+                    "cert_id": row["cert_id"],
+                    "repo": row["repo"],
+                    "commit_sha": row["commit_sha"][:12],
+                    "tier": row["tier"],
+                    "trust_score": row["trust_score"],
+                    "reviewer": row["reviewer"],
+                    "anchored_epoch": row["anchored_epoch"],
+                    "created_at": row["created_at"],
+                    "verify_url": f"https://rustchain.org/bcos/verify/{row['cert_id']}",
+                    "badge_url": f"https://50.28.86.131/bcos/badge/{row['cert_id']}.svg",
+                }
+            )
 
-        return jsonify({
-            "ok": True,
-            "total": total,
-            "count": len(certs),
-            "offset": offset,
-            "certificates": certs,
-        })
+        return jsonify(
+            {
+                "ok": True,
+                "total": total,
+                "count": len(certs),
+                "offset": offset,
+                "certificates": certs,
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 # ── Registration ──────────────────────────────────────────────────
+
 
 def register_bcos_routes(app, db_path: str):
     """Register BCOS blueprint with the Flask app."""

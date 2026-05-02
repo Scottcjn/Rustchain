@@ -167,7 +167,10 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
                 return jsonify({"error": "Job was already processed"}), 409
 
             # Transfer to provider
-            db.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?", (job["amount_rtc"], job["to_wallet"]))
+            db.execute(
+                "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
+                (job["amount_rtc"], job["to_wallet"]),
+            )
             db.commit()
             return jsonify({"ok": True, "status": "released"})
         except sqlite3.Error as e:
@@ -211,7 +214,10 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
                 return jsonify({"error": "Job was already processed"}), 409
 
             # Refund to original requester
-            db.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?", (job["amount_rtc"], job["from_wallet"]))
+            db.execute(
+                "UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?",
+                (job["amount_rtc"], job["from_wallet"]),
+            )
             db.commit()
             return jsonify({"ok": True, "status": "refunded"})
         except sqlite3.Error as e:

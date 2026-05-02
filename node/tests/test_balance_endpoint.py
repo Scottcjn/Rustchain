@@ -11,11 +11,11 @@ Tests cover:
 
 import importlib.util
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch, MagicMock
-import sqlite3
+from unittest.mock import MagicMock, patch
 
 # Define the path to the node directory and the integrated module.
 NODE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -45,9 +45,7 @@ class TestWalletBalanceEndpoint(unittest.TestCase):
             sys.path.insert(0, NODE_DIR)
 
         # Import the module containing the Flask app
-        spec = importlib.util.spec_from_file_location(
-            "rustchain_integrated_rewards_test", MODULE_PATH
-        )
+        spec = importlib.util.spec_from_file_location("rustchain_integrated_rewards_test", MODULE_PATH)
         cls.mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.mod)
 
@@ -75,7 +73,7 @@ class TestWalletBalanceEndpoint(unittest.TestCase):
         """Initialize and populate the test database."""
         if os.path.exists(TEST_DB_PATH):
             os.remove(TEST_DB_PATH)
-        
+
         conn = sqlite3.connect(TEST_DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
@@ -88,14 +86,14 @@ class TestWalletBalanceEndpoint(unittest.TestCase):
         )
         cursor.execute(
             "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?) ON CONFLICT(miner_id) DO UPDATE SET amount_i64 = excluded.amount_i64;",
-            (MINER_ID_ALICE, ALICE_BALANCE_I64)
+            (MINER_ID_ALICE, ALICE_BALANCE_I64),
         )
         conn.commit()
         conn.close()
 
     def setUp(self):
         """Reset the database for each test to ensure isolation."""
-        self._init_db() # Re-initialize the DB before each test
+        self._init_db()  # Re-initialize the DB before each test
 
     # --- Success Cases ---
 
@@ -137,7 +135,7 @@ class TestWalletBalanceEndpoint(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
         data = resp.get_json()
         self.assertEqual(data["error"], "miner_id required")
-    
+
     # --- Error Cases: Database Issues ---
 
     def test_get_balance_operational_error(self):
@@ -171,8 +169,7 @@ class TestWalletBalanceEndpoint(unittest.TestCase):
             data = resp.get_json()
             self.assertEqual(data["error"], DATABASE_LOCKED_ERROR_MESSAGE)
             mock_db.execute.assert_called_once_with(
-                "SELECT amount_i64 FROM balances WHERE miner_id = ?",
-                (MINER_ID_ALICE,)
+                "SELECT amount_i64 FROM balances WHERE miner_id = ?", (MINER_ID_ALICE,)
             )
 
     def test_get_balance_general_sqlite_error_during_execute(self):
@@ -190,8 +187,7 @@ class TestWalletBalanceEndpoint(unittest.TestCase):
             data = resp.get_json()
             self.assertEqual(data["error"], UNEXPECTED_DATABASE_ERROR_MESSAGE)
             mock_db.execute.assert_called_once_with(
-                "SELECT amount_i64 FROM balances WHERE miner_id = ?",
-                (MINER_ID_ALICE,)
+                "SELECT amount_i64 FROM balances WHERE miner_id = ?", (MINER_ID_ALICE,)
             )
 
     # --- Response Format Validation ---
@@ -219,7 +215,7 @@ class TestWalletBalanceEndpoint(unittest.TestCase):
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?) ON CONFLICT(miner_id) DO UPDATE SET amount_i64 = excluded.amount_i64;",
-            (MINER_ID_CHARLIE, balance_i64_complex)
+            (MINER_ID_CHARLIE, balance_i64_complex),
         )
         conn.commit()
         conn.close()
@@ -230,8 +226,8 @@ class TestWalletBalanceEndpoint(unittest.TestCase):
         self.assertAlmostEqual(data["amount_rtc"], expected_rtc)
         # Verify the number of decimal places for amount_rtc
         rtc_str = str(data["amount_rtc"])
-        if '.' in rtc_str:
-            actual_precision = len(rtc_str.split('.')[-1])
+        if "." in rtc_str:
+            actual_precision = len(rtc_str.split(".")[-1])
             self.assertLessEqual(actual_precision, RTC_DECIMAL_PRECISION)
 
 

@@ -5,7 +5,6 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-
 NODE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 MODULE_PATH = os.path.join(NODE_DIR, "rustchain_v2_integrated_v2.2.1_rip200.py")
 ADMIN_KEY = "0123456789abcdef0123456789abcdef"
@@ -41,9 +40,11 @@ class TestPublicApiDisclosure(unittest.TestCase):
         cls._tmp.cleanup()
 
     def test_epoch_public_response_exposes_current_fields(self):
-        with patch.object(self.mod, "current_slot", return_value=12345), \
-             patch.object(self.mod, "slot_to_epoch", return_value=85), \
-             patch.object(self.mod.sqlite3, "connect") as mock_connect:
+        with (
+            patch.object(self.mod, "current_slot", return_value=12345),
+            patch.object(self.mod, "slot_to_epoch", return_value=85),
+            patch.object(self.mod.sqlite3, "connect") as mock_connect,
+        ):
             mock_conn = mock_connect.return_value.__enter__.return_value
             mock_conn.execute.return_value.fetchone.return_value = [10]
 
@@ -57,9 +58,11 @@ class TestPublicApiDisclosure(unittest.TestCase):
             self.assertEqual(body["enrolled_miners"], 10)
 
     def test_epoch_admin_receives_full_fields(self):
-        with patch.object(self.mod, "current_slot", return_value=12345), \
-             patch.object(self.mod, "slot_to_epoch", return_value=85), \
-             patch.object(self.mod.sqlite3, "connect") as mock_connect:
+        with (
+            patch.object(self.mod, "current_slot", return_value=12345),
+            patch.object(self.mod, "slot_to_epoch", return_value=85),
+            patch.object(self.mod.sqlite3, "connect") as mock_connect,
+        ):
             mock_conn = mock_connect.return_value.__enter__.return_value
             mock_conn.execute.return_value.fetchone.return_value = [10]
 

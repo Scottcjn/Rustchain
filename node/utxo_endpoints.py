@@ -16,17 +16,14 @@ Endpoints:
     POST /utxo/transfer            - UTXO-native signed transfer
 """
 
-import decimal
-import hashlib
 import json
 import logging
 import sqlite3
 import time
 from decimal import Decimal, InvalidOperation
 
-from flask import Blueprint, request, jsonify
-
-from utxo_db import UtxoDB, coin_select, address_to_proposition, UNIT
+from flask import Blueprint, jsonify, request
+from utxo_db import UNIT, UtxoDB, coin_select
 
 # FIX(#2867 M2): Reject inputs that would overflow int64 (signed) or
 # represent absurd amounts. Total RTC supply is bounded; cap at 2^53 RTC
@@ -72,19 +69,20 @@ def _parse_rtc_amount(raw) -> Decimal:
         raise ValueError(f"amount exceeds maximum ({_MAX_RTC_AMOUNT})")
     return amount
 
+
 # Account-model balances store amount_i64 at 6 decimals (micro-RTC).
 # This MUST match the multiplier used in rustchain_v2_integrated_v2.2.1_rip200.py
 # (e.g. line 2370: amount_i64 = int(amount_decimal * Decimal(1000000))).
 ACCOUNT_UNIT = 1_000_000  # 1 RTC = 1,000,000 uRTC (6 decimals)
 
-utxo_bp = Blueprint('utxo', __name__, url_prefix='/utxo')
+utxo_bp = Blueprint("utxo", __name__, url_prefix="/utxo")
 
 # These get set by register_utxo_blueprint() from the main server
 _utxo_db: UtxoDB = None
 _db_path: str = None
-_verify_sig_fn = None      # verify_rtc_signature(pubkey_hex, message, sig_hex) -> bool
-_addr_from_pk_fn = None    # address_from_pubkey(pubkey_hex) -> str
-_current_slot_fn = None    # current_slot() -> int
+_verify_sig_fn = None  # verify_rtc_signature(pubkey_hex, message, sig_hex) -> bool
+_addr_from_pk_fn = None  # address_from_pubkey(pubkey_hex) -> str
+_current_slot_fn = None  # current_slot() -> int
 _dual_write: bool = False
 
 
@@ -99,7 +97,6 @@ def _ensure_transfer_nonce_table(conn: sqlite3.Connection) -> None:
         )
         """
     )
-
 
 
 def _reserve_transfer_nonce(conn: sqlite3.Connection, from_address: str, nonce) -> bool:
@@ -117,9 +114,9 @@ def _reserve_transfer_nonce(conn: sqlite3.Connection, from_address: str, nonce) 
     return conn.execute("SELECT changes()").fetchone()[0] == 1
 
 
-def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
-                            verify_sig_fn, addr_from_pk_fn,
-                            current_slot_fn, dual_write: bool = False):
+def register_utxo_blueprint(
+    app, utxo_db: UtxoDB, db_path: str, verify_sig_fn, addr_from_pk_fn, current_slot_fn, dual_write: bool = False
+):
     """
     Wire up the UTXO blueprint with dependencies from the main server.
     Call this after init_db().
@@ -149,76 +146,85 @@ def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
 # Read endpoints
 # ---------------------------------------------------------------------------
 
-@utxo_bp.route('/balance/<address>')
+
+@utxo_bp.route("/balance/<address>")
 def utxo_balance(address):
     """Get UTXO-derived balance for an address."""
     balance_nrtc = _utxo_db.get_balance(address)
     boxes = _utxo_db.get_unspent_for_address(address)
-    return jsonify({
-        'address': address,
-        'balance_nrtc': balance_nrtc,
-        'balance_rtc': balance_nrtc / UNIT,
-        'utxo_count': len(boxes),
-    })
+    return jsonify(
+        {
+            "address": address,
+            "balance_nrtc": balance_nrtc,
+            "balance_rtc": balance_nrtc / UNIT,
+            "utxo_count": len(boxes),
+        }
+    )
 
 
-@utxo_bp.route('/boxes/<address>')
+@utxo_bp.route("/boxes/<address>")
 def utxo_boxes(address):
     """Get all unspent boxes for an address."""
     boxes = _utxo_db.get_unspent_for_address(address)
-    return jsonify({
-        'address': address,
-        'count': len(boxes),
-        'boxes': [
-            {
-                'box_id': b['box_id'],
-                'value_nrtc': b['value_nrtc'],
-                'value_rtc': b['value_nrtc'] / UNIT,
-                'creation_height': b['creation_height'],
-                'transaction_id': b['transaction_id'],
-                'output_index': b['output_index'],
-                'registers': json.loads(b.get('registers_json', '{}')),
-            }
-            for b in boxes
-        ],
-    })
+    return jsonify(
+        {
+            "address": address,
+            "count": len(boxes),
+            "boxes": [
+                {
+                    "box_id": b["box_id"],
+                    "value_nrtc": b["value_nrtc"],
+                    "value_rtc": b["value_nrtc"] / UNIT,
+                    "creation_height": b["creation_height"],
+                    "transaction_id": b["transaction_id"],
+                    "output_index": b["output_index"],
+                    "registers": json.loads(b.get("registers_json", "{}")),
+                }
+                for b in boxes
+            ],
+        }
+    )
 
 
-@utxo_bp.route('/box/<box_id>')
+@utxo_bp.route("/box/<box_id>")
 def utxo_box(box_id):
     """Get a single box by ID (spent or unspent)."""
     box = _utxo_db.get_box(box_id)
     if not box:
-        return jsonify({'error': 'Box not found'}), 404
-    return jsonify({
-        'box_id': box['box_id'],
-        'value_nrtc': box['value_nrtc'],
-        'value_rtc': box['value_nrtc'] / UNIT,
-        'owner_address': box['owner_address'],
-        'creation_height': box['creation_height'],
-        'transaction_id': box['transaction_id'],
-        'output_index': box['output_index'],
-        'spent': box['spent_at'] is not None,
-        'spent_at': box['spent_at'],
-        'spent_by_tx': box['spent_by_tx'],
-        'registers': json.loads(box.get('registers_json', '{}')),
-        'tokens': json.loads(box.get('tokens_json', '[]')),
-    })
+        return jsonify({"error": "Box not found"}), 404
+    return jsonify(
+        {
+            "box_id": box["box_id"],
+            "value_nrtc": box["value_nrtc"],
+            "value_rtc": box["value_nrtc"] / UNIT,
+            "owner_address": box["owner_address"],
+            "creation_height": box["creation_height"],
+            "transaction_id": box["transaction_id"],
+            "output_index": box["output_index"],
+            "spent": box["spent_at"] is not None,
+            "spent_at": box["spent_at"],
+            "spent_by_tx": box["spent_by_tx"],
+            "registers": json.loads(box.get("registers_json", "{}")),
+            "tokens": json.loads(box.get("tokens_json", "[]")),
+        }
+    )
 
 
-@utxo_bp.route('/state_root')
+@utxo_bp.route("/state_root")
 def utxo_state_root():
     """Current Merkle state root of the UTXO set."""
     root = _utxo_db.compute_state_root()
     count = _utxo_db.count_unspent()
-    return jsonify({
-        'state_root': root,
-        'unspent_count': count,
-        'timestamp': int(time.time()),
-    })
+    return jsonify(
+        {
+            "state_root": root,
+            "unspent_count": count,
+            "timestamp": int(time.time()),
+        }
+    )
 
 
-@utxo_bp.route('/integrity')
+@utxo_bp.route("/integrity")
 def utxo_integrity():
     """Compare UTXO totals against account model."""
     # Get account model total and convert to nanoRTC (8 decimals).
@@ -227,9 +233,7 @@ def utxo_integrity():
     account_total = 0
     try:
         conn = sqlite3.connect(_db_path)
-        row = conn.execute(
-            "SELECT COALESCE(SUM(amount_i64), 0) FROM balances"
-        ).fetchone()
+        row = conn.execute("SELECT COALESCE(SUM(amount_i64), 0) FROM balances").fetchone()
         account_total = row[0] if row else 0
         conn.close()
         # Convert from 6-decimal uRTC to 8-decimal nanoRTC for comparison
@@ -240,23 +244,25 @@ def utxo_integrity():
 
     result = _utxo_db.integrity_check(expected_total=account_total_nrtc)
     if account_total is not None:
-        result['account_total_i64'] = account_total
-        result['account_total_nrtc'] = account_total_nrtc
-        result['account_total_rtc'] = account_total_nrtc / UNIT
+        result["account_total_i64"] = account_total
+        result["account_total_nrtc"] = account_total_nrtc
+        result["account_total_rtc"] = account_total_nrtc / UNIT
     return jsonify(result)
 
 
-@utxo_bp.route('/mempool')
+@utxo_bp.route("/mempool")
 def utxo_mempool():
     """View current UTXO mempool pending transactions (limit 50)."""
     candidates = _utxo_db.mempool_get_block_candidates(max_count=50)
-    return jsonify({
-        'count': len(candidates),
-        'transactions': candidates,
-    })
+    return jsonify(
+        {
+            "count": len(candidates),
+            "transactions": candidates,
+        }
+    )
 
 
-@utxo_bp.route('/stats')
+@utxo_bp.route("/stats")
 def utxo_stats():
     """UTXO set statistics."""
     conn = _utxo_db._conn()
@@ -264,25 +270,21 @@ def utxo_stats():
         unspent = conn.execute(
             "SELECT COUNT(*) AS n, COALESCE(SUM(value_nrtc),0) AS total FROM utxo_boxes WHERE spent_at IS NULL"
         ).fetchone()
-        spent = conn.execute(
-            "SELECT COUNT(*) AS n FROM utxo_boxes WHERE spent_at IS NOT NULL"
-        ).fetchone()
-        txs = conn.execute(
-            "SELECT COUNT(*) AS n FROM utxo_transactions"
-        ).fetchone()
-        mempool = conn.execute(
-            "SELECT COUNT(*) AS n FROM utxo_mempool"
-        ).fetchone()
+        spent = conn.execute("SELECT COUNT(*) AS n FROM utxo_boxes WHERE spent_at IS NOT NULL").fetchone()
+        txs = conn.execute("SELECT COUNT(*) AS n FROM utxo_transactions").fetchone()
+        mempool = conn.execute("SELECT COUNT(*) AS n FROM utxo_mempool").fetchone()
 
-        return jsonify({
-            'unspent_boxes': unspent['n'],
-            'total_value_nrtc': unspent['total'],
-            'total_value_rtc': unspent['total'] / UNIT,
-            'spent_boxes': spent['n'],
-            'total_transactions': txs['n'],
-            'mempool_size': mempool['n'],
-            'state_root': _utxo_db.compute_state_root(),
-        })
+        return jsonify(
+            {
+                "unspent_boxes": unspent["n"],
+                "total_value_nrtc": unspent["total"],
+                "total_value_rtc": unspent["total"] / UNIT,
+                "spent_boxes": spent["n"],
+                "total_transactions": txs["n"],
+                "mempool_size": mempool["n"],
+                "state_root": _utxo_db.compute_state_root(),
+            }
+        )
     finally:
         conn.close()
 
@@ -291,7 +293,8 @@ def utxo_stats():
 # Transfer endpoint
 # ---------------------------------------------------------------------------
 
-@utxo_bp.route('/transfer', methods=['POST'])
+
+@utxo_bp.route("/transfer", methods=["POST"])
 def utxo_transfer():
     """
     UTXO-native signed transfer.
@@ -320,41 +323,44 @@ def utxo_transfer():
     """
     data = request.get_json()
     if not data:
-        return jsonify({'error': 'JSON body required'}), 400
+        return jsonify({"error": "JSON body required"}), 400
 
-    from_address = (data.get('from_address') or '').strip()
-    to_address = (data.get('to_address') or '').strip()
-    public_key = (data.get('public_key') or '').strip()
-    signature = (data.get('signature') or '').strip()
-    nonce = data.get('nonce')
-    memo = data.get('memo', '')
+    from_address = (data.get("from_address") or "").strip()
+    to_address = (data.get("to_address") or "").strip()
+    public_key = (data.get("public_key") or "").strip()
+    signature = (data.get("signature") or "").strip()
+    nonce = data.get("nonce")
+    memo = data.get("memo", "")
     # FIX(#2867 M2): exact Decimal parsing with bounds check (was float()).
     try:
-        amount_rtc = _parse_rtc_amount(data.get('amount_rtc', 0))
-        fee_rtc = _parse_rtc_amount(data.get('fee_rtc', 0))
+        amount_rtc = _parse_rtc_amount(data.get("amount_rtc", 0))
+        fee_rtc = _parse_rtc_amount(data.get("fee_rtc", 0))
     except (ValueError, InvalidOperation) as e:
-        return jsonify({'error': f'Invalid amount: {e}'}), 400
+        return jsonify({"error": f"Invalid amount: {e}"}), 400
 
     # --- validation ---------------------------------------------------------
 
     if not all([from_address, to_address, public_key, signature, nonce]):
-        return jsonify({
-            'error': 'Missing required fields',
-            'required': ['from_address', 'to_address', 'public_key',
-                         'signature', 'nonce']
-        }), 400
+        return jsonify(
+            {
+                "error": "Missing required fields",
+                "required": ["from_address", "to_address", "public_key", "signature", "nonce"],
+            }
+        ), 400
 
     if amount_rtc <= 0:
-        return jsonify({'error': 'Amount must be positive'}), 400
+        return jsonify({"error": "Amount must be positive"}), 400
 
     # Verify pubkey → address
     expected_addr = _addr_from_pk_fn(public_key)
     if from_address != expected_addr:
-        return jsonify({
-            'error': 'Public key does not match from_address',
-            'expected': expected_addr,
-            'got': from_address,
-        }), 400
+        return jsonify(
+            {
+                "error": "Public key does not match from_address",
+                "expected": expected_addr,
+                "got": from_address,
+            }
+        ), 400
 
     # Reconstruct signed message.
     # FIX(#2202): Include fee in signed data to prevent MITM fee manipulation.
@@ -368,23 +374,23 @@ def utxo_transfer():
     amount_for_sig = float(amount_rtc)
     fee_for_sig = float(fee_rtc)
     tx_data_v2 = {
-        'from': from_address,
-        'to': to_address,
-        'amount': amount_for_sig,
-        'fee': fee_for_sig,
-        'memo': memo,
-        'nonce': nonce,
+        "from": from_address,
+        "to": to_address,
+        "amount": amount_for_sig,
+        "fee": fee_for_sig,
+        "memo": memo,
+        "nonce": nonce,
     }
-    message_v2 = json.dumps(tx_data_v2, sort_keys=True, separators=(',', ':')).encode()
+    message_v2 = json.dumps(tx_data_v2, sort_keys=True, separators=(",", ":")).encode()
 
     tx_data_legacy = {
-        'from': from_address,
-        'to': to_address,
-        'amount': amount_for_sig,
-        'memo': memo,
-        'nonce': nonce,
+        "from": from_address,
+        "to": to_address,
+        "amount": amount_for_sig,
+        "memo": memo,
+        "nonce": nonce,
     }
-    message_legacy = json.dumps(tx_data_legacy, sort_keys=True, separators=(',', ':')).encode()
+    message_legacy = json.dumps(tx_data_legacy, sort_keys=True, separators=(",", ":")).encode()
 
     if _verify_sig_fn(public_key, message_v2, signature):
         pass  # New client — fee is signed, MITM-resistant
@@ -395,7 +401,7 @@ def utxo_transfer():
             from_address[:20],
         )
     else:
-        return jsonify({'error': 'Invalid Ed25519 signature'}), 401
+        return jsonify({"error": "Invalid Ed25519 signature"}), 401
 
     # --- UTXO transaction ---------------------------------------------------
 
@@ -412,28 +418,29 @@ def utxo_transfer():
 
     if not selected:
         utxo_balance = _utxo_db.get_balance(from_address)
-        return jsonify({
-            'error': 'Insufficient UTXO balance',
-            'balance_nrtc': utxo_balance,
-            'balance_rtc': utxo_balance / UNIT,
-            'requested_nrtc': target_nrtc,
-            'requested_rtc': target_nrtc / UNIT,
-        }), 400
+        return jsonify(
+            {
+                "error": "Insufficient UTXO balance",
+                "balance_nrtc": utxo_balance,
+                "balance_rtc": utxo_balance / UNIT,
+                "requested_nrtc": target_nrtc,
+                "requested_rtc": target_nrtc / UNIT,
+            }
+        ), 400
 
     # Build outputs
-    outputs = [{'address': to_address, 'value_nrtc': amount_nrtc}]
+    outputs = [{"address": to_address, "value_nrtc": amount_nrtc}]
     if change_nrtc > 0:
-        outputs.append({'address': from_address, 'value_nrtc': change_nrtc})
+        outputs.append({"address": from_address, "value_nrtc": change_nrtc})
 
     # Build and apply UTXO transaction
     block_height = _current_slot_fn()
     tx = {
-        'tx_type': 'transfer',
-        'inputs': [{'box_id': u['box_id'], 'spending_proof': signature}
-                   for u in selected],
-        'outputs': outputs,
-        'fee_nrtc': fee_nrtc,
-        'timestamp': int(time.time()),
+        "tx_type": "transfer",
+        "inputs": [{"box_id": u["box_id"], "spending_proof": signature} for u in selected],
+        "outputs": outputs,
+        "fee_nrtc": fee_nrtc,
+        "timestamp": int(time.time()),
     }
 
     conn = sqlite3.connect(_db_path)
@@ -443,16 +450,18 @@ def utxo_transfer():
 
         if not _reserve_transfer_nonce(conn, from_address, nonce):
             conn.rollback()
-            return jsonify({
-                'error': 'Nonce already used (replay attack detected)',
-                'code': 'REPLAY_DETECTED',
-                'nonce': str(nonce),
-            }), 400
+            return jsonify(
+                {
+                    "error": "Nonce already used (replay attack detected)",
+                    "code": "REPLAY_DETECTED",
+                    "nonce": str(nonce),
+                }
+            ), 400
 
         ok = _utxo_db.apply_transaction(tx, block_height, conn=conn)
         if not ok:
             conn.rollback()
-            return jsonify({'error': 'UTXO transaction failed (race condition or validation)'}), 500
+            return jsonify({"error": "UTXO transaction failed (race condition or validation)"}), 500
 
         conn.commit()
     except Exception:
@@ -475,8 +484,7 @@ def utxo_transfer():
             # Re-check sender shadow-balance before debit (security: prevent
             # negative-balance minting when account-model diverges from UTXO
             # due to non-UTXO writes, prior dual-write failures, or races).
-            c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?",
-                      (from_address,))
+            c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_address,))
             shadow_row = c.fetchone()
             shadow_balance = shadow_row[0] if shadow_row else 0
             if shadow_balance < amount_i64:
@@ -487,23 +495,22 @@ def utxo_transfer():
                     f"(have {shadow_balance}, need {amount_i64})"
                 )
             else:
-                c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
-                          (to_address,))
-                c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
-                          (amount_i64, from_address))
-                c.execute("UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
-                          (amount_i64, to_address))
+                c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (to_address,))
+                c.execute(
+                    "UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?", (amount_i64, from_address)
+                )
+                c.execute(
+                    "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?", (amount_i64, to_address)
+                )
                 now = int(time.time())
                 slot = _current_slot_fn()
                 c.execute(
                     "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
-                    (now, slot, from_address, -amount_i64,
-                     f"utxo_transfer_out:{to_address[:20]}:{memo[:30]}")
+                    (now, slot, from_address, -amount_i64, f"utxo_transfer_out:{to_address[:20]}:{memo[:30]}"),
                 )
                 c.execute(
                     "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
-                    (now, slot, to_address, amount_i64,
-                     f"utxo_transfer_in:{from_address[:20]}:{memo[:30]}")
+                    (now, slot, to_address, amount_i64, f"utxo_transfer_in:{from_address[:20]}:{memo[:30]}"),
                 )
             conn.commit()
             conn.close()
@@ -517,21 +524,23 @@ def utxo_transfer():
     sender_bal = _utxo_db.get_balance(from_address)
     recipient_bal = _utxo_db.get_balance(to_address)
 
-    return jsonify({
-        'ok': True,
-        'from_address': from_address,
-        'to_address': to_address,
-        # FIX(#2867 M2 follow-up): Decimal isn't JSON-serializable; cast to float.
-        'amount_rtc': float(amount_rtc),
-        'fee_rtc': float(fee_rtc),
-        'inputs_consumed': len(selected),
-        'outputs_created': len(outputs),
-        'change_nrtc': change_nrtc,
-        'change_rtc': change_nrtc / UNIT,
-        'sender_balance_rtc': sender_bal / UNIT,
-        'recipient_balance_rtc': recipient_bal / UNIT,
-        'memo': memo,
-        'verified': True,
-        'signature_type': 'Ed25519',
-        'model': 'utxo',
-    })
+    return jsonify(
+        {
+            "ok": True,
+            "from_address": from_address,
+            "to_address": to_address,
+            # FIX(#2867 M2 follow-up): Decimal isn't JSON-serializable; cast to float.
+            "amount_rtc": float(amount_rtc),
+            "fee_rtc": float(fee_rtc),
+            "inputs_consumed": len(selected),
+            "outputs_created": len(outputs),
+            "change_nrtc": change_nrtc,
+            "change_rtc": change_nrtc / UNIT,
+            "sender_balance_rtc": sender_bal / UNIT,
+            "recipient_balance_rtc": recipient_bal / UNIT,
+            "memo": memo,
+            "verified": True,
+            "signature_type": "Ed25519",
+            "model": "utxo",
+        }
+    )

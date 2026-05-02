@@ -17,6 +17,7 @@ from pathlib import Path
 
 try:
     import nacl.signing
+
     HAVE_NACL = True
 except Exception:
     HAVE_NACL = False
@@ -39,8 +40,8 @@ def _sign_message(miner_id: str, wallet: str, nonce: str, commitment: str):
     signing_key = nacl.signing.SigningKey.generate()
     verify_key = signing_key.verify_key
     pubkey_hex = verify_key.encode().hex()
-    message = '{}|{}|{}|{}'.format(miner_id, wallet, nonce, commitment)
-    signature = signing_key.sign(message.encode('utf-8'))
+    message = "{}|{}|{}|{}".format(miner_id, wallet, nonce, commitment)
+    signature = signing_key.sign(message.encode("utf-8"))
     return signature.signature.hex(), pubkey_hex
 
 
@@ -244,7 +245,8 @@ class TestAttestSignatureVerification(unittest.TestCase):
         We simulate HAVE_NACL=False by monkeypatching the module-level flag.
         """
         mod, _ = self._load_module(
-            "rustchain_attest_sig_no_nacl", "sig_no_nacl.db",
+            "rustchain_attest_sig_no_nacl",
+            "sig_no_nacl.db",
         )
         # Monkeypatch HAVE_NACL to False to simulate missing pynacl
         original_have_nacl = mod.HAVE_NACL

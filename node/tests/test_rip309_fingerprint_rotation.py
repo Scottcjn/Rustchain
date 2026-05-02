@@ -14,9 +14,9 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from rip_200_round_robin_1cpu1vote import calculate_epoch_rewards_time_aged, GENESIS_TIMESTAMP, BLOCK_TIME
+from rip_200_round_robin_1cpu1vote import GENESIS_TIMESTAMP, calculate_epoch_rewards_time_aged
 
 
 def _init_db(conn):
@@ -54,21 +54,17 @@ def _insert_miner(conn, miner, device_arch="x86_64", passed_all=True, checks=Non
     conn.execute(
         "INSERT INTO miner_attest_recent (miner, device_arch, ts_ok, fingerprint_passed, fingerprint_checks_json) "
         "VALUES (?, ?, ?, ?, ?)",
-        (miner, device_arch, ts, 1 if passed_all else 0, json.dumps(checks))
+        (miner, device_arch, ts, 1 if passed_all else 0, json.dumps(checks)),
     )
     conn.commit()
 
 
 def _enroll_miner(conn, epoch, miner, weight=100):
-    conn.execute(
-        "INSERT INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
-        (epoch, miner, weight)
-    )
+    conn.execute("INSERT INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)", (epoch, miner, weight))
     conn.commit()
 
 
 class TestRip309Rotation(unittest.TestCase):
-
     def _fresh_db(self):
         fd, path = tempfile.mkstemp(suffix=".db")
         os.close(fd)
@@ -102,8 +98,12 @@ class TestRip309Rotation(unittest.TestCase):
         _enroll_miner(conn, 1, "alice", 100)
         # 4 passed, 2 failed => possible to select all 4 passed checks
         checks = {
-            "clock_drift": True, "cache_timing": True, "simd_identity": True,
-            "thermal_drift": True, "instruction_jitter": False, "anti_emulation": False,
+            "clock_drift": True,
+            "cache_timing": True,
+            "simd_identity": True,
+            "thermal_drift": True,
+            "instruction_jitter": False,
+            "anti_emulation": False,
         }
         _insert_miner(conn, "alice", checks=checks)
         conn.close()
@@ -114,8 +114,9 @@ class TestRip309Rotation(unittest.TestCase):
             rewards = calculate_epoch_rewards_time_aged(db_path, 1, 1_000_000, 200, h)
             selections.add(rewards.get("alice", 0))
 
-        self.assertTrue(0 in selections and max(selections) > 0,
-                        f"Expected mixed rewards across hashes, got {selections}")
+        self.assertTrue(
+            0 in selections and max(selections) > 0, f"Expected mixed rewards across hashes, got {selections}"
+        )
         os.unlink(db_path)
 
     def test_only_active_checks_affect_weight(self):
@@ -124,22 +125,33 @@ class TestRip309Rotation(unittest.TestCase):
         conn = sqlite3.connect(db_path)
         _enroll_miner(conn, 1, "alice", 100)
         checks = {
-            "clock_drift": True, "cache_timing": True, "simd_identity": True,
-            "thermal_drift": True, "instruction_jitter": True, "anti_emulation": False,
+            "clock_drift": True,
+            "cache_timing": True,
+            "simd_identity": True,
+            "thermal_drift": True,
+            "instruction_jitter": True,
+            "anti_emulation": False,
         }
         _insert_miner(conn, "alice", checks=checks)
         conn.close()
 
         for i in range(1000):
             h = hashlib.sha256(str(i).encode()).digest()
-            fp_checks = ['clock_drift', 'cache_timing', 'simd_identity',
-                         'thermal_drift', 'instruction_jitter', 'anti_emulation']
-            seed = int.from_bytes(hashlib.sha256(h + b"measurement_nonce").digest()[:4], 'big')
+            fp_checks = [
+                "clock_drift",
+                "cache_timing",
+                "simd_identity",
+                "thermal_drift",
+                "instruction_jitter",
+                "anti_emulation",
+            ]
+            seed = int.from_bytes(hashlib.sha256(h + b"measurement_nonce").digest()[:4], "big")
             active = set(random.Random(seed).sample(fp_checks, 4))
             if "anti_emulation" not in active:
                 rewards = calculate_epoch_rewards_time_aged(db_path, 1, 1_000_000, 200, h)
-                self.assertGreater(rewards.get("alice", 0), 0,
-                                   "Alice should receive rewards when failing check is inactive")
+                self.assertGreater(
+                    rewards.get("alice", 0), 0, "Alice should receive rewards when failing check is inactive"
+                )
                 os.unlink(db_path)
                 return
 
@@ -152,22 +164,33 @@ class TestRip309Rotation(unittest.TestCase):
         conn = sqlite3.connect(db_path)
         _enroll_miner(conn, 1, "alice", 100)
         checks = {
-            "clock_drift": True, "cache_timing": True, "simd_identity": True,
-            "thermal_drift": True, "instruction_jitter": True, "anti_emulation": False,
+            "clock_drift": True,
+            "cache_timing": True,
+            "simd_identity": True,
+            "thermal_drift": True,
+            "instruction_jitter": True,
+            "anti_emulation": False,
         }
         _insert_miner(conn, "alice", checks=checks)
         conn.close()
 
         for i in range(1000):
             h = hashlib.sha256(str(i).encode()).digest()
-            fp_checks = ['clock_drift', 'cache_timing', 'simd_identity',
-                         'thermal_drift', 'instruction_jitter', 'anti_emulation']
-            seed = int.from_bytes(hashlib.sha256(h + b"measurement_nonce").digest()[:4], 'big')
+            fp_checks = [
+                "clock_drift",
+                "cache_timing",
+                "simd_identity",
+                "thermal_drift",
+                "instruction_jitter",
+                "anti_emulation",
+            ]
+            seed = int.from_bytes(hashlib.sha256(h + b"measurement_nonce").digest()[:4], "big")
             active = set(random.Random(seed).sample(fp_checks, 4))
             if "anti_emulation" in active:
                 rewards = calculate_epoch_rewards_time_aged(db_path, 1, 1_000_000, 200, h)
-                self.assertEqual(rewards.get("alice", 0), 0,
-                                 "Alice should get zero rewards when failing check is active")
+                self.assertEqual(
+                    rewards.get("alice", 0), 0, "Alice should get zero rewards when failing check is active"
+                )
                 os.unlink(db_path)
                 return
 
@@ -180,8 +203,12 @@ class TestRip309Rotation(unittest.TestCase):
         conn = sqlite3.connect(db_path)
         _enroll_miner(conn, 1, "alice", 100)
         checks = {
-            "clock_drift": True, "cache_timing": True, "simd_identity": True,
-            "thermal_drift": True, "instruction_jitter": True, "anti_emulation": True,
+            "clock_drift": True,
+            "cache_timing": True,
+            "simd_identity": True,
+            "thermal_drift": True,
+            "instruction_jitter": True,
+            "anti_emulation": True,
         }
         _insert_miner(conn, "alice", checks=checks)
         conn.close()

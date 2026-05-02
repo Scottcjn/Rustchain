@@ -4,15 +4,27 @@ RustChain v2 - RIP-0005 Epoch Pro-Rata Rewards
 Production Anti-Spoof System with Fair Distribution
 Issue #2295: Added WebSocket real-time feed for Block Explorer
 """
-import os, time, json, secrets, hashlib, sqlite3
-from flask import Flask, request, jsonify
-from datetime import datetime
+
+import hashlib
+import json
+import secrets
+import sqlite3
+import time
+
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
 # WebSocket Feed Integration (Issue #2295)
 try:
-    from websocket_feed import init_websocket, broadcast_block, broadcast_attestation, broadcast_epoch_settlement, get_ws_feed
+    from websocket_feed import (
+        broadcast_attestation,
+        broadcast_block,
+        broadcast_epoch_settlement,
+        get_ws_feed,
+        init_websocket,
+    )
+
     WS_ENABLED = True
     ws_feed = init_websocket(app)
     print("[WebSocket] Real-time feed enabled for Block Explorer")
@@ -32,24 +44,28 @@ LAST_EPOCH = None
 # Database setup
 DB_PATH = "./rustchain_v2.db"
 
+
 def init_db():
     """Initialize database with epoch tables"""
     with sqlite3.connect(DB_PATH) as c:
         # Existing tables
         c.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
-        c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
+        c.execute(
+            "CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)"
+        )
 
         # New epoch tables
-        c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
-        c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
+        c.execute(
+            "CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)"
+        )
+        c.execute(
+            "CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))"
+        )
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
 
+
 # Hardware multipliers
-HARDWARE_WEIGHTS = {
-    "PowerPC": {"G4": 2.5, "G5": 2.0},
-    "x86": {"default": 1.0},
-    "ARM": {"default": 1.0}
-}
+HARDWARE_WEIGHTS = {"PowerPC": {"G4": 2.5, "G5": 2.0}, "x86": {"default": 1.0}, "ARM": {"default": 1.0}}
 
 # In-memory storage
 registered_nodes = {}
@@ -57,15 +73,18 @@ mining_pool = {}
 blacklisted = set()
 tickets_db = {}
 
+
 def slot_to_epoch(slot):
     """Convert slot number to epoch"""
     return int(slot) // max(EPOCH_SLOTS, 1)
+
 
 def inc_epoch_block(epoch):
     """Increment accepted blocks for epoch"""
     with sqlite3.connect(DB_PATH) as c:
         c.execute("INSERT OR IGNORE INTO epoch_state(epoch, accepted_blocks, finalized) VALUES (?,0,0)", (epoch,))
         c.execute("UPDATE epoch_state SET accepted_blocks = accepted_blocks + 1 WHERE epoch=?", (epoch,))
+
 
 def enroll_epoch(epoch, miner_pk, weight):
     """Enroll miner in epoch with weight.
@@ -77,7 +96,11 @@ def enroll_epoch(epoch, miner_pk, weight):
     miner's weight via repeated enroll calls.
     """
     with sqlite3.connect(DB_PATH) as c:
-        c.execute("INSERT OR IGNORE INTO epoch_enroll(epoch, miner_pk, weight) VALUES (?,?,?)", (epoch, miner_pk, float(weight)))
+        c.execute(
+            "INSERT OR IGNORE INTO epoch_enroll(epoch, miner_pk, weight) VALUES (?,?,?)",
+            (epoch, miner_pk, float(weight)),
+        )
+
 
 def finalize_epoch(epoch, per_block_rtc):
     """Finalize epoch and distribute rewards"""
@@ -105,11 +128,13 @@ def finalize_epoch(epoch, per_block_rtc):
         c.execute("UPDATE epoch_state SET finalized=1 WHERE epoch=?", (epoch,))
         return {"ok": True, "blocks": blocks, "total_reward": total_reward, "sum_w": sum_w, "payouts": payouts}
 
+
 def get_balance(miner_pk):
     """Get miner balance"""
     with sqlite3.connect(DB_PATH) as c:
         row = c.execute("SELECT balance_rtc FROM balances WHERE miner_pk=?", (miner_pk,)).fetchone()
         return float(row[0]) if row else 0.0
+
 
 def get_hardware_weight(device):
     """Get hardware multiplier from device info"""
@@ -120,6 +145,7 @@ def get_hardware_weight(device):
         return HARDWARE_WEIGHTS[family].get(arch, HARDWARE_WEIGHTS[family].get("default", 1.0))
     return 1.0
 
+
 def consume_ticket(ticket_id):
     """Consume a ticket (mark as used)"""
     if ticket_id in tickets_db:
@@ -129,29 +155,34 @@ def consume_ticket(ticket_id):
             return True
     return False
 
+
 @app.get("/api/stats")
 def api_stats():
     """Network statistics endpoint"""
     current_slot = int(time.time() // BLOCK_TIME)
     current_epoch = slot_to_epoch(current_slot)
 
-    return jsonify({
-        "block_time": BLOCK_TIME,
-        "per_block_rtc": PER_BLOCK_RTC,
-        "epoch_slots": EPOCH_SLOTS,
-        "current_epoch": current_epoch,
-        "current_slot": current_slot,
-        "active_miners": len(mining_pool),
-        "registered_nodes": len(registered_nodes),
-        "enforce_mode": ENFORCE,
-        "network": "mainnet",
-        "version": "2.1.0-rip5"
-    })
+    return jsonify(
+        {
+            "block_time": BLOCK_TIME,
+            "per_block_rtc": PER_BLOCK_RTC,
+            "epoch_slots": EPOCH_SLOTS,
+            "current_epoch": current_epoch,
+            "current_slot": current_slot,
+            "active_miners": len(mining_pool),
+            "registered_nodes": len(registered_nodes),
+            "enforce_mode": ENFORCE,
+            "network": "mainnet",
+            "version": "2.1.0-rip5",
+        }
+    )
+
 
 @app.get("/api/last_hash")
 def api_last_hash():
     """Get last block hash for VRF beacon"""
     return jsonify({"hash_b3": LAST_HASH_B3})
+
 
 @app.get("/epoch")
 def get_epoch():
@@ -170,18 +201,21 @@ def get_epoch():
         miner_count = int(miners[0]) if miners[0] else 0
         total_weight = float(miners[1]) if miners[1] else 0.0
 
-    return jsonify({
-        "epoch": epoch,
-        "slots_per_epoch": EPOCH_SLOTS,
-        "per_block_rtc": PER_BLOCK_RTC,
-        "current_slot": now_slot,
-        "slot_in_epoch": now_slot % EPOCH_SLOTS,
-        "blocks_this_epoch": blocks,
-        "enrolled_miners": miner_count,
-        "total_weight": total_weight,
-        "finalized": finalized,
-        "epoch_pot": PER_BLOCK_RTC * blocks
-    })
+    return jsonify(
+        {
+            "epoch": epoch,
+            "slots_per_epoch": EPOCH_SLOTS,
+            "per_block_rtc": PER_BLOCK_RTC,
+            "current_slot": now_slot,
+            "slot_in_epoch": now_slot % EPOCH_SLOTS,
+            "blocks_this_epoch": blocks,
+            "enrolled_miners": miner_count,
+            "total_weight": total_weight,
+            "finalized": finalized,
+            "epoch_pot": PER_BLOCK_RTC * blocks,
+        }
+    )
+
 
 @app.post("/epoch/enroll")
 def epoch_enroll():
@@ -213,22 +247,23 @@ def epoch_enroll():
     # Enroll
     enroll_epoch(epoch, miner_pk, total_weight)
 
-    return jsonify({
-        "ok": True,
-        "epoch": epoch,
-        "weight": total_weight,
-        "hardware_multiplier": hw,
-        "device_tier": "Classic" if hw >= 2.0 else "Modern"
-    })
+    return jsonify(
+        {
+            "ok": True,
+            "epoch": epoch,
+            "weight": total_weight,
+            "hardware_multiplier": hw,
+            "device_tier": "Classic" if hw >= 2.0 else "Modern",
+        }
+    )
+
 
 @app.get("/balance/<miner_pk>")
 def balance(miner_pk):
     """Get miner balance"""
     bal = get_balance(miner_pk)
-    return jsonify({
-        "miner": miner_pk,
-        "balance_rtc": bal
-    })
+    return jsonify({"miner": miner_pk, "balance_rtc": bal})
+
 
 @app.post("/api/register")
 def api_register():
@@ -250,24 +285,20 @@ def api_register():
     registered_nodes[system_id] = {
         "fingerprint": fingerprint,
         "registered_at": time.time(),
-        "hardware_tier": get_hardware_tier(fingerprint)
+        "hardware_tier": get_hardware_tier(fingerprint),
     }
 
-    return jsonify({
-        "success": True,
-        "system_id": system_id,
-        "hardware_tier": registered_nodes[system_id]["hardware_tier"]
-    })
+    return jsonify(
+        {"success": True, "system_id": system_id, "hardware_tier": registered_nodes[system_id]["hardware_tier"]}
+    )
+
 
 @app.post("/attest/challenge")
 def attest_challenge():
     """Get attestation challenge"""
     nonce = secrets.token_hex(16)
-    return jsonify({
-        "nonce": nonce,
-        "window_s": 120,
-        "policy_id": "rip5"
-    })
+    return jsonify({"nonce": nonce, "window_s": 120, "policy_id": "rip5"})
+
 
 @app.post("/attest/submit")
 def attest_submit():
@@ -288,11 +319,11 @@ def attest_submit():
         "commitment": report["commitment"],
         "expires_at": int(time.time()) + 3600,
         "device": device,
-        "weight": hw_weight
+        "weight": hw_weight,
     }
 
     tickets_db[ticket_id] = ticket
-    
+
     # Broadcast attestation event via WebSocket (Issue #2295)
     if WS_ENABLED and report.get("miner_id"):
         try:
@@ -304,12 +335,13 @@ def attest_submit():
                 multiplier=hw_weight,
                 epoch=current_epoch,
                 weight=hw_weight,
-                ticket_id=ticket_id
+                ticket_id=ticket_id,
             )
         except Exception as e:
             print(f"[WebSocket] Failed to broadcast attestation: {e}")
-    
+
     return jsonify(ticket)
+
 
 @app.post("/api/submit_block")
 def api_submit_block():
@@ -342,7 +374,7 @@ def api_submit_block():
         # Finalize previous epoch
         result = finalize_epoch(LAST_EPOCH, PER_BLOCK_RTC)
         print(f"Finalized epoch {LAST_EPOCH}: {result}")
-        
+
         # Broadcast epoch settlement event via WebSocket (Issue #2295)
         if WS_ENABLED and result.get("ok"):
             try:
@@ -350,11 +382,11 @@ def api_submit_block():
                     epoch=LAST_EPOCH,
                     total_blocks=result.get("blocks", 0),
                     total_reward=result.get("total_reward", 0.0),
-                    miners_count=len(result.get("payouts", []))
+                    miners_count=len(result.get("payouts", [])),
                 )
             except Exception as e:
                 print(f"[WebSocket] Failed to broadcast epoch settlement: {e}")
-        
+
         LAST_EPOCH = epoch
 
     # Add block to current epoch
@@ -364,7 +396,7 @@ def api_submit_block():
     payload = json.dumps({"header": header, "ext": ext}, sort_keys=True).encode()
     new_hash = hashlib.sha256(payload).hexdigest()
     LAST_HASH_B3 = new_hash
-    
+
     # Broadcast block event via WebSocket (Issue #2295)
     if WS_ENABLED:
         try:
@@ -372,7 +404,7 @@ def api_submit_block():
             miners_count = 1
             if ticket_id and ticket_id in tickets_db:
                 miners_count = 1  # Could be expanded for multi-miner blocks
-            
+
             broadcast_block(
                 height=slot,  # Use slot as height approximation
                 hash=new_hash,
@@ -380,27 +412,19 @@ def api_submit_block():
                 miners_count=miners_count,
                 reward=PER_BLOCK_RTC,
                 epoch=epoch,
-                slot=slot
+                slot=slot,
             )
         except Exception as e:
             print(f"[WebSocket] Failed to broadcast block: {e}")
 
-    return jsonify({
-        "ok": True,
-        "new_hash_b3": LAST_HASH_B3,
-        "reward_rtc": PER_BLOCK_RTC,
-        "epoch": epoch
-    })
+    return jsonify({"ok": True, "new_hash_b3": LAST_HASH_B3, "reward_rtc": PER_BLOCK_RTC, "epoch": epoch})
+
 
 @app.get("/health")
 def health():
     """Health check endpoint"""
-    return jsonify({
-        "ok": True,
-        "service": "rustchain_v2_rip5",
-        "enforce": ENFORCE,
-        "epoch_system": "active"
-    })
+    return jsonify({"ok": True, "service": "rustchain_v2_rip5", "enforce": ENFORCE, "epoch_system": "active"})
+
 
 def get_hardware_tier(fingerprint):
     """Determine hardware age tier"""
@@ -412,6 +436,7 @@ def get_hardware_tier(fingerprint):
         return "Modern"
     else:
         return "Unknown"
+
 
 if __name__ == "__main__":
     init_db()

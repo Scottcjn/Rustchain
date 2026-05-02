@@ -11,7 +11,6 @@ that all prepares share the same digest as the PRE-PREPARE.
 
 import importlib.util
 import os
-import sys
 import time
 import unittest
 
@@ -29,7 +28,7 @@ MessageType = bft_mod.MessageType
 ConsensusPhase = bft_mod.ConsensusPhase
 
 
-def _make_bft(node_id="node-1", db_path=":memory:", secret="test-secret-key"):
+def _make_bft(node_id="node-1", db_path=":memory:", secret="test-secret-key"):  # nosec
     """Create a BFTConsensus instance with a peer to enable quorum calculations."""
     bft = BFTConsensus(node_id, db_path, secret)
     bft.register_peer("node-2", "http://127.0.0.1:9001")
@@ -230,8 +229,12 @@ class TestQuorumDigestConsistency(unittest.TestCase):
             bft.prepare_log[1] = bft.prepare_log.get(1, {})
             bft.prepare_log[1][nid] = ConsensusMessage(
                 msg_type=MessageType.PREPARE.value,
-                view=0, epoch=1, digest=dig,
-                node_id=nid, signature=sig, timestamp=ts,
+                view=0,
+                epoch=1,
+                digest=dig,
+                node_id=nid,
+                signature=sig,
+                timestamp=ts,
             )
 
         bft.phase = ConsensusPhase.PREPARE
@@ -266,15 +269,23 @@ class TestQuorumDigestConsistency(unittest.TestCase):
 
         # 3 correct + 1 wrong = 4 total, but after filtering only 3 remain
         ts = int(time.time())
-        for nid, dig in [("node-1", correct_digest), ("node-2", wrong_digest),
-                          ("node-3", correct_digest), ("node-4", correct_digest)]:
+        for nid, dig in [
+            ("node-1", correct_digest),
+            ("node-2", wrong_digest),
+            ("node-3", correct_digest),
+            ("node-4", correct_digest),
+        ]:
             sign_data = f"{MessageType.PREPARE.value}:0:1:{dig}:{ts}"
             sig = bft._sign_message(sign_data)
             bft.prepare_log[1] = bft.prepare_log.get(1, {})
             bft.prepare_log[1][nid] = ConsensusMessage(
                 msg_type=MessageType.PREPARE.value,
-                view=0, epoch=1, digest=dig,
-                node_id=nid, signature=sig, timestamp=ts,
+                view=0,
+                epoch=1,
+                digest=dig,
+                node_id=nid,
+                signature=sig,
+                timestamp=ts,
             )
 
         bft.phase = ConsensusPhase.PREPARE

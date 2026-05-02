@@ -16,7 +16,6 @@ from dataclasses import asdict, dataclass
 from typing import Callable, List, Optional
 from urllib.request import urlopen
 
-
 Fetcher = Callable[..., dict]
 
 

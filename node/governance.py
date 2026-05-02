@@ -23,13 +23,11 @@ Author: NOX Ventures (noxxxxybot-sketch)
 Date: 2026-03-07
 """
 
-import hashlib
-import json
 import logging
 import sqlite3
 import time
-from typing import Optional
-from flask import Blueprint, request, jsonify
+
+from flask import Blueprint, jsonify, request
 
 log = logging.getLogger("rip0002_governance")
 
@@ -62,8 +60,9 @@ def _verify_miner_signature(miner_id: str, action: str, data: dict) -> bool:
 
     # Verify signature
     try:
-        from nacl.signing import VerifyKey
         from nacl.exceptions import BadSignatureError
+        from nacl.signing import VerifyKey
+
         verify_key = VerifyKey(bytes.fromhex(miner_id))
         message = f"{action}:{miner_id}:{ts}".encode()
         verify_key.verify(message, bytes.fromhex(signature_hex))
@@ -72,15 +71,16 @@ def _verify_miner_signature(miner_id: str, action: str, data: dict) -> bool:
         log.debug("Signature verification failed for %s: %s", miner_id, e)
         return False
 
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-VOTING_WINDOW_SECONDS = 7 * 86400      # 7 days
-QUORUM_THRESHOLD = 0.33                 # 33% of active miners
+VOTING_WINDOW_SECONDS = 7 * 86400  # 7 days
+QUORUM_THRESHOLD = 0.33  # 33% of active miners
 FOUNDER_VETO_DURATION = 2 * 365 * 86400  # 2 years from genesis
-GENESIS_TIMESTAMP = 1764706927          # Production chain launch (Dec 2, 2025)
-MAX_PROPOSALS_PER_MINER = 10            # Anti-spam: max active proposals
+GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
+MAX_PROPOSALS_PER_MINER = 10  # Anti-spam: max active proposals
 MAX_TITLE_LEN = 200
 MAX_DESCRIPTION_LEN = 10000
 
@@ -142,14 +142,12 @@ def init_governance_tables(db_path: str):
 # Helper functions
 # ---------------------------------------------------------------------------
 
+
 def _get_miner_antiquity_weight(miner_id: str, db_path: str) -> float:
     """Return the antiquity multiplier for a miner (default 1.0 if not found)."""
     try:
         with sqlite3.connect(db_path) as conn:
-            row = conn.execute(
-                "SELECT antiquity_multiplier FROM miners WHERE wallet_name = ?",
-                (miner_id,)
-            ).fetchone()
+            row = conn.execute("SELECT antiquity_multiplier FROM miners WHERE wallet_name = ?", (miner_id,)).fetchone()
             if row:
                 return max(float(row[0]), 1.0)
     except Exception as e:
@@ -163,8 +161,7 @@ def _is_active_miner(miner_id: str, db_path: str) -> bool:
         cutoff = int(time.time()) - 86400 * 2
         with sqlite3.connect(db_path) as conn:
             row = conn.execute(
-                "SELECT COUNT(*) FROM attestations WHERE miner_id = ? AND timestamp >= ?",
-                (miner_id, cutoff)
+                "SELECT COUNT(*) FROM attestations WHERE miner_id = ? AND timestamp >= ?", (miner_id, cutoff)
             ).fetchone()
             return bool(row and row[0] > 0)
     except Exception as e:
@@ -178,8 +175,7 @@ def _count_active_miners(db_path: str) -> int:
         cutoff = int(time.time()) - 86400 * 2
         with sqlite3.connect(db_path) as conn:
             row = conn.execute(
-                "SELECT COUNT(DISTINCT miner_id) FROM attestations WHERE timestamp >= ?",
-                (cutoff,)
+                "SELECT COUNT(DISTINCT miner_id) FROM attestations WHERE timestamp >= ?", (cutoff,)
             ).fetchone()
             return int(row[0]) if row else 0
     except Exception as e:
@@ -200,10 +196,10 @@ def _settle_expired_proposals(db_path: str):
             active = conn.execute(
                 "SELECT id, votes_for, votes_against, votes_abstain FROM governance_proposals "
                 "WHERE status = ? AND expires_at <= ?",
-                (STATUS_ACTIVE, now)
+                (STATUS_ACTIVE, now),
             ).fetchall()
 
-            for (pid, v_for, v_against, v_abstain) in active:
+            for pid, v_for, v_against, v_abstain in active:
                 total_votes = v_for + v_against + v_abstain
                 active_miners = _count_active_miners(db_path)
                 quorum_met = (total_votes >= active_miners * QUORUM_THRESHOLD) if active_miners > 0 else False
@@ -216,7 +212,7 @@ def _settle_expired_proposals(db_path: str):
 
                 conn.execute(
                     "UPDATE governance_proposals SET status = ?, quorum_met = ? WHERE id = ?",
-                    (new_status, 1 if quorum_met else 0, pid)
+                    (new_status, 1 if quorum_met else 0, pid),
                 )
             conn.commit()
     except Exception as e:
@@ -235,7 +231,7 @@ def _sophia_evaluate(proposal: dict) -> str:
 
     param_key = proposal.get("parameter_key") or ""
     analysis_lines = [
-        f"**Sophia AI Evaluation** (auto-generated, non-binding)",
+        "**Sophia AI Evaluation** (auto-generated, non-binding)",
         f"- Proposal type: `{ptype}`",
         f"- Risk level: **{risk_level}**",
     ]
@@ -246,15 +242,14 @@ def _sophia_evaluate(proposal: dict) -> str:
         analysis_lines.append("- Activates a new RIP feature — ensure backward compatibility")
     elif ptype == "emergency":
         analysis_lines.append("- Emergency action — requires careful deliberation despite urgency")
-    analysis_lines.append(
-        f"- Summary: {desc[:200]}..." if len(desc) > 200 else f"- Summary: {desc}"
-    )
+    analysis_lines.append(f"- Summary: {desc[:200]}..." if len(desc) > 200 else f"- Summary: {desc}")
     return "\n".join(analysis_lines)
 
 
 # ---------------------------------------------------------------------------
 # Flask Blueprint
 # ---------------------------------------------------------------------------
+
 
 def create_governance_blueprint(db_path: str) -> Blueprint:
     bp = Blueprint("governance", __name__)
@@ -297,7 +292,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                 # Anti-spam: max active proposals per miner
                 active_count = conn.execute(
                     "SELECT COUNT(*) FROM governance_proposals WHERE proposed_by = ? AND status = ?",
-                    (miner_id, STATUS_ACTIVE)
+                    (miner_id, STATUS_ACTIVE),
                 ).fetchone()[0]
                 if active_count >= MAX_PROPOSALS_PER_MINER:
                     return jsonify({"error": f"Max {MAX_PROPOSALS_PER_MINER} active proposals per miner"}), 429
@@ -316,8 +311,18 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                        (title, description, proposal_type, proposed_by, created_at, expires_at,
                         status, parameter_key, parameter_value, sophia_analysis)
                        VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                    (title, description, proposal_type, miner_id, now, expires_at,
-                     STATUS_ACTIVE, parameter_key, parameter_value, sophia_text)
+                    (
+                        title,
+                        description,
+                        proposal_type,
+                        miner_id,
+                        now,
+                        expires_at,
+                        STATUS_ACTIVE,
+                        parameter_key,
+                        parameter_value,
+                        sophia_text,
+                    ),
                 )
                 proposal_id = cursor.lastrowid
                 conn.commit()
@@ -327,15 +332,17 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
             return jsonify({"error": "internal error"}), 500
 
         log.info("Proposal #%s created by %s: %s", proposal_id, miner_id, title)
-        return jsonify({
-            "ok": True,
-            "proposal_id": proposal_id,
-            "title": title,
-            "proposal_type": proposal_type,
-            "status": STATUS_ACTIVE,
-            "expires_at": expires_at,
-            "sophia_analysis": sophia_text,
-        }), 201
+        return jsonify(
+            {
+                "ok": True,
+                "proposal_id": proposal_id,
+                "title": title,
+                "proposal_type": proposal_type,
+                "status": STATUS_ACTIVE,
+                "expires_at": expires_at,
+                "sophia_analysis": sophia_text,
+            }
+        ), 201
 
     # -- GET /api/governance/proposals ----------------------------------------
     @bp.route("/api/governance/proposals", methods=["GET"])
@@ -350,14 +357,12 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                 conn.row_factory = sqlite3.Row
                 if status_filter:
                     rows = conn.execute(
-                        "SELECT * FROM governance_proposals WHERE status = ? "
-                        "ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                        (status_filter, limit, offset)
+                        "SELECT * FROM governance_proposals WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                        (status_filter, limit, offset),
                     ).fetchall()
                 else:
                     rows = conn.execute(
-                        "SELECT * FROM governance_proposals ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                        (limit, offset)
+                        "SELECT * FROM governance_proposals ORDER BY created_at DESC LIMIT ? OFFSET ?", (limit, offset)
                     ).fetchall()
                 proposals = [dict(r) for r in rows]
 
@@ -374,16 +379,14 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         try:
             with sqlite3.connect(db_path) as conn:
                 conn.row_factory = sqlite3.Row
-                proposal = conn.execute(
-                    "SELECT * FROM governance_proposals WHERE id = ?", (proposal_id,)
-                ).fetchone()
+                proposal = conn.execute("SELECT * FROM governance_proposals WHERE id = ?", (proposal_id,)).fetchone()
                 if not proposal:
                     return jsonify({"error": "proposal not found"}), 404
 
                 votes = conn.execute(
                     "SELECT miner_id, vote, weight, voted_at FROM governance_votes "
                     "WHERE proposal_id = ? ORDER BY voted_at DESC",
-                    (proposal_id,)
+                    (proposal_id,),
                 ).fetchall()
 
         except Exception as e:
@@ -424,8 +427,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         try:
             with sqlite3.connect(db_path) as conn:
                 proposal = conn.execute(
-                    "SELECT id, status, expires_at FROM governance_proposals WHERE id = ?",
-                    (proposal_id,)
+                    "SELECT id, status, expires_at FROM governance_proposals WHERE id = ?", (proposal_id,)
                 ).fetchone()
 
                 if not proposal:
@@ -440,13 +442,13 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                     conn.execute(
                         "INSERT INTO governance_votes (proposal_id, miner_id, vote, weight, voted_at) "
                         "VALUES (?,?,?,?,?)",
-                        (proposal_id, miner_id, vote_choice, weight, now)
+                        (proposal_id, miner_id, vote_choice, weight, now),
                     )
                 except sqlite3.IntegrityError:
                     # Already voted — update
                     old_vote = conn.execute(
                         "SELECT vote, weight FROM governance_votes WHERE proposal_id = ? AND miner_id = ?",
-                        (proposal_id, miner_id)
+                        (proposal_id, miner_id),
                     ).fetchone()
                     if old_vote:
                         # Validate old vote value against whitelist before using
@@ -457,34 +459,30 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                         old_col = f"votes_{old_vote[0]}"
                         conn.execute(
                             f"UPDATE governance_proposals SET {old_col} = {old_col} - ? WHERE id = ?",
-                            (old_vote[1], proposal_id)
+                            (old_vote[1], proposal_id),
                         )
                     conn.execute(
                         "UPDATE governance_votes SET vote = ?, weight = ?, voted_at = ? "
                         "WHERE proposal_id = ? AND miner_id = ?",
-                        (vote_choice, weight, now, proposal_id, miner_id)
+                        (vote_choice, weight, now, proposal_id, miner_id),
                     )
 
                 # Update tally — vote_choice is already validated against
                 # VOTE_CHOICES at the top of this handler, so this f-string
                 # is safe from injection.
                 col = f"votes_{vote_choice}"
-                conn.execute(
-                    f"UPDATE governance_proposals SET {col} = {col} + ? WHERE id = ?",
-                    (weight, proposal_id)
-                )
+                conn.execute(f"UPDATE governance_proposals SET {col} = {col} + ? WHERE id = ?", (weight, proposal_id))
 
                 # Check quorum after vote
                 updated = conn.execute(
                     "SELECT votes_for, votes_against, votes_abstain FROM governance_proposals WHERE id = ?",
-                    (proposal_id,)
+                    (proposal_id,),
                 ).fetchone()
                 total = sum(updated)
                 active_miners = _count_active_miners(db_path)
                 quorum_met = (total >= active_miners * QUORUM_THRESHOLD) if active_miners > 0 else False
                 conn.execute(
-                    "UPDATE governance_proposals SET quorum_met = ? WHERE id = ?",
-                    (1 if quorum_met else 0, proposal_id)
+                    "UPDATE governance_proposals SET quorum_met = ? WHERE id = ?", (1 if quorum_met else 0, proposal_id)
                 )
                 conn.commit()
 
@@ -492,16 +490,17 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
             log.error("Vote error: %s", e)
             return jsonify({"error": "internal error"}), 500
 
-        log.info("Vote cast: proposal #%s, miner=%s, vote=%s, weight=%.2f",
-                 proposal_id, miner_id, vote_choice, weight)
-        return jsonify({
-            "ok": True,
-            "proposal_id": proposal_id,
-            "miner_id": miner_id,
-            "vote": vote_choice,
-            "weight": weight,
-            "quorum_met": quorum_met,
-        }), 200
+        log.info("Vote cast: proposal #%s, miner=%s, vote=%s, weight=%.2f", proposal_id, miner_id, vote_choice, weight)
+        return jsonify(
+            {
+                "ok": True,
+                "proposal_id": proposal_id,
+                "miner_id": miner_id,
+                "vote": vote_choice,
+                "weight": weight,
+                "quorum_met": quorum_met,
+            }
+        ), 200
 
     # -- GET /api/governance/results/<n> ------------------------------------
     @bp.route("/api/governance/results/<int:proposal_id>", methods=["GET"])
@@ -510,9 +509,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         try:
             with sqlite3.connect(db_path) as conn:
                 conn.row_factory = sqlite3.Row
-                proposal = conn.execute(
-                    "SELECT * FROM governance_proposals WHERE id = ?", (proposal_id,)
-                ).fetchone()
+                proposal = conn.execute("SELECT * FROM governance_proposals WHERE id = ?", (proposal_id,)).fetchone()
                 if not proposal:
                     return jsonify({"error": "proposal not found"}), 404
                 p = dict(proposal)
@@ -525,20 +522,22 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         active_miners = _count_active_miners(db_path)
         quorum_required = active_miners * QUORUM_THRESHOLD if active_miners > 0 else 0
 
-        return jsonify({
-            "proposal_id": proposal_id,
-            "title": p["title"],
-            "status": p["status"],
-            "votes_for": p["votes_for"],
-            "votes_against": p["votes_against"],
-            "votes_abstain": p["votes_abstain"],
-            "total_votes": total_votes,
-            "quorum_required": quorum_required,
-            "quorum_met": bool(p["quorum_met"]),
-            "active_miners": active_miners,
-            "participation_pct": round(total_votes / active_miners * 100, 1) if active_miners > 0 else 0,
-            "sophia_analysis": p.get("sophia_analysis"),
-        }), 200
+        return jsonify(
+            {
+                "proposal_id": proposal_id,
+                "title": p["title"],
+                "status": p["status"],
+                "votes_for": p["votes_for"],
+                "votes_against": p["votes_against"],
+                "votes_abstain": p["votes_abstain"],
+                "total_votes": total_votes,
+                "quorum_required": quorum_required,
+                "quorum_met": bool(p["quorum_met"]),
+                "active_miners": active_miners,
+                "participation_pct": round(total_votes / active_miners * 100, 1) if active_miners > 0 else 0,
+                "sophia_analysis": p.get("sophia_analysis"),
+            }
+        ), 200
 
     # -- POST /api/governance/veto/<n> (founder veto) -----------------------
     @bp.route("/api/governance/veto/<int:proposal_id>", methods=["POST"])
@@ -552,6 +551,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
 
         # Admin key is validated via environment variable (not hardcoded)
         import os
+
         expected_key = os.environ.get("RUSTCHAIN_ADMIN_KEY", "")
         if not expected_key or admin_key != expected_key:
             return jsonify({"error": "invalid admin_key"}), 403
@@ -559,8 +559,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         try:
             with sqlite3.connect(db_path) as conn:
                 proposal = conn.execute(
-                    "SELECT id, status FROM governance_proposals WHERE id = ?",
-                    (proposal_id,)
+                    "SELECT id, status FROM governance_proposals WHERE id = ?", (proposal_id,)
                 ).fetchone()
                 if not proposal:
                     return jsonify({"error": "proposal not found"}), 404
@@ -569,7 +568,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
 
                 conn.execute(
                     "UPDATE governance_proposals SET status = ?, vetoed_by = ?, veto_reason = ? WHERE id = ?",
-                    (STATUS_VETOED, "founder", reason, proposal_id)
+                    (STATUS_VETOED, "founder", reason, proposal_id),
                 )
                 conn.commit()
 
@@ -593,22 +592,22 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                     ).fetchone()
                     counts[status] = row[0] if row else 0
 
-                total_votes = conn.execute(
-                    "SELECT COUNT(*) FROM governance_votes"
-                ).fetchone()
+                total_votes = conn.execute("SELECT COUNT(*) FROM governance_votes").fetchone()
 
         except Exception as e:
             log.error("Stats error: %s", e)
             return jsonify({"error": "internal error"}), 500
 
-        return jsonify({
-            "proposal_counts": counts,
-            "total_proposals": sum(counts.values()),
-            "total_votes_cast": total_votes[0] if total_votes else 0,
-            "active_miners": _count_active_miners(db_path),
-            "founder_veto_active": _is_within_founder_veto_period(),
-            "quorum_threshold_pct": QUORUM_THRESHOLD * 100,
-            "voting_window_days": VOTING_WINDOW_SECONDS // 86400,
-        }), 200
+        return jsonify(
+            {
+                "proposal_counts": counts,
+                "total_proposals": sum(counts.values()),
+                "total_votes_cast": total_votes[0] if total_votes else 0,
+                "active_miners": _count_active_miners(db_path),
+                "founder_veto_active": _is_within_founder_veto_period(),
+                "quorum_threshold_pct": QUORUM_THRESHOLD * 100,
+                "voting_window_days": VOTING_WINDOW_SECONDS // 86400,
+            }
+        ), 200
 
     return bp

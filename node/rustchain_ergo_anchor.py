@@ -11,22 +11,17 @@ Phase 4 Implementation:
 Provides finality by anchoring RustChain state to Ergo's PoW chain.
 """
 
-import os
-import time
-import json
-import hashlib
 import logging
+import os
 import threading
-import requests
-from typing import Dict, List, Optional, Tuple
+import time
 from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
-from rustchain_crypto import blake2b256_hex, canonical_json, MerkleTree
+import requests
+from rustchain_crypto import blake2b256_hex, canonical_json
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [ANCHOR] %(levelname)s: %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [ANCHOR] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -50,17 +45,19 @@ ANCHOR_WALLET_ADDRESS = os.environ.get("ANCHOR_WALLET", "")
 # ANCHOR COMMITMENT
 # =============================================================================
 
+
 @dataclass
 class AnchorCommitment:
     """
     Commitment to be anchored to Ergo.
     """
-    rustchain_height: int           # RustChain block height
-    rustchain_hash: str             # RustChain block hash
-    state_root: str                 # State merkle root
-    attestations_root: str          # Attestations merkle root
-    timestamp: int                  # Unix timestamp (ms)
-    commitment_hash: str = ""       # Blake2b256 of all fields
+
+    rustchain_height: int  # RustChain block height
+    rustchain_hash: str  # RustChain block hash
+    state_root: str  # State merkle root
+    attestations_root: str  # Attestations merkle root
+    timestamp: int  # Unix timestamp (ms)
+    commitment_hash: str = ""  # Blake2b256 of all fields
 
     def compute_hash(self) -> str:
         """Compute commitment hash"""
@@ -69,7 +66,7 @@ class AnchorCommitment:
             "rc_hash": self.rustchain_hash,
             "state_root": self.state_root,
             "attestations_root": self.attestations_root,
-            "timestamp": self.timestamp
+            "timestamp": self.timestamp,
         }
         return blake2b256_hex(canonical_json(data))
 
@@ -83,7 +80,7 @@ class AnchorCommitment:
             "state_root": self.state_root,
             "attestations_root": self.attestations_root,
             "timestamp": self.timestamp,
-            "commitment_hash": self.commitment_hash
+            "commitment_hash": self.commitment_hash,
         }
 
     @classmethod
@@ -95,7 +92,7 @@ class AnchorCommitment:
             state_root=d["state_root"],
             attestations_root=d["attestations_root"],
             timestamp=d["timestamp"],
-            commitment_hash=d.get("commitment_hash", "")
+            commitment_hash=d.get("commitment_hash", ""),
         )
 
 
@@ -103,17 +100,18 @@ class AnchorCommitment:
 # ERGO CLIENT
 # =============================================================================
 
+
 class ErgoClient:
     """
     Client for interacting with Ergo node.
     """
 
     def __init__(self, node_url: str = ERGO_NODE_URL, api_key: str = ERGO_API_KEY):
-        self.node_url = node_url.rstrip('/')
+        self.node_url = node_url.rstrip("/")
         self.api_key = api_key
         self.session = requests.Session()
         if api_key:
-            self.session.headers['api_key'] = api_key
+            self.session.headers["api_key"] = api_key
 
     def _get(self, endpoint: str) -> Optional[Dict]:
         """Make GET request to Ergo node"""
@@ -131,11 +129,7 @@ class ErgoClient:
     def _post(self, endpoint: str, data: Dict) -> Optional[Dict]:
         """Make POST request to Ergo node"""
         try:
-            resp = self.session.post(
-                f"{self.node_url}{endpoint}",
-                json=data,
-                timeout=30
-            )
+            resp = self.session.post(f"{self.node_url}{endpoint}", json=data, timeout=30)
             if resp.status_code in [200, 201]:
                 return resp.json()
             else:
@@ -169,7 +163,7 @@ class ErgoClient:
     def create_anchor_transaction(
         self,
         commitment: AnchorCommitment,
-        fee_nano: int = 1_000_000  # 0.001 ERG
+        fee_nano: int = 1_000_000,  # 0.001 ERG
     ) -> Optional[str]:
         """
         Create an anchor transaction on Ergo.
@@ -178,7 +172,7 @@ class ErgoClient:
 
         Returns transaction ID if successful.
         """
-        commitment_bytes = bytes.fromhex(commitment.commitment_hash)
+        bytes.fromhex(commitment.commitment_hash)
 
         # Build transaction request
         tx_request = {
@@ -192,12 +186,12 @@ class ErgoClient:
                         # R5: Commitment hash (Coll[Byte])
                         "R5": f"0e40{commitment.commitment_hash}",
                         # R6: Timestamp (Long)
-                        "R6": f"05{commitment.timestamp:016x}"
-                    }
+                        "R6": f"05{commitment.timestamp:016x}",
+                    },
                 }
             ],
             "fee": fee_nano,
-            "inputsRaw": []
+            "inputsRaw": [],
         }
 
         # Generate transaction
@@ -267,17 +261,13 @@ class ErgoClient:
 # ANCHOR SERVICE
 # =============================================================================
 
+
 class AnchorService:
     """
     Service for managing RustChain -> Ergo anchoring.
     """
 
-    def __init__(
-        self,
-        db_path: str,
-        ergo_client: ErgoClient = None,
-        interval_blocks: int = ANCHOR_INTERVAL_BLOCKS
-    ):
+    def __init__(self, db_path: str, ergo_client: ErgoClient = None, interval_blocks: int = ANCHOR_INTERVAL_BLOCKS):
         self.db_path = db_path
         self.ergo = ergo_client or ErgoClient()
         self.interval_blocks = interval_blocks
@@ -287,6 +277,7 @@ class AnchorService:
     def get_last_anchor(self) -> Optional[Dict]:
         """Get the last recorded anchor"""
         import sqlite3
+
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -332,7 +323,7 @@ class AnchorService:
             rustchain_hash=block["block_hash"],
             state_root=block.get("state_root", "0" * 64),
             attestations_root=block.get("attestations_hash", "0" * 64),
-            timestamp=int(time.time() * 1000)
+            timestamp=int(time.time() * 1000),
         )
 
     def submit_anchor(self, commitment: AnchorCommitment) -> Optional[str]:
@@ -353,21 +344,25 @@ class AnchorService:
     def _save_anchor(self, commitment: AnchorCommitment, tx_id: str):
         """Save anchor record to database"""
         import sqlite3
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO ergo_anchors
                 (rustchain_height, rustchain_hash, commitment_hash,
                  ergo_tx_id, status, created_at)
                 VALUES (?, ?, ?, ?, 'pending', ?)
-            """, (
-                commitment.rustchain_height,
-                commitment.rustchain_hash,
-                commitment.commitment_hash,
-                tx_id,
-                int(time.time())
-            ))
+            """,
+                (
+                    commitment.rustchain_height,
+                    commitment.rustchain_hash,
+                    commitment.commitment_hash,
+                    tx_id,
+                    int(time.time()),
+                ),
+            )
 
     def update_anchor_status(self, tx_id: str) -> Tuple[int, str]:
         """
@@ -387,13 +382,17 @@ class AnchorService:
             status = "confirmed"
 
         import sqlite3
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE ergo_anchors
                 SET confirmations = ?, status = ?
                 WHERE ergo_tx_id = ?
-            """, (confirmations, status, tx_id))
+            """,
+                (confirmations, status, tx_id),
+            )
 
         return confirmations, status
 
@@ -404,16 +403,20 @@ class AnchorService:
         Returns anchor details including Ergo transaction.
         """
         import sqlite3
+
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT * FROM ergo_anchors
                 WHERE rustchain_height <= ?
                 ORDER BY rustchain_height DESC
                 LIMIT 1
-            """, (rustchain_height,))
+            """,
+                (rustchain_height,),
+            )
 
             row = cursor.fetchone()
             if not row:
@@ -434,11 +437,7 @@ class AnchorService:
             return
 
         self._running = True
-        self._thread = threading.Thread(
-            target=self._monitor_loop,
-            args=(check_interval,),
-            daemon=True
-        )
+        self._thread = threading.Thread(target=self._monitor_loop, args=(check_interval,), daemon=True)
         self._thread.start()
         logger.info("Anchor service started")
 
@@ -480,6 +479,7 @@ class AnchorService:
 # API ROUTES
 # =============================================================================
 
+
 def create_anchor_api_routes(app, anchor_service: AnchorService):
     """Create Flask routes for anchor API.
 
@@ -488,22 +488,24 @@ def create_anchor_api_routes(app, anchor_service: AnchorService):
     anchor list) and contain no write operations or sensitive information.
     No admin authentication is required for these transparency endpoints.
     """
-    from flask import request, jsonify
+    from flask import jsonify, request
 
-    @app.route('/anchor/status', methods=['GET'])
+    @app.route("/anchor/status", methods=["GET"])
     def anchor_status():
         """Get anchoring service status"""
         last = anchor_service.get_last_anchor()
         ergo_height = anchor_service.ergo.get_height()
 
-        return jsonify({
-            "ergo_connected": ergo_height > 0,
-            "ergo_height": ergo_height,
-            "interval_blocks": anchor_service.interval_blocks,
-            "last_anchor": last
-        })
+        return jsonify(
+            {
+                "ergo_connected": ergo_height > 0,
+                "ergo_height": ergo_height,
+                "interval_blocks": anchor_service.interval_blocks,
+                "last_anchor": last,
+            }
+        )
 
-    @app.route('/anchor/proof/<int:height>', methods=['GET'])
+    @app.route("/anchor/proof/<int:height>", methods=["GET"])
     def get_anchor_proof(height: int):
         """Get anchor proof for a RustChain height"""
         proof = anchor_service.get_anchor_proof(height)
@@ -511,30 +513,30 @@ def create_anchor_api_routes(app, anchor_service: AnchorService):
             return jsonify(proof)
         return jsonify({"error": "No anchor found for height"}), 404
 
-    @app.route('/anchor/list', methods=['GET'])
+    @app.route("/anchor/list", methods=["GET"])
     def list_anchors():
         """List all anchors"""
         import sqlite3
 
-        limit = request.args.get('limit', 50, type=int)
-        offset = request.args.get('offset', 0, type=int)
+        limit = request.args.get("limit", 50, type=int)
+        offset = request.args.get("offset", 0, type=int)
 
         with sqlite3.connect(anchor_service.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT * FROM ergo_anchors
                 ORDER BY rustchain_height DESC
                 LIMIT ? OFFSET ?
-            """, (limit, offset))
+            """,
+                (limit, offset),
+            )
 
             anchors = [dict(row) for row in cursor.fetchall()]
 
-        return jsonify({
-            "count": len(anchors),
-            "anchors": anchors
-        })
+        return jsonify({"count": len(anchors), "anchors": anchors})
 
 
 # =============================================================================
@@ -553,7 +555,7 @@ if __name__ == "__main__":
         rustchain_hash="abc123" + "0" * 58,
         state_root="def456" + "0" * 58,
         attestations_root="789ghi" + "0" * 58,
-        timestamp=int(time.time() * 1000)
+        timestamp=int(time.time() * 1000),
     )
 
     print(f"RC Height: {commitment.rustchain_height}")
@@ -574,7 +576,7 @@ if __name__ == "__main__":
     info = client.get_info()
 
     if info:
-        print(f"Connected to Ergo node")
+        print("Connected to Ergo node")
         print(f"Height: {info.get('fullHeight', 'N/A')}")
         print(f"Network: {info.get('network', 'N/A')}")
     else:

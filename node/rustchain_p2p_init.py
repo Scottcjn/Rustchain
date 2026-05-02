@@ -10,13 +10,13 @@ import os
 
 # All RustChain nodes - includes both Tailscale and public URLs
 PEER_NODES = {
-    "node1": "https://rustchain.org",           # VPS Primary (public)
-    "node1_ts": "http://100.125.31.50:8099",       # VPS via Tailscale
-    "node2": "http://50.28.86.153:8099",           # VPS Secondary / Ergo Anchor
-    "node3": "http://100.88.109.32:8099",          # Ryan's (Tailscale)
-    "node3_public": "http://76.8.228.245:8099",    # Ryan's (public)
-    "node4": "http://100.94.28.32:8099",           # POWER8 S824 (Tailscale)
-    "node4_public": "https://sophiapower8.tailbac22e.ts.net"  # POWER8 (Funnel - public!)
+    "node1": "https://rustchain.org",  # VPS Primary (public)
+    "node1_ts": "http://100.125.31.50:8099",  # VPS via Tailscale
+    "node2": "http://50.28.86.153:8099",  # VPS Secondary / Ergo Anchor
+    "node3": "http://100.88.109.32:8099",  # Ryan's (Tailscale)
+    "node3_public": "http://76.8.228.245:8099",  # Ryan's (public)
+    "node4": "http://100.94.28.32:8099",  # POWER8 S824 (Tailscale)
+    "node4_public": "https://sophiapower8.tailbac22e.ts.net",  # POWER8 (Funnel - public!)
 }
 
 
@@ -32,6 +32,7 @@ def init_p2p(app, db_path, node_id=None):
 
         if node_id is None:
             import socket
+
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 s.connect(("8.8.8.8", 80))
@@ -46,17 +47,19 @@ def init_p2p(app, db_path, node_id=None):
                 pass
 
         if node_id is None:
-            import socket
             import hashlib
+            import socket
+
             hostname = socket.gethostname()
             node_id = f"node_{hashlib.sha256(hostname.encode()).hexdigest()[:8]}"
 
     # Build peer list excluding self
     peers = {}
     my_ips = set()
-    
+
     try:
         import socket
+
         for info in socket.getaddrinfo(socket.gethostname(), None):
             my_ips.add(info[4][0])
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -65,7 +68,7 @@ def init_p2p(app, db_path, node_id=None):
         s.close()
     except:
         pass
-    
+
     for k, v in PEER_NODES.items():
         if k == node_id:
             continue

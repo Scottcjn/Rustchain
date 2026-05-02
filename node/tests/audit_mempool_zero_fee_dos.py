@@ -1,6 +1,3 @@
-import requests
-import time
-
 def simulate_mempool_dos():
     # This is a conceptual PoC. In a real scenario, we'd send many small txs.
     # Since we don't have a live node to hit, we describe the logic.
@@ -10,6 +7,7 @@ def simulate_mempool_dos():
     print("3. Each tx has fee_rtc=0 (allowed by endpoint).")
     print("4. Result: Mempool fills with junk, blocking real users.")
     print("5. Finding: Endpoint lacks a MIN_FEE_RTC requirement.")
+
 
 if __name__ == "__main__":
     simulate_mempool_dos()

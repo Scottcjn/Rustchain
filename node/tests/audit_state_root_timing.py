@@ -1,10 +1,7 @@
-import sqlite3
-import hashlib
-
 def simulate_state_mismatch():
     """
-    Simulates a logic error where the UTXO state root is computed 
-    BEFORE a transaction is committed, leading to a mismatch between 
+    Simulates a logic error where the UTXO state root is computed
+    BEFORE a transaction is committed, leading to a mismatch between
     the reported root and the actually stored state.
     """
     print("Conceptual PoC: UTXO State Root Timing Attack")
@@ -15,6 +12,7 @@ def simulate_state_mismatch():
     print("5. The DB state reflects ONLY the successful transactions.")
     print("6. FINDING: The reported State Root and the actual DB state are now divergent.")
     print("7. Result: Consensus failure or unspendable boxes.")
+
 
 if __name__ == "__main__":
     simulate_state_mismatch()

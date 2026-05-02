@@ -20,6 +20,7 @@ from pathlib import Path
 
 try:
     import nacl.signing
+
     HAVE_NACL = True
 except Exception:
     HAVE_NACL = False
@@ -46,8 +47,8 @@ def _sign_message(miner_id: str, wallet: str, nonce: str, commitment: str):
     signing_key = nacl.signing.SigningKey.generate()
     verify_key = signing_key.verify_key
     pubkey_hex = verify_key.encode().hex()
-    message = '{}|{}|{}|{}'.format(miner_id, wallet, nonce, commitment)
-    signature = signing_key.sign(message.encode('utf-8'))
+    message = "{}|{}|{}|{}".format(miner_id, wallet, nonce, commitment)
+    signature = signing_key.sign(message.encode("utf-8"))
     return signature.signature.hex(), pubkey_hex, signing_key
 
 
@@ -55,8 +56,8 @@ def _sign_enrollment(miner_pk: str, miner_id: str, epoch: int, signing_key):
     """Sign an enrollment message using the given Ed25519 signing key."""
     verify_key = signing_key.verify_key
     pubkey_hex = verify_key.encode().hex()
-    message = '{}|{}|{}'.format(miner_pk, miner_id, epoch)
-    signature = signing_key.sign(message.encode('utf-8'))
+    message = "{}|{}|{}".format(miner_pk, miner_id, epoch)
+    signature = signing_key.sign(message.encode("utf-8"))
     return signature.signature.hex(), pubkey_hex
 
 
@@ -211,7 +212,7 @@ class TestEnrollSignatureVerification(unittest.TestCase):
 
         with mod.app.test_request_context("/epoch", method="GET"):
             epoch_body = mod.get_epoch().get_json()
-        epoch = epoch_body["epoch"]
+        epoch_body["epoch"]
 
         payload = {
             "miner_pubkey": miner,

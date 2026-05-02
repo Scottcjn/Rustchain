@@ -9,10 +9,9 @@ Comprehensive hardware proof system that validates:
 4. Architecture-specific fingerprints
 """
 
-import hashlib
 import math
 import statistics
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple
 
 # Expected CPU timing profiles (microseconds per 10k hash ops)
 CPU_TIMING_PROFILES = {
@@ -26,10 +25,10 @@ CPU_TIMING_PROFILES = {
 
 # Antiquity tiers based on hardware characteristics
 ANTIQUITY_TIERS = {
-    "classic": 2.5,      # Pre-2006: PowerPC G4, 68k Mac, VAX, PDP
-    "vintage": 2.0,      # 2006-2010: PowerPC G5, early Core 2
-    "heritage": 1.5,     # 2010-2015: Sandy Bridge, early ARM
-    "modern": 1.0,       # 2015+: Modern x86, ARM64
+    "classic": 2.5,  # Pre-2006: PowerPC G4, 68k Mac, VAX, PDP
+    "vintage": 2.0,  # 2006-2010: PowerPC G5, early Core 2
+    "heritage": 1.5,  # 2010-2015: Sandy Bridge, early ARM
+    "modern": 1.0,  # 2015+: Modern x86, ARM64
 }
 
 
@@ -57,25 +56,18 @@ def analyze_cpu_timing(signals: Dict) -> Dict:
     samples = timing.get("samples", [])
 
     if not samples or len(samples) < 10:
-        return {
-            "valid": False,
-            "reason": "insufficient_timing_samples",
-            "tier": "modern",
-            "confidence": 0.0
-        }
+        return {"valid": False, "reason": "insufficient_timing_samples", "tier": "modern", "confidence": 0.0}
 
     mean = timing.get("mean") or statistics.mean(samples)
     variance = timing.get("variance") or (statistics.variance(samples) if len(samples) > 1 else 0)
 
     # Match against known profiles
     best_match = None
-    best_score = float('inf')
+    best_score = float("inf")
 
     for arch, profile in CPU_TIMING_PROFILES.items():
         mean_diff = abs(mean - profile["mean"])
-        variance_in_range = (
-            profile["variance_min"] <= variance <= profile["variance_max"]
-        )
+        variance_in_range = profile["variance_min"] <= variance <= profile["variance_max"]
 
         if variance_in_range:
             score = mean_diff
@@ -90,7 +82,7 @@ def analyze_cpu_timing(signals: Dict) -> Dict:
             "mean": mean,
             "variance": variance,
             "tier": "modern",
-            "confidence": 0.0
+            "confidence": 0.0,
         }
 
     # Determine antiquity tier
@@ -111,7 +103,7 @@ def analyze_cpu_timing(signals: Dict) -> Dict:
         "tier": tier,
         "mean": mean,
         "variance": variance,
-        "confidence": confidence
+        "confidence": confidence,
     }
 
 
@@ -142,7 +134,7 @@ def analyze_ram_patterns(signals: Dict) -> Dict:
         "random_ns": rand,
         "cache_hit_rate": cache_rate,
         "vintage_indicators": vintage_score,
-        "confidence": vintage_score / 3.0
+        "confidence": vintage_score / 3.0,
     }
 
 
@@ -187,7 +179,7 @@ def validate_hardware_proof(signals: Dict, claimed_arch: str) -> Tuple[bool, Dic
         "ram_patterns": {},
         "antiquity_tier": "modern",
         "tier_confidence": 0.0,
-        "warnings": []
+        "warnings": [],
     }
 
     # Calculate overall entropy score
@@ -222,9 +214,8 @@ def validate_hardware_proof(signals: Dict, claimed_arch: str) -> Tuple[bool, Dic
     min_entropy = 0.3
     min_confidence = 0.4
 
-    is_valid = (
-        analysis["entropy_score"] >= min_entropy and
-        (not cpu_result.get("valid") or cpu_result.get("confidence", 0) >= min_confidence)
+    is_valid = analysis["entropy_score"] >= min_entropy and (
+        not cpu_result.get("valid") or cpu_result.get("confidence", 0) >= min_confidence
     )
 
     if not is_valid:
@@ -244,7 +235,7 @@ def server_side_validation(data: Dict) -> Tuple[bool, Dict]:
     signals = data.get("signals", {})
 
     claimed_arch = device.get("arch", "unknown")
-    claimed_family = device.get("family", "unknown")
+    device.get("family", "unknown")
 
     # Validate hardware proof
     is_valid, analysis = validate_hardware_proof(signals, claimed_arch)
@@ -259,7 +250,7 @@ def server_side_validation(data: Dict) -> Tuple[bool, Dict]:
         "antiquity_tier": tier,
         "reward_multiplier": multiplier,
         "confidence": analysis.get("tier_confidence", 0.0),
-        "warnings": analysis.get("warnings", [])
+        "warnings": analysis.get("warnings", []),
     }
 
     if not is_valid:

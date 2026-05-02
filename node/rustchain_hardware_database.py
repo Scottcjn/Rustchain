@@ -14,20 +14,22 @@ Reference databases used:
 """
 
 from dataclasses import dataclass
-from typing import Optional, Dict, List, Tuple
-import re
+from typing import Dict, List, Optional, Tuple
+
 
 @dataclass
 class HardwareEntry:
     """Single hardware entry in the database"""
-    id: str                    # Unique identifier (CPUID, PVR, chipset ID)
-    name: str                  # Human-readable name
-    family: str                # Hardware family (x86, powerpc, m68k, etc.)
-    year: int                  # Release year (approximate)
-    base_multiplier: float     # Base PoA multiplier
-    rarity_bonus: float        # Additional bonus for rare hardware (0.0 - 1.0)
-    tier: str                  # MYTHIC, LEGENDARY, ANCIENT, VINTAGE, STANDARD, PENALTY
-    notes: str = ""            # Additional notes
+
+    id: str  # Unique identifier (CPUID, PVR, chipset ID)
+    name: str  # Human-readable name
+    family: str  # Hardware family (x86, powerpc, m68k, etc.)
+    year: int  # Release year (approximate)
+    base_multiplier: float  # Base PoA multiplier
+    rarity_bonus: float  # Additional bonus for rare hardware (0.0 - 1.0)
+    tier: str  # MYTHIC, LEGENDARY, ANCIENT, VINTAGE, STANDARD, PENALTY
+    notes: str = ""  # Additional notes
+
 
 # =============================================================================
 # x86 PROCESSOR DATABASE (by CPUID Family/Model/Stepping)
@@ -39,27 +41,21 @@ X86_CPUID_DATABASE: Dict[str, HardwareEntry] = {
     # Intel 8086/8088 (1978-1979)
     "8086": HardwareEntry("8086", "Intel 8086", "x86", 1978, 4.0, 0.5, "MYTHIC", "Original x86"),
     "8088": HardwareEntry("8088", "Intel 8088", "x86", 1979, 4.0, 0.5, "MYTHIC", "IBM PC original"),
-
     # Intel 80186/80188 (1982)
     "80186": HardwareEntry("80186", "Intel 80186", "x86", 1982, 4.0, 0.6, "MYTHIC", "Embedded variant"),
     "80188": HardwareEntry("80188", "Intel 80188", "x86", 1982, 4.0, 0.6, "MYTHIC", "Embedded 8-bit bus"),
-
     # Intel 80286 (1982)
     "2_0": HardwareEntry("2_0", "Intel 80286", "x86", 1982, 4.0, 0.4, "MYTHIC", "Protected mode"),
     "286": HardwareEntry("286", "Intel 80286", "x86", 1982, 4.0, 0.4, "MYTHIC"),
-
     # Intel 80386 (1985)
     "3_0": HardwareEntry("3_0", "Intel 80386DX", "x86", 1985, 4.0, 0.3, "MYTHIC", "32-bit x86"),
     "3_2": HardwareEntry("3_2", "Intel 80386SX", "x86", 1988, 4.0, 0.25, "MYTHIC", "16-bit bus"),
     "3_4": HardwareEntry("3_4", "Intel 80386SL", "x86", 1990, 4.0, 0.35, "MYTHIC", "Low power"),
     "386": HardwareEntry("386", "Intel 80386", "x86", 1985, 4.0, 0.3, "MYTHIC"),
-
     # AMD Am386 variants
     "amd_386": HardwareEntry("amd_386", "AMD Am386", "x86", 1991, 4.0, 0.35, "MYTHIC", "AMD clone"),
-
     # Cyrix 386 variants
     "cyrix_386": HardwareEntry("cyrix_386", "Cyrix Cx486SLC", "x86", 1992, 4.0, 0.4, "MYTHIC", "386 pin-compatible"),
-
     # ============ LEGENDARY-HIGH TIER (3.8x) - 486 ============
     # Intel 486 (1989)
     "4_0": HardwareEntry("4_0", "Intel 486DX", "x86", 1989, 3.8, 0.2, "LEGENDARY", "Integrated FPU"),
@@ -72,17 +68,14 @@ X86_CPUID_DATABASE: Dict[str, HardwareEntry] = {
     "4_8": HardwareEntry("4_8", "Intel 486DX4", "x86", 1994, 3.8, 0.2, "LEGENDARY", "Clock tripled"),
     "4_9": HardwareEntry("4_9", "Intel 486DX4-WB", "x86", 1994, 3.8, 0.2, "LEGENDARY"),
     "486": HardwareEntry("486", "Intel 486", "x86", 1989, 3.8, 0.2, "LEGENDARY"),
-
     # AMD 486 variants (often higher clocks)
     "amd_4_3": HardwareEntry("amd_4_3", "AMD Am486DX2", "x86", 1993, 3.8, 0.25, "LEGENDARY"),
     "amd_4_7": HardwareEntry("amd_4_7", "AMD Am486DX4", "x86", 1994, 3.8, 0.25, "LEGENDARY"),
     "amd_4_8": HardwareEntry("amd_4_8", "AMD Am5x86", "x86", 1995, 3.8, 0.3, "LEGENDARY", "486 socket, P75 perf"),
     "am5x86": HardwareEntry("am5x86", "AMD Am5x86", "x86", 1995, 3.8, 0.3, "LEGENDARY"),
-
     # Cyrix 486 variants
     "cyrix_4_4": HardwareEntry("cyrix_4_4", "Cyrix Cx486DX2", "x86", 1993, 3.8, 0.35, "LEGENDARY", "Rare"),
     "cyrix_4_9": HardwareEntry("cyrix_4_9", "Cyrix Cx5x86", "x86", 1995, 3.8, 0.4, "LEGENDARY", "Rare Cyrix"),
-
     # ============ LEGENDARY TIER (3.5x) - Pentium 1 ============
     # Intel Pentium (P5) (1993)
     "5_1": HardwareEntry("5_1", "Intel Pentium 60/66", "x86", 1993, 3.5, 0.2, "LEGENDARY", "First Pentium"),
@@ -95,44 +88,36 @@ X86_CPUID_DATABASE: Dict[str, HardwareEntry] = {
     "p5": HardwareEntry("p5", "Intel Pentium P5", "x86", 1993, 3.5, 0.15, "LEGENDARY"),
     "p54c": HardwareEntry("p54c", "Intel Pentium P54C", "x86", 1994, 3.5, 0.15, "LEGENDARY"),
     "p55c": HardwareEntry("p55c", "Intel Pentium MMX P55C", "x86", 1997, 3.5, 0.1, "LEGENDARY"),
-
     # AMD K5 (1996) - Pentium competitor
     "amd_5_0": HardwareEntry("amd_5_0", "AMD K5 PR75-PR100", "x86", 1996, 3.5, 0.3, "LEGENDARY", "AMD's first x86"),
     "amd_5_1": HardwareEntry("amd_5_1", "AMD K5 PR120-PR133", "x86", 1996, 3.5, 0.3, "LEGENDARY"),
     "amd_5_2": HardwareEntry("amd_5_2", "AMD K5 PR150-PR200", "x86", 1996, 3.5, 0.3, "LEGENDARY"),
     "k5": HardwareEntry("k5", "AMD K5", "x86", 1996, 3.5, 0.3, "LEGENDARY"),
-
     # Cyrix 6x86 (1996) - Pentium competitor (actually family 5 compatible)
     "cyrix_5_2": HardwareEntry("cyrix_5_2", "Cyrix 6x86", "x86", 1996, 3.5, 0.4, "LEGENDARY", "Rare Cyrix"),
     "cyrix_5_4": HardwareEntry("cyrix_5_4", "Cyrix 6x86MX", "x86", 1997, 3.5, 0.4, "LEGENDARY", "Rare"),
     "6x86": HardwareEntry("6x86", "Cyrix 6x86", "x86", 1996, 3.5, 0.4, "LEGENDARY"),
-
     # IDT/Centaur WinChip (1997)
     "idt_5_4": HardwareEntry("idt_5_4", "IDT WinChip C6", "x86", 1997, 3.5, 0.5, "LEGENDARY", "Very rare"),
     "idt_5_8": HardwareEntry("idt_5_8", "IDT WinChip 2", "x86", 1998, 3.5, 0.5, "LEGENDARY", "Very rare"),
     "winchip": HardwareEntry("winchip", "IDT WinChip", "x86", 1997, 3.5, 0.5, "LEGENDARY"),
-
     # NexGen Nx586 (1994) - Very rare
     "nexgen_5": HardwareEntry("nexgen_5", "NexGen Nx586", "x86", 1994, 3.5, 0.7, "LEGENDARY", "Extremely rare"),
     "nx586": HardwareEntry("nx586", "NexGen Nx586", "x86", 1994, 3.5, 0.7, "LEGENDARY"),
-
     # ============ LEGENDARY-LOW TIER (3.2x) - Pentium II / Celeron ============
     # Intel Pentium Pro (1995) - Actually family 6
     "6_1": HardwareEntry("6_1", "Intel Pentium Pro", "x86", 1995, 3.2, 0.2, "LEGENDARY", "P6 architecture"),
     "ppro": HardwareEntry("ppro", "Intel Pentium Pro", "x86", 1995, 3.2, 0.2, "LEGENDARY"),
-
     # Intel Pentium II (1997)
     "6_3": HardwareEntry("6_3", "Intel Pentium II Klamath", "x86", 1997, 3.2, 0.15, "LEGENDARY", "Slot 1"),
     "6_5": HardwareEntry("6_5", "Intel Pentium II Deschutes", "x86", 1998, 3.2, 0.1, "LEGENDARY"),
     "pii": HardwareEntry("pii", "Intel Pentium II", "x86", 1997, 3.2, 0.15, "LEGENDARY"),
     "p2": HardwareEntry("p2", "Intel Pentium II", "x86", 1997, 3.2, 0.15, "LEGENDARY"),
     "klamath": HardwareEntry("klamath", "Intel Pentium II Klamath", "x86", 1997, 3.2, 0.15, "LEGENDARY"),
-
     # Intel Celeron (1998)
     "6_6": HardwareEntry("6_6", "Intel Celeron Mendocino", "x86", 1998, 3.2, 0.1, "LEGENDARY"),
     "celeron_slot1": HardwareEntry("celeron_slot1", "Intel Celeron (Slot 1)", "x86", 1998, 3.2, 0.15, "LEGENDARY"),
     "mendocino": HardwareEntry("mendocino", "Intel Celeron Mendocino", "x86", 1998, 3.2, 0.1, "LEGENDARY"),
-
     # AMD K6 (1997)
     "amd_6_6": HardwareEntry("amd_6_6", "AMD K6", "x86", 1997, 3.2, 0.2, "LEGENDARY"),
     "amd_6_8": HardwareEntry("amd_6_8", "AMD K6-2", "x86", 1998, 3.2, 0.15, "LEGENDARY", "3DNow!"),
@@ -140,7 +125,6 @@ X86_CPUID_DATABASE: Dict[str, HardwareEntry] = {
     "k6": HardwareEntry("k6", "AMD K6", "x86", 1997, 3.2, 0.2, "LEGENDARY"),
     "k6-2": HardwareEntry("k6-2", "AMD K6-2", "x86", 1998, 3.2, 0.15, "LEGENDARY"),
     "k6-3": HardwareEntry("k6-3", "AMD K6-III", "x86", 1999, 3.2, 0.2, "LEGENDARY"),
-
     # ============ LEGENDARY-LOW TIER (3.0x) - Pentium III / Athlon ============
     # Intel Pentium III (1999)
     "6_7": HardwareEntry("6_7", "Intel Pentium III Katmai", "x86", 1999, 3.0, 0.1, "LEGENDARY", "SSE"),
@@ -152,7 +136,6 @@ X86_CPUID_DATABASE: Dict[str, HardwareEntry] = {
     "katmai": HardwareEntry("katmai", "Intel Pentium III Katmai", "x86", 1999, 3.0, 0.1, "LEGENDARY"),
     "coppermine": HardwareEntry("coppermine", "Intel Pentium III Coppermine", "x86", 1999, 3.0, 0.05, "LEGENDARY"),
     "tualatin": HardwareEntry("tualatin", "Intel Pentium III Tualatin", "x86", 2001, 3.0, 0.1, "LEGENDARY"),
-
     # AMD Athlon (1999)
     "amd_6_1": HardwareEntry("amd_6_1", "AMD Athlon (K7)", "x86", 1999, 3.0, 0.1, "LEGENDARY", "Slot A"),
     "amd_6_2": HardwareEntry("amd_6_2", "AMD Athlon (K75)", "x86", 1999, 3.0, 0.1, "LEGENDARY"),
@@ -164,20 +147,19 @@ X86_CPUID_DATABASE: Dict[str, HardwareEntry] = {
     "athlon_xp": HardwareEntry("athlon_xp", "AMD Athlon XP", "x86", 2001, 3.0, 0.05, "LEGENDARY"),
     "thunderbird": HardwareEntry("thunderbird", "AMD Athlon Thunderbird", "x86", 2000, 3.0, 0.05, "LEGENDARY"),
     "barton": HardwareEntry("barton", "AMD Athlon XP Barton", "x86", 2003, 3.0, 0.1, "LEGENDARY"),
-
     # VIA C3 (2001) - Rare
     "via_6_7": HardwareEntry("via_6_7", "VIA C3 Samuel", "x86", 2001, 3.0, 0.4, "LEGENDARY", "Rare VIA"),
     "via_6_8": HardwareEntry("via_6_8", "VIA C3 Ezra", "x86", 2001, 3.0, 0.4, "LEGENDARY", "Rare"),
     "via_6_9": HardwareEntry("via_6_9", "VIA C3 Nehemiah", "x86", 2003, 3.0, 0.4, "LEGENDARY", "Rare"),
     "c3": HardwareEntry("c3", "VIA C3", "x86", 2001, 3.0, 0.4, "LEGENDARY"),
-
     # Transmeta Crusoe (2000) - Very rare
-    "transmeta_5_4": HardwareEntry("transmeta_5_4", "Transmeta Crusoe TM5400", "x86", 2000, 3.0, 0.6, "LEGENDARY", "Code morphing"),
+    "transmeta_5_4": HardwareEntry(
+        "transmeta_5_4", "Transmeta Crusoe TM5400", "x86", 2000, 3.0, 0.6, "LEGENDARY", "Code morphing"
+    ),
     "transmeta_5_5": HardwareEntry("transmeta_5_5", "Transmeta Crusoe TM5600", "x86", 2000, 3.0, 0.6, "LEGENDARY"),
     "transmeta_15": HardwareEntry("transmeta_15", "Transmeta Efficeon", "x86", 2003, 3.0, 0.6, "LEGENDARY"),
     "crusoe": HardwareEntry("crusoe", "Transmeta Crusoe", "x86", 2000, 3.0, 0.6, "LEGENDARY"),
     "efficeon": HardwareEntry("efficeon", "Transmeta Efficeon", "x86", 2003, 3.0, 0.6, "LEGENDARY"),
-
     # ============ ANCIENT TIER (2.5x) - Pentium 4 / Athlon 64 ============
     # Intel Pentium 4 (2000)
     "15_0": HardwareEntry("15_0", "Intel Pentium 4 Willamette", "x86", 2000, 2.5, 0.1, "ANCIENT", "NetBurst"),
@@ -191,14 +173,12 @@ X86_CPUID_DATABASE: Dict[str, HardwareEntry] = {
     "willamette": HardwareEntry("willamette", "Intel Pentium 4 Willamette", "x86", 2000, 2.5, 0.1, "ANCIENT"),
     "northwood": HardwareEntry("northwood", "Intel Pentium 4 Northwood", "x86", 2002, 2.5, 0.05, "ANCIENT"),
     "prescott": HardwareEntry("prescott", "Intel Pentium 4 Prescott", "x86", 2004, 2.5, 0.05, "ANCIENT"),
-
     # Intel Pentium M (2003)
     "6_9": HardwareEntry("6_9", "Intel Pentium M Banias", "x86", 2003, 2.5, 0.15, "ANCIENT", "Mobile P6"),
     "6_13": HardwareEntry("6_13", "Intel Pentium M Dothan", "x86", 2004, 2.5, 0.1, "ANCIENT"),
     "pentium_m": HardwareEntry("pentium_m", "Intel Pentium M", "x86", 2003, 2.5, 0.1, "ANCIENT"),
     "banias": HardwareEntry("banias", "Intel Pentium M Banias", "x86", 2003, 2.5, 0.15, "ANCIENT"),
     "dothan": HardwareEntry("dothan", "Intel Pentium M Dothan", "x86", 2004, 2.5, 0.1, "ANCIENT"),
-
     # AMD Athlon 64 (2003)
     "amd_15_4": HardwareEntry("amd_15_4", "AMD Athlon 64 Clawhammer", "x86", 2003, 2.5, 0.1, "ANCIENT", "x86-64"),
     "amd_15_5": HardwareEntry("amd_15_5", "AMD Opteron", "x86", 2003, 2.5, 0.15, "ANCIENT", "Server"),
@@ -208,20 +188,16 @@ X86_CPUID_DATABASE: Dict[str, HardwareEntry] = {
     "athlon64": HardwareEntry("athlon64", "AMD Athlon 64", "x86", 2003, 2.5, 0.1, "ANCIENT"),
     "athlon64_x2": HardwareEntry("athlon64_x2", "AMD Athlon 64 X2", "x86", 2005, 2.5, 0.1, "ANCIENT"),
     "opteron": HardwareEntry("opteron", "AMD Opteron", "x86", 2003, 2.5, 0.15, "ANCIENT"),
-
     # ============ ANCIENT TIER (2.0x) - Core Duo / Early Core ============
     # Intel Core (2006)
     "6_14": HardwareEntry("6_14", "Intel Core Yonah", "x86", 2006, 2.0, 0.1, "ANCIENT", "Core Duo/Solo"),
     "core_duo": HardwareEntry("core_duo", "Intel Core Duo", "x86", 2006, 2.0, 0.1, "ANCIENT"),
     "core_solo": HardwareEntry("core_solo", "Intel Core Solo", "x86", 2006, 2.0, 0.1, "ANCIENT"),
     "yonah": HardwareEntry("yonah", "Intel Core Yonah", "x86", 2006, 2.0, 0.1, "ANCIENT"),
-
     # Intel Pentium D
     "pentium_d": HardwareEntry("pentium_d", "Intel Pentium D", "x86", 2005, 2.0, 0.1, "ANCIENT"),
-
     # AMD Athlon X2 (socket 939/AM2)
     "amd_15_67": HardwareEntry("amd_15_67", "AMD Athlon X2 Brisbane", "x86", 2007, 2.0, 0.05, "ANCIENT"),
-
     # ============ VINTAGE TIER (1.5x) - Core 2 ============
     # Intel Core 2 (2006)
     "6_15": HardwareEntry("6_15", "Intel Core 2 Merom/Conroe", "x86", 2006, 1.5, 0.05, "VINTAGE", "Core 2 Duo"),
@@ -234,21 +210,18 @@ X86_CPUID_DATABASE: Dict[str, HardwareEntry] = {
     "conroe": HardwareEntry("conroe", "Intel Core 2 Conroe", "x86", 2006, 1.5, 0.05, "VINTAGE"),
     "merom": HardwareEntry("merom", "Intel Core 2 Merom", "x86", 2006, 1.5, 0.05, "VINTAGE"),
     "penryn": HardwareEntry("penryn", "Intel Core 2 Penryn", "x86", 2008, 1.5, 0.05, "VINTAGE"),
-
     # AMD Phenom (2007)
     "amd_16_2": HardwareEntry("amd_16_2", "AMD Phenom X4 Agena", "x86", 2007, 1.5, 0.1, "VINTAGE"),
     "amd_16_4": HardwareEntry("amd_16_4", "AMD Phenom II X4 Deneb", "x86", 2009, 1.5, 0.05, "VINTAGE"),
     "amd_16_6": HardwareEntry("amd_16_6", "AMD Phenom II X6 Thuban", "x86", 2010, 1.5, 0.1, "VINTAGE", "6-core"),
     "phenom": HardwareEntry("phenom", "AMD Phenom", "x86", 2007, 1.5, 0.1, "VINTAGE"),
     "phenom_ii": HardwareEntry("phenom_ii", "AMD Phenom II", "x86", 2009, 1.5, 0.05, "VINTAGE"),
-
     # AMD FX (2011)
     "amd_21_1": HardwareEntry("amd_21_1", "AMD FX Bulldozer", "x86", 2011, 1.5, 0.1, "VINTAGE"),
     "amd_21_2": HardwareEntry("amd_21_2", "AMD FX Piledriver", "x86", 2012, 1.5, 0.1, "VINTAGE"),
     "fx": HardwareEntry("fx", "AMD FX", "x86", 2011, 1.5, 0.1, "VINTAGE"),
     "bulldozer": HardwareEntry("bulldozer", "AMD FX Bulldozer", "x86", 2011, 1.5, 0.1, "VINTAGE"),
     "piledriver": HardwareEntry("piledriver", "AMD FX Piledriver", "x86", 2012, 1.5, 0.1, "VINTAGE"),
-
     # ============ STANDARD TIER (1.0x) - Nehalem through Haswell ============
     "6_26": HardwareEntry("6_26", "Intel Core i7 Nehalem", "x86", 2008, 1.0, 0.0, "STANDARD"),
     "6_30": HardwareEntry("6_30", "Intel Core i7 Lynnfield", "x86", 2009, 1.0, 0.0, "STANDARD"),
@@ -260,7 +233,6 @@ X86_CPUID_DATABASE: Dict[str, HardwareEntry] = {
     "sandy_bridge": HardwareEntry("sandy_bridge", "Intel Core Sandy Bridge", "x86", 2011, 1.0, 0.0, "STANDARD"),
     "ivy_bridge": HardwareEntry("ivy_bridge", "Intel Core Ivy Bridge", "x86", 2012, 1.0, 0.0, "STANDARD"),
     "haswell": HardwareEntry("haswell", "Intel Core Haswell", "x86", 2013, 1.0, 0.0, "STANDARD"),
-
     # ============ PENALTY TIER (0.8x) - Modern x86-64 ============
     "6_61": HardwareEntry("6_61", "Intel Core Broadwell", "x86", 2014, 0.8, 0.0, "PENALTY"),
     "6_78": HardwareEntry("6_78", "Intel Core Skylake", "x86", 2015, 0.8, 0.0, "PENALTY"),
@@ -271,7 +243,6 @@ X86_CPUID_DATABASE: Dict[str, HardwareEntry] = {
     "coffee_lake": HardwareEntry("coffee_lake", "Intel Core Coffee Lake", "x86", 2017, 0.8, 0.0, "PENALTY"),
     "alder_lake": HardwareEntry("alder_lake", "Intel Core Alder Lake", "x86", 2021, 0.8, 0.0, "PENALTY"),
     "raptor_lake": HardwareEntry("raptor_lake", "Intel Core Raptor Lake", "x86", 2022, 0.8, 0.0, "PENALTY"),
-
     # AMD Ryzen (Modern - Penalty)
     "amd_23_1": HardwareEntry("amd_23_1", "AMD Ryzen Zen", "x86", 2017, 0.8, 0.0, "PENALTY"),
     "amd_23_8": HardwareEntry("amd_23_8", "AMD Ryzen Zen+", "x86", 2018, 0.8, 0.0, "PENALTY"),
@@ -303,7 +274,6 @@ POWERPC_PVR_DATABASE: Dict[str, HardwareEntry] = {
     "603e": HardwareEntry("603e", "PowerPC 603e", "powerpc", 1996, 3.5, 0.15, "LEGENDARY"),
     "604": HardwareEntry("604", "PowerPC 604", "powerpc", 1994, 3.5, 0.2, "LEGENDARY"),
     "604e": HardwareEntry("604e", "PowerPC 604e", "powerpc", 1996, 3.5, 0.15, "LEGENDARY"),
-
     # ============ LEGENDARY TIER (3.2x) - PowerPC G3 ============
     "0x0008": HardwareEntry("0x0008", "PowerPC 750 (G3)", "powerpc", 1997, 3.2, 0.1, "LEGENDARY", "G3"),
     "0x7000": HardwareEntry("0x7000", "PowerPC 750CX (G3)", "powerpc", 1999, 3.2, 0.1, "LEGENDARY"),
@@ -315,7 +285,6 @@ POWERPC_PVR_DATABASE: Dict[str, HardwareEntry] = {
     "750cx": HardwareEntry("750cx", "PowerPC 750CX (G3)", "powerpc", 1999, 3.2, 0.1, "LEGENDARY"),
     "750fx": HardwareEntry("750fx", "PowerPC 750FX (G3)", "powerpc", 2002, 3.2, 0.15, "LEGENDARY"),
     "750gx": HardwareEntry("750gx", "PowerPC 750GX (G3)", "powerpc", 2004, 3.2, 0.15, "LEGENDARY"),
-
     # ============ ANCIENT TIER (2.5x) - PowerPC G4 ============
     "0x000C": HardwareEntry("0x000C", "PowerPC 7400 (G4)", "powerpc", 1999, 2.5, 0.1, "ANCIENT", "AltiVec"),
     "0x800C": HardwareEntry("0x800C", "PowerPC 7410 (G4)", "powerpc", 2000, 2.5, 0.1, "ANCIENT"),
@@ -331,7 +300,6 @@ POWERPC_PVR_DATABASE: Dict[str, HardwareEntry] = {
     "7447": HardwareEntry("7447", "PowerPC 7447 (G4)", "powerpc", 2003, 2.5, 0.1, "ANCIENT"),
     "7448": HardwareEntry("7448", "PowerPC 7448 (G4)", "powerpc", 2005, 2.5, 0.15, "ANCIENT"),
     "g4": HardwareEntry("g4", "PowerPC G4", "powerpc", 1999, 2.5, 0.1, "ANCIENT"),
-
     # ============ ANCIENT TIER (2.0x) - PowerPC G5 ============
     "0x0039": HardwareEntry("0x0039", "PowerPC 970 (G5)", "powerpc", 2003, 2.0, 0.1, "ANCIENT", "First G5"),
     "0x003C": HardwareEntry("0x003C", "PowerPC 970FX (G5)", "powerpc", 2004, 2.0, 0.1, "ANCIENT", "90nm"),
@@ -340,7 +308,6 @@ POWERPC_PVR_DATABASE: Dict[str, HardwareEntry] = {
     "970fx": HardwareEntry("970fx", "PowerPC 970FX (G5)", "powerpc", 2004, 2.0, 0.1, "ANCIENT"),
     "970mp": HardwareEntry("970mp", "PowerPC 970MP (G5)", "powerpc", 2005, 2.0, 0.15, "ANCIENT"),
     "g5": HardwareEntry("g5", "PowerPC G5", "powerpc", 2003, 2.0, 0.1, "ANCIENT"),
-
     # ============ RARE POWERPC VARIANTS ============
     # IBM POWER series (Servers)
     "power1": HardwareEntry("power1", "IBM POWER1", "powerpc", 1990, 4.0, 0.7, "MYTHIC", "Extremely rare"),
@@ -348,14 +315,12 @@ POWERPC_PVR_DATABASE: Dict[str, HardwareEntry] = {
     "power3": HardwareEntry("power3", "IBM POWER3", "powerpc", 1998, 3.5, 0.5, "LEGENDARY", "Rare server"),
     "power4": HardwareEntry("power4", "IBM POWER4", "powerpc", 2001, 3.0, 0.4, "LEGENDARY", "First GHz"),
     "power5": HardwareEntry("power5", "IBM POWER5", "powerpc", 2004, 2.5, 0.3, "ANCIENT"),
-
     # Freescale/NXP embedded PowerPC
     "mpc5xx": HardwareEntry("mpc5xx", "Freescale MPC5xx", "powerpc", 1996, 3.5, 0.5, "LEGENDARY", "Automotive"),
     "mpc8xx": HardwareEntry("mpc8xx", "Freescale MPC8xx", "powerpc", 1997, 3.5, 0.4, "LEGENDARY", "Networking"),
     "e300": HardwareEntry("e300", "Freescale e300", "powerpc", 2004, 3.0, 0.3, "LEGENDARY"),
     "e500": HardwareEntry("e500", "Freescale e500", "powerpc", 2003, 2.5, 0.3, "ANCIENT"),
     "e600": HardwareEntry("e600", "Freescale e600", "powerpc", 2005, 2.5, 0.3, "ANCIENT"),
-
     # AMCC PowerPC
     "ppc405": HardwareEntry("ppc405", "AMCC PPC405", "powerpc", 1999, 3.2, 0.4, "LEGENDARY", "Embedded"),
     "ppc440": HardwareEntry("ppc440", "AMCC PPC440", "powerpc", 2002, 3.0, 0.3, "LEGENDARY"),
@@ -374,13 +339,11 @@ M68K_DATABASE: Dict[str, HardwareEntry] = {
     "68012": HardwareEntry("68012", "Motorola 68012", "m68k", 1983, 4.0, 0.6, "MYTHIC", "Very rare"),
     "68020": HardwareEntry("68020", "Motorola 68020", "m68k", 1984, 4.0, 0.25, "MYTHIC", "32-bit"),
     "68030": HardwareEntry("68030", "Motorola 68030", "m68k", 1987, 4.0, 0.2, "MYTHIC", "Integrated MMU"),
-
     # ============ LEGENDARY-HIGH TIER (3.8x) ============
     "68040": HardwareEntry("68040", "Motorola 68040", "m68k", 1990, 3.8, 0.2, "LEGENDARY", "Integrated FPU"),
     "68lc040": HardwareEntry("68lc040", "Motorola 68LC040", "m68k", 1991, 3.8, 0.25, "LEGENDARY", "No FPU"),
     "68060": HardwareEntry("68060", "Motorola 68060", "m68k", 1994, 3.8, 0.3, "LEGENDARY", "Final 68K"),
     "68lc060": HardwareEntry("68lc060", "Motorola 68LC060", "m68k", 1995, 3.8, 0.35, "LEGENDARY"),
-
     # ============ RARE VARIANTS ============
     "cpu32": HardwareEntry("cpu32", "Motorola CPU32", "m68k", 1990, 3.8, 0.5, "LEGENDARY", "Embedded 68K"),
     "coldfire": HardwareEntry("coldfire", "Freescale ColdFire", "m68k", 1994, 3.5, 0.3, "LEGENDARY", "68K compatible"),
@@ -394,7 +357,9 @@ M68K_DATABASE: Dict[str, HardwareEntry] = {
 CLASSIC_CHIPSET_DATABASE: Dict[str, HardwareEntry] = {
     # ============ AMIGA CHIPSETS (MYTHIC) ============
     "ocs": HardwareEntry("ocs", "Amiga OCS (Original Chip Set)", "amiga", 1985, 4.0, 0.3, "MYTHIC", "A1000/A500/A2000"),
-    "ecs": HardwareEntry("ecs", "Amiga ECS (Enhanced Chip Set)", "amiga", 1990, 4.0, 0.25, "MYTHIC", "A500+/A600/A3000"),
+    "ecs": HardwareEntry(
+        "ecs", "Amiga ECS (Enhanced Chip Set)", "amiga", 1990, 4.0, 0.25, "MYTHIC", "A500+/A600/A3000"
+    ),
     "aga": HardwareEntry("aga", "Amiga AGA (Advanced Graphics)", "amiga", 1992, 4.0, 0.2, "MYTHIC", "A1200/A4000"),
     "agnus_8361": HardwareEntry("agnus_8361", "Agnus 8361 (PAL-A)", "amiga", 1985, 4.0, 0.35, "MYTHIC"),
     "agnus_8367": HardwareEntry("agnus_8367", "Agnus 8367 (NTSC-A)", "amiga", 1985, 4.0, 0.35, "MYTHIC"),
@@ -405,13 +370,19 @@ CLASSIC_CHIPSET_DATABASE: Dict[str, HardwareEntry] = {
     "denise_8373": HardwareEntry("denise_8373", "Super Denise 8373", "amiga", 1990, 4.0, 0.3, "MYTHIC", "ECS"),
     "lisa_8364": HardwareEntry("lisa_8364", "Lisa 8364", "amiga", 1992, 4.0, 0.25, "MYTHIC", "AGA"),
     "paula_8364": HardwareEntry("paula_8364", "Paula 8364", "amiga", 1985, 4.0, 0.35, "MYTHIC", "Sound/IO"),
-
     # Amiga Accelerator Cards (RARE!)
-    "blizzard_1230": HardwareEntry("blizzard_1230", "Blizzard 1230 (68030)", "amiga", 1995, 4.0, 0.5, "MYTHIC", "A1200 accelerator"),
-    "blizzard_1260": HardwareEntry("blizzard_1260", "Blizzard 1260 (68060)", "amiga", 1997, 4.0, 0.6, "MYTHIC", "Very rare"),
-    "cyberstorm_060": HardwareEntry("cyberstorm_060", "CyberStorm 68060", "amiga", 1996, 4.0, 0.6, "MYTHIC", "A4000 accelerator"),
-    "apollo_68080": HardwareEntry("apollo_68080", "Apollo 68080 FPGA", "amiga", 2017, 3.5, 0.7, "LEGENDARY", "Modern retro"),
-
+    "blizzard_1230": HardwareEntry(
+        "blizzard_1230", "Blizzard 1230 (68030)", "amiga", 1995, 4.0, 0.5, "MYTHIC", "A1200 accelerator"
+    ),
+    "blizzard_1260": HardwareEntry(
+        "blizzard_1260", "Blizzard 1260 (68060)", "amiga", 1997, 4.0, 0.6, "MYTHIC", "Very rare"
+    ),
+    "cyberstorm_060": HardwareEntry(
+        "cyberstorm_060", "CyberStorm 68060", "amiga", 1996, 4.0, 0.6, "MYTHIC", "A4000 accelerator"
+    ),
+    "apollo_68080": HardwareEntry(
+        "apollo_68080", "Apollo 68080 FPGA", "amiga", 2017, 3.5, 0.7, "LEGENDARY", "Modern retro"
+    ),
     # ============ ATARI CHIPSETS (MYTHIC) ============
     "shifter": HardwareEntry("shifter", "Atari ST Shifter", "atari", 1985, 4.0, 0.35, "MYTHIC", "Video"),
     "glue": HardwareEntry("glue", "Atari ST GLUE", "atari", 1985, 4.0, 0.35, "MYTHIC", "Bus controller"),
@@ -419,7 +390,6 @@ CLASSIC_CHIPSET_DATABASE: Dict[str, HardwareEntry] = {
     "blitter": HardwareEntry("blitter", "Atari ST BLiTTER", "atari", 1987, 4.0, 0.4, "MYTHIC", "STE/Mega ST"),
     "videl": HardwareEntry("videl", "Atari Falcon VIDEL", "atari", 1992, 4.0, 0.5, "MYTHIC", "Falcon030 only"),
     "dsp56001": HardwareEntry("dsp56001", "Motorola DSP56001", "atari", 1992, 4.0, 0.5, "MYTHIC", "Falcon030 DSP"),
-
     # ============ COMMODORE 64/128 (MYTHIC) ============
     "vic_ii": HardwareEntry("vic_ii", "MOS 6569 VIC-II (PAL)", "c64", 1982, 4.0, 0.25, "MYTHIC", "C64 video"),
     "vic_ii_ntsc": HardwareEntry("vic_ii_ntsc", "MOS 6567 VIC-II (NTSC)", "c64", 1982, 4.0, 0.25, "MYTHIC"),
@@ -429,32 +399,25 @@ CLASSIC_CHIPSET_DATABASE: Dict[str, HardwareEntry] = {
     "pla_906114": HardwareEntry("pla_906114", "MOS 906114-01 PLA", "c64", 1982, 4.0, 0.3, "MYTHIC"),
     "vdc_8563": HardwareEntry("vdc_8563", "MOS 8563 VDC", "c64", 1985, 4.0, 0.45, "MYTHIC", "C128 80-col"),
     "mmu_8722": HardwareEntry("mmu_8722", "MOS 8722 MMU", "c64", 1985, 4.0, 0.45, "MYTHIC", "C128 only"),
-
     # ============ APPLE II (MYTHIC) ============
     "iou": HardwareEntry("iou", "Apple IOU", "apple2", 1977, 4.0, 0.4, "MYTHIC", "I/O controller"),
     "mmu_apple2": HardwareEntry("mmu_apple2", "Apple II MMU", "apple2", 1983, 4.0, 0.4, "MYTHIC", "IIe/IIc"),
     "iigs_mega2": HardwareEntry("iigs_mega2", "Apple IIgs Mega II", "apple2", 1986, 4.0, 0.5, "MYTHIC", "IIgs"),
     "iigs_fpi": HardwareEntry("iigs_fpi", "Apple IIgs FPI", "apple2", 1986, 4.0, 0.5, "MYTHIC"),
-
     # ============ RARE/OBSCURE SYSTEMS (HIGH BONUS) ============
     # Sinclair ZX Spectrum
     "ula_spectrum": HardwareEntry("ula_spectrum", "Ferranti ULA", "spectrum", 1982, 4.0, 0.35, "MYTHIC", "ZX Spectrum"),
-
     # BBC Micro
     "bbc_video_ula": HardwareEntry("bbc_video_ula", "BBC Video ULA", "bbc", 1981, 4.0, 0.5, "MYTHIC"),
-
     # MSX
     "v9938": HardwareEntry("v9938", "Yamaha V9938 VDP", "msx", 1985, 4.0, 0.4, "MYTHIC", "MSX2"),
     "v9958": HardwareEntry("v9958", "Yamaha V9958 VDP", "msx", 1988, 4.0, 0.45, "MYTHIC", "MSX2+"),
-
     # TI-99/4A
     "tms9900": HardwareEntry("tms9900", "TI TMS9900", "ti99", 1976, 4.0, 0.6, "MYTHIC", "16-bit!"),
     "tms9918a": HardwareEntry("tms9918a", "TI TMS9918A VDP", "ti99", 1979, 4.0, 0.5, "MYTHIC"),
-
     # Tandy/Radio Shack
     "coco_sam": HardwareEntry("coco_sam", "TRS-80 CoCo SAM", "tandy", 1980, 4.0, 0.5, "MYTHIC"),
     "gime": HardwareEntry("gime", "GIME (CoCo 3)", "tandy", 1986, 4.0, 0.55, "MYTHIC", "Rare"),
-
     # Acorn Archimedes
     "vidc1": HardwareEntry("vidc1", "ARM VIDC1", "acorn", 1987, 4.0, 0.6, "MYTHIC", "Archimedes"),
     "memc1": HardwareEntry("memc1", "ARM MEMC1", "acorn", 1987, 4.0, 0.6, "MYTHIC"),
@@ -477,7 +440,6 @@ WORKSTATION_DATABASE: Dict[str, HardwareEntry] = {
     "ev68": HardwareEntry("ev68", "DEC Alpha 21264C (EV68)", "alpha", 2001, 3.0, 0.35, "LEGENDARY"),
     "ev7": HardwareEntry("ev7", "DEC Alpha 21364 (EV7)", "alpha", 2003, 3.0, 0.5, "LEGENDARY", "Final Alpha"),
     "alpha": HardwareEntry("alpha", "DEC Alpha", "alpha", 1992, 3.0, 0.4, "LEGENDARY"),
-
     # ============ SUN SPARC (LEGENDARY) ============
     "sparc_v7": HardwareEntry("sparc_v7", "SPARC V7", "sparc", 1987, 3.0, 0.5, "LEGENDARY", "Sun-4"),
     "sparc_v8": HardwareEntry("sparc_v8", "SPARC V8 (SuperSPARC)", "sparc", 1992, 3.0, 0.4, "LEGENDARY"),
@@ -487,7 +449,6 @@ WORKSTATION_DATABASE: Dict[str, HardwareEntry] = {
     "ultrasparc_iv": HardwareEntry("ultrasparc_iv", "UltraSPARC IV", "sparc", 2004, 2.5, 0.25, "ANCIENT"),
     "sparc64": HardwareEntry("sparc64", "Fujitsu SPARC64", "sparc", 1995, 3.0, 0.4, "LEGENDARY"),
     "sparc": HardwareEntry("sparc", "SPARC", "sparc", 1987, 3.0, 0.4, "LEGENDARY"),
-
     # ============ HP PA-RISC (LEGENDARY) ============
     "pa7000": HardwareEntry("pa7000", "HP PA-7000", "parisc", 1991, 3.0, 0.5, "LEGENDARY"),
     "pa7100": HardwareEntry("pa7100", "HP PA-7100", "parisc", 1992, 3.0, 0.45, "LEGENDARY"),
@@ -499,7 +460,6 @@ WORKSTATION_DATABASE: Dict[str, HardwareEntry] = {
     "pa8700": HardwareEntry("pa8700", "HP PA-8700", "parisc", 2001, 2.5, 0.35, "ANCIENT"),
     "pa8800": HardwareEntry("pa8800", "HP PA-8800", "parisc", 2003, 2.5, 0.4, "ANCIENT", "Final PA-RISC"),
     "parisc": HardwareEntry("parisc", "HP PA-RISC", "parisc", 1986, 3.0, 0.4, "LEGENDARY"),
-
     # ============ SGI MIPS (LEGENDARY) ============
     "r2000": HardwareEntry("r2000", "MIPS R2000", "mips", 1985, 3.5, 0.5, "LEGENDARY", "First MIPS"),
     "r3000": HardwareEntry("r3000", "MIPS R3000", "mips", 1988, 3.5, 0.45, "LEGENDARY"),
@@ -513,14 +473,14 @@ WORKSTATION_DATABASE: Dict[str, HardwareEntry] = {
     "r14000": HardwareEntry("r14000", "MIPS R14000", "mips", 2001, 2.5, 0.35, "ANCIENT"),
     "r16000": HardwareEntry("r16000", "MIPS R16000", "mips", 2002, 2.5, 0.4, "ANCIENT", "Final SGI MIPS"),
     "mips": HardwareEntry("mips", "MIPS", "mips", 1985, 3.0, 0.4, "LEGENDARY"),
-
     # ============ RISC-V (2010+) — Open ISA ============
     "riscv": HardwareEntry("riscv", "RISC-V", "riscv", 2010, 1.4, 0.5, "EXOTIC"),
     "riscv64": HardwareEntry("riscv64", "RISC-V 64-bit", "riscv", 2014, 1.4, 0.5, "EXOTIC"),
     "riscv32": HardwareEntry("riscv32", "RISC-V 32-bit", "riscv", 2010, 1.5, 0.55, "EXOTIC"),
     "sifive_u74": HardwareEntry("sifive_u74", "SiFive U74", "riscv", 2020, 1.3, 0.4, "EXOTIC", "HiFive Unmatched"),
-    "starfive_jh7110": HardwareEntry("starfive_jh7110", "StarFive JH7110", "riscv", 2022, 1.3, 0.35, "EXOTIC", "VisionFive 2"),
-
+    "starfive_jh7110": HardwareEntry(
+        "starfive_jh7110", "StarFive JH7110", "riscv", 2022, 1.3, 0.35, "EXOTIC", "VisionFive 2"
+    ),
     # ============ IBM mainframes (VERY RARE) ============
     "s390": HardwareEntry("s390", "IBM S/390", "ibm", 1990, 3.0, 0.8, "LEGENDARY", "Mainframe"),
     "z900": HardwareEntry("z900", "IBM zSeries z900", "ibm", 2000, 2.5, 0.6, "ANCIENT"),
@@ -541,24 +501,20 @@ ARM_DATABASE: Dict[str, HardwareEntry] = {
     "strongarm": HardwareEntry("strongarm", "StrongARM SA-110", "arm", 1996, 3.0, 0.3, "LEGENDARY", "DEC/Intel"),
     "sa1100": HardwareEntry("sa1100", "StrongARM SA-1100", "arm", 1998, 3.0, 0.3, "LEGENDARY", "iPAQ"),
     "xscale": HardwareEntry("xscale", "Intel XScale", "arm", 2000, 2.5, 0.25, "ANCIENT", "PDAs"),
-
     # ============ ANCIENT TIER (2.0-2.5x) - ARM9/ARM11 ============
     "arm9": HardwareEntry("arm9", "ARM9", "arm", 1998, 2.5, 0.2, "ANCIENT"),
     "arm926ej": HardwareEntry("arm926ej", "ARM926EJ-S", "arm", 2001, 2.5, 0.2, "ANCIENT"),
     "arm11": HardwareEntry("arm11", "ARM11", "arm", 2003, 2.0, 0.15, "ANCIENT", "iPhone 1"),
     "arm1176": HardwareEntry("arm1176", "ARM1176JZF-S", "arm", 2003, 2.0, 0.15, "ANCIENT", "RPi 1"),
-
     # ============ VINTAGE TIER (1.5x) - Cortex-A ============
     "cortex_a8": HardwareEntry("cortex_a8", "ARM Cortex-A8", "arm", 2005, 1.5, 0.1, "VINTAGE", "iPhone 3GS"),
     "cortex_a9": HardwareEntry("cortex_a9", "ARM Cortex-A9", "arm", 2007, 1.5, 0.05, "VINTAGE"),
     "cortex_a15": HardwareEntry("cortex_a15", "ARM Cortex-A15", "arm", 2010, 1.5, 0.05, "VINTAGE"),
-
     # ============ PENALTY TIER (0.8x) - Modern ARM ============
     "cortex_a53": HardwareEntry("cortex_a53", "ARM Cortex-A53", "arm", 2012, 1.0, 0.0, "STANDARD"),
     "cortex_a72": HardwareEntry("cortex_a72", "ARM Cortex-A72", "arm", 2015, 0.8, 0.0, "PENALTY"),
     "cortex_a76": HardwareEntry("cortex_a76", "ARM Cortex-A76", "arm", 2018, 0.8, 0.0, "PENALTY"),
     "cortex_x1": HardwareEntry("cortex_x1", "ARM Cortex-X1", "arm", 2020, 0.8, 0.0, "PENALTY"),
-
     # Apple Silicon (PENALTY)
     "m1": HardwareEntry("m1", "Apple M1", "arm", 2020, 0.8, 0.0, "PENALTY", "Modern ARM"),
     "m1_pro": HardwareEntry("m1_pro", "Apple M1 Pro", "arm", 2021, 0.8, 0.0, "PENALTY"),
@@ -580,54 +536,63 @@ ARM_DATABASE: Dict[str, HardwareEntry] = {
 GRAPHICS_DATABASE: Dict[str, HardwareEntry] = {
     # ============ MYTHIC/LEGENDARY GRAPHICS ============
     # 3dfx Voodoo (MYTHIC!)
-    "voodoo1": HardwareEntry("voodoo1", "3dfx Voodoo Graphics", "gpu", 1996, 0.0, 0.5, "MYTHIC", "First 3D accelerator"),
+    "voodoo1": HardwareEntry(
+        "voodoo1", "3dfx Voodoo Graphics", "gpu", 1996, 0.0, 0.5, "MYTHIC", "First 3D accelerator"
+    ),
     "voodoo2": HardwareEntry("voodoo2", "3dfx Voodoo2", "gpu", 1998, 0.0, 0.4, "MYTHIC", "SLI!"),
     "voodoo_banshee": HardwareEntry("voodoo_banshee", "3dfx Voodoo Banshee", "gpu", 1998, 0.0, 0.35, "LEGENDARY"),
     "voodoo3": HardwareEntry("voodoo3", "3dfx Voodoo3", "gpu", 1999, 0.0, 0.3, "LEGENDARY"),
     "voodoo4": HardwareEntry("voodoo4", "3dfx Voodoo4", "gpu", 2000, 0.0, 0.4, "LEGENDARY", "Rare"),
     "voodoo5": HardwareEntry("voodoo5", "3dfx Voodoo5", "gpu", 2000, 0.0, 0.5, "LEGENDARY", "Very rare"),
-    "voodoo5_6000": HardwareEntry("voodoo5_6000", "3dfx Voodoo5 6000", "gpu", 2000, 0.0, 0.9, "LEGENDARY", "Extremely rare"),
-
+    "voodoo5_6000": HardwareEntry(
+        "voodoo5_6000", "3dfx Voodoo5 6000", "gpu", 2000, 0.0, 0.9, "LEGENDARY", "Extremely rare"
+    ),
     # S3 (MYTHIC/LEGENDARY)
     "virge": HardwareEntry("virge", "S3 ViRGE", "gpu", 1995, 0.0, 0.35, "MYTHIC", "First consumer 3D"),
     "virge_dx": HardwareEntry("virge_dx", "S3 ViRGE/DX", "gpu", 1996, 0.0, 0.3, "MYTHIC"),
     "savage3d": HardwareEntry("savage3d", "S3 Savage3D", "gpu", 1998, 0.0, 0.3, "LEGENDARY"),
     "savage4": HardwareEntry("savage4", "S3 Savage4", "gpu", 1999, 0.0, 0.25, "LEGENDARY"),
     "savage2000": HardwareEntry("savage2000", "S3 Savage2000", "gpu", 1999, 0.0, 0.35, "LEGENDARY", "Rare"),
-
     # ATI Rage (LEGENDARY)
     "rage_pro": HardwareEntry("rage_pro", "ATI Rage Pro", "gpu", 1997, 0.0, 0.25, "LEGENDARY"),
     "rage_128": HardwareEntry("rage_128", "ATI Rage 128", "gpu", 1999, 0.0, 0.2, "LEGENDARY"),
     "rage_fury": HardwareEntry("rage_fury", "ATI Rage Fury MAXX", "gpu", 1999, 0.0, 0.4, "LEGENDARY", "Dual GPU"),
     "radeon_ddr": HardwareEntry("radeon_ddr", "ATI Radeon DDR", "gpu", 2000, 0.0, 0.2, "LEGENDARY"),
     "radeon_7200": HardwareEntry("radeon_7200", "ATI Radeon 7200", "gpu", 2001, 0.0, 0.15, "LEGENDARY"),
-
     # NVIDIA (LEGENDARY/ANCIENT)
     "riva_128": HardwareEntry("riva_128", "NVIDIA RIVA 128", "gpu", 1997, 0.0, 0.35, "LEGENDARY"),
     "riva_tnt": HardwareEntry("riva_tnt", "NVIDIA RIVA TNT", "gpu", 1998, 0.0, 0.3, "LEGENDARY"),
     "tnt2": HardwareEntry("tnt2", "NVIDIA TNT2", "gpu", 1999, 0.0, 0.25, "LEGENDARY"),
-    "geforce_256": HardwareEntry("geforce_256", "NVIDIA GeForce 256", "gpu", 1999, 0.0, 0.25, "LEGENDARY", "First GeForce"),
+    "geforce_256": HardwareEntry(
+        "geforce_256", "NVIDIA GeForce 256", "gpu", 1999, 0.0, 0.25, "LEGENDARY", "First GeForce"
+    ),
     "geforce2": HardwareEntry("geforce2", "NVIDIA GeForce2", "gpu", 2000, 0.0, 0.2, "LEGENDARY"),
     "geforce3": HardwareEntry("geforce3", "NVIDIA GeForce3", "gpu", 2001, 0.0, 0.15, "ANCIENT"),
     "geforce4": HardwareEntry("geforce4", "NVIDIA GeForce4", "gpu", 2002, 0.0, 0.15, "ANCIENT"),
-
     # Matrox (RARE!)
     "millennium": HardwareEntry("millennium", "Matrox Millennium", "gpu", 1995, 0.0, 0.5, "LEGENDARY", "Professional"),
     "mystique": HardwareEntry("mystique", "Matrox Mystique", "gpu", 1996, 0.0, 0.4, "LEGENDARY"),
     "g200": HardwareEntry("g200", "Matrox G200", "gpu", 1998, 0.0, 0.35, "LEGENDARY"),
     "g400": HardwareEntry("g400", "Matrox G400", "gpu", 1999, 0.0, 0.35, "LEGENDARY", "Best 2D"),
     "parhelia": HardwareEntry("parhelia", "Matrox Parhelia", "gpu", 2002, 0.0, 0.5, "LEGENDARY", "Triple-head"),
-
     # Number Nine (VERY RARE!)
-    "imagine_128": HardwareEntry("imagine_128", "Number Nine Imagine 128", "gpu", 1995, 0.0, 0.6, "LEGENDARY", "Very rare"),
-    "revolution_3d": HardwareEntry("revolution_3d", "Number Nine Revolution 3D", "gpu", 1997, 0.0, 0.7, "LEGENDARY", "Extremely rare"),
+    "imagine_128": HardwareEntry(
+        "imagine_128", "Number Nine Imagine 128", "gpu", 1995, 0.0, 0.6, "LEGENDARY", "Very rare"
+    ),
+    "revolution_3d": HardwareEntry(
+        "revolution_3d", "Number Nine Revolution 3D", "gpu", 1997, 0.0, 0.7, "LEGENDARY", "Extremely rare"
+    ),
     "revolution_iv": HardwareEntry("revolution_iv", "Number Nine Revolution IV", "gpu", 1998, 0.0, 0.7, "LEGENDARY"),
-
     # Rendition (MYTHIC - VERY RARE!)
-    "verite_v1000": HardwareEntry("verite_v1000", "Rendition Verite V1000", "gpu", 1995, 0.0, 0.7, "MYTHIC", "Extremely rare"),
-    "verite_v2100": HardwareEntry("verite_v2100", "Rendition Verite V2100", "gpu", 1997, 0.0, 0.6, "MYTHIC", "Very rare"),
-    "verite_v2200": HardwareEntry("verite_v2200", "Rendition Verite V2200", "gpu", 1998, 0.0, 0.6, "MYTHIC", "Very rare"),
-
+    "verite_v1000": HardwareEntry(
+        "verite_v1000", "Rendition Verite V1000", "gpu", 1995, 0.0, 0.7, "MYTHIC", "Extremely rare"
+    ),
+    "verite_v2100": HardwareEntry(
+        "verite_v2100", "Rendition Verite V2100", "gpu", 1997, 0.0, 0.6, "MYTHIC", "Very rare"
+    ),
+    "verite_v2200": HardwareEntry(
+        "verite_v2200", "Rendition Verite V2200", "gpu", 1998, 0.0, 0.6, "MYTHIC", "Very rare"
+    ),
     # PowerVR (RARE!)
     "pcx1": HardwareEntry("pcx1", "NEC PowerVR PCX1", "gpu", 1996, 0.0, 0.6, "LEGENDARY", "Tile-based"),
     "pcx2": HardwareEntry("pcx2", "NEC PowerVR PCX2", "gpu", 1997, 0.0, 0.5, "LEGENDARY"),
@@ -640,9 +605,11 @@ GRAPHICS_DATABASE: Dict[str, HardwareEntry] = {
 # HARDWARE LOOKUP FUNCTIONS
 # =============================================================================
 
+
 def normalize_id(hw_id: str) -> str:
     """Normalize hardware ID for lookup"""
     return hw_id.lower().strip().replace(" ", "_").replace("-", "_")
+
 
 def lookup_hardware(hw_id: str, family: Optional[str] = None) -> Optional[HardwareEntry]:
     """
@@ -671,15 +638,17 @@ def lookup_hardware(hw_id: str, family: Optional[str] = None) -> Optional[Hardwa
             databases.append(GRAPHICS_DATABASE)
 
     # Add all databases as fallback
-    databases.extend([
-        X86_CPUID_DATABASE,
-        POWERPC_PVR_DATABASE,
-        M68K_DATABASE,
-        ARM_DATABASE,
-        WORKSTATION_DATABASE,
-        CLASSIC_CHIPSET_DATABASE,
-        GRAPHICS_DATABASE,
-    ])
+    databases.extend(
+        [
+            X86_CPUID_DATABASE,
+            POWERPC_PVR_DATABASE,
+            M68K_DATABASE,
+            ARM_DATABASE,
+            WORKSTATION_DATABASE,
+            CLASSIC_CHIPSET_DATABASE,
+            GRAPHICS_DATABASE,
+        ]
+    )
 
     # Search through databases
     for db in databases:
@@ -692,6 +661,7 @@ def lookup_hardware(hw_id: str, family: Optional[str] = None) -> Optional[Hardwa
                 return entry
 
     return None
+
 
 def calculate_poa_multiplier(
     device_family: str,
@@ -708,7 +678,7 @@ def calculate_poa_multiplier(
     """
     family_lower = device_family.lower() if device_family else ""
     arch_lower = device_arch.lower() if device_arch else ""
-    model_lower = device_model.lower() if device_model else ""
+    device_model.lower() if device_model else ""
 
     # Default values
     base_mult = 1.0
@@ -804,6 +774,7 @@ def calculate_poa_multiplier(
 
     return (base_mult, tier, rarity, hw_name)
 
+
 def get_total_multiplier(base_mult: float, rarity_bonus: float) -> float:
     """Calculate total multiplier including rarity bonus"""
     return base_mult + (base_mult * rarity_bonus)
@@ -812,6 +783,7 @@ def get_total_multiplier(base_mult: float, rarity_bonus: float) -> float:
 # =============================================================================
 # CONVENIENCE FUNCTIONS FOR RIP SERVICE
 # =============================================================================
+
 
 def get_poa_info_for_miner(signals: dict) -> dict:
     """
@@ -861,6 +833,7 @@ def get_poa_info_for_miner(signals: dict) -> dict:
 # STATISTICS AND REPORTING
 # =============================================================================
 
+
 def get_database_stats() -> dict:
     """Get statistics about the hardware database"""
     all_dbs = {
@@ -898,10 +871,7 @@ def get_database_stats() -> dict:
 
     # Find rarest hardware (highest rarity bonus)
     all_entries.sort(key=lambda x: x.rarity_bonus, reverse=True)
-    stats["rarest_hardware"] = [
-        {"name": e.name, "rarity": e.rarity_bonus, "tier": e.tier}
-        for e in all_entries[:20]
-    ]
+    stats["rarest_hardware"] = [{"name": e.name, "rarity": e.rarity_bonus, "tier": e.tier} for e in all_entries[:20]]
 
     return stats
 
@@ -914,14 +884,14 @@ if __name__ == "__main__":
     print("=" * 60)
     print(f"\nTotal hardware entries: {stats['total_entries']}")
     print("\nBy family:")
-    for family, count in stats['by_family'].items():
+    for family, count in stats["by_family"].items():
         print(f"  {family:15} {count:4} entries")
     print("\nBy tier:")
-    for tier, count in stats['by_tier'].items():
+    for tier, count in stats["by_tier"].items():
         print(f"  {tier:12} {count:4} entries")
     print("\nTop 10 rarest hardware (highest bonus):")
-    for i, hw in enumerate(stats['rarest_hardware'][:10], 1):
-        print(f"  {i:2}. {hw['name']:35} +{hw['rarity']*100:.0f}% ({hw['tier']})")
+    for i, hw in enumerate(stats["rarest_hardware"][:10], 1):
+        print(f"  {i:2}. {hw['name']:35} +{hw['rarity'] * 100:.0f}% ({hw['tier']})")
 
     # Test some lookups
     print("\n" + "=" * 60)
@@ -944,4 +914,4 @@ if __name__ == "__main__":
         print(f"\n{family}/{arch}:")
         print(f"  Hardware: {name}")
         print(f"  Tier: {tier}")
-        print(f"  Base: {base}x, Rarity: +{rarity*100:.0f}%, Total: {total:.2f}x")
+        print(f"  Base: {base}x, Rarity: +{rarity * 100:.0f}%, Total: {total:.2f}x")

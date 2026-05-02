@@ -4,6 +4,7 @@ F10: Block save / transaction confirmation must be atomic.
 Tests that save_block + confirm_transaction share a single DB connection
 so that a crash or failure cannot partially confirm transactions.
 """
+
 import os
 import sqlite3
 import sys
@@ -17,9 +18,21 @@ if NODE_DIR not in sys.path:
 
 # Stub rustchain_crypto module
 mock = types.ModuleType("rustchain_crypto")
+
+
 class SignedTransaction:
-    def __init__(self, from_addr="", to_addr="", amount_urtc=0, nonce=0,
-                 timestamp=0, memo="", signature="", public_key="", tx_hash=""):
+    def __init__(
+        self,
+        from_addr="",
+        to_addr="",
+        amount_urtc=0,
+        nonce=0,
+        timestamp=0,
+        memo="",
+        signature="",
+        public_key="",
+        tx_hash="",
+    ):
         self.from_addr = from_addr
         self.to_addr = to_addr
         self.amount_urtc = amount_urtc
@@ -29,10 +42,23 @@ class SignedTransaction:
         self.signature = signature
         self.public_key = public_key
         self.tx_hash = tx_hash
-    def verify(self): return True
-class Ed25519Signer: pass
-def blake2b256_hex(x): return "00" * 32
-def address_from_public_key(b): return "addr-from-pub"
+
+    def verify(self):
+        return True
+
+
+class Ed25519Signer:
+    pass
+
+
+def blake2b256_hex(x):
+    return "00" * 32
+
+
+def address_from_public_key(b):
+    return "addr-from-pub"
+
+
 mock.SignedTransaction = SignedTransaction
 mock.Ed25519Signer = Ed25519Signer
 mock.blake2b256_hex = blake2b256_hex
@@ -46,7 +72,7 @@ class TestConfirmTransactionAtomicity(unittest.TestCase):
     """Test that confirm_transaction can share a connection with save_block."""
 
     def setUp(self):
-        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.db_path = self.tmp.name
         self.tmp.close()
         # Create the balances table BEFORE TransactionPool init so
@@ -61,15 +87,9 @@ class TestConfirmTransactionAtomicity(unittest.TestCase):
         # Seed balances
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "INSERT INTO balances (wallet, balance_urtc, wallet_nonce) "
-                "VALUES (?, ?, ?)",
-                ("alice", 10_000, 0)
+                "INSERT INTO balances (wallet, balance_urtc, wallet_nonce) VALUES (?, ?, ?)", ("alice", 10_000, 0)
             )
-            conn.execute(
-                "INSERT INTO balances (wallet, balance_urtc, wallet_nonce) "
-                "VALUES (?, ?, ?)",
-                ("bob", 0, 0)
-            )
+            conn.execute("INSERT INTO balances (wallet, balance_urtc, wallet_nonce) VALUES (?, ?, ?)", ("bob", 0, 0))
 
     def tearDown(self):
         try:
@@ -85,7 +105,7 @@ class TestConfirmTransactionAtomicity(unittest.TestCase):
                 "(tx_hash, from_addr, to_addr, amount_urtc, nonce, timestamp, "
                 "memo, signature, public_key, status, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
-                (tx_hash, from_addr, to_addr, amount, nonce, 1000, "", "sig", "pk", 1000)
+                (tx_hash, from_addr, to_addr, amount, nonce, 1000, "", "sig", "pk", 1000),
             )
 
     def test_confirm_with_shared_connection_succeeds(self):
@@ -99,9 +119,7 @@ class TestConfirmTransactionAtomicity(unittest.TestCase):
         self.assertTrue(ok)
 
         # Verify changes are visible on the same connection (before commit)
-        row = conn.execute(
-            "SELECT balance_urtc FROM balances WHERE wallet = ?", ("bob",)
-        ).fetchone()
+        row = conn.execute("SELECT balance_urtc FROM balances WHERE wallet = ?", ("bob",)).fetchone()
         self.assertEqual(row[0], 1_000)
 
         conn.commit()
@@ -109,15 +127,10 @@ class TestConfirmTransactionAtomicity(unittest.TestCase):
 
         # Verify persisted after commit
         with sqlite3.connect(self.db_path) as conn2:
-            row = conn2.execute(
-                "SELECT balance_urtc FROM balances WHERE wallet = ?", ("bob",)
-            ).fetchone()
+            row = conn2.execute("SELECT balance_urtc FROM balances WHERE wallet = ?", ("bob",)).fetchone()
             self.assertEqual(row[0], 1_000)
             # Pending should be gone
-            row2 = conn2.execute(
-                "SELECT COUNT(*) FROM pending_transactions WHERE tx_hash = ?",
-                ("tx1",)
-            ).fetchone()
+            row2 = conn2.execute("SELECT COUNT(*) FROM pending_transactions WHERE tx_hash = ?", ("tx1",)).fetchone()
             self.assertEqual(row2[0], 0)
 
     def test_confirm_rollback_on_shared_connection(self):
@@ -136,15 +149,10 @@ class TestConfirmTransactionAtomicity(unittest.TestCase):
 
         # State should be unchanged
         with sqlite3.connect(self.db_path) as conn2:
-            row = conn2.execute(
-                "SELECT balance_urtc FROM balances WHERE wallet = ?", ("bob",)
-            ).fetchone()
+            row = conn2.execute("SELECT balance_urtc FROM balances WHERE wallet = ?", ("bob",)).fetchone()
             self.assertEqual(row[0], 0)  # bob still has 0
             # Pending should still exist
-            row2 = conn2.execute(
-                "SELECT COUNT(*) FROM pending_transactions WHERE tx_hash = ?",
-                ("tx2",)
-            ).fetchone()
+            row2 = conn2.execute("SELECT COUNT(*) FROM pending_transactions WHERE tx_hash = ?", ("tx2",)).fetchone()
             self.assertEqual(row2[0], 1)
 
     def test_confirm_fails_insufficient_balance_shared_conn(self):
@@ -161,14 +169,9 @@ class TestConfirmTransactionAtomicity(unittest.TestCase):
 
         # Nothing should have changed
         with sqlite3.connect(self.db_path) as conn2:
-            row = conn2.execute(
-                "SELECT balance_urtc FROM balances WHERE wallet = ?", ("alice",)
-            ).fetchone()
+            row = conn2.execute("SELECT balance_urtc FROM balances WHERE wallet = ?", ("alice",)).fetchone()
             self.assertEqual(row[0], 10_000)
-            row2 = conn2.execute(
-                "SELECT COUNT(*) FROM pending_transactions WHERE tx_hash = ?",
-                ("tx3",)
-            ).fetchone()
+            row2 = conn2.execute("SELECT COUNT(*) FROM pending_transactions WHERE tx_hash = ?", ("tx3",)).fetchone()
             self.assertEqual(row2[0], 1)
 
     def test_standalone_confirm_still_works(self):
@@ -179,9 +182,7 @@ class TestConfirmTransactionAtomicity(unittest.TestCase):
         self.assertTrue(ok)
 
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                "SELECT balance_urtc FROM balances WHERE wallet = ?", ("bob",)
-            ).fetchone()
+            row = conn.execute("SELECT balance_urtc FROM balances WHERE wallet = ?", ("bob",)).fetchone()
             self.assertEqual(row[0], 500)
 
     def test_multi_tx_atomic_on_shared_conn(self):
@@ -202,9 +203,7 @@ class TestConfirmTransactionAtomicity(unittest.TestCase):
         conn.close()
 
         with sqlite3.connect(self.db_path) as conn2:
-            row = conn2.execute(
-                "SELECT balance_urtc FROM balances WHERE wallet = ?", ("bob",)
-            ).fetchone()
+            row = conn2.execute("SELECT balance_urtc FROM balances WHERE wallet = ?", ("bob",)).fetchone()
             self.assertEqual(row[0], 0)
 
 

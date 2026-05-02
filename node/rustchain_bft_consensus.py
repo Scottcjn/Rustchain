@@ -25,21 +25,22 @@ import logging
 import sqlite3
 import threading
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set
+
 import requests
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [BFT] %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [BFT] %(message)s")
 
 # ============================================================================
 # CONSTANTS
 # ============================================================================
 
 BLOCK_TIME = 600  # 10 minutes per epoch
-PREPARE_THRESHOLD = 2/3  # Need 2/3 of nodes to prepare
-COMMIT_THRESHOLD = 2/3   # Need 2/3 of nodes to commit
+PREPARE_THRESHOLD = 2 / 3  # Need 2/3 of nodes to prepare
+COMMIT_THRESHOLD = 2 / 3  # Need 2/3 of nodes to commit
 VIEW_CHANGE_TIMEOUT = 90  # Seconds before triggering view change
 CONSENSUS_MESSAGE_TTL = 300  # 5 minutes message validity
 
@@ -66,23 +67,25 @@ class MessageType(Enum):
 # DATA STRUCTURES
 # ============================================================================
 
+
 @dataclass
 class ConsensusMessage:
     """Message structure for BFT consensus"""
+
     msg_type: str
-    view: int           # Current view number
-    epoch: int          # RustChain epoch
-    digest: str         # Hash of proposal
-    node_id: str        # Sender node ID
-    signature: str      # HMAC signature
-    timestamp: int      # Unix timestamp
+    view: int  # Current view number
+    epoch: int  # RustChain epoch
+    digest: str  # Hash of proposal
+    node_id: str  # Sender node ID
+    signature: str  # HMAC signature
+    timestamp: int  # Unix timestamp
     proposal: Optional[Dict] = None  # Actual data (only in PRE-PREPARE)
 
     def to_dict(self) -> Dict:
         return asdict(self)
 
     @staticmethod
-    def from_dict(data: Dict) -> 'ConsensusMessage':
+    def from_dict(data: Dict) -> "ConsensusMessage":
         return ConsensusMessage(**data)
 
     def compute_digest(self) -> str:
@@ -95,21 +98,22 @@ class ConsensusMessage:
 @dataclass
 class EpochProposal:
     """Proposal for epoch settlement"""
+
     epoch: int
-    miners: List[Dict]          # Miner attestations
-    total_reward: float         # 1.5 RTC per epoch
+    miners: List[Dict]  # Miner attestations
+    total_reward: float  # 1.5 RTC per epoch
     distribution: Dict[str, float]  # miner_id -> reward
-    proposer: str               # Node that created proposal
-    merkle_root: str            # Merkle root of miner data
+    proposer: str  # Node that created proposal
+    merkle_root: str  # Merkle root of miner data
 
     def compute_digest(self) -> str:
         data = {
-            'epoch': self.epoch,
-            'miners': self.miners,
-            'total_reward': self.total_reward,
-            'distribution': self.distribution,
-            'proposer': self.proposer,
-            'merkle_root': self.merkle_root
+            "epoch": self.epoch,
+            "miners": self.miners,
+            "total_reward": self.total_reward,
+            "distribution": self.distribution,
+            "proposer": self.proposer,
+            "merkle_root": self.merkle_root,
         }
         return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
@@ -117,6 +121,7 @@ class EpochProposal:
 @dataclass
 class ViewChangeMessage:
     """View change request"""
+
     view: int
     epoch: int
     node_id: str
@@ -128,6 +133,7 @@ class ViewChangeMessage:
 # ============================================================================
 # BFT CONSENSUS ENGINE
 # ============================================================================
+
 
 class BFTConsensus:
     """
@@ -229,9 +235,7 @@ class BFTConsensus:
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
-                rows = conn.execute(
-                    "SELECT epoch, view FROM bft_committed_epochs"
-                ).fetchall()
+                rows = conn.execute("SELECT epoch, view FROM bft_committed_epochs").fetchall()
                 for epoch, view in rows:
                     self.committed_epochs.add(epoch)
                     if view > self.current_view:
@@ -300,20 +304,12 @@ class BFTConsensus:
         3. Existing deployments just need to set the same shared secret
            on all nodes — per-node keys are derived automatically.
         """
-        return hmac.new(
-            self.secret_key.encode(),
-            node_id.encode(),
-            hashlib.sha256
-        ).hexdigest()
+        return hmac.new(self.secret_key.encode(), node_id.encode(), hashlib.sha256).hexdigest()
 
     def _sign_message(self, data: str) -> str:
         """Sign a message with node-specific HMAC key"""
         node_key = self._derive_node_key(self.node_id)
-        return hmac.new(
-            node_key.encode(),
-            data.encode(),
-            hashlib.sha256
-        ).hexdigest()
+        return hmac.new(node_key.encode(), data.encode(), hashlib.sha256).hexdigest()
 
     def _verify_signature(self, node_id: str, data: str, signature: str) -> bool:
         """Verify message signature using the sender's derived key.
@@ -323,19 +319,16 @@ class BFTConsensus:
         cannot forge messages claiming to be from a different node_id.
         """
         node_key = self._derive_node_key(node_id)
-        expected = hmac.new(
-            node_key.encode(),
-            data.encode(),
-            hashlib.sha256
-        ).hexdigest()
+        expected = hmac.new(node_key.encode(), data.encode(), hashlib.sha256).hexdigest()
         return hmac.compare_digest(signature, expected)
 
     # ========================================================================
     # PHASE 1: PRE-PREPARE (Leader proposes)
     # ========================================================================
 
-    def propose_epoch_settlement(self, epoch: int, miners: List[Dict],
-                                  distribution: Dict[str, float]) -> Optional[ConsensusMessage]:
+    def propose_epoch_settlement(
+        self, epoch: int, miners: List[Dict], distribution: Dict[str, float]
+    ) -> Optional[ConsensusMessage]:
         """
         Leader proposes epoch settlement (PRE-PREPARE phase).
         Only the leader for current view can call this.
@@ -356,7 +349,7 @@ class BFTConsensus:
                 total_reward=1.5,  # RTC per epoch
                 distribution=distribution,
                 proposer=self.node_id,
-                merkle_root=self._compute_merkle_root(miners)
+                merkle_root=self._compute_merkle_root(miners),
             )
 
             digest = proposal.compute_digest()
@@ -375,7 +368,7 @@ class BFTConsensus:
                 node_id=self.node_id,
                 signature=signature,
                 timestamp=timestamp,
-                proposal=asdict(proposal)
+                proposal=asdict(proposal),
             )
 
             # Log locally
@@ -402,10 +395,7 @@ class BFTConsensus:
             return hashlib.sha256(b"empty").hexdigest()
 
         # Simple merkle: hash all miner data
-        hashes = [
-            hashlib.sha256(json.dumps(m, sort_keys=True).encode()).hexdigest()
-            for m in miners
-        ]
+        hashes = [hashlib.sha256(json.dumps(m, sort_keys=True).encode()).hexdigest() for m in miners]
 
         while len(hashes) > 1:
             # Duplicate the last leaf when the count is odd so we always pair evenly.
@@ -476,7 +466,7 @@ class BFTConsensus:
                 digest=msg.digest,
                 node_id=self.node_id,
                 signature=signature,
-                timestamp=timestamp
+                timestamp=timestamp,
             )
 
             # Log prepare
@@ -522,7 +512,9 @@ class BFTConsensus:
 
             # Verify digest matches the PRE-PREPARE for this epoch
             if epoch in self.pre_prepare_log and msg.digest != self.pre_prepare_log[epoch].digest:
-                logging.warning(f"PREPARE digest mismatch for epoch {epoch}: expected {self.pre_prepare_log[epoch].digest[:16]}... got {msg.digest[:16]}...")
+                logging.warning(
+                    f"PREPARE digest mismatch for epoch {epoch}: expected {self.pre_prepare_log[epoch].digest[:16]}... got {msg.digest[:16]}..."
+                )
                 return
 
             # Store prepare
@@ -592,7 +584,7 @@ class BFTConsensus:
                 digest=pre_prepare.digest,
                 node_id=self.node_id,
                 signature=signature,
-                timestamp=timestamp
+                timestamp=timestamp,
             )
 
             # Log commit
@@ -636,7 +628,9 @@ class BFTConsensus:
 
             # Verify digest matches the PRE-PREPARE for this epoch
             if epoch in self.pre_prepare_log and msg.digest != self.pre_prepare_log[epoch].digest:
-                logging.warning(f"COMMIT digest mismatch for epoch {epoch}: expected {self.pre_prepare_log[epoch].digest[:16]}... got {msg.digest[:16]}...")
+                logging.warning(
+                    f"COMMIT digest mismatch for epoch {epoch}: expected {self.pre_prepare_log[epoch].digest[:16]}... got {msg.digest[:16]}..."
+                )
                 return
 
             # Store commit
@@ -685,12 +679,14 @@ class BFTConsensus:
 
             # Save to committed epochs table
             with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT OR REPLACE INTO bft_committed_epochs
                     (epoch, view, digest, committed_at, proposal_json)
                     VALUES (?, ?, ?, ?, ?)
-                """, (epoch, self.current_view, pre_prepare.digest,
-                      int(time.time()), json.dumps(pre_prepare.proposal)))
+                """,
+                    (epoch, self.current_view, pre_prepare.digest, int(time.time()), json.dumps(pre_prepare.proposal)),
+                )
                 conn.commit()
 
             logging.info(f"CONSENSUS REACHED for epoch {epoch}")
@@ -708,22 +704,16 @@ class BFTConsensus:
         times for the same epoch (e.g. after a restart before
         committed_epochs is fully restored).
         """
-        epoch = proposal.get('epoch')
-        distribution = proposal.get('distribution', {})
+        epoch = proposal.get("epoch")
+        distribution = proposal.get("distribution", {})
 
         with sqlite3.connect(self.db_path) as conn:
             # ── Idempotency guard ────────────────────────────────────
             # If any ledger entry already exists for this epoch, the
             # settlement was already applied.  Bail out.
-            existing = conn.execute(
-                "SELECT 1 FROM ledger WHERE memo = ? LIMIT 1",
-                (f"epoch_{epoch}_bft",)
-            ).fetchone()
+            existing = conn.execute("SELECT 1 FROM ledger WHERE memo = ? LIMIT 1", (f"epoch_{epoch}_bft",)).fetchone()
             if existing:
-                logging.warning(
-                    f"Settlement for epoch {epoch} already applied — skipping "
-                    f"to prevent reward doubling"
-                )
+                logging.warning(f"Settlement for epoch {epoch} already applied — skipping to prevent reward doubling")
                 return
 
             for miner_id, reward in distribution.items():
@@ -731,18 +721,24 @@ class BFTConsensus:
                 # floating-point drift accumulating across many ledger entries.
                 reward_urtc = int(reward * 1_000_000)
 
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT INTO balances (miner_id, amount_i64)
                     VALUES (?, ?)
                     ON CONFLICT(miner_id) DO UPDATE SET
                     amount_i64 = amount_i64 + excluded.amount_i64
-                """, (miner_id, reward_urtc))
+                """,
+                    (miner_id, reward_urtc),
+                )
 
                 # Log in ledger
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT INTO ledger (miner_id, delta_i64, tx_type, memo, ts)
                     VALUES (?, ?, 'reward', ?, ?)
-                """, (miner_id, reward_urtc, f"epoch_{epoch}_bft", int(time.time())))
+                """,
+                    (miner_id, reward_urtc, f"epoch_{epoch}_bft", int(time.time())),
+                )
 
             conn.commit()
 
@@ -784,7 +780,7 @@ class BFTConsensus:
                 node_id=self.node_id,
                 prepared_cert=None,  # Could include prepared certificate
                 signature=signature,
-                timestamp=timestamp
+                timestamp=timestamp,
             )
 
             # Log view change
@@ -801,11 +797,11 @@ class BFTConsensus:
     def handle_view_change(self, msg_data: Dict):
         """Handle received VIEW-CHANGE message"""
         with self.lock:
-            new_view = msg_data.get('view')
-            node_id = msg_data.get('node_id')
-            signature = msg_data.get('signature', '')
-            timestamp = msg_data.get('timestamp', 0)
-            epoch = msg_data.get('epoch', 0)
+            new_view = msg_data.get("view")
+            node_id = msg_data.get("node_id")
+            signature = msg_data.get("signature", "")
+            timestamp = msg_data.get("timestamp", 0)
+            epoch = msg_data.get("epoch", 0)
 
             # -- Validation: reject garbage / missing fields -----------------
             if not all([new_view, node_id, signature, timestamp]):
@@ -814,28 +810,18 @@ class BFTConsensus:
 
             # Must be requesting a *higher* view than current
             if new_view <= self.current_view:
-                logging.warning(
-                    f"[VIEW-CHANGE] Rejected stale view {new_view} "
-                    f"(<= current {self.current_view})"
-                )
+                logging.warning(f"[VIEW-CHANGE] Rejected stale view {new_view} (<= current {self.current_view})")
                 return
 
             # -- Verify HMAC signature (same format as _trigger_view_change) --
-            sign_data = (
-                f"{MessageType.VIEW_CHANGE.value}:{new_view}:{epoch}:{timestamp}"
-            )
+            sign_data = f"{MessageType.VIEW_CHANGE.value}:{new_view}:{epoch}:{timestamp}"
             if not self._verify_signature(node_id, sign_data, signature):
-                logging.warning(
-                    f"[VIEW-CHANGE] Invalid signature from {node_id}"
-                )
+                logging.warning(f"[VIEW-CHANGE] Invalid signature from {node_id}")
                 return
 
             # -- Timestamp freshness -----------------------------------------
             if abs(time.time() - timestamp) > CONSENSUS_MESSAGE_TTL:
-                logging.warning(
-                    f"[VIEW-CHANGE] Stale message from {node_id} "
-                    f"(age={int(time.time()) - timestamp}s)"
-                )
+                logging.warning(f"[VIEW-CHANGE] Stale message from {node_id} (age={int(time.time()) - timestamp}s)")
                 return
 
             # -- Passed all checks, store ------------------------------------
@@ -874,7 +860,7 @@ class BFTConsensus:
 
             # If we're the new leader, propose
             if self.is_leader():
-                logging.info(f"[NEW-VIEW] We are the new leader!")
+                logging.info("[NEW-VIEW] We are the new leader!")
                 # New leader should re-propose pending epochs
 
     # ========================================================================
@@ -886,9 +872,9 @@ class BFTConsensus:
         if not proposal:
             return False
 
-        epoch = proposal.get('epoch')
-        miners = proposal.get('miners', [])
-        distribution = proposal.get('distribution', {})
+        epoch = proposal.get("epoch")
+        miners = proposal.get("miners", [])
+        distribution = proposal.get("distribution", {})
 
         # Check epoch is valid
         if epoch is None or epoch < 0:
@@ -902,7 +888,7 @@ class BFTConsensus:
             return False
 
         # Check all miners in distribution are in miner list
-        miner_ids = {m.get('miner_id') for m in miners}
+        miner_ids = {m.get("miner_id") for m in miners}
         for miner_id in distribution:
             if miner_id not in miner_ids:
                 logging.warning(f"Miner {miner_id} in distribution but not in miners list")
@@ -913,7 +899,7 @@ class BFTConsensus:
         # from a previous epoch while submitting a different (falsified) miners
         # list, and honest nodes would still send PREPARE for the forged proposal.
         expected_merkle = self._compute_merkle_root(miners)
-        if proposal.get('merkle_root') != expected_merkle:
+        if proposal.get("merkle_root") != expected_merkle:
             logging.warning(
                 f"Proposal merkle_root mismatch for epoch {epoch}: "
                 f"got {proposal.get('merkle_root', '')[:16]}... "
@@ -932,12 +918,7 @@ class BFTConsensus:
         for node_id, url in self.peers.items():
             try:
                 endpoint = f"{url}/bft/message"
-                response = requests.post(
-                    endpoint,
-                    json=msg.to_dict(),
-                    timeout=5,
-                    headers={'X-Node-ID': self.node_id}
-                )
+                response = requests.post(endpoint, json=msg.to_dict(), timeout=5, headers={"X-Node-ID": self.node_id})
                 if response.ok:
                     logging.debug(f"Broadcast {msg.msg_type} to {node_id}")
             except Exception as e:
@@ -959,22 +940,30 @@ class BFTConsensus:
         """Save consensus message to database"""
         try:
             with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT OR REPLACE INTO bft_consensus_log
                     (epoch, view, msg_type, node_id, digest, proposal_json, signature, timestamp)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    msg.epoch, msg.view, msg.msg_type, msg.node_id,
-                    msg.digest, json.dumps(msg.proposal) if msg.proposal else None,
-                    msg.signature, msg.timestamp
-                ))
+                """,
+                    (
+                        msg.epoch,
+                        msg.view,
+                        msg.msg_type,
+                        msg.node_id,
+                        msg.digest,
+                        json.dumps(msg.proposal) if msg.proposal else None,
+                        msg.signature,
+                        msg.timestamp,
+                    ),
+                )
                 conn.commit()
         except Exception as e:
             logging.error(f"Failed to save message: {e}")
 
     def receive_message(self, msg_data: Dict):
         """Handle incoming consensus message"""
-        msg_type = msg_data.get('msg_type')
+        msg_type = msg_data.get("msg_type")
 
         if msg_type == MessageType.PRE_PREPARE.value:
             msg = ConsensusMessage.from_dict(msg_data)
@@ -994,17 +983,17 @@ class BFTConsensus:
         """Get consensus status"""
         with self.lock:
             return {
-                'node_id': self.node_id,
-                'current_view': self.current_view,
-                'current_epoch': self.current_epoch,
-                'phase': self.phase.value,
-                'leader': self.get_leader(),
-                'is_leader': self.is_leader(),
-                'total_nodes': self.get_total_nodes(),
-                'fault_tolerance': self.get_fault_tolerance(),
-                'quorum_size': self.get_quorum_size(),
-                'committed_epochs': len(self.committed_epochs),
-                'peers': list(self.peers.keys())
+                "node_id": self.node_id,
+                "current_view": self.current_view,
+                "current_epoch": self.current_epoch,
+                "phase": self.phase.value,
+                "leader": self.get_leader(),
+                "is_leader": self.is_leader(),
+                "total_nodes": self.get_total_nodes(),
+                "fault_tolerance": self.get_fault_tolerance(),
+                "quorum_size": self.get_quorum_size(),
+                "committed_epochs": len(self.committed_epochs),
+                "peers": list(self.peers.keys()),
             }
 
 
@@ -1012,54 +1001,55 @@ class BFTConsensus:
 # FLASK ROUTES FOR BFT
 # ============================================================================
 
+
 def create_bft_routes(app, bft: BFTConsensus):
     """Add BFT consensus routes to Flask app"""
-    from flask import request, jsonify
+    from flask import jsonify, request
 
-    @app.route('/bft/status', methods=['GET'])
+    @app.route("/bft/status", methods=["GET"])
     def bft_status():
         """Get BFT consensus status"""
         return jsonify(bft.get_status())
 
-    @app.route('/bft/message', methods=['POST'])
+    @app.route("/bft/message", methods=["POST"])
     def bft_receive_message():
         """Receive consensus message from peer"""
         try:
             msg_data = request.get_json()
             bft.receive_message(msg_data)
-            return jsonify({'status': 'ok'})
+            return jsonify({"status": "ok"})
         except Exception as e:
             logging.error(f"BFT message error: {e}")
-            return jsonify({'error': str(e)}), 400
+            return jsonify({"error": str(e)}), 400
 
-    @app.route('/bft/view_change', methods=['POST'])
+    @app.route("/bft/view_change", methods=["POST"])
     def bft_view_change():
         """Receive view change message"""
         try:
             msg_data = request.get_json()
             bft.handle_view_change(msg_data)
-            return jsonify({'status': 'ok'})
+            return jsonify({"status": "ok"})
         except Exception as e:
             logging.error(f"BFT view change error: {e}")
-            return jsonify({'error': str(e)}), 400
+            return jsonify({"error": str(e)}), 400
 
-    @app.route('/bft/propose', methods=['POST'])
+    @app.route("/bft/propose", methods=["POST"])
     def bft_propose():
         """Manually trigger epoch proposal (admin)"""
         try:
             data = request.get_json()
-            epoch = data.get('epoch')
-            miners = data.get('miners', [])
-            distribution = data.get('distribution', {})
+            epoch = data.get("epoch")
+            miners = data.get("miners", [])
+            distribution = data.get("distribution", {})
 
             msg = bft.propose_epoch_settlement(epoch, miners, distribution)
             if msg:
-                return jsonify({'status': 'proposed', 'digest': msg.digest})
+                return jsonify({"status": "proposed", "digest": msg.digest})
             else:
-                return jsonify({'error': 'not_leader_or_already_committed'}), 400
+                return jsonify({"error": "not_leader_or_already_committed"}), 400
         except Exception as e:
             logging.error(f"BFT propose error: {e}")
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
 
 # ============================================================================
@@ -1095,15 +1085,12 @@ if __name__ == "__main__":
 
         # Mock miner data
         miners = [
-            {'miner_id': 'g4-powerbook-115', 'device_arch': 'G4', 'weight': 2.5},
-            {'miner_id': 'sophia-nas-c4130', 'device_arch': 'modern', 'weight': 1.0},
+            {"miner_id": "g4-powerbook-115", "device_arch": "G4", "weight": 2.5},
+            {"miner_id": "sophia-nas-c4130", "device_arch": "modern", "weight": 1.0},
         ]
 
-        total_weight = sum(m['weight'] for m in miners)
-        distribution = {
-            m['miner_id']: 1.5 * (m['weight'] / total_weight)
-            for m in miners
-        }
+        total_weight = sum(m["weight"] for m in miners)
+        distribution = {m["miner_id"]: 1.5 * (m["weight"] / total_weight) for m in miners}
 
         msg = bft.propose_epoch_settlement(epoch=425, miners=miners, distribution=distribution)
         if msg:

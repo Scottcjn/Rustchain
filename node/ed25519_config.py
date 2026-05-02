@@ -1,10 +1,5 @@
 # RIP-201: Fleet Detection Immune System
 try:
-    from fleet_immune_system import (
-        record_fleet_signals, calculate_immune_weights,
-        register_fleet_endpoints, ensure_schema as ensure_fleet_schema,
-        get_fleet_report
-    )
     HAVE_FLEET_IMMUNE = True
     print("[RIP-201] Fleet immune system loaded")
 except Exception as _e:
@@ -24,4 +19,4 @@ except Exception as _e:
 # =============================================================================
 
 TESTNET_ALLOW_INLINE_PUBKEY = False  # PRODUCTION: Disabled - Inline pubkeys bypass key registry
-TESTNET_ALLOW_MOCK_SIG = False       # PRODUCTION: Disabled - Mock signatures are insecure
+TESTNET_ALLOW_MOCK_SIG = False  # PRODUCTION: Disabled - Mock signatures are insecure

@@ -12,25 +12,16 @@ Phase 1 Implementation:
 All transactions MUST be signed with Ed25519.
 """
 
-import sqlite3
-import time
-import threading
 import logging
-from typing import Dict, Optional, Tuple, List
-from dataclasses import dataclass
+import sqlite3
+import threading
+import time
 from contextlib import contextmanager
+from typing import Dict, List, Optional, Tuple
 
-from rustchain_crypto import (
-    SignedTransaction,
-    Ed25519Signer,
-    blake2b256_hex,
-    address_from_public_key
-)
+from rustchain_crypto import Ed25519Signer, SignedTransaction, address_from_public_key
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [TX] %(levelname)s: %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [TX] %(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -94,6 +85,7 @@ CREATE INDEX IF NOT EXISTS idx_history_block ON transaction_history(block_height
 # TRANSACTION POOL
 # =============================================================================
 
+
 class TransactionPool:
     """
     Manages pending transactions with proper validation.
@@ -135,9 +127,7 @@ class TransactionPool:
             # Migrate balances table to add CHECK(balance_urtc >= 0) constraint.
             # SQLite doesn't support ALTER TABLE ADD CHECK, so we recreate the table.
             # Detect existing constraint by inspecting the CREATE TABLE statement.
-            cursor.execute(
-                "SELECT sql FROM sqlite_master WHERE type='table' AND name='balances'"
-            )
+            cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='balances'")
             row = cursor.fetchone()
             has_check = row and "CHECK" in (row[0] or "").upper()
             if not has_check:
@@ -149,7 +139,9 @@ class TransactionPool:
                             wallet_nonce INTEGER DEFAULT 0
                         )
                     """)
-                    cursor.execute("INSERT OR IGNORE INTO balances_new SELECT wallet, balance_urtc, wallet_nonce FROM balances WHERE balance_urtc >= 0")
+                    cursor.execute(
+                        "INSERT OR IGNORE INTO balances_new SELECT wallet, balance_urtc, wallet_nonce FROM balances WHERE balance_urtc >= 0"
+                    )
                     cursor.execute("DROP TABLE IF EXISTS balances_old")
                     cursor.execute("ALTER TABLE balances RENAME TO balances_old")
                     cursor.execute("ALTER TABLE balances_new RENAME TO balances")
@@ -159,9 +151,9 @@ class TransactionPool:
                     logger.warning(f"Balance CHECK constraint migration skipped: {e}")
 
             # Create other tables
-            for statement in SCHEMA_UPGRADE_SQL.split(';'):
+            for statement in SCHEMA_UPGRADE_SQL.split(";"):
                 statement = statement.strip()
-                if statement and not statement.startswith('ALTER'):
+                if statement and not statement.startswith("ALTER"):
                     try:
                         cursor.execute(statement)
                     except sqlite3.OperationalError as e:
@@ -189,10 +181,7 @@ class TransactionPool:
         """Get current nonce for a wallet"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT wallet_nonce FROM balances WHERE wallet = ?",
-                (address,)
-            )
+            cursor.execute("SELECT wallet_nonce FROM balances WHERE wallet = ?", (address,))
             result = cursor.fetchone()
             return result["wallet_nonce"] if result else 0
 
@@ -200,10 +189,7 @@ class TransactionPool:
         """Get current balance for a wallet (in uRTC)"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT balance_urtc FROM balances WHERE wallet = ?",
-                (address,)
-            )
+            cursor.execute("SELECT balance_urtc FROM balances WHERE wallet = ?", (address,))
             result = cursor.fetchone()
             return result["balance_urtc"] if result else 0
 
@@ -215,7 +201,7 @@ class TransactionPool:
                 """SELECT COALESCE(SUM(amount_urtc), 0) as pending
                    FROM pending_transactions
                    WHERE from_addr = ? AND status = 'pending'""",
-                (address,)
+                (address,),
             )
             result = cursor.fetchone()
             return result["pending"] if result else 0
@@ -242,7 +228,7 @@ class TransactionPool:
                     """INSERT OR REPLACE INTO wallet_pubkeys
                        (address, public_key, registered_at)
                        VALUES (?, ?, ?)""",
-                    (address, public_key, int(time.time()))
+                    (address, public_key, int(time.time())),
                 )
                 return True
             except Exception as e:
@@ -253,10 +239,7 @@ class TransactionPool:
         """Get registered public key for address"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT public_key FROM wallet_pubkeys WHERE address = ?",
-                (address,)
-            )
+            cursor.execute("SELECT public_key FROM wallet_pubkeys WHERE address = ?", (address,))
             result = cursor.fetchone()
             return result["public_key"] if result else None
 
@@ -278,7 +261,7 @@ class TransactionPool:
         # 2. Verify public key matches address
         derived_addr = address_from_public_key(bytes.fromhex(tx.public_key))
         if derived_addr != tx.from_addr:
-            return False, f"Public key does not match from_addr"
+            return False, "Public key does not match from_addr"
 
         # 3. Check nonce
         expected_nonce = self.get_wallet_nonce(tx.from_addr) + 1
@@ -310,8 +293,7 @@ class TransactionPool:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT nonce FROM pending_transactions WHERE from_addr = ? AND status = 'pending'",
-                (address,)
+                "SELECT nonce FROM pending_transactions WHERE from_addr = ? AND status = 'pending'", (address,)
             )
             return {row["nonce"] for row in cursor.fetchall()}
 
@@ -321,18 +303,12 @@ class TransactionPool:
             cursor = conn.cursor()
 
             # Check pending
-            cursor.execute(
-                "SELECT 1 FROM pending_transactions WHERE tx_hash = ?",
-                (tx_hash,)
-            )
+            cursor.execute("SELECT 1 FROM pending_transactions WHERE tx_hash = ?", (tx_hash,))
             if cursor.fetchone():
                 return True
 
             # Check history
-            cursor.execute(
-                "SELECT 1 FROM transaction_history WHERE tx_hash = ?",
-                (tx_hash,)
-            )
+            cursor.execute("SELECT 1 FROM transaction_history WHERE tx_hash = ?", (tx_hash,))
             return cursor.fetchone() is not None
 
     # SECURITY FIX #2019: Max pending transactions per wallet to prevent DoS
@@ -375,7 +351,7 @@ class TransactionPool:
             cursor.execute(
                 """SELECT COUNT(*) as cnt FROM pending_transactions
                    WHERE from_addr = ? AND status = 'pending'""",
-                (tx.from_addr,)
+                (tx.from_addr,),
             )
             pending_count = cursor.fetchone()["cnt"]
             if pending_count >= self.MAX_PENDING_PER_WALLET:
@@ -385,16 +361,12 @@ class TransactionPool:
                 )
 
             # Check nonce
-            cursor.execute(
-                "SELECT wallet_nonce FROM balances WHERE wallet = ?",
-                (tx.from_addr,)
-            )
+            cursor.execute("SELECT wallet_nonce FROM balances WHERE wallet = ?", (tx.from_addr,))
             nonce_row = cursor.fetchone()
             expected_nonce = (nonce_row["wallet_nonce"] if nonce_row else 0) + 1
 
             cursor.execute(
-                "SELECT nonce FROM pending_transactions WHERE from_addr = ? AND status = 'pending'",
-                (tx.from_addr,)
+                "SELECT nonce FROM pending_transactions WHERE from_addr = ? AND status = 'pending'", (tx.from_addr,)
             )
             pending_nonces = {row["nonce"] for row in cursor.fetchall()}
             while expected_nonce in pending_nonces:
@@ -404,10 +376,7 @@ class TransactionPool:
                 return False, f"Invalid nonce: expected {expected_nonce}, got {tx.nonce}"
 
             # Check balance (atomically within same transaction)
-            cursor.execute(
-                "SELECT balance_urtc FROM balances WHERE wallet = ?",
-                (tx.from_addr,)
-            )
+            cursor.execute("SELECT balance_urtc FROM balances WHERE wallet = ?", (tx.from_addr,))
             bal_row = cursor.fetchone()
             balance = bal_row["balance_urtc"] if bal_row else 0
 
@@ -415,7 +384,7 @@ class TransactionPool:
                 """SELECT COALESCE(SUM(amount_urtc), 0) as pending
                    FROM pending_transactions
                    WHERE from_addr = ? AND status = 'pending'""",
-                (tx.from_addr,)
+                (tx.from_addr,),
             )
             pending_sum = cursor.fetchone()["pending"]
             available = max(0, balance - pending_sum)
@@ -424,16 +393,10 @@ class TransactionPool:
                 return False, f"Insufficient balance: have {available}, need {tx.amount_urtc}"
 
             # Check for duplicate
-            cursor.execute(
-                "SELECT 1 FROM pending_transactions WHERE tx_hash = ?",
-                (tx.tx_hash,)
-            )
+            cursor.execute("SELECT 1 FROM pending_transactions WHERE tx_hash = ?", (tx.tx_hash,))
             if cursor.fetchone():
                 return False, "Transaction already exists"
-            cursor.execute(
-                "SELECT 1 FROM transaction_history WHERE tx_hash = ?",
-                (tx.tx_hash,)
-            )
+            cursor.execute("SELECT 1 FROM transaction_history WHERE tx_hash = ?", (tx.tx_hash,))
             if cursor.fetchone():
                 return False, "Transaction already exists"
 
@@ -453,13 +416,15 @@ class TransactionPool:
                         tx.memo,
                         tx.signature,
                         tx.public_key,
-                        int(time.time())
-                    )
+                        int(time.time()),
+                    ),
                 )
 
-                logger.info(f"TX accepted: {tx.tx_hash[:16]}... "
-                           f"{tx.from_addr[:16]}... -> {tx.to_addr[:16]}... "
-                           f"amount={tx.amount_urtc}")
+                logger.info(
+                    f"TX accepted: {tx.tx_hash[:16]}... "
+                    f"{tx.from_addr[:16]}... -> {tx.to_addr[:16]}... "
+                    f"amount={tx.amount_urtc}"
+                )
 
                 return True, tx.tx_hash
 
@@ -475,7 +440,7 @@ class TransactionPool:
                    WHERE status = 'pending'
                    ORDER BY nonce ASC
                    LIMIT ?""",
-                (limit,)
+                (limit,),
             )
 
             return [
@@ -488,17 +453,13 @@ class TransactionPool:
                     memo=row["memo"],
                     signature=row["signature"],
                     public_key=row["public_key"],
-                    tx_hash=row["tx_hash"]
+                    tx_hash=row["tx_hash"],
                 )
                 for row in cursor.fetchall()
             ]
 
     def confirm_transaction(
-        self,
-        tx_hash: str,
-        block_height: int,
-        block_hash: str,
-        conn: Optional[sqlite3.Connection] = None
+        self, tx_hash: str, block_height: int, block_hash: str, conn: Optional[sqlite3.Connection] = None
     ) -> bool:
         """
         Confirm a transaction (move from pending to history).
@@ -508,12 +469,10 @@ class TransactionPool:
         (e.g. ``BlockProducer.save_block``).  Otherwise a standalone
         connection is used (legacy / test path).
         """
+
         def _do_confirm(cursor) -> bool:
             # Get pending transaction
-            cursor.execute(
-                "SELECT * FROM pending_transactions WHERE tx_hash = ?",
-                (tx_hash,)
-            )
+            cursor.execute("SELECT * FROM pending_transactions WHERE tx_hash = ?", (tx_hash,))
             row = cursor.fetchone()
 
             if not row:
@@ -530,7 +489,7 @@ class TransactionPool:
                    SET balance_urtc = balance_urtc - ?,
                        wallet_nonce = ?
                    WHERE wallet = ? AND balance_urtc >= ?""",
-                (row["amount_urtc"], row["nonce"], row["from_addr"], row["amount_urtc"])
+                (row["amount_urtc"], row["nonce"], row["from_addr"], row["amount_urtc"]),
             )
             if cursor.rowcount == 0:
                 logger.error(
@@ -558,8 +517,8 @@ class TransactionPool:
                     row["public_key"],
                     block_height,
                     block_hash,
-                    int(time.time())
-                )
+                    int(time.time()),
+                ),
             )
 
             # Update receiver balance (create if not exists)
@@ -568,14 +527,11 @@ class TransactionPool:
                    VALUES (?, ?, 0)
                    ON CONFLICT(wallet) DO UPDATE SET
                    balance_urtc = balance_urtc + ?""",
-                (row["to_addr"], row["amount_urtc"], row["amount_urtc"])
+                (row["to_addr"], row["amount_urtc"], row["amount_urtc"]),
             )
 
             # Remove from pending
-            cursor.execute(
-                "DELETE FROM pending_transactions WHERE tx_hash = ?",
-                (tx_hash,)
-            )
+            cursor.execute("DELETE FROM pending_transactions WHERE tx_hash = ?", (tx_hash,))
 
             logger.info(f"TX confirmed: {tx_hash[:16]}... in block {block_height}")
             return True
@@ -600,7 +556,7 @@ class TransactionPool:
                 """UPDATE pending_transactions
                    SET status = 'rejected'
                    WHERE tx_hash = ?""",
-                (tx_hash,)
+                (tx_hash,),
             )
 
             if cursor.rowcount > 0:
@@ -617,7 +573,7 @@ class TransactionPool:
             cursor.execute(
                 """DELETE FROM pending_transactions
                    WHERE status = 'pending' AND created_at < ?""",
-                (cutoff,)
+                (cutoff,),
             )
             count = cursor.rowcount
 
@@ -632,19 +588,13 @@ class TransactionPool:
             cursor = conn.cursor()
 
             # Check pending
-            cursor.execute(
-                "SELECT *, 'pending' as location FROM pending_transactions WHERE tx_hash = ?",
-                (tx_hash,)
-            )
+            cursor.execute("SELECT *, 'pending' as location FROM pending_transactions WHERE tx_hash = ?", (tx_hash,))
             row = cursor.fetchone()
             if row:
                 return dict(row)
 
             # Check history
-            cursor.execute(
-                "SELECT *, 'history' as location FROM transaction_history WHERE tx_hash = ?",
-                (tx_hash,)
-            )
+            cursor.execute("SELECT *, 'history' as location FROM transaction_history WHERE tx_hash = ?", (tx_hash,))
             row = cursor.fetchone()
             if row:
                 return dict(row)
@@ -655,6 +605,7 @@ class TransactionPool:
 # =============================================================================
 # TRANSACTION API ENDPOINTS
 # =============================================================================
+
 
 def create_tx_api_routes(app, tx_pool: TransactionPool):
     """
@@ -668,9 +619,9 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
     - GET /wallet/<addr>/nonce - Get wallet nonce
     - GET /wallet/<addr>/history - Get transaction history
     """
-    from flask import request, jsonify
+    from flask import jsonify, request
 
-    @app.route('/tx/submit', methods=['POST'])
+    @app.route("/tx/submit", methods=["POST"])
     def submit_transaction():
         """Submit a signed transaction"""
         try:
@@ -690,22 +641,15 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
             success, result = tx_pool.submit_transaction(tx)
 
             if success:
-                return jsonify({
-                    "success": True,
-                    "tx_hash": result,
-                    "status": "pending"
-                })
+                return jsonify({"success": True, "tx_hash": result, "status": "pending"})
             else:
-                return jsonify({
-                    "success": False,
-                    "error": result
-                }), 400
+                return jsonify({"success": False, "error": result}), 400
 
         except Exception as e:
             logger.error(f"Error submitting transaction: {e}")
             return jsonify({"error": str(e)}), 500
 
-    @app.route('/tx/status/<tx_hash>', methods=['GET'])
+    @app.route("/tx/status/<tx_hash>", methods=["GET"])
     def get_tx_status(tx_hash: str):
         """Get transaction status"""
         try:
@@ -714,11 +658,11 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-    @app.route('/tx/pending', methods=['GET'])
+    @app.route("/tx/pending", methods=["GET"])
     def list_pending():
         """List pending transactions"""
         try:
-            limit_raw = request.args.get('limit')
+            limit_raw = request.args.get("limit")
             if limit_raw is None:
                 limit = 100
             else:
@@ -733,14 +677,11 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                 return jsonify({"error": "limit exceeds maximum of 200"}), 400
 
             pending = tx_pool.get_pending_transactions(limit)
-            return jsonify({
-                "count": len(pending),
-                "transactions": [tx.to_dict() for tx in pending]
-            })
+            return jsonify({"count": len(pending), "transactions": [tx.to_dict() for tx in pending]})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-    @app.route('/wallet/<address>/balance', methods=['GET'])
+    @app.route("/wallet/<address>/balance", methods=["GET"])
     def get_wallet_balance(address: str):
         """Get wallet balance"""
         try:
@@ -748,18 +689,20 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
             available = tx_pool.get_available_balance(address)
             pending = tx_pool.get_pending_amount(address)
 
-            return jsonify({
-                "address": address,
-                "balance_urtc": balance,
-                "available_urtc": available,
-                "pending_urtc": pending,
-                "balance_rtc": balance / 100_000_000,
-                "available_rtc": available / 100_000_000
-            })
+            return jsonify(
+                {
+                    "address": address,
+                    "balance_urtc": balance,
+                    "available_urtc": available,
+                    "pending_urtc": pending,
+                    "balance_rtc": balance / 100_000_000,
+                    "available_rtc": available / 100_000_000,
+                }
+            )
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-    @app.route('/wallet/<address>/nonce', methods=['GET'])
+    @app.route("/wallet/<address>/nonce", methods=["GET"])
     def get_wallet_nonce(address: str):
         """Get wallet nonce (for transaction construction)"""
         try:
@@ -771,22 +714,24 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
             while next_nonce in pending_nonces:
                 next_nonce += 1
 
-            return jsonify({
-                "address": address,
-                "confirmed_nonce": nonce,
-                "next_nonce": next_nonce,
-                "pending_nonces": sorted(pending_nonces)
-            })
+            return jsonify(
+                {
+                    "address": address,
+                    "confirmed_nonce": nonce,
+                    "next_nonce": next_nonce,
+                    "pending_nonces": sorted(pending_nonces),
+                }
+            )
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-    @app.route('/wallet/<address>/history', methods=['GET'])
+    @app.route("/wallet/<address>/history", methods=["GET"])
     def get_wallet_history(address: str):
         """Get transaction history for wallet"""
         try:
-            limit_raw = request.args.get('limit')
-            offset_raw = request.args.get('offset')
-            
+            limit_raw = request.args.get("limit")
+            offset_raw = request.args.get("offset")
+
             # Parameter Validation
             try:
                 limit = int(limit_raw) if limit_raw is not None else 50
@@ -798,7 +743,7 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                 return jsonify({"error": "limit cannot be negative"}), 400
             if limit > 500:
                 return jsonify({"error": "limit exceeds maximum of 500"}), 400
-            
+
             if offset < 0:
                 offset = 0
 
@@ -811,16 +756,12 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                        WHERE from_addr = ? OR to_addr = ?
                        ORDER BY confirmed_at DESC
                        LIMIT ? OFFSET ?""",
-                    (address, address, limit, offset)
+                    (address, address, limit, offset),
                 )
 
                 transactions = [dict(row) for row in cursor.fetchall()]
 
-            return jsonify({
-                "address": address,
-                "count": len(transactions),
-                "transactions": transactions
-            })
+            return jsonify({"address": address, "count": len(transactions), "transactions": transactions})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -830,15 +771,15 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
 # =============================================================================
 
 if __name__ == "__main__":
-    import tempfile
     import os
+    import tempfile
 
     print("=" * 70)
     print("RustChain Transaction Handler - Test Suite")
     print("=" * 70)
 
     # Create temporary database
-    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
 
     try:
@@ -859,13 +800,13 @@ if __name__ == "__main__":
         with sqlite3.connect(db_path) as conn:
             conn.execute(
                 "INSERT INTO balances (wallet, balance_urtc, wallet_nonce) VALUES (?, ?, ?)",
-                (addr1, 1000_000_000, 0)  # 10 RTC
+                (addr1, 1000_000_000, 0),  # 10 RTC
             )
 
-        print(f"\nSeeded Wallet 1 with 10 RTC")
+        print("\nSeeded Wallet 1 with 10 RTC")
 
         # Check balance
-        print(f"\n=== Balance Check ===")
+        print("\n=== Balance Check ===")
         balance = pool.get_balance(addr1)
         nonce = pool.get_wallet_nonce(addr1)
         print(f"Wallet 1 balance: {balance / 100_000_000} RTC, nonce: {nonce}")
@@ -880,7 +821,7 @@ if __name__ == "__main__":
             amount_urtc=100_000_000,  # 1 RTC
             nonce=1,
             timestamp=int(time.time() * 1000),
-            memo="Test transfer"
+            memo="Test transfer",
         )
         tx.sign(signer)
 
@@ -917,7 +858,7 @@ if __name__ == "__main__":
             to_addr=addr2,
             amount_urtc=50_000_000,
             nonce=5,  # Wrong nonce
-            timestamp=int(time.time() * 1000)
+            timestamp=int(time.time() * 1000),
         )
         tx2.sign(signer)
         success, result = pool.validate_transaction(tx2)

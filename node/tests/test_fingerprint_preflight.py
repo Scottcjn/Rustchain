@@ -2,7 +2,6 @@ import os
 import sys
 import unittest
 
-
 try:
     import test_fingerprints
 except ModuleNotFoundError:

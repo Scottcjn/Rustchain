@@ -13,9 +13,9 @@ Sources:
 - E-Maculation: https://www.emaculation.com/
 """
 
-from typing import Dict, List, Optional, Tuple
 import hashlib
 import os
+from typing import Dict, List, Optional, Tuple
 
 # =============================================================================
 # AMIGA KICKSTART ROMS - Known emulator ROM hashes (SHA-1)
@@ -135,7 +135,11 @@ MAC_68K_CHECKSUMS = {
     "F1ACAD13": {"models": ["Quadra 610", "Quadra 650", "Quadra 800"], "size": "1M", "year": 1993},
     "FF7439EE": {"models": ["Quadra 605", "LC 475", "Performa 475/476"], "size": "1M", "year": 1993},
     "5BF10FD1": {"models": ["Quadra 660AV", "Quadra 840AV"], "size": "2M", "year": 1993},
-    "EDE66CBD": {"models": ["Color Classic II", "LC 550", "Performa 275/550/560", "Mac TV"], "size": "1M", "year": 1993},
+    "EDE66CBD": {
+        "models": ["Color Classic II", "LC 550", "Performa 275/550/560", "Mac TV"],
+        "size": "1M",
+        "year": 1993,
+    },
     "064DC91D": {"models": ["Performa 580", "Performa 588"], "size": "1M", "year": 1994},
     # PowerBooks
     "63ABFD3F": {"models": ["PowerBook 5300", "PowerBook Duo 2300"], "size": "1M", "year": 1995},
@@ -363,7 +367,7 @@ def detect_platform_roms() -> Dict[str, Optional[str]]:
                         break
 
     # Check for Mac ROMs in common locations
-    mac_paths = [
+    [
         os.path.expanduser("~/.basilisk_ii_prefs"),
         os.path.expanduser("~/.sheepshaver_prefs"),
         "/usr/share/basilisk2/",
@@ -388,7 +392,7 @@ def get_real_hardware_rom_signature() -> Optional[Dict]:
     import platform
 
     arch = platform.machine().lower()
-    system = platform.system().lower()
+    platform.system().lower()
 
     # PowerPC Mac - try to read ROM
     if "ppc" in arch or "powerpc" in arch:

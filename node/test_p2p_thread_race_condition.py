@@ -129,13 +129,13 @@ def main():
     print(f"Total processing count: {len(gossip.processed_messages)}")
 
     if len(gossip.processed_messages) > 1:
-        print(f"\n⚠️  RACE CONDITION DETECTED!")
+        print("\n⚠️  RACE CONDITION DETECTED!")
         print(f"   Message '{msg_id}' processed {len(gossip.processed_messages)} times")
-        print(f"   Expected: 1 time")
-        print(f"   This confirms concurrent thread access without synchronization")
+        print("   Expected: 1 time")
+        print("   This confirms concurrent thread access without synchronization")
         vuln_confirmed = True
     else:
-        print(f"\n   (Timing did not trigger race this iteration)")
+        print("\n   (Timing did not trigger race this iteration)")
         vuln_confirmed = False
 
     # TEST 2: Fixed code
@@ -149,7 +149,7 @@ def main():
         result = gossip2.handle_message_fixed(msg_id)
         results2.append((thread_id, result))
 
-    print(f"Launching 2 concurrent threads with locking...")
+    print("Launching 2 concurrent threads with locking...")
     t3 = threading.Thread(target=process_fixed, args=(1,))
     t4 = threading.Thread(target=process_fixed, args=(2,))
 
@@ -162,13 +162,13 @@ def main():
     print(f"Total processing count: {len(gossip2.processed_messages)}")
 
     if len(gossip2.processed_messages) == 1:
-        print(f"\n✓ FIXED: Message processed exactly 1 time (lock prevents duplicate)")
+        print("\n✓ FIXED: Message processed exactly 1 time (lock prevents duplicate)")
 
     # Summary
     print("\n" + "=" * 70)
     print("VULNERABILITY SUMMARY")
     print("=" * 70)
-    print(f"""
+    print("""
 Issue:         Thread-unsafe deduplication in handle_message()
 Severity:      HIGH (CVSS 7.1)
 Affected Func: GossipLayer.handle_message() [lines 396-438]

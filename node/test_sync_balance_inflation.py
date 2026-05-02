@@ -8,8 +8,8 @@ have a local balance, preventing arbitrary fund inflation.
 """
 
 import os
-import sys
 import sqlite3
+import sys
 import tempfile
 import unittest
 
@@ -70,46 +70,54 @@ class TestSyncBalanceInflation(unittest.TestCase):
         self.assertEqual(original, 5_000_000)
 
         # Malicious peer syncs a higher balance
-        self.sync.apply_sync_payload("balances", [
-            {"miner_id": "miner-alice", "amount_i64": 999_000_000},  # 999 RTC
-        ])
+        self.sync.apply_sync_payload(
+            "balances",
+            [
+                {"miner_id": "miner-alice", "amount_i64": 999_000_000},  # 999 RTC
+            ],
+        )
 
         after = self._get_balance("miner-alice")
-        self.assertEqual(after, 5_000_000,
-                         "Balance must not increase via peer sync")
+        self.assertEqual(after, 5_000_000, "Balance must not increase via peer sync")
 
     def test_balance_decrease_still_rejected(self):
         """Existing protection against decreases must still work."""
-        self.sync.apply_sync_payload("balances", [
-            {"miner_id": "miner-alice", "amount_i64": 1_000_000},  # 1 RTC
-        ])
+        self.sync.apply_sync_payload(
+            "balances",
+            [
+                {"miner_id": "miner-alice", "amount_i64": 1_000_000},  # 1 RTC
+            ],
+        )
 
         after = self._get_balance("miner-alice")
-        self.assertEqual(after, 5_000_000,
-                         "Balance must not decrease via peer sync")
+        self.assertEqual(after, 5_000_000, "Balance must not decrease via peer sync")
 
     def test_new_wallet_from_sync_allowed(self):
         """New wallets (no local row yet) CAN be created via sync.
 
         This allows initial balance propagation for newly registered miners.
         """
-        self.sync.apply_sync_payload("balances", [
-            {"miner_id": "miner-bob", "amount_i64": 2_000_000},  # 2 RTC
-        ])
+        self.sync.apply_sync_payload(
+            "balances",
+            [
+                {"miner_id": "miner-bob", "amount_i64": 2_000_000},  # 2 RTC
+            ],
+        )
 
         bob_balance = self._get_balance("miner-bob")
-        self.assertEqual(bob_balance, 2_000_000,
-                         "New wallet should be created via sync")
+        self.assertEqual(bob_balance, 2_000_000, "New wallet should be created via sync")
 
     def test_unchanged_balance_passes(self):
         """Sync with identical balance value should succeed (no-op upsert)."""
-        self.sync.apply_sync_payload("balances", [
-            {"miner_id": "miner-alice", "amount_i64": 5_000_000},
-        ])
+        self.sync.apply_sync_payload(
+            "balances",
+            [
+                {"miner_id": "miner-alice", "amount_i64": 5_000_000},
+            ],
+        )
 
         after = self._get_balance("miner-alice")
-        self.assertEqual(after, 5_000_000,
-                         "Identical balance should not be rejected")
+        self.assertEqual(after, 5_000_000, "Identical balance should not be rejected")
 
 
 if __name__ == "__main__":

@@ -4,9 +4,8 @@ RustChain Miner Download Server
 Serves miners via HTTP on port 8090
 """
 
-from http.server import HTTPServer, SimpleHTTPRequestHandler
 import os
-import urllib.parse
+from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 DOWNLOAD_DIR = "/root/rustchain/downloads"
 
@@ -73,7 +72,7 @@ HTML_PAGE = """<!DOCTYPE html>
 </head>
 <body>
     <h1>🦀 RustChain Miner Downloads</h1>
-    
+
     <div class="stats">
         <p><strong>Node</strong>: rustchain.org</p>
         <p><strong>Version</strong>: 2.2.1</p>
@@ -92,7 +91,7 @@ HTML_PAGE = """<!DOCTYPE html>
     </div>
 
     <h2>💻 Individual Miners</h2>
-    
+
     <div class="download-section">
         <h3>PowerPC G4/G5 Mac (2.5x Mining Power!)</h3>
         <a href="/rustchain_powerpc_g4_miner.py" class="download-link">
@@ -147,13 +146,13 @@ HTML_PAGE = """<!DOCTYPE html>
     <div class="download-section">
         <h3>1. Install Python 3</h3>
         <p>Most systems come with Python. Test: <code>python3 --version</code></p>
-        
+
         <h3>2. Install requests library</h3>
         <p><code>pip3 install requests</code></p>
-        
+
         <h3>3. Run your miner</h3>
         <p><code>python3 rustchain_linux_miner.py</code></p>
-        
+
         <h3>4. Specify wallet (optional)</h3>
         <p><code>python3 rustchain_linux_miner.py --wallet YOUR_WALLET_HERE</code></p>
     </div>
@@ -171,19 +170,20 @@ HTML_PAGE = """<!DOCTYPE html>
 </body>
 </html>"""
 
+
 class DownloadHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
-        if self.path == '/' or self.path == '/index.html':
+        if self.path == "/" or self.path == "/index.html":
             self.send_response(200)
-            self.send_header('Content-type', 'text/html')
+            self.send_header("Content-type", "text/html")
             self.end_headers()
             self.wfile.write(HTML_PAGE.encode())
         else:
             # Serve files from downloads directory
-            file_path = self.path.lstrip('/')
+            file_path = self.path.lstrip("/")
 
             # SECURITY: Reject path traversal attempts
-            if '..' in file_path or file_path.startswith(('/', '\\')):
+            if ".." in file_path or file_path.startswith(("/", "\\")):
                 self.send_error(403, "Forbidden")
                 return
 
@@ -197,25 +197,26 @@ class DownloadHandler(SimpleHTTPRequestHandler):
 
             if os.path.isfile(full_path):
                 self.send_response(200)
-                if file_path.endswith('.py'):
-                    self.send_header('Content-type', 'text/plain')
-                    self.send_header('Content-Disposition', f'attachment; filename="{file_path}"')
-                elif file_path.endswith('.zip'):
-                    self.send_header('Content-type', 'application/zip')
-                    self.send_header('Content-Disposition', f'attachment; filename="{file_path}"')
+                if file_path.endswith(".py"):
+                    self.send_header("Content-type", "text/plain")
+                    self.send_header("Content-Disposition", f'attachment; filename="{file_path}"')
+                elif file_path.endswith(".zip"):
+                    self.send_header("Content-type", "application/zip")
+                    self.send_header("Content-Disposition", f'attachment; filename="{file_path}"')
                 else:
-                    self.send_header('Content-type', 'application/octet-stream')
+                    self.send_header("Content-type", "application/octet-stream")
                 self.end_headers()
-                
-                with open(full_path, 'rb') as f:
+
+                with open(full_path, "rb") as f:
                     self.wfile.write(f.read())
             else:
                 self.send_error(404, f"File not found: {file_path}")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     os.chdir(DOWNLOAD_DIR)
-    server = HTTPServer(('0.0.0.0', 8090), DownloadHandler)
-    print(f"🦀 RustChain Download Server running on port 8090...")
+    server = HTTPServer(("0.0.0.0", 8090), DownloadHandler)
+    print("🦀 RustChain Download Server running on port 8090...")
     print(f"📁 Serving files from: {DOWNLOAD_DIR}")
-    print(f"🌐 Access at: https://rustchain.org:8090")
+    print("🌐 Access at: https://rustchain.org:8090")
     server.serve_forever()

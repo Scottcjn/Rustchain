@@ -9,16 +9,15 @@ Three-layer security:
   Layer 3: Human spot-check -- admin dashboard (separate)
 """
 
-import os
-import sys
-import json
-import time
-import sqlite3
-import hashlib
 import argparse
+import hashlib
+import json
 import logging
-import traceback
-from typing import Optional, Tuple, Dict, List
+import os
+import sqlite3
+import sys
+import time
+from typing import Dict, List, Optional, Tuple
 
 try:
     import requests
@@ -31,10 +30,10 @@ except ImportError:
 
 # Ollama endpoints -- failover chain
 OLLAMA_ENDPOINTS = [
-    os.getenv("SOPHIACORE_URL", "http://localhost:11434"),       # Local Ollama
-    "http://100.75.100.89:8080",                                 # POWER8 S824 llama-server
-    "http://100.75.100.89:11434",                                # POWER8 S824 Ollama
-    "http://192.168.0.160:11434",                                # Sophia NAS
+    os.getenv("SOPHIACORE_URL", "http://localhost:11434"),  # Local Ollama
+    "http://100.75.100.89:8080",  # POWER8 S824 llama-server
+    "http://100.75.100.89:11434",  # POWER8 S824 Ollama
+    "http://192.168.0.160:11434",  # Sophia NAS
 ]
 
 # Dual-model strategy on POWER8:
@@ -46,9 +45,9 @@ POWER8_SERVER_URL = os.getenv("POWER8_LLM_URL", "http://100.75.100.89:8080")
 
 DB_PATH = os.getenv("RUSTCHAIN_DB_PATH", "/root/rustchain/rustchain_v2.db")
 
-OLLAMA_TIMEOUT = 120   # seconds — POWER8 GPT-OSS 120B at ~2-5 tok/s needs generous timeout
-DEEP_TIMEOUT = 180     # seconds for GPT-OSS 120B deep analysis (escalation)
-BATCH_DELAY = 1.0      # seconds between inspections to avoid hammering
+OLLAMA_TIMEOUT = 120  # seconds — POWER8 GPT-OSS 120B at ~2-5 tok/s needs generous timeout
+DEEP_TIMEOUT = 180  # seconds for GPT-OSS 120B deep analysis (escalation)
+BATCH_DELAY = 1.0  # seconds between inspections to avoid hammering
 
 # Verdict constants
 VERDICT_APPROVED = "APPROVED"
@@ -57,10 +56,10 @@ VERDICT_SUSPICIOUS = "SUSPICIOUS"
 VERDICT_REJECTED = "REJECTED"
 
 VERDICT_EMOJI = {
-    VERDICT_APPROVED: "\u2728",    # sparkles
-    VERDICT_CAUTIOUS: "\u26a0\ufe0f",   # warning
-    VERDICT_SUSPICIOUS: "\U0001f50d",    # magnifying glass
-    VERDICT_REJECTED: "\u274c",    # cross mark
+    VERDICT_APPROVED: "\u2728",  # sparkles
+    VERDICT_CAUTIOUS: "\u26a0\ufe0f",  # warning
+    VERDICT_SUSPICIOUS: "\U0001f50d",  # magnifying glass
+    VERDICT_REJECTED: "\u274c",  # cross mark
 }
 
 VALID_VERDICTS = frozenset([VERDICT_APPROVED, VERDICT_CAUTIOUS, VERDICT_SUSPICIOUS, VERDICT_REJECTED])
@@ -79,6 +78,7 @@ if not log.handlers:
 # ---------------------------------------------------------------------------
 # Database helpers
 # ---------------------------------------------------------------------------
+
 
 def ensure_schema(db_path: str = None):
     """Create sophia_inspections and sophia_overrides tables if they don't exist."""
@@ -112,9 +112,11 @@ def ensure_schema(db_path: str = None):
         """)
         conn.commit()
 
+
 # ---------------------------------------------------------------------------
 # Ollama interaction
 # ---------------------------------------------------------------------------
+
 
 def _try_ollama_api(ep: str, prompt: str) -> Optional[str]:
     """Try Ollama /api/generate endpoint."""
@@ -255,6 +257,7 @@ def _call_deep_model(prompt: str) -> Optional[str]:
 # Prompt construction
 # ---------------------------------------------------------------------------
 
+
 def _build_inspection_prompt(miner_id: str, device: dict, fingerprint: dict, history: list = None) -> str:
     """Build the inspection prompt for Sophia Elya."""
     device = device or {}
@@ -277,10 +280,12 @@ def _build_inspection_prompt(miner_id: str, device: dict, fingerprint: dict, his
             ts = entry.get("ts", 0)
             profile = entry.get("profile", {})
             ts_str = time.strftime("%Y-%m-%d %H:%M", time.gmtime(ts)) if ts else "?"
-            history_lines.append(f"  {ts_str}: clock_cv={profile.get('clock_drift_cv', '?')}, "
-                                 f"thermal_var={profile.get('thermal_variance', '?')}, "
-                                 f"jitter_cv={profile.get('jitter_cv', '?')}, "
-                                 f"cache_ratio={profile.get('cache_hierarchy_ratio', '?')}")
+            history_lines.append(
+                f"  {ts_str}: clock_cv={profile.get('clock_drift_cv', '?')}, "
+                f"thermal_var={profile.get('thermal_variance', '?')}, "
+                f"jitter_cv={profile.get('jitter_cv', '?')}, "
+                f"cache_ratio={profile.get('cache_hierarchy_ratio', '?')}"
+            )
         history_section = "Previous attestation history (most recent last):\n" + "\n".join(history_lines)
 
     prompt = f"""You are Sophia Elya, the attestation inspector for RustChain.
@@ -313,9 +318,11 @@ verdict (APPROVED or CAUTIOUS or SUSPICIOUS or REJECTED), confidence (0.0 to 1.0
 
     return prompt
 
+
 # ---------------------------------------------------------------------------
 # Response parsing
 # ---------------------------------------------------------------------------
+
 
 def _parse_verdict(response_text: str) -> Tuple[str, float, str]:
     """
@@ -337,7 +344,7 @@ def _parse_verdict(response_text: str) -> Tuple[str, float, str]:
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
-        json_str = text[start:end + 1]
+        json_str = text[start : end + 1]
         try:
             data = json.loads(json_str)
 
@@ -361,9 +368,11 @@ def _parse_verdict(response_text: str) -> Tuple[str, float, str]:
     log.warning("Could not parse Sophia's response as JSON: %.200s", text)
     return VERDICT_CAUTIOUS, 0.5, f"Unparseable response: {text[:200]}"
 
+
 # ---------------------------------------------------------------------------
 # Data fetching
 # ---------------------------------------------------------------------------
+
 
 def _fetch_miner_data(miner_id: str, db_path: str = None) -> Tuple[dict, dict, list]:
     """
@@ -382,7 +391,7 @@ def _fetch_miner_data(miner_id: str, db_path: str = None) -> Tuple[dict, dict, l
             row = conn.execute(
                 "SELECT miner, device_family, device_arch, fingerprint_passed, ts_ok "
                 "FROM miner_attest_recent WHERE miner = ?",
-                (miner_id,)
+                (miner_id,),
             ).fetchone()
             if row:
                 device = {
@@ -394,9 +403,8 @@ def _fetch_miner_data(miner_id: str, db_path: str = None) -> Tuple[dict, dict, l
             # Latest fingerprint profile from history table (may not exist on all nodes)
             try:
                 hist_rows = conn.execute(
-                    "SELECT ts, profile_json FROM miner_fingerprint_history "
-                    "WHERE miner = ? ORDER BY ts DESC LIMIT 10",
-                    (miner_id,)
+                    "SELECT ts, profile_json FROM miner_fingerprint_history WHERE miner = ? ORDER BY ts DESC LIMIT 10",
+                    (miner_id,),
                 ).fetchall()
             except Exception:
                 hist_rows = []
@@ -404,8 +412,9 @@ def _fetch_miner_data(miner_id: str, db_path: str = None) -> Tuple[dict, dict, l
                 try:
                     profile = json.loads(hr["profile_json"] or "{}")
                     history.append({"ts": int(hr["ts"]), "profile": profile})
-                except Exception:
-                    continue
+                except Exception as e:
+                    log.debug("Skipping malformed history entry for %s: %s", miner_id, e)
+                    continue  # nosec B112
 
             # Use the most recent profile as "the fingerprint"
             if history:
@@ -424,12 +433,13 @@ def _compute_fingerprint_hash(fingerprint: dict) -> str:
     canonical = json.dumps(fingerprint, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(canonical.encode()).hexdigest()[:32]
 
+
 # ---------------------------------------------------------------------------
 # Core inspection
 # ---------------------------------------------------------------------------
 
-def inspect_miner(miner_id: str, device: dict = None, fingerprint: dict = None,
-                  db_path: str = None) -> Dict:
+
+def inspect_miner(miner_id: str, device: dict = None, fingerprint: dict = None, db_path: str = None) -> Dict:
     """
     Main inspection function.
 
@@ -493,13 +503,19 @@ def inspect_miner(miner_id: str, device: dict = None, fingerprint: dict = None,
             f"Device: {json.dumps(device, default=str)}\n\n"
             f"Provide a detailed second opinion. Is this genuine hardware with quirks, "
             f"or actual spoofing? Look deeper at cross-correlations between all metrics.\n\n"
-            f'Respond in JSON: {{"verdict": "APPROVED|CAUTIOUS|SUSPICIOUS|REJECTED", "confidence": 0.0-1.0, "reasoning": "detailed analysis"}}'
+            'Respond in JSON: {"verdict": "APPROVED|CAUTIOUS|SUSPICIOUS|REJECTED", '
+            '"confidence": 0.0-1.0, "reasoning": "detailed analysis"}'
         )
         deep_response = _call_deep_model(deep_prompt)
         if deep_response:
             deep_verdict, deep_confidence, deep_reasoning = _parse_verdict(deep_response)
-            log.info("Deep analysis (GPT-OSS 120B) for %s: %s %.0f%% — %s",
-                     miner_id, deep_verdict, deep_confidence * 100, deep_reasoning[:80])
+            log.info(
+                "Deep analysis (GPT-OSS 120B) for %s: %s %.0f%% — %s",
+                miner_id,
+                deep_verdict,
+                deep_confidence * 100,
+                deep_reasoning[:80],
+            )
             # Deep model overrides if it's more confident
             if deep_confidence > confidence:
                 verdict = deep_verdict
@@ -516,7 +532,7 @@ def inspect_miner(miner_id: str, device: dict = None, fingerprint: dict = None,
                 "INSERT OR REPLACE INTO sophia_inspections "
                 "(miner, inspection_ts, verdict, confidence, reasoning, model_version, fingerprint_hash) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (miner_id, now, verdict, confidence, reasoning, used_model, fp_hash)
+                (miner_id, now, verdict, confidence, reasoning, used_model, fp_hash),
             )
             conn.commit()
     except Exception as exc:
@@ -535,14 +551,22 @@ def inspect_miner(miner_id: str, device: dict = None, fingerprint: dict = None,
         "ollama_available": True,
     }
 
-    log.info("Inspected %s: %s %s (%.0f%%) -- %s",
-             miner_id, VERDICT_EMOJI.get(verdict, "?"), verdict, confidence * 100, reasoning[:80])
+    log.info(
+        "Inspected %s: %s %s (%.0f%%) -- %s",
+        miner_id,
+        VERDICT_EMOJI.get(verdict, "?"),
+        verdict,
+        confidence * 100,
+        reasoning[:80],
+    )
 
     return result
+
 
 # ---------------------------------------------------------------------------
 # Batch inspection
 # ---------------------------------------------------------------------------
+
 
 def batch_inspect_all(db_path: str = None) -> List[Dict]:
     """
@@ -558,8 +582,7 @@ def batch_inspect_all(db_path: str = None) -> List[Dict]:
     try:
         with sqlite3.connect(db_path) as conn:
             rows = conn.execute(
-                "SELECT miner FROM miner_attest_recent WHERE ts_ok > ? ORDER BY ts_ok DESC",
-                (cutoff,)
+                "SELECT miner FROM miner_attest_recent WHERE ts_ok > ? ORDER BY ts_ok DESC", (cutoff,)
             ).fetchall()
             miners = [r[0] for r in rows]
     except Exception as exc:
@@ -580,15 +603,17 @@ def batch_inspect_all(db_path: str = None) -> List[Dict]:
             results.append(result)
         except Exception as exc:
             log.error("Error inspecting %s: %s", miner_id, exc)
-            results.append({
-                "miner": miner_id,
-                "verdict": VERDICT_CAUTIOUS,
-                "confidence": 0.0,
-                "reasoning": f"Inspection error: {exc}",
-                "emoji": VERDICT_EMOJI[VERDICT_CAUTIOUS],
-                "timestamp": int(time.time()),
-                "ollama_available": False,
-            })
+            results.append(
+                {
+                    "miner": miner_id,
+                    "verdict": VERDICT_CAUTIOUS,
+                    "confidence": 0.0,
+                    "reasoning": f"Inspection error: {exc}",
+                    "emoji": VERDICT_EMOJI[VERDICT_CAUTIOUS],
+                    "timestamp": int(time.time()),
+                    "ollama_available": False,
+                }
+            )
 
         # Rate limit between inspections
         if i < len(miners) - 1:
@@ -607,9 +632,11 @@ def batch_inspect_all(db_path: str = None) -> List[Dict]:
 
     return results
 
+
 # ---------------------------------------------------------------------------
 # Query latest verdict
 # ---------------------------------------------------------------------------
+
 
 def get_latest_verdict(miner_id: str, db_path: str = None) -> Optional[Dict]:
     """
@@ -625,7 +652,7 @@ def get_latest_verdict(miner_id: str, db_path: str = None) -> Optional[Dict]:
             row = conn.execute(
                 "SELECT miner, inspection_ts, verdict, confidence, reasoning, model_version, fingerprint_hash "
                 "FROM sophia_inspections WHERE miner = ? ORDER BY inspection_ts DESC LIMIT 1",
-                (miner_id,)
+                (miner_id,),
             ).fetchone()
             if not row:
                 return None
@@ -681,9 +708,11 @@ def get_all_latest_verdicts(db_path: str = None) -> List[Dict]:
         log.error("Error fetching all verdicts: %s", exc)
         return []
 
+
 # ---------------------------------------------------------------------------
 # Flask endpoint registration
 # ---------------------------------------------------------------------------
+
 
 def register_sophia_endpoints(app, db_path: str = None):
     """
@@ -694,7 +723,7 @@ def register_sophia_endpoints(app, db_path: str = None):
     POST /sophia/inspect            -- trigger inspection (admin key required)
     POST /sophia/batch              -- batch inspection (admin key required)
     """
-    from flask import request, jsonify
+    from flask import jsonify, request
 
     db = db_path or DB_PATH
 
@@ -707,12 +736,14 @@ def register_sophia_endpoints(app, db_path: str = None):
     def sophia_status_miner(miner_id):
         result = get_latest_verdict(miner_id, db_path=db)
         if result is None:
-            return jsonify({
-                "miner": miner_id,
-                "verdict": None,
-                "message": "No inspection on record. Pending.",
-                "emoji": "\u23f3",
-            }), 404
+            return jsonify(
+                {
+                    "miner": miner_id,
+                    "verdict": None,
+                    "message": "No inspection on record. Pending.",
+                    "emoji": "\u23f3",
+                }
+            ), 404
         return jsonify(result)
 
     @app.route("/sophia/status", methods=["GET"])
@@ -722,11 +753,13 @@ def register_sophia_endpoints(app, db_path: str = None):
         for v in verdicts:
             vd = v.get("verdict", "UNKNOWN")
             summary[vd] = summary.get(vd, 0) + 1
-        return jsonify({
-            "miners": verdicts,
-            "count": len(verdicts),
-            "summary": summary,
-        })
+        return jsonify(
+            {
+                "miners": verdicts,
+                "count": len(verdicts),
+                "summary": summary,
+            }
+        )
 
     @app.route("/sophia/inspect", methods=["POST"])
     def sophia_inspect():
@@ -750,15 +783,19 @@ def register_sophia_endpoints(app, db_path: str = None):
         for r in results:
             vd = r.get("verdict", "UNKNOWN")
             summary[vd] = summary.get(vd, 0) + 1
-        return jsonify({
-            "inspected": len(results),
-            "summary": summary,
-            "results": results,
-        })
+        return jsonify(
+            {
+                "inspected": len(results),
+                "summary": summary,
+                "results": results,
+            }
+        )
+
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -810,7 +847,8 @@ def main():
             print("No inspections on record.")
             sys.exit(0)
         for v in verdicts:
-            print(f"  {v['emoji']} {v['miner']}: {v['verdict']} ({v['confidence']:.0%}) -- {v.get('reasoning', '')[:60]}")
+            reasoning = v.get("reasoning", "")[:60]
+            print(f"  {v['emoji']} {v['miner']}: {v['verdict']} ({v['confidence']:.0%}) -- {reasoning}")
         sys.exit(0)
 
     else:

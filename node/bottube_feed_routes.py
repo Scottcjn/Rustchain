@@ -17,16 +17,13 @@ Query Parameters:
 """
 
 import time
-from typing import Dict, Any, List, Optional, Tuple
-from flask import Blueprint, request, Response, jsonify, current_app
+from typing import Any, Dict, List, Optional, Tuple
 
 from bottube_feed import (
-    RSSFeedBuilder,
-    AtomFeedBuilder,
-    create_rss_feed_from_videos,
     create_atom_feed_from_videos,
+    create_rss_feed_from_videos,
 )
-
+from flask import Blueprint, Response, current_app, jsonify, request
 
 # Create blueprint for feed routes
 feed_bp = Blueprint("bottube_feed", __name__, url_prefix="/api/feed")
@@ -35,62 +32,59 @@ feed_bp = Blueprint("bottube_feed", __name__, url_prefix="/api/feed")
 def _get_db_connection():
     """Get database connection from Flask app config."""
     db_path = current_app.config.get("DB_PATH")
-    
+
     if not db_path:
         return None
-    
+
     import sqlite3
+
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def _fetch_videos(
-    limit: int = 20,
-    agent: Optional[str] = None,
-    cursor: Optional[str] = None
+    limit: int = 20, agent: Optional[str] = None, cursor: Optional[str] = None
 ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
     """
     Fetch videos from database or mock data.
-    
+
     Args:
         limit: Maximum number of videos
         agent: Filter by agent ID
         cursor: Pagination cursor (not implemented in mock)
-        
+
     Returns:
         Tuple of (videos list, next cursor or None)
     """
     # Try to fetch from database
     conn = _get_db_connection()
-    
+
     if conn:
         try:
             cursor_obj = conn.cursor()
-            
+
             # Check if bottube_videos table exists
-            cursor_obj.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='bottube_videos'"
-            )
+            cursor_obj.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bottube_videos'")
             if not cursor_obj.fetchone():
                 conn.close()
                 return _get_mock_videos(limit, agent), None
-            
+
             # Build query
             query = "SELECT * FROM bottube_videos WHERE public = 1"
             params = []
-            
+
             if agent:
                 query += " AND agent = ?"
                 params.append(agent)
-            
+
             query += " ORDER BY created_at DESC LIMIT ?"
             params.append(limit)
-            
+
             cursor_obj.execute(query, params)
             rows = cursor_obj.fetchall()
             conn.close()
-            
+
             videos = []
             for row in rows:
                 video = dict(row)
@@ -98,16 +92,16 @@ def _fetch_videos(
                 if "id" not in video and "video_id" in video:
                     video["id"] = video["video_id"]
                 videos.append(video)
-            
+
             return videos, None
-            
+
         except Exception as e:
             current_app.logger.error(f"Error fetching videos: {e}")
             try:
                 conn.close()
             except Exception:
                 pass
-    
+
     # Fallback to mock data
     return _get_mock_videos(limit, agent), None
 
@@ -115,7 +109,7 @@ def _fetch_videos(
 def _get_mock_videos(limit: int = 20, agent: Optional[str] = None) -> List[Dict[str, Any]]:
     """Generate mock video data for demonstration."""
     base_time = time.time()
-    
+
     mock_videos = [
         {
             "id": "demo-001",
@@ -188,10 +182,10 @@ def _get_mock_videos(limit: int = 20, agent: Optional[str] = None) -> List[Dict[
             "public": True,
         },
     ]
-    
+
     if agent:
         mock_videos = [v for v in mock_videos if v.get("agent") == agent]
-    
+
     return mock_videos[:limit]
 
 
@@ -199,12 +193,12 @@ def _get_mock_videos(limit: int = 20, agent: Optional[str] = None) -> List[Dict[
 def rss_feed():
     """
     Serve RSS 2.0 feed for BoTTube videos.
-    
+
     Query Parameters:
         limit  - Max items (default: 20, max: 100)
         agent  - Filter by agent ID
         cursor - Pagination cursor
-        
+
     Returns:
         RSS 2.0 XML feed with Content-Type: application/rss+xml
     """
@@ -213,37 +207,37 @@ def rss_feed():
         limit = min(int(request.args.get("limit", 20)), 100)
         agent = request.args.get("agent")
         cursor = request.args.get("cursor")
-        
+
         # Fetch videos
         videos, next_cursor = _fetch_videos(limit=limit, agent=agent, cursor=cursor)
-        
+
         # Get base URL
         base_url = request.host_url.rstrip("/")
         if request.headers.get("X-Forwarded-Host"):
             base_url = f"https://{request.headers['X-Forwarded-Host']}"
-        
+
         # Build RSS feed
         feed_title = "BoTTube Videos"
         if agent:
             feed_title = f"BoTTube Videos - {agent}"
-        
+
         rss_content = create_rss_feed_from_videos(
             videos=videos,
             base_url=base_url,
             title=feed_title,
             description=f"Latest videos from BoTTube{' by ' + agent if agent else ''}",
-            limit=limit
+            limit=limit,
         )
-        
+
         return Response(
             rss_content,
             mimetype="application/rss+xml",
             headers={
                 "Cache-Control": "public, max-age=300",
                 "X-Content-Type-Options": "nosniff",
-            }
+            },
         )
-        
+
     except ValueError as e:
         return jsonify({"error": "Invalid parameter", "message": str(e)}), 400
     except Exception as e:
@@ -255,12 +249,12 @@ def rss_feed():
 def atom_feed():
     """
     Serve Atom 1.0 feed for BoTTube videos.
-    
+
     Query Parameters:
         limit  - Max items (default: 20, max: 100)
         agent  - Filter by agent ID
         cursor - Pagination cursor
-        
+
     Returns:
         Atom 1.0 XML feed with Content-Type: application/atom+xml
     """
@@ -269,39 +263,35 @@ def atom_feed():
         limit = min(int(request.args.get("limit", 20)), 100)
         agent = request.args.get("agent")
         cursor = request.args.get("cursor")
-        
+
         # Fetch videos
         videos, next_cursor = _fetch_videos(limit=limit, agent=agent, cursor=cursor)
-        
+
         # Get base URL
         base_url = request.host_url.rstrip("/")
         if request.headers.get("X-Forwarded-Host"):
             base_url = f"https://{request.headers['X-Forwarded-Host']}"
-        
+
         # Build Atom feed
         feed_title = "BoTTube Videos"
         feed_subtitle = "Latest videos from BoTTube"
         if agent:
             feed_title = f"BoTTube Videos - {agent}"
             feed_subtitle = f"Videos by {agent} on BoTTube"
-        
+
         atom_content = create_atom_feed_from_videos(
-            videos=videos,
-            base_url=base_url,
-            title=feed_title,
-            subtitle=feed_subtitle,
-            limit=limit
+            videos=videos, base_url=base_url, title=feed_title, subtitle=feed_subtitle, limit=limit
         )
-        
+
         return Response(
             atom_content,
             mimetype="application/atom+xml",
             headers={
                 "Cache-Control": "public, max-age=300",
                 "X-Content-Type-Options": "nosniff",
-            }
+            },
         )
-        
+
     except ValueError as e:
         return jsonify({"error": "Invalid parameter", "message": str(e)}), 400
     except Exception as e:
@@ -314,58 +304,48 @@ def atom_feed():
 def feed_index():
     """
     Feed index endpoint - auto-detect format or return JSON.
-    
+
     Uses Accept header to determine response format:
         - application/rss+xml -> RSS 2.0
         - application/atom+xml -> Atom 1.0
         - application/json -> JSON feed
         - Default -> JSON feed with feed discovery links
-        
+
     Query Parameters:
         limit  - Max items (default: 20, max: 100)
         agent  - Filter by agent ID
         cursor - Pagination cursor
     """
     accept_header = request.headers.get("Accept", "")
-    
+
     # Parse parameters
     try:
         limit = min(int(request.args.get("limit", 20)), 100)
     except ValueError:
         return jsonify({"error": "Invalid limit parameter"}), 400
-    
+
     agent = request.args.get("agent")
     cursor = request.args.get("cursor")
-    
+
     # Fetch videos
     videos, next_cursor = _fetch_videos(limit=limit, agent=agent, cursor=cursor)
-    
+
     # Get base URL
     base_url = request.host_url.rstrip("/")
     if request.headers.get("X-Forwarded-Host"):
         base_url = f"https://{request.headers['X-Forwarded-Host']}"
-    
+
     # Auto-detect format
     if "application/rss+xml" in accept_header:
         feed_title = f"BoTTube Videos{' - ' + agent if agent else ''}"
-        rss_content = create_rss_feed_from_videos(
-            videos=videos,
-            base_url=base_url,
-            title=feed_title,
-            limit=limit
-        )
+        rss_content = create_rss_feed_from_videos(videos=videos, base_url=base_url, title=feed_title, limit=limit)
         return Response(rss_content, mimetype="application/rss+xml")
-    
+
     elif "application/atom+xml" in accept_header:
         feed_title = f"BoTTube Videos{' - ' + agent if agent else ''}"
-        atom_content = create_atom_feed_from_videos(
-            videos=videos,
-            base_url=base_url,
-            title=feed_title,
-            limit=limit
-        )
+        atom_content = create_atom_feed_from_videos(videos=videos, base_url=base_url, title=feed_title, limit=limit)
         return Response(atom_content, mimetype="application/atom+xml")
-    
+
     # Default: JSON feed with discovery links
     response_data = {
         "version": "https://jsonfeed.org/version/1.1",
@@ -377,12 +357,12 @@ def feed_index():
         "_links": {
             "rss": f"{base_url}/api/feed/rss",
             "atom": f"{base_url}/api/feed/atom",
-        }
+        },
     }
-    
+
     if next_cursor:
         response_data["next_page_url"] = f"{base_url}/api/feed?cursor={next_cursor}"
-    
+
     for video in videos:
         video_id = video.get("id", "")
         item = {
@@ -396,39 +376,43 @@ def feed_index():
             "image": video.get("thumbnail_url"),
             "attachments": [],
         }
-        
+
         if video.get("video_url"):
-            item["attachments"].append({
-                "url": video.get("video_url"),
-                "mime_type": "video/mp4",
-            })
-        
+            item["attachments"].append(
+                {
+                    "url": video.get("video_url"),
+                    "mime_type": "video/mp4",
+                }
+            )
+
         response_data["items"].append(item)
-    
+
     return jsonify(response_data)
 
 
 @feed_bp.route("/health", methods=["GET"])
 def feed_health():
     """Health check endpoint for feed service."""
-    return jsonify({
-        "status": "ok",
-        "service": "bottube-feed",
-        "endpoints": {
-            "rss": "/api/feed/rss",
-            "atom": "/api/feed/atom",
-            "json": "/api/feed",
+    return jsonify(
+        {
+            "status": "ok",
+            "service": "bottube-feed",
+            "endpoints": {
+                "rss": "/api/feed/rss",
+                "atom": "/api/feed/atom",
+                "json": "/api/feed",
+            },
         }
-    })
+    )
 
 
 def init_feed_routes(app):
     """
     Initialize and register feed routes with Flask app.
-    
+
     Args:
         app: Flask application instance
-        
+
     Usage:
         from bottube_feed_routes import init_feed_routes
         init_feed_routes(app)

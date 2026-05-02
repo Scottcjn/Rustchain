@@ -14,16 +14,16 @@ Designed for 3+ nodes with no single point of failure.
 import hashlib
 import hmac
 import json
+import logging
 import os
-import secrets
 import sqlite3
 import threading
 import time
-from dataclasses import dataclass, asdict, field
+from collections import OrderedDict, defaultdict
+from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple, Any
-from collections import defaultdict, OrderedDict
-import logging
+from typing import Dict, List, Optional, Set, Tuple
+
 import requests
 
 # ---------------------------------------------------------------------------
@@ -38,13 +38,14 @@ _P2P_SECRET_RAW = os.environ.get("RC_P2P_SECRET", "").strip()
 # TTL Cache for message deduplication (Issue #2755: Memory leak fix)
 # =============================================================================
 
+
 class TTLCache:
     """Time-based LRU cache for message deduplication.
-    
+
     Replaces the unbounded set with automatic TTL-based eviction.
     Uses OrderedDict for O(1) operations and LRU eviction.
     """
-    
+
     def __init__(self, ttl: int = 3600, max_size: int = 10000):
         """
         Args:
@@ -54,12 +55,12 @@ class TTLCache:
         self._cache = OrderedDict()  # msg_id -> timestamp
         self._ttl = ttl
         self._max_size = max_size
-    
+
     def contains(self, key: str) -> bool:
         """Check if key exists and is not expired."""
         self._cleanup_expired()
         return key in self._cache
-    
+
     def add(self, key: str) -> None:
         """Add key with current timestamp. Evicts LRU if at capacity."""
         self._cleanup_expired()
@@ -69,24 +70,23 @@ class TTLCache:
             if len(self._cache) >= self._max_size:
                 self._cache.popitem(last=False)
             self._cache[key] = time.time()
-    
+
     def _cleanup_expired(self) -> None:
         """Remove expired entries."""
         now = time.time()
         expired = [k for k, ts in self._cache.items() if now - ts > self._ttl]
         for k in expired:
             del self._cache[k]
-    
+
     def __len__(self) -> int:
         """Return number of entries (including expired)."""
         return len(self._cache)
-    
+
     def cleanup(self) -> int:
         """Force cleanup of expired entries. Returns count of removed entries."""
         before = len(self._cache)
         self._cleanup_expired()
         return before - len(self._cache)
-
 
 
 # Known insecure placeholders that must never be accepted in production.
@@ -121,19 +121,20 @@ DB_PATH = os.environ.get("RUSTCHAIN_DB", "/root/rustchain/rustchain_v2.db")
 _tls_verify_env = os.environ.get("RUSTCHAIN_TLS_VERIFY", "true").strip().lower()
 _ca_bundle = os.environ.get("RUSTCHAIN_CA_BUNDLE", "").strip()
 if _ca_bundle and os.path.isfile(_ca_bundle):
-    TLS_VERIFY = _ca_bundle          # Path to pinned cert / CA bundle
+    TLS_VERIFY = _ca_bundle  # Path to pinned cert / CA bundle
 elif _tls_verify_env in ("false", "0", "no"):
-    TLS_VERIFY = False                # Explicit opt-out (dev only)
+    TLS_VERIFY = False  # Explicit opt-out (dev only)
 else:
-    TLS_VERIFY = True                 # Default: full CA verification
+    TLS_VERIFY = True  # Default: full CA verification
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [P2P] %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [P2P] %(message)s")
 logger = logging.getLogger(__name__)
 
 
 # =============================================================================
 # MESSAGE TYPES
 # =============================================================================
+
 
 class MessageType(Enum):
     # Discovery & Health
@@ -169,6 +170,7 @@ class MessageType(Enum):
 @dataclass
 class GossipMessage:
     """Base gossip message structure"""
+
     msg_type: str
     msg_id: str
     sender_id: str
@@ -181,7 +183,7 @@ class GossipMessage:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict) -> 'GossipMessage':
+    def from_dict(cls, data: Dict) -> "GossipMessage":
         return cls(**data)
 
     def compute_hash(self) -> str:
@@ -193,6 +195,7 @@ class GossipMessage:
 # =============================================================================
 # CRDT IMPLEMENTATIONS
 # =============================================================================
+
 
 class LWWRegister:
     """
@@ -216,7 +219,7 @@ class LWWRegister:
             return self.data[key][1]
         return None
 
-    def merge(self, other: 'LWWRegister'):
+    def merge(self, other: "LWWRegister"):
         """Merge another LWW register into this one"""
         for key, (ts, value) in other.data.items():
             self.set(key, value, ts)
@@ -225,7 +228,7 @@ class LWWRegister:
         return {k: {"ts": ts, "value": v} for k, (ts, v) in self.data.items()}
 
     @classmethod
-    def from_dict(cls, data: Dict) -> 'LWWRegister':
+    def from_dict(cls, data: Dict) -> "LWWRegister":
         reg = cls()
         for k, v in data.items():
             reg.data[k] = (v["ts"], v["value"])
@@ -262,28 +265,24 @@ class PNCounter:
         all_miners = set(self.increments.keys()) | set(self.decrements.keys())
         return {m: self.get_balance(m) for m in all_miners}
 
-    def merge(self, other: 'PNCounter'):
+    def merge(self, other: "PNCounter"):
         """Merge remote state - take max for each (node_id, miner_id) pair"""
         for miner_id, node_amounts in other.increments.items():
             for node_id, amount in node_amounts.items():
-                self.increments[miner_id][node_id] = max(
-                    self.increments[miner_id][node_id], amount
-                )
+                self.increments[miner_id][node_id] = max(self.increments[miner_id][node_id], amount)
 
         for miner_id, node_amounts in other.decrements.items():
             for node_id, amount in node_amounts.items():
-                self.decrements[miner_id][node_id] = max(
-                    self.decrements[miner_id][node_id], amount
-                )
+                self.decrements[miner_id][node_id] = max(self.decrements[miner_id][node_id], amount)
 
     def to_dict(self) -> Dict:
         return {
             "increments": {k: dict(v) for k, v in self.increments.items()},
-            "decrements": {k: dict(v) for k, v in self.decrements.items()}
+            "decrements": {k: dict(v) for k, v in self.decrements.items()},
         }
 
     @classmethod
-    def from_dict(cls, data: Dict) -> 'PNCounter':
+    def from_dict(cls, data: Dict) -> "PNCounter":
         counter = cls()
         for miner_id, nodes in data.get("increments", {}).items():
             for node_id, amount in nodes.items():
@@ -313,7 +312,7 @@ class GSet:
     def contains(self, epoch: int) -> bool:
         return epoch in self.items
 
-    def merge(self, other: 'GSet'):
+    def merge(self, other: "GSet"):
         """Merge another G-Set - union operation"""
         self.items |= other.items
         for epoch, meta in other.metadata.items():
@@ -321,13 +320,10 @@ class GSet:
                 self.metadata[epoch] = meta
 
     def to_dict(self) -> Dict:
-        return {
-            "epochs": list(self.items),
-            "metadata": self.metadata
-        }
+        return {"epochs": list(self.items), "metadata": self.metadata}
 
     @classmethod
-    def from_dict(cls, data: Dict) -> 'GSet':
+    def from_dict(cls, data: Dict) -> "GSet":
         gset = cls()
         gset.items = set(data.get("epochs", []))
         gset.metadata = data.get("metadata", {})
@@ -337,6 +333,7 @@ class GSet:
 # =============================================================================
 # GOSSIP LAYER
 # =============================================================================
+
 
 class GossipLayer:
     """
@@ -364,6 +361,7 @@ class GossipLayer:
             LocalKeypair,
             PeerRegistry,
         )
+
         self._signing_mode = SIGNING_MODE
         self._keypair: Optional[LocalKeypair] = None
         self._peer_registry: Optional[PeerRegistry] = None
@@ -397,12 +395,11 @@ class GossipLayer:
                     FROM miner_attest_recent
                 """).fetchall()
                 for miner, ts_ok, family, arch, entropy in rows:
-                    self.attestation_crdt.set(miner, {
-                        "miner": miner,
-                        "device_family": family,
-                        "device_arch": arch,
-                        "entropy_score": entropy or 0
-                    }, ts_ok)
+                    self.attestation_crdt.set(
+                        miner,
+                        {"miner": miner, "device_family": family, "device_arch": arch, "entropy_score": entropy or 0},
+                        ts_ok,
+                    )
 
                 # Load settled epochs
                 rows = conn.execute("""
@@ -411,8 +408,10 @@ class GossipLayer:
                 for (epoch,) in rows:
                     self.epoch_crdt.add(epoch)
 
-                logger.info(f"Loaded {len(self.attestation_crdt.data)} attestations, "
-                           f"{len(self.epoch_crdt.items)} settled epochs")
+                logger.info(
+                    f"Loaded {len(self.attestation_crdt.data)} attestations, "
+                    f"{len(self.epoch_crdt.items)} settled epochs"
+                )
         except Exception as e:
             logger.error(f"Failed to load state from DB: {e}")
 
@@ -433,14 +432,13 @@ class GossipLayer:
         ed25519_sig: Optional[str] = None
 
         if mode in ("hmac", "dual"):
-            hmac_sig = hmac.new(
-                P2P_SECRET.encode(), message.encode(), hashlib.sha256
-            ).hexdigest()
+            hmac_sig = hmac.new(P2P_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
 
         if mode in ("dual", "ed25519", "strict") and self._keypair is not None:
             ed25519_sig = self._keypair.sign(message.encode())
 
         from p2p_identity import pack_signature
+
         return pack_signature(hmac_sig, ed25519_sig), timestamp
 
     def _verify_signature(self, content: str, signature: str, timestamp: int) -> bool:
@@ -454,7 +452,8 @@ class GossipLayer:
         message = f"{content}:{timestamp}"
         mode = self._signing_mode
 
-        from p2p_identity import unpack_signature, verify_ed25519
+        from p2p_identity import unpack_signature
+
         hmac_sig, ed25519_sig = unpack_signature(signature)
 
         # "strict" mode: only Ed25519 accepted. HMAC-only sigs are rejected
@@ -474,24 +473,20 @@ class GossipLayer:
         if mode == "hmac":
             if hmac_sig is None:
                 return False
-            expected = hmac.new(
-                P2P_SECRET.encode(), message.encode(), hashlib.sha256
-            ).hexdigest()
+            expected = hmac.new(P2P_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
             return hmac.compare_digest(hmac_sig, expected)
 
         # "dual" or "ed25519" modes: accept either signature type.
         # HMAC path:
         if hmac_sig is not None:
-            expected = hmac.new(
-                P2P_SECRET.encode(), message.encode(), hashlib.sha256
-            ).hexdigest()
+            expected = hmac.new(P2P_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
             if hmac.compare_digest(hmac_sig, expected):
                 return True
         # Ed25519 path (cannot run without sender_id; caller should use
         # verify_message()). Fall through to reject if HMAC also absent.
         return False
 
-    # SECURITY (#2256 + #2272): the signed content now includes sender_id, 
+    # SECURITY (#2256 + #2272): the signed content now includes sender_id,
     # msg_id, and ttl so the message metadata cannot be flipped post-sign.
     @staticmethod
     def _signed_content(msg_type: str, sender_id: str, msg_id: str, ttl: int, payload: Dict) -> str:
@@ -502,7 +497,7 @@ class GossipLayer:
         # Generate msg_id first for signature binding (Issue #2272)
         temp_content = f"{msg_type.value}:{self.node_id}:{json.dumps(payload, sort_keys=True)}"
         msg_id = hashlib.sha256(f"{temp_content}:{time.time()}".encode()).hexdigest()[:24]
-        
+
         content = self._signed_content(msg_type.value, self.node_id, msg_id, ttl, payload)
         sig, ts = self._sign_message(content)
 
@@ -513,7 +508,7 @@ class GossipLayer:
             timestamp=ts,
             ttl=ttl,
             signature=sig,
-            payload=payload
+            payload=payload,
         )
         return msg
 
@@ -536,6 +531,7 @@ class GossipLayer:
         mode = self._signing_mode
 
         from p2p_identity import unpack_signature, verify_ed25519
+
         hmac_sig, ed25519_sig = unpack_signature(msg.signature)
 
         # 1) Try Ed25519 if available AND peer is registered.
@@ -552,9 +548,7 @@ class GossipLayer:
             return False
         if hmac_sig is None:
             return False
-        expected = hmac.new(
-            P2P_SECRET.encode(), message.encode(), hashlib.sha256
-        ).hexdigest()
+        expected = hmac.new(P2P_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
         return hmac.compare_digest(hmac_sig, expected)
 
     def broadcast(self, msg: GossipMessage, exclude_peer: str = None):
@@ -570,12 +564,7 @@ class GossipLayer:
     def _send_to_peer(self, peer_url: str, msg: GossipMessage):
         """Send message to a specific peer"""
         try:
-            resp = requests.post(
-                f"{peer_url}/p2p/gossip",
-                json=msg.to_dict(),
-                timeout=10,
-                verify=TLS_VERIFY
-            )
+            resp = requests.post(f"{peer_url}/p2p/gossip", json=msg.to_dict(), timeout=10, verify=TLS_VERIFY)
             if resp.status_code != 200:
                 logger.warning(f"Peer {peer_url} returned {resp.status_code}")
         except Exception as e:
@@ -603,8 +592,9 @@ class GossipLayer:
         # Record as seen (Issue #2271: Persistent storage)
         try:
             with sqlite3.connect(self.db_path) as conn:
-                conn.execute("INSERT OR IGNORE INTO p2p_seen_messages (msg_id, ts) VALUES (?, ?)", 
-                             (msg.msg_id, int(time.time())))
+                conn.execute(
+                    "INSERT OR IGNORE INTO p2p_seen_messages (msg_id, ts) VALUES (?, ?)", (msg.msg_id, int(time.time()))
+                )
                 # Prune old messages (> 1 hour)
                 conn.execute("DELETE FROM p2p_seen_messages WHERE ts < ?", (int(time.time()) - 3600,))
                 conn.commit()
@@ -643,11 +633,14 @@ class GossipLayer:
 
     def _handle_ping(self, msg: GossipMessage) -> Dict:
         """Respond to ping with pong"""
-        pong = self.create_message(MessageType.PONG, {
-            "node_id": self.node_id,
-            "attestation_count": len(self.attestation_crdt.data),
-            "settled_epochs": len(self.epoch_crdt.items)
-        })
+        pong = self.create_message(
+            MessageType.PONG,
+            {
+                "node_id": self.node_id,
+                "attestation_count": len(self.attestation_crdt.data),
+                "settled_epochs": len(self.epoch_crdt.items),
+            },
+        )
         return {"status": "ok", "pong": pong.to_dict()}
 
     def _handle_inv_attestation(self, msg: GossipMessage) -> Dict:
@@ -709,7 +702,8 @@ class GossipLayer:
                 # - entropy_score: MAX() preserves the highest observed score; a
                 #   malicious peer sending entropy_score=0 cannot erase a legitimate
                 #   high-entropy measurement (anti-double-mining canonical selection).
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT INTO miner_attest_recent
                         (miner, ts_ok, device_family, device_arch, entropy_score)
                     VALUES (?, ?, ?, ?, ?)
@@ -724,13 +718,15 @@ class GossipLayer:
                             MAX(COALESCE(miner_attest_recent.fingerprint_passed, 0),
                                 COALESCE(excluded.fingerprint_passed, miner_attest_recent.fingerprint_passed)),
                             miner_attest_recent.fingerprint_passed)
-                """, (
-                    attestation.get("miner"),
-                    ts_ok,
-                    attestation.get("device_family", "unknown"),
-                    attestation.get("device_arch", "unknown"),
-                    attestation.get("entropy_score", 0)
-                ))
+                """,
+                    (
+                        attestation.get("miner"),
+                        ts_ok,
+                        attestation.get("device_family", "unknown"),
+                        attestation.get("device_arch", "unknown"),
+                        attestation.get("entropy_score", 0),
+                    ),
+                )
                 conn.commit()
         except Exception as e:
             logger.error(f"Failed to save attestation: {e}")
@@ -781,8 +777,7 @@ class GossipLayer:
 
         if remote_merkle != local_merkle:
             logger.warning(
-                f"Epoch {epoch}: Merkle root mismatch "
-                f"(remote={remote_merkle[:16]}..., local={local_merkle[:16]}...)"
+                f"Epoch {epoch}: Merkle root mismatch (remote={remote_merkle[:16]}..., local={local_merkle[:16]}...)"
             )
             return self._reject_epoch_vote(epoch, proposal, "merkle_root_mismatch")
 
@@ -795,9 +790,7 @@ class GossipLayer:
         # only legitimately attested miners receive rewards.
         try:
             with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute(
-                    "SELECT miner FROM miner_attest_recent"
-                )
+                cursor = conn.execute("SELECT miner FROM miner_attest_recent")
                 attested_miners = {row[0] for row in cursor.fetchall()}
         except Exception as e:
             logger.error(f"Epoch {epoch}: Failed to query attested miners: {e}")
@@ -805,19 +798,14 @@ class GossipLayer:
 
         for recipient in distribution:
             if recipient not in attested_miners:
-                logger.warning(
-                    f"Epoch {epoch}: Distribution recipient {recipient} "
-                    f"not found in attested miners"
-                )
+                logger.warning(f"Epoch {epoch}: Distribution recipient {recipient} not found in attested miners")
                 return self._reject_epoch_vote(epoch, proposal, "unattested_recipient")
 
         # Merkle verified AND recipients validated - vote to accept
-        vote = self.create_message(MessageType.EPOCH_VOTE, {
-            "epoch": epoch,
-            "proposal_hash": proposal.get("proposal_hash"),
-            "vote": "accept",
-            "voter": self.node_id
-        })
+        vote = self.create_message(
+            MessageType.EPOCH_VOTE,
+            {"epoch": epoch, "proposal_hash": proposal.get("proposal_hash"), "vote": "accept", "voter": self.node_id},
+        )
 
         self.broadcast(vote)
 
@@ -825,13 +813,16 @@ class GossipLayer:
 
     def _reject_epoch_vote(self, epoch: int, proposal: Dict, reason: str) -> Dict:
         """Helper: broadcast epoch vote rejection with reason."""
-        vote = self.create_message(MessageType.EPOCH_VOTE, {
-            "epoch": epoch,
-            "proposal_hash": proposal.get("proposal_hash"),
-            "vote": "reject",
-            "voter": self.node_id,
-            "reason": reason
-        })
+        vote = self.create_message(
+            MessageType.EPOCH_VOTE,
+            {
+                "epoch": epoch,
+                "proposal_hash": proposal.get("proposal_hash"),
+                "vote": "reject",
+                "voter": self.node_id,
+                "reason": reason,
+            },
+        )
         self.broadcast(vote)
         return {"status": "voted", "vote": "reject", "reason": reason}
 
@@ -866,13 +857,12 @@ class GossipLayer:
         # Reject contradictory payload voter claim (likely tampering).
         if payload_voter is not None and payload_voter != voter:
             logger.warning(
-                f"Epoch {epoch}: payload voter {payload_voter} != "
-                f"authenticated sender {voter}; rejecting vote"
+                f"Epoch {epoch}: payload voter {payload_voter} != authenticated sender {voter}; rejecting vote"
             )
             return {"status": "error", "reason": "voter_identity_mismatch"}
 
         # Phase C: index by (epoch, proposal_hash) — not just epoch.
-        if not hasattr(self, '_epoch_votes'):
+        if not hasattr(self, "_epoch_votes"):
             self._epoch_votes: Dict[Tuple[int, str], Dict[str, str]] = {}
         key = (epoch, proposal_hash)
         if key not in self._epoch_votes:
@@ -880,10 +870,7 @@ class GossipLayer:
 
         # Idempotent per (epoch, proposal_hash, voter).
         if voter in self._epoch_votes[key]:
-            logger.warning(
-                f"Epoch {epoch} proposal {proposal_hash[:12]}: "
-                f"duplicate vote from {voter} ignored"
-            )
+            logger.warning(f"Epoch {epoch} proposal {proposal_hash[:12]}: duplicate vote from {voter} ignored")
             return {"status": "duplicate", "epoch": epoch, "voter": voter}
 
         self._epoch_votes[key][voter] = vote
@@ -905,17 +892,19 @@ class GossipLayer:
         # Check if quorum reached for acceptance — bound to this specific proposal_hash.
         if accept_count >= quorum:
             logger.info(
-                f"Epoch {epoch}: QUORUM REACHED for proposal {proposal_hash[:12]} "
-                f"({accept_count}/{total_nodes} accept)"
+                f"Epoch {epoch}: QUORUM REACHED for proposal {proposal_hash[:12]} ({accept_count}/{total_nodes} accept)"
             )
             self.epoch_crdt.add(epoch, {"proposal_hash": proposal_hash, "finalized": True})
             # Broadcast commit message
-            commit_msg = self.create_message(MessageType.EPOCH_COMMIT, {
-                "epoch": epoch,
-                "proposal_hash": proposal_hash,
-                "accept_count": accept_count,
-                "voters": list(votes_for_proposal.keys())
-            })
+            commit_msg = self.create_message(
+                MessageType.EPOCH_COMMIT,
+                {
+                    "epoch": epoch,
+                    "proposal_hash": proposal_hash,
+                    "accept_count": accept_count,
+                    "voters": list(votes_for_proposal.keys()),
+                },
+            )
             self.broadcast(commit_msg)
             return {"status": "committed", "epoch": epoch, "accept_count": accept_count}
 
@@ -931,7 +920,7 @@ class GossipLayer:
         state_data = {
             "attestations": self.attestation_crdt.to_dict(),
             "epochs": self.epoch_crdt.to_dict(),
-            "balances": self.balance_crdt.to_dict()
+            "balances": self.balance_crdt.to_dict(),
         }
         # Sign the state response so the requester can verify authenticity.
         # Uses the Phase A signed-content shape (msg_type:sender_id:payload)
@@ -940,7 +929,7 @@ class GossipLayer:
         state_msg_id = hashlib.sha256(
             f"STATE:{self.node_id}:{json.dumps(payload, sort_keys=True)}:{time.time()}".encode()
         ).hexdigest()[:24]
-        
+
         content = self._signed_content(MessageType.STATE.value, self.node_id, state_msg_id, 0, payload)
         signature, timestamp = self._sign_message(content)
         return {
@@ -950,7 +939,7 @@ class GossipLayer:
             "timestamp": timestamp,
             "sender_id": self.node_id,
             "msg_id": state_msg_id,
-            "ttl": 0
+            "ttl": 0,
         }
 
     def _handle_state(self, msg: GossipMessage) -> Dict:
@@ -1043,26 +1032,22 @@ class GossipLayer:
 
     def announce_attestation(self, miner_id: str, ts_ok: int, device_arch: str):
         """Announce new attestation to peers"""
-        msg = self.create_message(MessageType.INV_ATTESTATION, {
-            "miner_id": miner_id,
-            "ts_ok": ts_ok,
-            "device_arch": device_arch,
-            "attestation_hash": hashlib.sha256(f"{miner_id}:{ts_ok}".encode()).hexdigest()[:16]
-        })
+        msg = self.create_message(
+            MessageType.INV_ATTESTATION,
+            {
+                "miner_id": miner_id,
+                "ts_ok": ts_ok,
+                "device_arch": device_arch,
+                "attestation_hash": hashlib.sha256(f"{miner_id}:{ts_ok}".encode()).hexdigest()[:16],
+            },
+        )
         self.broadcast(msg)
 
     def request_full_sync(self, peer_url: str):
         """Request full state sync from a peer"""
-        msg = self.create_message(MessageType.GET_STATE, {
-            "requester": self.node_id
-        })
+        msg = self.create_message(MessageType.GET_STATE, {"requester": self.node_id})
         try:
-            resp = requests.post(
-                f"{peer_url}/p2p/gossip",
-                json=msg.to_dict(),
-                timeout=30,
-                verify=TLS_VERIFY
-            )
+            resp = requests.post(f"{peer_url}/p2p/gossip", json=msg.to_dict(), timeout=30, verify=TLS_VERIFY)
             if resp.status_code == 200:
                 data = resp.json()
                 if "state" in data:
@@ -1086,7 +1071,7 @@ class GossipLayer:
                         timestamp=timestamp,
                         ttl=ttl,
                         signature=signature,
-                        payload=state_payload
+                        payload=state_payload,
                     )
                     self._handle_state(state_msg)
         except Exception as e:
@@ -1096,6 +1081,7 @@ class GossipLayer:
 # =============================================================================
 # EPOCH CONSENSUS
 # =============================================================================
+
 
 class EpochConsensus:
     """
@@ -1134,7 +1120,7 @@ class EpochConsensus:
             "distribution": distribution,
             "merkle_root": merkle_root,
             "proposal_hash": hashlib.sha256(f"{epoch}:{merkle_root}".encode()).hexdigest()[:24],
-            "timestamp": int(time.time())
+            "timestamp": int(time.time()),
         }
 
         self.proposals[epoch] = proposal
@@ -1151,12 +1137,10 @@ class EpochConsensus:
         vote = "accept" if accept else "reject"
         self.votes[epoch][self.node_id] = vote
 
-        msg = self.gossip.create_message(MessageType.EPOCH_VOTE, {
-            "epoch": epoch,
-            "proposal_hash": proposal_hash,
-            "vote": vote,
-            "voter": self.node_id
-        })
+        msg = self.gossip.create_message(
+            MessageType.EPOCH_VOTE,
+            {"epoch": epoch, "proposal_hash": proposal_hash, "vote": vote, "voter": self.node_id},
+        )
         self.gossip.broadcast(msg)
 
     def check_consensus(self, epoch: int) -> bool:
@@ -1179,6 +1163,7 @@ class EpochConsensus:
 # P2P NODE COORDINATOR
 # =============================================================================
 
+
 class RustChainP2PNode:
     """
     Main P2P node coordinator.
@@ -1192,11 +1177,7 @@ class RustChainP2PNode:
 
         # Initialize components
         self.gossip = GossipLayer(node_id, peers, db_path)
-        self.consensus = EpochConsensus(
-            node_id,
-            list(peers.keys()) + [node_id],
-            self.gossip
-        )
+        self.consensus = EpochConsensus(node_id, list(peers.keys()) + [node_id], self.gossip)
 
         self.running = False
         self.sync_thread = None
@@ -1235,9 +1216,7 @@ class RustChainP2PNode:
         """Get attestation state for sync"""
         return {
             "node_id": self.node_id,
-            "attestations": {
-                k: v[0] for k, v in self.gossip.attestation_crdt.data.items()
-            }
+            "attestations": {k: v[0] for k, v in self.gossip.attestation_crdt.data.items()},
         }
 
     def get_full_state(self) -> Dict:
@@ -1246,7 +1225,7 @@ class RustChainP2PNode:
             "node_id": self.node_id,
             "attestations": self.gossip.attestation_crdt.to_dict(),
             "epochs": self.gossip.epoch_crdt.to_dict(),
-            "balances": self.gossip.balance_crdt.to_dict()
+            "balances": self.gossip.balance_crdt.to_dict(),
         }
 
     def announce_new_attestation(self, miner_id: str, attestation: Dict):
@@ -1257,23 +1236,21 @@ class RustChainP2PNode:
         self.gossip.attestation_crdt.set(miner_id, attestation, ts_ok)
 
         # Broadcast to peers
-        self.gossip.announce_attestation(
-            miner_id,
-            ts_ok,
-            attestation.get("device_arch", "unknown")
-        )
+        self.gossip.announce_attestation(miner_id, ts_ok, attestation.get("device_arch", "unknown"))
 
 
 # =============================================================================
 # FLASK ENDPOINTS REGISTRATION
 # =============================================================================
 
+
 def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
     """Register P2P synchronization endpoints on Flask app"""
 
-    from flask import request, jsonify
     from collections import deque
     from threading import Lock
+
+    from flask import jsonify, request
 
     # FIX(#2867 M5): Per-IP rate limit on /p2p/gossip POST.
     # The endpoint does signature verification + CRDT merge + SQLite I/O on
@@ -1311,11 +1288,11 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
                     del _gossip_rate[ip]
             return True
 
-    @app.route('/p2p/gossip', methods=['POST'])
+    @app.route("/p2p/gossip", methods=["POST"])
     def receive_gossip():
         """Receive and process gossip message"""
         # FIX(#2867 M5): per-IP rate limit BEFORE expensive verify+CRDT work.
-        remote_ip = request.headers.get('X-Forwarded-For', request.remote_addr or 'unknown').split(',')[0].strip()
+        remote_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
         if not _gossip_rate_check(remote_ip):
             return jsonify({"error": "rate_limited", "limit": f"{GOSSIP_RATE_LIMIT}/{GOSSIP_RATE_WINDOW_S}s"}), 429
 
@@ -1323,34 +1300,33 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
         result = p2p_node.handle_gossip(data)
         return jsonify(result)
 
-    @app.route('/p2p/state', methods=['GET'])
+    @app.route("/p2p/state", methods=["GET"])
     def get_state():
         """Get full CRDT state for sync"""
         return jsonify(p2p_node.get_full_state())
 
-    @app.route('/p2p/attestation_state', methods=['GET'])
+    @app.route("/p2p/attestation_state", methods=["GET"])
     def get_attestation_state():
         """Get attestation timestamps for efficient sync"""
         return jsonify(p2p_node.get_attestation_state())
 
-    @app.route('/p2p/peers', methods=['GET'])
+    @app.route("/p2p/peers", methods=["GET"])
     def get_peers():
         """Get list of known peers"""
-        return jsonify({
-            "node_id": p2p_node.node_id,
-            "peers": list(p2p_node.peers.keys())
-        })
+        return jsonify({"node_id": p2p_node.node_id, "peers": list(p2p_node.peers.keys())})
 
-    @app.route('/p2p/health', methods=['GET'])
+    @app.route("/p2p/health", methods=["GET"])
     def p2p_health():
         """P2P subsystem health check"""
-        return jsonify({
-            "node_id": p2p_node.node_id,
-            "running": p2p_node.running,
-            "peer_count": len(p2p_node.peers),
-            "attestation_count": len(p2p_node.gossip.attestation_crdt.data),
-            "settled_epochs": len(p2p_node.gossip.epoch_crdt.items)
-        })
+        return jsonify(
+            {
+                "node_id": p2p_node.node_id,
+                "running": p2p_node.running,
+                "peer_count": len(p2p_node.peers),
+                "attestation_count": len(p2p_node.gossip.attestation_crdt.data),
+                "settled_epochs": len(p2p_node.gossip.epoch_crdt.items),
+            }
+        )
 
     logger.info("P2P endpoints registered")
 
@@ -1363,11 +1339,7 @@ if __name__ == "__main__":
     # Test configuration
     NODE_ID = os.environ.get("RC_NODE_ID", "node1")
 
-    PEERS = {
-        "node1": "https://rustchain.org",
-        "node2": "http://50.28.86.153:8099",
-        "node3": "http://76.8.228.245:8099"
-    }
+    PEERS = {"node1": "https://rustchain.org", "node2": "http://50.28.86.153:8099", "node3": "http://76.8.228.245:8099"}
 
     # Remove self from peers
     if NODE_ID in PEERS:

@@ -6,8 +6,8 @@ canonical miner list instead of the stale miner_attest_recent time-window query.
 """
 
 import os
-import sys
 import sqlite3
+import sys
 import tempfile
 import unittest
 
@@ -16,10 +16,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from rip_200_round_robin_1cpu1vote import (
-    calculate_epoch_rewards_time_aged,
-    GENESIS_TIMESTAMP,
     BLOCK_TIME,
-    ATTESTATION_TTL,
+    GENESIS_TIMESTAMP,
+    calculate_epoch_rewards_time_aged,
 )
 
 SLOTS_PER_EPOCH = 144
@@ -107,9 +106,7 @@ class TestDelayedSettlementIntegrity(unittest.TestCase):
 
         # Immediate settlement of epoch 10
         current_slot = EPOCH * SLOTS_PER_EPOCH + 72  # mid-epoch
-        rewards_immediate = calculate_epoch_rewards_time_aged(
-            self.db_path, EPOCH, PER_EPOCH_URTC, current_slot
-        )
+        rewards_immediate = calculate_epoch_rewards_time_aged(self.db_path, EPOCH, PER_EPOCH_URTC, current_slot)
 
         self.assertIn("miner_A", rewards_immediate)
         self.assertIn("miner_B", rewards_immediate)
@@ -122,13 +119,10 @@ class TestDelayedSettlementIntegrity(unittest.TestCase):
         # The old code would miss miner_A because ts_ok is now in epoch 11.
         # The fix uses epoch_enroll, so miner_A should still be included.
         current_slot_late = 11 * SLOTS_PER_EPOCH + 72  # epoch 11
-        rewards_delayed = calculate_epoch_rewards_time_aged(
-            self.db_path, EPOCH, PER_EPOCH_URTC, current_slot_late
-        )
+        rewards_delayed = calculate_epoch_rewards_time_aged(self.db_path, EPOCH, PER_EPOCH_URTC, current_slot_late)
 
         # Both miners must still be present
-        self.assertIn("miner_A", rewards_delayed,
-                      "miner_A must be in delayed settlement (epoch_enroll source)")
+        self.assertIn("miner_A", rewards_delayed, "miner_A must be in delayed settlement (epoch_enroll source)")
         self.assertIn("miner_B", rewards_delayed)
 
         # Total rewards must still sum to PER_EPOCH_URTC
@@ -147,9 +141,7 @@ class TestDelayedSettlementIntegrity(unittest.TestCase):
         _attest_miner(self.conn, "miner_Y", "modern", ts_ok=start_ts + 200)
 
         current_slot = EPOCH * SLOTS_PER_EPOCH + 72
-        rewards = calculate_epoch_rewards_time_aged(
-            self.db_path, EPOCH, PER_EPOCH_URTC, current_slot
-        )
+        rewards = calculate_epoch_rewards_time_aged(self.db_path, EPOCH, PER_EPOCH_URTC, current_slot)
 
         # Both miners should be found via fallback path
         self.assertIn("miner_X", rewards)
@@ -167,9 +159,7 @@ class TestDelayedSettlementIntegrity(unittest.TestCase):
         # No attestation for this miner
 
         current_slot = EPOCH * SLOTS_PER_EPOCH + 72
-        rewards = calculate_epoch_rewards_time_aged(
-            self.db_path, EPOCH, PER_EPOCH_URTC, current_slot
-        )
+        rewards = calculate_epoch_rewards_time_aged(self.db_path, EPOCH, PER_EPOCH_URTC, current_slot)
 
         self.assertIn("orphan_miner", rewards)
         self.assertGreater(rewards["orphan_miner"], 0)
@@ -183,16 +173,12 @@ class TestDelayedSettlementIntegrity(unittest.TestCase):
         start_ts, _ = self._epoch_ts(EPOCH)
 
         _enroll_miner(self.conn, EPOCH, "vm_miner", weight=0.0)
-        _attest_miner(self.conn, "vm_miner", "aarch64", ts_ok=start_ts + 100,
-                      fingerprint_passed=0)
+        _attest_miner(self.conn, "vm_miner", "aarch64", ts_ok=start_ts + 100, fingerprint_passed=0)
         _enroll_miner(self.conn, EPOCH, "good_miner", weight=2.5)
-        _attest_miner(self.conn, "good_miner", "g4", ts_ok=start_ts + 200,
-                      fingerprint_passed=1)
+        _attest_miner(self.conn, "good_miner", "g4", ts_ok=start_ts + 200, fingerprint_passed=1)
 
         current_slot = EPOCH * SLOTS_PER_EPOCH + 72
-        rewards = calculate_epoch_rewards_time_aged(
-            self.db_path, EPOCH, PER_EPOCH_URTC, current_slot
-        )
+        rewards = calculate_epoch_rewards_time_aged(self.db_path, EPOCH, PER_EPOCH_URTC, current_slot)
 
         # vm_miner should get zero (fingerprint failed)
         self.assertEqual(rewards.get("vm_miner", 0), 0)

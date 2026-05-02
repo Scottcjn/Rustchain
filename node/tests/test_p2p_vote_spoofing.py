@@ -9,15 +9,15 @@ Severity: CRITICAL / High
 Target: rustchain_p2p_gossip.py::_handle_epoch_vote()
 """
 
-import sys
 import os
+import sys
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 os.environ.setdefault("RC_P2P_SECRET", os.urandom(32).hex())
 
-from rustchain_p2p_gossip import GossipLayer, MessageType, GossipMessage
+from rustchain_p2p_gossip import GossipLayer, GossipMessage, MessageType
 
 
 def test_vote_spoofing_finds_quorum():
@@ -38,12 +38,9 @@ def test_vote_spoofing_finds_quorum():
     epoch = 42
 
     # Alice casts vote for herself legitimately
-    vote_alice = alice_gossip.create_message(MessageType.EPOCH_VOTE, {
-        "epoch": epoch,
-        "proposal_hash": proposal_hash,
-        "vote": "accept",
-        "voter": "alice"
-    })
+    vote_alice = alice_gossip.create_message(
+        MessageType.EPOCH_VOTE, {"epoch": epoch, "proposal_hash": proposal_hash, "vote": "accept", "voter": "alice"}
+    )
     result = alice_gossip.handle_message(vote_alice)
     print(f"[1/4] Alice votes for Alice: {result}")
 
@@ -55,12 +52,7 @@ def test_vote_spoofing_finds_quorum():
         timestamp=int(time.time()),
         ttl=0,
         signature="",
-        payload={
-            "epoch": epoch,
-            "proposal_hash": proposal_hash,
-            "vote": "accept",
-            "voter": "bob"
-        }
+        payload={"epoch": epoch, "proposal_hash": proposal_hash, "vote": "accept", "voter": "bob"},
     )
 
     original_verify = alice_gossip.verify_message
@@ -77,25 +69,19 @@ def test_vote_spoofing_finds_quorum():
         timestamp=int(time.time()),
         ttl=0,
         signature="",
-        payload={
-            "epoch": epoch,
-            "proposal_hash": proposal_hash,
-            "vote": "accept",
-            "voter": "carol"
-        }
+        payload={"epoch": epoch, "proposal_hash": proposal_hash, "vote": "accept", "voter": "carol"},
     )
     result = alice_gossip.handle_message(forged_carol)
     print(f"[3/4] Alice FORGES vote for Carol: {result}")
 
-    votes = getattr(alice_gossip, '_epoch_votes', {}).get(epoch, {})
+    votes = getattr(alice_gossip, "_epoch_votes", {}).get(epoch, {})
     print(f"[4/4] Votes recorded for epoch {epoch}: {votes}")
 
     alice_gossip.verify_message = original_verify
 
     assert "bob" in votes, "Vulnerability not reproduced: Bob's vote was not recorded"
     assert "carol" in votes, "Vulnerability not reproduced: Carol's vote was not recorded"
-    assert sum(1 for v in votes.values() if v == "accept") >= 3, \
-        f"Quorum not reached with forged votes. Votes: {votes}"
+    assert sum(1 for v in votes.values() if v == "accept") >= 3, f"Quorum not reached with forged votes. Votes: {votes}"
 
     print("\n✅ VULNERABILITY CONFIRMED: A single node forged 2 extra votes and reached quorum.")
 

@@ -20,6 +20,7 @@ Wire format for signature field:
   - Dual or Ed25519:         JSON dict: {"h":"<hmac_hex>","e":"<ed25519_hex>"}
     "h" key is optional in strict mode.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,10 +42,7 @@ logger = logging.getLogger(__name__)
 _MODE_RAW = os.environ.get("RC_P2P_SIGNING_MODE", "hmac").strip().lower()
 _VALID_MODES = {"hmac", "dual", "ed25519", "strict"}
 if _MODE_RAW not in _VALID_MODES:
-    logger.warning(
-        f"[P2P] Unknown RC_P2P_SIGNING_MODE={_MODE_RAW!r}; defaulting to 'hmac'. "
-        f"Valid: {_VALID_MODES}"
-    )
+    logger.warning(f"[P2P] Unknown RC_P2P_SIGNING_MODE={_MODE_RAW!r}; defaulting to 'hmac'. Valid: {_VALID_MODES}")
     _MODE_RAW = "hmac"
 SIGNING_MODE = _MODE_RAW
 
@@ -96,17 +94,18 @@ def get_default_privkey_path() -> Path:
 # ---------------------------------------------------------------------------
 def _require_crypto():
     try:
+        from cryptography.exceptions import InvalidSignature
         from cryptography.hazmat.primitives.asymmetric.ed25519 import (
             Ed25519PrivateKey,
             Ed25519PublicKey,
         )
         from cryptography.hazmat.primitives.serialization import (
             Encoding,
-            PrivateFormat,
             NoEncryption,
+            PrivateFormat,
             load_pem_private_key,
         )
-        from cryptography.exceptions import InvalidSignature
+
         return (
             Ed25519PrivateKey,
             Ed25519PublicKey,
@@ -118,8 +117,7 @@ def _require_crypto():
         )
     except ImportError as e:
         raise ImportError(
-            "[P2P] cryptography library required for Phase F Ed25519 mode. "
-            "Install with: pip install cryptography"
+            "[P2P] cryptography library required for Phase F Ed25519 mode. Install with: pip install cryptography"
         ) from e
 
 
@@ -155,7 +153,7 @@ class LocalKeypair:
 
         # Item A: Look for versioned key file if forced or if current exists
         force_keygen = os.environ.get("RC_P2P_KEYGEN", "0") == "1"
-        
+
         if self.path.exists() and not force_keygen:
             with open(self.path, "rb") as f:
                 content = f.read()
@@ -177,34 +175,35 @@ class LocalKeypair:
                         current_v = int(version_path.read_text().strip())
                     except ValueError:
                         pass
-                
+
                 old_path = self.path.parent / f"{self.path.stem}.v{current_v}.pem"
                 self.path.replace(old_path)
                 logger.info(f"[P2P] Archived old identity to {old_path}")
                 self.key_version = current_v + 1
-            
+
             self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             self._privkey = Ed25519PrivateKey.generate()
-            pem = self._privkey.private_bytes(
-                Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
-            )
+            pem = self._privkey.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
             # Write with 0600 perms
             fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             try:
                 os.write(fd, pem)
             finally:
                 os.close(fd)
-            
+
             # Persist version
             version_path = self.path.with_suffix(".version")
             version_path.write_text(str(self.key_version))
-            
+
             logger.info(f"[P2P] Generated new Ed25519 identity (v{self.key_version}) at {self.path}")
 
         from cryptography.hazmat.primitives.serialization import (
             Encoding as _Enc,
+        )
+        from cryptography.hazmat.primitives.serialization import (
             PublicFormat as _Pub,
         )
+
         pub_bytes = self._privkey.public_key().public_bytes(_Enc.Raw, _Pub.Raw)
         self._pubkey_hex = pub_bytes.hex()
 
@@ -230,7 +229,7 @@ class PeerEntry:
     pubkey_hex: str
     key_version: int = 1
     not_before: Optional[str] = None  # ISO-8601
-    not_after: Optional[str] = None   # ISO-8601
+    not_after: Optional[str] = None  # ISO-8601
 
 
 class PeerRegistry:
@@ -280,13 +279,7 @@ class PeerRegistry:
             if not nid or not pk:
                 logger.warning(f"[P2P] Skipping malformed peer entry: {p}")
                 continue
-            entries[nid] = PeerEntry(
-                node_id=nid,
-                pubkey_hex=pk,
-                key_version=kv,
-                not_before=nb,
-                not_after=na
-            )
+            entries[nid] = PeerEntry(node_id=nid, pubkey_hex=pk, key_version=kv, not_before=nb, not_after=na)
         self._by_node_id = entries
         self._loaded = True
         logger.info(f"[P2P] Loaded {len(entries)} peers from registry {self.path}")
@@ -300,11 +293,12 @@ class PeerRegistry:
 
         # Item B: Registry expiry / not_before / not_after
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc)
-        
+
         # Clock skew tolerance: ±5 min (300s)
         SKEW = 300
-        
+
         if entry.not_before:
             try:
                 nb = datetime.fromisoformat(entry.not_before.replace("Z", "+00:00"))

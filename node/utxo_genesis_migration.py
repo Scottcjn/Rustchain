@@ -94,7 +94,7 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
     if check_existing_genesis(utxo_db):
         print("ERROR: Genesis boxes already exist. Aborting.")
         print("To re-run, first delete genesis boxes:")
-        print(f"  DELETE FROM utxo_boxes WHERE creation_height = {GENESIS_HEIGHT};")
+        print("  DELETE FROM utxo_boxes WHERE creation_height = %d;" % GENESIS_HEIGHT)
         return {'error': 'genesis_already_exists'}
 
     # Load balances

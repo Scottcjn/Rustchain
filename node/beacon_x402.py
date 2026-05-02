@@ -7,26 +7,34 @@ Usage in beacon_chat.py:
     beacon_x402.init_app(app, get_db)
 """
 
-import json
 import logging
 import os
 import sqlite3
 import time
 
 from flask import g, jsonify, request
-from functools import wraps
 
 log = logging.getLogger("beacon.x402")
 
 # --- Optional imports (graceful degradation) ---
 try:
     import sys
+
     sys.path.insert(0, "/root/shared")
     from x402_config import (
-        BEACON_TREASURY, FACILITATOR_URL, X402_NETWORK, USDC_BASE,
-        PRICE_BEACON_CONTRACT, PRICE_RELAY_REGISTER, PRICE_REPUTATION_EXPORT,
-        is_free, has_cdp_credentials, create_agentkit_wallet, SWAP_INFO,
+        BEACON_TREASURY,
+        FACILITATOR_URL,
+        PRICE_BEACON_CONTRACT,
+        PRICE_RELAY_REGISTER,
+        PRICE_REPUTATION_EXPORT,
+        SWAP_INFO,
+        USDC_BASE,
+        X402_NETWORK,
+        create_agentkit_wallet,
+        has_cdp_credentials,
+        is_free,
     )
+
     X402_CONFIG_OK = True
 except ImportError:
     log.warning("x402_config not found — x402 features disabled")
@@ -69,8 +77,7 @@ def _run_migrations(db_path):
 
     # Add coinbase_address to relay_agents if missing
     cursor = conn.execute("PRAGMA table_info(relay_agents)")
-    existing_cols = {row[1] if isinstance(row, tuple) else row["name"]
-                     for row in cursor.fetchall()}
+    existing_cols = {row[1] if isinstance(row, tuple) else row["name"] for row in cursor.fetchall()}
 
     for sql in RELAY_MIGRATION_SQL:
         col_name = sql.split("ADD COLUMN ")[1].split()[0]
@@ -88,10 +95,11 @@ def _run_migrations(db_path):
 # CORS helper (match beacon_chat.py pattern)
 # ---------------------------------------------------------------------------
 
+
 def _cors_json(data, status=200):
     """Return JSON response with CORS headers (matching beacon_chat.py pattern)."""
     resp = jsonify(data) if not isinstance(data, str) else data
-    if hasattr(resp, 'headers'):
+    if hasattr(resp, "headers"):
         resp.headers["Access-Control-Allow-Origin"] = "*"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-PAYMENT"
         resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, OPTIONS"
@@ -101,6 +109,7 @@ def _cors_json(data, status=200):
 # ---------------------------------------------------------------------------
 # x402 payment check
 # ---------------------------------------------------------------------------
+
 
 def _check_x402_payment(price_str, action_name):
     """
@@ -112,27 +121,29 @@ def _check_x402_payment(price_str, action_name):
 
     payment_header = request.headers.get("X-PAYMENT", "")
     if not payment_header:
-        return False, _cors_json({
-            "error": "Payment Required",
-            "x402": {
-                "version": "1",
-                "network": X402_NETWORK,
-                "facilitator": FACILITATOR_URL,
-                "payTo": BEACON_TREASURY,
-                "maxAmountRequired": price_str,
-                "asset": USDC_BASE,
-                "resource": request.url,
-                "description": f"Beacon Atlas: {action_name}",
-            }
-        }, 402)
+        return False, _cors_json(
+            {
+                "error": "Payment Required",
+                "x402": {
+                    "version": "1",
+                    "network": X402_NETWORK,
+                    "facilitator": FACILITATOR_URL,
+                    "payTo": BEACON_TREASURY,
+                    "maxAmountRequired": price_str,
+                    "asset": USDC_BASE,
+                    "resource": request.url,
+                    "description": f"Beacon Atlas: {action_name}",
+                },
+            },
+            402,
+        )
 
     # Log payment
     try:
         db = g.get("db")
         if db:
             db.execute(
-                "INSERT INTO x402_beacon_payments (payer_address, action, amount_usdc, created_at) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO x402_beacon_payments (payer_address, action, amount_usdc, created_at) VALUES (?, ?, ?, ?)",
                 ("unknown", action_name, price_str, time.time()),
             )
             db.commit()
@@ -146,13 +157,12 @@ def _check_x402_payment(price_str, action_name):
 # Route registration
 # ---------------------------------------------------------------------------
 
+
 def init_app(app, get_db_func):
     """Register x402 routes on the Beacon Atlas Flask app."""
 
     # Determine DB path from the app's existing config
-    db_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "beacon_atlas.db"
-    )
+    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "beacon_atlas.db")
 
     # Run migrations
     try:
@@ -193,12 +203,14 @@ def init_app(app, get_db_func):
         )
         db.commit()
 
-        return _cors_json({
-            "ok": True,
-            "agent_id": agent_id,
-            "coinbase_address": address,
-            "network": "Base (eip155:8453)",
-        })
+        return _cors_json(
+            {
+                "ok": True,
+                "agent_id": agent_id,
+                "coinbase_address": address,
+                "network": "Base (eip155:8453)",
+            }
+        )
 
     @app.route("/api/agents/<agent_id>/wallet", methods=["GET", "OPTIONS"])
     def get_agent_wallet(agent_id):
@@ -215,13 +227,15 @@ def init_app(app, get_db_func):
         ).fetchone()
 
         if row and row["coinbase_address"]:
-            return _cors_json({
-                "agent_id": agent_id,
-                "coinbase_address": row["coinbase_address"],
-                "source": "native",
-                "network": "Base (eip155:8453)",
-                "swap_info": SWAP_INFO if X402_CONFIG_OK else None,
-            })
+            return _cors_json(
+                {
+                    "agent_id": agent_id,
+                    "coinbase_address": row["coinbase_address"],
+                    "source": "native",
+                    "network": "Base (eip155:8453)",
+                    "swap_info": SWAP_INFO if X402_CONFIG_OK else None,
+                }
+            )
 
         # Check relay_agents table
         try:
@@ -230,21 +244,25 @@ def init_app(app, get_db_func):
                 (agent_id,),
             ).fetchone()
             if relay and relay.get("coinbase_address"):
-                return _cors_json({
-                    "agent_id": agent_id,
-                    "coinbase_address": relay["coinbase_address"],
-                    "source": "relay",
-                    "network": "Base (eip155:8453)",
-                    "swap_info": SWAP_INFO if X402_CONFIG_OK else None,
-                })
+                return _cors_json(
+                    {
+                        "agent_id": agent_id,
+                        "coinbase_address": relay["coinbase_address"],
+                        "source": "relay",
+                        "network": "Base (eip155:8453)",
+                        "swap_info": SWAP_INFO if X402_CONFIG_OK else None,
+                    }
+                )
         except (sqlite3.OperationalError, KeyError):
             pass  # Column may not exist yet
 
-        return _cors_json({
-            "agent_id": agent_id,
-            "coinbase_address": None,
-            "hint": "POST /api/agents/<id>/wallet with admin key to set wallet",
-        })
+        return _cors_json(
+            {
+                "agent_id": agent_id,
+                "coinbase_address": None,
+                "hint": "POST /api/agents/<id>/wallet with admin key to set wallet",
+            }
+        )
 
     # ---------------------------------------------------------------
     # Premium Endpoints (x402 paywalled)
@@ -265,18 +283,18 @@ def init_app(app, get_db_func):
 
         db = get_db_func()
         try:
-            rows = db.execute(
-                "SELECT * FROM reputation ORDER BY score DESC"
-            ).fetchall()
+            rows = db.execute("SELECT * FROM reputation ORDER BY score DESC").fetchall()
             reputation = [dict(r) for r in rows]
         except sqlite3.OperationalError:
             reputation = []
 
-        return _cors_json({
-            "total": len(reputation),
-            "reputation": reputation,
-            "exported_at": time.time(),
-        })
+        return _cors_json(
+            {
+                "total": len(reputation),
+                "reputation": reputation,
+                "exported_at": time.time(),
+            }
+        )
 
     @app.route("/api/premium/contracts/export", methods=["GET", "OPTIONS"])
     def premium_contracts_export():
@@ -292,9 +310,7 @@ def init_app(app, get_db_func):
             return err_resp
 
         db = get_db_func()
-        rows = db.execute(
-            "SELECT * FROM contracts ORDER BY created_at DESC"
-        ).fetchall()
+        rows = db.execute("SELECT * FROM contracts ORDER BY created_at DESC").fetchall()
 
         contracts = []
         for r in rows:
@@ -309,11 +325,13 @@ def init_app(app, get_db_func):
                 d[f"{field}_wallet"] = wallet_row["coinbase_address"] if wallet_row else None
             contracts.append(d)
 
-        return _cors_json({
-            "total": len(contracts),
-            "contracts": contracts,
-            "exported_at": time.time(),
-        })
+        return _cors_json(
+            {
+                "total": len(contracts),
+                "contracts": contracts,
+                "exported_at": time.time(),
+            }
+        )
 
     # ---------------------------------------------------------------
     # x402 Payment History
@@ -327,16 +345,16 @@ def init_app(app, get_db_func):
 
         db = get_db_func()
         try:
-            rows = db.execute(
-                "SELECT * FROM x402_beacon_payments ORDER BY created_at DESC LIMIT 50"
-            ).fetchall()
+            rows = db.execute("SELECT * FROM x402_beacon_payments ORDER BY created_at DESC LIMIT 50").fetchall()
         except sqlite3.OperationalError:
             rows = []
 
-        return _cors_json({
-            "payments": [dict(r) for r in rows],
-            "total": len(rows),
-        })
+        return _cors_json(
+            {
+                "payments": [dict(r) for r in rows],
+                "total": len(rows),
+            }
+        )
 
     # ---------------------------------------------------------------
     # x402 Status
@@ -348,19 +366,21 @@ def init_app(app, get_db_func):
         if request.method == "OPTIONS":
             return _cors_json({"ok": True})
 
-        return _cors_json({
-            "x402_enabled": X402_CONFIG_OK,
-            "cdp_configured": has_cdp_credentials() if X402_CONFIG_OK else False,
-            "network": "Base (eip155:8453)",
-            "facilitator": FACILITATOR_URL if X402_CONFIG_OK else None,
-            "pricing_mode": "free" if not X402_CONFIG_OK or is_free(
-                PRICE_BEACON_CONTRACT if X402_CONFIG_OK else "0"
-            ) else "paid",
-            "swap_info": SWAP_INFO if X402_CONFIG_OK else None,
-            "premium_endpoints": [
-                "/api/premium/reputation",
-                "/api/premium/contracts/export",
-            ],
-        })
+        return _cors_json(
+            {
+                "x402_enabled": X402_CONFIG_OK,
+                "cdp_configured": has_cdp_credentials() if X402_CONFIG_OK else False,
+                "network": "Base (eip155:8453)",
+                "facilitator": FACILITATOR_URL if X402_CONFIG_OK else None,
+                "pricing_mode": "free"
+                if not X402_CONFIG_OK or is_free(PRICE_BEACON_CONTRACT if X402_CONFIG_OK else "0")
+                else "paid",
+                "swap_info": SWAP_INFO if X402_CONFIG_OK else None,
+                "premium_endpoints": [
+                    "/api/premium/reputation",
+                    "/api/premium/contracts/export",
+                ],
+            }
+        )
 
     log.info("Beacon Atlas x402 module initialized")

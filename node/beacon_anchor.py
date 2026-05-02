@@ -6,6 +6,7 @@ Beacon envelopes (hello, heartbeat, want, bounty, mayday, accord, pushback)
 are stored in rustchain_v2.db and periodically committed to Ergo via the
 existing ergo_miner_anchor.py system.
 """
+
 import hashlib
 import json
 import sqlite3
@@ -13,8 +14,9 @@ import time
 from hashlib import blake2b
 
 try:
-    from nacl.signing import VerifyKey
     from nacl.exceptions import BadSignatureError
+    from nacl.signing import VerifyKey
+
     NACL_AVAILABLE = True
 except ImportError:
     VerifyKey = None
@@ -37,11 +39,7 @@ def _agent_id_from_pubkey(pubkey_bytes: bytes) -> str:
 
 def _canonical_signed_fields(envelope: dict) -> dict:
     """Return the exact Beacon v2 body covered by signature verification and payload hashing."""
-    return {
-        field: value
-        for field, value in envelope.items()
-        if field not in UNSIGNED_TRANSPORT_FIELDS
-    }
+    return {field: value for field, value in envelope.items() if field not in UNSIGNED_TRANSPORT_FIELDS}
 
 
 def _canonical_signing_payload(envelope: dict) -> bytes:
@@ -61,19 +59,11 @@ def _ensure_payload_hash_version_column(conn: sqlite3.Connection):
     so pre-upgrade rows cannot be recomputed safely in place. We therefore tag them
     as legacy and let new writes opt into the explicit signed-field hash contract.
     """
-    columns = {
-        row[1]
-        for row in conn.execute("PRAGMA table_info(beacon_envelopes)").fetchall()
-    }
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(beacon_envelopes)").fetchall()}
     if "payload_hash_version" not in columns:
-        conn.execute(
-            "ALTER TABLE beacon_envelopes "
-            "ADD COLUMN payload_hash_version INTEGER NOT NULL DEFAULT 1"
-        )
+        conn.execute("ALTER TABLE beacon_envelopes ADD COLUMN payload_hash_version INTEGER NOT NULL DEFAULT 1")
     conn.execute(
-        "UPDATE beacon_envelopes "
-        "SET payload_hash_version = ? "
-        "WHERE payload_hash_version IS NULL",
+        "UPDATE beacon_envelopes SET payload_hash_version = ? WHERE payload_hash_version IS NULL",
         (LEGACY_PAYLOAD_HASH_VERSION,),
     )
 
@@ -174,19 +164,21 @@ def store_envelope(envelope: dict, db_path=DB_PATH) -> dict:
 
     try:
         with sqlite3.connect(db_path) as conn:
-            conn.execute("INSERT INTO beacon_envelopes "
-                         "(agent_id, kind, nonce, sig, pubkey, payload_hash, payload_hash_version, anchored, created_at) "
-                         "VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
-                         (
-                             agent_id,
-                             kind,
-                             nonce,
-                             sig,
-                             pubkey,
-                             payload_hash,
-                             CURRENT_PAYLOAD_HASH_VERSION,
-                             now,
-                         ))
+            conn.execute(
+                "INSERT INTO beacon_envelopes "
+                "(agent_id, kind, nonce, sig, pubkey, payload_hash, payload_hash_version, anchored, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
+                (
+                    agent_id,
+                    kind,
+                    nonce,
+                    sig,
+                    pubkey,
+                    payload_hash,
+                    CURRENT_PAYLOAD_HASH_VERSION,
+                    now,
+                ),
+            )
             conn.commit()
             row_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         return {
@@ -252,10 +244,7 @@ def mark_anchored(envelope_ids: list, db_path=DB_PATH):
         return
     with sqlite3.connect(db_path) as conn:
         placeholders = ",".join("?" for _ in envelope_ids)
-        conn.execute(
-            f"UPDATE beacon_envelopes SET anchored = 1 WHERE id IN ({placeholders})",
-            envelope_ids
-        )
+        conn.execute(f"UPDATE beacon_envelopes SET anchored = 1 WHERE id IN ({placeholders})", envelope_ids)
         conn.commit()
 
 
@@ -266,7 +255,7 @@ def get_recent_envelopes(limit=50, offset=0, db_path=DB_PATH) -> list:
         rows = conn.execute(
             "SELECT id, agent_id, kind, nonce, payload_hash, payload_hash_version, anchored, created_at "
             "FROM beacon_envelopes ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (limit, offset)
+            (limit, offset),
         ).fetchall()
     return [dict(r) for r in rows]
 

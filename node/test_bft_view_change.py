@@ -13,8 +13,7 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rustchain_bft_consensus import BFTConsensus, MessageType, CONSENSUS_MESSAGE_TTL
-
+from rustchain_bft_consensus import CONSENSUS_MESSAGE_TTL, BFTConsensus, MessageType
 
 SECRET_KEY = "test_bft_key_for_unit_tests_2025"
 
@@ -57,27 +56,31 @@ class TestBFTViewChangeSecurity(unittest.TestCase):
 
     def test_unsigned_view_change_rejected(self):
         """Unsigned view-change must NOT be accepted."""
-        self.bft.handle_view_change({
-            "view": 1,
-            "epoch": 0,
-            "node_id": "attacker",
-            "prepared_cert": None,
-            "signature": "",            # empty signature
-            "timestamp": int(time.time()),
-        })
+        self.bft.handle_view_change(
+            {
+                "view": 1,
+                "epoch": 0,
+                "node_id": "attacker",
+                "prepared_cert": None,
+                "signature": "",  # empty signature
+                "timestamp": int(time.time()),
+            }
+        )
         # attacker should NOT be in the log
         self.assertNotIn("attacker", self.bft.view_change_log.get(1, {}))
 
     def test_forged_signature_rejected(self):
         """View-change with wrong HMAC must be rejected."""
-        self.bft.handle_view_change({
-            "view": 1,
-            "epoch": 0,
-            "node_id": "node-B",
-            "prepared_cert": None,
-            "signature": "deadbeef" * 8,  # forged
-            "timestamp": int(time.time()),
-        })
+        self.bft.handle_view_change(
+            {
+                "view": 1,
+                "epoch": 0,
+                "node_id": "node-B",
+                "prepared_cert": None,
+                "signature": "deadbeef" * 8,  # forged
+                "timestamp": int(time.time()),
+            }
+        )
         self.assertNotIn("node-B", self.bft.view_change_log.get(1, {}))
 
     def test_stale_view_change_rejected(self):
@@ -92,14 +95,16 @@ class TestBFTViewChangeSecurity(unittest.TestCase):
         ts = int(time.time()) - CONSENSUS_MESSAGE_TTL - 60
         sign_data = f"{MessageType.VIEW_CHANGE.value}:1:{self.bft.current_epoch}:{ts}"
         sig = self.bft._sign_message(sign_data)
-        self.bft.handle_view_change({
-            "view": 1,
-            "epoch": 0,
-            "node_id": "node-B",
-            "prepared_cert": None,
-            "signature": sig,
-            "timestamp": ts,
-        })
+        self.bft.handle_view_change(
+            {
+                "view": 1,
+                "epoch": 0,
+                "node_id": "node-B",
+                "prepared_cert": None,
+                "signature": sig,
+                "timestamp": ts,
+            }
+        )
         self.assertNotIn("node-B", self.bft.view_change_log.get(1, {}))
 
     def test_valid_view_change_accepted(self):
@@ -117,14 +122,16 @@ class TestBFTViewChangeSecurity(unittest.TestCase):
         """
         initial_view = self.bft.current_view
         for fake_id in ["node-B", "node-C", "node-D"]:
-            self.bft.handle_view_change({
-                "view": 1,
-                "epoch": 0,
-                "node_id": fake_id,
-                "prepared_cert": None,
-                "signature": "fake_sig_000000000000000000000000",
-                "timestamp": int(time.time()),
-            })
+            self.bft.handle_view_change(
+                {
+                    "view": 1,
+                    "epoch": 0,
+                    "node_id": fake_id,
+                    "prepared_cert": None,
+                    "signature": "fake_sig_000000000000000000000000",
+                    "timestamp": int(time.time()),
+                }
+            )
         # View should NOT have changed
         self.assertEqual(self.bft.current_view, initial_view)
         # Log should be empty — all were rejected

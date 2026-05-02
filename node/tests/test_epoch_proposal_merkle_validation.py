@@ -19,19 +19,19 @@ Fix:
   includes recipients not present in the locally attested miner set.
 """
 
-import os
-import sys
+import hashlib
+import hmac
 import json
+import os
 import sqlite3
-import unittest
+import sys
 import tempfile
 import time
-import hmac
-import hashlib
+import unittest
 from unittest.mock import patch
 
 # Add node directory to path
-NODE_DIR = os.path.join(os.path.dirname(__file__), '..', 'node')
+NODE_DIR = os.path.join(os.path.dirname(__file__), "..", "node")
 sys.path.insert(0, NODE_DIR)
 
 from rustchain_p2p_gossip import GossipLayer, GossipMessage, MessageType
@@ -41,7 +41,7 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
     """Validate that epoch proposals with unattested recipients are rejected."""
 
     def setUp(self):
-        self.db_fd, self.db_path = tempfile.mkstemp(suffix='.db')
+        self.db_fd, self.db_path = tempfile.mkstemp(suffix=".db")
         self._init_db()
         self.secret = "test_hmac_secret_for_unit_tests_only_32chars"
         self._patch_secret()
@@ -59,6 +59,7 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
         except OSError:
             pass
         import rustchain_p2p_gossip as mod
+
         mod.P2P_SECRET = self._orig_secret
 
     def _init_db(self):
@@ -81,6 +82,7 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
 
     def _patch_secret(self):
         import rustchain_p2p_gossip as mod
+
         self._orig_secret = mod.P2P_SECRET
         mod.P2P_SECRET = self.secret
 
@@ -93,13 +95,9 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
         """Craft an EPOCH_PROPOSE message with the given distribution."""
         if merkle_root is None:
             sorted_dist = sorted(distribution.items())
-            merkle_root = hashlib.sha256(
-                json.dumps(sorted_dist, sort_keys=True).encode()
-            ).hexdigest()
+            merkle_root = hashlib.sha256(json.dumps(sorted_dist, sort_keys=True).encode()).hexdigest()
 
-        proposal_hash = hashlib.sha256(
-            f"{epoch}:{merkle_root}".encode()
-        ).hexdigest()[:24]
+        proposal_hash = hashlib.sha256(f"{epoch}:{merkle_root}".encode()).hexdigest()[:24]
 
         payload = {
             "epoch": epoch,
@@ -113,9 +111,7 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
         content = f"{MessageType.EPOCH_PROPOSE.value}:{json.dumps(payload, sort_keys=True)}"
         timestamp = int(time.time())
         message = f"{content}:{timestamp}"
-        sig = hmac.new(
-            self.secret.encode(), message.encode(), hashlib.sha256
-        ).hexdigest()
+        sig = hmac.new(self.secret.encode(), message.encode(), hashlib.sha256).hexdigest()
 
         return GossipMessage(
             msg_type=MessageType.EPOCH_PROPOSE.value,
@@ -133,7 +129,7 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
                 "INSERT OR REPLACE INTO miner_attest_recent "
                 "(miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                (miner_id, int(time.time()), "x86", "modern", 0.85, 1)
+                (miner_id, int(time.time()), "x86", "modern", 0.85, 1),
             )
             conn.commit()
 
@@ -145,7 +141,8 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
         """Proposal paying only the proposer (not attested) must be rejected."""
         # Epoch 0: node1 is leader (0 % 3 == 0)
         msg = self._make_proposal_message(
-            epoch=0, proposer="node1",
+            epoch=0,
+            proposer="node1",
             distribution={"attacker_wallet": 1.5},
         )
         result = self.gossip._handle_epoch_propose(msg)
@@ -158,7 +155,8 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
         self._insert_attested_miner("legit_miner_2")
 
         msg = self._make_proposal_message(
-            epoch=3, proposer="node1",
+            epoch=3,
+            proposer="node1",
             distribution={
                 "legit_miner_1": 0.5,
                 "legit_miner_2": 0.5,
@@ -175,7 +173,8 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
         self._insert_attested_miner("miner_b")
 
         msg = self._make_proposal_message(
-            epoch=6, proposer="node1",
+            epoch=6,
+            proposer="node1",
             distribution={"miner_a": 0.75, "miner_b": 0.75},
         )
         result = self.gossip._handle_epoch_propose(msg)
@@ -186,7 +185,8 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
         self._insert_attested_miner("miner_a")
 
         msg = self._make_proposal_message(
-            epoch=9, proposer="node1",
+            epoch=9,
+            proposer="node1",
             distribution={"miner_a": 1.5},
             merkle_root="deadbeef" * 8,
         )
@@ -197,7 +197,8 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
     def test_empty_distribution_accepted(self):
         """Empty distribution with correct merkle root should pass."""
         msg = self._make_proposal_message(
-            epoch=12, proposer="node1",
+            epoch=12,
+            proposer="node1",
             distribution={},
         )
         result = self.gossip._handle_epoch_propose(msg)
@@ -208,7 +209,8 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
         self._insert_attested_miner("miner_a")
         # Epoch 1: leader is node2, not node999
         msg = self._make_proposal_message(
-            epoch=1, proposer="node999",
+            epoch=1,
+            proposer="node999",
             distribution={"miner_a": 1.5},
         )
         result = self.gossip._handle_epoch_propose(msg)
@@ -221,22 +223,21 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
 
         # Epoch 0: miner is attested
         msg1 = self._make_proposal_message(
-            epoch=0, proposer="node1",
+            epoch=0,
+            proposer="node1",
             distribution={"departed_miner": 1.5},
         )
-        self.assertEqual(
-            self.gossip._handle_epoch_propose(msg1)["vote"], "accept"
-        )
+        self.assertEqual(self.gossip._handle_epoch_propose(msg1)["vote"], "accept")
 
         # Remove miner from attestation table
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("DELETE FROM miner_attest_recent WHERE miner=?",
-                         ("departed_miner",))
+            conn.execute("DELETE FROM miner_attest_recent WHERE miner=?", ("departed_miner",))
             conn.commit()
 
         # Epoch 3: miner no longer attested
         msg2 = self._make_proposal_message(
-            epoch=3, proposer="node1",
+            epoch=3,
+            proposer="node1",
             distribution={"departed_miner": 1.5},
         )
         result = self.gossip._handle_epoch_propose(msg2)
@@ -248,7 +249,8 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
         self._insert_attested_miner("miner_a")
 
         msg = self._make_proposal_message(
-            epoch=15, proposer="node1",
+            epoch=15,
+            proposer="node1",
             distribution={"miner_a": 1.5},
         )
 
@@ -259,5 +261,5 @@ class TestEpochProposalMerkleValidation(unittest.TestCase):
         self.assertEqual(result["reason"], "attested_miners_query_error")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

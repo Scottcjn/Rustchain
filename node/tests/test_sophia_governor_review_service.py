@@ -1,6 +1,6 @@
 import os
-import tempfile
 import sys
+import tempfile
 from types import SimpleNamespace
 
 import pytest
@@ -56,7 +56,10 @@ def test_review_endpoint_calls_model_and_stores(client, monkeypatch):
     monkeypatch.setattr(
         review_service,
         "_call_ollama",
-        lambda prompt: ("**Assessment** hold transfer.\n**Risk** high exposure.\n**Next step** escalate to committee.", "glm-test"),
+        lambda prompt: (
+            "**Assessment** hold transfer.\n**Risk** high exposure.\n**Next step** escalate to committee.",
+            "glm-test",
+        ),
     )
     response = client.post("/review", headers={"X-Admin-Key": "test-admin"}, json=_payload())
     assert response.status_code == 200
