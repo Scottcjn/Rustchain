@@ -68,16 +68,33 @@ def _verify_commitment(report_json_str: str, claimed_commitment: str) -> bool:
         return False
 
 
+import hashlib
+
+# Simple LRU cache for signature verification to save CPU cycles
+_SIG_CACHE: dict[str, bool] = {}
+
 def _verify_ed25519(commitment: str, signature_hex: str, pubkey_hex: str) -> bool:
-    """Verify Ed25519 signature over commitment string."""
+    """Verify Ed25519 signature over commitment string with internal caching."""
     if not HAVE_NACL:
         return False
+    
+    # FIX: Use caching for repetitive signature validations (e.g. popular repos)
+    cache_key = f"{pubkey_hex}:{signature_hex}:{commitment}"
+    if cache_key in _SIG_CACHE:
+        return _SIG_CACHE[cache_key]
+
     try:
         vk = VerifyKey(bytes.fromhex(pubkey_hex))
         vk.verify(commitment.encode(), bytes.fromhex(signature_hex))
-        return True
+        res = True
     except (BadSignatureError, Exception):
-        return False
+        res = False
+
+    # Bound cache size to 10k entries
+    if len(_SIG_CACHE) > 10000:
+        _SIG_CACHE.clear()
+    _SIG_CACHE[cache_key] = res
+    return res
 
 
 # ── Database ──────────────────────────────────────────────────────
