@@ -695,12 +695,15 @@ def register_lock_ledger_routes(app):
     
     @app.route('/api/lock/release', methods=['POST'])
     def release_lock_endpoint():
-        """Admin: Release a lock."""
+        """Admin: Release a lock with strict authentication."""
         admin_key = request.headers.get("X-Admin-Key", "")
-        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "").strip()
+        
+        # FIX: Ensure expected_key is not empty before allowing access
         if not expected_key:
             return jsonify({"error": "RC_ADMIN_KEY not configured — admin endpoints disabled"}), 503
-        if not hmac.compare_digest(admin_key, expected_key):
+        
+        if not admin_key or not hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
         
         data = request.get_json(silent=True)
@@ -729,12 +732,15 @@ def register_lock_ledger_routes(app):
     
     @app.route('/api/lock/forfeit', methods=['POST'])
     def forfeit_lock_endpoint():
-        """Admin: Forfeit a lock (penalty)."""
+        """Admin: Forfeit a lock with strict authentication."""
         admin_key = request.headers.get("X-Admin-Key", "")
-        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        expected_key = os.environ.get("RC_ADMIN_KEY", "").strip()
+        
+        # FIX: Ensure expected_key is not empty before allowing access
         if not expected_key:
             return jsonify({"error": "RC_ADMIN_KEY not configured — admin endpoints disabled"}), 503
-        if not hmac.compare_digest(admin_key, expected_key):
+        
+        if not admin_key or not hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
         
         data = request.get_json(silent=True)
