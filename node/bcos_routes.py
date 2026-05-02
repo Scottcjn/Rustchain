@@ -123,6 +123,13 @@ def init_bcos_table(conn):
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_bcos_repo ON bcos_attestations(repo)"
     )
+    # FIX: Added composite indexes to optimize directory filtering and sorting
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_bcos_tier_created ON bcos_attestations(tier, created_at DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_bcos_score_created ON bcos_attestations(trust_score DESC, created_at DESC)"
+    )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_bcos_commit ON bcos_attestations(commit_sha)"
     )
