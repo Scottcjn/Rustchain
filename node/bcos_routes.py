@@ -488,6 +488,8 @@ def bcos_directory():
             "total": total,
             "count": len(certs),
             "offset": offset,
+            "total": total,
+            "query": repo_search,
             "certificates": certs,
         })
     except Exception as e:
