@@ -325,17 +325,28 @@ class MachinePassportLedger:
                 )
             return None
     
-    def update_passport(self, machine_id: str, updates: Dict) -> Tuple[bool, str]:
+    def update_passport(self, machine_id: str, updates: Dict, requester_id: Optional[str] = None) -> Tuple[bool, str]:
         """
         Update a machine passport.
+        FIX: Added ownership verification to prevent unauthorized updates.
         
         Args:
             machine_id: The machine's unique identifier
             updates: Dict of fields to update
+            requester_id: The miner ID of the entity requesting the update
             
         Returns:
             Tuple of (success: bool, message: str)
         """
+        # Load existing passport to check ownership
+        existing = self.get_passport(machine_id)
+        if not existing:
+            return False, "Passport not found"
+        
+        # Verify ownership (skip if requester_id not provided for legacy compat or admin)
+        if requester_id and existing.owner_miner_id != requester_id:
+            return False, "Unauthorized: Only the current owner can update this passport"
+
         allowed_fields = {'name', 'owner_miner_id', 'manufacture_year', 
                          'architecture', 'photo_hash', 'photo_url', 'provenance'}
         
