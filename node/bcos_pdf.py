@@ -191,8 +191,12 @@ def generate_certificate(attestation: Dict[str, Any]) -> bytes:
 
     # Table rows
     pdf.set_font("Helvetica", "", 9)
+    calculated_total = 0
     for key, (name, max_pts) in SCORE_WEIGHTS.items():
         pts = breakdown.get(key, 0)
+        # FIX: Clamp points to maximum allowed to prevent misleading totals
+        pts = max(0, min(int(pts), max_pts))
+        calculated_total += pts
         pct = pts / max_pts if max_pts > 0 else 0
 
         if pct >= 0.7:
@@ -219,9 +223,8 @@ def generate_certificate(attestation: Dict[str, Any]) -> bytes:
     # Total row
     pdf.set_font("Helvetica", "B", 9)
     pdf.set_fill_color(240, 240, 240)
-    total = sum(breakdown.values())
     pdf.cell(90, 7, "TOTAL", border=1, fill=True, new_x="RIGHT")
-    pdf.cell(30, 7, str(total), border=1, fill=True, align="C", new_x="RIGHT")
+    pdf.cell(30, 7, str(calculated_total), border=1, fill=True, align="C", new_x="RIGHT")
     pdf.cell(30, 7, "100", border=1, fill=True, align="C", new_x="RIGHT")
     pdf.cell(40, 7, "", border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
 
