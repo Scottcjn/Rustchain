@@ -210,8 +210,12 @@ class WebSocketFeed:
             logger.info(f"[WebSocket] Client disconnected: {client_id}")
 
         @self.socketio.on('ping')
-        def handle_ping():
-            """Handle heartbeat ping from client"""
+        def handle_ping(data=None):
+            """Handle heartbeat ping from client with schema validation."""
+            # FIX: Validate that incoming data is a dictionary if provided
+            if data is not None and not isinstance(data, dict):
+                return
+                
             emit('pong', {
                 'timestamp': time.time(),
                 'server_time': datetime.utcnow().isoformat()
