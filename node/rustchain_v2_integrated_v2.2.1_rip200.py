@@ -591,12 +591,29 @@ def health_diagnostics():
     except (AttributeError, OSError):
         pass
 
+    # Check Memory health
+    memory_stats = {}
+    try:
+        # FIX: Added process-level memory monitoring to track potential leaks
+        # in the Flask application during high-concurrency periods.
+        import psutil
+        process = psutil.Process(os.getpid())
+        mem_info = process.memory_info()
+        memory_stats = {
+            "rss_mb": round(mem_info.rss / (1024 * 1024), 2),
+            "vms_mb": round(mem_info.vms / (1024 * 1024), 2),
+            "percent": process.memory_percent()
+        }
+    except (ImportError, Exception):
+        pass
+
     return jsonify({
         "status": "ok" if db_ok else "degraded",
         "version": APP_VERSION,
         "uptime_seconds": int(uptime),
         "timestamp": int(now),
         "load_avg": cpu_load,
+        "memory": memory_stats,
         "mempool": {
             "pending_inputs": mempool_count
         },
