@@ -83,15 +83,18 @@ def enroll_epoch(epoch, miner_pk, weight):
         c.execute("INSERT OR IGNORE INTO epoch_enroll(epoch, miner_pk, weight) VALUES (?,?,?)", (epoch, clean_pk, float(weight)))
 
 def finalize_epoch(epoch, per_block_rtc):
-    """Finalize epoch and distribute rewards"""
+    """Finalize epoch and distribute rewards with robust status reporting."""
     with sqlite3.connect(DB_PATH) as c:
-        row = c.execute("SELECT finalized, accepted_blocks FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
-        if not row:
-            return {"ok": False, "reason": "no_state"}
+        try:
+            row = c.execute("SELECT finalized, accepted_blocks FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
+            if not row:
+                return {"ok": False, "error": "epoch_state_missing", "epoch": epoch}
 
-        finalized, blocks = int(row[0]), int(row[1])
-        if finalized:
-            return {"ok": False, "reason": "already_finalized"}
+            finalized, blocks = int(row[0]), int(row[1])
+            if finalized:
+                return {"ok": False, "error": "epoch_already_finalized", "epoch": epoch}
+            
+            # ... (rest of logic)
 
         total_reward = per_block_rtc * blocks
         miners = list(c.execute("SELECT miner_pk, weight FROM epoch_enroll WHERE epoch=?", (epoch,)))
