@@ -621,6 +621,17 @@ def health_diagnostics():
     except (AttributeError, OSError):
         pass
 
+    # Check Open Files health
+    open_files = 0
+    try:
+        # FIX: Monitor the number of open file descriptors to prevent
+        # 'Too many open files' errors under high load.
+        import psutil
+        process = psutil.Process(os.getpid())
+        open_files = len(process.open_files())
+    except (ImportError, Exception):
+        pass
+
     return jsonify({
         "status": "ok" if db_ok else "degraded",
         "version": APP_VERSION,
@@ -629,6 +640,7 @@ def health_diagnostics():
         "load_avg": cpu_load,
         "memory": memory_stats,
         "disk": disk_stats,
+        "open_files": open_files,
         "mempool": {
             "pending_inputs": mempool_count
         },
