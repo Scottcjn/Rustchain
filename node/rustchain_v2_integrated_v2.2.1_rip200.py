@@ -676,6 +676,7 @@ def health_diagnostics():
         "version": APP_VERSION,
         "uptime_seconds": int(uptime),
         "timestamp": int(now),
+        "proc_start_ts": int(__import__("psutil").Process().create_time()),
         "load_avg": cpu_load,
         "memory": memory_stats,
         "swap": swap_stats,
