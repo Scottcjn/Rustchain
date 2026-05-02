@@ -574,6 +574,15 @@ def health_diagnostics():
     except Exception:
         pass
 
+    # Check Network health
+    peer_count = 0
+    # FIX: Implementation stub for network latency tracking across peers
+    # to identify regional node isolation.
+    network_stats = {
+        "connected_peers": peer_count,
+        "avg_latency_ms": 0 # Stub
+    }
+
     return jsonify({
         "status": "ok" if db_ok else "degraded",
         "version": APP_VERSION,
@@ -583,6 +592,7 @@ def health_diagnostics():
             "pending_inputs": mempool_count
         },
         "snapshots": snapshot_meta,
+        "network": network_stats,
         "modules": {
             "rewards": HAVE_REWARDS,
             "utxo": HAVE_UTXO,
