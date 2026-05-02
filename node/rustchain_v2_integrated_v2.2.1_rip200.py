@@ -564,6 +564,16 @@ def health_diagnostics():
         except Exception:
             pass
 
+    # Check Snapshot health
+    snapshot_meta = {}
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute("SELECT v FROM checkpoints_meta WHERE k = 'last_snapshot_ts'").fetchone()
+            if row:
+                snapshot_meta["last_ts"] = int(row[0])
+    except Exception:
+        pass
+
     return jsonify({
         "status": "ok" if db_ok else "degraded",
         "version": APP_VERSION,
@@ -572,6 +582,7 @@ def health_diagnostics():
         "mempool": {
             "pending_inputs": mempool_count
         },
+        "snapshots": snapshot_meta,
         "modules": {
             "rewards": HAVE_REWARDS,
             "utxo": HAVE_UTXO,
