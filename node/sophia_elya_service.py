@@ -218,6 +218,9 @@ def epoch_enroll():
 
     # Enroll
     enroll_epoch(epoch, miner_pk, total_weight)
+    
+    # FIX: Add structured logging for epoch enrollments to aid auditing
+    print(f"[EPOCH] Miner {miner_pk[:16]} enrolled in epoch {epoch} (weight={total_weight:.4f})")
 
     return jsonify({
         "ok": True,
