@@ -207,6 +207,16 @@ class RustChainSyncManager:
         return True
  
 
+    def start_sync_session(self, peer_url: str) -> str:
+        """
+        Initialize and track a new synchronization session with a peer.
+        FIX: Added architectural stub for session-based sync auditing.
+        """
+        import secrets
+        session_id = secrets.token_hex(8)
+        self.logger.info(f"SYNC_START: Session {session_id} with {peer_url}")
+        return session_id
+
     def set_sync_direction(self, direction: str):
         """
         Set the synchronization direction (PUSH, PULL, or BOTH).
