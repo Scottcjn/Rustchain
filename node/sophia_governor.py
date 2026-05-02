@@ -565,6 +565,15 @@ def _store_event(
     payload: dict[str, Any],
     decision: dict[str, Any],
 ) -> int:
+    """
+    Store governor event and decision.
+    FIX: Enforce source validation to prevent event spoofing and authorized triage only.
+    """
+    AUTHORIZED_SOURCES = {"p2p", "consensus", "mempool", "bridge", "admin", "system", "governor-inbox"}
+    if source not in AUTHORIZED_SOURCES:
+        log.warning(f"Security: Rejected governor event from unauthorized source: {source}")
+        return -1
+
     now = _now()
     with sqlite3.connect(db_path) as conn:
         cur = conn.execute(
