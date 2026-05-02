@@ -193,15 +193,23 @@ C64_ROMS = {
 
 
 def compute_file_hash(filepath: str, algorithm: str = "sha1") -> Optional[str]:
-    """Compute hash of a file."""
+    """Compute hash of a file securely."""
     if not os.path.exists(filepath):
         return None
 
-    hasher = hashlib.new(algorithm)
-    with open(filepath, "rb") as f:
-        while chunk := f.read(8192):
-            hasher.update(chunk)
-    return hasher.hexdigest()
+    # FIX: Restrict to a safe set of algorithms to prevent crashes or misuse
+    ALLOWED_ALGORITHMS = {"sha1", "sha256", "md5"}
+    if algorithm.lower() not in ALLOWED_ALGORITHMS:
+        return None
+
+    try:
+        hasher = hashlib.new(algorithm)
+        with open(filepath, "rb") as f:
+            while chunk := f.read(8192):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+    except Exception:
+        return None
 
 
 def compute_rom_checksum_apple(filepath: str) -> Optional[str]:
