@@ -481,7 +481,10 @@ class TransactionPool:
                 return False, f"Transaction already exists: {e}"
 
     def get_pending_transactions(self, limit: int = 100) -> List[Dict]:
-        """Get pending transactions ordered by fee (desc) then nonce (asc)"""
+        """Get pending transactions with auto-cleanup of expired ones."""
+        # FIX: Trigger auto-cleanup whenever mempool is accessed to prevent junk buildup
+        self.cleanup_expired(max_age_seconds=3600)
+        
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
