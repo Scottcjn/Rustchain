@@ -274,26 +274,37 @@ def _local_llm_endpoints() -> list[str]:
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:
+    """Safely extract the largest JSON object from text with depth checking."""
     text = (text or "").strip()
     if not text:
         return None
 
-    for candidate in (text, _text_excerpt(text, 4000)):
-        try:
-            parsed = json.loads(candidate)
-            if isinstance(parsed, dict):
-                return parsed
-        except Exception:
-            pass
-
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        return None
+    # Try direct parse first
     try:
-        parsed = json.loads(match.group(0))
-        return parsed if isinstance(parsed, dict) else None
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
     except Exception:
+        pass
+
+    # Find the first { and last }
+    start = text.find('{')
+    end = text.rfind('}')
+    
+    if start == -1 or end == -1 or end <= start:
         return None
+        
+    candidate = text[start:end+1]
+    try:
+        parsed = json.loads(candidate)
+        if isinstance(parsed, dict):
+            # FIX: Validate expected schema keys to prevent prompt injection
+            REQUIRED_KEYS = {'stance', 'risk_level'}
+            if all(k in parsed for k in REQUIRED_KEYS):
+                return parsed
+    except Exception:
+        pass
+    return None
 
 
 def _try_ollama_generate(base_url: str, prompt: str) -> tuple[str | None, str | None]:
