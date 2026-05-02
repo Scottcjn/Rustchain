@@ -208,8 +208,9 @@ def bind_hardware_v2(
     Bind hardware to wallet with entropy and serial validation.
     FIX: Added force_rebind parameter to allow policy-driven overrides.
     """
-    # FIX: Basic serial number validation to prevent junk data registration
-    clean_serial = str(serial or "").strip().upper()
+    # FIX: Robust serial number sanitization for cross-OS consistency
+    import re
+    clean_serial = re.sub(r'[^A-Z0-9]', '', str(serial or "").upper())
     if not clean_serial or len(clean_serial) < 4:
         return False, 'invalid_serial', {'error': 'Serial number too short or missing'}
     
