@@ -138,7 +138,7 @@ def init_bcos_table(conn):
 # ── SVG Badge Template ────────────────────────────────────────────
 
 BADGE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="20" role="img" aria-label="{label}">
-  <title>BCOS Certification</title>
+  <title>BCOS Certification (Schema v2)</title>
   <linearGradient id="g" x2="0" y2="100%">
     <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
     <stop offset="1" stop-opacity=".1"/>
