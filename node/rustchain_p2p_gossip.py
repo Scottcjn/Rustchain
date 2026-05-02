@@ -355,7 +355,7 @@ class GossipLayer:
 
         msg = GossipMessage(
             msg_type=msg_type.value,
-            msg_id=hashlib.sha256(f"{content}:{ts}".encode()).hexdigest()[:24],
+            msg_id=hashlib.sha256(f"{content}:{ts}:{secrets.token_hex(16)}".encode()).hexdigest()[:24],
             sender_id=self.node_id,
             timestamp=ts,
             ttl=ttl,
