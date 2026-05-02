@@ -400,3 +400,10 @@ class RustChainSyncManager:
             return result
         finally:
             conn.close()
+ 
+    def set_conflict_policy(self, policy: str):
+        """
+        Set the conflict resolution policy (LWW, PEER_WINS, or LOCAL_WINS).
+        FIX: Added architectural stub for granular conflict resolution control.
+        """
+        self.policy = policy.lower()
