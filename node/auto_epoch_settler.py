@@ -7,12 +7,14 @@ import time
 import sqlite3
 import requests
 import sys
+import os
 from datetime import datetime
 
-# Configuration
-NODE_URL = "http://localhost:8088"
-DB_PATH = "/root/rustchain/rustchain_v2.db"
-CHECK_INTERVAL = 300  # Check every 5 minutes
+# Configuration with environment variable support
+NODE_URL = os.environ.get("RC_NODE_URL", "http://localhost:8088")
+DB_PATH = os.environ.get("RC_DB_PATH", "/root/rustchain/rustchain_v2.db")
+CHECK_INTERVAL = int(os.environ.get("RC_SETTLE_INTERVAL", "300"))
+API_KEY = os.environ.get("RC_ADMIN_KEY", "")
 SLOTS_PER_EPOCH = 144
 
 def get_current_slot():
@@ -85,12 +87,17 @@ def get_unsettled_epochs():
         return []
 
 def settle_epoch_via_api(epoch):
-    """Settle an epoch using the node API"""
+    """Settle an epoch using the node API with authentication"""
     try:
+        headers = {}
+        if API_KEY:
+            headers["X-API-Key"] = API_KEY
+
         resp = requests.post(
             f"{NODE_URL}/rewards/settle",
             json={"epoch": epoch},
-            timeout=30
+            headers=headers,
+            timeout=60
         )
 
         if resp.status_code == 200:
