@@ -48,6 +48,12 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
 
+        # FIX: Sanitize and validate capability metadata
+        tts_models = data.get("tts_models")
+        if not isinstance(tts_models, list): tts_models = []
+        llm_models = data.get("llm_models")
+        if not isinstance(llm_models, list): llm_models = []
+
         # In a real node, we'd verify the signed hardware fingerprint here.
         # For the bounty, we implement the protocol storage and API.
         db = get_db()
