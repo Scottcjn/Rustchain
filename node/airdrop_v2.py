@@ -290,9 +290,12 @@ class AirdropV2:
         logger.info("Airdrop V2 database initialized")
 
     def _generate_id(self, prefix: str, *args: str) -> str:
-        """Generate unique ID from components."""
-        data = ":".join([prefix] + list(args) + [str(time.time())])
-        return hashlib.sha256(data.encode()).hexdigest()[:16]
+        """Generate a cryptographically secure unique ID."""
+        import secrets
+        # FIX: Include a strong random component to prevent ID prediction
+        random_salt = secrets.token_hex(16)
+        data = ":".join([prefix] + list(args) + [str(time.time()), random_salt])
+        return hashlib.sha256(data.encode()).hexdigest()[:24] # Increased length to 24
 
     # ========================================================================
     # Eligibility Checks
