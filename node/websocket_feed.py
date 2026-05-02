@@ -122,7 +122,8 @@ class WebSocketFeed:
             'active_connections': 0,
             'blocks_sent': 0,
             'attestations_sent': 0,
-            'settlements_sent': 0
+            'settlements_sent': 0,
+            'errors': 0 # FIX: Track broadcast errors
         }
         
         # Lock for thread safety
