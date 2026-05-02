@@ -222,16 +222,21 @@ def _bearer_tokens() -> set[str]:
 
 
 def _is_authorized(req) -> bool:
+    """Check if the request is authorized using Admin Key or Bearer Token."""
     required_admin = os.getenv("RC_ADMIN_KEY", "").strip()
     required_bearers = _bearer_tokens()
 
     provided_admin = (req.headers.get("X-Admin-Key") or req.headers.get("X-API-Key") or "").strip()
+    
+    # FIX: Ensure required_admin is not empty before allowing match.
+    # Empty string matches empty string, which would allow unauthorized access.
     if required_admin and provided_admin and provided_admin == required_admin:
         return True
 
     auth_header = (req.headers.get("Authorization") or "").strip()
     if auth_header.lower().startswith("bearer "):
         provided_bearer = auth_header.split(" ", 1)[1].strip()
+        # FIX: Also ensure provided_bearer is not empty and exists in required_bearers
         if provided_bearer and provided_bearer in required_bearers:
             return True
 
