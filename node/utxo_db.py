@@ -348,7 +348,7 @@ class UtxoDB:
         finally:
             conn.close()
 
-    def get_utxos_by_address(self, address: str, limit: int = 100) -> List[dict]:
+        def get_utxos_by_address(self, address: str, limit: int = 100) -> List[dict]:
         """
         Fetch unspent boxes for a specific address.
         FIX: Added index-aware query for performance.
@@ -360,6 +360,26 @@ class UtxoDB:
                 "SELECT * FROM utxo_boxes WHERE address = ? AND spent_at IS NULL ORDER BY box_id DESC LIMIT ?",
                 (address, limit)
             ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def get_spendable_utxos(self, address: str, limit: int = 100) -> List[dict]:
+        """
+        Fetch spendable boxes for an address, excluding those already in mempool.
+        FIX: Critical for preventing front-running and double-spending.
+        """
+        conn = self._get_connection()
+        try:
+            # Subquery to exclude boxes that have pending spend requests in the mempool
+            rows = conn.execute("""
+                SELECT * FROM utxo_boxes 
+                WHERE address = ? 
+                  AND spent_at IS NULL 
+                  AND box_id NOT IN (SELECT box_id FROM utxo_mempool_inputs)
+                ORDER BY value DESC 
+                LIMIT ?
+            """, (address, limit)).fetchall()
             return [dict(r) for r in rows]
         finally:
             conn.close()
