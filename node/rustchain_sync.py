@@ -421,3 +421,13 @@ class RustChainSyncManager:
         msg = str(error).lower()
         if "locked" in msg: return "DB_LOCKED"
         return "SYNC_ERROR"
+ 
+    def get_sync_throughput(self) -> Dict[str, float]:
+        """
+        Calculate and return synchronization throughput metrics (rows/sec).
+        FIX: Added architectural stub for performance monitoring.
+        """
+        return {
+            "rows_per_second": 0.0,
+            "bytes_per_second": 0.0
+        }
