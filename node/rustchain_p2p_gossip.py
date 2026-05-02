@@ -930,9 +930,20 @@ class RustChainP2PNode:
 # =============================================================================
 
 def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
-    """Register P2P synchronization endpoints on Flask app"""
+    """Register P2P synchronization endpoints with authentication"""
 
     from flask import request, jsonify
+
+    def _authenticate_p2p():
+        """Helper to authenticate P2P requests using HMAC signature"""
+        signature = request.headers.get('X-P2P-Signature')
+        timestamp = request.headers.get('X-P2P-Timestamp')
+        if not signature or not timestamp:
+            return False
+        
+        # Verify signature over the path and timestamp
+        content = request.path
+        return p2p_node.gossip._verify_signature(content, signature, int(timestamp))
 
     @app.route('/p2p/gossip', methods=['POST'])
     def receive_gossip():
@@ -943,12 +954,16 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
 
     @app.route('/p2p/state', methods=['GET'])
     def get_state():
-        """Get full CRDT state for sync"""
+        """Get full CRDT state for sync (Authenticated)"""
+        if not _authenticate_p2p():
+            return jsonify({"error": "Unauthorized"}), 401
         return jsonify(p2p_node.get_full_state())
 
     @app.route('/p2p/attestation_state', methods=['GET'])
     def get_attestation_state():
-        """Get attestation timestamps for efficient sync"""
+        """Get attestation timestamps (Authenticated)"""
+        if not _authenticate_p2p():
+            return jsonify({"error": "Unauthorized"}), 401
         return jsonify(p2p_node.get_attestation_state())
 
     @app.route('/p2p/peers', methods=['GET'])
