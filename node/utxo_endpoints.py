@@ -303,6 +303,32 @@ def utxo_transfer():
     else:
         return jsonify({'error': 'Invalid Ed25519 signature'}), 401
 
+    # --- replay protection --------------------------------------------------
+
+    # FIX: Check and store nonce to prevent replay attacks
+    try:
+        conn = sqlite3.connect(_db_path)
+        # Check if nonce used
+        row = conn.execute(
+            "SELECT 1 FROM transfer_nonces WHERE from_address = ? AND nonce = ?",
+            (from_address, str(nonce))
+        ).fetchone()
+        
+        if row:
+            conn.close()
+            return jsonify({'error': 'Nonce already used (replay detected)'}), 409
+            
+        # Store nonce
+        conn.execute(
+            "INSERT INTO transfer_nonces (from_address, nonce, used_at) VALUES (?, ?, ?)",
+            (from_address, str(nonce), int(time.time()))
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logging.error(f"[UTXO] Nonce check failed: {e}")
+        return jsonify({'error': 'Internal security check failed'}), 500
+
     # --- UTXO transaction ---------------------------------------------------
 
     amount_nrtc = int(amount_rtc * UNIT)
