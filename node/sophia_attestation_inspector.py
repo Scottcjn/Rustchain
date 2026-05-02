@@ -255,20 +255,34 @@ def _call_deep_model(prompt: str) -> Optional[str]:
 # Prompt construction
 # ---------------------------------------------------------------------------
 
+def _sanitize_for_prompt(text: Any) -> str:
+    """Sanitize input strings to prevent prompt injection."""
+    if text is None:
+        return "unknown"
+    # Remove characters often used in prompt injection attacks
+    s = str(text)
+    # Remove newlines, backslashes, and quotes that could break JSON or prompt structure
+    s = s.replace("\n", " ").replace("\r", " ").replace("\"", "'").replace("\\", "/")
+    # Limit length
+    return s[:200].strip() or "unknown"
+
 def _build_inspection_prompt(miner_id: str, device: dict, fingerprint: dict, history: list = None) -> str:
-    """Build the inspection prompt for Sophia Elya."""
+    """Build the inspection prompt for Sophia Elya with injection protection."""
     device = device or {}
     fingerprint = fingerprint or {}
 
-    device_family = device.get("device_family") or device.get("family", "unknown")
-    device_arch = device.get("device_arch") or device.get("arch", "unknown")
-    cpu_brand = device.get("cpu_brand") or device.get("model", "unknown")
-    machine = device.get("machine", "unknown")
+    # FIX: Sanitize all user-controlled inputs before placing them in the prompt
+    s_miner_id = _sanitize_for_prompt(miner_id)
+    device_family = _sanitize_for_prompt(device.get("device_family") or device.get("family"))
+    device_arch = _sanitize_for_prompt(device.get("device_arch") or device.get("arch"))
+    cpu_brand = _sanitize_for_prompt(device.get("cpu_brand") or device.get("model"))
+    machine = _sanitize_for_prompt(device.get("machine"))
 
     # Pretty-print fingerprint data (truncate if huge)
-    fp_str = json.dumps(fingerprint, indent=2, default=str)
-    if len(fp_str) > 3000:
-        fp_str = fp_str[:3000] + "\n... (truncated)"
+    # Fingerprint is JSON, so we rely on json.dumps but still truncate strictly
+    fp_str = json.dumps(fingerprint, separators=(",", ":"), default=str)
+    if len(fp_str) > 2000:
+        fp_str = fp_str[:2000] + "...(truncated)"
 
     history_section = ""
     if history:
@@ -284,7 +298,7 @@ def _build_inspection_prompt(miner_id: str, device: dict, fingerprint: dict, his
         history_section = "Previous attestation history (most recent last):\n" + "\n".join(history_lines)
 
     prompt = f"""You are Sophia Elya, the attestation inspector for RustChain.
-You are examining hardware fingerprint data from miner "{miner_id}".
+You are examining hardware fingerprint data from miner "{s_miner_id}".
 
 Device claims: {device_family} / {device_arch}
 CPU: {cpu_brand}
