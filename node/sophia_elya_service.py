@@ -146,6 +146,25 @@ def get_current_slot():
         return 0
     return elapsed // BLOCK_TIME
 
+@app.errorhandler(404)
+def not_found_error(error):
+    """Custom 404 error handler."""
+    return jsonify({
+        "ok": False,
+        "error": "not_found",
+        "message": "Resource not found"
+    }), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Custom 500 error handler."""
+    return jsonify({
+        "ok": False,
+        "error": "internal_server_error",
+        "message": "An unexpected error occurred"
+    }), 500
+
+
 @app.get("/api/stats")
 def api_stats():
     """Network statistics with precise slot reporting."""
