@@ -678,6 +678,8 @@ def health_diagnostics():
         "timestamp": int(now),
         "proc_start_ts": int(__import__("psutil").Process().create_time()),
         "python_version": __import__("sys").version.split()[0],
+        "sqlite_version": __import__("sqlite3").sqlite_version,
+        "flask_version": __import__("flask").__version__,
         "load_avg": cpu_load,
         "memory": memory_stats,
         "swap": swap_stats,
