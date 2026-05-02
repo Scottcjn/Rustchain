@@ -6,7 +6,7 @@ from hashlib import blake2b
 ERGO_NODE = os.environ.get("ERGO_NODE", "http://localhost:9053")
 ERGO_API_KEY = os.environ.get("ERGO_API_KEY", "")
 ERGO_WALLET_PASSWORD = os.environ.get("ERGO_WALLET_PASSWORD", "")
-DB_PATH = "/root/rustchain/rustchain_v2.db"
+DB_PATH = os.environ.get("RUSTCHAIN_DB_PATH", os.environ.get("DB_PATH", "./rustchain_v2.db"))
 ANCHOR_VALUE = 1000000  # 0.001 ERG min box size
 
 class ErgoMinerAnchor:
@@ -17,18 +17,22 @@ class ErgoMinerAnchor:
         self.session.headers["Content-Type"] = "application/json"
     
     def unlock_wallet(self, password=None):
-        """Unlock wallet if needed."""
-        status_resp = self.session.get(ERGO_NODE + "/wallet/status")
-        if status_resp.status_code != 200:
-            return False
-        status = status_resp.json()
-        if not status.get("isUnlocked"):
-            pwd = password if password is not None else ERGO_WALLET_PASSWORD
-            if not pwd:
+        """Unlock wallet if needed with timeout protection."""
+        try:
+            status_resp = self.session.get(ERGO_NODE + "/wallet/status", timeout=10)
+            if status_resp.status_code != 200:
                 return False
-            unlock_resp = self.session.post(ERGO_NODE + "/wallet/unlock", json={"pass": pwd})
-            return unlock_resp.status_code == 200
-        return True
+            status = status_resp.json()
+            if not status.get("isUnlocked"):
+                pwd = password if password is not None else ERGO_WALLET_PASSWORD
+                if not pwd:
+                    return False
+                unlock_resp = self.session.post(ERGO_NODE + "/wallet/unlock", json={"pass": pwd}, timeout=10)
+                return unlock_resp.status_code == 200
+            return True
+        except Exception as e:
+            print(f"Error unlocking Ergo wallet: {e}")
+            return False
     
     def get_recent_miners(self, limit=10):
         conn = sqlite3.connect(DB_PATH)
