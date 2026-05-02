@@ -204,10 +204,10 @@ class RustChainSyncManager:
 
                 # Conflict resolution: Latest timestamp wins for attestations
                 if table_name == "miner_attest_recent":
-                    if "last_attest" in sanitized:
-                        cursor.execute(f"SELECT last_attest FROM {table_name} WHERE {pk} = ?", (sanitized[pk],))
+                    if "ts_ok" in sanitized: # Fixed column name to match schema
+                        cursor.execute(f"SELECT ts_ok FROM {table_name} WHERE {pk} = ?", (sanitized[pk],))
                         local_row = cursor.fetchone()
-                        if local_row and local_row["last_attest"] is not None and local_row["last_attest"] >= sanitized["last_attest"]:
+                        if local_row and local_row["ts_ok"] is not None and local_row["ts_ok"] >= sanitized["ts_ok"]:
                             continue
 
                 # SECURITY: Balances must NEVER be updated via peer sync.
