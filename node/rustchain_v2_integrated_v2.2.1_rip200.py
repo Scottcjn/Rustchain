@@ -2355,25 +2355,34 @@ ATTEST_IP_LIMIT = 15      # Max unique miners per IP per hour
 ATTEST_IP_WINDOW = 3600  # 1 hour window
 
 def check_ip_rate_limit(client_ip, miner_id):
-    """Rate limit attestations per source IP using SQLite (shared across workers)."""
+    """Rate limit attestations per source IP with atomic transactions."""
     now = int(time.time())
     cutoff = now - ATTEST_IP_WINDOW
     
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("DELETE FROM ip_rate_limit WHERE ts < ?", (cutoff,))
-        conn.execute(
-            "INSERT OR REPLACE INTO ip_rate_limit (client_ip, miner_id, ts) VALUES (?, ?, ?)",
-            (client_ip, miner_id, now)
-        )
-        row = conn.execute(
-            "SELECT COUNT(DISTINCT miner_id) FROM ip_rate_limit WHERE client_ip = ? AND ts >= ?",
-            (client_ip, cutoff)
-        ).fetchone()
-        unique_count = row[0] if row else 0
-        
-        if unique_count > ATTEST_IP_LIMIT:
-            print(f"[RATE_LIMIT] IP {client_ip} has {unique_count} unique miners (limit {ATTEST_IP_LIMIT})")
-            return False, f"ip_rate_limit:{unique_count}_miners_from_same_ip"
+    try:
+        with sqlite3.connect(DB_PATH, timeout=20) as conn:
+            # FIX: Use explicit transaction to prevent race conditions across multiple workers
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("DELETE FROM ip_rate_limit WHERE ts < ?", (cutoff,))
+            conn.execute(
+                "INSERT OR REPLACE INTO ip_rate_limit (client_ip, miner_id, ts) VALUES (?, ?, ?)",
+                (client_ip, miner_id, now)
+            )
+            row = conn.execute(
+                "SELECT COUNT(DISTINCT miner_id) FROM ip_rate_limit WHERE client_ip = ? AND ts >= ?",
+                (client_ip, cutoff)
+            ).fetchone()
+            unique_count = row[0] if row else 0
+            
+            if unique_count > ATTEST_IP_LIMIT:
+                conn.rollback() # Don't record the over-limit attempt
+                print(f"[RATE_LIMIT] IP {client_ip} exceeded limit: {unique_count} miners")
+                return False, f"ip_rate_limit_exceeded"
+            
+            conn.commit()
+    except sqlite3.Error as e:
+        print(f"[RATE_LIMIT] DB Error: {e}")
+        return True, "error_fallback_allow" # Fail open to prevent service disruption
     
     return True, "ok"
 
