@@ -407,3 +407,10 @@ class RustChainSyncManager:
         FIX: Added architectural stub for granular conflict resolution control.
         """
         self.policy = policy.lower()
+ 
+    def set_batch_size(self, batch_size: int):
+        """
+        Set the number of rows per batch for synchronization.
+        FIX: Added architectural stub for batch size optimization.
+        """
+        self.batch_size = max(1, min(int(batch_size), 5000))
