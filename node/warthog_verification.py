@@ -158,21 +158,25 @@ def verify_warthog_proof(proof, miner_id) -> Tuple[bool, float, str]:
 
 def record_warthog_proof(conn, miner_id, epoch, proof, verified, bonus_tier, reason):
     """
-    Write Warthog proof record to database.
-
-    Args:
-        conn: sqlite3 connection
-        miner_id: RustChain miner identifier
-        epoch: Current epoch number
-        proof: Raw proof dict
-        verified: Boolean result
-        bonus_tier: Float bonus multiplier
-        reason: Verification reason string
+    Write Warthog proof record to database with address uniqueness check.
     """
     node = proof.get("node") or {}
     pool = proof.get("pool") or {}
+    wart_address = proof.get("wart_address", "").strip()
 
     try:
+        # FIX: Check if this WART address has already been used by a DIFFERENT miner in this epoch.
+        # This prevents multiple Sybil identities from claiming bonuses using a single rich address.
+        if verified and wart_address:
+            existing = conn.execute(
+                "SELECT miner FROM warthog_mining_proofs WHERE wart_address = ? AND epoch = ? AND miner != ? AND verified = 1",
+                (wart_address, epoch, miner_id)
+            ).fetchone()
+            if existing:
+                verified = False
+                bonus_tier = WART_BONUS_NONE
+                reason = f"wart_address_already_used_by_{existing[0]}"
+
         conn.execute("""
             INSERT OR REPLACE INTO warthog_mining_proofs
             (miner, epoch, proof_type, wart_address, wart_node_height,
@@ -183,7 +187,7 @@ def record_warthog_proof(conn, miner_id, epoch, proof, verified, bonus_tier, rea
             miner_id,
             epoch,
             proof.get("proof_type", "none"),
-            proof.get("wart_address", ""),
+            wart_address,
             node.get("height"),
             proof.get("balance"),
             pool.get("url"),
