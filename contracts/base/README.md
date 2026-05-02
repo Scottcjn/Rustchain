@@ -2,7 +2,7 @@
 
 ## Overview
 
-Wrapped RTC (wRTC) ERC-20 token implementing [RIP-305](../docs/RIP-305-cross-chain-airdrop.md) for the Base L2 network.
+Wrapped RTC (wRTC) ERC-20 token implementing [RIP-305](../../docs/RIP-305-cross-chain-airdrop.md) for the Base L2 network.
 
 ## Contract: WrappedRTC.sol
 
