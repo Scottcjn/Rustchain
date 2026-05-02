@@ -166,9 +166,19 @@ class WebSocketFeed:
         @self.socketio.on('connect')
         def handle_connect():
             """Handle client connection"""
+            # FIX: Enforce per-IP connection limits to prevent DoS
+            client_ip = request.remote_addr if request else 'unknown'
             with self._lock:
+                # Basic IP tracking logic (simplified for PR)
+                current_ip_count = sum(1 for sid, ip in getattr(self, '_ip_map', {}).items() if ip == client_ip)
+                if current_ip_count >= 5:
+                    logger.warning(f"DoS protection: Rejecting connection from {client_ip} (limit reached)")
+                    return False  # Reject connection
+
                 self.metrics['total_connections'] += 1
                 self.metrics['active_connections'] += 1
+                if not hasattr(self, '_ip_map'): self._ip_map = {}
+                self._ip_map[request.sid] = client_ip
             
             client_id = request.sid if request else 'unknown'
             logger.info(f"[WebSocket] Client connected: {client_id}")
@@ -203,6 +213,8 @@ class WebSocketFeed:
             """Handle client disconnection"""
             with self._lock:
                 self.metrics['active_connections'] = max(0, self.metrics['active_connections'] - 1)
+                if hasattr(self, '_ip_map') and request.sid in self._ip_map:
+                    del self._ip_map[request.sid]
             
             client_id = request.sid if request else 'unknown'
             logger.info(f"[WebSocket] Client disconnected: {client_id}")
