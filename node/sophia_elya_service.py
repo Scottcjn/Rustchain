@@ -102,9 +102,9 @@ def enroll_epoch(epoch, miner_pk, weight):
 
 def finalize_epoch(epoch, per_block_rtc):
     """Finalize epoch and distribute rewards with robust status reporting."""
-    with sqlite3.connect(DB_PATH) as c:
+    with sqlite3.connect(DB_PATH, timeout=20) as c:
+        c.execute("BEGIN IMMEDIATE")
         try:
-            row = c.execute("SELECT finalized, accepted_blocks FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
             if not row:
                 return {"ok": False, "error": "epoch_state_missing", "epoch": epoch}
 
