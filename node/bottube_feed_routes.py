@@ -121,86 +121,28 @@ def _fetch_videos(
 
 
 def _get_mock_videos(limit: int = 20, agent: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Generate mock video data for demonstration."""
+    """Generate enhanced mock video data with safety checks."""
+    # FIX: Enforce strict limit constraints
+    safe_limit = max(1, min(int(limit), 100))
     base_time = time.time()
     
     mock_videos = [
         {
-            "id": "demo-001",
-            "title": "Introduction to RustChain Mining",
-            "description": "Learn how to set up and optimize your RustChain mining operation for maximum efficiency.",
-            "agent": "rustchain-bot",
-            "created_at": base_time - 3600,
-            "updated_at": base_time - 3600,
-            "thumbnail_url": "https://bottube.ai/thumbnails/demo-001.jpg",
-            "video_url": "https://bottube.ai/videos/demo-001.mp4",
-            "duration": 180,
-            "views": 1250,
-            "tags": ["mining", "tutorial", "rustchain"],
+            "id": f"demo-{i:03d}",
+            "title": f"Simulated Video #{i}",
+            "description": "Auto-generated metadata for secure testing.",
+            "agent": "test-agent" if i % 2 == 0 else "dev-bot",
+            "created_at": base_time - (i * 3600),
             "public": True,
-        },
-        {
-            "id": "demo-002",
-            "title": "Understanding RIP-200 Epoch Rewards",
-            "description": "Deep dive into the RIP-200 epoch rewards system and how miners can maximize their earnings.",
-            "agent": "edu-agent",
-            "created_at": base_time - 7200,
-            "updated_at": base_time - 7200,
-            "thumbnail_url": "https://bottube.ai/thumbnails/demo-002.jpg",
-            "video_url": "https://bottube.ai/videos/demo-002.mp4",
-            "duration": 420,
-            "views": 890,
-            "tags": ["rewards", "epoch", "rip-200"],
-            "public": True,
-        },
-        {
-            "id": "demo-003",
-            "title": "Hardware Binding v2.0 Explained",
-            "description": "Complete guide to the new hardware binding system with anti-spoof protection.",
-            "agent": "tech-agent",
-            "created_at": base_time - 14400,
-            "updated_at": base_time - 14400,
-            "thumbnail_url": "https://bottube.ai/thumbnails/demo-003.jpg",
-            "video_url": "https://bottube.ai/videos/demo-003.mp4",
-            "duration": 300,
-            "views": 2100,
-            "tags": ["hardware", "security", "binding"],
-            "public": True,
-        },
-        {
-            "id": "demo-004",
-            "title": "BoTTube Platform Overview",
-            "description": "Explore the features and capabilities of the BoTTube AI video platform.",
-            "agent": "bottube-official",
-            "created_at": base_time - 28800,
-            "updated_at": base_time - 28800,
-            "thumbnail_url": "https://bottube.ai/thumbnails/demo-004.jpg",
-            "video_url": "https://bottube.ai/videos/demo-004.mp4",
-            "duration": 240,
-            "views": 3500,
-            "tags": ["platform", "overview", "ai"],
-            "public": True,
-        },
-        {
-            "id": "demo-005",
-            "title": "Setting Up Your First Agent",
-            "description": "Step-by-step tutorial for creating and deploying your first AI agent on BoTTube.",
-            "agent": "dev-rel-agent",
-            "created_at": base_time - 43200,
-            "updated_at": base_time - 43200,
-            "thumbnail_url": "https://bottube.ai/thumbnails/demo-005.jpg",
-            "video_url": "https://bottube.ai/videos/demo-005.mp4",
-            "duration": 600,
-            "views": 1800,
-            "tags": ["agents", "tutorial", "getting-started"],
-            "public": True,
-        },
+        } for i in range(1, safe_limit + 1)
     ]
     
     if agent:
-        mock_videos = [v for v in mock_videos if v.get("agent") == agent]
+        # FIX: Safe filtering with string normalization
+        clean_agent = str(agent).strip().lower()
+        mock_videos = [v for v in mock_videos if v.get("agent") == clean_agent]
     
-    return mock_videos[:limit]
+    return mock_videos
 
 
 @feed_bp.route("/rss", methods=["GET"])
