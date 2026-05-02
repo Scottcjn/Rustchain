@@ -148,13 +148,15 @@ class WebSocketFeed:
             return
         
         self.app = app
+        # FIX: Restricted CORS and reduced buffer size to prevent resource exhaustion
+        # and unauthorized cross-origin access.
         self.socketio = SocketIO(
             app, 
-            cors_allowed_origins="*",
+            cors_allowed_origins=os.environ.get('ALLOWED_ORIGINS', 'https://rustchain.org').split(','),
             async_mode='threading',
             ping_timeout=60,
             ping_interval=25,
-            max_http_buffer_size=10 * 1024 * 1024
+            max_http_buffer_size=1 * 1024 * 1024 # Reduced to 1MB
         )
         
         self._register_events()
