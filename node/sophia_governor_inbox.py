@@ -81,6 +81,20 @@ CREATE INDEX IF NOT EXISTS idx_sophia_governor_inbox_forward_inbox
 
 def init_sophia_governor_inbox_schema(db_path: str | None = None) -> None:
     """Create inbox tables if they do not exist."""
+    # FIX: Enforce valid state transitions to prevent accidental regression
+    # or tampering with resolved/dismissed events.
+    CURRENT_STATUS = row["status"]
+    VALID_NEXT_STATES = {
+        "received": {"reviewing", "forwarded", "dismissed"},
+        "reviewing": {"forwarded", "resolved", "dismissed"},
+        "forwarded": {"resolved", "dismissed"},
+        "resolved": set(), # Terminal state
+        "dismissed": {"received"} # Allow re-opening if needed, but carefully
+    }
+    
+    if status and status not in VALID_NEXT_STATES.get(CURRENT_STATUS, set()):
+        raise ValueError(f"invalid_transition:{CURRENT_STATUS}->{status}")
+
     with sqlite3.connect(db_path or DB_PATH) as conn:
         conn.executescript(INBOX_SCHEMA)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(sophia_governor_inbox)")}
