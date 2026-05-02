@@ -88,4 +88,4 @@ def create_agentkit_wallet():
             "coinbase-agentkit not installed. Run: pip install coinbase-agentkit"
         )
     except Exception as e:
-        raise RuntimeError(f"Failed to create Coinbase wallet: {e}")
+        raise RuntimeError("Failed to create Coinbase wallet. Check CDP configuration and network connectivity.")
