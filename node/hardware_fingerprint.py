@@ -398,12 +398,14 @@ class HardwareFingerprint:
                         oracle["cpu_family"] = line.split(":")[1].strip()
                         
             elif platform.system() == "Darwin":
-                # macOS - use sysctl
+                # macOS - use sysctl with full path for security
                 try:
-                    result = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
-                                          capture_output=True, text=True, timeout=5)
-                    oracle["cpu_model"] = result.stdout.strip()
-                except:
+                    # FIX: Use absolute path and strict timeout
+                    result = subprocess.run(["/usr/sbin/sysctl", "-n", "machdep.cpu.brand_string"],
+                                          capture_output=True, text=True, timeout=5, check=False)
+                    if result.returncode == 0:
+                        oracle["cpu_model"] = result.stdout.strip()
+                except Exception:
                     pass
                     
         except:
