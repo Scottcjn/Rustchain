@@ -191,33 +191,43 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
 
         db = get_db()
         try:
+            # FIX: Use explicit transaction for atomic refund
+            db.execute("BEGIN IMMEDIATE")
             _ensure_escrow_secret_column(db)
             job = db.execute("SELECT * FROM render_escrow WHERE job_id = ?", (job_id,)).fetchone()
+            
             if not job:
+                db.rollback()
                 return jsonify({"error": "Job not found"}), 404
+            
             if job["status"] != "locked":
-                return jsonify({"error": "Job not in locked state"}), 409
-            if actor_wallet not in {job["from_wallet"], job["to_wallet"]}:
-                return jsonify({"error": "actor_wallet must be escrow participant"}), 403
+                db.rollback()
+                return jsonify({"error": f"Job already {job['status']}"}), 409
+            
             if actor_wallet != job["to_wallet"]:
-                return jsonify({"error": "only provider can request refund"}), 403
+                db.rollback()
+                return jsonify({"error": "only provider can authorize refund"}), 403
+            
             if _hash_job_secret(escrow_secret) != (job["escrow_secret_hash"] or ""):
+                db.rollback()
                 return jsonify({"error": "invalid escrow_secret"}), 403
 
-            # Atomic state transition first to prevent races/double-processing.
+            # Atomic state transition
             moved = db.execute(
                 "UPDATE render_escrow SET status = 'refunded', released_at = ? WHERE job_id = ? AND status = 'locked'",
                 (int(time.time()), job_id),
             )
+            
             if moved.rowcount != 1:
                 db.rollback()
-                return jsonify({"error": "Job was already processed"}), 409
+                return jsonify({"error": "Refund failed - job state changed"}), 409
 
             # Refund to original requester
             db.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?", (job["amount_rtc"], job["from_wallet"]))
             db.commit()
             return jsonify({"ok": True, "status": "refunded"})
         except sqlite3.Error as e:
+            db.rollback()
             return jsonify({"error": str(e)}), 500
         finally:
             db.close()
