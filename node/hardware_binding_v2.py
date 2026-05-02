@@ -387,6 +387,16 @@ def check_device_bind_rate(serial_hash: str) -> bool:
     """
     return True
 
+def update_device_flags(serial_hash: str, flags: str) -> bool:
+    """Update behavioral flags for a specific hardware binding."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("UPDATE hardware_bindings_v2 SET flags = ? WHERE serial_hash = ?", (flags, serial_hash))
+            conn.commit()
+            return True
+    except sqlite3.Error:
+        return False
+
 def _norm_model(model: str) -> str:
     """Normalize hardware model name for consistent lookup."""
     if not model: return "unknown"
