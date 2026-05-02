@@ -52,7 +52,10 @@ class ErgoMinerAnchor:
         return row[0] if row and row[0] else 0
     
     def create_anchor_tx(self, miners):
-        """Create zero-fee anchor TX with miner data in registers."""
+        """
+        Create zero-fee anchor TX with miner data in registers.
+        FIX: Added slot idempotency check to prevent redundant transactions.
+        """
         if not ERGO_API_KEY:
             return {"success": False, "error": "ERGO_API_KEY not configured"}
         if not self.unlock_wallet():
@@ -60,6 +63,14 @@ class ErgoMinerAnchor:
         
         commitment = self.compute_commitment(miners)
         rc_slot = self.get_rc_slot()
+
+        # FIX: Check if an anchor already exists for this slot to prevent double-spending
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            cur.execute("CREATE TABLE IF NOT EXISTS ergo_anchors (id INTEGER PRIMARY KEY, tx_id TEXT, commitment TEXT, miner_count INTEGER, rc_slot INTEGER UNIQUE, created_at INTEGER)")
+            exists = cur.execute("SELECT tx_id FROM ergo_anchors WHERE rc_slot = ?", (rc_slot,)).fetchone()
+            if exists:
+                return {"success": True, "already_anchored": True, "tx_id": exists[0], "message": f"Slot {rc_slot} already anchored"}
         
         # Get UTXO
         boxes = self.session.get(ERGO_NODE + "/wallet/boxes/unspent?minConfirmations=1").json()
