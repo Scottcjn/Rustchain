@@ -16,14 +16,23 @@ _CERT_PATH = os.path.expanduser("~/.rustchain/node_cert.pem")
 
 
 def get_tls_verify() -> Union[str, bool]:
-    """Return the appropriate TLS verify parameter for requests/httpx.
-
-    Returns:
-        str: Path to pinned cert file if it exists.
-        bool: True to use system CA bundle as fallback.
-    """
+    """Return the appropriate TLS verify parameter for requests/httpx with permission checks."""
     if os.path.exists(_CERT_PATH):
-        return _CERT_PATH
+        # FIX: Security check - Ensure the pinned certificate file is only readable by the owner
+        # to prevent unauthorized modification in shared environments (MitM risk).
+        try:
+            mode = os.stat(_CERT_PATH).st_mode
+            # Check if group or others have write permissions (0022 bits)
+            if mode & 0o022:
+                import logging
+                logging.getLogger("tls.config").warning(
+                    f"INSECURE PERMISSIONS on pinned cert {_CERT_PATH}. "
+                    "Falling back to system CA bundle."
+                )
+                return True
+            return _CERT_PATH
+        except Exception:
+            return True
     return True
 
 
