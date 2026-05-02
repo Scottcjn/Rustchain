@@ -123,11 +123,22 @@ class GPURenderProtocol:
     # -------------------------------------------------------------------
 
     def attest_gpu(self, miner_id: str, gpu_info: dict) -> dict:
-        """Register or update a GPU node attestation."""
+        """
+        Register or update a GPU node attestation.
+        FIX: Enforce physical sanity bounds for reported hardware specs.
+        """
         required = ["gpu_model", "vram_gb", "device_arch"]
         for field in required:
             if field not in gpu_info:
                 return {"error": f"Missing required field: {field}"}
+
+        # FIX: Prevent 'VRAM Inflation' attacks by enforcing a physical upper bound (128GB)
+        try:
+            vram = float(gpu_info["vram_gb"])
+            if vram <= 0 or vram > 128:
+                return {"error": "Security: Invalid VRAM value. Must be between 0 and 128 GB."}
+        except (ValueError, TypeError):
+            return {"error": "Invalid VRAM format"}
 
         if gpu_info["device_arch"] not in ("nvidia_gpu", "amd_gpu", "apple_gpu"):
             return {"error": "device_arch must be nvidia_gpu, amd_gpu, or apple_gpu"}
