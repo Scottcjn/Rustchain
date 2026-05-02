@@ -48,12 +48,18 @@ class ErgoMinerAnchor:
         return blake2b(data, digest_size=32).hexdigest()
     
     def get_rc_slot(self):
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        cur.execute("SELECT MAX(slot) FROM headers")
-        row = cur.fetchone()
-        conn.close()
-        return row[0] if row and row[0] else 0
+        """Get current RustChain slot with error handling."""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            # FIX: Ensure we get the latest height/slot from headers table
+            cur.execute("SELECT MAX(slot) FROM headers")
+            row = cur.fetchone()
+            conn.close()
+            return int(row[0]) if row and row[0] is not None else 0
+        except Exception as e:
+            print(f"Error fetching RC slot: {e}")
+            return 0
     
     def create_anchor_tx(self, miners):
         """Create zero-fee anchor TX with miner data in registers."""
