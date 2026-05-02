@@ -162,7 +162,7 @@ def _generate_badge_svg(tier: str, score: int) -> str:
     """Generate SVG badge for a BCOS certification."""
     # Color by tier
     colors = {
-        "L0": "#9f9f9f",  # Gray
+        "L0": "#555",  # Gray
         "L1": "#4c1",     # Green
         "L2": "#08c",     # Blue
         "L3": "#93c",     # Purple
