@@ -18,8 +18,9 @@ CORE_ENTROPY_FIELDS = ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jit
 
 def init_hardware_bindings_v2():
     """Create the v2 bindings table with entropy profiles."""
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute('''
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute('''
             CREATE TABLE IF NOT EXISTS hardware_bindings_v2 (
                 serial_hash TEXT PRIMARY KEY,
                 serial_raw TEXT,
@@ -37,7 +38,9 @@ def init_hardware_bindings_v2():
         ''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_hw2_wallet ON hardware_bindings_v2(bound_wallet)')
         conn.commit()
-    print('[HW_BIND_V2] Initialized hardware_bindings_v2 table')
+        print('[HW_BIND_V2] Initialized hardware_bindings_v2 table')
+    except sqlite3.Error as e:
+        print(f'[HW_BIND_V2] Database error during initialization: {e}')
 
 def compute_serial_hash(serial: str, arch: str) -> str:
     """Hash serial + arch for privacy and cross-platform uniqueness."""
