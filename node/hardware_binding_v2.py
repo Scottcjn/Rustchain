@@ -181,8 +181,12 @@ def check_entropy_collision(entropy_profile: Dict, exclude_serial: str = None) -
 
                 is_similar, score, _ = compare_entropy_profiles(stored, entropy_profile)
                 
-                # Require stronger confidence on sufficiently rich, comparable profiles.
-                if is_similar and score > 0.97:
+                # FIX: Adaptive collision threshold based on profile richness.
+                # Richer profiles (more comparable fields) can have a lower threshold
+                # while maintaining high confidence.
+                required_score = 0.98 if comparable_nonzero >= 4 else 0.99
+                
+                if is_similar and score > required_score:
                     return serial_hash  # Collision detected!
     
     return None
