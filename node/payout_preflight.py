@@ -80,9 +80,19 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
     amount_rtc, aerr = _safe_float(data.get("amount_rtc", 0))
     if aerr:
         return PreflightResult(ok=False, error=aerr, details={})
+    
+    # FIX: Enforce precision limit to prevent floating-point drift exploits (max 6 decimals)
+    amount_str = str(data.get("amount_rtc", "0"))
+    if "." in amount_str and len(amount_str.split(".")[1]) > 6:
+        return PreflightResult(
+            ok=False, 
+            error="excessive_precision", 
+            details={"max_decimals": 6}
+        )
+
     if amount_rtc is None or amount_rtc <= 0:
         return PreflightResult(ok=False, error="amount_must_be_positive", details={})
-    amount_i64 = int(amount_rtc * 1_000_000)
+    amount_i64 = int(round(amount_rtc * 1_000_000))
     if amount_i64 <= 0:
         return PreflightResult(
             ok=False,
