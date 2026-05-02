@@ -431,3 +431,21 @@ class RustChainSyncManager:
             "rows_per_second": 0.0,
             "bytes_per_second": 0.0
         }
+ 
+    def _retry_with_backoff(self, func, *args, **kwargs):
+        """
+        Generic retry wrapper with exponential backoff and jitter.
+        FIX: Improved resilience against transient errors during synchronization.
+        """
+        import random
+        retries = 0
+        MAX_RETRIES = 3
+        while retries < MAX_RETRIES:
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                retries += 1
+                if retries == MAX_RETRIES: raise
+                sleep_time = (2 ** retries) + random.uniform(0, 1)
+                self.logger.warning(f"RETRY {retries} after {sleep_time:.2f}s: {e}")
+                time.sleep(sleep_time)
