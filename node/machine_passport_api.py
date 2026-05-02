@@ -271,28 +271,25 @@ def update_passport(machine_id: str):
     """
     Update a machine passport.
     
-    Requires admin authentication or owner verification.
+    Requires admin authentication. (Owner updates currently restricted to admin)
     """
     admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
     expected_admin_key = os.environ.get('ADMIN_KEY', '')
+    
+    # FIX: Enforce strict admin authentication for all updates.
+    # Allowing updates based on self-reported owner_miner_id is insecure.
+    if not expected_admin_key or admin_key != expected_admin_key:
+        return jsonify({
+            'ok': False,
+            'error': 'unauthorized',
+            'message': 'Admin key required',
+        }), 401
     
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
-    
-    # Check authorization
-    if expected_admin_key:
-        if admin_key != expected_admin_key:
-            # Allow owner to update their own passport
-            data = request.get_json()
-            if data and data.get('owner_miner_id') != passport.owner_miner_id:
-                return jsonify({
-                    'ok': False,
-                    'error': 'unauthorized',
-                    'message': 'Admin key required or must be owner',
-                }), 401
     
     data = request.get_json()
     if not data:
@@ -317,19 +314,14 @@ def update_passport(machine_id: str):
 @machine_passport_bp.route('/<machine_id>/repair-log', methods=['POST'])
 def add_repair_entry(machine_id: str):
     """
-    Add a repair log entry.
-    
-    Request Body:
-    {
-        "repair_date": 1234567890,  # Optional: defaults to now
-        "repair_type": "capacitor_replacement",
-        "description": "Replaced all electrolytic capacitors on logic board",
-        "parts_replaced": "C12, C13, C14, C15",
-        "technician": "VintageResto Shop",
-        "cost_rtc": 50000000,  # 50 RTC in micro units
-        "notes": "Machine now stable at 1.2V"
-    }
+    Add a repair log entry. Requires admin authentication.
     """
+    admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
+    expected_admin_key = os.environ.get('ADMIN_KEY', '')
+    
+    if not expected_admin_key or admin_key != expected_admin_key:
+        return jsonify({'ok': False, 'error': 'unauthorized'}), 401
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
