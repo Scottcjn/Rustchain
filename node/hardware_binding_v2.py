@@ -123,8 +123,17 @@ def compare_entropy_profiles(stored: Dict, current: Dict) -> Tuple[bool, float, 
             # No overlapping comparable fields; caller should treat as low-confidence comparison.
             return True, 0.5, 'insufficient_comparable_overlap' 
     
-    avg_diff = total_diff / count
-    similarity = 1.0 - avg_diff
+    # FIX: Use a more stable similarity calculation with weighted averages
+    # Stable fields (cache) have more weight than volatile ones (jitter/clock)
+    WEIGHTS = {
+        'cache_l1': 0.4,
+        'cache_l2': 0.4,
+        'thermal_ratio': 0.1,
+        'clock_cv': 0.05,
+        'jitter_cv': 0.05
+    }
+    
+    similarity = 1.0 - min(avg_diff, 1.0)
     
     # Only reject if STABLE fields (cache, non-volatile) exceed tolerance
     if hard_fails >= 2:  # Multiple stable fields differ = likely spoof
