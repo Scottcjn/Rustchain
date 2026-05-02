@@ -462,6 +462,20 @@ def inspect_miner(miner_id: str, device: dict = None, fingerprint: dict = None,
         }
 
     fp_hash = _compute_fingerprint_hash(fingerprint)
+    
+    # FIX: Enforce cryptographic identity verification before semantic inspection.
+    # Every attestation bundle must carry a valid Ed25519 signature to be inspected.
+    if not fingerprint.get('signature') and not device.get('signature'):
+        log.warning("Security Filter: Miner %s attestation lacks a valid signature. Rejecting.", miner_id)
+        return {
+            "miner": miner_id,
+            "verdict": VERDICT_REJECTED,
+            "confidence": 1.0,
+            "reasoning": "Missing Ed25519 signature. Semantic inspection requires verified identity.",
+            "emoji": VERDICT_EMOJI[VERDICT_REJECTED],
+            "model": "security-pre-filter-v1",
+            "timestamp": int(time.time()),
+        }
 
     prompt = _build_inspection_prompt(miner_id, device, fingerprint, history)
     response_text = _call_ollama(prompt)
