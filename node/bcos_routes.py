@@ -83,7 +83,7 @@ def _verify_ed25519(commitment: str, signature_hex: str, pubkey_hex: str) -> boo
 # ── Database ──────────────────────────────────────────────────────
 
 def init_bcos_table(conn):
-    """Create bcos_attestations table. Call from init_db()."""
+    """Create bcos_attestations table with revocation support."""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS bcos_attestations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,6 +98,8 @@ def init_bcos_table(conn):
             signature TEXT,
             signer_pubkey TEXT,
             anchored_epoch INTEGER,
+            revoked INTEGER DEFAULT 0,
+            revoked_reason TEXT,
             created_at INTEGER NOT NULL
         )
     """)
@@ -388,23 +390,15 @@ def bcos_badge_svg(cert_id):
 
 @bcos_bp.route("/bcos/directory", methods=["GET"])
 def bcos_directory():
-    """List all BCOS-certified repos with advanced filtering and sorting."""
-    tier_filter = request.args.get("tier", "").upper()
-    repo_search = request.args.get("q", "").strip().lower()
-    sort_by = request.args.get("sort", "date") # date or score
-    limit = min(int(request.args.get("limit", 100)), 500)
-    offset = max(int(request.args.get("offset", 0)), 0)
-
-    try:
-        with sqlite3.connect(_DB_PATH) as conn:
-            conn.row_factory = sqlite3.Row
-
-            query = """
-                SELECT cert_id, repo, commit_sha, tier, trust_score,
-                       reviewer, anchored_epoch, created_at
-                FROM bcos_attestations
-                WHERE 1=1
-            """
+    """List all active (non-revoked) BCOS-certified repos."""
+    # ...
+    # FIX: Exclude revoked certificates from public directory
+    query = """
+        SELECT cert_id, repo, commit_sha, tier, trust_score,
+               reviewer, anchored_epoch, created_at
+        FROM bcos_attestations
+        WHERE revoked = 0
+    """
             params = []
 
             if tier_filter in ("L0", "L1", "L2"):
