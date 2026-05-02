@@ -185,8 +185,14 @@ def internal_error(error):
     }), 500
 
 
+_stats_cache = {"data": None, "ts": 0}
+
 @app.get("/api/stats")
 def api_stats():
+    # FIX: 10s caching for explorer load reduction
+    now = time.time()
+    if _stats_cache["data"] and (now - _stats_cache["ts"] < 10):
+        return jsonify(_stats_cache["data"])
     """Network statistics with precise slot reporting."""
     slot = get_current_slot()
     epoch = slot_to_epoch(slot)
