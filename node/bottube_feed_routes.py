@@ -17,6 +17,7 @@ Query Parameters:
 """
 
 import time
+import html
 from typing import Dict, Any, List, Optional, Tuple
 from flask import Blueprint, request, Response, jsonify, current_app
 
@@ -96,6 +97,9 @@ def _fetch_videos(
             videos = []
             for row in rows:
                 video = dict(row)
+                # FIX: Sanitize metadata to prevent XSS in RSS readers
+                video["title"] = html.escape(video.get("title", "Untitled"))
+                video["description"] = html.escape(video.get("description", ""))
                 # Normalize field names
                 if "id" not in video and "video_id" in video:
                     video["id"] = video["video_id"]
