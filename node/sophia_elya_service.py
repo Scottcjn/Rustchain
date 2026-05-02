@@ -119,8 +119,10 @@ def finalize_epoch(epoch, per_block_rtc):
 
         if sum_w > 0 and total_reward > 0:
             for pk, w in miners:
-                amt = total_reward * (w / sum_w)
+                # FIX: Implement explicit precision for reward distribution
+                amt = round(total_reward * (w / sum_w), 8)
                 c.execute("INSERT OR IGNORE INTO balances(miner_pk, balance_rtc) VALUES (?,0)", (pk,))
+ 
                 c.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk=?", (amt, pk))
                 payouts.append((pk, amt))
 
