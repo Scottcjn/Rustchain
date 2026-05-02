@@ -81,8 +81,13 @@ def init_identity_tables(db_path: str = DB_PATH) -> None:
 # ---------------------------------------------------------------------------
 
 def agent_id_from_pubkey(pubkey_bytes: bytes) -> str:
-    """Derive canonical Beacon agent ID: ``bcn_`` + first 12 hex chars of SHA-256."""
-    return "bcn_" + hashlib.sha256(pubkey_bytes).hexdigest()[:12]
+    """
+    Derive canonical Beacon agent ID from public key.
+    
+    FIX: Increased ID length from 12 to 24 chars to prevent collisions
+    as the agent network grows. (12 hex chars = 48 bits, too small for global scale).
+    """
+    return "bcn_" + hashlib.sha256(pubkey_bytes).hexdigest()[:24]
 
 
 # ---------------------------------------------------------------------------
