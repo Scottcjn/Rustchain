@@ -392,7 +392,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
 
         now = int(time.time())
         p = dict(proposal)
-        p["votes"] = [dict(v) for v in votes]
+        p["votes"] = [{"miner_id": f"{v[0][:6]}...{v[0][-4:]}", "vote": v[1], "weight": v[2], "voted_at": v[3]} for v in votes]
         p["time_remaining_seconds"] = max(0, p["expires_at"] - now)
         return jsonify(p), 200
 
