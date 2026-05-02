@@ -198,10 +198,12 @@ def bind_hardware_v2(
     arch: str,
     cores: int,
     fingerprint: dict,
-    macs: list = None
+    macs: list = None,
+    force_rebind: bool = False
 ) -> Tuple[bool, str, dict]:
     """
     Bind hardware to wallet with entropy and serial validation.
+    FIX: Added force_rebind parameter to allow policy-driven overrides.
     """
     # FIX: Basic serial number validation to prevent junk data registration
     clean_serial = str(serial or "").strip().upper()
