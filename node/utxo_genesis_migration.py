@@ -46,10 +46,17 @@ def load_account_balances(db_path: str) -> list:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
+        # FIX: Ensure we only migrate accounts that haven't been processed to prevent double-counting
+        # First, ensure the status column exists (idempotent)
+        try:
+            conn.execute("ALTER TABLE balances ADD COLUMN migrated_to_utxo INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass # Already exists
+
         rows = conn.execute(
             """SELECT miner_id, amount_i64
                FROM balances
-               WHERE amount_i64 > 0
+               WHERE amount_i64 > 0 AND migrated_to_utxo = 0
                ORDER BY miner_id ASC"""
         ).fetchall()
         return [(r['miner_id'], r['amount_i64']) for r in rows]
@@ -165,6 +172,12 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
                         }]),
                         '[]', 0, now, GENESIS_HEIGHT, 'confirmed',
                     ),
+                )
+
+                # FIX: Mark source account as migrated within the same transaction
+                conn.execute(
+                    "UPDATE balances SET migrated_to_utxo = 1 WHERE miner_id = ?",
+                    (miner_id,)
                 )
 
             boxes_created += 1
