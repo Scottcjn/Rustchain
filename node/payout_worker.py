@@ -146,21 +146,22 @@ class PayoutWorker:
         return False
 
     def process_batch(self) -> int:
-        """Process a batch of withdrawals"""
-        withdrawals = self.get_pending_withdrawals()
+        """Process a batch of withdrawals efficiently."""
+        # FIX: Use a larger batch size for selection and process them in order
+        withdrawals = self.get_pending_withdrawals(limit=BATCH_SIZE)
 
         if not withdrawals:
             return 0
 
-        logger.info(f"Processing batch of {len(withdrawals)} withdrawals")
+        logger.info(f"Processing batch of {len(withdrawals)} locked withdrawals")
 
         processed = 0
         for withdrawal in withdrawals:
             if self.process_withdrawal(withdrawal):
                 processed += 1
-
-            # Small delay between transactions
-            time.sleep(1)
+            
+            # Small adaptive delay between transactions to prevent network/node congestion
+            time.sleep(0.2) 
 
         return processed
 
