@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Floppy Witness Kit
 
 **Epoch proofs on 1.44MB media** — Bounty #2313 Implementation
