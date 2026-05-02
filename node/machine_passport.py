@@ -399,38 +399,24 @@ class MachinePassportLedger:
                        architecture: Optional[str] = None,
                        limit: int = 100, offset: int = 0) -> List[MachinePassport]:
         """
-        List machine passports with optional filtering.
-        
-        Args:
-            owner_miner_id: Filter by owner
-            architecture: Filter by architecture type
-            limit: Maximum results to return
-            offset: Pagination offset
-            
-        Returns:
-            List of MachinePassport objects
+        List machine passports with secure parameter binding.
         """
-        conditions = []
+        query = "SELECT * FROM machine_passports WHERE 1=1"
         params = []
         
         if owner_miner_id:
-            conditions.append("owner_miner_id = ?")
+            query += " AND owner_miner_id = ?"
             params.append(owner_miner_id)
         
         if architecture:
-            conditions.append("architecture = ?")
+            query += " AND architecture = ?"
             params.append(architecture)
         
-        where_clause = " AND ".join(conditions) if conditions else "1=1"
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         
         with self._get_connection() as conn:
-            rows = conn.execute(f"""
-                SELECT * FROM machine_passports 
-                WHERE {where_clause}
-                ORDER BY created_at DESC
-                LIMIT ? OFFSET ?
-            """, params).fetchall()
+            rows = conn.execute(query, params).fetchall()
             
             return [MachinePassport(
                 machine_id=row['machine_id'],
