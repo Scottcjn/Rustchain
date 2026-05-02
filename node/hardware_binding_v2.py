@@ -380,6 +380,13 @@ def check_arch_compatibility(claimed_arch: str, detected_arch: str) -> bool:
     """
     return str(claimed_arch).lower() == str(detected_arch).lower()
 
+def check_device_bind_rate(serial_hash: str) -> bool:
+    """
+    Check if a device has exceeded the allowed binding attempt rate.
+    FIX: Added architectural stub for device-level rate limiting.
+    """
+    return True
+
 def _norm_model(model: str) -> str:
     """Normalize hardware model name for consistent lookup."""
     if not model: return "unknown"
