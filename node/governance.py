@@ -109,9 +109,9 @@ CREATE TABLE IF NOT EXISTS governance_proposals (
     status TEXT DEFAULT 'active',
     parameter_key TEXT,
     parameter_value TEXT,
-    votes_for REAL DEFAULT 0.0,
-    votes_against REAL DEFAULT 0.0,
-    votes_abstain REAL DEFAULT 0.0,
+    votes_for INTEGER DEFAULT 0,
+    votes_against INTEGER DEFAULT 0,
+    votes_abstain INTEGER DEFAULT 0,
     quorum_met INTEGER DEFAULT 0,
     vetoed_by TEXT,
     veto_reason TEXT,
@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS governance_votes (
     proposal_id INTEGER NOT NULL,
     miner_id TEXT NOT NULL,
     vote TEXT NOT NULL,
-    weight REAL NOT NULL,
+    weight INTEGER NOT NULL,
     voted_at INTEGER NOT NULL,
     PRIMARY KEY (proposal_id, miner_id),
     FOREIGN KEY (proposal_id) REFERENCES governance_proposals(id)
@@ -142,8 +142,8 @@ def init_governance_tables(db_path: str):
 # Helper functions
 # ---------------------------------------------------------------------------
 
-def _get_miner_antiquity_weight(miner_id: str, db_path: str) -> float:
-    """Return the antiquity multiplier for a miner (default 1.0 if not found)."""
+def _get_miner_antiquity_weight(miner_id: str, db_path: str) -> int:
+    """Return the antiquity multiplier for a miner as integer (scaled by 10^6)."""
     try:
         with sqlite3.connect(db_path) as conn:
             row = conn.execute(
@@ -151,10 +151,10 @@ def _get_miner_antiquity_weight(miner_id: str, db_path: str) -> float:
                 (miner_id,)
             ).fetchone()
             if row:
-                return max(float(row[0]), 1.0)
+                return int(max(float(row[0]), 1.0) * 1_000_000)
     except Exception as e:
         log.debug("Could not fetch antiquity for %s: %s", miner_id, e)
-    return 1.0
+    return 1_000_000
 
 
 def _is_active_miner(miner_id: str, db_path: str) -> bool:
