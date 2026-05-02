@@ -212,6 +212,9 @@ def _is_admin(req):
 def api_stats_reset():
     if not _is_admin(request):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    if not data.get("confirm") == "true":
+        return jsonify({"ok": False, "error": "confirmation_required"}), 400
     _stats_cache["data"] = None
     _stats_cache["ts"] = 0
     return jsonify({"ok": True, "message": "Stats cache reset"})
