@@ -12,7 +12,7 @@ from typing import Tuple, Dict, Optional
 
 # Allow overrides for local dev / non-Linux environments.
 DB_PATH = os.environ.get('RUSTCHAIN_DB_PATH') or os.environ.get('DB_PATH') or '/root/rustchain/rustchain_v2.db'
-ENTROPY_TOLERANCE = 0.30  # 30% tolerance for entropy drift
+ENTROPY_TOLERANCE = float(os.getenv("HW_ENTROPY_TOLERANCE", "0.30"))  # 30% tolerance for entropy drift
 MIN_COMPARABLE_FIELDS = 3  # require at least 3 non-zero entropy fields for quality
 CORE_ENTROPY_FIELDS = ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']
 
