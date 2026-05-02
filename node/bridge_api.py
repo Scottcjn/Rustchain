@@ -656,6 +656,15 @@ def update_external_confirmation(
 # Flask Routes (to be integrated into main node)
 # =============================================================================
 
+def _bridge_error(code: str, message: str, status: int = 400):
+    """Build a consistent error response for bridge endpoints."""
+    return jsonify({
+        "ok": False,
+        "error": code.lower(),
+        "code": code,
+        "message": message
+    }), status
+
 def register_bridge_routes(app):
     """Register bridge API routes with Flask app."""
     from flask import request, jsonify
