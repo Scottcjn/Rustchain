@@ -143,7 +143,7 @@ BADGE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="2
     <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
     <stop offset="1" stop-opacity=".1"/>
   </linearGradient>
-  <clipPath id="r"><rect width="{width}" height="20" rx="3"/></clipPath>
+  <clipPath id="r"><rect width="{width}" height="20" rx="4"/></clipPath>
   <g clip-path="url(#r)">
     <rect width="50" height="20" fill="#555"/>
     <rect x="50" width="{right_width}" height="20" fill="{color}"/>
