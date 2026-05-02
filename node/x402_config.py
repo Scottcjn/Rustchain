@@ -8,6 +8,7 @@ Change values when ready to charge real USDC.
 
 import os
 import logging
+import re
 
 log = logging.getLogger("x402")
 
@@ -51,6 +52,10 @@ SWAP_INFO = {
     "reference_price_usd": 0.10,
 }
 
+
+def is_valid_address(address):
+    """Validate EVM address format."""
+    return bool(re.match(r"^0x[a-fA-F0-9]{40}$", str(address)))
 
 def is_free(price_str):
     """Check if a price is $0 (free mode)."""
