@@ -386,6 +386,17 @@ def _norm_model(model: str) -> str:
     import re
     m = str(model).lower().replace("(r)", "").replace("(tm)", "")
     return re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9 ]', '', m)).strip()
+
+def compute_mac_hash(mac: str) -> str:
+    """Compute secure HMAC hash of a MAC address."""
+    pepper = b"rustchain_poa_v2_mac"
+    import hmac
+    norm = ''.join(ch for ch in str(mac).lower() if ch in "0123456789abcdef")
+    return hmac.new(pepper, norm.encode(), hashlib.sha256).hexdigest()[:12]
+ 
+    import re
+    m = str(model).lower().replace("(r)", "").replace("(tm)", "")
+    return re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9 ]', '', m)).strip()
  
  
 
