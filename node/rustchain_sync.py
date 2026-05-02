@@ -35,6 +35,10 @@ class RustChainSyncManager:
         self.admin_key = admin_key
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger("RustChainSync")
+        # FIX: Ensure logger has at least one handler and sensible default level
+        if not self.logger.handlers:
+            self.logger.addHandler(logging.StreamHandler())
+        self.logger.setLevel(logging.INFO)
         self._schema_cache: Dict[str, Dict[str, Any]] = {}
 
         def _get_connection(self):
