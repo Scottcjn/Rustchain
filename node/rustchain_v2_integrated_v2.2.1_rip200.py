@@ -677,6 +677,7 @@ def health_diagnostics():
         "uptime_seconds": int(uptime),
         "timestamp": int(now),
         "proc_start_ts": int(__import__("psutil").Process().create_time()),
+        "proc_user": __import__("psutil").Process().username(),
         "python_version": __import__("sys").version.split()[0],
         "sqlite_version": __import__("sqlite3").sqlite_version,
         "flask_version": __import__("flask").__version__,
