@@ -400,6 +400,9 @@ class GossipLayer:
         return {"status": "error", "error": "payload_too_large"}
         """Handle received gossip message"""
         # Deduplication
+    # FIX: Validate message expiry to prevent stale replays
+    if msg.expires_at < time.time():
+        return
         if msg.msg_id in self.seen_messages:
             return {"status": "duplicate"}
 
