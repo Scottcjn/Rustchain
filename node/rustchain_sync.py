@@ -458,3 +458,11 @@ class RustChainSyncManager:
         if not self._is_table_allowed(table_name):
             return []
         return []
+ 
+    def _get_table_pk(self, table_name: str) -> Optional[List[str]]:
+        """
+        Dynamically discover the primary key(s) for a table.
+        FIX: Added support for composite primary keys.
+        """
+        schema = self._load_table_schema(table_name)
+        return schema.get("pk_cols") if schema else None
