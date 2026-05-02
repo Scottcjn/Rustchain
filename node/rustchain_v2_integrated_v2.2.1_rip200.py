@@ -926,7 +926,7 @@ OPENAPI = {
                     {
                         "name": "miner_pk",
                         "in": "path",
-                        "required": true,
+                        "required": True,
                         "schema": {"type": "string"},
                         "description": "Miner public key (hex)"
                     }
@@ -957,7 +957,7 @@ OPENAPI = {
                     {
                         "name": "address",
                         "in": "query",
-                        "required": true,
+                        "required": True,
                         "schema": {"type": "string"},
                         "description": "Wallet address (RTC...)"
                     }
@@ -2367,7 +2367,7 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     Requires raw data for critical checks and cross-validates device claims.
 
     Handles BOTH formats:
-    - New Python format: {"checks": {"clock_drift": {"passed": true, "data": {...}}}}
+    - New Python format: {"checks": {"clock_drift": {"passed": True, "data": {...}}}}
     - C miner format: {"checks": {"clock_drift": true}}
     
     FIX #1147: Added defensive type checking for all nested access to prevent crashes
