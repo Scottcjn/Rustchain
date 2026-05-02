@@ -22,6 +22,7 @@ except ImportError:
     ws_feed = None
 
 # Configuration
+LOG_LEVEL = os.getenv("SOPHIA_LOG_LEVEL", "INFO").upper()
 BLOCK_TIME = 600  # 10 minutes
 PER_BLOCK_RTC = 1.5  # Fixed per block
 EPOCH_SLOTS = 144  # 24 hours at 10-min blocks
