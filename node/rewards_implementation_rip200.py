@@ -188,6 +188,19 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
             db.rollback()
             return {"ok": False, "error": "no_eligible_miners", "epoch": epoch}
 
+        # FIX: Enforce a global reward cap per epoch to prevent inflationary exploits
+        total_distributed_urtc = sum(rewards.values())
+        if total_distributed_urtc > PER_EPOCH_URTC:
+            db.rollback()
+            print(f"[SECURITY] Critical Error: Reward calculation ({total_distributed_urtc}) exceeds epoch cap ({PER_EPOCH_URTC}). Aborting.")
+            return {
+                "ok": False,
+                "error": "reward_cap_exceeded",
+                "epoch": epoch,
+                "calculated": total_distributed_urtc,
+                "cap": PER_EPOCH_URTC
+            }
+
         # Credit rewards to miners
         ts_now = int(time.time())
         miners_data = []
