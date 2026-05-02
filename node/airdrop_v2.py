@@ -757,6 +757,16 @@ class AirdropV2:
         """
         chain_lower = chain.lower()
 
+        # FIX: Enforce chain-specific address validation to prevent cross-chain replay or invalid payouts
+        if chain_lower == "solana":
+            if not re.match(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$", wallet_address):
+                return False, "Invalid Solana address format", None
+        elif chain_lower == "base":
+            if not re.match(r"^0x[a-fA-F0-9]{40}$", wallet_address):
+                return False, "Invalid Base/EVM address format", None
+        else:
+            return False, f"Unsupported chain: {chain}", None
+
         # When skip_antisybil is True (testing), use provided tier directly
         if skip_antisybil:
             tier_enum = getattr(EligibilityTier, tier.upper(), None)
