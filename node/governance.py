@@ -263,6 +263,9 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
     # -- POST /api/governance/propose ----------------------------------------
     @bp.route("/api/governance/propose", methods=["POST"])
     def create_proposal():
+    # FIX: Reject proposals from blacklisted or suspicious agents
+    if miner_id in current_app.config.get("BLACKLISTED_PROPOSERS", []):
+        return jsonify({"error": "proposer_blacklisted"}), 403
         _settle_expired_proposals(db_path)
         data = request.get_json(silent=True) or {}
 
