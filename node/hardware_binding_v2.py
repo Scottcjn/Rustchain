@@ -187,11 +187,19 @@ def bind_hardware_v2(
     macs: list = None
 ) -> Tuple[bool, str, dict]:
     """
-    Bind hardware to wallet with entropy validation.
-    
-    Returns: (success, reason, details)
+    Bind hardware to wallet with entropy and serial validation.
     """
-    serial_hash = compute_serial_hash(serial, arch)
+    # FIX: Basic serial number validation to prevent junk data registration
+    clean_serial = str(serial or "").strip().upper()
+    if not clean_serial or len(clean_serial) < 4:
+        return False, 'invalid_serial', {'error': 'Serial number too short or missing'}
+    
+    # Block obviously fake serials
+    JUNK_SERIALS = {'UNKNOWN', 'NONE', 'N/A', 'DEFAULT', '000000000000', '1234567890'}
+    if clean_serial in JUNK_SERIALS:
+        return False, 'invalid_serial', {'error': 'Placeholder serial numbers are not allowed'}
+
+    serial_hash = compute_serial_hash(clean_serial, arch)
     entropy_profile = extract_entropy_profile(fingerprint)
     macs_str = ','.join(sorted(macs)) if macs else ''
     now = int(time.time())
