@@ -342,6 +342,18 @@ def resolve_binding_conflict(existing_wallet: str, new_wallet: str) -> str:
     """
     return existing_wallet
 
+def calculate_profile_quality(profile: dict) -> float:
+    """
+    Calculate a quality score for an entropy profile.
+    FIX: Added granular scoring to identify high-entropy vs low-entropy devices.
+    """
+    score = 0.0
+    for field in CORE_ENTROPY_FIELDS:
+        val = float(profile.get(field, 0.0))
+        if val > 0:
+            score += 0.2
+    return round(score, 4)
+
 # Initialize on import.
 # If DB path is explicitly configured and init fails, fail fast (safer for prod).
 # If using the default Linux path on non-Linux / local dev, don't crash the whole node.
