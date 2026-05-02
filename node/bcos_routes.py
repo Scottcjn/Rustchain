@@ -175,7 +175,7 @@ def _generate_badge_svg(tier: str, score: int) -> str:
     label = f"{tier} {score}/100"
     right_width = max(70, len(label) * 7 + 10)
     width = 50 + right_width
-    text_x = 50 + right_width // 2
+    text_x = 50 + (right_width // 2)
 
     return BADGE_SVG.format(
         width=width,
