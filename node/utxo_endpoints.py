@@ -304,9 +304,18 @@ def utxo_transfer():
         return jsonify({'error': 'Invalid Ed25519 signature'}), 401
 
     # --- UTXO transaction ---------------------------------------------------
-
-    amount_nrtc = int(amount_rtc * UNIT)
-    fee_nrtc = int(fee_rtc * UNIT)
+    from decimal import Decimal
+    try:
+        # FIX: Use Decimal for absolute precision in financial calculations
+        # and prevent rounding errors associated with floats.
+        amount_dec = Decimal(str(amount_rtc))
+        fee_dec = Decimal(str(fee_rtc))
+        
+        amount_nrtc = int(amount_dec * Decimal(str(UNIT)))
+        fee_nrtc = int(fee_dec * Decimal(str(UNIT)))
+    except Exception:
+        return jsonify({'error': 'Invalid amount or fee format'}), 400
+        
     target_nrtc = amount_nrtc + fee_nrtc
 
     # Select UTXOs
