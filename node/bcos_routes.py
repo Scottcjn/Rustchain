@@ -150,9 +150,9 @@ BADGE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="2
     <rect width="{width}" height="20" fill="url(#g)"/>
   </g>
   <g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11">
-    <text x="25" y="15" fill="#010101" fill-opacity=".3">BCOS</text>
+    <text x="25" y="15" fill="#010101" fill-opacity=".4">BCOS</text>
     <text x="25" y="14">BCOS</text>
-    <text x="{text_x}" y="15" fill="#010101" fill-opacity=".3">{label}</text>
+    <text x="{text_x}" y="15" fill="#010101" fill-opacity=".4">{label}</text>
     <text x="{text_x}" y="14">{label}</text>
   </g>
 </svg>"""
