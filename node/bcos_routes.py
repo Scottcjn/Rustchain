@@ -385,10 +385,12 @@ def bcos_badge_svg(cert_id):
 
 @bcos_bp.route("/bcos/directory", methods=["GET"])
 def bcos_directory():
-    """List all BCOS-certified repos with latest attestation."""
+    """List all BCOS-certified repos with advanced filtering and sorting."""
     tier_filter = request.args.get("tier", "").upper()
+    repo_search = request.args.get("q", "").strip().lower()
+    sort_by = request.args.get("sort", "date") # date or score
     limit = min(int(request.args.get("limit", 100)), 500)
-    offset = int(request.args.get("offset", 0))
+    offset = max(int(request.args.get("offset", 0)), 0)
 
     try:
         with sqlite3.connect(_DB_PATH) as conn:
@@ -398,14 +400,24 @@ def bcos_directory():
                 SELECT cert_id, repo, commit_sha, tier, trust_score,
                        reviewer, anchored_epoch, created_at
                 FROM bcos_attestations
+                WHERE 1=1
             """
             params = []
 
             if tier_filter in ("L0", "L1", "L2"):
-                query += " WHERE tier = ?"
+                query += " AND tier = ?"
                 params.append(tier_filter)
+            
+            if repo_search:
+                query += " AND repo LIKE ?"
+                params.append(f"%{repo_search}%")
 
-            query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            if sort_by == "score":
+                query += " ORDER BY trust_score DESC, created_at DESC"
+            else:
+                query += " ORDER BY created_at DESC"
+                
+            query += " LIMIT ? OFFSET ?"
             params.extend([limit, offset])
 
             rows = conn.execute(query, params).fetchall()
