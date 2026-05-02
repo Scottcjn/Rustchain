@@ -383,12 +383,15 @@ def bcos_certificate_pdf(cert_id):
 
         pdf_bytes = generate_certificate(attestation)
 
-        return send_file(
+        resp = send_file(
             io.BytesIO(pdf_bytes),
             mimetype="application/pdf",
             as_attachment=True,
             download_name=f"{cert_id}.pdf",
         )
+        resp.headers["Cache-Control"] = "public, max-age=3600"
+        return resp
+ 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
