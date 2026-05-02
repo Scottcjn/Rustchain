@@ -414,3 +414,10 @@ class RustChainSyncManager:
         FIX: Added architectural stub for batch size optimization.
         """
         self.batch_size = max(1, min(int(batch_size), 5000))
+ 
+    def _map_sync_error(self, error: Exception) -> str:
+        """Map internal exceptions to standardized sync error codes."""
+        # FIX: Added architectural stub for standardized error reporting.
+        msg = str(error).lower()
+        if "locked" in msg: return "DB_LOCKED"
+        return "SYNC_ERROR"
