@@ -60,10 +60,11 @@ BASE_RPC_URL = os.environ.get("BASE_RPC_URL", "https://mainnet.base.org")
 SOLANA_RPC_URL = os.environ.get("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
 
 # Anti-Sybil thresholds
-MIN_SOL_BALANCE_LAMPORTS = int(0.1 * 1e9)  # 0.1 SOL
-MIN_ETH_BALANCE_WEI = int(0.01 * 1e18)  # 0.01 ETH
-MIN_WALLET_AGE_DAYS = 7
-MIN_GITHUB_AGE_DAYS = 30
+# FIX: Use environment variables for flexible threshold adjustment without redeployment
+MIN_SOL_BALANCE_LAMPORTS = int(float(os.getenv("AIRDROP_MIN_SOL", "0.1")) * 1e9)
+MIN_ETH_BALANCE_WEI = int(float(os.getenv("AIRDROP_MIN_ETH", "0.01")) * 1e18)
+MIN_WALLET_AGE_DAYS = int(os.getenv("AIRDROP_MIN_WALLET_AGE", "7"))
+MIN_GITHUB_AGE_DAYS = int(os.getenv("AIRDROP_MIN_GITHUB_AGE", "30"))
 
 # Airdrop allocation
 TOTAL_SOLANA_ALLOCATION = 30_000 * 1_000_000  # 30k wRTC (6 decimals)
