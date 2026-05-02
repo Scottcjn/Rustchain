@@ -5123,9 +5123,17 @@ def bounty_multiplier():
 def api_nodes():
     """Return list of all registered attestation nodes"""
     def _is_admin() -> bool:
-        need = os.environ.get("RC_ADMIN_KEY", "")
-        got = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-        return bool(need and got and need == got)
+        """Securely check if the request is authorized as admin with timing protection."""
+        need = str(os.environ.get("RC_ADMIN_KEY", "")).strip()
+        # FIX: Enforce minimum key length and use constant-time comparison
+        if not need or len(need) < 32:
+            return False
+            
+        got = (request.headers.get("X-Admin-Key") or request.headers.get("X-API-Key") or "").strip()
+        if not got:
+            return False
+            
+        return hmac.compare_digest(got, need)
 
     def _should_redact_url(u: str) -> bool:
         try:
