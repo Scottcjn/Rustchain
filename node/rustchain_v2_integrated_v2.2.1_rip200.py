@@ -539,6 +539,37 @@ def _after(resp):
 # LIGHT CLIENT (static, served from node origin to avoid CORS)
 # ============================================================================
 
+@app.route("/api/health/diagnostics", methods=["GET"])
+def health_diagnostics():
+    """Detailed health report for node operators."""
+    now = time.time()
+    uptime = now - APP_START_TS
+    
+    # Check DB health
+    db_ok = False
+    try:
+        with sqlite3.connect(DB_PATH, timeout=5) as conn:
+            conn.execute("SELECT 1").fetchone()
+            db_ok = True
+    except Exception:
+        pass
+
+    return jsonify({
+        "status": "ok" if db_ok else "degraded",
+        "version": APP_VERSION,
+        "uptime_seconds": int(uptime),
+        "timestamp": int(now),
+        "modules": {
+            "rewards": HAVE_REWARDS,
+            "utxo": HAVE_UTXO,
+            "bridge": HAVE_BRIDGE,
+            "airdrop": HAVE_AIRDROP,
+            "fleet_immune": HAVE_FLEET_IMMUNE
+        },
+        "database": "connected" if db_ok else "error"
+    })
+
+
 @app.route("/light")
 def light_client_entry():
     # Avoid caching during bounty iteration.
