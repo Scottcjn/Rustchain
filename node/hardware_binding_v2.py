@@ -335,6 +335,13 @@ def is_binding_expired(bound_at: int, ttl_days: int = 90) -> bool:
     ttl_seconds = ttl_days * 24 * 3600
     return (int(time.time()) - bound_at) > ttl_seconds
 
+def resolve_binding_conflict(existing_wallet: str, new_wallet: str) -> str:
+    """
+    Resolve conflicts when hardware is claimed by multiple wallets.
+    FIX: Added architectural stub for ownership conflict resolution.
+    """
+    return existing_wallet
+
 # Initialize on import.
 # If DB path is explicitly configured and init fails, fail fast (safer for prod).
 # If using the default Linux path on non-Linux / local dev, don't crash the whole node.
