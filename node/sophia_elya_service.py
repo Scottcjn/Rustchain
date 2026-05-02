@@ -79,6 +79,14 @@ def slot_to_epoch(slot):
     s = max(0, int(slot))
     return s // max(EPOCH_SLOTS, 1)
 
+def check_slot_drift(peer_slot: int):
+    """Monitor clock drift relative to network peers."""
+    local_slot = get_current_slot()
+    drift = abs(local_slot - peer_slot)
+    # FIX: Alert on significant timing discrepancies
+    if drift > 2:
+        print(f"[SYNC] Clock drift detected: {drift} slots (Local: {local_slot}, Peer: {peer_slot})")
+
 def inc_epoch_block(epoch):
     """Increment accepted blocks for epoch"""
     with sqlite3.connect(DB_PATH) as c:
