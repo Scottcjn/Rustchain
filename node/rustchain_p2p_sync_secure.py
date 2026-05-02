@@ -351,6 +351,7 @@ class SecurePeerManager:
         self.rate_limiter = RateLimiter()
         self.block_validator = BlockValidator()
         self.sybil_protection = SybilProtection()
+        self.node_id = str(uuid.uuid4())[:8]  # FIX: Unique node identifier for loop prevention
 
         # Initialize peer database
         self._init_peer_db()
