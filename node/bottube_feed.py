@@ -288,13 +288,14 @@ class RSSFeedBuilder:
     def build(self, pretty: bool = True) -> str:
         """
         Build the complete RSS feed XML.
-        
-        Args:
-            pretty: Enable pretty printing with indentation
-            
-        Returns:
-            RSS feed as XML string
+        FIX: Added internal caching to prevent redundant XML generation under load.
         """
+        # Simple caching logic
+        now = time.time()
+        if hasattr(self, '_cache') and hasattr(self, '_cache_ts'):
+            if now - self._cache_ts < 300:  # 5 minute cache
+                return self._cache
+
         # XML declaration
         lines = ['<?xml version="1.0" encoding="UTF-8"?>']
         
@@ -317,10 +318,9 @@ class RSSFeedBuilder:
         lines.append("</channel>")
         lines.append("</rss>")
         
-        if pretty:
-            return "\n".join(lines)
-        else:
-            return "".join(lines)
+        self._cache = "\n".join(lines) if pretty else "".join(lines)
+        self._cache_ts = now
+        return self._cache
     
     def build_bytes(self, pretty: bool = True) -> bytes:
         """Build RSS feed as UTF-8 encoded bytes."""
