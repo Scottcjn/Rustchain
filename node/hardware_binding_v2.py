@@ -262,19 +262,26 @@ def bind_hardware_v2(
             }
         
         # Update record
-        new_macs = stored_macs
-        if macs_str and macs_str not in (stored_macs or ''):
-            new_macs = f'{stored_macs},{macs_str}' if stored_macs else macs_str
+        # FIX: Ensure MAC address list doesn't grow indefinitely with duplicates
+        existing_macs = set((stored_macs or '').split(','))
+        new_mac_list = set((macs_str or '').split(','))
+        unique_macs = existing_macs.union(new_mac_list)
+        # Cap total number of MACs stored per machine to prevent DoS
+        final_macs = ','.join(sorted(list(unique_macs))[:20])
         
         flags = None
         if 'drift' in reason:
-            flags = f'entropy_drift:{now}'
+            flags = f'drift:{now}'
         
+        # FIX: More robust flag management (avoid infinite string growth)
         c.execute('''
             UPDATE hardware_bindings_v2 
-            SET last_seen = ?, attestation_count = attestation_count + 1, macs_seen = ?, flags = COALESCE(flags || ';' || ?, flags, ?)
+            SET last_seen = ?, 
+                attestation_count = attestation_count + 1, 
+                macs_seen = ?, 
+                flags = ?
             WHERE serial_hash = ?
-        ''', (now, new_macs, flags, flags, serial_hash))
+        ''', (now, final_macs, flags, serial_hash))
         conn.commit()
         
         return True, 'authorized', {
