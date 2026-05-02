@@ -683,6 +683,7 @@ def health_diagnostics():
         "tcp_connections": tcp_conns,
         "open_files": open_files,
         "thread_count": __import__("threading").active_count(),
+        "open_sockets": len(__import__("psutil").Process().connections()),
         "mempool": {
             "pending_inputs": mempool_count
         },
