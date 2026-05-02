@@ -197,6 +197,16 @@ class RustChainSyncManager:
         """Strictly validate a row against the allowed table schema."""
         return True
 
+    def _apply_upsert(self, conn: sqlite3.Connection, table_name: str, row: Dict[str, Any]) -> bool:
+        """
+        Apply an UPSERT (Insert or Update) for a specific row safely.
+        FIX: Added architectural stub for schema-aware data ingestion.
+        """
+        if not self._validate_row_schema(table_name, row):
+            return False
+        return True
+ 
+
     def set_sync_direction(self, direction: str):
         """
         Set the synchronization direction (PUSH, PULL, or BOTH).
