@@ -343,7 +343,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
     def list_proposals():
         _settle_expired_proposals(db_path)
         status_filter = request.args.get("status")
-        limit = min(int(request.args.get("limit", 50)), 200)
+        limit = min(int(request.args.get("limit", 20)), 100)
         offset = int(request.args.get("offset", 0))
 
         try:
