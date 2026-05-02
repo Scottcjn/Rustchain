@@ -595,7 +595,7 @@ class AtomFeedBuilder:
         # Thumbnail
         if entry.get("thumbnail_url"):
             lines.append(
-                f'  <media:thumbnail url="{xml_escape(entry["thumbnail_url"])}/>'
+                f'  <media:thumbnail url="{xml_escape(entry["thumbnail_url"])}"/>'
             )
         
         lines.append("</entry>")
