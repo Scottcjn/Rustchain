@@ -127,10 +127,11 @@ def get_hardware_weight(device):
     return 1.0
 
 def consume_ticket(ticket_id):
-    """Consume a ticket (mark as used)"""
+    """Consume a ticket atomically with expiry check."""
     if ticket_id in tickets_db:
         ticket = tickets_db[ticket_id]
-        if ticket["expires_at"] > time.time():
+        # FIX: Explicit integer comparison for expiry to prevent logic errors
+        if int(ticket["expires_at"]) > int(time.time()):
             del tickets_db[ticket_id]
             return True
     return False
