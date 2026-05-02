@@ -86,6 +86,7 @@ MAX_DESCRIPTION_LEN = 10000
 
 PROPOSAL_TYPES = ("parameter_change", "feature_activation", "emergency")
 VOTE_CHOICES = ("for", "against", "abstain")
+VOTE_COLUMN_MAP = {"for": "votes_for", "against": "votes_against", "abstain": "votes_abstain"}
 
 STATUS_ACTIVE = "active"
 STATUS_PASSED = "passed"
@@ -454,7 +455,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                         # vote value was ever tampered with.
                         if old_vote[0] not in VOTE_CHOICES:
                             return jsonify({"error": "corrupted vote record"}), 500
-                        old_col = f"votes_{old_vote[0]}"
+                        old_col = VOTE_COLUMN_MAP.get(old_vote[0])
                         conn.execute(
                             f"UPDATE governance_proposals SET {old_col} = {old_col} - ? WHERE id = ?",
                             (old_vote[1], proposal_id)
@@ -468,7 +469,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                 # Update tally — vote_choice is already validated against
                 # VOTE_CHOICES at the top of this handler, so this f-string
                 # is safe from injection.
-                col = f"votes_{vote_choice}"
+                col = VOTE_COLUMN_MAP.get(vote_choice)
                 conn.execute(
                     f"UPDATE governance_proposals SET {col} = {col} + ? WHERE id = ?",
                     (weight, proposal_id)
