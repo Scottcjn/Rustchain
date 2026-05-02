@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # wRTC Solana Bridge Dashboard
 
 **Bounty:** #2303  
