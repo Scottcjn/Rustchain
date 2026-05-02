@@ -122,8 +122,14 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
         nonce_int = int(str(data.get("nonce")))
     except (TypeError, ValueError):
         return PreflightResult(ok=False, error="nonce_not_int", details={})
+    
+    # FIX: Enforce a more reasonable range and positive value for nonces
+    # and add support for potential timestamp-based nonces (milliseconds).
     if nonce_int <= 0:
         return PreflightResult(ok=False, error="nonce_must_be_gt_zero", details={})
+    
+    if nonce_int > 2**63 - 1: # Max signed 64-bit integer
+        return PreflightResult(ok=False, error="nonce_too_large", details={})
 
     return PreflightResult(
         ok=True,
