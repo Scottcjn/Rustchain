@@ -389,6 +389,13 @@ class BlockProducer:
                     producer=self.wallet_address
                 )
 
+                # FIX: Implement block size limit (e.g., 2MB) to prevent resource exhaustion
+                MAX_BLOCK_SIZE_BYTES = 2 * 1024 * 1024
+                body_json_str = json.dumps(body.to_dict())
+                if len(body_json_str.encode('utf-8')) > MAX_BLOCK_SIZE_BYTES:
+                    logger.error(f"Block production failed: body size exceeds {MAX_BLOCK_SIZE_BYTES} bytes")
+                    return None
+
                 # Sign header
                 header.sign(self.signer)
 
