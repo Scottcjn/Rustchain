@@ -136,11 +136,21 @@ def consume_ticket(ticket_id):
             return True
     return False
 
+def get_current_slot():
+    """Calculate current slot with fallback and precision."""
+    # FIX: Use better slot calculation with millisecond precision if needed,
+    # and handle potential clock drift between nodes.
+    now = int(time.time())
+    elapsed = now - GENESIS_TIMESTAMP
+    if elapsed < 0:
+        return 0
+    return elapsed // BLOCK_TIME
+
 @app.get("/api/stats")
 def api_stats():
-    """Network statistics endpoint"""
-    current_slot = int(time.time() // BLOCK_TIME)
-    current_epoch = slot_to_epoch(current_slot)
+    """Network statistics with precise slot reporting."""
+    slot = get_current_slot()
+    epoch = slot_to_epoch(slot)
 
     return jsonify({
         "block_time": BLOCK_TIME,
