@@ -457,7 +457,7 @@ def _start_timer():
     g.request_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex
 
 def _normalize_client_ip(raw_value) -> str:
-    """Normalize a peer/header IP string down to the first address token."""
+    """Safely normalize and validate client IP address using ipaddress module."""
     if raw_value is None:
         return ""
     if not isinstance(raw_value, str):
@@ -467,7 +467,12 @@ def _normalize_client_ip(raw_value) -> str:
         return ""
     if "," in value:
         value = value.split(",")[0].strip()
-    return value
+        
+    try:
+        parsed = ipaddress.ip_address(value)
+        return str(parsed)
+    except Exception:
+        return ""
 
 
 def _trusted_proxy_networks():
