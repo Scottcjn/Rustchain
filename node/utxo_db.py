@@ -333,6 +333,21 @@ class UtxoDB:
         finally:
             conn.close()
 
+    def get_utxo_snapshot(self, limit: int = 1000) -> List[dict]:
+        """
+        Get a snapshot of the current UTXO set for synchronization.
+        FIX: Bounded snapshot to prevent memory exhaustion.
+        """
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM utxo_boxes WHERE spent_at IS NULL ORDER BY box_id ASC LIMIT ?",
+                (limit,)
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
     # -- transaction application ---------------------------------------------
 
     def apply_transaction(self, tx: dict, block_height: int,
