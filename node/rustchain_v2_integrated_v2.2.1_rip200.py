@@ -647,6 +647,20 @@ def health_diagnostics():
     except (ImportError, Exception):
         pass
 
+    # Check Network I/O health
+    net_io = {}
+    try:
+        import psutil
+        io_cnt = psutil.net_io_counters()
+        net_io = {
+            "sent_mb": round(io_cnt.bytes_sent / (1024 * 1024), 2),
+            "recv_mb": round(io_cnt.bytes_recv / (1024 * 1024), 2),
+            "errin": io_cnt.errin,
+            "errout": io_cnt.errout
+        }
+    except (ImportError, Exception):
+        pass
+
     # Check TCP health
     tcp_conns = 0
     try:
