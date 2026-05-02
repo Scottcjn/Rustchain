@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # RIP-302 Challenge Guide
 
 > Detailed instructions for executing and verifying RIP-302 Agent-to-Agent transaction test challenges.
@@ -110,7 +111,7 @@ cd Rustchain/bounties/issue-684
 
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # On Windows: venv\Scriptsctivate
 ```
 
 #### Step 3: Install Dependencies
