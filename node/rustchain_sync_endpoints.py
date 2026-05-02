@@ -101,12 +101,14 @@ def register_sync_endpoints(app, db_path, admin_key):
     @app.route("/api/sync/status", methods=["GET"])
     @require_admin
     def sync_status():
-        """Returns the current Merkle root and table hashes."""
+        """Returns the current Merkle root and table hashes securely."""
         now = time.time()
         _cleanup_peer_history(now)
         _cleanup_nonces(now)
         status = sync_manager.get_sync_status()
-        status["peer_sync_history"] = last_sync_times
+        
+        # FIX: Remove internal peer history from public/admin status to prevent network mapping
+        # status["peer_sync_history"] = last_sync_times 
         return jsonify(status)
 
     @app.route("/api/sync/pull", methods=["GET"])
