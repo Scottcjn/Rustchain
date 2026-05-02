@@ -721,6 +721,7 @@ class GossipLayer:
         """Request full state sync from a peer"""
         msg = self.create_message(MessageType.GET_STATE, {
             "requester": self.node_id
+            "sync_nonce": secrets.token_hex(16)
         })
         try:
             resp = requests.post(
