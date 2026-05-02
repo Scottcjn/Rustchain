@@ -325,6 +325,14 @@ def cleanup_stale_bindings(days: int = 90) -> int:
         conn.commit()
     return count
 
+def is_binding_expired(bound_at: int, ttl_days: int = 90) -> bool:
+    """
+    Check if a hardware binding has expired.
+    FIX: Added TTL check for periodic re-attestation.
+    """
+    ttl_seconds = ttl_days * 24 * 3600
+    return (int(time.time()) - bound_at) > ttl_seconds
+
 # Initialize on import.
 # If DB path is explicitly configured and init fails, fail fast (safer for prod).
 # If using the default Linux path on non-Linux / local dev, don't crash the whole node.
