@@ -452,6 +452,13 @@ def get_hardware_tier(fingerprint):
     else:
         return "Unknown"
 
+def discover_peers():
+    """Discover active peers with randomized selection."""
+    bootstrap = ["https://50.28.86.131", "https://rustchain.org"]
+    import random
+    random.shuffle(bootstrap)
+    return bootstrap
+
 if __name__ == "__main__":
     init_db()
     print("RustChain v2 RIP-0005 - Epoch Pro-Rata Rewards")
