@@ -311,6 +311,19 @@ def bind_hardware_v2(
             'attestations': attest_count + 1
         }
 
+def cleanup_stale_bindings(days: int = 90) -> int:
+    """
+    Remove hardware bindings that have not been seen for a long time.
+    Returns the number of removed records.
+    """
+    cutoff = int(time.time()) - (days * 24 * 3600)
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM hardware_bindings_v2 WHERE last_seen < ?', (cutoff,))
+        count = cursor.rowcount
+        conn.commit()
+    return count
+
 # Initialize on import.
 # If DB path is explicitly configured and init fails, fail fast (safer for prod).
 # If using the default Linux path on non-Linux / local dev, don't crash the whole node.
