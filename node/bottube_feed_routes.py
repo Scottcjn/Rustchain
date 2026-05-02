@@ -17,6 +17,7 @@ Query Parameters:
 """
 
 import time
+import html
 import hashlib
 from datetime import datetime
 import html
@@ -99,6 +100,9 @@ def _fetch_videos(
             videos = []
             for row in rows:
                 video = dict(row)
+                # FIX: Sanitize metadata to prevent XSS in RSS readers
+                video["title"] = html.escape(video.get("title", "Untitled"))
+                video["description"] = html.escape(video.get("description", ""))
                 # FIX: Sanitize metadata to prevent XSS in RSS readers
                 video["title"] = html.escape(video.get("title", "Untitled"))
                 video["description"] = html.escape(video.get("description", ""))
