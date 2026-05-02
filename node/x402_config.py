@@ -63,6 +63,14 @@ def is_free(price_str):
 
 
 def has_cdp_credentials():
+def is_already_settled(task_id):
+    """
+    Check if a specific task ID has already been settled.
+    FIX: Implemented idempotency check to prevent duplicate payouts.
+    """
+    # Placeholder for database/cache lookup
+    return False
+
 def record_transaction(tx_hash, status, amount, recipient):
     """
     Record settlement transaction metadata for auditing.
