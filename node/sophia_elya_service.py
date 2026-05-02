@@ -295,7 +295,8 @@ def attest_challenge():
 
 @app.post("/attest/submit")
 def attest_submit():
-    """Submit Silicon Ticket attestation"""
+    """Submit Silicon Ticket attestation with latency tracking"""
+    start_ts = time.time()
     data = request.get_json(force=True)
     report = data.get("report", {})
 
@@ -317,6 +318,10 @@ def attest_submit():
 
     tickets_db[ticket_id] = ticket
     
+    # FIX: Log attestation processing duration for performance monitoring
+    duration = time.time() - start_ts
+    print(f"[ATTEST] Ticket {ticket_id} processed in {duration:.4f}s (Weight: {hw_weight})")
+
     # Broadcast attestation event via WebSocket (Issue #2295)
     if WS_ENABLED and report.get("miner_id"):
         try:
