@@ -109,6 +109,10 @@ class PayoutWorker:
 
                 if tx_hash:
                     # Mark as completed
+                    now = int(time.time())
+                    # FIX: Calculate processing duration to identify network/node latency
+                    duration = now - withdrawal.get('created_at', now)
+                    
                     with sqlite3.connect(self.db_path) as conn:
                         conn.execute("""
                             UPDATE withdrawals
@@ -117,9 +121,9 @@ class PayoutWorker:
                                 tx_hash = ?,
                                 retry_count = ?
                             WHERE withdrawal_id = ?
-                        """, (int(time.time()), tx_hash, retries, withdrawal_id))
+                        """, (now, tx_hash, retries, withdrawal_id))
 
-                    logger.info(f"[OK] Withdrawal {withdrawal_id} completed: {tx_hash}")
+                    logger.info(f"[OK] Withdrawal {withdrawal_id} completed in {duration}s: {tx_hash}")
                     self.stats['processed'] += 1
                     self.stats['total_rtc'] += withdrawal['amount']
                     return True
