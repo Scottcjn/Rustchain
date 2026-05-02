@@ -69,6 +69,16 @@ def cleanup_expired_tickets():
     if to_del:
         print(f"[CLEANUP] Purged {len(to_del)} expired tickets")
 
+def vacuum_db():
+    """Compact database to reclaim space."""
+    try:
+        start = time.time()
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("VACUUM")
+        print(f"[MAINT] Database vacuumed in {time.time()-start:.2f}s")
+    except Exception as e:
+        print(f"[MAINT] Vacuum failed: {e}")
+
 # Hardware multipliers
 HARDWARE_WEIGHTS = {
     "PowerPC": {"G4": 2.5, "G5": 2.0},
