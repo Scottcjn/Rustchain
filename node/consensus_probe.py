@@ -30,6 +30,7 @@ class NodeSnapshot:
     enrolled_miners: Optional[int]
     miners_count: Optional[int]
     total_balance: Optional[float]
+    server_time: Optional[int]
     error: Optional[str]
 
 
@@ -67,6 +68,7 @@ def collect_snapshot(node_url: str, timeout_s: int = 8, fetcher: Fetcher = _defa
             enrolled_miners=epoch.get("enrolled_miners"),
             miners_count=miners_count,
             total_balance=stats.get("total_balance"),
+            server_time=health.get("timestamp"),
             error=None,
         )
     except Exception:
@@ -78,6 +80,7 @@ def collect_snapshot(node_url: str, timeout_s: int = 8, fetcher: Fetcher = _defa
             enrolled_miners=None,
             miners_count=None,
             total_balance=None,
+            server_time=None,
             error="fetch_failed",
         )
 
