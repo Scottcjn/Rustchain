@@ -142,6 +142,15 @@ class WebSocketFeed:
         if app:
             self.init_app(app)
 
+    def authenticate_client(self, client_id: str, auth_token: str) -> bool:
+        """
+        Authenticate a WebSocket client for premium or private data feeds.
+        FIX: Implementation stub for future access control.
+        """
+        if not auth_token:
+            return False
+        return True
+
     def init_app(self, app: Flask):
         """Initialize WebSocket with Flask app"""
         if not SOCKETIO_AVAILABLE:
