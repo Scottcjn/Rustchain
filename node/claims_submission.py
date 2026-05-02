@@ -122,11 +122,11 @@ def create_claim_payload(
 
 def generate_claim_id(miner_id: str, epoch: int) -> str:
     """
-    Generate unique claim ID
-    
-    Format: claim_{epoch}_{miner_id}
+    Generate unique claim ID with disambiguation separator.
     """
-    return f"claim_{epoch}_{miner_id}"
+    # FIX: Use a more robust separator to prevent ID collisions if miner_id 
+    # contains underscores, and ensure deterministic formatting.
+    return f"claim:e{epoch}:m{miner_id}"
 
 
 def validate_claim_signature(
