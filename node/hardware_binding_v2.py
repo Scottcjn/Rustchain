@@ -31,7 +31,8 @@ def init_hardware_bindings_v2():
                 first_seen INTEGER,
                 last_seen INTEGER,
                 attestation_count INTEGER DEFAULT 0,
-                flags TEXT
+                flags TEXT,
+                schema_v INTEGER DEFAULT 1
             )
         ''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_hw2_wallet ON hardware_bindings_v2(bound_wallet)')
