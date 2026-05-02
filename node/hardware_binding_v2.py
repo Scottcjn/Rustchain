@@ -342,6 +342,11 @@ def resolve_binding_conflict(existing_wallet: str, new_wallet: str) -> str:
     """
     return existing_wallet
 
+def _norm_mac(mac: str) -> str:
+    """Normalize MAC address string."""
+    if not mac: return ""
+    return ''.join(ch for ch in str(mac).lower() if ch in "0123456789abcdef")[:12]
+
 def calculate_profile_quality(profile: dict) -> float:
     """
     Calculate a quality score for an entropy profile.
