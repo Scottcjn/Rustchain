@@ -319,7 +319,7 @@ def attest_challenge():
 def attest_submit():
     """Submit Silicon Ticket attestation with latency tracking"""
     start_ts = time.time()
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True) or {}
     report = data.get("report", {})
 
     # Basic validation
