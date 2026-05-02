@@ -257,26 +257,41 @@ def update_claims_settled(
     batch_id: str
 ) -> int:
     """
-    Update multiple claims to 'settled' status
-    
-    Returns:
-        Number of claims updated
+    Update multiple claims to 'settled' status atomically.
+    FIX: Use a single transaction for bulk updates to prevent partial state corruption.
     """
+    if not claim_ids:
+        return 0
+        
     updated = 0
+    now = int(time.time())
     
-    for claim_id in claim_ids:
-        success = update_claim_status(
-            db_path=db_path,
-            claim_id=claim_id,
-            status="settled",
-            details={
-                "transaction_hash": transaction_hash,
-                "settlement_batch": batch_id
-            }
-        )
-        if success:
-            updated += 1
-    
+    try:
+        with sqlite3.connect(db_path) as conn:
+            # Use BEGIN IMMEDIATE to lock the database for the entire batch
+            conn.execute("BEGIN IMMEDIATE")
+            cursor = conn.cursor()
+            
+            for claim_id in claim_ids:
+                # FIX: Check current status to prevent race conditions during bulk update
+                res = cursor.execute("""
+                    UPDATE claims
+                    SET status = 'settled',
+                        settled_at = ?,
+                        updated_at = ?,
+                        settlement_tx_hash = ?,
+                        settlement_batch = ?
+                    WHERE claim_id = ? AND status = 'approved'
+                """, (now, now, transaction_hash, batch_id, claim_id))
+                
+                if res.rowcount == 1:
+                    updated += 1
+            
+            conn.commit()
+    except Exception as e:
+        print(f"[SETTLEMENT] Bulk update failed: {e}")
+        # Rollback happens automatically with context manager
+        
     return updated
 
 
