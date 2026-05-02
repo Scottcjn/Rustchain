@@ -159,22 +159,15 @@ def verify_warthog_proof(proof, miner_id) -> Tuple[bool, float, str]:
 def record_warthog_proof(conn, miner_id, epoch, proof, verified, bonus_tier, reason):
     """
     Write Warthog proof record to database.
-
-    Args:
-        conn: sqlite3 connection
-        miner_id: RustChain miner identifier
-        epoch: Current epoch number
-        proof: Raw proof dict
-        verified: Boolean result
-        bonus_tier: Float bonus multiplier
-        reason: Verification reason string
+    FIX: Use INSERT OR IGNORE to prevent overwriting legitimate proofs (First-Wins).
     """
     node = proof.get("node") or {}
     pool = proof.get("pool") or {}
 
     try:
+        # FIX: Changed from INSERT OR REPLACE to INSERT OR IGNORE to protect established proofs
         conn.execute("""
-            INSERT OR REPLACE INTO warthog_mining_proofs
+            INSERT OR IGNORE INTO warthog_mining_proofs
             (miner, epoch, proof_type, wart_address, wart_node_height,
              wart_balance, pool_url, pool_hashrate, bonus_tier,
              verified, verified_reason, submitted_at)
