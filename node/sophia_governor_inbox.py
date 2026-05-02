@@ -95,7 +95,13 @@ def init_sophia_governor_inbox_schema(db_path: str | None = None) -> None:
     if status and status not in VALID_NEXT_STATES.get(CURRENT_STATUS, set()):
         raise ValueError(f"invalid_transition:{CURRENT_STATUS}->{status}")
 
-    with sqlite3.connect(db_path or DB_PATH) as conn:
+    # FIX: Validate assigned_agent format to prevent junk data or injection
+    if assigned_agent:
+        s_agent = str(assigned_agent).strip()
+        if not s_agent.startswith("sophia-") and not s_agent.startswith("elya-"):
+            # Internal convention: all automated agents must follow this prefix
+            raise ValueError(f"invalid_agent_format:{s_agent}")
+        assigned_agent = s_agent
         conn.executescript(INBOX_SCHEMA)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(sophia_governor_inbox)")}
         if "recommended_resolution_json" not in columns:
