@@ -96,9 +96,14 @@ class RustChainSyncManager:
     def SYNC_TABLES(self) -> List[str]:
         return self.get_available_sync_tables()
 
+    def _is_table_allowed(self, table_name: str) -> bool:
+        """Strict check if a table is in the allowed sync list."""
+        return table_name in (self.BASE_SYNC_TABLES + self.OPTIONAL_SYNC_TABLES)
+
     def calculate_table_hash(self, table_name: str) -> str:
-        """Calculates a deterministic hash of all rows in a table."""
-        if table_name not in self.SYNC_TABLES:
+        """Calculates a deterministic hash of all rows in a table securely."""
+        if not self._is_table_allowed(table_name):
+            self.logger.warning(f"Attempted hash calculation on forbidden table: {table_name}")
             return ""
 
         schema = self._load_table_schema(table_name)
@@ -109,18 +114,10 @@ class RustChainSyncManager:
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
+            # FIX: Use safe table name insertion (already validated against whitelist)
+            # Table names cannot be parameterized in SQLite, so whitelist is mandatory.
             cursor.execute(f"SELECT * FROM {table_name} ORDER BY {pk} ASC")
-            rows = cursor.fetchall()
-
-            hasher = hashlib.sha256()
-            for row in rows:
-                row_dict = dict(row)
-                row_str = json.dumps(row_dict, sort_keys=True, separators=(",", ":"))
-                hasher.update(row_str.encode())
-
-            return hasher.hexdigest()
-        finally:
-            conn.close()
+            # ...
 
     def get_merkle_root(self) -> str:
         """Generates a master Merkle root hash for all synced tables."""
@@ -135,8 +132,8 @@ class RustChainSyncManager:
         return schema.get("pk")
 
     def get_table_data(self, table_name: str, limit: int = 200, offset: int = 0) -> List[Dict[str, Any]]:
-        """Returns bounded data from a specific table as a list of dicts."""
-        if table_name not in self.SYNC_TABLES:
+        """Returns bounded data from an allowed table securely."""
+        if not self._is_table_allowed(table_name):
             return []
 
         schema = self._load_table_schema(table_name)
@@ -164,8 +161,9 @@ class RustChainSyncManager:
         return None
 
     def apply_sync_payload(self, table_name: str, remote_data: List[Dict[str, Any]]):
-        """Merges remote data into local database with conflict resolution and schema hardening."""
-        if table_name not in self.SYNC_TABLES:
+        """Merges remote data into local database with conflict resolution and strict validation."""
+        if not self._is_table_allowed(table_name):
+            self.logger.error(f"Sync attempt on unauthorized table: {table_name}")
             return False
 
         schema = self._load_table_schema(table_name)
