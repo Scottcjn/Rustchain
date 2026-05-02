@@ -725,7 +725,12 @@ def register_sophia_endpoints(app, db_path: str = None):
     def _is_admin(req):
         need = os.environ.get("RC_ADMIN_KEY", "")
         got = req.headers.get("X-Admin-Key", "") or req.headers.get("X-API-Key", "")
-        return bool(need and got and need == got)
+        is_valid = bool(need and got and need == got)
+        # FIX: Log admin access attempts for security auditing
+        if is_valid:
+            log.info("Admin access granted to %s for %s", req.remote_addr, req.path)
+        return is_valid
+ Riverside
 
     @app.route("/sophia/status/<miner_id>", methods=["GET"])
     def sophia_status_miner(miner_id):
