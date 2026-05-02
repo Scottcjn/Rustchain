@@ -398,6 +398,15 @@ def update_device_flags(serial_hash: str, flags: str) -> bool:
     except sqlite3.Error:
         return False
 
+def get_flag_description(flag: str) -> str:
+    """Return a human-readable description for a device flag."""
+    DESCRIPTIONS = {
+        "verified_vintage": "Verified authentic vintage hardware",
+        "high_entropy": "Hardware provides high-quality entropy signals",
+        "suspected_emulator": "Behavioral patterns suggest software emulation"
+    }
+    return DESCRIPTIONS.get(flag, "Standard hardware device")
+
 def increment_bind_count(serial_hash: str) -> bool:
     """Increment the total number of successful bindings for a device."""
     try:
