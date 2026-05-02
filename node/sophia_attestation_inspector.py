@@ -39,9 +39,11 @@ OLLAMA_ENDPOINTS = [
 
 # Dual-model strategy on POWER8:
 #   - Regular inspections: elyan-sophia:7b (fast, 1-2s, batch-friendly)
-#   - Deep analysis on SUSPICIOUS: GPT-OSS 120B MXFP4 (thorough, 30-60s)
+#   - Deep analysis on SUSPICIOUS: elyan-sophia:34b (thorough, 10-20s)
+#   - Expert review on CRITICAL: GPT-OSS 120B (ultra-thorough, 60s)
 MODEL = os.getenv("SOPHIACORE_MODEL", "elyan-sophia:7b-q4_K_M")
-MODEL_DEEP = os.getenv("SOPHIACORE_MODEL_DEEP", "gpt-oss-120b")  # For SUSPICIOUS escalation
+MODEL_DEEP = os.getenv("SOPHIACORE_MODEL_DEEP", "elyan-sophia:34b-q4_K_M")
+MODEL_ULTRA = os.getenv("SOPHIACORE_MODEL_ULTRA", "gpt-oss-120b")
 POWER8_SERVER_URL = os.getenv("POWER8_LLM_URL", "http://100.75.100.89:8080")
 
 DB_PATH = os.getenv("RUSTCHAIN_DB_PATH", "/root/rustchain/rustchain_v2.db")
