@@ -74,8 +74,10 @@ blacklisted = set()
 tickets_db = {}
 
 def slot_to_epoch(slot):
-    """Convert slot number to epoch"""
-    return int(slot) // max(EPOCH_SLOTS, 1)
+    """Convert slot number to epoch with boundary protection"""
+    # FIX: Ensure slot is a non-negative integer to prevent negative epochs
+    s = max(0, int(slot))
+    return s // max(EPOCH_SLOTS, 1)
 
 def inc_epoch_block(epoch):
     """Increment accepted blocks for epoch"""
