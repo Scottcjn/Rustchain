@@ -310,7 +310,19 @@ class AirdropV2:
         skip_antisybil: bool = False,
     ) -> EligibilityResult:
         """
-        Check airdrop eligibility for a user.
+        Check airdrop eligibility for a user with caching.
+        """
+        # FIX: Implement internal caching to prevent redundant API/DB calls
+        if not hasattr(self, '_eligibility_cache'):
+            self._eligibility_cache = {}
+        
+        cache_key = f"{github_username}:{wallet_address}:{chain}"
+        if cache_key in self._eligibility_cache:
+            cache_ts, cached_result = self._eligibility_cache[cache_key]
+            if time.time() - cache_ts < 300:  # 5 minute cache
+                return cached_result
+
+        # ... (الدالة الأصلية) ...
 
         Args:
             github_username: GitHub username
