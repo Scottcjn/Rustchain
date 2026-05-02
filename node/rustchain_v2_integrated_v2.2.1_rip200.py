@@ -682,6 +682,7 @@ def health_diagnostics():
         "disk": disk_stats,
         "tcp_connections": tcp_conns,
         "open_files": open_files,
+        "thread_count": __import__("threading").active_count(),
         "mempool": {
             "pending_inputs": mempool_count
         },
