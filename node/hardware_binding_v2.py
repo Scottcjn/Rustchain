@@ -196,6 +196,12 @@ def bind_hardware_v2(
     macs_str = ','.join(sorted(macs)) if macs else ''
     now = int(time.time())
     
+    # FIX: Implement per-hardware rate limiting to prevent automated fingerprint probing
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute('SELECT last_seen FROM hardware_bindings_v2 WHERE serial_hash = ?', (serial_hash,)).fetchone()
+        if row and row[0] and (now - row[0] < 300):
+            return False, 'rate_limited', {'error': 'Hardware attestation too frequent', 'retry_after': 300 - (now - row[0])}
+    
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         
