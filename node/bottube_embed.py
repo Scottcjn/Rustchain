@@ -789,11 +789,9 @@ def _get_related_videos(video_id: str, limit: int = 5) -> List[Dict[str, Any]]:
 
 
 def _get_base_url() -> str:
-    """Get the base URL from request."""
-    base_url = request.host_url.rstrip("/")
-    if request.headers.get("X-Forwarded-Host"):
-        base_url = f"https://{request.headers['X-Forwarded-Host']}"
-    return base_url
+    """Get the base URL securely from request."""
+    # FIX: Use configured host_url instead of untrusted X-Forwarded-Host
+    return request.host_url.rstrip("/")
 
 
 # ============================================================================
@@ -869,16 +867,21 @@ def oembed():
             "error": "Unsupported format. Only JSON is supported."
         }), 400
     
-    # Extract video ID from URL
+    # Extract video ID from URL securely
     video_id = None
-    if "/watch/" in url:
-        video_id = url.split("/watch/")[-1].split("?")[0].split("/")[0]
-    elif "/embed/" in url:
-        video_id = url.split("/embed/")[-1].split("?")[0].split("/")[0]
+    import re
+    # FIX: Use regex to strictly extract alphanumeric video IDs
+    watch_match = re.search(r"/watch/([a-zA-Z0-9_-]+)", url)
+    embed_match = re.search(r"/embed/([a-zA-Z0-9_-]+)", url)
+    
+    if watch_match:
+        video_id = watch_match.group(1)
+    elif embed_match:
+        video_id = embed_match.group(1)
     
     if not video_id:
         return jsonify({
-            "error": "Invalid URL. Must be a BoTTube video URL."
+            "error": "Invalid URL. Must be a valid BoTTube video URL."
         }), 400
     
     # Get video data
