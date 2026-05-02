@@ -543,17 +543,29 @@ class BlockValidator:
             if block.height != max_height + 1:
                 return False, f"Invalid height: expected {max_height + 1}, got {block.height}"
 
-        # 4. Check prev hash
+        # 4. Check prev hash and timestamp sequence
         if block.height > 0:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT block_hash FROM blocks WHERE height = ?",
+                    "SELECT block_hash, timestamp FROM blocks WHERE height = ?",
                     (block.height - 1,)
                 )
                 result = cursor.fetchone()
-                if result and result[0] != block.header.prev_hash:
-                    return False, f"Invalid prev_hash"
+                if result:
+                    prev_hash, prev_ts = result
+                    if prev_hash != block.header.prev_hash:
+                        return False, f"Invalid prev_hash"
+                    
+                    # FIX: Enforce monotonic time sequence
+                    if block.header.timestamp <= prev_ts:
+                        return False, f"Block timestamp must be greater than previous block"
+        
+        # FIX: Prevent future blocks (2 hour tolerance)
+        # Headers are in milliseconds, time.time() is in seconds
+        now_ms = int(time.time() * 1000)
+        if block.header.timestamp > now_ms + (2 * 3600 * 1000):
+            return False, "Block timestamp too far in the future"
 
         # 5. Validate producer signature (if we have pubkey)
         if producer_pubkey:
