@@ -181,12 +181,15 @@ class RustChainSyncManager:
         return True
 
     def set_bandwidth_limit(self, max_kbps: int):
-        """
-        Set a maximum bandwidth limit for synchronization operations.
-        FIX: Added architectural stub for network resource management.
-        """
-        # For now, we just store the limit
+        # ... (الدالة الموجودة) ...
         self.max_kbps = max_kbps
+
+    def blacklist_peer(self, peer_url: str, reason: str):
+        """
+        Blacklist a peer node for malicious behavior or excessive errors.
+        FIX: Added architectural stub for peer reputation management.
+        """
+        self.logger.warning(f"BLACKLIST: {peer_url} - Reason: {reason}")
 
     def _balance_value_for_row(self, row: Dict[str, Any]) -> Optional[int]:
         for candidate in ("amount_i64", "balance_i64", "balance_urtc", "amount_rtc"):
