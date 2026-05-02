@@ -175,7 +175,14 @@ def utxo_mempool():
 
 @utxo_bp.route('/stats')
 def utxo_stats():
-    """UTXO set statistics."""
+    """UTXO set statistics (Authenticated)."""
+    # FIX: Require admin authentication to view detailed UTXO statistics
+    # to prevent data leakage and network mapping.
+    admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
+    expected_admin_key = os.environ.get('RC_ADMIN_KEY', '')
+    if not expected_admin_key or admin_key != expected_admin_key:
+        return jsonify({'error': 'unauthorized'}), 401
+
     conn = _utxo_db._conn()
     try:
         unspent = conn.execute(
