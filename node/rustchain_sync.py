@@ -258,8 +258,9 @@ class RustChainSyncManager:
 
             conn.commit()
             return True
-        except Exception as e:
-            self.logger.error(f"Sync error on {table_name}: {e}")
+            # FIX: More detailed logging for sync failures to aid diagnostics
+            self.logger.error(f"Sync error on table '{table_name}': {e}")
+            self.logger.debug(f"Failed payload size: {len(remote_data)} rows")
             conn.rollback()
             return False
         finally:
