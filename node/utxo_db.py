@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS utxo_boxes (
     created_at INTEGER NOT NULL,
     spent_at INTEGER,
     spent_by_tx TEXT,
+    ric TEXT,  -- Record Integrity Checksum
     UNIQUE(transaction_id, output_index)
 );
 
@@ -196,12 +197,16 @@ class UtxoDB:
         if own:
             conn = self._conn()
         try:
+            # FIX: Compute record integrity checksum (RIC) to detect tampering or corruption
+            record_payload = f"{box['box_id']}:{box['value_nrtc']}:{box['owner_address']}"
+            ric = hashlib.sha256(record_payload.encode()).hexdigest()[:16]
+
             conn.execute(
                 """INSERT INTO utxo_boxes
                    (box_id, value_nrtc, proposition, owner_address,
                     creation_height, transaction_id, output_index,
-                    tokens_json, registers_json, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    tokens_json, registers_json, created_at, ric)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     box['box_id'],
                     box['value_nrtc'],
@@ -213,6 +218,7 @@ class UtxoDB:
                     box.get('tokens_json', '[]'),
                     box.get('registers_json', '{}'),
                     int(time.time()),
+                    ric
                 ),
             )
             if own:
