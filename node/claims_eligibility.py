@@ -514,12 +514,14 @@ def check_claim_eligibility(
     
     # Get fleet status (RIP-0201)
     if HAVE_FLEET_IMMUNE:
-        fleet_status = get_fleet_status_for_miner(db_path, miner_id, current_ts)
+                fleet_status = get_fleet_status_for_miner(db_path, miner_id, current_ts)
         result["fleet_status"] = fleet_status
         
         # Check for fleet penalties
+        # FIX: If fleet is flagged, explicitly mark as ineligible to protect the ecosystem
         if fleet_status.get("penalty_applied") or fleet_status.get("fleet_flagged"):
-            result["reason"] = "fleet_penalty"
+            result["eligible"] = False
+            result["reason"] = "fleet_violation_detected"
             result["checks"]["fingerprint_passed"] = False
             return result
     else:
