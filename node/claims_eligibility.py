@@ -105,19 +105,17 @@ class EpochNotSettledError(ClaimsEligibilityError):
 
 def validate_miner_id_format(miner_id: str) -> bool:
     """
-    Validate miner ID format
-    
-    Valid miner IDs:
-    - Non-empty string
-    - Max 128 characters
-    - Alphanumeric, hyphens, underscores only
+    Validate miner ID format.
+    FIX: Hardened regex and length constraints to prevent injection and bloat.
     """
     if not miner_id or not isinstance(miner_id, str):
         return False
-    if len(miner_id) > 128:
+    # Enforce strict length and character set to prevent buffer or SQL probing
+    if len(miner_id) < 4 or len(miner_id) > 64:
         return False
     import re
-    return bool(re.match(r'^[a-zA-Z0-9_-]+$', miner_id))
+    # Allow only lowercase alphanumeric and specific separators
+    return bool(re.fullmatch(r'^[a-z0-9_\-]+$', miner_id))
 
 
 def get_miner_attestation(
