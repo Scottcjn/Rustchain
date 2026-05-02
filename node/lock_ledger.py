@@ -275,21 +275,14 @@ def forfeit_lock(
     forfeited_by: str = "admin"
 ) -> Tuple[bool, Dict[str, Any]]:
     """
-    Forfeit a lock (penalty/slashing).
-    Assets are not returned to owner.
-    
-    Args:
-        db_conn: Database connection
-        lock_id: Lock ledger entry ID
-        reason: Reason for forfeiture
-        forfeited_by: Entity forfeiting the lock
-    
-    Returns:
-        (success, result_dict)
+    Forfeit a lock (penalty/slashing) securely.
     """
     cursor = db_conn.cursor()
     now = int(time.time())
     
+    # FIX: Sanitize reason to prevent log/data pollution
+    safe_reason = str(reason or "admin_forfeit")[:255].strip()
+
     # Find the lock
     row = cursor.execute("""
         SELECT id, miner_id, amount_i64, status
@@ -303,12 +296,12 @@ def forfeit_lock(
     lid, miner_id, amount_i64, status = row
     
     if status != "locked":
-        return False, {
-            "error": f"Lock already {status}",
-            "hint": "Only locked entries can be forfeited"
-        }
+        return False, {"error": f"Lock already {status}"}
     
     try:
+        # Use explicit transaction for atomicity
+        db_conn.execute("BEGIN IMMEDIATE")
+        
         # Update lock status
         cursor.execute("""
             UPDATE lock_ledger
@@ -318,8 +311,12 @@ def forfeit_lock(
             WHERE id = ?
         """, (now, forfeited_by, lock_id))
         
-        # Note: Forfeited assets remain in the protocol treasury
-        # They are not credited back to the miner
+        # FIX: Log the forfeiture in the protocol ledger for auditability
+        # This ensures the 'disappearance' of these micro-units is recorded.
+        cursor.execute("""
+            INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason)
+            VALUES (?, ?, ?, ?, ?)
+        """, (now, 0, miner_id, -amount_i64, f"slash_lock_{lock_id}:{safe_reason}"))
         
         db_conn.commit()
         
@@ -328,10 +325,9 @@ def forfeit_lock(
             "lock_id": lock_id,
             "miner_id": miner_id,
             "amount_rtc": amount_i64 / LOCK_UNIT,
-            "reason": reason,
+            "reason": safe_reason,
             "forfeited_by": forfeited_by,
-            "forfeited_at": now,
-            "note": "Forfeited assets are retained by protocol"
+            "forfeited_at": now
         }
         
     except sqlite3.Error as e:
