@@ -17,6 +17,8 @@ Query Parameters:
 """
 
 import time
+import hashlib
+from datetime import datetime
 import html
 from typing import Dict, Any, List, Optional, Tuple
 from flask import Blueprint, request, Response, jsonify, current_app
@@ -241,14 +243,17 @@ def rss_feed():
             limit=limit
         )
         
-        return Response(
+        response = Response(
             rss_content,
             mimetype="application/rss+xml",
             headers={
-                "Cache-Control": "public, max-age=300",
+                "Cache-Control": "public, max-age=600",
                 "X-Content-Type-Options": "nosniff",
+                "ETag": hashlib.sha256(rss_content).hexdigest(),
             }
         )
+        response.last_modified = datetime.fromtimestamp(videos[0]["created_at"]) if videos else datetime.now()
+        return response
         
     except ValueError as e:
         return jsonify({"error": "Invalid parameter", "message": str(e)}), 400
@@ -299,14 +304,17 @@ def atom_feed():
             limit=limit
         )
         
-        return Response(
-            atom_content,
-            mimetype="application/atom+xml",
+        response = Response(
+            rss_content,
+            mimetype="application/rss+xml",
             headers={
-                "Cache-Control": "public, max-age=300",
+                "Cache-Control": "public, max-age=600",
                 "X-Content-Type-Options": "nosniff",
+                "ETag": hashlib.sha256(rss_content).hexdigest(),
             }
         )
+        response.last_modified = datetime.fromtimestamp(videos[0]["created_at"]) if videos else datetime.now()
+        return response
         
     except ValueError as e:
         return jsonify({"error": "Invalid parameter", "message": str(e)}), 400
@@ -360,37 +368,28 @@ def feed_index():
             title=feed_title,
             limit=limit
         )
-        return Response(rss_content, mimetype="application/rss+xml")
-    
-    elif "application/atom+xml" in accept_header:
-        feed_title = f"BoTTube Videos{' - ' + agent if agent else ''}"
-        atom_content = create_atom_feed_from_videos(
-            videos=videos,
-            base_url=base_url,
-            title=feed_title,
-            limit=limit
+        response = Response(
+            rss_content,
+            mimetype="application/rss+xml",
+            headers={
+                "Cache-Control": "public, max-age=600",
+                "X-Content-Type-Options": "nosniff",
+                "ETag": hashlib.sha256(rss_content).hexdigest(),
+            }
         )
-        return Response(atom_content, mimetype="application/atom+xml")
-    
-    # Default: JSON feed with discovery links
-    response_data = {
-        "version": "https://jsonfeed.org/version/1.1",
-        "title": f"BoTTube Videos{' - ' + agent if agent else ''}",
-        "home_page_url": base_url,
-        "feed_url": f"{base_url}/api/feed",
-        "description": "Latest videos from BoTTube",
-        "items": [],
-        "_links": {
-            "rss": f"{base_url}/api/feed/rss",
-            "atom": f"{base_url}/api/feed/atom",
-        }
-    }
-    
-    if next_cursor:
-        response_data["next_page_url"] = f"{base_url}/api/feed?cursor={next_cursor}"
-    
-    for video in videos:
-        video_id = video.get("id", "")
+        response.last_modified = datetime.fromtimestamp(videos[0]["created_at"]) if videos else datetime.now()
+        return response
+        response = Response(
+            rss_content,
+            mimetype="application/rss+xml",
+            headers={
+                "Cache-Control": "public, max-age=600",
+                "X-Content-Type-Options": "nosniff",
+                "ETag": hashlib.sha256(rss_content).hexdigest(),
+            }
+        )
+        response.last_modified = datetime.fromtimestamp(videos[0]["created_at"]) if videos else datetime.now()
+        return response
         item = {
             "id": video_id,
             "url": f"{base_url}/video/{video_id}",
