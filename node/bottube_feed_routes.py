@@ -217,10 +217,10 @@ def rss_feed():
         # Fetch videos
         videos, next_cursor = _fetch_videos(limit=limit, agent=agent, cursor=cursor)
         
-        # Get base URL
+        # Get base URL securely
+        # FIX: Do not trust X-Forwarded-Host header from untrusted clients
+        # to prevent Link Injection and Phishing attacks.
         base_url = request.host_url.rstrip("/")
-        if request.headers.get("X-Forwarded-Host"):
-            base_url = f"https://{request.headers['X-Forwarded-Host']}"
         
         # Build RSS feed
         feed_title = "BoTTube Videos"
@@ -273,10 +273,8 @@ def atom_feed():
         # Fetch videos
         videos, next_cursor = _fetch_videos(limit=limit, agent=agent, cursor=cursor)
         
-        # Get base URL
+        # Get base URL securely
         base_url = request.host_url.rstrip("/")
-        if request.headers.get("X-Forwarded-Host"):
-            base_url = f"https://{request.headers['X-Forwarded-Host']}"
         
         # Build Atom feed
         feed_title = "BoTTube Videos"
@@ -340,10 +338,8 @@ def feed_index():
     # Fetch videos
     videos, next_cursor = _fetch_videos(limit=limit, agent=agent, cursor=cursor)
     
-    # Get base URL
+    # Get base URL securely
     base_url = request.host_url.rstrip("/")
-    if request.headers.get("X-Forwarded-Host"):
-        base_url = f"https://{request.headers['X-Forwarded-Host']}"
     
     # Auto-detect format
     if "application/rss+xml" in accept_header:
