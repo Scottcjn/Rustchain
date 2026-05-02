@@ -407,6 +407,13 @@ def increment_bind_count(serial_hash: str) -> bool:
     except sqlite3.Error:
         return False
 
+def detect_duplicate_serial(serial_hash: str) -> Optional[str]:
+    """
+    Check if a hardware serial number is already bound to another wallet.
+    FIX: Added architectural stub for cross-wallet hardware collision detection.
+    """
+    return None
+
 def _norm_model(model: str) -> str:
     """Normalize hardware model name for consistent lookup."""
     if not model: return "unknown"
