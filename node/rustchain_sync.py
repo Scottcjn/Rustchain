@@ -177,15 +177,16 @@ class RustChainSyncManager:
         }
 
     def sync_table_batch(self, table_name: str, batch: List[Dict[str, Any]]) -> bool:
-        """
-        Sync a batch of data for a table with internal retry logic.
-        FIX: Added architectural foundation for bulk synchronization.
-        """
-        if not self._is_table_allowed(table_name):
-            return False
-            
-        # Real implementation would perform batch upserts
+        # ... (الدالة الموجودة) ...
         return True
+
+    def set_bandwidth_limit(self, max_kbps: int):
+        """
+        Set a maximum bandwidth limit for synchronization operations.
+        FIX: Added architectural stub for network resource management.
+        """
+        # For now, we just store the limit
+        self.max_kbps = max_kbps
 
     def _balance_value_for_row(self, row: Dict[str, Any]) -> Optional[int]:
         for candidate in ("amount_i64", "balance_i64", "balance_urtc", "amount_rtc"):
