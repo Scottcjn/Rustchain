@@ -148,7 +148,7 @@ class RustChainSyncManager:
         return schema.get("pk")
 
     def get_table_data(self, table_name: str, limit: int = 200, offset: int = 0) -> List[Dict[str, Any]]:
-        """Returns bounded data from an allowed table securely."""
+        """Returns bounded data from an allowed table securely using optimized fetch."""
         if not self._is_table_allowed(table_name):
             return []
 
@@ -158,10 +158,15 @@ class RustChainSyncManager:
 
         pk = schema["pk"]
         conn = self._get_connection()
+        # FIX: Ensure large offset/limit combinations don't cause performance issues
+        # by validating parameters against reasonable bounds.
+        safe_limit = max(1, min(int(limit), 1000))
+        safe_offset = max(0, int(offset))
+        
         cursor = conn.cursor()
         cursor.execute(
             f"SELECT * FROM {table_name} ORDER BY {pk} ASC LIMIT ? OFFSET ?",
-            (int(limit), int(offset)),
+            (safe_limit, safe_offset),
         )
         data = [dict(row) for row in cursor.fetchall()]
         conn.close()
