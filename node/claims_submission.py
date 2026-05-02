@@ -491,9 +491,18 @@ def submit_claim(
     # Verify signature (unless skipped for testing)
     if not skip_signature_verify:
         timestamp = current_ts
-        payload = create_claim_payload(miner_id, epoch, wallet_address, timestamp)
+        # FIX: Include chain_id in claim payload to prevent cross-chain replay attacks
+        chain_id = os.environ.get("RC_CHAIN_ID", "rustchain-mainnet-v2")
+        payload = {
+            "miner_id": miner_id,
+            "epoch": epoch,
+            "wallet_address": wallet_address,
+            "timestamp": timestamp,
+            "chain_id": chain_id
+        }
+        payload_str = json.dumps(payload, sort_keys=True, separators=(',', ':'))
         
-        valid, error = validate_claim_signature(payload, signature, public_key)
+        valid, error = validate_claim_signature(payload_str, signature, public_key)
         if not valid:
             result["error"] = f"invalid_signature: {error}"
             return result
