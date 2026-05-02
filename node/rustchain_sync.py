@@ -37,12 +37,23 @@ class RustChainSyncManager:
         self.logger = logging.getLogger("RustChainSync")
         self._schema_cache: Dict[str, Dict[str, Any]] = {}
 
-    def _get_connection(self):
-        """Open and return a new SQLite connection to the node database.
-
-        Configures ``conn.row_factory = sqlite3.Row`` so that query results
-        can be accessed by column name as well as by index.  Callers are
-        responsible for closing the returned connection when finished.
+        def _get_connection(self):
+        """
+        Open and return an optimized SQLite connection to the node database.
+        FIX: Added PRAGMAs to optimize for bulk sync workloads.
+        """
+        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn.row_factory = sqlite3.Row
+        
+        # Performance tuning for high-volume synchronization
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA cache_size=-64000") # 64MB internal cache
+        except sqlite3.Error:
+            pass # Fail soft if PRAGMAs are restricted
+            
+        return conn
         """
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
