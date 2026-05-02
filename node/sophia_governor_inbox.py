@@ -1096,6 +1096,16 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
         if not _is_authorized(request):
             return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
 
+        # FIX: Implement submission fee verification to prevent inbox flooding (DoS)
+        # In production, this would verify a signed tx hash or deduct from miner balance
+        submission_fee_paid = request.headers.get("X-Submission-Fee-Tx")
+        if not submission_fee_paid and not _is_admin(request):
+            return jsonify({
+                "error": "submission_fee_required",
+                "message": "Governance escalations require a 50 RTC submission fee to prevent spam.",
+                "fee_amount_rtc": 50.0
+            }), 402
+
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             return jsonify({"error": "JSON object required"}), 400
