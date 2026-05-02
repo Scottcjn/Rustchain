@@ -235,10 +235,18 @@ class BlockchainIntegration:
         return awarded
     
     def _store_badge_metadata(self, badge_id: str, metadata: Dict):
-        """Store badge metadata (placeholder for IPFS upload)"""
-        # In production, this would upload to IPFS and return the hash
-        # For now, we'll store it locally
-        with open(f"badges/{badge_id}.json", 'w') as f:
+        """Store badge metadata securely preventing path traversal."""
+        # FIX: Sanitize badge_id to prevent directory traversal attacks
+        import re
+        safe_id = re.sub(r'[^a-zA-Z0-9_-]', '', str(badge_id))
+        if not safe_id:
+            raise ValueError("Invalid badge ID")
+            
+        # Ensure directory exists
+        os.makedirs("badges", exist_ok=True)
+        
+        filepath = os.path.join("badges", f"{safe_id}.json")
+        with open(filepath, 'w') as f:
             json.dump(metadata, f, indent=2)
     
     def sync_with_blockchain(self) -> Dict:
