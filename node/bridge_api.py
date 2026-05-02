@@ -14,23 +14,19 @@ Endpoints:
 - POST /api/bridge/update-external - Update external tx confirmation data
 """
 
+import hashlib
+import hmac
+import os
 import sqlite3
 import time
-import hashlib
-import os
-from typing import Optional, Tuple, Dict, Any
-from decimal import Decimal
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import Enum
+from typing import Any, Dict, Optional, Tuple
 
 # Import from main node module
 try:
-    from rustchain_v2_integrated_v2_2_1_rip200 import (
-        DB_PATH, 
-        current_slot, 
-        slot_to_epoch,
-        validate_miner_id_format
-    )
+    from rustchain_v2_integrated_v2_2_1_rip200 import DB_PATH, current_slot, slot_to_epoch, validate_miner_id_format
 except ImportError:
     # Fallback for standalone testing
     DB_PATH = os.environ.get("RC_DB_PATH", "rustchain.db")
@@ -117,59 +113,59 @@ def validate_bridge_request(data: Optional[Dict]) -> ValidationResult:
     """Validate bridge transfer request payload."""
     if not data:
         return ValidationResult(ok=False, error="Request body is required")
-    
+
     # Required fields
     required = ["direction", "source_chain", "dest_chain", "source_address", "dest_address", "amount_rtc"]
     for field in required:
         if field not in data:
             return ValidationResult(ok=False, error=f"Missing required field: {field}")
-    
+
     # Validate direction
     direction = data.get("direction")
     if direction not in ["deposit", "withdraw"]:
         return ValidationResult(ok=False, error=f"Invalid direction: {direction}. Must be 'deposit' or 'withdraw'")
-    
+
     # Validate chains
     source_chain = data.get("source_chain", "").lower()
     dest_chain = data.get("dest_chain", "").lower()
-    
+
     if source_chain not in VALID_CHAINS:
         return ValidationResult(ok=False, error=f"Invalid source_chain: {source_chain}")
     if dest_chain not in VALID_CHAINS:
         return ValidationResult(ok=False, error=f"Invalid dest_chain: {dest_chain}")
     if source_chain == dest_chain:
         return ValidationResult(ok=False, error="Source and destination chains must be different")
-    
+
     # Validate addresses
     source_address = data.get("source_address", "")
     dest_address = data.get("dest_address", "")
-    
+
     if not source_address or len(source_address) < 10:
         return ValidationResult(ok=False, error="Invalid source_address (too short)")
     if not dest_address or len(dest_address) < 10:
         return ValidationResult(ok=False, error="Invalid dest_address (too short)")
-    
+
     # Validate amount
     try:
         amount_rtc = float(data.get("amount_rtc", 0))
     except (TypeError, ValueError):
         return ValidationResult(ok=False, error="amount_rtc must be a number")
-    
+
     if amount_rtc <= 0:
         return ValidationResult(ok=False, error="amount_rtc must be positive")
     if amount_rtc < BRIDGE_MIN_AMOUNT_RTC:
         return ValidationResult(ok=False, error=f"amount_rtc must be >= {BRIDGE_MIN_AMOUNT_RTC} RTC")
-    
+
     # Validate bridge type (optional)
     bridge_type = data.get("bridge_type", "bottube")
     if bridge_type not in VALID_BRIDGE_TYPES:
         return ValidationResult(ok=False, error=f"Invalid bridge_type: {bridge_type}")
-    
+
     # Validate memo (optional)
     memo = data.get("memo")
     if memo and len(memo) > 256:
         return ValidationResult(ok=False, error="Memo must be <= 256 characters")
-    
+
     return ValidationResult(
         ok=True,
         details={
@@ -189,32 +185,32 @@ def validate_chain_address_format(chain: str, address: str) -> Tuple[bool, str]:
     """Validate address format for specific chain."""
     if not address:
         return False, "Address is required"
-    
+
     if chain == "rustchain":
         if not address.startswith("RTC"):
             return False, "RustChain addresses must start with 'RTC'"
         if len(address) < 10:
             return False, "RustChain address too short"
-    
+
     elif chain == "solana":
         # Solana addresses are base58, 32-44 chars
         if len(address) < 32 or len(address) > 44:
             return False, "Invalid Solana address length"
-    
+
     elif chain == "ergo":
         # Ergo addresses start with '9' or '3'
         if not address.startswith(("9", "3")):
             return False, "Invalid Ergo address format"
         if len(address) < 30:
             return False, "Ergo address too short"
-    
+
     elif chain == "base":
         # Base (Ethereum L2) addresses are 0x-prefixed
         if not address.startswith("0x"):
             return False, "Base addresses must start with '0x'"
         if len(address) != 42:
             return False, "Invalid Base address length"
-    
+
     return True, ""
 
 
@@ -231,7 +227,8 @@ def generate_bridge_tx_hash(
     amount_i64: int
 ) -> str:
     """Generate unique transaction hash for bridge transfer."""
-    data = f"{direction}:{source_chain}:{dest_chain}:{source_address}:{dest_address}:{amount_i64}:{time.time()}:{os.urandom(8).hex()}"
+    data = (f"{direction}:{source_chain}:{dest_chain}:{source_address}:"
+            f"{dest_address}:{amount_i64}:{time.time()}:{os.urandom(8).hex()}")
     return hashlib.sha256(data.encode()).hexdigest()[:32]
 
 
@@ -241,27 +238,71 @@ def check_miner_balance(db_conn: sqlite3.Connection, miner_id: str, amount_i64: 
     Returns: (has_balance, available_balance, pending_debits)
     """
     cursor = db_conn.cursor()
-    
+
     # Get total balance
     row = cursor.execute(
-        "SELECT amount_i64 FROM balances WHERE miner_id = ?", 
+        "SELECT amount_i64 FROM balances WHERE miner_id = ?",
         (miner_id,)
     ).fetchone()
     total_balance = row[0] if row else 0
-    
+
     # Get pending bridge debits (locked but not yet confirmed/voided)
     pending_row = cursor.execute("""
-        SELECT COALESCE(SUM(amount_i64), 0) 
-        FROM bridge_transfers 
-        WHERE source_address = ? 
+        SELECT COALESCE(SUM(amount_i64), 0)
+        FROM bridge_transfers
+        WHERE source_address = ?
           AND direction = 'deposit'
           AND status IN ('pending', 'locked', 'confirming')
     """, (miner_id,)).fetchone()
     pending_debits = pending_row[0] if pending_row else 0
-    
+
     available = total_balance - pending_debits
-    
+
     return available >= amount_i64, available, pending_debits
+
+
+def check_bridge_rate_limit(
+    conn: sqlite3.Connection, identifier: str, limit: int = 10, window_seconds: int = 3600
+) -> Tuple[bool, int]:
+    """
+    Token bucket style rate limiting using database persistence.
+    FIX: Prevent DoS by limiting bridge initiation requests.
+    Returns: (is_allowed, retry_after_seconds)
+    """
+    now = int(time.time())
+    cursor = conn.cursor()
+    
+    # identifier can be IP or source_address
+    row = cursor.execute(
+        "SELECT request_count, last_request_ts FROM bridge_rate_limits WHERE identifier = ?",
+        (identifier,)
+    ).fetchone()
+    
+    if row is None:
+        cursor.execute(
+            "INSERT INTO bridge_rate_limits (identifier, request_count, last_request_ts) VALUES (?, 1, ?)",
+            (identifier, now)
+        )
+        return True, 0
+        
+    count, last_ts = row
+    
+    # Reset count if window passed
+    if now - last_ts > window_seconds:
+        cursor.execute(
+            "UPDATE bridge_rate_limits SET request_count = 1, last_request_ts = ? WHERE identifier = ?",
+            (now, identifier)
+        )
+        return True, 0
+        
+    if count >= limit:
+        return False, window_seconds - (now - last_ts)
+        
+    cursor.execute(
+        "UPDATE bridge_rate_limits SET request_count = request_count + 1 WHERE identifier = ?",
+        (identifier,)
+    )
+    return True, 0
 
 
 def create_bridge_transfer(
@@ -271,13 +312,13 @@ def create_bridge_transfer(
 ) -> Tuple[bool, Dict[str, Any]]:
     """
     Create a new bridge transfer entry.
-    
+
     Returns: (success, result_dict)
     """
     cursor = db_conn.cursor()
     now = int(time.time())
     current_epoch = slot_to_epoch(current_slot())
-    
+
     amount_i64 = int(Decimal(str(request.amount_rtc)) * BRIDGE_UNIT)
     tx_hash = generate_bridge_tx_hash(
         request.direction,
@@ -287,7 +328,7 @@ def create_bridge_transfer(
         request.dest_address,
         amount_i64
     )
-    
+
     # Calculate unlock time based on direction
     if request.direction == "deposit":
         # Deposit: lock until external confirmations
@@ -295,13 +336,13 @@ def create_bridge_transfer(
     else:
         # Withdraw: shorter lock (RustChain confirmation)
         unlock_at = now + (6 * 600)  # 6 slots = 1 hour
-    
+
     try:
         # For deposits, check balance and create lock
         if request.direction == "deposit" and not admin_initiated:
             has_balance, available, pending = check_miner_balance(
-                db_conn, 
-                request.source_address, 
+                db_conn,
+                request.source_address,
                 amount_i64
             )
             if not has_balance:
@@ -311,7 +352,7 @@ def create_bridge_transfer(
                     "pending_debits_rtc": pending / BRIDGE_UNIT,
                     "requested_rtc": request.amount_rtc
                 }
-        
+
         # Insert bridge transfer
         cursor.execute("""
             INSERT INTO bridge_transfers (
@@ -341,9 +382,9 @@ def create_bridge_transfer(
             tx_hash,
             request.memo
         ))
-        
+
         bridge_id = cursor.lastrowid
-        
+
         # Create lock ledger entry for deposits
         if request.direction == "deposit":
             cursor.execute("""
@@ -367,9 +408,9 @@ def create_bridge_transfer(
                 "locked",
                 now
             ))
-        
+
         db_conn.commit()
-        
+
         return True, {
             "ok": True,
             "bridge_transfer_id": bridge_id,
@@ -383,7 +424,7 @@ def create_bridge_transfer(
             "dest_chain": request.dest_chain,
             "amount_rtc": request.amount_rtc
         }
-        
+
     except sqlite3.Error as e:
         db_conn.rollback()
         return False, {
@@ -398,9 +439,9 @@ def get_bridge_transfer_by_hash(
 ) -> Optional[Dict[str, Any]]:
     """Get bridge transfer details by transaction hash."""
     cursor = db_conn.cursor()
-    
+
     row = cursor.execute("""
-        SELECT 
+        SELECT
             id, direction, source_chain, dest_chain,
             source_address, dest_address,
             amount_i64, amount_rtc,
@@ -413,10 +454,10 @@ def get_bridge_transfer_by_hash(
         FROM bridge_transfers
         WHERE tx_hash = ?
     """, (tx_hash,)).fetchone()
-    
+
     if not row:
         return None
-    
+
     return {
         "id": row[0],
         "direction": row[1],
@@ -453,10 +494,10 @@ def list_bridge_transfers(
 ) -> list:
     """List bridge transfers with optional filters."""
     cursor = db_conn.cursor()
-    
+
     # Build query with filters
     query = """
-        SELECT 
+        SELECT
             id, direction, source_chain, dest_chain,
             source_address, dest_address,
             amount_rtc, bridge_type,
@@ -466,28 +507,28 @@ def list_bridge_transfers(
         WHERE 1=1
     """
     params = []
-    
+
     if status_filter:
         query += " AND status = ?"
         params.append(status_filter)
-    
+
     if source_address:
         query += " AND source_address = ?"
         params.append(source_address)
-    
+
     if dest_address:
         query += " AND dest_address = ?"
         params.append(dest_address)
-    
+
     if direction:
         query += " AND direction = ?"
         params.append(direction)
-    
+
     query += " ORDER BY id DESC LIMIT ?"
     params.append(min(limit, 500))
-    
+
     rows = cursor.execute(query, params).fetchall()
-    
+
     return [
         {
             "id": r[0],
@@ -518,20 +559,20 @@ def void_bridge_transfer(
 ) -> Tuple[bool, Dict[str, Any]]:
     """Void a bridge transfer and release associated lock."""
     cursor = db_conn.cursor()
-    
+
     # Find the transfer
     transfer = get_bridge_transfer_by_hash(db_conn, tx_hash)
     if not transfer:
         return False, {"error": "Bridge transfer not found"}
-    
+
     if transfer["status"] not in ("pending", "locked", "confirming"):
         return False, {
             "error": f"Cannot void transfer with status '{transfer['status']}'",
             "hint": "Only pending/locked/confirming transfers can be voided"
         }
-    
+
     now = int(time.time())
-    
+
     try:
         # Update bridge transfer
         cursor.execute("""
@@ -542,7 +583,7 @@ def void_bridge_transfer(
                 updated_at = ?
             WHERE tx_hash = ?
         """, (voided_by, reason, now, tx_hash))
-        
+
         # Release associated lock
         cursor.execute("""
             UPDATE lock_ledger
@@ -552,9 +593,9 @@ def void_bridge_transfer(
             WHERE bridge_transfer_id = ?
               AND status = 'locked'
         """, (now, voided_by, transfer["id"]))
-        
+
         db_conn.commit()
-        
+
         return True, {
             "ok": True,
             "voided_id": transfer["id"],
@@ -566,7 +607,7 @@ def void_bridge_transfer(
             "reason": reason,
             "lock_released": True
         }
-        
+
     except sqlite3.Error as e:
         db_conn.rollback()
         return False, {
@@ -584,20 +625,20 @@ def update_external_confirmation(
 ) -> Tuple[bool, Dict[str, Any]]:
     """Update external transaction confirmation data."""
     cursor = db_conn.cursor()
-    
+
     transfer = get_bridge_transfer_by_hash(db_conn, tx_hash)
     if not transfer:
         return False, {"error": "Bridge transfer not found"}
-    
+
     if transfer["status"] in ("completed", "failed", "voided"):
         return False, {
-            "error": f"Cannot update completed/failed/voided transfer",
+            "error": "Cannot update completed/failed/voided transfer",
             "current_status": transfer["status"]
         }
-    
+
     now = int(time.time())
     req_conf = required_confirmations or transfer["required_confirmations"] or BRIDGE_DEFAULT_CONFIRMATIONS
-    
+
     # Determine new status
     if confirmations >= req_conf:
         new_status = "completed"
@@ -608,7 +649,7 @@ def update_external_confirmation(
     else:
         new_status = "locked"
         completed_at = None
-    
+
     try:
         cursor.execute("""
             UPDATE bridge_transfers
@@ -620,7 +661,7 @@ def update_external_confirmation(
                 updated_at = ?
             WHERE tx_hash = ?
         """, (external_tx_hash, confirmations, req_conf, new_status, completed_at, now, tx_hash))
-        
+
         # If completed, release the lock
         if new_status == "completed":
             cursor.execute("""
@@ -631,9 +672,9 @@ def update_external_confirmation(
                 WHERE bridge_transfer_id = ?
                   AND status = 'locked'
             """, (now, external_tx_hash, transfer["id"]))
-        
+
         db_conn.commit()
-        
+
         return True, {
             "ok": True,
             "tx_hash": tx_hash,
@@ -641,7 +682,7 @@ def update_external_confirmation(
             "external_confirmations": confirmations,
             "required_confirmations": req_conf
         }
-        
+
     except sqlite3.Error as e:
         db_conn.rollback()
         return False, {
@@ -656,18 +697,51 @@ def update_external_confirmation(
 
 def register_bridge_routes(app):
     """Register bridge API routes with Flask app."""
-    from flask import request, jsonify
-    
+    from flask import jsonify, request
+
     @app.route('/api/bridge/initiate', methods=['POST'])
     def initiate_bridge():
-        """Initiate a new bridge transfer."""
+        """
+        Initiate a new bridge transfer.
+        FIX: Added rate limiting to prevent DoS attacks.
+        """
+        # Admin check
+        admin_key = request.headers.get('X-Admin-Key', '')
+        admin_initiated = False
+        if admin_key:
+            admin_initiated = hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", ""))
+
         data = request.get_json(silent=True)
-        
+        if not data:
+            return jsonify({"ok": False, "error": "invalid_json"}), 400
+
+        # FIX: Enforce rate limits unless it's an admin-initiated transfer
+        if not admin_initiated:
+            client_ip = request.remote_addr or "unknown"
+            source_address = data.get("source_address")
+            
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                # Limit by IP (20 per hour)
+                ok, retry_after = check_bridge_rate_limit(conn, f"ip:{client_ip}", limit=20, window_seconds=3600)
+                if not ok:
+                    return jsonify({"ok": False, "error": "rate_limit_exceeded", "message": f"Too many requests from your IP. Retry after {retry_after}s"}), 429
+                
+                # Limit by wallet address (5 per hour)
+                if source_address:
+                    ok, retry_after = check_bridge_rate_limit(conn, f"wallet:{source_address}", limit=5, window_seconds=3600)
+                    if not ok:
+                        return jsonify({"ok": False, "error": "rate_limit_exceeded", "message": f"Too many requests for this wallet. Retry after {retry_after}s"}), 429
+                
+                conn.commit()
+            finally:
+                conn.close()
+
         # Validate request
         validation = validate_bridge_request(data)
         if not validation.ok:
             return jsonify({"error": validation.error}), 400
-        
+
         # Validate address formats
         for chain, addr in [
             (data["source_chain"], data["source_address"]),
@@ -676,11 +750,11 @@ def register_bridge_routes(app):
             valid, msg = validate_chain_address_format(chain, addr)
             if not valid:
                 return jsonify({"error": f"Invalid {chain} address: {msg}"}), 400
-        
+
         # Check admin initiation (bypasses balance check)
         admin_key = request.headers.get("X-Admin-Key", "")
         admin_initiated = admin_key == os.environ.get("RC_ADMIN_KEY", "")
-        
+
         # Create bridge transfer
         req = BridgeTransferRequest(
             direction=data["direction"],
@@ -692,7 +766,7 @@ def register_bridge_routes(app):
             memo=data.get("memo"),
             bridge_type=data.get("bridge_type", "bottube")
         )
-        
+
         conn = sqlite3.connect(DB_PATH)
         try:
             success, result = create_bridge_transfer(conn, req, admin_initiated)
@@ -702,30 +776,30 @@ def register_bridge_routes(app):
                 return jsonify(result), 400
         finally:
             conn.close()
-    
+
     @app.route('/api/bridge/status/<tx_hash>', methods=['GET'])
     @app.route('/api/bridge/status', methods=['GET'])
     def get_bridge_status(tx_hash: Optional[str] = None):
         """Get bridge transfer status by tx_hash or id."""
         if not tx_hash:
             tx_hash = request.args.get("id") or request.args.get("tx_hash")
-        
+
         if not tx_hash:
             return jsonify({"error": "tx_hash or id parameter required"}), 400
-        
+
         conn = sqlite3.connect(DB_PATH)
         try:
             transfer = get_bridge_transfer_by_hash(conn, tx_hash)
             if not transfer:
                 return jsonify({"error": "Bridge transfer not found"}), 404
-            
+
             return jsonify({
                 "ok": True,
                 "transfer": transfer
             }), 200
         finally:
             conn.close()
-    
+
     @app.route('/api/bridge/list', methods=['GET'])
     def list_bridges():
         """List bridge transfers with filters."""
@@ -734,7 +808,7 @@ def register_bridge_routes(app):
         dest = request.args.get("dest_address")
         direction = request.args.get("direction")
         limit = int(request.args.get("limit", 100))
-        
+
         conn = sqlite3.connect(DB_PATH)
         try:
             transfers = list_bridge_transfers(
@@ -745,7 +819,7 @@ def register_bridge_routes(app):
                 direction=direction,
                 limit=limit
             )
-            
+
             return jsonify({
                 "ok": True,
                 "count": len(transfers),
@@ -753,25 +827,25 @@ def register_bridge_routes(app):
             }), 200
         finally:
             conn.close()
-    
+
     @app.route('/api/bridge/void', methods=['POST'])
     def void_bridge():
         """Admin: Void a bridge transfer."""
         admin_key = request.headers.get("X-Admin-Key", "")
         if admin_key != os.environ.get("RC_ADMIN_KEY", ""):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
-        
+
         data = request.get_json(silent=True)
         if not data:
             return jsonify({"error": "Request body required"}), 400
-        
+
         tx_hash = data.get("tx_hash")
         reason = data.get("reason", "admin_void")
         voided_by = data.get("voided_by", "admin")
-        
+
         if not tx_hash:
             return jsonify({"error": "tx_hash required"}), 400
-        
+
         conn = sqlite3.connect(DB_PATH)
         try:
             success, result = void_bridge_transfer(conn, tx_hash, reason, voided_by)
@@ -781,7 +855,7 @@ def register_bridge_routes(app):
                 return jsonify(result), 400
         finally:
             conn.close()
-    
+
     @app.route('/api/bridge/update-external', methods=['POST'])
     def update_external():
         """Update external confirmation data (for bridge service callbacks)."""
@@ -790,16 +864,16 @@ def register_bridge_routes(app):
         expected_key = os.environ.get("RC_BRIDGE_API_KEY", "")
         if expected_key and api_key != expected_key:
             return jsonify({"error": "Unauthorized"}), 401
-        
+
         data = request.get_json(silent=True)
         if not data:
             return jsonify({"error": "Request body required"}), 400
-        
+
         tx_hash = data.get("tx_hash")
         external_tx_hash = data.get("external_tx_hash")
         confirmations = data.get("confirmations", 0)
         required_confirmations = data.get("required_confirmations")
-        
+
         if not tx_hash or not external_tx_hash:
             return jsonify({"error": "tx_hash and external_tx_hash required"}), 400
 
@@ -822,7 +896,7 @@ def register_bridge_routes(app):
 
 def init_bridge_schema(cursor):
     """Initialize bridge_transfers table schema.
-    
+
     Args:
         cursor: SQLite cursor object
     """
@@ -867,9 +941,18 @@ def init_bridge_schema(cursor):
             memo TEXT
         )
     """)
-    
+
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_status ON bridge_transfers(status)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_source ON bridge_transfers(source_address)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_dest ON bridge_transfers(dest_address)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_lock_epoch ON bridge_transfers(lock_epoch)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_tx_hash ON bridge_transfers(tx_hash)")
+
+    # FIX: Add rate limiting table to prevent DoS attacks on bridge initiation
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bridge_rate_limits (
+            identifier TEXT PRIMARY KEY,
+            request_count INTEGER DEFAULT 0,
+            last_request_ts INTEGER NOT NULL
+        )
+    """)
