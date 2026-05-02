@@ -232,8 +232,8 @@ def balance(miner_pk):
 
 @app.post("/api/register")
 def api_register():
-    """Register node with hardware fingerprint"""
-    data = request.get_json(force=True)
+    """Register node with hardware fingerprint and basic rate limiting."""
+    data = request.get_json(force=True) or {}
 
     system_id = data.get("system_id")
     fingerprint = data.get("fingerprint", {})
@@ -241,8 +241,12 @@ def api_register():
     if not system_id or not fingerprint:
         return jsonify({"error": "missing_data"}), 400
 
+    # FIX: Basic DoS protection - limit total number of in-memory registrations
+    if len(registered_nodes) > 10000:
+        return jsonify({"error": "registration_pool_full"}), 503
+
     # Check blacklist
-    fp_hash = hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()
+    fp_hash = hashlib.sha256(json.dumps(fingerprint, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     if fp_hash in blacklisted:
         return jsonify({"error": "blacklisted"}), 403
 
