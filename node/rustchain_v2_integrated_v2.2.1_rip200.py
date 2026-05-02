@@ -632,6 +632,21 @@ def health_diagnostics():
     except (ImportError, Exception):
         pass
 
+    # Check Swap health
+    swap_stats = {}
+    try:
+        # FIX: Added swap usage monitoring to identify system thrashing
+        # which can severely impact block processing and attestation timing.
+        import psutil
+        swap = psutil.swap_memory()
+        swap_stats = {
+            "total_mb": round(swap.total / (1024 * 1024), 2),
+            "used_mb": round(swap.used / (1024 * 1024), 2),
+            "percent": swap.percent
+        }
+    except (ImportError, Exception):
+        pass
+
     return jsonify({
         "status": "ok" if db_ok else "degraded",
         "version": APP_VERSION,
@@ -639,6 +654,7 @@ def health_diagnostics():
         "timestamp": int(now),
         "load_avg": cpu_load,
         "memory": memory_stats,
+        "swap": swap_stats,
         "disk": disk_stats,
         "open_files": open_files,
         "mempool": {
