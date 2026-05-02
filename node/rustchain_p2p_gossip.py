@@ -394,6 +394,10 @@ class GossipLayer:
             logger.debug(f"Send to {peer_url} failed: {e}")
 
     def handle_message(self, msg: GossipMessage) -> Optional[Dict]:
+    # FIX: Enforce maximum payload size to prevent memory DoS attacks
+    if len(json.dumps(msg.payload)) > 1024 * 1024: # 1MB limit
+        logger.warning(f"Rejected oversized gossip message from {msg.sender_id}")
+        return {"status": "error", "error": "payload_too_large"}
         """Handle received gossip message"""
         # Deduplication
         if msg.msg_id in self.seen_messages:
