@@ -721,6 +721,16 @@ def register_bridge_routes(app):
             if not transfer:
                 return jsonify({"error": "Bridge transfer not found"}), 404
             
+            # FIX: Added human-readable status mapping for better UI feedback
+            status_map = {
+                'pending': '⏳ Waiting for confirmations',
+                'locked': '🔒 Assets locked on source',
+                'releasing': '🔓 Releasing assets on destination',
+                'completed': '✅ Bridge successful',
+                'failed': '❌ Bridge failed'
+            }
+            transfer['status_display'] = status_map.get(transfer.get('status', 'pending'), 'Unknown')
+
             return jsonify({
                 "ok": True,
                 "transfer": transfer
