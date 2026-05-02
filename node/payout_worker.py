@@ -31,28 +31,44 @@ class PayoutWorker:
         }
 
     def get_pending_withdrawals(self, limit: int = BATCH_SIZE) -> List[Dict]:
-        """Fetch pending withdrawals from database"""
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute("""
-                SELECT withdrawal_id, miner_pk, amount, fee, destination, created_at
-                FROM withdrawals
-                WHERE status = 'pending'
-                ORDER BY created_at ASC
-                LIMIT ?
-            """, (limit,)).fetchall()
+        """Fetch and lock pending withdrawals atomically to prevent double payouts."""
+        withdrawals = []
+        try:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
+                # FIX: Use BEGIN IMMEDIATE to lock the database during selection and update
+                conn.execute("BEGIN IMMEDIATE")
+                
+                rows = conn.execute("""
+                    SELECT withdrawal_id, miner_pk, amount, fee, destination, created_at
+                    FROM withdrawals
+                    WHERE status = 'pending'
+                    ORDER BY created_at ASC
+                    LIMIT ?
+                """, (limit,)).fetchall()
 
-            withdrawals = []
-            for row in rows:
-                withdrawals.append({
-                    'withdrawal_id': row[0],
-                    'miner_pk': row[1],
-                    'amount': row[2],
-                    'fee': row[3],
-                    'destination': row[4],
-                    'created_at': row[5]
-                })
-
-            return withdrawals
+                for row in rows:
+                    w = {
+                        'withdrawal_id': row[0],
+                        'miner_pk': row[1],
+                        'amount': row[2],
+                        'fee': row[3],
+                        'destination': row[4],
+                        'created_at': row[5]
+                    }
+                    withdrawals.append(w)
+                    
+                    # Mark as processing IMMEDIATELY within the same transaction
+                    conn.execute("""
+                        UPDATE withdrawals
+                        SET status = 'processing'
+                        WHERE withdrawal_id = ?
+                    """, (w['withdrawal_id'],))
+                
+                conn.commit()
+        except sqlite3.Error as e:
+            logger.error(f"Database error during withdrawal fetch: {e}")
+            
+        return withdrawals
 
     def execute_withdrawal(self, withdrawal: Dict) -> Optional[str]:
         """Execute withdrawal transaction"""
@@ -84,17 +100,7 @@ class PayoutWorker:
         withdrawal_id = withdrawal['withdrawal_id']
 
         try:
-            logger.info(f"Processing withdrawal {withdrawal_id}")
-            logger.info(f"  Amount: {withdrawal['amount']} RTC")
-            logger.info(f"  Destination: {withdrawal['destination']}")
-
-            # Mark as processing
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    UPDATE withdrawals
-                    SET status = 'processing'
-                    WHERE withdrawal_id = ?
-                """, (withdrawal_id,))
+            logger.info(f"Executing withdrawal {withdrawal_id} ({withdrawal['amount']} RTC)")
 
             # Execute withdrawal
             tx_hash = self.execute_withdrawal(withdrawal)
