@@ -357,7 +357,8 @@ def attest_submit():
                 multiplier=float(hw_weight),
                 epoch=current_epoch,
                 weight=float(hw_weight),
-                ticket_id=str(ticket_id)
+                ticket_id=str(ticket_id),
+                expires_at=int(ticket["expires_at"])
             )
         except Exception as e:
             print(f"[WebSocket] Failed to broadcast attestation: {e}")
