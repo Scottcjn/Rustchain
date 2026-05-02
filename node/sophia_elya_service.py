@@ -39,6 +39,18 @@ def init_db():
         # FIX: Optimize for concurrent access
         c.execute("PRAGMA journal_mode=WAL")
         c.execute("PRAGMA synchronous=NORMAL")
+
+def save_state_snapshot():
+    """Save Silicon Ticket state to disk safely."""
+    # FIX: Added atomic state snapshot logic for in-memory ticket persistence
+    import tempfile
+    try:
+        with tempfile.NamedTemporaryFile('w', delete=False, dir=".") as tf:
+            json.dump(tickets_db, tf)
+            temp_name = tf.name
+        os.replace(temp_name, "tickets_snapshot.json")
+    except Exception:
+        pass
         # Existing tables
         c.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
