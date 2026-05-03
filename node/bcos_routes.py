@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import io
 import json
+import hmac
 import os
 import sqlite3
 import time
@@ -169,7 +170,7 @@ def bcos_attest():
     - Valid Ed25519 signature in the report
     """
     admin_key = request.headers.get("X-Admin-Key", "")
-    is_admin = admin_key and admin_key == _get_admin_key()
+    is_admin = admin_key and hmac.compare_digest(admin_key, _get_admin_key() or "")
 
     data = request.get_json(silent=True)
     if not data:

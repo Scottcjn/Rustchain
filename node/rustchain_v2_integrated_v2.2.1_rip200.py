@@ -4539,7 +4539,7 @@ def register_withdrawal_key():
     # SECURITY: prevent unauthenticated key overwrite (withdrawal takeover).
     # First-time registration is allowed. Rotation requires admin key.
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    is_admin = admin_key == os.environ.get("RC_ADMIN_KEY", "")
+    is_admin = hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", ""))
 
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as c:
@@ -6054,7 +6054,7 @@ def ops_readiness():
     """Single PASS/FAIL aggregator for all go/no-go checks"""
     # SECURITY FIX 2026-02-15: Only show detailed checks to admin
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    is_admin = admin_key == ADMIN_KEY
+    is_admin = hmac.compare_digest(admin_key, ADMIN_KEY or "")
     out = {"ok": True, "checks": []}
 
     # Health check
