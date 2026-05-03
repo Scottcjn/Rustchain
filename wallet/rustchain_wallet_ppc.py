@@ -103,7 +103,7 @@ try:
     import tkMessageBox
     import tkSimpleDialog
 except ImportError:
-    print "Error: Tkinter not available"
+    print("Error: Tkinter not available")
     sys.exit(1)
 
 # Configuration
@@ -230,7 +230,7 @@ class RustChainWallet:
 
             self.balance_var.set("%.4f RTC" % balance_rtc)
             self.status_var.set("Balance updated")
-        except Exception, e:
+        except Exception as e:
             self.balance_var.set("Error")
             self.status_var.set("Error: %s" % str(e))
 
@@ -289,7 +289,7 @@ class RustChainWallet:
             else:
                 error = result.get("error", "Unknown error")
                 tkMessageBox.showerror("Error", "Transaction failed: %s" % error)
-        except Exception, e:
+        except Exception as e:
             tkMessageBox.showerror("Error", "Transaction failed: %s" % str(e))
 
         self.status_var.set("Ready")
