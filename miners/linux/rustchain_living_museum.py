@@ -459,7 +459,8 @@ class LivingMuseumBot(discord.Client):
             for a in archs:
                 arch_counts[a] = arch_counts.get(a, 0) + 1
 
-            arch_summary = ", ".join([f"{ARCH_EMOJIS.get(a, '\U0001F527')}{c}" for a, c in arch_counts.items()])
+            _wrench = '\U0001F527'
+            arch_summary = ", ".join([f"{ARCH_EMOJIS.get(a, _wrench)}{c}" for a, c in arch_counts.items()])
 
             timeline_text += f"**{date}:** +{count} machines\n"
             timeline_text += f"    {arch_summary}\n"
