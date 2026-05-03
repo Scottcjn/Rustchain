@@ -103,7 +103,7 @@ try:
     import tkMessageBox
     import tkSimpleDialog
 except ImportError:
-    print "Error: Tkinter not available"
+    print("Error: Tkinter not available")
     sys.exit(1)
 
 # Configuration
