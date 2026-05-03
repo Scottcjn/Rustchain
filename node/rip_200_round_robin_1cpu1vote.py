@@ -683,7 +683,7 @@ def calculate_epoch_rewards_time_aged(
             # Last miner gets remainder (prevents rounding issues)
             share = remaining
         else:
-            share = int((weight / total_weight) * total_reward_urtc)
+            share = 0 if total_weight == 0 else int((weight / total_weight) * total_reward_urtc)
             remaining -= share
 
         rewards[miner_id] = share
@@ -708,9 +708,9 @@ if __name__ == "__main__":
         total_reward = 150_000_000  # 1.5 RTC in uRTC
         total_weight = g4_mult + g5_mult + modern_mult
 
-        g4_share = (g4_mult / total_weight) * total_reward
-        g5_share = (g5_mult / total_weight) * total_reward
-        modern_share = (modern_mult / total_weight) * total_reward
+        g4_share = 0 if total_weight == 0 else (g4_mult / total_weight) * total_reward
+        g5_share = 0 if total_weight == 0 else (g5_mult / total_weight) * total_reward
+        modern_share = 0 if total_weight == 0 else (modern_mult / total_weight) * total_reward
 
         print(f"\nReward distribution (1.5 RTC total):")
         print(f"  G4: {g4_share / 100_000_000:.6f} RTC ({g4_share/total_reward*100:.1f}%)")
