@@ -16,6 +16,7 @@ Endpoints:
 
 import sqlite3
 import time
+import hmac
 import hashlib
 import os
 from typing import Optional, Tuple, Dict, Any
@@ -679,7 +680,7 @@ def register_bridge_routes(app):
         
         # Check admin initiation (bypasses balance check)
         admin_key = request.headers.get("X-Admin-Key", "")
-        admin_initiated = admin_key == os.environ.get("RC_ADMIN_KEY", "")
+        admin_initiated = hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", ""))
         
         # Create bridge transfer
         req = BridgeTransferRequest(
