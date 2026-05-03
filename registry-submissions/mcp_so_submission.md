@@ -69,7 +69,7 @@ balances, epochs, bounties, videos, and network health.
       "command": "python",
       "args": ["-m", "rustchain_mcp"],
       "env": {
-        "RUSTCHAIN_NODE_URL": "https://50.28.86.131",
+        "RUSTCHAIN_NODE_URL": "https://rustchain.org",
         "BOTTUBE_API_URL": "https://50.28.86.153"
       }
     }

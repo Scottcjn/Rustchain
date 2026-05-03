@@ -127,7 +127,7 @@ graph LR
 
 | Node | Location | Role | Status |
 |------|----------|------|--------|
-| **Node 1** | 50.28.86.131 | Primary + Explorer | ✅ Active |
+| **Node 1** | rustchain.org | Primary + Explorer | ✅ Active |
 | **Node 2** | 50.28.86.153 | Ergo Anchor | ✅ Active |
 | **Node 3** | 76.8.228.245 | Community | ✅ Active |
 

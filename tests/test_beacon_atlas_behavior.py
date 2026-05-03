@@ -164,11 +164,12 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(len(bounties), 1)
         self.assertEqual(bounties[0]['difficulty'], 'MEDIUM')
         
-        # Claim bounty
+        # Claim bounty (admin-only per #2800 — requires X-Admin-Key)
         claim_response = self.client.post(
             '/api/bounties/gh_test_bounty/claim',
             data=json.dumps({'agent_id': 'bcn_claimer'}),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']},
         )
         self.assertEqual(claim_response.status_code, 200)
         

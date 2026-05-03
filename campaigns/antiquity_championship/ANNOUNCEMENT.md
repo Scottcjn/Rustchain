@@ -98,11 +98,11 @@ Post in the [GitHub Discussion thread](#) with:
 
 ### 5. Watch the Leaderboard
 
-Live scores at: `https://50.28.86.131/api/championship/leaderboard`
+Live scores at: `https://rustchain.org/api/championship/leaderboard`
 
 Check your standing:
 ```bash
-curl -s "https://50.28.86.131/api/championship/leaderboard" -k | python3 -m json.tool
+curl -s "https://rustchain.org/api/championship/leaderboard" -k | python3 -m json.tool
 ```
 
 ## What Counts as "Before 2005"

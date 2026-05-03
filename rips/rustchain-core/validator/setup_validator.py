@@ -29,6 +29,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -61,7 +62,7 @@ BOOTSTRAP_NODES = [
     "192.168.0.126:9333",  # G4 Mirror Door Secondary
 ]
 
-CURRENT_YEAR = 2025
+CURRENT_YEAR = datetime.now().year
 
 # =============================================================================
 # Hardware Detection

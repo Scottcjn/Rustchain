@@ -9,7 +9,7 @@ A reward modifier (1.0x - 2.5x) based on CPU age. Older hardware receives higher
 The process of proving hardware authenticity to the network. Miners submit 6 hardware fingerprints that are validated against known profiles.
 
 ### Attestation Node
-A trusted server that validates hardware fingerprints and enrolls miners into epochs. Primary node: `50.28.86.131`
+A trusted server that validates hardware fingerprints and enrolls miners into epochs. Primary node: `rustchain.org`
 
 ## C
 

@@ -76,7 +76,7 @@ Deploy to any static hosting service:
 ## API Integration
 
 The calculator attempts to fetch live network data from:
-- `https://50.28.86.131/api/miners` - Active miners list
+- `https://rustchain.org/api/miners` - Active miners list
 
 If the API is unavailable, it falls back to default network composition.
 

@@ -44,7 +44,7 @@ This implementation delivers **real integration** of retro console mining into R
 ### 4. Documentation ✅
 
 **Files Created:**
-- `rips/docs/RIP-0683-console-bridge-integration.md` - Full specification
+- `docs/CONSOLE_MINING_SETUP.md` - Full specification
 - `docs/CONSOLE_MINING_SETUP.md` - User setup guide
 - `IMPLEMENTATION_SUMMARY.md` - This file
 
@@ -197,7 +197,7 @@ Assuming 10 total miners, 3 in retro_console bucket:
 
 ## References
 
-- [RIP-0683 Specification](rips/docs/RIP-0683-console-bridge-integration.md)
+- [RIP-0683 Specification](docs/CONSOLE_MINING_SETUP.md)
 - [RIP-0304: Original Console Mining Spec](rips/docs/RIP-0304-retro-console-mining.md)
 - [RIP-201: Fleet Immune System](rips/docs/RIP-0201-fleet-immune-system.md)
 - [Legend of Elya](https://github.com/ilya-kh/legend-of-elya) - N64 neural network demo

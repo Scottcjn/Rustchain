@@ -20,7 +20,7 @@
 
 *Tu PowerPC G4 gana más que un Threadripper moderno. Ese es el punto.*
 
-[Website](https://rustchain.org) • [Manifesto](https://rustchain.org/manifesto.html) • [Principios Boudreaux](docs/Boudreaux_COMPUTING_PRINCIPLES.md) • [Live Explorer](https://rustchain.org/explorer) • [Swap wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Quickstart](docs/wrtc.md) • [Tutorial wRTC](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Ref. Grokipedia](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [Inicio Rápido](#-inicio-rápido) • [Cómo Funciona](#-cómo-funciona-proof-of-antiquity)
+[Website](https://rustchain.org) • [Manifesto](https://rustchain.org/manifesto.html) • [Principios Boudreaux](docs/Boudreaux_COMPUTING_PRINCIPLES.md) • [Live Explorer](https://rustchain.org/explorer) • [Swap wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Quickstart](docs/wrtc.md) • [Tutorial wRTC](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Ref. Grokipedia](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [Inicio Rápido](#-inicio-rápido) • [Cómo Funciona](#-cómo-funciona-proof-of-antiquity)
 
 </div>
 

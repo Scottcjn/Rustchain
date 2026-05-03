@@ -677,9 +677,16 @@ class UtxoDB:
             tx_type = tx.get('tx_type', 'transfer')
             now = int(time.time())
 
-            # Only authorized minting transaction types may have empty inputs.
+            # Public mempool admission must never accept minting transactions.
+            # Coinbase/mining rewards are internally constructed during block
+            # production and guarded by apply_transaction(_allow_minting=True).
+            # Admitting user-supplied mining_reward txs here lets invalid mint
+            # candidates occupy mempool slots and reach block candidate selection.
             MINTING_TX_TYPES = {'mining_reward'}
-            if not inputs and tx_type not in MINTING_TX_TYPES:
+            if tx_type in MINTING_TX_TYPES:
+                return False
+
+            if not inputs:
                 return False
 
             conn.execute("BEGIN IMMEDIATE")

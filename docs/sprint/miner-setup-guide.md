@@ -5,7 +5,7 @@ Set up a RustChain miner on your hardware and start earning RTC through
 a PowerPC G4 earns 2.5× while a modern x86_64 earns 1.0×.
 
 **Attestation nodes:**
-- Primary: `http://50.28.86.131:8088`
+- Primary: `http://rustchain.org:8088`
 - Anchor:  `http://50.28.86.153:8088`
 
 ---
@@ -71,7 +71,7 @@ Edit `node/.env`:
 
 ```ini
 MINER_ID=your_wallet_nameRTC
-NODE_URL=http://50.28.86.131:8088
+NODE_URL=http://rustchain.org:8088
 ATTEST_INTERVAL=600
 ```
 
@@ -80,7 +80,7 @@ ATTEST_INTERVAL=600
 ```bash
 source venv/bin/activate
 python3 node/hardware_fingerprint.py --miner-id your_wallet_nameRTC \
-    --node http://50.28.86.131:8088
+    --node http://rustchain.org:8088
 ```
 
 > **Apple Silicon:** The `arm64` fingerprint profile applies automatically.
@@ -124,7 +124,7 @@ Edit `node/.env`, then run:
 ```bash
 python3 node/hardware_fingerprint.py \
     --miner-id your_wallet_nameRTC \
-    --node http://50.28.86.131:8088
+    --node http://rustchain.org:8088
 ```
 
 #### Run as a systemd service
@@ -141,7 +141,7 @@ User=$USER
 WorkingDirectory=$PWD
 ExecStart=$PWD/venv/bin/python3 node/hardware_fingerprint.py \
     --miner-id your_wallet_nameRTC \
-    --node http://50.28.86.131:8088
+    --node http://rustchain.org:8088
 Restart=on-failure
 RestartSec=60
 
@@ -199,7 +199,7 @@ cp node/.env.example node/.env
 # Edit node/.env with your MINER_ID and NODE_URL
 python3 node/hardware_fingerprint.py \
     --miner-id your_wallet_nameRTC \
-    --node http://50.28.86.131:8088
+    --node http://rustchain.org:8088
 ```
 
 > **Note:** WSL hardware fingerprints are classified as `modern_x86` (1.0×
@@ -241,7 +241,7 @@ Run:
 ```bash
 python3 node/hardware_fingerprint.py \
     --miner-id your_wallet_nameRTC \
-    --node http://50.28.86.131:8088
+    --node http://rustchain.org:8088
 ```
 
 At startup you should see:
@@ -286,7 +286,7 @@ Edit `node/.env`:
 
 ```ini
 MINER_ID=mypiRTC
-NODE_URL=http://50.28.86.131:8088
+NODE_URL=http://rustchain.org:8088
 ATTEST_INTERVAL=600
 ```
 
@@ -294,7 +294,7 @@ Run:
 
 ```bash
 python3 node/hardware_fingerprint.py --miner-id mypiRTC \
-    --node http://50.28.86.131:8088
+    --node http://rustchain.org:8088
 ```
 
 > **Pi Zero / Pi 2:** These have ARMv6/ARMv7 CPUs. Use `python3.9` or newer
@@ -309,7 +309,7 @@ When everything works correctly, you will see output like this:
 ```
 [2026-03-28 21:00:00] RustChain Miner v2.2.1-rip200
 [2026-03-28 21:00:00] Miner ID    : eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC
-[2026-03-28 21:00:00] Node URL    : http://50.28.86.131:8088
+[2026-03-28 21:00:00] Node URL    : http://rustchain.org:8088
 [2026-03-28 21:00:00] Hardware    : PowerPC G4 (Vintage)
 [2026-03-28 21:00:00] Profile     : ppc_g4 (antiquity_multiplier=2.5x)
 
@@ -371,7 +371,7 @@ ConnectionRefusedError: [Errno 111] Connection refused
 
 ```bash
 # Test connectivity
-curl http://50.28.86.131:8088/health
+curl http://rustchain.org:8088/health
 curl http://50.28.86.153:8088/health   # fallback node
 ```
 
@@ -416,11 +416,11 @@ pyenv global 3.11.8
 epoch). Monitor the `/epoch` endpoint and ensure you attest early in the epoch.
 
 ```bash
-curl http://50.28.86.131:8088/epoch | python3 -m json.tool
+curl http://rustchain.org:8088/epoch | python3 -m json.tool
 ```
 
 If `slot` > 140, wait for the next epoch before expecting rewards.
 
 ---
 
-*Guide covers RustChain v2.2.1-rip200 · Nodes: http://50.28.86.131:8088, http://50.28.86.153:8088*
+*Guide covers RustChain v2.2.1-rip200 · Nodes: http://rustchain.org:8088, http://50.28.86.153:8088*

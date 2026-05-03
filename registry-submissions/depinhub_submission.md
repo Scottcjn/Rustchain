@@ -46,7 +46,7 @@ Hi DePINHub team! I'd like to submit RustChain for your project listing.
 - Architectures: PowerPC G3/G4/G5, POWER8, SPARC, MIPS, x86, Apple Silicon, ARM
 
 **Links**:
-- Block Explorer: https://50.28.86.131/explorer
+- Block Explorer: https://rustchain.org/explorer
 - Agent Discovery: https://rustchain.org/.well-known/agent.json
 - MCP Server: https://github.com/Scottcjn/rustchain-mcp
 - Stars: 183 (rustchain repo)

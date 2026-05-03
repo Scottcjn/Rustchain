@@ -160,4 +160,4 @@ MIT
 - [RustChain](https://rustchain.org) -- The blockchain
 - [RIP-200 Spec](https://github.com/Scottcjn/rustchain/blob/main/docs/RIP-200.md) -- Proof of Antiquity consensus
 - [Miner Setup](https://github.com/Scottcjn/rustchain/blob/main/docs/MINER_SETUP.md) -- How to start mining
-- [Block Explorer](https://50.28.86.131/explorer) -- Live network data
+- [Block Explorer](https://rustchain.org/explorer) -- Live network data

@@ -135,7 +135,7 @@ not the prize pool.
 A live leaderboard will be available at:
 
 ```
-https://50.28.86.131/api/championship/leaderboard
+https://rustchain.org/api/championship/leaderboard
 ```
 
 ### Leaderboard Data Fields
@@ -206,7 +206,7 @@ April 14, 2026:
 python3 rustchain_linux_miner.py --wallet YOUR_WALLET_NAME
 
 # Verify attestation
-curl -s "https://50.28.86.131/lottery/eligibility?miner_id=YOUR_WALLET_NAME" -k
+curl -s "https://rustchain.org/lottery/eligibility?miner_id=YOUR_WALLET_NAME" -k
 ```
 
 Then post your entry in the GitHub Discussion thread (link TBD) with:

@@ -1,5 +1,5 @@
 # Test dependencies for RustChain
-pytest>=7.0.0
+pytest>=7.4.4
 # Needed by Beacon signature verification tests and server-side Ed25519 checks
 PyNaCl>=1.6.2
 # Needed by test_wallet_cli_39 (imports from tools/rustchain_wallet_cli.py)

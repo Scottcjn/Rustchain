@@ -38,6 +38,7 @@ class TestUtxoDB(unittest.TestCase):
             'outputs': [{'address': address, 'value_nrtc': value_nrtc}],
             'fee_nrtc': 0,
             'timestamp': int(time.time()),
+            '_allow_minting': True,
         }, block_height=block_height)
 
     # -- box operations ------------------------------------------------------
@@ -314,6 +315,24 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(
             self.db.mempool_check_double_spend(boxes[0]['box_id'])
         )
+
+    def test_mempool_rejects_user_supplied_mining_reward(self):
+        """Public mempool must not admit minting transactions.
+
+        apply_transaction() requires _allow_minting=True for mining rewards;
+        mempool_add() is a public admission boundary and should reject this
+        class entirely so invalid mint candidates cannot occupy the mempool or
+        be returned to block producers.
+        """
+        ok = self.db.mempool_add({
+            'tx_id': 'evil_mint_1',
+            'tx_type': 'mining_reward',
+            'inputs': [],
+            'outputs': [{'address': 'attacker', 'value_nrtc': 999999999 * UNIT}],
+            'fee_nrtc': 0,
+        })
+        self.assertFalse(ok)
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
 
     def test_mempool_block_candidates(self):
         self._apply_coinbase('alice', 100 * UNIT, block_height=1)
@@ -709,6 +728,7 @@ class TestMultiInputTransfer(unittest.TestCase):
                 'inputs': [],
                 'outputs': [{'address': 'miner', 'value_nrtc': 10 * UNIT}],
                 'timestamp': int(time.time()) + i,
+                '_allow_minting': True,
             }, block_height=i + 1)
 
         self.assertEqual(self.db.get_balance('miner'), 50 * UNIT)
@@ -739,6 +759,7 @@ class TestMultiInputTransfer(unittest.TestCase):
             'tx_type': 'mining_reward',
             'inputs': [],
             'outputs': [{'address': 'alice', 'value_nrtc': 100 * UNIT}],
+            '_allow_minting': True,
         }, block_height=1)
 
         conn = self.db._conn()

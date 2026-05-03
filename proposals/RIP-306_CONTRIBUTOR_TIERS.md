@@ -266,7 +266,7 @@ This prevents tier multipliers from draining bounty budgets.
 - [ ] Add `contributor_profiles` and `tier_history` tables to `rustchain_v2.db`
 - [ ] Write `recalculate_tiers.py` script that reads `bounty_ledger` and populates profiles
 - [ ] Run initial calculation against existing 31,710 RTC / 487 wallets
-- [ ] Deploy as cron job on Node 1 (50.28.86.131)
+- [ ] Deploy as cron job on Node 1 (https://rustchain.org)
 
 ### Phase 2: API and Badges (Week 2)
 

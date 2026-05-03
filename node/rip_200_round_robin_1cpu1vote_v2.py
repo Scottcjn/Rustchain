@@ -20,7 +20,7 @@ from datetime import datetime
 GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
 BLOCK_TIME = 600  # 10 minutes
 ATTESTATION_TTL = 600  # 10 minutes
-CURRENT_YEAR = 2025
+CURRENT_YEAR = datetime.now().year
 
 # =============================================================================
 # ANTIQUITY MULTIPLIER SYSTEM v2

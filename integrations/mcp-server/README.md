@@ -434,7 +434,7 @@ RustChain rewards vintage hardware with multipliers:
 ## 📚 Additional Resources
 
 - [RustChain Main Repository](https://github.com/Scottcjn/RustChain)
-- [RustChain Whitepaper](../../docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+- [RustChain Whitepaper](../../docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
 - [Open Bounties](https://github.com/Scottcjn/rustchain-bounties/issues)
 - [Live Explorer](https://rustchain.org/explorer)
 - [Model Context Protocol Docs](https://modelcontextprotocol.io)

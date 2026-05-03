@@ -22,7 +22,7 @@
 
 *PowerPC G4は最新のThreadripperよりも多くの報酬を得られます。それがポイントです。*
 
-[Webサイト](https://rustchain.org) • [ライブエクスプローラー](https://rustchain.org/explorer) • [wRTCスワップ](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTCクイックスタート](docs/wrtc.md) • [wRTCチュートリアル](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia参照](https://grokipedia.com/search?q=RustChain) • [ホワイトペーパー](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf) • [クイックスタート](#-quick-start) • [仕組み](#-how-proof-of-antiquity-works)
+[Webサイト](https://rustchain.org) • [ライブエクスプローラー](https://rustchain.org/explorer) • [wRTCスワップ](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTCクイックスタート](docs/wrtc.md) • [wRTCチュートリアル](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia参照](https://grokipedia.com/search?q=RustChain) • [ホワイトペーパー](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [クイックスタート](#-quick-start) • [仕組み](#-how-proof-of-antiquity-works)
 
 </div>
 
@@ -313,7 +313,7 @@ Modern PC (1.0×):  0.12 RTC  ████████
 
 | ノード | ロケーション | 役割 | ステータス |
 |------|----------|------|--------|
-| **Node 1** | 50.28.86.131 | プライマリ + エクスプローラー | ✅ アクティブ |
+| **Node 1** | rustchain.org | プライマリ + エクスプローラー | ✅ アクティブ |
 | **Node 2** | 50.28.86.153 | Ergoアンカー | ✅ アクティブ |
 | **Node 3** | 76.8.228.245 | 外部（コミュニティ） | ✅ アクティブ |
 
