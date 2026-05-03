@@ -350,7 +350,7 @@ def calculate_epoch_rewards_v2(
         if i == len(weighted_miners) - 1:
             share = remaining
         else:
-            share = int((weight / total_weight) * total_reward_urtc)
+            share = 0 if total_weight == 0 else int((weight / total_weight) * total_reward_urtc)
             remaining -= share
 
         rewards[miner_id] = share
@@ -410,9 +410,9 @@ if __name__ == "__main__":
     print("-" * 62)
 
     for name, mult in weights:
-        share_urtc = int((mult / total_weight) * total_reward)
+        share_urtc = 0 if total_weight == 0 else int((mult / total_weight) * total_reward)
         share_rtc = share_urtc / 100_000_000
-        pct = (mult / total_weight) * 100
+        pct = 0 if total_weight == 0 else (mult / total_weight) * 100
         print(f"{name:<30} {mult:>8.2f}x {share_rtc:>10.6f} {pct:>7.1f}%")
 
     print("\n" + "=" * 70)

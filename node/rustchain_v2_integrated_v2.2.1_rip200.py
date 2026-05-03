@@ -2859,7 +2859,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
             # Distribute rewards with precision
             for pk, weight in miners:
                 # Use Decimal arithmetic to avoid float precision loss
-                amount_decimal = total_reward * Decimal(weight) / Decimal(total_weight)
+                amount_decimal = Decimal(0) if Decimal(total_weight) == 0 else total_reward * Decimal(weight) / Decimal(total_weight)
                 amount_i64 = int(amount_decimal * Decimal(100000000))
 
                 # OVERFLOW PROTECTION: Ensure amount_i64 fits in signed 64-bit int
