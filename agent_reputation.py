@@ -50,6 +50,7 @@ MAX_JOB_VALUE = {
 
 CAN_POST_JOBS       = {"trusted", "veteran"}
 CAN_POST_HIGH_VALUE = {"veteran"}
+HIGH_VALUE_THRESHOLD = 50  # RTC — jobs above this require veteran level
 
 
 def score_to_level(score):
@@ -337,16 +338,23 @@ def check_eligibility():
 
     rep = _engine.get(agent_id)
     max_val = rep["max_job_value_rtc"]
+    level = rep["level"]
     eligible = job_value <= max_val
+
+    # High-value job gate: jobs above HIGH_VALUE_THRESHOLD require veteran level
+    if eligible and job_value > HIGH_VALUE_THRESHOLD:
+        if level not in CAN_POST_HIGH_VALUE:
+            eligible = False
 
     return jsonify({
         "agent_id": agent_id,
         "job_value_rtc": job_value,
         "eligible": eligible,
         "reputation_score": rep["reputation_score"],
-        "level": rep["level"],
+        "level": level,
+        "can_post_high_value": level in CAN_POST_HIGH_VALUE,
         "max_job_value_rtc": max_val,
-        "reason": None if eligible else f"{rep['level']} level agents can only claim jobs up to {max_val} RTC",
+        "reason": None if eligible else f"{level} level agents cannot claim high-value jobs (>{HIGH_VALUE_THRESHOLD} RTC)",
     })
 
 
