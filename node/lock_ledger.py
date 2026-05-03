@@ -764,12 +764,13 @@ def register_lock_ledger_routes(app):
     @app.route('/api/lock/auto-release', methods=['POST'])
     def auto_release_endpoint():
         """Worker: Auto-release expired locks."""
-        # Optional: require worker key
+        # Require worker key authentication
         worker_key = request.headers.get("X-Worker-Key", "")
         expected_worker = os.environ.get("RC_WORKER_KEY", "")
-        if expected_worker and worker_key != expected_worker:
+        if not expected_worker:
+            return jsonify({"error": "RC_WORKER_KEY not configured — worker endpoints disabled"}), 503
+        if not hmac.compare_digest(worker_key, expected_worker):
             return jsonify({"error": "Unauthorized"}), 401
-        
         batch_size = int(request.args.get("batch_size", 100))
         
         conn = sqlite3.connect(DB_PATH)
