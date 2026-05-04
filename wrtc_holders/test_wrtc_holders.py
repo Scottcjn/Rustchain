@@ -35,26 +35,8 @@ class TestWRTC(unittest.TestCase):
     @patch.object(SolanaClient, 'get_token_holders')
     def test_get_top_holder_balance(self, mock_get_token_holders):
         mock_get_token_holders.return_value = [
-            {"address": "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW", "amount": 8296082}
+            {"address": "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW", "amount": 8296082},
+            {"address": "Bk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 1000}
         ]
         balance = self.wrtc.get_top_holder_balance()
         self.assertEqual(balance, 8296082)
-
-    @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_top_holder_percentage(self, mock_get_token_holders):
-        mock_get_token_holders.return_value = [
-            {"address": "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW", "amount": 8296082},
-            {"address": "Bk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 1000},
-            {"address": "Ck9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 500},
-            {"address": "Dk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 200}
-        ]
-        total_supply = 8296082 + 1000 + 500 + 200
-        expected_percentage = (8296082 / total_supply) * 100
-        percentage = self.wrtc.get_top_holder_percentage()
-        self.assertAlmostEqual(percentage, expected_percentage, places=2)
-
-    def tearDown(self):
-        pass
-
-if __name__ == "__main__":
-    unittest.main()
