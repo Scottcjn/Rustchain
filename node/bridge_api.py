@@ -389,7 +389,7 @@ def create_bridge_transfer(
         db_conn.rollback()
         return False, {
             "error": "Database error",
-            "details": str(e)
+            "details": "internal_error"
         }
 
 
@@ -572,7 +572,7 @@ def void_bridge_transfer(
         db_conn.rollback()
         return False, {
             "error": "Database error",
-            "details": str(e)
+            "details": "internal_error"
         }
 
 
@@ -647,7 +647,7 @@ def update_external_confirmation(
         db_conn.rollback()
         return False, {
             "error": "Database error",
-            "details": str(e)
+            "details": "internal_error"
         }
 
 

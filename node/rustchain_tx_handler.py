@@ -703,7 +703,7 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
 
         except Exception as e:
             logger.error(f"Error submitting transaction: {e}")
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "internal_error"}), 500
 
     @app.route('/tx/status/<tx_hash>', methods=['GET'])
     def get_tx_status(tx_hash: str):
@@ -712,7 +712,7 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
             status = tx_pool.get_transaction_status(tx_hash)
             return jsonify(status)
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "internal_error"}), 500
 
     @app.route('/tx/pending', methods=['GET'])
     def list_pending():
@@ -738,7 +738,7 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                 "transactions": [tx.to_dict() for tx in pending]
             })
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "internal_error"}), 500
 
     @app.route('/wallet/<address>/balance', methods=['GET'])
     def get_wallet_balance(address: str):
@@ -757,7 +757,7 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                 "available_rtc": available / 100_000_000
             })
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "internal_error"}), 500
 
     @app.route('/wallet/<address>/nonce', methods=['GET'])
     def get_wallet_nonce(address: str):
@@ -778,7 +778,7 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                 "pending_nonces": sorted(pending_nonces)
             })
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "internal_error"}), 500
 
     @app.route('/wallet/<address>/history', methods=['GET'])
     def get_wallet_history(address: str):
@@ -822,7 +822,7 @@ def create_tx_api_routes(app, tx_pool: TransactionPool):
                 "transactions": transactions
             })
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "internal_error"}), 500
 
 
 # =============================================================================

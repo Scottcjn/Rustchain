@@ -54,7 +54,7 @@ def validate_gpu_fingerprint(fingerprint_data: Dict) -> Tuple[bool, str]:
 
         return True, "valid"
     except Exception as e:
-        return False, f"validation_error: {str(e)}"
+        return False, "validation_error"
 
 def get_gpu_attestation_payload(device_index=0) -> Dict:
     """

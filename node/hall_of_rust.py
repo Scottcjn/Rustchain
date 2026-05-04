@@ -234,7 +234,7 @@ def induct_machine():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": "internal_error"}), 500
 
 @hall_bp.route('/hall/machine/<fingerprint>', methods=['GET'])
 def get_machine(fingerprint):
@@ -255,7 +255,7 @@ def get_machine(fingerprint):
         
         return jsonify(dict(row))
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": "internal_error"}), 500
 
 @hall_bp.route('/hall/leaderboard', methods=['GET'])
 def rust_leaderboard():
@@ -294,7 +294,7 @@ def rust_leaderboard():
             'generated_at': int(time.time())
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": "internal_error"}), 500
 
 @hall_bp.route('/hall/eulogy/<fingerprint>', methods=['POST'])
 def set_eulogy(fingerprint):
@@ -331,7 +331,7 @@ def set_eulogy(fingerprint):
         conn.close()
         return jsonify({'ok': True, 'message': 'Memorial updated'})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": "internal_error"}), 500
 
 @hall_bp.route('/hall/stats', methods=['GET'])
 def hall_stats():
@@ -371,7 +371,7 @@ def hall_stats():
         conn.close()
         return jsonify(stats)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": "internal_error"}), 500
 
 def get_rust_badge(score):
     """Get a badge based on Rust Score."""
@@ -493,7 +493,7 @@ def api_hall_of_fame_leaderboard():
             'generated_at': int(time.time()),
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": "internal_error"}), 500
 
 
 @hall_bp.route('/api/hall_of_fame/machine', methods=['GET'])
@@ -617,7 +617,7 @@ def api_hall_of_fame_machine():
             'generated_at': now,
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": "internal_error"}), 500
 
 def register_hall_endpoints(app, db_path):
     """Register Hall of Rust endpoints with Flask app."""
@@ -686,7 +686,7 @@ def machine_of_the_day():
         
         return jsonify(machine)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": "internal_error"}), 500
 
 @hall_bp.route('/hall/fleet_breakdown', methods=['GET'])
 def fleet_breakdown():
@@ -726,7 +726,7 @@ def fleet_breakdown():
             'generated_at': int(time.time())
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": "internal_error"}), 500
 
 @hall_bp.route('/hall/timeline', methods=['GET'])
 def hall_timeline():
@@ -762,4 +762,4 @@ def hall_timeline():
             'generated_at': int(time.time())
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": "internal_error"}), 500

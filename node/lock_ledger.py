@@ -213,7 +213,7 @@ def create_lock(
         db_conn.rollback()
         return False, {
             "error": "Database error",
-            "details": str(e)
+            "details": "internal_error"
         }
 
 
@@ -298,7 +298,7 @@ def release_lock(
         db_conn.rollback()
         return False, {
             "error": "Database error",
-            "details": str(e)
+            "details": "internal_error"
         }
 
 
@@ -372,7 +372,7 @@ def forfeit_lock(
         db_conn.rollback()
         return False, {
             "error": "Database error",
-            "details": str(e)
+            "details": "internal_error"
         }
 
 

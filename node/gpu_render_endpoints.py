@@ -80,7 +80,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.commit()
             return jsonify({"ok": True, "message": "GPU attestation recorded"})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "internal_error"}), 500
         finally:
             db.close()
 
@@ -127,7 +127,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             # escrow_secret is intentionally returned once to allow participant-auth for release/refund.
             return jsonify({"ok": True, "job_id": job_id, "status": "locked", "escrow_secret": escrow_secret})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "internal_error"}), 500
         finally:
             db.close()
 
@@ -171,7 +171,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.commit()
             return jsonify({"ok": True, "status": "released"})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "internal_error"}), 500
         finally:
             db.close()
 
@@ -215,7 +215,7 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.commit()
             return jsonify({"ok": True, "status": "refunded"})
         except sqlite3.Error as e:
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "internal_error"}), 500
         finally:
             db.close()
 

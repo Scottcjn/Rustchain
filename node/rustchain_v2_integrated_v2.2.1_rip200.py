@@ -4953,7 +4953,7 @@ def gov_rotate_approve():
             sig = bytes.fromhex(sig_hex.replace("0x",""))
             nacl.signing.VerifyKey(pk).verify(msg, sig)
         except Exception as e:
-            return jsonify({"ok": False, "reason": "bad_signature", "error": str(e)}), 400
+            return jsonify({"error": "internal_error"}), 400
 
         db.execute("""INSERT OR IGNORE INTO gov_rotation_approvals
                       (epoch_effective, signer_id, sig_hex, approved_ts)
@@ -6945,7 +6945,7 @@ try:
             blocks = block_sync.get_blocks_for_sync(start_height, limit)
             return jsonify({"ok": True, "blocks": blocks})
         except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            return jsonify({"error": "internal_error"}), 400
 
     @app.route('/p2p/add_peer', methods=['POST'])
     @require_peer_auth
@@ -6961,7 +6961,7 @@ try:
             success = peer_manager.add_peer(peer_url)
             return jsonify({"ok": success})
         except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            return jsonify({"error": "internal_error"}), 400
 
     # Start background sync
     block_sync.start()
@@ -6991,7 +6991,7 @@ def download_installer():
             mimetype="application/x-bat"
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 404
+        return jsonify({"error": "internal_error"}), 404
 
 @app.route("/download/miner")
 def download_miner():
@@ -7004,7 +7004,7 @@ def download_miner():
             mimetype="text/x-python"
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 404
+        return jsonify({"error": "internal_error"}), 404
 
 
 @app.route("/download/uninstaller")
@@ -7617,7 +7617,7 @@ def download_test_bat():
                 h.update(chunk)
         expected_sha256 = h.hexdigest().upper()
     except Exception as e:
-        return jsonify({"error": str(e)}), 404
+        return jsonify({"error": "internal_error"}), 404
 
     # Keep legacy HTTP download URL, but verify hash before running.
     bat = f"""@echo off

@@ -526,10 +526,10 @@ def submit_claim(
         
         return result
     except DuplicateClaimError as e:
-        result["error"] = str(e)
+        result["error"] = "internal_error"
         return result
     except ClaimsSubmissionError as e:
-        result["error"] = str(e)
+        result["error"] = "internal_error"
         return result
 
 

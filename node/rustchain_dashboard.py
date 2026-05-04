@@ -661,7 +661,7 @@ def api_wallet_lookup(wallet_address):
 
     except Exception as e:
         print(f"Error in wallet lookup: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": "internal_error"}), 500
 
 def format_uptime(seconds):
     """Format uptime in human-readable format"""
