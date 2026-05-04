@@ -413,7 +413,11 @@ def get_contracts():
 
 @beacon_api.route('/api/contracts', methods=['POST'])
 def create_contract():
-    """Create a new contract between agents."""
+    """Create a new contract between agents.
+    
+    Requires X-Agent-Key header to authenticate the contract creator (from_agent).
+    Validates that the from_agent exists in the relay_agents table.
+    """
     try:
         data = request.get_json()
         
@@ -422,6 +426,29 @@ def create_contract():
         for field in required:
             if field not in data:
                 return jsonify({'error': f'Missing field: {field}'}), 400
+        
+        from_agent = data['from']
+        
+        # Authentication: require X-Agent-Key header matching from_agent
+        agent_key = request.headers.get('X-Agent-Key', '')
+        if not agent_key:
+            return jsonify({'error': 'Missing X-Agent-Key header — authentication required'}), 401
+        
+        if agent_key != from_agent:
+            return jsonify({
+                'error': 'Unauthorized — X-Agent-Key does not match from_agent'
+            }), 403
+        
+        # Verify from_agent exists in relay_agents table
+        db = get_db()
+        existing = db.execute(
+            "SELECT agent_id FROM relay_agents WHERE agent_id = ?",
+            (from_agent,)
+        ).fetchone()
+        if not existing:
+            return jsonify({
+                'error': f'from_agent not found: {from_agent}'
+            }), 400
         
         # Generate contract ID
         contract_id = f"ctr_{int(time.time())}_{hashlib.blake2b(str(time.time()).encode(), digest_size=4).hexdigest()}"
