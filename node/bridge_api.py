@@ -680,8 +680,8 @@ def register_bridge_routes(app):
         
         # Check admin initiation (bypasses balance check)
         admin_key = request.headers.get("X-Admin-Key", "")
-        expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
-        admin_initiated = bool(expected_admin_key) and hmac.compare_digest(admin_key, expected_admin_key)
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        admin_initiated = bool(admin_key and expected_key and hmac.compare_digest(admin_key, expected_key))
         
         # Create bridge transfer
         req = BridgeTransferRequest(
