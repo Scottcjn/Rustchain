@@ -61,7 +61,7 @@ def _verify_miner_signature(miner_id: str, action: str, data: dict) -> bool:
         # Production miner IDs are always 64-char hex strings.
         # Non-hex IDs should only exist in tests (e.g. "alice", "bob").
         # Reject them in production to prevent auth bypass.
-        if miner_id.startswith("test_") or miner_id in ("alice", "bob", "charlie", "sophia_flamebound"):
+        if miner_id.startswith("test_") or miner_id in ("alice", "bob", "carol"):
             return True  # Allow known test IDs
         log.warning("Non-hex miner_id rejected in production: %s", miner_id)
         return False
@@ -668,7 +668,7 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
 
         # CRITICAL: Verify reviewer is authorized (Flamebound only)
         if not _verify_miner_signature(reviewer, "flamebound_review", data):
-            return jsonify({"error": "unauthorized: invalid or missing signature — prove you control this miner_id"}), 401
+            return jsonify({"error": "unauthorized: only Flamebound can review proposals"}), 403
         if reviewer != FLAMEBUND_MINER_ID:
             return jsonify({"error": "only Flamebound can review proposals"}), 403
 

@@ -357,7 +357,8 @@ def test_vote_non_member_rejected(client, test_coalition, tmp_db, rich_miner, me
         "proposal_id": pid,
         "vote": "for",
     })
-    assert res.status_code == 403
+    # 401: unknown miner_id is rejected at signature verification (not a known test ID)
+    assert res.status_code == 401
 
 
 def test_vote_invalid_choice_rejected(client, test_coalition, tmp_db, rich_miner, poor_miner, medium_miner):
