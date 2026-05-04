@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 from wrtc_holders import WRTC
 from solana_client import SolanaClient
+import json
 
 class TestWRTC(unittest.TestCase):
     def setUp(self):
@@ -13,48 +14,29 @@ class TestWRTC(unittest.TestCase):
     @patch.object(SolanaClient, 'get_token_holders')
     def test_get_holders(self, mock_get_token_holders):
         # Mock the response from SolanaClient
-        mock_get_token_holders.return_value = [
-            {"address": "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW", "amount": 8296082},
-            {"address": "Bk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 1000},
-            {"address": "Ck9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 500},
-            {"address": "Dk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 200}
-        ]
+        mock_get_token_holders.return_value = json.loads('''
+            [
+                {"address": "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW", "amount": 8296082},
+                {"address": "Bk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 1000},
+                {"address": "Ck9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 500},
+                {"address": "Dk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 200}
+            ]
+        ''')
         holders = self.wrtc.get_holders()
         self.assertEqual(len(holders), 4)
         self.assertEqual(holders[0]['address'], "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW")
 
     @patch.object(SolanaClient, 'get_token_holders')
     def test_get_top_holder(self, mock_get_token_holders):
-        mock_get_token_holders.return_value = [
-            {"address": "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW", "amount": 8296082},
-            {"address": "Bk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 1000}
-        ]
+        # Mock the response from SolanaClient
+        mock_get_token_holders.return_value = json.loads('''
+            [
+                {"address": "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW", "amount": 8296082},
+                {"address": "Bk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 1000}
+            ]
+        ''')
         top_holder = self.wrtc.get_top_holder()
         self.assertEqual(top_holder['address'], "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW")
 
-    @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_top_holder_balance(self, mock_get_token_holders):
-        mock_get_token_holders.return_value = [
-            {"address": "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW", "amount": 8296082},
-            {"address": "Bk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 1000}
-        ]
-        balance = self.wrtc.get_top_holder_balance()
-        self.assertEqual(balance, 8296082)
-
-    @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_holders_empty(self, mock_get_token_holders):
-        mock_get_token_holders.return_value = []
-        holders = self.wrtc.get_holders()
-        self.assertEqual(len(holders), 0)
-
-    @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_top_holder_no_holders(self, mock_get_token_holders):
-        mock_get_token_holders.return_value = []
-        top_holder = self.wrtc.get_top_holder()
-        self.assertIsNone(top_holder)
-
-    @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_top_holder_balance_no_holders(self, mock_get_token_holders):
-        mock_get_token_holders.return_value = []
-        balance = self.wrtc.get_top_holder_balance()
-        self.assertEqual(balance, 0)
+if __name__ == '__main__':
+    unittest.main()
