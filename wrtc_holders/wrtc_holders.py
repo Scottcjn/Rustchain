@@ -72,30 +72,28 @@ class WRTCHolder:
         self.amount = amount
         self.decimals = decimals
 
-    def formatted_balance(self) -> str:
+    def normalized_balance(self) -> float:
         """
-        Get the formatted balance with decimals applied.
+        Get the normalized balance of the holder.
 
         Returns:
-            str: The human-readable balance.
+            float: The normalized balance.
         """
-        try:
-            whole = self.amount // (10 ** self.decimals)
-            fractional = self.amount % (10 ** self.decimals)
-            return f"{whole}.{fractional:0{self.decimals}d}"
-        except Exception as e:
-            raise RuntimeError(f"Failed to format balance: {e}")
+        return self.amount / (10 ** self.decimals)
 
-    def meets_minimum_threshold(self, threshold: int) -> bool:
+    def meets_threshold(self, threshold: float) -> bool:
         """
-        Check if the holder meets or exceeds the minimum threshold.
+        Check if the holder meets the given threshold.
 
         Args:
-            threshold (int): The minimum amount required (in base units).
+            threshold (float): The threshold to meet.
 
         Returns:
-            bool: True if amount >= threshold, False otherwise.
+            bool: True if the normalized balance meets or exceeds the threshold.
+
+        Raises:
+            ValueError: If threshold is negative.
         """
-        if not isinstance(threshold, int) or threshold < 0:
-            raise ValueError("Threshold must be a non-negative integer")
-        return self.amount >= threshold
+        if not isinstance(threshold, (int, float)) or threshold < 0:
+            raise ValueError("Threshold must be a non-negative number")
+        return self.normalized_balance() >= threshold
