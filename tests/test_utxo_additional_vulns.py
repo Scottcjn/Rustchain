@@ -179,6 +179,9 @@ class TestVuln2TxIdCollision(unittest.TestCase):
         self.db.init_tables()
         self.conn = self.db._conn()
         self.conn.row_factory = sqlite3.Row
+        # Reset rate limiter for clean test
+        from utxo_db import _mempool_submission_times
+        _mempool_submission_times.clear()
 
     def tearDown(self):
         self.conn.close()
@@ -268,6 +271,8 @@ class TestVuln2TxIdCollision(unittest.TestCase):
             h.update(out['address'].encode('utf-8'))
             h.update(out['value_nrtc'].to_bytes(8, 'little'))
             h.update('[]'.encode('utf-8'))  # tokens_json
+        h.update((0).to_bytes(8, 'little'))  # lock_time
+        h.update((1).to_bytes(8, 'little'))  # version
         h.update(timestamp.to_bytes(8, 'little'))
         expected_tx1_id = h.hexdigest()
 
@@ -284,6 +289,8 @@ class TestVuln2TxIdCollision(unittest.TestCase):
             h2.update(out['address'].encode('utf-8'))
             h2.update(out['value_nrtc'].to_bytes(8, 'little'))
             h2.update('[]'.encode('utf-8'))
+        h2.update((0).to_bytes(8, 'little'))  # lock_time
+        h2.update((1).to_bytes(8, 'little'))  # version
         h2.update(timestamp.to_bytes(8, 'little'))
         expected_tx2_id = h2.hexdigest()
 
@@ -357,6 +364,9 @@ class TestVuln3MempoolTxIdSpoofing(unittest.TestCase):
         self.db.init_tables()
         self.conn = self.db._conn()
         self.conn.row_factory = sqlite3.Row
+        # Reset rate limiter for clean test
+        from utxo_db import _mempool_submission_times
+        _mempool_submission_times.clear()
 
     def tearDown(self):
         self.conn.close()
@@ -414,6 +424,8 @@ class TestVuln3MempoolTxIdSpoofing(unittest.TestCase):
             h.update(out['address'].encode('utf-8'))
             h.update(out['value_nrtc'].to_bytes(8, 'little'))
             h.update('[]'.encode('utf-8'))
+        h.update((0).to_bytes(8, 'little'))  # lock_time
+        h.update((1).to_bytes(8, 'little'))  # version
         h.update(timestamp.to_bytes(8, 'little'))
         correct_tx_id = h.hexdigest()
 
@@ -462,6 +474,8 @@ class TestVuln3MempoolTxIdSpoofing(unittest.TestCase):
             h.update(out['address'].encode('utf-8'))
             h.update(out['value_nrtc'].to_bytes(8, 'little'))
             h.update('[]'.encode('utf-8'))
+        h.update((0).to_bytes(8, 'little'))  # lock_time
+        h.update((1).to_bytes(8, 'little'))  # version
         h.update(timestamp.to_bytes(8, 'little'))
         correct_tx_id = h.hexdigest()
 
@@ -549,6 +563,8 @@ class TestVulnIntegration(unittest.TestCase):
             h.update(out['address'].encode('utf-8'))
             h.update(out['value_nrtc'].to_bytes(8, 'little'))
             h.update(out['tokens_json'].encode('utf-8'))
+        h.update((0).to_bytes(8, 'little'))  # lock_time
+        h.update((1).to_bytes(8, 'little'))  # version
         h.update(timestamp.to_bytes(8, 'little'))
         correct_tx_id = h.hexdigest()
 
@@ -612,6 +628,110 @@ class TestVulnIntegration(unittest.TestCase):
 
         conn.close()
 
+
+class TestMempoolRateLimiting(unittest.TestCase):
+    """Test mempool rate limiting prevents spam attacks."""
+
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp.close()
+        self.db = UtxoDB(self.tmp.name)
+        self.db.init_tables()
+        self.conn = self.db._conn()
+        self.conn.row_factory = sqlite3.Row
+        # Reset rate limiter for clean test
+        from utxo_db import _mempool_submission_times
+        _mempool_submission_times.clear()
+
+    def tearDown(self):
+        self.conn.close()
+        os.unlink(self.tmp.name)
+
+    def test_rate_limit_blocks_excess_transactions(self):
+        """
+        NEW: Mempool rate limiting prevents spam.
+
+        After fix:
+        - MAX_MEMPOOL_TX_PER_WINDOW=10, MEMPOOL_RATE_WINDOW_SECONDS=60
+        - Submitting >10 tx in 60s window should be rejected
+        """
+        from utxo_db import MAX_MEMPOOL_TX_PER_WINDOW
+        import hashlib
+
+        addr = "RTCsender_address_1234567890abcdef"
+        box_ids = []
+
+        # Create enough genesis boxes with UNIQUE values (different value_nrtc ensures unique box_ids)
+        for i in range(MAX_MEMPOOL_TX_PER_WINDOW + 1):
+            self.db.apply_transaction({
+                'tx_type': 'mining_reward',
+                'inputs': [],
+                'outputs': [{'address': addr, 'value_nrtc': (1000 + i) * UNIT}],
+                'fee_nrtc': 0,
+                'timestamp': int(time.time()) + 1000 + i,
+                '_allow_minting': True,
+            }, block_height=i + 1)
+
+            rows = self.conn.execute(
+                "SELECT box_id FROM utxo_boxes WHERE owner_address = ? AND spent_at IS NULL ORDER BY value_nrtc DESC",
+                (addr,)
+            ).fetchall()
+            box_ids.append(rows[0]['box_id'])  # Highest value = most recent
+
+        # Submit MAX_MEMPOOL_TX_PER_WINDOW transactions (should succeed)
+        for i in range(MAX_MEMPOOL_TX_PER_WINDOW):
+            ts = int(time.time()) + 100 + i
+            inputs = [{'box_id': box_ids[i], 'spending_proof': 'proof'}]
+            outputs = [{'address': addr, 'value_nrtc': 900 * UNIT}]
+            h = hashlib.sha256()
+            for inp in sorted(inputs, key=lambda x: x['box_id']):
+                h.update(bytes.fromhex(inp['box_id']))
+            for out in outputs:
+                h.update(out['address'].encode('utf-8'))
+                h.update(out['value_nrtc'].to_bytes(8, 'little'))
+                h.update('[]'.encode('utf-8'))
+            h.update((0).to_bytes(8, 'little'))  # lock_time
+            h.update((1).to_bytes(8, 'little'))  # version
+            h.update(ts.to_bytes(8, 'little'))
+            tx_id = h.hexdigest()
+
+            tx = {
+                'tx_id': tx_id,
+                'tx_type': 'transfer',
+                'inputs': inputs,
+                'outputs': outputs,
+                'fee_nrtc': 0,
+                'timestamp': ts,
+            }
+            result = self.db.mempool_add(tx)
+            self.assertTrue(result, f"TX {i+1} should be accepted within rate limit")
+
+        # The (MAX+1)th transaction should be rejected due to rate limiting
+        ts = int(time.time()) + 100 + MAX_MEMPOOL_TX_PER_WINDOW
+        inputs = [{'box_id': box_ids[MAX_MEMPOOL_TX_PER_WINDOW], 'spending_proof': 'proof'}]
+        outputs = [{'address': addr, 'value_nrtc': 900 * UNIT}]
+        h = hashlib.sha256()
+        for inp in sorted(inputs, key=lambda x: x['box_id']):
+            h.update(bytes.fromhex(inp['box_id']))
+        for out in outputs:
+            h.update(out['address'].encode('utf-8'))
+            h.update(out['value_nrtc'].to_bytes(8, 'little'))
+            h.update('[]'.encode('utf-8'))
+        h.update((0).to_bytes(8, 'little'))
+        h.update((1).to_bytes(8, 'little'))
+        h.update(ts.to_bytes(8, 'little'))
+        tx_id = h.hexdigest()
+
+        excess_tx = {
+            'tx_id': tx_id,
+            'tx_type': 'transfer',
+            'inputs': inputs,
+            'outputs': outputs,
+            'fee_nrtc': 0,
+            'timestamp': ts,
+        }
+        result = self.db.mempool_add(excess_tx)
+        self.assertFalse(result, "Transaction exceeding rate limit should be rejected")
 
 if __name__ == '__main__':
     unittest.main()

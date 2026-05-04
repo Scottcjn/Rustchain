@@ -39,7 +39,12 @@ DUST_THRESHOLD = 1_000      # nanoRTC below which change is absorbed into fee
 MAX_COINBASE_OUTPUT_NRTC = 150 * 144 * UNIT  # Max minting output per block (1.5 RTC)
 MAX_POOL_SIZE = 10_000
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
+MAX_MEMPOOL_TX_PER_WINDOW = 10  # Rate limit: max tx submissions per window
+MEMPOOL_RATE_WINDOW_SECONDS = 60  # Rate limit window in seconds
 P2PK_PREFIX = b'\x00\x08'   # Pay-to-Public-Key proposition prefix
+
+# Sliding window tracker for mempool submission rate limiting
+_mempool_submission_times = __import__('collections').deque()
 
 
 # ---------------------------------------------------------------------------
@@ -59,13 +64,20 @@ def compute_box_id(value_nrtc: int, proposition: str, creation_height: int,
 
 
 def compute_tx_id(inputs: List[dict], outputs: List[dict],
-                  timestamp: int) -> str:
-    """Deterministic transaction ID. Returns hex string."""
+                  lock_time: int = 0, version: int = 1,
+                  timestamp: int = 0) -> str:
+    """Deterministic transaction ID. Returns hex string.
+    FIX(VULN-2): Includes outputs, lock_time, and version in hash.
+    """
     h = hashlib.sha256()
-    for inp in inputs:
+    for inp in sorted(inputs, key=lambda i: i['box_id']):
         h.update(bytes.fromhex(inp['box_id']))
     for out in outputs:
-        h.update(bytes.fromhex(out['box_id']))
+        h.update(out['address'].encode('utf-8'))
+        h.update(out['value_nrtc'].to_bytes(8, 'little'))
+        h.update(out.get('tokens_json', '[]').encode('utf-8'))
+    h.update(lock_time.to_bytes(8, 'little'))
+    h.update(version.to_bytes(8, 'little'))
     h.update(timestamp.to_bytes(8, 'little'))
     return h.hexdigest()
 
@@ -486,14 +498,18 @@ class UtxoDB:
             # Use SHA256(sorted input box_ids + outputs + timestamp).
             # FIX(VULN-2): Always include outputs in tx_id to prevent
             # collision attacks where same inputs map to different outputs.
+            # FIX(VULN-2b): Also include lock_time and version.
             tx_seed_h = hashlib.sha256()
             for inp in sorted(inputs, key=lambda i: i['box_id']):
                 tx_seed_h.update(bytes.fromhex(inp['box_id']))
-            # Always include outputs regardless of whether inputs exist
             for out in outputs:
                 tx_seed_h.update(out['address'].encode('utf-8'))
                 tx_seed_h.update(out['value_nrtc'].to_bytes(8, 'little'))
                 tx_seed_h.update(out.get('tokens_json', '[]').encode('utf-8'))
+            lock_time = tx.get('lock_time', 0)
+            version = tx.get('version', 1)
+            tx_seed_h.update(lock_time.to_bytes(8, 'little'))
+            tx_seed_h.update(version.to_bytes(8, 'little'))
             tx_seed_h.update(ts.to_bytes(8, 'little'))
             tx_id_hex = tx_seed_h.hexdigest()
 
@@ -698,6 +714,14 @@ class UtxoDB:
             if row['n'] >= MAX_POOL_SIZE:
                 return False
 
+            # Rate limiting: reject if too many submissions in the window
+            now = int(time.time())
+            cutoff = now - MEMPOOL_RATE_WINDOW_SECONDS
+            while _mempool_submission_times and _mempool_submission_times[0] < cutoff:
+                _mempool_submission_times.popleft()
+            if len(_mempool_submission_times) >= MAX_MEMPOOL_TX_PER_WINDOW:
+                return False
+
             tx_id = tx.get('tx_id', '')
             # FIX(#2179): Reject empty/whitespace-only tx_id to prevent
             # INSERT OR IGNORE collisions that create orphan input claims.
@@ -708,9 +732,12 @@ class UtxoDB:
             # verify it matches the provided tx_id. This prevents attackers
             # from spoofing arbitrary tx_ids to collide with existing entries
             # or evade tracking.
+            # FIX(VULN-3b): Include lock_time and version in recomputation.
             inputs = tx.get('inputs', [])
             outputs = tx.get('outputs', [])
             ts = tx.get('timestamp', int(time.time()))
+            lock_time = tx.get('lock_time', 0)
+            version = tx.get('version', 1)
             import hashlib as _hashlib
             _h = _hashlib.sha256()
             for inp in sorted(inputs, key=lambda i: i['box_id']):
@@ -719,6 +746,8 @@ class UtxoDB:
                 _h.update(out['address'].encode('utf-8'))
                 _h.update(out['value_nrtc'].to_bytes(8, 'little'))
                 _h.update(out.get('tokens_json', '[]').encode('utf-8'))
+            _h.update(lock_time.to_bytes(8, 'little'))
+            _h.update(version.to_bytes(8, 'little'))
             _h.update(ts.to_bytes(8, 'little'))
             computed_tx_id = _h.hexdigest()
             if tx_id != computed_tx_id:
@@ -833,6 +862,7 @@ class UtxoDB:
                 )
 
             conn.execute("COMMIT")
+            _mempool_submission_times.append(int(time.time()))
             return True
         except Exception:
             try:
