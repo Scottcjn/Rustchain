@@ -42,12 +42,6 @@ class TestWRTC(unittest.TestCase):
         self.assertEqual(balance, 8296082)
 
     @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_top_holder_balance_no_holders(self, mock_get_token_holders):
-        mock_get_token_holders.return_value = []
-        balance = self.wrtc.get_top_holder_balance()
-        self.assertEqual(balance, 0)
-
-    @patch.object(SolanaClient, 'get_token_holders')
     def test_get_holders_empty(self, mock_get_token_holders):
         mock_get_token_holders.return_value = []
         holders = self.wrtc.get_holders()
@@ -58,3 +52,9 @@ class TestWRTC(unittest.TestCase):
         mock_get_token_holders.return_value = []
         top_holder = self.wrtc.get_top_holder()
         self.assertIsNone(top_holder)
+
+    @patch.object(SolanaClient, 'get_token_holders')
+    def test_get_top_holder_balance_no_holders(self, mock_get_token_holders):
+        mock_get_token_holders.return_value = []
+        balance = self.wrtc.get_top_holder_balance()
+        self.assertEqual(balance, 0)
