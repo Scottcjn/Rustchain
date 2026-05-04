@@ -7,7 +7,7 @@ from solana.publickey import PublicKey
 from solana.rpc.api import Client
 from solana.rpc.types import TokenAccountOpts
 
-def get_token_holders(client: Client, token_mint: PublicKey) -> List[Dict[str, int]]:
+def get_token_holders(client: Client, token_mint: PublicKey) -> List[Dict[str, float]]:
     """
     Fetches all token holders for a given token mint address.
     
@@ -20,6 +20,7 @@ def get_token_holders(client: Client, token_mint: PublicKey) -> List[Dict[str, i
 
     Raises:
         ValueError: If client is not connected or token_mint is invalid
+        RuntimeError: If the RPC request fails
     """
     if not isinstance(client, Client):
         raise ValueError("client must be a Solana Client instance")
@@ -27,8 +28,7 @@ def get_token_holders(client: Client, token_mint: PublicKey) -> List[Dict[str, i
         raise ValueError("token_mint must be a PublicKey instance")
 
     try:
-        opts = TokenAccountOpts(mint=token_mint)
-        response = client.get_token_accounts_by_mint(token_mint, opts)
+        response = client.get_token_accounts_by_mint(token_mint, TokenAccountOpts(mint=token_mint))
         value = response.get("value", [])
     except Exception as e:
         raise RuntimeError(f"Failed to fetch token accounts: {e}") from e
@@ -38,18 +38,23 @@ def get_token_holders(client: Client, token_mint: PublicKey) -> List[Dict[str, i
         try:
             pubkey = item.get("pubkey")
             account_info = item.get("account", {})
-            amount_data = account_info.get("data", {}).get("parsed", {}).get("info", {}).get("tokenAmount", {})
+            amount_data = (
+                account_info
+                .get("data", {})
+                .get("parsed", {})
+                .get("info", {})
+                .get("tokenAmount", {})
+            )
             ui_amount = amount_data.get("uiAmount", 0)
 
             if not isinstance(ui_amount, (int, float)):
-                ui_amount = 0
+                ui_amount = 0.0
 
             holders.append({
                 "address": pubkey,
                 "amount": float(ui_amount)
             })
         except Exception as e:
-            # Log error or skip invalid entry
             continue
 
     return holders
