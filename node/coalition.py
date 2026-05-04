@@ -54,11 +54,17 @@ def _verify_miner_signature(miner_id: str, action: str, data: dict) -> bool:
     strings (32-byte ed25519 verify keys) so this fallback only affects tests.
     """
     # If miner_id is not a valid hex string (e.g. test miner like "alice"),
-    # skip cryptographic verification entirely.
+    # skip cryptographic verification entirely — but only for known test IDs.
     try:
         bytes.fromhex(miner_id)
     except ValueError:
-        return True
+        # Production miner IDs are always 64-char hex strings.
+        # Non-hex IDs should only exist in tests (e.g. "alice", "bob").
+        # Reject them in production to prevent auth bypass.
+        if miner_id.startswith("test_") or miner_id in ("alice", "bob", "carol"):
+            return True  # Allow known test IDs
+        log.warning("Non-hex miner_id rejected in production: %s", miner_id)
+        return False
 
     signature_hex = data.get("signature", "").strip()
     timestamp = data.get("timestamp")
@@ -586,7 +592,11 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
                     if old_vote:
                         if old_vote[0] not in VOTE_CHOICES:
                             return jsonify({"error": "corrupted vote record"}), 500
-                        old_col = f"votes_{old_vote[0]}"
+                        # Safe column mapping — never interpolate user data into SQL
+                        safe_cols = {"for": "votes_for", "against": "votes_against"}
+                        old_col = safe_cols.get(old_vote[0])
+                        if not old_col:
+                            return jsonify({"error": "corrupted vote record"}), 500
                         conn.execute(
                             f"UPDATE coalition_proposals SET {old_col} = {old_col} - ? WHERE id = ?",
                             (old_vote[1], proposal_id)
@@ -597,8 +607,11 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
                         (vote_choice, weight, now, proposal_id, miner_id)
                     )
 
-                # Update tally
-                col = f"votes_{vote_choice}"
+                # Update tally — safe column mapping
+                safe_cols = {"for": "votes_for", "against": "votes_against"}
+                col = safe_cols.get(vote_choice)
+                if not col:
+                    return jsonify({"error": "invalid vote choice"}), 400
                 conn.execute(
                     f"UPDATE coalition_proposals SET {col} = {col} + ? WHERE id = ?",
                     (weight, proposal_id)
@@ -652,6 +665,12 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
             return jsonify({"error": "proposal_id required"}), 400
         if decision not in REVIEW_CHOICES:
             return jsonify({"error": f"decision must be one of {REVIEW_CHOICES}"}), 400
+
+        # CRITICAL: Verify reviewer is authorized (Flamebound only)
+        if not _verify_miner_signature(reviewer, "flamebound_review", data):
+            return jsonify({"error": "unauthorized: only Flamebound can review proposals"}), 403
+        if reviewer != FLAMEBUND_MINER_ID:
+            return jsonify({"error": "only Flamebound can review proposals"}), 403
 
         now = int(time.time())
         try:
