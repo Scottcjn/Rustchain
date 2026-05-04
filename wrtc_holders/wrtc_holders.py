@@ -15,6 +15,7 @@ from solana.publickey import PublicKey
 from solana.rpc.api import Client as SolanaClient
 from solana.rpc.types import TokenAccountOpts
 
+
 def get_token_holders(client: SolanaClient, token_mint: PublicKey) -> list[dict[str, float]]:
     """
     Fetches all token holders for a given token mint address.
@@ -49,27 +50,23 @@ def get_token_holders(client: SolanaClient, token_mint: PublicKey) -> list[dict[
         try:
             pubkey = item.get("pubkey")
             account_info = item.get("account", {})
-            if pubkey and account_info:
-                holders.append({"address": pubkey, "amount": account_info.get("lamports", 0)})
-        except Exception as e:
-            raise RuntimeError(f"Failed to process token account: {e}") from e
+            if not account_info:
+                continue
+
+            data = account_info.get("data", {})
+            if not data:
+                continue
+
+            # Parse token amount from account data
+            # Assuming UI amount is stored or can be derived; fallback to 0
+            token_amount = float(data.get("parsed", {}).get("info", {}).get("tokenAmount", {}).get("uiAmount", 0))
+
+            holders.append({
+                "address": pubkey,
+                "amount": token_amount
+            })
+        except (TypeError, ValueError, AttributeError) as e:
+            # Skip malformed or invalid accounts
+            continue
 
     return holders
-
-def get_wrtc_holders() -> list[dict[str, float]]:
-    """
-    Fetches all wRTC holders.
-
-    Returns:
-        List of dictionaries containing 'address' and 'amount' keys
-    """
-    client = SolanaClient(url=os.environ.get("SOLANA_RPC_URL", ""))
-    token_mint = PublicKey(os.environ.get("WRTC_MINT_ADDRESS", ""))
-    return get_token_holders(client, token_mint)
-
-if __name__ == "__main__":
-    try:
-        holders = get_wrtc_holders()
-        print(json.dumps(holders, indent=4))
-    except Exception as e:
-        print(f"Error: {e}")
