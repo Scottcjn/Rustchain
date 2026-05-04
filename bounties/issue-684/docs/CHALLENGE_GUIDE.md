@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # RIP-302 Challenge Guide
 
 > Detailed instructions for executing and verifying RIP-302 Agent-to-Agent transaction test challenges.
@@ -110,7 +111,7 @@ cd Rustchain/bounties/issue-684
 
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # On Windows: venv\Scriptsctivate
 ```
 
 #### Step 3: Install Dependencies
@@ -452,8 +453,8 @@ python scripts/run_challenge.py --all
 
 ### Getting Help
 
-1. Check the [main README](./README.md)
-2. Review the [RIP-302 specification](./docs/RIP-302-agent-to-agent-test-challenge.md)
+1. Check the [main README](../README.md)
+2. Review the [RIP-302 specification](../docs/RIP-302-agent-to-agent-test-challenge.md)
 3. Open an issue on GitHub
 4. Ask in RustChain Discord
 
@@ -529,7 +530,7 @@ python scripts/collect_proof.py --result-files a.json b.json   # Specific files
 
 ## Appendix B: Evidence Schema Reference
 
-See [expected_state.json](./fixtures/expected_state.json) for the complete schema definition.
+See [expected_state.json](../fixtures/expected_state.json) for the complete schema definition.
 
 ---
 
