@@ -50,23 +50,47 @@ def get_token_holders(client: SolanaClient, token_mint: PublicKey) -> list[dict[
         try:
             pubkey = item.get("pubkey")
             account_info = item.get("account", {})
-            if not account_info:
-                continue
-
-            data = account_info.get("data", {})
-            if not data:
-                continue
-
-            # Parse token amount from account data
-            # Assuming UI amount is stored or can be derived; fallback to 0
-            token_amount = float(data.get("parsed", {}).get("info", {}).get("tokenAmount", {}).get("uiAmount", 0))
-
-            holders.append({
-                "address": pubkey,
-                "amount": token_amount
-            })
-        except (TypeError, ValueError, AttributeError) as e:
-            # Skip malformed or invalid accounts
-            continue
+            if pubkey and account_info:
+                holders.append({"address": pubkey, "amount": account_info.get("lamports", 0)})
+        except Exception as e:
+            raise RuntimeError(f"Failed to process token account: {e}") from e
 
     return holders
+
+
+def get_wrtc_holders(client: SolanaClient, token_mint: PublicKey) -> list[dict[str, float]]:
+    """
+    Fetches all wRTC holders for a given token mint address.
+
+    Args:
+        client: Solana RPC client instance
+        token_mint: PublicKey of the token mint
+
+    Returns:
+        List of dictionaries containing 'address' and 'amount' keys
+
+    Raises:
+        ValueError: If client is not connected or token_mint is invalid
+        RuntimeError: If the RPC request fails
+    """
+    return get_token_holders(client, token_mint)
+
+
+def main():
+    """Main entry point for wRTC holder tracking."""
+    # Get inputs from environment
+    client_url = os.environ.get("INPUT_CLIENT_URL", "")
+    token_mint = os.environ.get("INPUT_TOKEN_MINT", "")
+
+    if not all([client_url, token_mint]):
+        print("⚠️ Missing required environment variables. Skipping wRTC holder tracking.")
+        return
+
+    # Create Solana RPC client instance
+    client = SolanaClient(url=client_url)
+
+    # Fetch wRTC holders
+    holders = get_wrtc_holders(client, PublicKey(token_mint))
+
+    # Print wRTC holders
+    print(json.dumps(holders, indent=4))
