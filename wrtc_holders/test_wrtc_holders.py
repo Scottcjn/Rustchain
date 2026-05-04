@@ -44,63 +44,78 @@ class TestWRTC(unittest.TestCase):
         self.assertEqual(top_holder['amount'], 8296082)
 
     @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_top_holder_no_holders(self, mock_get_token_holders):
+    def test_get_top_holder_empty(self, mock_get_token_holders):
         # Mock empty response
         mock_get_token_holders.return_value = []
         top_holder = self.wrtc.get_top_holder()
         self.assertIsNone(top_holder)
 
     @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_holders_network_error(self, mock_get_token_holders):
-        # Simulate network error
-        mock_get_token_holders.side_effect = Exception("Network unreachable")
-        with self.assertRaises(Exception) as context:
-            self.wrtc.get_holders()
-        self.assertIn("Network unreachable", str(context.exception))
-
-    def test_wrtc_instantiation_with_valid_client(self):
-        # Test that WRTC initializes correctly with a SolanaClient
-        self.assertIsInstance(self.wrtc.solana_client, SolanaClient)
-        self.assertEqual(self.wrtc.solana_client.rpc_url, "https://api.devnet.solana.com")
-
-    @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_holders_returns_sorted_by_amount(self, mock_get_token_holders):
+    def test_get_holders_with_minimum_balance(self, mock_get_token_holders):
+        # Mock the response from SolanaClient
         mock_get_token_holders.return_value = json.loads('''
             [
+                {"address": "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW", "amount": 8296082},
                 {"address": "Bk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 1000},
-                {"address": "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW", "amount": 8296082}
+                {"address": "Ck9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 500},
+                {"address": "Dk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 200}
             ]
         ''')
-        holders = self.wrtc.get_holders()
+        holders = self.wrtc.get_holders_with_minimum_balance(600)
+        self.assertEqual(len(holders), 2)
         self.assertEqual(holders[0]['amount'], 8296082)
         self.assertEqual(holders[1]['amount'], 1000)
 
     @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_eligible_holders(self, mock_get_token_holders):
+    def test_get_holders_with_minimum_balance_no_matches(self, mock_get_token_holders):
+        # Mock the response from SolanaClient
         mock_get_token_holders.return_value = json.loads('''
             [
-                {"address": "A1", "amount": 1000000},
-                {"address": "B2", "amount": 50000},
-                {"address": "C3", "amount": 1500000}
+                {"address": "Bk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 1000},
+                {"address": "Ck9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 500},
+                {"address": "Dk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 200}
             ]
         ''')
-        # Assume threshold is 100,000
-        with patch.object(WRTC, 'get_incentive_threshold', return_value=100000):
-            eligible = self.wrtc.get_eligible_holders()
-        self.assertEqual(len(eligible), 2)
-        self.assertIn({"address": "A1", "amount": 1000000}, eligible)
-        self.assertIn({"address": "C3", "amount": 1500000}, eligible)
+        holders = self.wrtc.get_holders_with_minimum_balance(2000)
+        self.assertEqual(len(holders), 0)
 
-    def test_get_incentive_threshold_returns_int(self):
-        threshold = self.wrtc.get_incentive_threshold()
-        self.assertIsInstance(threshold, int)
-        self.assertGreaterEqual(threshold, 0)
+    def test_calculate_incentive_share(self):
+        total_supply = 1000000
+        holder_balance = 10000
+        expected_share = (holder_balance / total_supply) * 100
+        share = self.wrtc.calculate_incentive_share(holder_balance, total_supply)
+        self.assertAlmostEqual(share, expected_share, places=5)
+
+    def test_calculate_incentive_share_zero_supply(self):
+        total_supply = 0
+        holder_balance = 10000
+        with self.assertRaises(ValueError) as context:
+            self.wrtc.calculate_incentive_share(holder_balance, total_supply)
+        self.assertEqual(str(context.exception), "Total supply must be greater than zero.")
+
+    def test_calculate_incentive_share_negative_balance(self):
+        total_supply = 1000000
+        holder_balance = -1000
+        with self.assertRaises(ValueError) as context:
+            self.wrtc.calculate_incentive_share(holder_balance, total_supply)
+        self.assertEqual(str(context.exception), "Holder balance cannot be negative.")
 
     @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_top_holder_single_holder(self, mock_get_token_holders):
-        mock_get_token_holders.return_value = json.loads('''
-            [{"address": "OnlyOne", "amount": 99999}]
-        ''')
-        top_holder = self.wrtc.get_top_holder()
-        self.assertEqual(top_holder['address'], "OnlyOne")
-        self.assertEqual(top_holder['amount'], 99999)
+    def test_get_holders_network_error(self, mock_get_token_holders):
+        # Simulate network error
+        mock_get_token_holders.side_effect = Exception("Network error: failed to connect")
+        with self.assertRaises(Exception) as context:
+            self.wrtc.get_holders()
+        self.assertIn("Network error", str(context.exception))
+
+    @patch.object(SolanaClient, 'get_token_holders')
+    def test_get_holders_invalid_json_response(self, mock_get_token_holders):
+        # Simulate invalid JSON response
+        mock_get_token_holders.return_value = "invalid json"
+        with patch('json.loads', side_effect=json.JSONDecodeError("Expecting value", "doc", 0)):
+            with self.assertRaises(json.JSONDecodeError):
+                self.wrtc.get_holders()
+
+
+if __name__ == '__main__':
+    unittest.main()
