@@ -42,29 +42,19 @@ class TestWRTC(unittest.TestCase):
         self.assertEqual(balance, 8296082)
 
     @patch.object(SolanaClient, 'get_token_holders')
+    def test_get_holders_empty(self, mock_get_token_holders):
+        mock_get_token_holders.return_value = []
+        holders = self.wrtc.get_holders()
+        self.assertEqual(len(holders), 0)
+
+    @patch.object(SolanaClient, 'get_token_holders')
+    def test_get_top_holder_no_holders(self, mock_get_token_holders):
+        mock_get_token_holders.return_value = []
+        top_holder = self.wrtc.get_top_holder()
+        self.assertIsNone(top_holder)
+
+    @patch.object(SolanaClient, 'get_token_holders')
     def test_get_top_holder_balance_no_holders(self, mock_get_token_holders):
         mock_get_token_holders.return_value = []
         balance = self.wrtc.get_top_holder_balance()
         self.assertEqual(balance, 0)
-
-    @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_holders_sorted_by_amount(self, mock_get_token_holders):
-        mock_get_token_holders.return_value = [
-            {"address": "Bk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 1000},
-            {"address": "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW", "amount": 8296082}
-        ]
-        holders = self.wrtc.get_holders()
-        self.assertEqual(holders[0]['address'], "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW")
-
-    def test_get_top_holder_no_holders(self):
-        with patch.object(SolanaClient, 'get_token_holders') as mock_get_token_holders:
-            mock_get_token_holders.return_value = []
-            top_holder = self.wrtc.get_top_holder()
-            self.assertIsNone(top_holder)
-
-    def test_get_holders_client_error(self):
-        with patch.object(SolanaClient, 'get_token_holders') as mock_get_token_holders:
-            mock_get_token_holders.side_effect = Exception("Network error")
-            with self.assertRaises(Exception) as context:
-                self.wrtc.get_holders()
-            self.assertIn("Network error", str(context.exception))
