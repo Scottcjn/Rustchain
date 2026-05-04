@@ -7,32 +7,32 @@ on:
   schedule:
     - cron: '0 9 * * MON'
   
-  # Allow manual trigger from GitHub Actions tab
-  workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'Run in dry-run mode (no actual sends)'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
-      send_discord:
-        description: 'Send to Discord'
-        required: false
-        default: 'true'
-        type: boolean
-      send_telegram:
-        description: 'Send to Telegram'
-        required: false
-        default: 'false'
-        type: boolean
-      send_email:
-        description: 'Send via Email'
-        required: false
-        default: 'false'
-        type: boolean
+  # Manual trigger disabled (requires secrets not configured in this fork)
+  # workflow_dispatch:
+  #   inputs:
+  #     dry_run:
+  #       description: 'Run in dry-run mode (no actual sends)'
+  #       required: false
+  #       default: 'false'
+  #       type: choice
+  #       options:
+  #         - 'true'
+  #         - 'false'
+  #     send_discord:
+  #       description: 'Send to Discord'
+  #       required: false
+  #       default: 'true'
+  #       type: boolean
+  #     send_telegram:
+  #       description: 'Send to Telegram'
+  #       required: false
+  #       default: 'false'
+  #       type: boolean
+  #     send_email:
+  #       description: 'Send via Email'
+  #       required: false
+  #       default: 'false'
+  #       type: boolean
 
 jobs:
   send-digest:
