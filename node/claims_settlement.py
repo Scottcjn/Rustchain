@@ -310,28 +310,50 @@ def generate_batch_id() -> str:
     """
     Generate unique batch identifier
     
-    Format: batch_YYYY_MM_DD_NNN
+    Format: batch_YYYY_MM_DD_NNN_unique
     """
     now = datetime.now(timezone.utc)
     timestamp = now.strftime("%Y_%m_%d")
     
-    # Get batch number for today
+    # FIX(#3218): Use atomic file locking to prevent race conditions
+    # where concurrent processes read the same counter value.
     try:
         import os
+        import fcntl
+        import uuid
+        
         batch_file = f"/tmp/rustchain_settlement_batch_{timestamp}.txt"
-        if os.path.exists(batch_file):
-            with open(batch_file, 'r') as f:
-                batch_num = int(f.read().strip()) + 1
-        else:
-            batch_num = 1
         
-        with open(batch_file, 'w') as f:
-            f.write(str(batch_num))
-        
-        return f"batch_{timestamp}_{batch_num:03d}"
+        # Open file for reading/writing (create if not exists)
+        fd = os.open(batch_file, os.O_RDWR | os.O_CREAT)
+        try:
+            # Acquire exclusive lock (blocks until available)
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            
+            # Read current counter
+            try:
+                with os.fdopen(fd, 'r') as f:
+                    content = f.read().strip()
+                    batch_num = int(content) + 1 if content else 1
+            except (ValueError, OSError):
+                batch_num = 1
+            
+            # Write updated counter
+            with open(batch_file, 'w') as f:
+                f.write(str(batch_num))
+            
+            # Generate unique batch ID with UUID suffix
+            unique_id = uuid.uuid4().hex[:8]
+            return f"batch_{timestamp}_{batch_num:03d}_{unique_id}"
+        finally:
+            # Release lock and close file
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
     except Exception:
-        # Fallback: use timestamp
-        return f"batch_{timestamp}_001"
+        # Fallback: use timestamp + random string
+        import random
+        unique_id = f"{random.randint(0, 0xFFFFFFFF):08x}"
+        return f"batch_{timestamp}_001_{unique_id}"
 
 
 def process_claims_batch(
