@@ -58,8 +58,8 @@ class WRTCHolder:
 
         Args:
             address (str): The address of the holder.
-            amount (int): The amount of WRTC held.
-            decimals (int): The number of decimals for the WRTC amount.
+            amount (int): The amount of wRTC held.
+            decimals (int): The number of decimals for the token.
         """
         if not isinstance(address, str) or not address.strip():
             raise ValueError("Address must be a non-empty string")
@@ -72,76 +72,25 @@ class WRTCHolder:
         self.amount = amount
         self.decimals = decimals
 
-    def get_balance(self) -> float:
+    def normalized_balance(self) -> float:
         """
-        Get the balance of the holder in human-readable format.
+        Get the normalized balance of the holder.
 
         Returns:
-            float: The balance of the holder.
-
-        Raises:
-            ZeroDivisionError: If decimals is set to a negative value (prevented by constructor).
+            float: The normalized balance.
         """
-        if self.decimals < 0:
-            raise ZeroDivisionError("Decimals cannot be negative")
-        divisor = 10 ** self.decimals
-        return float(self.amount) / divisor
+        return self.amount / (10 ** self.decimals)
 
-class WRTC:
-    """
-    Represents the WRTC token and provides utilities for holder management.
-    """
-
-    def __init__(self, mint_address: str, decimals: int = 9):
+    def meets_minimum_threshold(self, threshold: int) -> bool:
         """
-        Initialize WRTC token configuration.
+        Check if the holder meets the minimum threshold.
 
         Args:
-            mint_address (str): The token mint address.
-            decimals (int): Number of token decimals, default is 9.
-        """
-        if not isinstance(mint_address, str) or not mint_address.strip():
-            raise ValueError("Mint address must be a non-empty string")
-        if not isinstance(decimals, int) or decimals < 0:
-            raise ValueError("Decimals must be a non-negative integer")
-
-        self.mint_address = mint_address.strip()
-        self.decimals = decimals
-        self.holders = []
-
-    def add_holder(self, holder: WRTCHolder) -> None:
-        """
-        Add a holder to the tracking list.
-
-        Args:
-            holder (WRTCHolder): The holder to add.
-
-        Raises:
-            TypeError: If holder is not an instance of WRTCHolder.
-        """
-        if not isinstance(holder, WRTCHolder):
-            raise TypeError("Holder must be an instance of WRTCHolder")
-        self.holders.append(holder)
-
-    def total_supply(self) -> float:
-        """
-        Calculate the total tracked supply of WRTC.
+            threshold (int): The minimum amount required.
 
         Returns:
-            float: Total supply across all tracked holders.
+            bool: True if the holder meets the threshold.
         """
-        return sum(holder.get_balance() for holder in self.holders)
-
-    def get_top_holders(self, n: int) -> list:
-        """
-        Get the top N holders by balance.
-
-        Args:
-            n (int): Number of top holders to return.
-
-        Returns:
-            list[WRTCHolder]: Top N holders sorted by balance descending.
-        """
-        if not isinstance(n, int) or n < 0:
-            raise ValueError("N must be a non-negative integer")
-        return sorted(self.holders, key=lambda h: h.get_balance(), reverse=True)[:n]
+        if not isinstance(threshold, int) or threshold < 0:
+            raise ValueError("Threshold must be a non-negative integer")
+        return self.amount >= threshold
