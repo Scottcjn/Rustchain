@@ -668,7 +668,7 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
 
         # CRITICAL: Verify reviewer is authorized (Flamebound only)
         if not _verify_miner_signature(reviewer, "flamebound_review", data):
-            return jsonify({"error": "unauthorized: only Flamebound can review proposals"}), 403
+            return jsonify({"error": "unauthorized: invalid or missing signature — prove you control this miner_id"}), 401
         if reviewer != FLAMEBUND_MINER_ID:
             return jsonify({"error": "only Flamebound can review proposals"}), 403
 

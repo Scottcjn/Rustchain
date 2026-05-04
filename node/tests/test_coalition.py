@@ -736,3 +736,28 @@ def test_proposal_tally_accuracy(client, test_coalition, tmp_db, rich_miner, poo
     # 200 + 1 + 75 = 276
     assert prop["votes_for"] == 276.0
     assert prop["votes_against"] == 0.0
+
+
+def test_non_hex_miner_id_rejected(client):
+    """Security: non-hex miner_id without valid signature must be rejected with 401.
+    
+    This tests the fix for the auth bypass where any non-hex miner_id
+    (e.g. "admin", "non_hex_string") could skip signature verification.
+    See: Scottcjn/Rustchain#3945 fix-forward request.
+    """
+    # Attempt to create coalition with a non-hex miner_id
+    resp = client.post("/api/coalition/create", json={
+        "miner_id": "non_hex_string",
+        "name": "Test Coalition",
+        "description": "Test",
+    })
+    assert resp.status_code in (400, 401), \
+        f"Expected 400 or 401 for non-hex miner_id, got {resp.status_code}"
+    
+    # Attempt to join coalition with non-hex miner_id
+    resp = client.post("/api/coalition/join", json={
+        "miner_id": "admin",
+        "coalition_id": 1,
+    })
+    assert resp.status_code in (400, 401), \
+        f"Expected 400 or 401 for non-hex miner_id, got {resp.status_code}"
