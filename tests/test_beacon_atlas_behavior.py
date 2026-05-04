@@ -83,6 +83,12 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
 
     def test_create_contract_workflow(self):
         """Full workflow: create contract, verify, update state."""
+        # Register agent first (required for contract creation)
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.execute("INSERT OR IGNORE INTO relay_agents (agent_id, pubkey_hex, name, status, created_at) VALUES (?, ?, ?, ?, ?)",
+                         ('bcn_alice_test', 'abc123', 'Alice', 'active', 1000))
+            conn.commit()
+            
         # Create contract
         contract_data = {
             'from': 'bcn_alice_test',
@@ -95,7 +101,8 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         create_response = self.client.post(
             '/api/contracts',
             data=json.dumps(contract_data),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_alice_test'}
         )
         self.assertEqual(create_response.status_code, 201)
         
@@ -114,11 +121,12 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(len(contracts), 1)
         self.assertEqual(contracts[0]['id'], contract_id)
         
-        # Update contract state to active
+        # Update contract state to active (requires to_agent to accept)
         update_response = self.client.put(
             f'/api/contracts/{contract_id}',
             data=json.dumps({'state': 'active'}),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_bob_test'}
         )
         self.assertEqual(update_response.status_code, 200)
         
@@ -237,6 +245,12 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
 
     def test_invalid_state_update_rejected(self):
         """Contract state updates reject invalid states."""
+        # Register agent first
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.execute("INSERT OR IGNORE INTO relay_agents (agent_id, pubkey_hex, name, status, created_at) VALUES (?, ?, ?, ?, ?)",
+                         ('bcn_test_from', 'abc456', 'TestFrom', 'active', 1000))
+            conn.commit()
+
         # Create a contract first
         contract_data = {
             'from': 'bcn_test_from',
@@ -249,7 +263,8 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         create_response = self.client.post(
             '/api/contracts',
             data=json.dumps(contract_data),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_test_from'}
         )
         contract_id = json.loads(create_response.data)['id']
         
