@@ -58,20 +58,23 @@ def get_token_holders(client: SolanaClient, token_mint: PublicKey) -> list[dict[
                 continue
 
             # Parse token amount from account data
-            # Assuming UI amount is stored or can be derived from mint decimals
-            # Here we simplify: in practice, decode buffer or use token_program
-            amount_str = data.get("parsed", {}).get("info", {}).get("tokenAmount", {}).get("uiAmountString", "0")
-            amount = float(amount_str) if amount_str else 0.0
+            # Assuming UI amount is parsed from token program state
+            # Here we expect amount to be extractable via token account decoding
+            # For simplicity, assuming amount is available in parsed UI format
+            parsed = data.get("parsed", {})
+            info = parsed.get("info", {})
+            token_amount = info.get("tokenAmount", {})
 
-            if amount <= 0:
+            ui_amount = token_amount.get("uiAmount", 0.0)
+            if ui_amount <= 0:
                 continue
 
             holders.append({
                 "address": pubkey,
-                "amount": amount
+                "amount": float(ui_amount)
             })
-        except (KeyError, ValueError, TypeError) as e:
-            # Skip malformed account entries
+        except Exception as e:
+            # Skip malformed or invalid accounts
             continue
 
     return holders
@@ -79,23 +82,24 @@ def get_token_holders(client: SolanaClient, token_mint: PublicKey) -> list[dict[
 
 def main():
     """Main entry point for wRTC holder tracking."""
-    rpc_url = os.environ.get("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
-    mint_str = os.environ.get("TOKEN_MINT_ADDRESS")
-
-    if not mint_str:
-        print("⚠️ TOKEN_MINT_ADDRESS environment variable is required.")
+    # Get inputs from environment
+    rpc_url = os.environ.get("INPUT_RPC_URL", "https://api.mainnet-beta.solana.com")
+    token_mint_str = os.environ.get("INPUT_TOKEN_MINT")
+    
+    if not token_mint_str:
+        print("⚠️ Missing required environment variable: INPUT_TOKEN_MINT")
         return
 
     try:
-        mint_pubkey = PublicKey(mint_str)
-    except ValueError as e:
-        raise ValueError(f"Invalid token mint address: {mint_str}") from e
+        token_mint = PublicKey(token_mint_str)
+    except Exception as e:
+        raise ValueError(f"Invalid token mint public key: {e}") from e
 
     client = SolanaClient(rpc_url)
 
     try:
-        holders = get_token_holders(client, mint_pubkey)
-        print(json.dumps(holders, indent=2))
+        holders = get_token_holders(client, token_mint)
+        # Output as JSON to stdout
+        print(json.dumps(holders))
     except Exception as e:
-        print(f"❌ Failed to fetch holders: {e}")
-        raise
+        raise RuntimeError(f"Failed to process token holders: {e}") from e
