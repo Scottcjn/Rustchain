@@ -160,7 +160,7 @@ def get_agents():
 
         return jsonify(agents)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/api/agent/<agent_id>', methods=['GET'])
@@ -186,7 +186,7 @@ def get_agent(agent_id):
             'updated_at': row['updated_at'],
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 # ============================================================
@@ -310,7 +310,7 @@ def beacon_join():
         })
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/beacon/atlas', methods=['GET', 'OPTIONS'])
@@ -376,7 +376,7 @@ def beacon_atlas():
         })
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 # ============================================================
@@ -408,7 +408,7 @@ def get_contracts():
         
         return jsonify(contracts)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/api/contracts', methods=['POST'])
@@ -453,7 +453,7 @@ def create_contract():
         return jsonify(contract), 201
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/api/contracts/<contract_id>', methods=['PUT'])
@@ -483,7 +483,7 @@ def update_contract(contract_id):
         return jsonify({'ok': True, 'contract_id': contract_id, 'state': new_state})
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 # ============================================================
@@ -518,7 +518,7 @@ def get_bounties():
         
         return jsonify(bounties)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/api/bounties/sync', methods=['POST'])
@@ -624,7 +624,7 @@ def sync_bounties():
         return jsonify({'synced': len(all_bounties), 'ok': True})
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/api/bounties/<bounty_id>/claim', methods=['POST'])
@@ -658,7 +658,7 @@ def claim_bounty(bounty_id):
         return jsonify({'ok': True, 'bounty_id': bounty_id, 'claimant': agent_id})
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/api/bounties/<bounty_id>/complete', methods=['POST'])
@@ -714,7 +714,7 @@ def complete_bounty(bounty_id):
         return jsonify({'ok': True, 'bounty_id': bounty_id, 'completed_by': agent_id})
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 # ============================================================
@@ -741,7 +741,7 @@ def get_reputation():
         
         return jsonify(reputations)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 @beacon_api.route('/api/reputation/<agent_id>', methods=['GET'])
@@ -763,7 +763,7 @@ def get_agent_reputation(agent_id):
             'total_rtc_earned': row['total_rtc_earned'],
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 # ============================================================
@@ -813,7 +813,7 @@ def chat():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal_error'}), 500
 
 
 # ============================================================
