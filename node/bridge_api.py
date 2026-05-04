@@ -680,7 +680,7 @@ def register_bridge_routes(app):
         
         # Check admin initiation (bypasses balance check)
         admin_key = request.headers.get("X-Admin-Key", "")
-        admin_initiated = hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", ""))
+        admin_initiated = bool(os.environ.get("RC_ADMIN_KEY", "") and hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")))
         
         # Create bridge transfer
         req = BridgeTransferRequest(
@@ -759,7 +759,8 @@ def register_bridge_routes(app):
     def void_bridge():
         """Admin: Void a bridge transfer."""
         admin_key = request.headers.get("X-Admin-Key", "")
-        if admin_key != os.environ.get("RC_ADMIN_KEY", ""):
+        expected_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not expected_key or not hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "Unauthorized - admin key required"}), 401
         
         data = request.get_json(silent=True)
@@ -789,7 +790,7 @@ def register_bridge_routes(app):
         # Optional: require API key for callbacks
         api_key = request.headers.get("X-API-Key", "")
         expected_key = os.environ.get("RC_BRIDGE_API_KEY", "")
-        if expected_key and api_key != expected_key:
+        if not expected_key or not hmac.compare_digest(api_key, expected_key):
             return jsonify({"error": "Unauthorized"}), 401
         
         data = request.get_json(silent=True)
