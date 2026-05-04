@@ -164,6 +164,123 @@ class TestTokenConservation(unittest.TestCase):
         self.assertTrue(result, 
             "Transaction accepted - token destruction not prevented")
 
+    def test_silent_burning_IS_FIXED(self):
+        """
+        VULN-1b FIXED: Verify that tokens cannot be silently burned
+        by omitting them from outputs.
+
+        Attack Scenario (BEFORE fix):
+        1. Input UTXO contains tokens (e.g. NFT, governance token)
+        2. Outputs omit the token entirely (no entry in outputs)
+        3. Previous code only iterated output_tokens.items()
+           — the missing token_id was never checked
+           — tokens silently burned without _allow_burning flag
+
+        AFTER fix:
+        1. Iterates over ALL token_ids from both inputs and outputs
+        2. Missing token in outputs = burning = REJECTED without flag
+        """
+        # Step 1: Create a UTXO box WITH tokens
+        addr_with_tokens = "RTCminer_with_tokens_abc123456789012345"
+        box_with_tokens = "aa" * 32
+        token_data = json.dumps([
+            {"token_id": "governance_VOTE", "amount": 500},
+        ])
+
+        conn = self.utxo_db._conn()
+        conn.execute(
+            """INSERT INTO utxo_boxes
+               (box_id, value_nrtc, proposition, owner_address,
+                creation_height, transaction_id, output_index,
+                tokens_json, registers_json, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (
+                box_with_tokens,
+                500000000,  # 500 RTC
+                address_to_proposition(addr_with_tokens),
+                addr_with_tokens,
+                self.block_height - 1,
+                "genesis_with_tokens",
+                0,
+                token_data,
+                "{}",
+                1000001,
+            )
+        )
+        conn.commit()
+        conn.close()
+
+        # Step 2: Build tx that consumes the token-bearing box
+        # but outputs contain NO tokens (silent burn attempt)
+        inputs = [{'box_id': box_with_tokens, 'spending_proof': 'fake_proof'}]
+        outputs = [
+            {
+                'address': addr_with_tokens,
+                'value_nrtc': 499000000,  # 499 RTC (minus 1 RTC fee)
+                'tokens_json': "[]",  # NO TOKENS — silent burn!
+                'registers_json': "{}",
+            },
+        ]
+        tx = self._build_transaction(inputs, outputs, fee=1000000)
+
+        # FIXED: Should be REJECTED — burning without _allow_burning flag
+        result = self.utxo_db.apply_transaction(tx, self.block_height)
+        self.assertFalse(result,
+            "FIXED: Silent burning rejected — token in inputs but not outputs "
+            "is detected as burning without _allow_burning flag")
+
+    def test_burning_with_flag_allowed(self):
+        """
+        VULN-1b: Verify that burning WITH _allow_burning flag is permitted.
+        """
+        # Create a UTXO box WITH tokens
+        addr_with_tokens = "RTCburner_with_flag_xyz987654321098765"
+        box_with_tokens = "bb" * 32
+        token_data = json.dumps([
+            {"token_id": "burnable_TOKEN", "amount": 100},
+        ])
+
+        conn = self.utxo_db._conn()
+        conn.execute(
+            """INSERT INTO utxo_boxes
+               (box_id, value_nrtc, proposition, owner_address,
+                creation_height, transaction_id, output_index,
+                tokens_json, registers_json, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (
+                box_with_tokens,
+                300000000,
+                address_to_proposition(addr_with_tokens),
+                addr_with_tokens,
+                self.block_height - 1,
+                "genesis_burnable",
+                0,
+                token_data,
+                "{}",
+                1000002,
+            )
+        )
+        conn.commit()
+        conn.close()
+
+        # Burn tokens WITH the flag
+        inputs = [{'box_id': box_with_tokens, 'spending_proof': 'fake_proof'}]
+        outputs = [
+            {
+                'address': addr_with_tokens,
+                'value_nrtc': 299000000,
+                'tokens_json': "[]",  # Tokens burned
+                'registers_json': "{}",
+            },
+        ]
+        tx = self._build_transaction(inputs, outputs, fee=1000000)
+        tx['_allow_burning'] = True  # Explicit flag
+
+        # Should be ACCEPTED — burning is authorized
+        result = self.utxo_db.apply_transaction(tx, self.block_height)
+        self.assertTrue(result,
+            "Burning with _allow_burning flag should be permitted")
+
     def test_mempool_allows_token_creation(self):
         """
         MEDIUM: mempool_add() also doesn't check token conservation.

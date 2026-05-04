@@ -486,8 +486,14 @@ class UtxoDB:
                         tid = t['token_id']
                         output_tokens[tid] = output_tokens.get(tid, 0) + t['amount']
 
-                for tid, out_amt in output_tokens.items():
+                # FIX(VULN-1b): Iterate over ALL token_ids from both inputs
+                # and outputs. The previous loop only checked output_tokens,
+                # so a token present in INPUTS but completely omitted from
+                # OUTPUTS was silently burned with no _allow_burning check.
+                all_token_ids = set(input_tokens.keys()) | set(output_tokens.keys())
+                for tid in all_token_ids:
                     in_amt = input_tokens.get(tid, 0)
+                    out_amt = output_tokens.get(tid, 0)
                     if out_amt > in_amt:
                         return abort()  # unauthorized minting
                     if out_amt < in_amt and not tx.get('_allow_burning'):
