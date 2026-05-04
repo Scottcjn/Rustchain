@@ -926,7 +926,7 @@ OPENAPI = {
                     {
                         "name": "miner_pk",
                         "in": "path",
-                        "required": true,
+                        "required": True,
                         "schema": {"type": "string"},
                         "description": "Miner public key (hex)"
                     }
@@ -957,7 +957,7 @@ OPENAPI = {
                     {
                         "name": "address",
                         "in": "query",
-                        "required": true,
+                        "required": True,
                         "schema": {"type": "string"},
                         "description": "Wallet address (RTC...)"
                     }
