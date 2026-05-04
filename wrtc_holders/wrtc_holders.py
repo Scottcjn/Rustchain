@@ -77,23 +77,20 @@ class WRTCHolder:
         Get the normalized balance of the holder.
 
         Returns:
-            float: The normalized balance.
+            float: The balance adjusted for decimals.
         """
         return self.amount / (10 ** self.decimals)
 
-    def meets_threshold(self, threshold: float) -> bool:
+    def meets_minimum_threshold(self, threshold: int) -> bool:
         """
-        Check if the holder meets the given threshold.
+        Check if the holder meets the minimum threshold.
 
         Args:
-            threshold (float): The threshold to meet.
+            threshold (int): The minimum amount required (in base units).
 
         Returns:
-            bool: True if the normalized balance meets or exceeds the threshold.
-
-        Raises:
-            ValueError: If threshold is negative.
+            bool: True if the holder meets or exceeds the threshold.
         """
-        if not isinstance(threshold, (int, float)) or threshold < 0:
-            raise ValueError("Threshold must be a non-negative number")
-        return self.normalized_balance() >= threshold
+        if not isinstance(threshold, int) or threshold < 0:
+            raise ValueError("Threshold must be a non-negative integer")
+        return self.amount >= threshold
