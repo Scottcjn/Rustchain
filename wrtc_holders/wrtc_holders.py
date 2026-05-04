@@ -6,13 +6,16 @@ wRTC Holder Tracking
 Fetches all wRTC holders for a given token mint address.
 """
 
-import solana_client
-from typing import Dict, List
+import json
+import os
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+from solana_client import Client
 from solana.publickey import PublicKey
-from solana.rpc.api import Client
+from solana.rpc.api import Client as SolanaClient
 from solana.rpc.types import TokenAccountOpts
 
-def get_token_holders(client: Client, token_mint: PublicKey) -> List[Dict[str, float]]:
+def get_token_holders(client: SolanaClient, token_mint: PublicKey) -> List[Dict[str, float]]:
     """
     Fetches all token holders for a given token mint address.
 
@@ -27,7 +30,7 @@ def get_token_holders(client: Client, token_mint: PublicKey) -> List[Dict[str, f
         ValueError: If client is not connected or token_mint is invalid
         RuntimeError: If the RPC request fails
     """
-    if not isinstance(client, Client):
+    if not isinstance(client, SolanaClient):
         raise ValueError("client must be a Solana Client instance")
     if not isinstance(token_mint, PublicKey):
         raise ValueError("token_mint must be a PublicKey instance")
@@ -51,10 +54,10 @@ def get_token_holders(client: Client, token_mint: PublicKey) -> List[Dict[str, f
                 .get("data", {})
                 .get("parsed", {})
                 .get("info", {})
-                .get("tokenAmount")
+                .get("amount")
             )
-            holders.append({"address": pubkey, "amount": amount_data.amount})
-        except Exception as e:
+            holders.append({"address": pubkey, "amount": amount_data})
+        except (KeyError, TypeError) as e:
             raise RuntimeError(f"Failed to parse token account: {e}") from e
 
     return holders
