@@ -77,22 +77,23 @@ class TestTokenConservation(unittest.TestCase):
             'timestamp': 1000000,
         }
 
-    def test_token_creation_from_nothing(self):
+    def test_token_creation_from_nothing_IS_FIXED(self):
         """
-        CRITICAL: Demonstrate that tokens can be created from nothing.
-        
-        Attack scenario:
+        VULN-1 FIXED: Verify that tokens cannot be created from nothing.
+
+        Attack scenario (BEFORE fix):
         1. Attacker consumes a UTXO with NO tokens
         2. Attacker creates outputs with arbitrary tokens
-        3. apply_transaction() accepts the transaction because it only
-           checks nRTC conservation, not token conservation
-        
-        This bypasses the fundamental UTXO invariant that outputs cannot
-        contain more of any asset than was present in the inputs.
+        3. apply_transaction() accepted the transaction (only checked nRTC conservation)
+
+        AFTER fix:
+        1. Token conservation is enforced
+        2. Transaction creating tokens from nothing is REJECTED
+        3. No counterfeit tokens are created
         """
         # Input: consume genesis box (contains 0 tokens)
         inputs = [{'box_id': self.genesis_box_id, 'spending_proof': 'fake_proof'}]
-        
+
         # Output: create TWO outputs
         # 1. Return change to self (still no tokens)
         # 2. Create a FAKE output containing arbitrary tokens
@@ -100,7 +101,7 @@ class TestTokenConservation(unittest.TestCase):
             {"token_id": "counterfeit_nft_12345", "amount": 1},
             {"token_id": "fake_stablecoin_USD", "amount": 1000000},
         ])
-        
+
         outputs = [
             {
                 'address': self.genesis_addr,
@@ -115,35 +116,26 @@ class TestTokenConservation(unittest.TestCase):
                 'registers_json': "{}",
             },
         ]
-        
+
         tx = self._build_transaction(inputs, outputs, fee=0)
-        
-        # This SHOULD fail because we're creating tokens from nothing
-        # But currently it SUCCEDES because apply_transaction() doesn't
-        # check token conservation!
+
+        # FIXED: Transaction creating tokens from nothing should be REJECTED
         result = self.utxo_db.apply_transaction(tx, self.block_height)
-        
-        # Assert that the transaction was accepted (this is the BUG)
-        self.assertTrue(result, 
-            "BUG: Transaction creating tokens from nothing was accepted! "
-            "apply_transaction() must enforce token conservation.")
-        
-        # Verify the attacker received the counterfeit tokens
+        self.assertFalse(result,
+            "FIXED: Transaction creating tokens from nothing was rejected! "
+            "apply_transaction() now enforces token conservation.")
+
+        # Verify the attacker did NOT receive any tokens (transaction was rejected)
         conn = self.utxo_db._conn()
         row = conn.execute(
             "SELECT tokens_json FROM utxo_boxes WHERE owner_address = ?",
             ("RTCattacker_address_evil_9876543210fedcba",)
         ).fetchone()
-        
-        self.assertIsNotNone(row, "Attacker box not created")
-        received_tokens = json.loads(row['tokens_json'])
-        
-        # The attacker now has counterfeit tokens that never existed
-        self.assertEqual(len(received_tokens), 2,
-            "Attacker received counterfeit tokens")
-        self.assertEqual(received_tokens[1]['amount'], 1000000,
-            "Attacker created 1M fake stablecoins from nothing")
-        
+
+        # FIXED: Attacker should NOT have received tokens
+        self.assertIsNone(row,
+            "FIXED: Attacker box should NOT be created - token minting was blocked")
+
         conn.close()
 
     def test_token_destroy_without_spending(self):
