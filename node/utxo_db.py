@@ -450,20 +450,51 @@ class UtxoDB:
             if inputs and (output_total + fee) > input_total:
                 return abort()
 
+            # -- token conservation check ------------------------------------
+            # Prevent unauthorized token minting/burning by comparing
+            # token amounts in inputs vs outputs per token_id.
+            # Mining reward transactions may mint new tokens (exempt).
+            # Burning requires explicit _allow_burning flag.
+            if tx_type not in MINTING_TX_TYPES and inputs:
+                input_tokens: dict = {}
+                for inp in inputs:
+                    box = conn.execute(
+                        "SELECT tokens_json FROM utxo_boxes WHERE box_id = ?",
+                        (inp['box_id'],),
+                    ).fetchone()
+                    if box and box['tokens_json']:
+                        for t in json.loads(box['tokens_json']):
+                            tid = t['token_id']
+                            input_tokens[tid] = input_tokens.get(tid, 0) + t['amount']
+
+                output_tokens: dict = {}
+                for out in outputs:
+                    tokens_list = json.loads(out.get('tokens_json', '[]'))
+                    for t in tokens_list:
+                        tid = t['token_id']
+                        output_tokens[tid] = output_tokens.get(tid, 0) + t['amount']
+
+                for tid, out_amt in output_tokens.items():
+                    in_amt = input_tokens.get(tid, 0)
+                    if out_amt > in_amt:
+                        return abort()  # unauthorized minting
+                    if out_amt < in_amt and not tx.get('_allow_burning'):
+                        return abort()  # burning without flag
+
             # -- compute output box IDs and build tx_id ----------------------
             # We need a preliminary tx_id for box_id computation.
-            # Use SHA256(sorted input box_ids + timestamp) as tx seed.
+            # Use SHA256(sorted input box_ids + outputs + timestamp).
+            # FIX(VULN-2): Always include outputs in tx_id to prevent
+            # collision attacks where same inputs map to different outputs.
             tx_seed_h = hashlib.sha256()
             for inp in sorted(inputs, key=lambda i: i['box_id']):
                 tx_seed_h.update(bytes.fromhex(inp['box_id']))
+            # Always include outputs regardless of whether inputs exist
+            for out in outputs:
+                tx_seed_h.update(out['address'].encode('utf-8'))
+                tx_seed_h.update(out['value_nrtc'].to_bytes(8, 'little'))
+                tx_seed_h.update(out.get('tokens_json', '[]').encode('utf-8'))
             tx_seed_h.update(ts.to_bytes(8, 'little'))
-            # For coinbase, include tx_type + outputs to differentiate
-            if not inputs:
-                tx_seed_h.update(tx_type.encode())
-                tx_seed_h.update(block_height.to_bytes(8, 'little'))
-                for out in outputs:
-                    tx_seed_h.update(out['address'].encode())
-                    tx_seed_h.update(out['value_nrtc'].to_bytes(8, 'little'))
             tx_id_hex = tx_seed_h.hexdigest()
 
             # -- assign box_ids to outputs -----------------------------------
@@ -673,7 +704,26 @@ class UtxoDB:
             if not tx_id or not tx_id.strip():
                 return False
 
+            # FIX(VULN-3): Recompute tx_id from transaction contents and
+            # verify it matches the provided tx_id. This prevents attackers
+            # from spoofing arbitrary tx_ids to collide with existing entries
+            # or evade tracking.
             inputs = tx.get('inputs', [])
+            outputs = tx.get('outputs', [])
+            ts = tx.get('timestamp', int(time.time()))
+            import hashlib as _hashlib
+            _h = _hashlib.sha256()
+            for inp in sorted(inputs, key=lambda i: i['box_id']):
+                _h.update(bytes.fromhex(inp['box_id']))
+            for out in outputs:
+                _h.update(out['address'].encode('utf-8'))
+                _h.update(out['value_nrtc'].to_bytes(8, 'little'))
+                _h.update(out.get('tokens_json', '[]').encode('utf-8'))
+            _h.update(ts.to_bytes(8, 'little'))
+            computed_tx_id = _h.hexdigest()
+            if tx_id != computed_tx_id:
+                return False
+
             tx_type = tx.get('tx_type', 'transfer')
             now = int(time.time())
 
