@@ -55,6 +55,7 @@ def get_token_holders(client: Client, token_mint: PublicKey) -> List[Dict[str, f
                 "amount": float(ui_amount)
             })
         except Exception as e:
+            # Skip malformed account entries
             continue
 
     return holders
