@@ -1,8 +1,13 @@
 // File: wrtc_holders/wrtc_holders.py
-# SPDX-License-Identifier: MIT
+#!/usr/bin/env python3
+"""
+wRTC Holder Tracking
+
+Fetches all wRTC holders for a given token mint address.
+"""
 
 import solana_client
-from typing import Dict, List, Optional
+from typing import Dict, List
 from solana.publickey import PublicKey
 from solana.rpc.api import Client
 from solana.rpc.types import TokenAccountOpts
@@ -46,10 +51,9 @@ def get_token_holders(client: Client, token_mint: PublicKey) -> List[Dict[str, f
                 .get("data", {})
                 .get("parsed", {})
                 .get("info", {})
-                .get("tokenAmount", {})
+                .get("tokenAmount")
             )
-            ui_amount = amount_data.get("uiAmount", 0.0)
-            holders.append({"address": pubkey, "amount": ui_amount})
+            holders.append({"address": pubkey, "amount": amount_data.amount})
         except Exception as e:
             raise RuntimeError(f"Failed to parse token account: {e}") from e
 
