@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Dict, List, Optional, Any
 from decimal import Decimal
+from datetime import datetime
 
 # =============================================================================
 # Constants from RIP-0004: Monetary Policy
@@ -22,7 +23,7 @@ PREMINE_AMOUNT: int = 503_316  # 6% = 503,316.48 RTC
 BLOCK_REWARD: Decimal = Decimal("1.5")  # RTC per block
 BLOCK_TIME_SECONDS: int = 600  # 10 minutes
 CHAIN_ID: int = 2718
-CURRENT_YEAR: int = 2025
+CURRENT_YEAR: int = datetime.now().year
 
 # Founder wallets (4 x 125,829.12 RTC each)
 FOUNDER_WALLETS = [
