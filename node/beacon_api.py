@@ -458,7 +458,11 @@ def create_contract():
 
 @beacon_api.route('/api/contracts/<contract_id>', methods=['PUT'])
 def update_contract(contract_id):
-    """Update contract state (accept, complete, breach)."""
+    """Update contract state (accept, complete, breach).
+    
+    Requires X-Agent-Key header to verify caller is a party to the contract.
+    Validates state transitions to prevent invalid jumps.
+    """
     try:
         data = request.get_json()
         new_state = data.get('state')
@@ -470,15 +474,68 @@ def update_contract(contract_id):
         if new_state not in valid_states:
             return jsonify({'error': f'Invalid state: {new_state}'}), 400
         
+        # Valid state transitions — prevent arbitrary jumps
+        allowed_transitions = {
+            'offered': {'active', 'rejected', 'expired'},
+            'active': {'completed', 'breached', 'renewed'},
+            'renewed': {'completed', 'breached', 'expired'},
+            'completed': set(),  # terminal state
+            'breached': set(),   # terminal state
+            'expired': set(),    # terminal state
+        }
+        
         db = get_db()
+        
+        # Fetch current contract to verify ownership and current state
+        contract = db.execute(
+            "SELECT id, from_agent, to_agent, state FROM beacon_contracts WHERE id = ?",
+            (contract_id,)
+        ).fetchone()
+        
+        if not contract:
+            return jsonify({'error': 'Contract not found'}), 404
+        
+        current_state = contract['state']
+        
+        # Validate state transition
+        if new_state not in allowed_transitions.get(current_state, set()):
+            return jsonify({
+                'error': f'Invalid state transition: {current_state} -> {new_state}'
+            }), 400
+        
+        # Verify caller is a party to the contract
+        agent_key = request.headers.get('X-Agent-Key', '')
+        if not agent_key:
+            return jsonify({'error': 'Missing X-Agent-Key header — authentication required'}), 401
+        
+        from_agent = contract['from_agent']
+        to_agent = contract.get('to_agent', '')
+        
+        # Caller must be either the from_agent or to_agent
+        if agent_key != from_agent and agent_key != to_agent:
+            return jsonify({
+                'error': 'Unauthorized — caller is not a party to this contract'
+            }), 403
+        
+        # Additional: only to_agent can accept (offered -> active)
+        if current_state == 'offered' and new_state == 'active':
+            if agent_key != to_agent:
+                return jsonify({
+                    'error': 'Only the recipient (to_agent) can accept this contract'
+                }), 403
+        
+        # Only from_agent can mark as breached
+        if new_state == 'breached':
+            if agent_key != from_agent:
+                return jsonify({
+                    'error': 'Only the contract creator (from_agent) can mark as breached'
+                }), 403
+        
         db.execute(
             "UPDATE beacon_contracts SET state = ?, updated_at = ? WHERE id = ?",
             (new_state, int(time.time()), contract_id)
         )
         db.commit()
-        
-        if db.total_changes == 0:
-            return jsonify({'error': 'Contract not found'}), 404
         
         return jsonify({'ok': True, 'contract_id': contract_id, 'state': new_state})
         
