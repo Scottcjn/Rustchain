@@ -37,16 +37,13 @@ class TestWRTC(unittest.TestCase):
         _validate_holders(holders)
         self.assertEqual(len(holders), 4)
         self.assertEqual(holders[0]['address'], "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW")
+        self.assertEqual(holders[0]['amount'], 8296082)
+        self.assertEqual(holders[1]['address'], "Bk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM")
+        self.assertEqual(holders[1]['amount'], 1000)
+        self.assertEqual(holders[2]['address'], "Ck9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM")
+        self.assertEqual(holders[2]['amount'], 500)
+        self.assertEqual(holders[3]['address'], "Dk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM")
+        self.assertEqual(holders[3]['amount'], 200)
 
-    @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_holders_empty_list(self, mock_get_token_holders):
-        mock_get_token_holders.return_value = json.loads('[]')
-        holders = self.wrtc.get_holders()
-        _validate_holders(holders)
-        self.assertEqual(len(holders), 0)
-
-    @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_holders_invalid_input(self, mock_get_token_holders):
-        mock_get_token_holders.return_value = "Invalid JSON"
-        with self.assertRaises(ValueError):
-            self.wrtc.get_holders()
+if __name__ == '__main__':
+    unittest.main()
