@@ -81,16 +81,19 @@ class WRTCHolder:
         """
         return self.amount / (10 ** self.decimals)
 
-    def meets_minimum_threshold(self, threshold: int) -> bool:
+    def meets_threshold(self, threshold: float) -> bool:
         """
-        Check if the holder meets the minimum threshold.
+        Check if the holder's balance meets or exceeds the threshold.
 
         Args:
-            threshold (int): The minimum amount required.
+            threshold (float): The threshold to check against.
 
         Returns:
-            bool: True if the holder meets the threshold.
+            bool: True if balance meets or exceeds threshold, False otherwise.
+
+        Raises:
+            ValueError: If threshold is negative.
         """
-        if not isinstance(threshold, int) or threshold < 0:
-            raise ValueError("Threshold must be a non-negative integer")
-        return self.amount >= threshold
+        if not isinstance(threshold, (int, float)) or threshold < 0:
+            raise ValueError("Threshold must be a non-negative number")
+        return self.normalized_balance() >= threshold
