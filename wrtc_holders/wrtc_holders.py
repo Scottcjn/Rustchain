@@ -58,23 +58,17 @@ def get_token_holders(client: SolanaClient, token_mint: PublicKey) -> list[dict[
                 continue
 
             # Parse token amount from account data
-            # Assuming UI amount is parsed from token program state
-            # Here we expect amount to be extractable via token account decoding
-            # For simplicity, assuming amount is available in parsed UI format
-            parsed = data.get("parsed", {})
-            info = parsed.get("info", {})
-            token_amount = info.get("tokenAmount", {})
-
-            ui_amount = token_amount.get("uiAmount", 0.0)
-            if ui_amount <= 0:
-                continue
+            # Assuming UI amount is stored or can be derived from mint decimals (6 for wRTC)
+            # This uses a simplified approach; real parsing may require ABI or layout knowledge
+            amount_str = data.get("parsed", {}).get("info", {}).get("tokenAmount", {}).get("uiAmountString", "0")
+            amount = float(amount_str)
 
             holders.append({
                 "address": pubkey,
-                "amount": float(ui_amount)
+                "amount": amount
             })
-        except Exception as e:
-            # Skip malformed or invalid accounts
+        except (KeyError, ValueError, TypeError) as e:
+            # Skip malformed account entries
             continue
 
     return holders
@@ -84,22 +78,21 @@ def main():
     """Main entry point for wRTC holder tracking."""
     # Get inputs from environment
     rpc_url = os.environ.get("INPUT_RPC_URL", "https://api.mainnet-beta.solana.com")
-    token_mint_str = os.environ.get("INPUT_TOKEN_MINT")
-    
-    if not token_mint_str:
-        print("⚠️ Missing required environment variable: INPUT_TOKEN_MINT")
+    token_mint_str = os.environ.get("INPUT_TOKEN_MINT", "wRTCrW1X9m96A9JbRUt9LoGNp9Hc9U8XcdFy23s7uJQ")
+
+    if not rpc_url or not token_mint_str:
+        print("⚠️ Missing required environment variables: INPUT_RPC_URL or INPUT_TOKEN_MINT")
         return
 
     try:
+        client = SolanaClient(rpc_url)
         token_mint = PublicKey(token_mint_str)
     except Exception as e:
-        raise ValueError(f"Invalid token mint public key: {e}") from e
-
-    client = SolanaClient(rpc_url)
+        raise ValueError(f"Invalid RPC URL or token mint address: {e}") from e
 
     try:
         holders = get_token_holders(client, token_mint)
         # Output as JSON to stdout
         print(json.dumps(holders))
     except Exception as e:
-        raise RuntimeError(f"Failed to process token holders: {e}") from e
+        raise RuntimeError(f"Failed to retrieve or process token holders: {e}") from e
