@@ -106,12 +106,18 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         try:
             _ensure_escrow_secret_column(db)
 
-            # check balance (Simplified for bounty protocol)
+            # FIX: Use IMMEDIATE transaction to prevent TOCTOU race condition
+            # where concurrent requests could both pass the balance check
+            # before either deducts funds, leading to negative balances.
+            db.execute("BEGIN IMMEDIATE")
+
+            # check balance (atomic with deduction due to IMMEDIATE transaction)
             res = db.execute("SELECT balance_rtc FROM balances WHERE miner_pk = ?", (from_wallet,)).fetchone()
             if not res or res[0] < amount:
+                db.rollback()
                 return jsonify({"error": "Insufficient balance for escrow"}), 400
 
-            # Lock funds
+            # Lock funds (atomic with balance check)
             db.execute("UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ?", (amount, from_wallet))
 
             db.execute(
