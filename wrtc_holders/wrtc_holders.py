@@ -10,7 +10,7 @@ from solana.rpc.types import TokenAccountOpts
 def get_token_holders(client: Client, token_mint: PublicKey) -> List[Dict[str, float]]:
     """
     Fetches all token holders for a given token mint address.
-    
+
     Args:
         client: Solana RPC client instance
         token_mint: PublicKey of the token mint
@@ -28,7 +28,10 @@ def get_token_holders(client: Client, token_mint: PublicKey) -> List[Dict[str, f
         raise ValueError("token_mint must be a PublicKey instance")
 
     try:
-        response = client.get_token_accounts_by_mint(token_mint, TokenAccountOpts(mint=token_mint))
+        response = client.get_token_accounts_by_mint(
+            token_mint,
+            TokenAccountOpts(mint=token_mint, commitment="finalized")
+        )
         value = response.get("value", [])
     except Exception as e:
         raise RuntimeError(f"Failed to fetch token accounts: {e}") from e
@@ -45,17 +48,9 @@ def get_token_holders(client: Client, token_mint: PublicKey) -> List[Dict[str, f
                 .get("info", {})
                 .get("tokenAmount", {})
             )
-            ui_amount = amount_data.get("uiAmount", 0)
-
-            if not isinstance(ui_amount, (int, float)):
-                ui_amount = 0.0
-
-            holders.append({
-                "address": pubkey,
-                "amount": float(ui_amount)
-            })
+            ui_amount = amount_data.get("uiAmount", 0.0)
+            holders.append({"address": pubkey, "amount": ui_amount})
         except Exception as e:
-            # Skip malformed account entries
-            continue
+            raise RuntimeError(f"Failed to parse token account: {e}") from e
 
     return holders
