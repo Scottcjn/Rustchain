@@ -248,7 +248,9 @@ def bcos_attest():
     except sqlite3.IntegrityError:
         return jsonify({"error": f"Certificate {cert_id} already exists"}), 409
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 @bcos_bp.route("/bcos/verify/<cert_id>", methods=["GET"])
@@ -306,7 +308,9 @@ def bcos_verify(cert_id):
             "pdf_url": f"https://50.28.86.131/bcos/cert/{cert_id}.pdf",
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 @bcos_bp.route("/bcos/cert/<cert_id>.pdf", methods=["GET"])
@@ -346,7 +350,9 @@ def bcos_certificate_pdf(cert_id):
             download_name=f"{cert_id}.pdf",
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 @bcos_bp.route("/bcos/badge/<cert_id>.svg", methods=["GET"])
@@ -431,7 +437,9 @@ def bcos_directory():
             "certificates": certs,
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 # ── Registration ──────────────────────────────────────────────────
