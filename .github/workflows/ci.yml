@@ -49,10 +49,11 @@ jobs:
         RC_P2P_SECRET: "ci-test-secret-00000000000000000000000000000000"
         DB_PATH: ":memory:"
         RC_P2P_SECRET: "ci-test-secret-0123456789abcdef0123456789abcdef0123456789abcdef01"
-      run: pytest tests/ -v \
-        --ignore=tests/test_epoch_settlement_formal.py \
-        --ignore=tests/test_rip201_bucket_spoof.py \
-        --ignore=tests/test_beacon_crewai.py \
-        --ignore=tests/test_beacon_langgraph.py \
-        --ignore=tests/test_beacon_atlas_behavior.py \
-        --ignore=tests/security_audit/test_security_findings_2867.py
+      run: |
+        pytest tests/ -v \
+          --ignore=tests/test_epoch_settlement_formal.py \
+          --ignore=tests/test_rip201_bucket_spoof.py \
+          --ignore=tests/test_beacon_crewai.py \
+          --ignore=tests/test_beacon_langgraph.py \
+          --ignore=tests/test_beacon_atlas_behavior.py \
+          --ignore=tests/security_audit/test_security_findings_2867.py
