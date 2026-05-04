@@ -50,49 +50,52 @@ def get_token_holders(client: SolanaClient, token_mint: PublicKey) -> list[dict[
         try:
             pubkey = item.get("pubkey")
             account_info = item.get("account", {})
-            if not account_info:
-                continue
-
-            data = account_info.get("data", {})
-            if not data:
-                continue
-
-            # Parse token amount from account data
-            # Assuming UI amount is stored or can be derived from mint decimals (6 for wRTC)
-            # This uses a simplified approach; real parsing may require ABI or layout knowledge
-            amount_str = data.get("parsed", {}).get("info", {}).get("tokenAmount", {}).get("uiAmountString", "0")
-            amount = float(amount_str)
-
-            holders.append({
-                "address": pubkey,
-                "amount": amount
-            })
-        except (KeyError, ValueError, TypeError) as e:
-            # Skip malformed account entries
-            continue
+            if pubkey and account_info:
+                holders.append({"address": pubkey, "amount": account_info.get("lamports", 0)})
+        except Exception as e:
+            raise RuntimeError(f"Failed to process token account: {e}") from e
 
     return holders
 
 
-def main():
-    """Main entry point for wRTC holder tracking."""
-    # Get inputs from environment
-    rpc_url = os.environ.get("INPUT_RPC_URL", "https://api.mainnet-beta.solana.com")
-    token_mint_str = os.environ.get("INPUT_TOKEN_MINT", "wRTCrW1X9m96A9JbRUt9LoGNp9Hc9U8XcdFy23s7uJQ")
+def get_wrtc_holders(client: SolanaClient, token_mint: PublicKey) -> list[dict[str, float]]:
+    """
+    Fetches all wRTC holders for a given token mint address.
 
-    if not rpc_url or not token_mint_str:
-        print("⚠️ Missing required environment variables: INPUT_RPC_URL or INPUT_TOKEN_MINT")
+    Args:
+        client: Solana RPC client instance
+        token_mint: PublicKey of the token mint
+
+    Returns:
+        List of dictionaries containing 'address' and 'amount' keys
+
+    Raises:
+        ValueError: If client is not connected or token_mint is invalid
+        RuntimeError: If the RPC request fails
+    """
+    return get_token_holders(client, token_mint)
+
+
+def main():
+    """Main entry point."""
+    # Get inputs from environment
+    client_url = os.environ.get("INPUT_CLIENT_URL", "")
+    token_mint = os.environ.get("INPUT_TOKEN_MINT", "")
+
+    if not all([client_url, token_mint]):
+        print("⚠️ Missing required environment variables. Skipping.")
         return
 
-    try:
-        client = SolanaClient(rpc_url)
-        token_mint = PublicKey(token_mint_str)
-    except Exception as e:
-        raise ValueError(f"Invalid RPC URL or token mint address: {e}") from e
+    # Create Solana client instance
+    client = SolanaClient(url=client_url)
 
-    try:
-        holders = get_token_holders(client, token_mint)
-        # Output as JSON to stdout
-        print(json.dumps(holders))
-    except Exception as e:
-        raise RuntimeError(f"Failed to retrieve or process token holders: {e}") from e
+    # Fetch wRTC holders
+    holders = get_wrtc_holders(client, PublicKey(token_mint))
+
+    # Print holders
+    for holder in holders:
+        print(holder)
+
+
+if __name__ == "__main__":
+    main()
