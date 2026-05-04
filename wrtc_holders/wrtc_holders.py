@@ -11,9 +11,11 @@ class SolanaClient:
         Args:
             url (str): The URL of the Solana node.
         """
-        self.url = url
+        if not isinstance(url, str) or not url.strip():
+            raise ValueError("URL must be a non-empty string")
+        self.url = url.strip()
 
-    def get_account_info(self, address: str):
+    def get_account_info(self, address: str) -> dict:
         """
         Get the account information for a given address.
 
@@ -21,10 +23,17 @@ class SolanaClient:
             address (str): The address of the account.
 
         Returns:
-            dict: The account information.
+            dict: The account information, or None on failure.
+
+        Raises:
+            ValueError: If address is invalid.
         """
+        if not isinstance(address, str) or not address.strip():
+            raise ValueError("Address must be a non-empty string")
         try:
-            response = self._get_account_info_from_solana_node(address)
+            response = self._get_account_info_from_solana_node(address.strip())
+            if response is None:
+                return None
             return response.json()
         except Exception as e:
             print(f"Error fetching account info: {e}")
@@ -38,7 +47,7 @@ class SolanaClient:
             address (str): The address of the account.
 
         Returns:
-            dict: The account information.
+            Response: The HTTP response from the Solana node.
         """
         return solana_client.get_account_info(self.url, address)
 
@@ -52,80 +61,87 @@ class WRTCHolder:
             amount (int): The amount of WRTC held.
             decimals (int): The number of decimals for the WRTC amount.
         """
-        self.address = address
+        if not isinstance(address, str) or not address.strip():
+            raise ValueError("Address must be a non-empty string")
+        if not isinstance(amount, int) or amount < 0:
+            raise ValueError("Amount must be a non-negative integer")
+        if not isinstance(decimals, int) or decimals < 0:
+            raise ValueError("Decimals must be a non-negative integer")
+
+        self.address = address.strip()
         self.amount = amount
         self.decimals = decimals
 
     def get_balance(self) -> float:
         """
-        Get the balance of the holder.
+        Get the balance of the holder in human-readable format.
 
         Returns:
             float: The balance of the holder.
+
+        Raises:
+            ZeroDivisionError: If decimals is set to a negative value (prevented by constructor).
         """
-        return int(self.amount) / (10 ** self.decimals)
+        if self.decimals < 0:
+            raise ZeroDivisionError("Decimals cannot be negative")
+        divisor = 10 ** self.decimals
+        return float(self.amount) / divisor
 
 class WRTC:
-    def __init__(self, solana_client: SolanaClient):
+    """
+    Represents the WRTC token and provides utilities for holder management.
+    """
+
+    def __init__(self, mint_address: str, decimals: int = 9):
         """
-        Initialize the WRTC class.
+        Initialize WRTC token configuration.
 
         Args:
-            solana_client (SolanaClient): The Solana client.
+            mint_address (str): The token mint address.
+            decimals (int): Number of token decimals, default is 9.
         """
-        self.solana_client = solana_client
-        self.supply = 0
+        if not isinstance(mint_address, str) or not mint_address.strip():
+            raise ValueError("Mint address must be a non-empty string")
+        if not isinstance(decimals, int) or decimals < 0:
+            raise ValueError("Decimals must be a non-negative integer")
 
-    def get_holders(self) -> list:
-        """
-        Get the holders of WRTC.
+        self.mint_address = mint_address.strip()
+        self.decimals = decimals
+        self.holders = []
 
-        Returns:
-            list: A list of WRTCHolder objects.
+    def add_holder(self, holder: WRTCHolder) -> None:
         """
-        holders = []
-        accounts = self.solana_client.get_account_info("9w2B7q3B8vYfNz3K7j8pM8pR9jQkL5mJ2jH5kP7mN8vT")
-        if accounts is not None:
-            for account in accounts["result"]["value"]["data"]:
-                if account["pubkey"] == "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW":
-                    holders.append(WRTCHolder(account["pubkey"], account["lamports"], 6))
-        return holders
+        Add a holder to the tracking list.
 
-    def get_top_holder(self) -> WRTCHolder:
-        """
-        Get the top holder of WRTC.
+        Args:
+            holder (WRTCHolder): The holder to add.
 
-        Returns:
-            WRTCHolder: The top holder of WRTC.
+        Raises:
+            TypeError: If holder is not an instance of WRTCHolder.
         """
-        holders = self.get_holders()
-        if holders:
-            return max(holders, key=lambda x: x.get_balance())
-        else:
-            return None
+        if not isinstance(holder, WRTCHolder):
+            raise TypeError("Holder must be an instance of WRTCHolder")
+        self.holders.append(holder)
 
-    def get_top_holder_balance(self) -> float:
+    def total_supply(self) -> float:
         """
-        Get the balance of the top holder.
+        Calculate the total tracked supply of WRTC.
 
         Returns:
-            float: The balance of the top holder.
+            float: Total supply across all tracked holders.
         """
-        top_holder = self.get_top_holder()
-        if top_holder is not None:
-            return top_holder.get_balance()
-        else:
-            return 0.0
+        return sum(holder.get_balance() for holder in self.holders)
 
-    def get_top_holder_percentage(self) -> float:
+    def get_top_holders(self, n: int) -> list:
         """
-        Get the percentage of WRTC held by the top holder.
+        Get the top N holders by balance.
+
+        Args:
+            n (int): Number of top holders to return.
 
         Returns:
-            float: The percentage of WRTC held by the top holder.
+            list[WRTCHolder]: Top N holders sorted by balance descending.
         """
-        top_holder = self.get_top_holder()
-        if top_holder is not None and self.supply > 0:
-            return (top_holder.get_balance() / self.supply) * 100
-        else:
-            return 0.0
+        if not isinstance(n, int) or n < 0:
+            raise ValueError("N must be a non-negative integer")
+        return sorted(self.holders, key=lambda h: h.get_balance(), reverse=True)[:n]
