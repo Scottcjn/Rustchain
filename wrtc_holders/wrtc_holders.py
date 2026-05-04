@@ -58,7 +58,7 @@ class WRTCHolder:
 
         Args:
             address (str): The address of the holder.
-            amount (int): The amount of WRTC held.
+            amount (int): The amount of wRTC held.
             decimals (int): The number of decimals for the token.
         """
         if not isinstance(address, str) or not address.strip():
@@ -77,23 +77,20 @@ class WRTCHolder:
         Get the normalized balance of the holder.
 
         Returns:
-            float: The balance divided by 10^decimals.
+            float: The normalized balance.
         """
         return self.amount / (10 ** self.decimals)
 
-    def meets_threshold(self, threshold: float) -> bool:
+    def meets_minimum_threshold(self, threshold: int) -> bool:
         """
-        Check if the holder's balance meets or exceeds the threshold.
+        Check if the holder meets the minimum threshold.
 
         Args:
-            threshold (float): The minimum balance required.
+            threshold (int): The minimum amount required.
 
         Returns:
-            bool: True if balance >= threshold, False otherwise.
-
-        Raises:
-            ValueError: If threshold is negative.
+            bool: True if the holder meets the threshold.
         """
-        if threshold < 0:
-            raise ValueError("Threshold must be non-negative")
-        return self.normalized_balance() >= threshold
+        if not isinstance(threshold, int) or threshold < 0:
+            raise ValueError("Threshold must be a non-negative integer")
+        return self.amount >= threshold
