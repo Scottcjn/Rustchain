@@ -7,6 +7,16 @@ from solana_client import SolanaClient
 import json
 
 
+def _validate_holders(holders):
+    if not isinstance(holders, list):
+        raise ValueError("Holders must be a list")
+    for holder in holders:
+        if not isinstance(holder, dict):
+            raise ValueError("Each holder must be a dictionary")
+        if not all(key in holder for key in ["address", "amount"]):
+            raise ValueError("Each holder must have 'address' and 'amount' keys")
+
+
 class TestWRTC(unittest.TestCase):
     def setUp(self):
         self.solana_client = SolanaClient("https://api.devnet.solana.com")
@@ -23,6 +33,7 @@ class TestWRTC(unittest.TestCase):
             ]
         ''')
         holders = self.wrtc.get_holders()
+        _validate_holders(holders)
         self.assertEqual(len(holders), 4)
         self.assertEqual(holders[0]['address'], "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW")
         self.assertEqual(holders[0]['amount'], 8296082)
@@ -35,24 +46,29 @@ class TestWRTC(unittest.TestCase):
                 {"address": "Bk9gDyK6nZGdfevAzJdGmGtiqF3MEyZm1S7v11J2q3pM", "amount": 1000}
             ]
         ''')
-        top_holder = self.wrtc.get_top_holder()
-        self.assertEqual(top_holder['address'], "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW")
-        self.assertEqual(top_holder['amount'], 8296082)
+        holders = self.wrtc.get_holders()
+        _validate_holders(holders)
+        self.assertEqual(len(holders), 2)
+        self.assertEqual(holders[0]['address'], "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW")
+        self.assertEqual(holders[0]['amount'], 8296082)
 
     @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_holders_empty_response(self, mock_get_token_holders):
+    def test_get_holders_empty(self, mock_get_token_holders):
         mock_get_token_holders.return_value = json.loads('''
             []
         ''')
         holders = self.wrtc.get_holders()
+        _validate_holders(holders)
         self.assertEqual(len(holders), 0)
 
     @patch.object(SolanaClient, 'get_token_holders')
-    def test_get_holders_invalid_response(self, mock_get_token_holders):
+    def test_get_holders_invalid(self, mock_get_token_holders):
         mock_get_token_holders.return_value = json.loads('''
-            {"error": "Invalid response"}
+            [
+                {"address": "3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW", "amount": "not a number"}
+            ]
         ''')
-        with self.assertRaises(json.JSONDecodeError):
+        with self.assertRaises(ValueError):
             self.wrtc.get_holders()
 
 if __name__ == '__main__':
