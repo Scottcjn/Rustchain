@@ -32,7 +32,7 @@ struct Args {
     #[arg(short = 'p', long = "proxy", env = "RUSTCHAIN_PROXY_URL")]
     proxy: Option<String>,
 
-    /// Run preflight checks only (no mining)
+    /// Test mode: run preflight checks and output hardware fingerprint without actual mining
     #[arg(long = "dry-run", env = "RUSTCHAIN_DRY_RUN")]
     dry_run: bool,
 
