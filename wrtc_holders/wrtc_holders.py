@@ -51,7 +51,10 @@ def get_token_holders(client: SolanaClient, token_mint: PublicKey) -> list[dict[
             pubkey = item.get("pubkey")
             account_info = item.get("account", {})
             if pubkey and account_info:
-                holders.append({"address": pubkey, "amount": account_info.get("lamports", 0)})
+                holders.append({
+                    "address": pubkey,
+                    "amount": account_info.get("lamports", 0) / (10 ** 9)
+                })
         except Exception as e:
             raise RuntimeError(f"Failed to process token account: {e}") from e
 
@@ -90,7 +93,8 @@ def main():
     client = SolanaClient(url=client_url)
 
     # Fetch wRTC holders
-    holders = get_wrtc_holders(client, PublicKey(token_mint))
+    holders = get_wrtc_holders(client, token_mint)
 
     # Print wRTC holders
-    print(json.dumps(holders, indent=4))
+    for holder in holders:
+        print(f"Address: {holder['address']}, Amount: {holder['amount']}")
