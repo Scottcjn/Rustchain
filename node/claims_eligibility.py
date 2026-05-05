@@ -318,12 +318,31 @@ def is_epoch_settled(
 ) -> bool:
     """
     Check if epoch has been settled
-    
-    Epochs are typically settled within 1-2 epochs after completion.
-    For simplicity, we consider an epoch settled if we're at least 2 epochs past it.
+
+    SECURITY FIX: Previously this function only used time-based heuristics
+    (current_slot // 144 - 2) which could be bypassed — an epoch might be
+    "time-settled" but not actually settled in the database (e.g., if
+    settle_epoch_rip200 failed or no eligible miners existed).
+
+    Now checks the epoch_state table first, then falls back to the time
+    heuristic as a secondary signal.
     """
-    settled_epoch = max(0, current_slot // 144 - 2)
-    return epoch <= settled_epoch
+    try:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT settled FROM epoch_state WHERE epoch = ?",
+                (epoch,)
+            ).fetchone()
+            if row:
+                return int(row[0]) == 1
+            # No row yet — check if another worker is currently settling.
+            # Fall back to time heuristic: settled if we're 2+ epochs past.
+            settled_epoch = max(0, current_slot // 144 - 2)
+            return epoch <= settled_epoch
+    except sqlite3.Error:
+        # Database unavailable — fall back to time heuristic
+        settled_epoch = max(0, current_slot // 144 - 2)
+        return epoch <= settled_epoch
 
 
 def calculate_epoch_reward(
