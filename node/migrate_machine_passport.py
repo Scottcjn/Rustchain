@@ -56,7 +56,7 @@ def check_existing_schema(db_path: str) -> dict:
         
         conn.close()
     except Exception as e:
-        result['error'] = str(e)
+        result['error'] = "Migration schema check failed"
     
     return result
 
