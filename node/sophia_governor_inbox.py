@@ -10,11 +10,13 @@ and stores them in a durable inbox for bigger Sophia/Elyan agents.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import sqlite3
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 from flask import jsonify, request
 
@@ -180,8 +182,34 @@ def _parse_csv_env(name: str) -> list[str]:
 def _forward_targets() -> list[str]:
     targets = _parse_csv_env("SOPHIA_GOVERNOR_INBOX_FORWARD_TARGETS")
     if targets:
-        return targets
-    return _parse_csv_env("SOPHIA_GOVERNOR_INBOX_FORWARD_URLS")
+        return [t for t in targets if _is_safe_url(t)]
+    return [t for t in _parse_csv_env("SOPHIA_GOVERNOR_INBOX_FORWARD_URLS") if _is_safe_url(t)]
+
+
+def _is_safe_url(url: str) -> bool:
+    """Validate that a URL doesn't point to internal/private addresses (SSRF prevention)."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        # Reject localhost, loopback, and private IP ranges
+        lower = hostname.lower()
+        if lower in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+            return False
+        # Reject private IP ranges (10.x, 172.16-31.x, 192.168.x, 169.254.x)
+        import ipaddress
+        try:
+            ip = ipaddress.ip_address(hostname)
+            return not (ip.is_private or ip.is_loopback or ip.is_link_local)
+        except ValueError:
+            # It's a hostname, not an IP - allow for now
+            # In production, DNS rebinding protection would require resolution + validation
+            return True
+    except Exception:
+        return False
 
 
 def _auto_forward_enabled() -> bool:
@@ -226,13 +254,13 @@ def _is_authorized(req) -> bool:
     required_bearers = _bearer_tokens()
 
     provided_admin = (req.headers.get("X-Admin-Key") or req.headers.get("X-API-Key") or "").strip()
-    if required_admin and provided_admin and provided_admin == required_admin:
+    if required_admin and provided_admin and hmac.compare_digest(provided_admin, required_admin):
         return True
 
     auth_header = (req.headers.get("Authorization") or "").strip()
     if auth_header.lower().startswith("bearer "):
         provided_bearer = auth_header.split(" ", 1)[1].strip()
-        if provided_bearer and provided_bearer in required_bearers:
+        if provided_bearer and any(hmac.compare_digest(provided_bearer, t) for t in required_bearers):
             return True
 
     return False
@@ -1089,6 +1117,8 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
 
     @app.route("/api/sophia/governor/bridge/status", methods=["GET"])
     def sophia_governor_bridge_status():
+        if not _is_authorized(request):
+            return jsonify({"error": "Unauthorized -- admin key or bearer required"}), 401
         return jsonify(get_governor_inbox_status(db))
 
     @app.route("/api/sophia/governor/ingest", methods=["POST"])
@@ -1179,6 +1209,11 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
         if targets is not None and not isinstance(targets, list):
             return jsonify({"error": "targets must be a list of URLs"}), 400
         clean_targets = [str(target).strip() for target in (targets or []) if str(target).strip()]
+
+        # SSRF prevention: validate user-provided forward targets
+        for target in clean_targets:
+            if not _is_safe_url(target):
+                return jsonify({"error": f"invalid forward target: blocked for security (private/internal)"}), 400
 
         try:
             result = forward_governor_inbox_entry(
