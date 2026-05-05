@@ -119,7 +119,9 @@ class Message:
         if not self.timestamp:
             self.timestamp = int(time.time())
         if not self.nonce:
-            self.nonce = int.from_bytes(hashlib.sha256(str(time.time()).encode()).digest()[:4], 'big')
+            # Issue #2268: Use cryptographically secure random nonce instead of predictable time.time()
+            import secrets
+            self.nonce = int.from_bytes(secrets.token_bytes(4), 'big')  # 32-bit cryptographically secure nonce
 
     def to_bytes(self) -> bytes:
         """Serialize message to bytes"""
