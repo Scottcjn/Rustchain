@@ -174,6 +174,23 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
                 return result
             except Exception as e:
                 print(f"[WARN] Anti-double-mining failed, falling back to standard: {e}")
+                # SECURITY FIX: Rollback any partial writes from the failed
+                # anti-double-mining path before falling through. Without this,
+                # the standard path would append its own writes on top of the
+                # uncommitted partial state, causing a double-spend when commit()
+                # is called at the end.
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                # Re-acquire the transaction lock after rollback
+                db.execute("BEGIN IMMEDIATE")
+                # Re-check settled status — another worker may have settled
+                # while we were rolling back.
+                st = db.execute("SELECT settled FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
+                if st and int(st[0]) == 1:
+                    db.rollback()
+                    return {"ok": True, "epoch": epoch, "already_settled": True}
                 # Fall through to standard rewards
 
         # Standard RIP-200 rewards (no anti-double-mining)
