@@ -16,6 +16,7 @@ Query Parameters:
     cursor  - Pagination cursor (optional)
 """
 
+import re
 import time
 from typing import Dict, Any, List, Optional, Tuple
 from flask import Blueprint, request, Response, jsonify, current_app
@@ -217,10 +218,13 @@ def rss_feed():
         # Fetch videos
         videos, next_cursor = _fetch_videos(limit=limit, agent=agent, cursor=cursor)
         
-        # Get base URL
+        # Get base URL — validate X-Forwarded-Host to prevent host header injection
         base_url = request.host_url.rstrip("/")
-        if request.headers.get("X-Forwarded-Host"):
-            base_url = f"https://{request.headers['X-Forwarded-Host']}"
+        fwd_host = request.headers.get("X-Forwarded-Host", "")
+        if fwd_host:
+            # SECURITY: Only allow alphanumeric, dots, and hyphens to prevent host header injection
+            if re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9.\-]{0,253}[a-zA-Z0-9])?$', fwd_host):
+                base_url = f"https://{fwd_host}"
         
         # Build RSS feed
         feed_title = "BoTTube Videos"
@@ -273,10 +277,13 @@ def atom_feed():
         # Fetch videos
         videos, next_cursor = _fetch_videos(limit=limit, agent=agent, cursor=cursor)
         
-        # Get base URL
+        # Get base URL — validate X-Forwarded-Host to prevent host header injection
         base_url = request.host_url.rstrip("/")
-        if request.headers.get("X-Forwarded-Host"):
-            base_url = f"https://{request.headers['X-Forwarded-Host']}"
+        fwd_host = request.headers.get("X-Forwarded-Host", "")
+        if fwd_host:
+            # SECURITY: Only allow alphanumeric, dots, and hyphens to prevent host header injection
+            if re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9.\-]{0,253}[a-zA-Z0-9])?$', fwd_host):
+                base_url = f"https://{fwd_host}"
         
         # Build Atom feed
         feed_title = "BoTTube Videos"
@@ -340,10 +347,13 @@ def feed_index():
     # Fetch videos
     videos, next_cursor = _fetch_videos(limit=limit, agent=agent, cursor=cursor)
     
-    # Get base URL
+    # Get base URL — validate X-Forwarded-Host to prevent host header injection
     base_url = request.host_url.rstrip("/")
-    if request.headers.get("X-Forwarded-Host"):
-        base_url = f"https://{request.headers['X-Forwarded-Host']}"
+    fwd_host = request.headers.get("X-Forwarded-Host", "")
+    if fwd_host:
+        # SECURITY: Only allow alphanumeric, dots, and hyphens to prevent host header injection
+        if re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9.\-]{0,253}[a-zA-Z0-9])?$', fwd_host):
+            base_url = f"https://{fwd_host}"
     
     # Auto-detect format
     if "application/rss+xml" in accept_header:

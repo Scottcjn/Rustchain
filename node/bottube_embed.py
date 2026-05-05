@@ -789,10 +789,14 @@ def _get_related_videos(video_id: str, limit: int = 5) -> List[Dict[str, Any]]:
 
 
 def _get_base_url() -> str:
-    """Get the base URL from request."""
+    """Get the base URL from request — validates X-Forwarded-Host to prevent host header injection."""
     base_url = request.host_url.rstrip("/")
-    if request.headers.get("X-Forwarded-Host"):
-        base_url = f"https://{request.headers['X-Forwarded-Host']}"
+    fwd_host = request.headers.get("X-Forwarded-Host", "")
+    if fwd_host:
+        # SECURITY: Only allow alphanumeric, dots, and hyphens to prevent host header injection
+        import re
+        if re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9.\-]{0,253}[a-zA-Z0-9])?$', fwd_host):
+            base_url = f"https://{fwd_host}"
     return base_url
 
 
