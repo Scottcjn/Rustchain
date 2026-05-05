@@ -462,7 +462,11 @@ def _measure_nvidia_vram_timing(iterations: int) -> Dict:
         return {
             "seq_read_latencies_ns": seq_latencies[:20],  # Trim for output
             "seq_read_mean_ns": int(statistics.mean(seq_latencies)),
-            "seq_read_stdev_ns": int(statistics.stdev(seq_latencies)) if len(seq_latencies) > 1 else 0,
+            "seq_read_stdev_ns": (
+                int(statistics.stdev(seq_latencies))
+                if len(seq_latencies) > 1
+                else 0
+            ),
             "rand_read_latencies_ns": rand_latencies[:20],
             "rand_read_mean_ns": int(statistics.mean(rand_latencies)),
             "buf_size_bytes": buf_size,
@@ -649,7 +653,10 @@ def _measure_amd_cu_asymmetry(buckets: int) -> Dict:
 
 # ─── Channel 8 Check 4: Thermal Throttle Signatures ─────────────────────────
 
-def check_thermal_throttle_signature(warmup_seconds: int = 10, cooldown_seconds: int = 5) -> Tuple[bool, Dict]:
+def check_thermal_throttle_signature(
+    warmup_seconds: int = 10,
+    cooldown_seconds: int = 5,
+) -> Tuple[bool, Dict]:
     """
     Check 4: Thermal Throttle Signatures
 
@@ -846,19 +853,22 @@ def _measure_amd_thermal(warmup_seconds: int, cooldown_seconds: int) -> Tuple[Li
                 for line in result.stdout.splitlines():
                     if "SCLK" in line:
                         try:
-                            mhz = int(line.split(":")[1].strip().replace("Mhz", "").replace("MHz", ""))
+                            raw = line.split(":")[1].strip().replace("Mhz", "").replace("MHz", "")
+                            mhz = int(raw)
                             clocks.append(mhz)
                         except (ValueError, IndexError):
                             pass
                     if "Temperature" in line or "Edge" in line:
                         try:
-                            temp = float(line.split(":")[1].strip().replace("c", "").replace("C", ""))
+                            raw = line.split(":")[1].strip().replace("c", "").replace("C", "")
+                            temp = float(raw)
                             temps.append(int(temp))
                         except (ValueError, IndexError):
                             pass
                     if "Power" in line:
                         try:
-                            power = float(line.split(":")[1].strip().replace("W", "").replace("w", ""))
+                            raw = line.split(":")[1].strip().replace("W", "").replace("w", "")
+                            power = float(raw)
                             powers.append(power)
                         except (ValueError, IndexError):
                             pass
@@ -975,7 +985,10 @@ def compute_gpu_silicone_signature() -> Optional[str]:
     components.append(info.get("pci_bus_id", "unknown"))
 
     # Quick jitter measurement (10 samples)
-    jitter_samples = _measure_cuda_kernel_jitter(10) if vendor == "nvidia" else _measure_rocm_kernel_jitter(10)
+    if vendor == "nvidia":
+        jitter_samples = _measure_cuda_kernel_jitter(10)
+    else:
+        jitter_samples = _measure_rocm_kernel_jitter(10)
     if jitter_samples:
         cv = round(statistics.stdev(jitter_samples) / statistics.mean(jitter_samples), 8)
         components.append(f"cv_{cv}")
