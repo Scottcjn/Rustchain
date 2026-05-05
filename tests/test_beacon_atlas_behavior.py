@@ -33,8 +33,10 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         cls.app.config['DB_PATH'] = cls.test_db_path
         
         # Import blueprint routes manually to avoid teardown_appcontext issue
-        from node.beacon_api import DB_PATH, init_beacon_tables
-        
+        from node import beacon_api as beacon_module
+        from node.beacon_api import init_beacon_tables
+        beacon_module.DB_PATH = cls.test_db_path
+
         # Register blueprint
         from node import beacon_api as beacon_module
         cls.app.register_blueprint(beacon_module.beacon_api)
@@ -53,7 +55,24 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         
         # Initialize database tables
         init_beacon_tables(cls.test_db_path)
-        
+
+        # Seed relay_agents so from_agent lookup in create_contract succeeds
+        with sqlite3.connect(cls.test_db_path) as conn:
+            now = int(time.time())
+            test_agents = [
+                ('bcn_alice_test', 'deadbeef' * 8, 'Alice', 'active', None, now, now),
+                ('bcn_bob_test',   'cafecafe' * 8, 'Bob',   'active', None, now, now),
+                ('bcn_test_from',  'facb00fb' * 8, 'From',  'active', None, now, now),
+                ('bcn_test_to',    'beefbabe' * 8, 'To',    'active', None, now, now),
+            ]
+            conn.executemany(
+                "INSERT OR IGNORE INTO relay_agents "
+                "(agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                test_agents,
+            )
+            conn.commit()
+
         cls.client = cls.app.test_client()
 
     @classmethod
@@ -95,30 +114,32 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         create_response = self.client.post(
             '/api/contracts',
             data=json.dumps(contract_data),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_alice_test'},
         )
         self.assertEqual(create_response.status_code, 201)
-        
+
         created = json.loads(create_response.data)
         self.assertIn('id', created)
         self.assertEqual(created['from'], 'bcn_alice_test')
         self.assertEqual(created['to'], 'bcn_bob_test')
         self.assertEqual(created['state'], 'offered')
-        
+
         contract_id = created['id']
-        
+
         # Verify contract appears in list
         list_response = self.client.get('/api/contracts')
         self.assertEqual(list_response.status_code, 200)
         contracts = json.loads(list_response.data)
         self.assertEqual(len(contracts), 1)
         self.assertEqual(contracts[0]['id'], contract_id)
-        
-        # Update contract state to active
+
+        # Update contract state to active (only to_agent can accept)
         update_response = self.client.put(
             f'/api/contracts/{contract_id}',
             data=json.dumps({'state': 'active'}),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_bob_test'},
         )
         self.assertEqual(update_response.status_code, 200)
         
@@ -249,15 +270,17 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         create_response = self.client.post(
             '/api/contracts',
             data=json.dumps(contract_data),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_test_from'},
         )
         contract_id = json.loads(create_response.data)['id']
-        
-        # Try invalid state
+
+        # Try invalid state (caller must be from_agent or to_agent)
         update_response = self.client.put(
             f'/api/contracts/{contract_id}',
             data=json.dumps({'state': 'invalid_state'}),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_test_from'},
         )
         self.assertEqual(update_response.status_code, 400)
 

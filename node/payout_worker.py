@@ -168,7 +168,7 @@ class PayoutWorker:
                     SET status = 'failed',
                         error_msg = ?
                     WHERE withdrawal_id = ?
-                """, (str(e), withdrawal_id))
+                """, ("Withdrawal processing failed", withdrawal_id))
                 conn.execute("COMMIT")
 
             self.stats['failed'] += 1

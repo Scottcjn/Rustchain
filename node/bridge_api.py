@@ -385,11 +385,10 @@ def create_bridge_transfer(
             "amount_rtc": request.amount_rtc
         }
         
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         db_conn.rollback()
         return False, {
-            "error": "Database error",
-            "details": str(e)
+            "error": "Database error processing bridge transfer"
         }
 
 
@@ -568,11 +567,10 @@ def void_bridge_transfer(
             "lock_released": True
         }
         
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         db_conn.rollback()
         return False, {
-            "error": "Database error",
-            "details": str(e)
+            "error": "Database error processing lock release"
         }
 
 
@@ -643,11 +641,10 @@ def update_external_confirmation(
             "required_confirmations": req_conf
         }
         
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         db_conn.rollback()
         return False, {
-            "error": "Database error",
-            "details": str(e)
+            "error": "Database error updating bridge confirmation"
         }
 
 
