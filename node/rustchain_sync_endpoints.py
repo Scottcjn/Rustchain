@@ -92,7 +92,7 @@ def register_sync_endpoints(app, db_path, admin_key):
         @wraps(f)
         def decorated(*args, **kwargs):
             key = request.headers.get("X-Admin-Key") or request.headers.get("X-API-Key")
-            if not key or key != admin_key:
+            if not key or not hmac.compare_digest(key, admin_key):
                 return jsonify({"error": "Unauthorized"}), 401
             return f(*args, **kwargs)
 
