@@ -257,6 +257,10 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
 
     def test_invalid_state_update_rejected(self):
         """Contract state updates reject invalid states."""
+        # Seed agents for auth
+        self._seed_agent('bcn_test_from')
+        self._seed_agent('bcn_test_to')
+        
         # Create a contract first
         contract_data = {
             'from': 'bcn_test_from',
@@ -269,15 +273,17 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         create_response = self.client.post(
             '/api/contracts',
             data=json.dumps(contract_data),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_test_from'},
         )
         contract_id = json.loads(create_response.data)['id']
         
-        # Try invalid state
+        # Try invalid state (caller must be from_agent or to_agent)
         update_response = self.client.put(
             f'/api/contracts/{contract_id}',
             data=json.dumps({'state': 'invalid_state'}),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_test_from'},
         )
         self.assertEqual(update_response.status_code, 400)
 
