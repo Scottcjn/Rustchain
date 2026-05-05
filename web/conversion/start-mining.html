@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>RustChain Start Mining Flow</title>
+  <style>
+    :root {
+      --bg: #081016;
+      --panel: #101c24;
+      --panel2: #132530;
+      --line: #28414e;
+      --text: #edf7f4;
+      --muted: #9cb7b3;
+      --accent: #6ee7a8;
+      --accent2: #fbbf24;
+      --danger: #fb7185;
+      --blue: #7dd3fc;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(110,231,168,.15), transparent 35%),
+        radial-gradient(circle at 80% 10%, rgba(125,211,252,.12), transparent 30%),
+        linear-gradient(180deg, #081016, #05090d);
+      color: var(--text);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      min-height: 100vh;
+    }
+    a { color: var(--accent); }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 24px 16px 56px; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 0 18px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+    .brand { font-size: 18px; font-weight: 800; letter-spacing: .04em; color: var(--accent); }
+    .nav { display: flex; gap: 14px; flex-wrap: wrap; }
+    .nav a { color: var(--muted); text-decoration: none; font-size: 13px; }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(280px, .95fr);
+      gap: 22px;
+      padding: 46px 0 26px;
+      align-items: center;
+    }
+    h1 { font-size: clamp(34px, 6vw, 68px); line-height: .98; margin: 0 0 18px; letter-spacing: 0; }
+    h2 { font-size: 24px; margin: 0 0 12px; }
+    h3 { font-size: 17px; margin: 0 0 8px; }
+    p, li { color: var(--muted); line-height: 1.58; font-size: 15px; }
+    .lead { font-size: 18px; max-width: 650px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+    button, .button {
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #06100c;
+      padding: 11px 16px;
+      font-weight: 800;
+      cursor: pointer;
+      text-decoration: none;
+      font-size: 14px;
+    }
+    button.secondary, .button.secondary {
+      background: #223642;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+    .hero-card, .card {
+      background: rgba(16,28,36,.92);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 20px 70px rgba(0,0,0,.22);
+    }
+    .hero-card { padding: 18px; }
+    .machine {
+      border: 1px solid #3f5c68;
+      border-radius: 8px;
+      background: #0a141b;
+      padding: 18px;
+      min-height: 300px;
+      position: relative;
+      overflow: hidden;
+    }
+    .screen {
+      width: 78%;
+      height: 150px;
+      margin: 18px auto 0;
+      border: 8px solid #334b57;
+      border-radius: 12px;
+      background: #03070a;
+      display: grid;
+      place-items: center;
+      color: var(--accent);
+      font-family: Consolas, monospace;
+      font-size: 14px;
+    }
+    .stand { width: 90px; height: 44px; background: #334b57; margin: 0 auto; }
+    .base { width: 68%; height: 28px; background: #435d69; border-radius: 18px; margin: 0 auto; }
+    .machine-copy { text-align: center; margin-top: 18px; }
+    .pill {
+      display: inline-flex;
+      border: 1px solid rgba(110,231,168,.45);
+      color: var(--accent);
+      background: rgba(110,231,168,.09);
+      border-radius: 999px;
+      padding: 4px 9px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { padding: 18px; }
+    section { margin-top: 26px; }
+    .number {
+      display: inline-grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #06100c;
+      font-weight: 900;
+      margin-bottom: 10px;
+    }
+    label { display: block; color: var(--text); font-size: 13px; margin-bottom: 5px; font-weight: 700; }
+    input, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #071015;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 11px;
+      font: inherit;
+      outline: none;
+    }
+    textarea { min-height: 86px; resize: vertical; }
+    input:focus, textarea:focus { border-color: var(--accent); }
+    .field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .command {
+      position: relative;
+      margin-top: 12px;
+      background: #02070a;
+      border: 1px solid #263d49;
+      border-radius: 8px;
+      padding: 14px;
+      color: var(--accent);
+      font-family: Consolas, "SF Mono", monospace;
+      font-size: 13px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .notice {
+      border: 1px solid rgba(251,191,36,.36);
+      background: rgba(251,191,36,.08);
+      color: #fde68a;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .danger {
+      border-color: rgba(251,113,133,.38);
+      background: rgba(251,113,133,.09);
+      color: #fecdd3;
+    }
+    .bounty { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; border-top: 1px solid rgba(255,255,255,.08); padding-top: 12px; margin-top: 12px; }
+    .amount { color: var(--accent2); font-weight: 900; white-space: nowrap; }
+    canvas {
+      width: 100%;
+      height: auto;
+      background: #081016;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .small { font-size: 12px; color: var(--muted); }
+    .status-line { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .tag { border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px; color: var(--muted); font-size: 12px; }
+    @media (max-width: 860px) {
+      .hero, .grid, .grid.two, .field-row { grid-template-columns: 1fr; }
+      header { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">RustChain</div>
+      <nav class="nav">
+        <a href="#start">Start</a>
+        <a href="#dry-run">Dry-run</a>
+        <a href="#referral">Referral</a>
+        <a href="#brag-card">Brag card</a>
+        <a href="#hall">Hall of fame</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" id="start">
+        <div>
+          <span class="pill">Safe first step for old computers</span>
+          <h1>Your old computer still has work to do.</h1>
+          <p class="lead">RustChain lets real working machines join a proof network where one CPU gets one vote. Start with a safe dry-run, share the result, and keep useful hardware out of storage.</p>
+          <div class="actions">
+            <a class="button" href="#dry-run">Run Safe Dry-Run</a>
+            <a class="button secondary" href="#micro-bounties">See Micro-Bounties</a>
+          </div>
+          <div class="status-line">
+            <span class="tag">No private keys</span>
+            <span class="tag">No new hardware required</span>
+            <span class="tag">Copyable command</span>
+          </div>
+        </div>
+        <div class="hero-card">
+          <div class="machine">
+            <div class="screen">one CPU -> one vote</div>
+            <div class="stand"></div>
+            <div class="base"></div>
+            <div class="machine-copy">
+              <h3>Start with the machine you already have.</h3>
+              <p>Old laptop, desktop, Mac, workstation, or spare server: if it still boots, test it.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="grid">
+          <div class="card">
+            <div class="number">1</div>
+            <h3>Find a working machine</h3>
+            <p>Use any computer that still boots. The message is simple: do not buy a rig before you test what you already own.</p>
+          </div>
+          <div class="card">
+            <div class="number">2</div>
+            <h3>Run the safe dry-run</h3>
+            <p>The dry-run checks setup and prints output without mining or changing network state.</p>
+          </div>
+          <div class="card">
+            <div class="number">3</div>
+            <h3>Share proof and continue</h3>
+            <p>Share a machine story, dry-run result, or beginner tip. Then move to live mining only when ready.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid two" id="dry-run">
+        <div class="card">
+          <h2>Dry-Run Command Generator</h2>
+          <p>Generate a beginner-safe command with a public miner ID. This prototype does not ask for secrets.</p>
+          <div>
+            <label for="minerId">Miner ID or public wallet label</label>
+            <input id="minerId" value="my-rustchain-miner" autocomplete="off"/>
+          </div>
+          <div class="command" id="commandBox"></div>
+          <div class="actions">
+            <button id="copyCommand">Copy Command</button>
+            <button class="secondary" id="resetCommand">Reset</button>
+          </div>
+          <p class="small">Expected next action: paste the dry-run output into a bounty thread or setup-help form. Redact usernames or hostnames if needed.</p>
+        </div>
+        <div class="card">
+          <h2>Safety Copy</h2>
+          <div class="notice">
+            Use the dry-run before live mining. It is okay if the result shows an error: real failed attempts help improve onboarding.
+          </div>
+          <p>Do not paste private keys, passwords, API keys, seed phrases, SSH keys, or full environment dumps into public threads.</p>
+          <div class="notice danger">
+            The setup flow should never ask a beginner to expose secrets. Public proof should be limited to hardware summary, command output, and non-sensitive logs.
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="micro-bounties">
+        <h2>Micro-Bounties for Non-Technical Users</h2>
+        <p>These turn setup friction into small, reviewable actions that can produce early community momentum.</p>
+        <div class="bounty">
+          <div>
+            <h3>Machine Photo + Story</h3>
+            <p>Post a photo or description of one old computer you want to save from storage or recycling. Include model, approximate age, whether it boots, and one sentence about where it came from.</p>
+          </div>
+          <div class="amount">1 RTC</div>
+        </div>
+        <div class="bounty">
+          <div>
+            <h3>Safe Dry-Run Output</h3>
+            <p>Run the dry-run command and post the output with OS, CPU model if visible, completion status, and any confusing error. Errors count when the attempt is real.</p>
+          </div>
+          <div class="amount">2 RTC</div>
+        </div>
+        <div class="bounty">
+          <div>
+            <h3>Help the Next Beginner</h3>
+            <p>Write one beginner-friendly setup tip after trying RustChain. The tip must name the confusing step and suggest clearer wording.</p>
+          </div>
+          <div class="amount">1 RTC</div>
+        </div>
+      </section>
+
+      <section class="grid two" id="referral">
+        <div class="card">
+          <h2>Referral Invite Copy</h2>
+          <p>Generate a clean invite that points people toward the dry-run instead of making earning promises.</p>
+          <label for="inviteName">Your handle</label>
+          <input id="inviteName" value="@yourname"/>
+          <div class="command" id="inviteBox"></div>
+          <button id="copyInvite">Copy Invite</button>
+        </div>
+        <div class="card">
+          <h2>Referral Rules</h2>
+          <ul>
+            <li>Referrer shares a link or invite code.</li>
+            <li>New user completes a real first action: machine story or dry-run output.</li>
+            <li>Both accounts must be distinct real users.</li>
+            <li>Duplicate accounts, copied logs, fake machines, and self-referrals do not qualify.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="grid two" id="brag-card">
+        <div class="card">
+          <h2>Brag Card Generator</h2>
+          <div class="field-row">
+            <div>
+              <label for="displayName">Display name</label>
+              <input id="displayName" value="RustChain Starter"/>
+            </div>
+            <div>
+              <label for="machineLabel">Machine</label>
+              <input id="machineLabel" value="Old laptop that still boots"/>
+            </div>
+          </div>
+          <div class="field-row" style="margin-top:10px">
+            <div>
+              <label for="milestone">Milestone</label>
+              <input id="milestone" value="Safe dry-run complete"/>
+            </div>
+            <div>
+              <label for="publicId">Public miner ID</label>
+              <input id="publicId" value="my-rustchain-miner"/>
+            </div>
+          </div>
+          <div class="actions">
+            <button id="renderCard">Render Card</button>
+            <button class="secondary" id="downloadCard">Download PNG</button>
+          </div>
+          <p class="small">The card intentionally displays only public, user-entered fields.</p>
+        </div>
+        <div class="card">
+          <canvas id="cardCanvas" width="1200" height="630"></canvas>
+        </div>
+      </section>
+
+      <section class="card" id="hall">
+        <h2>Weekly Hall of Fame Rules</h2>
+        <div class="grid">
+          <div>
+            <h3>Oldest working machine</h3>
+            <p>15 RTC for the strongest verified old-hardware story.</p>
+          </div>
+          <div>
+            <h3>Most consistent uptime</h3>
+            <p>10 RTC for verifiable persistence during the week.</p>
+          </div>
+          <div>
+            <h3>Best first-time setup story</h3>
+            <p>10 RTC for a useful, honest beginner story.</p>
+          </div>
+          <div>
+            <h3>Most helpful beginner tip</h3>
+            <p>5 RTC for a clear setup improvement that helps the next person.</p>
+          </div>
+          <div>
+            <h3>Most successful inviter</h3>
+            <p>10 RTC for real new users who complete a first action.</p>
+          </div>
+          <div>
+            <h3>Eligibility</h3>
+            <p>Submissions must be original, non-duplicated, and tied to a public miner ID or GitHub identity.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function safeLabel(value) {
+      return String(value || "")
+        .replace(/[^\w@.-]/g, "-")
+        .replace(/-+/g, "-")
+        .slice(0, 80) || "my-rustchain-miner";
+    }
+
+    function updateCommand() {
+      const minerId = safeLabel($("minerId").value);
+      $("commandBox").textContent = `curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --dry-run --wallet ${minerId}`;
+    }
+
+    async function copyText(text, button) {
+      await navigator.clipboard.writeText(text);
+      const old = button.textContent;
+      button.textContent = "Copied";
+      setTimeout(() => { button.textContent = old; }, 1100);
+    }
+
+    function updateInvite() {
+      const handle = safeLabel($("inviteName").value);
+      $("inviteBox").textContent = `I found RustChain, a project that gives old working computers a reason to stay online. If you have an old laptop or desktop that still boots, start with the safe dry-run before mining.\n\nStart here: https://rustchain.org\nReferred by: ${handle}`;
+    }
+
+    function drawBragCard() {
+      const canvas = $("cardCanvas");
+      const ctx = canvas.getContext("2d");
+      const width = canvas.width;
+      const height = canvas.height;
+      const name = $("displayName").value || "RustChain Starter";
+      const machine = $("machineLabel").value || "Old computer";
+      const milestone = $("milestone").value || "Safe dry-run complete";
+      const publicId = $("publicId").value || "public-miner-id";
+
+      const bg = ctx.createLinearGradient(0, 0, width, height);
+      bg.addColorStop(0, "#09141b");
+      bg.addColorStop(1, "#173326");
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.strokeStyle = "#6ee7a8";
+      ctx.lineWidth = 8;
+      roundRect(ctx, 42, 42, width - 84, height - 84, 26);
+      ctx.stroke();
+
+      ctx.fillStyle = "#6ee7a8";
+      ctx.font = "800 54px Segoe UI, Arial";
+      ctx.fillText("I put old hardware back to work", 82, 125);
+
+      ctx.fillStyle = "#edf7f4";
+      ctx.font = "800 42px Segoe UI, Arial";
+      wrapCanvas(ctx, milestone, 82, 206, 760, 48);
+
+      ctx.fillStyle = "#9cb7b3";
+      ctx.font = "28px Segoe UI, Arial";
+      wrapCanvas(ctx, `Machine: ${machine}`, 82, 335, 720, 35);
+      wrapCanvas(ctx, `Public ID: ${publicId}`, 82, 415, 720, 35);
+      ctx.fillText(`Shared by: ${name}`, 82, 492);
+
+      ctx.fillStyle = "#fbbf24";
+      ctx.font = "800 34px Segoe UI, Arial";
+      ctx.fillText("Start yours at rustchain.org", 82, 555);
+
+      drawMiniComputer(ctx, 890, 330);
+    }
+
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function wrapCanvas(ctx, text, x, y, maxWidth, lineHeight) {
+      const words = String(text).split(/\s+/);
+      let line = "";
+      for (const word of words) {
+        const trial = line ? `${line} ${word}` : word;
+        if (ctx.measureText(trial).width > maxWidth && line) {
+          ctx.fillText(line, x, y);
+          line = word;
+          y += lineHeight;
+        } else {
+          line = trial;
+        }
+      }
+      if (line) ctx.fillText(line, x, y);
+    }
+
+    function drawMiniComputer(ctx, cx, cy) {
+      ctx.fillStyle = "#20333f";
+      roundRect(ctx, cx - 165, cy - 105, 330, 210, 18);
+      ctx.fill();
+      ctx.strokeStyle = "#6ee7a8";
+      ctx.lineWidth = 6;
+      ctx.stroke();
+      ctx.fillStyle = "#071015";
+      roundRect(ctx, cx - 128, cy - 72, 256, 125, 10);
+      ctx.fill();
+      ctx.fillStyle = "#6ee7a8";
+      ctx.beginPath();
+      ctx.arc(cx, cy - 5, 16, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#405a66";
+      ctx.fillRect(cx - 38, cy + 105, 76, 50);
+      roundRect(ctx, cx - 190, cy + 150, 380, 34, 16);
+      ctx.fill();
+    }
+
+    $("minerId").addEventListener("input", updateCommand);
+    $("resetCommand").addEventListener("click", () => {
+      $("minerId").value = "my-rustchain-miner";
+      updateCommand();
+    });
+    $("copyCommand").addEventListener("click", (event) => copyText($("commandBox").textContent, event.target));
+    $("inviteName").addEventListener("input", updateInvite);
+    $("copyInvite").addEventListener("click", (event) => copyText($("inviteBox").textContent, event.target));
+    ["displayName", "machineLabel", "milestone", "publicId"].forEach((id) => $(id).addEventListener("input", drawBragCard));
+    $("renderCard").addEventListener("click", drawBragCard);
+    $("downloadCard").addEventListener("click", () => {
+      const link = document.createElement("a");
+      link.download = "rustchain-brag-card.png";
+      link.href = $("cardCanvas").toDataURL("image/png");
+      link.click();
+    });
+
+    updateCommand();
+    updateInvite();
+    drawBragCard();
+  </script>
+</body>
+</html>
