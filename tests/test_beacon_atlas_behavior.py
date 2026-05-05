@@ -25,34 +25,19 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         cls.test_db_fd, cls.test_db_path = tempfile.mkstemp(suffix='.db')
         
         # Import and initialize Flask app
-        from flask import Flask, g
-        import sqlite3
-        
+        from flask import Flask
+
         cls.app = Flask(__name__)
         cls.app.config['TESTING'] = True
-        cls.app.config['DB_PATH'] = cls.test_db_path
-        
+
         # Import blueprint routes manually to avoid teardown_appcontext issue
         from node import beacon_api as beacon_module
         from node.beacon_api import init_beacon_tables
         beacon_module.DB_PATH = cls.test_db_path
 
         # Register blueprint
-        from node import beacon_api as beacon_module
         cls.app.register_blueprint(beacon_module.beacon_api)
-        
-        # Add database setup/teardown handlers
-        @cls.app.before_request
-        def before_request():
-            g.db = sqlite3.connect(cls.test_db_path)
-            g.db.row_factory = sqlite3.Row
-        
-        @cls.app.teardown_request
-        def teardown_request(exception):
-            db = getattr(g, 'db', None)
-            if db is not None:
-                db.close()
-        
+
         # Initialize database tables
         init_beacon_tables(cls.test_db_path)
 

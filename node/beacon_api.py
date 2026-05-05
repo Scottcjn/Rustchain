@@ -536,7 +536,7 @@ def update_contract(contract_id):
             return jsonify({'error': 'Missing X-Agent-Key header — authentication required'}), 401
         
         from_agent = contract['from_agent']
-        to_agent = contract.get('to_agent', '')
+        to_agent = contract['to_agent']
         
         # Caller must be either the from_agent or to_agent
         if agent_key != from_agent and agent_key != to_agent:
@@ -563,9 +563,9 @@ def update_contract(contract_id):
             (new_state, int(time.time()), contract_id)
         )
         db.commit()
-        
+
         return jsonify({'ok': True, 'contract_id': contract_id, 'state': new_state})
-        
+
     except Exception as e:
         return jsonify({'error': 'internal_error'}), 500
 

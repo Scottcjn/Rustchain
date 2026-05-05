@@ -1028,9 +1028,9 @@ def create_bft_routes(app, bft: BFTConsensus):
             msg_data = request.get_json()
             bft.receive_message(msg_data)
             return jsonify({'status': 'ok'})
-        except Exception as e:
-            logging.error(f"BFT message error: {e}")
-            return jsonify({'error': str(e)}), 400
+        except Exception:
+            logging.error(f"BFT message error")
+            return jsonify({'error': 'Failed to process consensus message'}), 400
 
     @app.route('/bft/view_change', methods=['POST'])
     def bft_view_change():
@@ -1039,9 +1039,9 @@ def create_bft_routes(app, bft: BFTConsensus):
             msg_data = request.get_json()
             bft.handle_view_change(msg_data)
             return jsonify({'status': 'ok'})
-        except Exception as e:
-            logging.error(f"BFT view change error: {e}")
-            return jsonify({'error': str(e)}), 400
+        except Exception:
+            logging.error(f"BFT view change error")
+            return jsonify({'error': 'Failed to process view change'}), 400
 
     @app.route('/bft/propose', methods=['POST'])
     def bft_propose():
@@ -1057,9 +1057,9 @@ def create_bft_routes(app, bft: BFTConsensus):
                 return jsonify({'status': 'proposed', 'digest': msg.digest})
             else:
                 return jsonify({'error': 'not_leader_or_already_committed'}), 400
-        except Exception as e:
-            logging.error(f"BFT propose error: {e}")
-            return jsonify({'error': str(e)}), 500
+        except Exception:
+            logging.error(f"BFT propose error")
+            return jsonify({'error': 'Failed to process proposal'}), 500
 
 
 # ============================================================================
