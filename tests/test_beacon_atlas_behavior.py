@@ -69,6 +69,16 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             conn.execute("DELETE FROM beacon_bounties")
             conn.execute("DELETE FROM beacon_reputation")
             conn.execute("DELETE FROM beacon_chat")
+            conn.execute("DELETE FROM relay_agents")
+            conn.commit()
+
+    def _seed_agent(self, agent_id, name=None):
+        """Insert a test agent into relay_agents table."""
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO relay_agents (agent_id, pubkey_hex, name, status, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)",
+                (agent_id, f'pub_{agent_id}', name or agent_id, int(__import__('time').time()), int(__import__('time').time()))
+            )
             conn.commit()
 
     def test_health_endpoint_returns_ok(self):
@@ -83,6 +93,10 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
 
     def test_create_contract_workflow(self):
         """Full workflow: create contract, verify, update state."""
+        # Seed agents in relay_agents table (required by auth)
+        self._seed_agent('bcn_alice_test')
+        self._seed_agent('bcn_bob_test')
+        
         # Create contract
         contract_data = {
             'from': 'bcn_alice_test',
@@ -95,7 +109,8 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         create_response = self.client.post(
             '/api/contracts',
             data=json.dumps(contract_data),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_alice_test'},
         )
         self.assertEqual(create_response.status_code, 201)
         
@@ -114,11 +129,12 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(len(contracts), 1)
         self.assertEqual(contracts[0]['id'], contract_id)
         
-        # Update contract state to active
+        # Update contract state to active (only to_agent can accept)
         update_response = self.client.put(
             f'/api/contracts/{contract_id}',
             data=json.dumps({'state': 'active'}),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_bob_test'},
         )
         self.assertEqual(update_response.status_code, 200)
         
@@ -129,6 +145,9 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
 
     def test_contract_validation_rejects_invalid(self):
         """Contract creation rejects invalid/missing fields."""
+        # Seed agent for auth
+        self._seed_agent('bcn_alice')
+        
         # Missing required field 'to'
         invalid_data = {
             'from': 'bcn_alice',
@@ -140,7 +159,8 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         response = self.client.post(
             '/api/contracts',
             data=json.dumps(invalid_data),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_alice'},
         )
         self.assertEqual(response.status_code, 400)
         data = json.loads(response.data)

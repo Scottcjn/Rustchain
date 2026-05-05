@@ -120,15 +120,15 @@ class RustChainClient:
         except requests.exceptions.Timeout:
             logger.error(f"Timeout requesting {url}")
             return {"error": "Request timeout"}
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"Connection error to {url}: {e}")
-            return {"error": f"Connection failed: {str(e)}"}
+        except requests.exceptions.ConnectionError:
+            logger.error(f"Connection error to {url}")
+            return {"error": "Connection failed"}
         except requests.exceptions.HTTPError as e:
             logger.error(f"HTTP error from {url}: {e}")
             return {"error": f"HTTP error: {e.response.status_code}"}
-        except Exception as e:
-            logger.error(f"Unexpected error requesting {url}: {e}")
-            return {"error": str(e)}
+        except Exception:
+            logger.error(f"Unexpected error requesting {url}")
+            return {"error": "Request failed"}
 
     def health(self) -> Dict[str, Any]:
         """Get node health status."""

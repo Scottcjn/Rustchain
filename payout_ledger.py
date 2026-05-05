@@ -197,8 +197,8 @@ def register_ledger_routes(app):
                 tx_hash=data.get("tx_hash", ""),
                 notes=data.get("notes", ""),
             )
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
+        except ValueError:
+            return jsonify({"error": "Invalid status value"}), 400
         return jsonify({"id": record_id, "status": new_status})
 
     @app.route("/api/ledger/summary", methods=["GET"])

@@ -64,8 +64,8 @@ class RustChainNode:
             import urllib.request
             with urllib.request.urlopen(f"{self.node_url}/health", timeout=5) as r:
                 return json.loads(r.read())
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+        except Exception:
+            return {"ok": False, "error": "Health check failed"}
 
     def epoch(self) -> dict:
         """Return current epoch info."""
@@ -73,8 +73,8 @@ class RustChainNode:
             import urllib.request
             with urllib.request.urlopen(f"{self.node_url}/epoch", timeout=5) as r:
                 return json.loads(r.read())
-        except Exception as e:
-            return {"error": str(e)}
+        except Exception:
+            return {"error": "Epoch check failed"}
 
     def config(self) -> dict:
         """Return current configuration."""

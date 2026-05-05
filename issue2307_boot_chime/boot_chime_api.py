@@ -119,7 +119,7 @@ def issue_challenge():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @app.route('/api/v1/submit', methods=['POST'])
@@ -187,7 +187,7 @@ def submit_proof():
         return jsonify(result.to_dict()), status_code
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @app.route('/api/v1/verify/<miner_id>', methods=['GET'])
@@ -208,7 +208,7 @@ def verify_miner(miner_id: str):
         result = poi_system.verify_miner(miner_id)
         return jsonify(result.to_dict())
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @app.route('/api/v1/enroll', methods=['POST'])
@@ -249,7 +249,7 @@ def enroll_miner():
         return jsonify(result.to_dict()), status_code
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @app.route('/api/v1/capture', methods=['POST'])
@@ -282,7 +282,7 @@ def capture_audio():
         )
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @app.route('/api/v1/revoke', methods=['POST'])
@@ -315,7 +315,7 @@ def revoke_attestation():
             return jsonify({'error': 'Miner not found'}), 404
             
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @app.route('/api/v1/status/<miner_id>', methods=['GET'])
@@ -336,7 +336,7 @@ def get_status(miner_id: str):
         return jsonify(response)
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @app.route('/api/v1/identity/<miner_id>', methods=['GET'])
@@ -351,7 +351,7 @@ def get_identity(miner_id: str):
             return jsonify({'error': 'Identity not found'}), 404
             
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ============= Analytics & Metrics =============
@@ -389,7 +389,7 @@ def get_metrics():
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @app.route('/api/v1/analyze', methods=['POST'])
@@ -447,7 +447,7 @@ def analyze_audio():
             os.unlink(tmp_path)
             
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 # ============= Error Handlers =============
