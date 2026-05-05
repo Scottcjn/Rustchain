@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+#  SPDX-License-Identifier: MIT
 # SPDX-License-Identifier: MIT
 """Hardware fingerprint manipulation library for Rustchain RIP-PoA testing"""
 

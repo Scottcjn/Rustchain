@@ -10,12 +10,13 @@ def generate_validator_payload():
 
 # Simulated packet radio send function
 def send_over_packet_radio(payload):
-    print(f"📡 Preparing to transmit via TNC... ")
+    print(f"📡 Preparing to transmit via TNC...")
+    print(f">>>> {payload}")
     print(f">>>> {payload}")
     print("🔁 Transmitting...")
     time.sleep(2)  # Simulate delay
     print("✅ Packet sent. Awaiting QSL or relay acknowledgment.")
-    print("73s de KE5LVX - Flame acknowledged.")
+    print("73s de KE5LVX – Flame acknowledged.")
 
 if __name__ == "__main__":
     print("🔥 RustChain Packet Radio Validator – Ham Relay Edition")
