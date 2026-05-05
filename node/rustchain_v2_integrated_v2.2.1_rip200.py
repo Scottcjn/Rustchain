@@ -1273,6 +1273,15 @@ def init_db():
         # Insert default values
         c.execute("INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES(17, ?)",
                   (int(time.time()),))
+
+        # API endpoint rate limiting table (Issue #2749)
+        c.execute("""CREATE TABLE IF NOT EXISTS api_rate_limits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_ip TEXT NOT NULL,
+            endpoint TEXT NOT NULL,
+            ts INTEGER NOT NULL
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_api_rate_limits_ip_endpoint_ts ON api_rate_limits(client_ip, endpoint, ts)")
         c.execute("INSERT OR IGNORE INTO gov_threshold(id, threshold) VALUES(1, 3)")
         c.execute("INSERT OR IGNORE INTO checkpoints_meta(k, v) VALUES('chain_id', 'rustchain-mainnet-candidate')")
         # BCOS v2: Blockchain Certified Open Source attestations
@@ -2575,6 +2584,51 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
 
     return True, "valid"
 
+
+
+# ── API Endpoint Rate Limiting (Issue #2749 - Security Hardening) ──
+# Sliding window rate limiter for public API endpoints to prevent DoS and scraping.
+API_RATE_LIMIT = 100         # Max requests per window
+API_RATE_WINDOW = 60         # Window size in seconds (1 minute)
+API_RATE_CAPTCHA_THRESHOLD = 50  # Require CAPTCHA after this many requests
+
+def check_api_endpoint_rate_limit(client_ip: str, endpoint: str) -> tuple:
+    """Sliding window rate limit for API endpoints.
+    
+    Returns (allowed: bool, remaining: int, retry_after: int, message: str)
+    """
+    now = int(time.time())
+    cutoff = now - API_RATE_WINDOW
+    
+    with sqlite3.connect(DB_PATH) as conn:
+        # Clean expired entries
+        conn.execute("DELETE FROM api_rate_limits WHERE endpoint = ? AND ts < ?", (endpoint, cutoff))
+        
+        # Count requests in current window
+        row = conn.execute(
+            "SELECT COUNT(*) FROM api_rate_limits WHERE client_ip = ? AND endpoint = ? AND ts >= ?",
+            (client_ip, endpoint, cutoff)
+        ).fetchone()
+        request_count = row[0] if row else 0
+        
+        if request_count >= API_RATE_LIMIT:
+            # Calculate retry_after from oldest request in window
+            oldest = conn.execute(
+                "SELECT MIN(ts) FROM api_rate_limits WHERE client_ip = ? AND endpoint = ? AND ts >= ?",
+                (client_ip, endpoint, cutoff)
+            ).fetchone()
+            retry_after = (oldest[0] + API_RATE_WINDOW) - now if oldest else API_RATE_WINDOW
+            return False, 0, max(1, retry_after), f"rate_limit_exceeded:{request_count}/{API_RATE_LIMIT} per {API_RATE_WINDOW}s"
+        
+        # Record this request
+        conn.execute(
+            "INSERT INTO api_rate_limits (client_ip, endpoint, ts) VALUES (?, ?, ?)",
+            (client_ip, endpoint, now)
+        )
+        
+        remaining = API_RATE_LIMIT - request_count - 1
+        captcha_required = request_count >= API_RATE_CAPTCHA_THRESHOLD
+        return True, remaining, 0, "captcha_required" if captcha_required else "ok"
 
 
 # ── IP Rate Limiting for Attestations (Security Hardening 2026-02-02) ──
@@ -5494,8 +5548,22 @@ def api_miners():
     """
     Return list of attested miners with their PoA details.
     RIP-200 Bounty #2002: Added Pagination (limit, offset) to prevent DoS.
+    Issue #2749: Added sliding window rate limiting (100 req/min per IP).
     """
     import time as _time
+    
+    # Issue #2749: Rate limiting check
+    client_ip = get_client_ip()
+    allowed, remaining, retry_after, msg = check_api_endpoint_rate_limit(client_ip, "/api/miners")
+    if not allowed:
+        response = jsonify({"error": "rate_limit_exceeded", "message": msg, "retry_after": retry_after})
+        response.status_code = 429
+        response.headers["Retry-After"] = str(retry_after)
+        response.headers["X-RateLimit-Limit"] = str(API_RATE_LIMIT)
+        response.headers["X-RateLimit-Remaining"] = "0"
+        response.headers["X-RateLimit-Reset"] = str(int(_time.time()) + retry_after)
+        return response
+    
     now = int(_time.time())
     
     # Pagination args
@@ -5568,7 +5636,7 @@ def api_miners():
                 "antiquity_multiplier": mult
             })
     
-    return jsonify({
+    response = jsonify({
         "miners": miners,
         "pagination": {
             "total": total_count,
@@ -5577,6 +5645,13 @@ def api_miners():
             "count": len(miners)
         }
     })
+    # Issue #2749: Add rate limit headers to successful responses
+    response.headers["X-RateLimit-Limit"] = str(API_RATE_LIMIT)
+    response.headers["X-RateLimit-Remaining"] = str(remaining)
+    response.headers["X-RateLimit-Reset"] = str(now + API_RATE_WINDOW)
+    if msg == "captcha_required":
+        response.headers["X-Captcha-Required"] = "true"
+    return response
 
 
 @app.route("/api/miner/<miner_id>/streak", methods=["GET"])
