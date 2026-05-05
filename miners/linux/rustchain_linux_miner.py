@@ -59,9 +59,10 @@ def get_linux_serial():
 
 class LocalMiner:
     def __init__(self, wallet=None, wart_address=None, wart_pool=None,
-                 bzminer_path=None, manage_bzminer=False):
+                 bzminer_path=None, manage_bzminer=False, show_payload=False):
         self.node_url = NODE_URL
         self.wallet = wallet or self._gen_wallet()
+        self.show_payload = show_payload
         self.hw_info = {}
         self.enrolled = False
         self.attestation_valid_until = 0
@@ -464,6 +465,37 @@ class LocalMiner:
         else:
             print("[DRY-RUN] Fingerprint checks available: no")
 
+        if self.show_payload:
+            payload_preview = {
+                "miner": self.wallet,
+                "miner_id": f"ryzen5-{self.hw_info['hostname']}",
+                "nonce": "<challenge nonce fetched during live attestation>",
+                "report": {
+                    "nonce": "<challenge nonce fetched during live attestation>",
+                    "commitment": "<sha256(nonce + wallet + entropy)>",
+                    "derived": "<timing entropy collected immediately before attestation>",
+                    "entropy_score": "<variance_ns>",
+                },
+                "device": {
+                    "family": self.hw_info["family"],
+                    "arch": self.hw_info["arch"],
+                    "model": self.hw_info.get("cpu", "Unknown"),
+                    "cpu": self.hw_info["cpu"],
+                    "cores": self.hw_info["cores"],
+                    "memory_gb": self.hw_info["memory_gb"],
+                    "serial": self.hw_info.get("serial"),
+                    "machine": self.hw_info.get("machine", platform.machine()),
+                },
+                "signals": {
+                    "macs": self.hw_info.get("macs", [self.hw_info["mac"]]),
+                    "hostname": self.hw_info["hostname"],
+                },
+                "fingerprint": self.fingerprint_data,
+                "warthog": self.warthog.collect_proof() if self.warthog else None,
+            }
+            print("[DRY-RUN] Attestation payload preview:")
+            print(json.dumps(payload_preview, indent=2, sort_keys=True))
+
         # Optional health probe (read-only)
         try:
             r = requests.get(f"{self.node_url}/health", timeout=8, verify=TLS_VERIFY)
@@ -528,6 +560,8 @@ if __name__ == "__main__":
     parser.add_argument("--bzminer-path", help="Path to BzMiner binary")
     parser.add_argument("--manage-bzminer", action="store_true", help="Auto-start/stop BzMiner")
     parser.add_argument("--dry-run", action="store_true", help="Run preflight checks only; do not start mining")
+    parser.add_argument("--show-payload", action="store_true",
+                        help="With --dry-run, print the attestation payload shape that would be submitted")
     args = parser.parse_args()
 
     miner = LocalMiner(
@@ -536,6 +570,7 @@ if __name__ == "__main__":
         wart_pool=args.wart_pool,
         bzminer_path=args.bzminer_path,
         manage_bzminer=args.manage_bzminer,
+        show_payload=args.show_payload,
     )
     if args.dry_run:
         miner.dry_run()
