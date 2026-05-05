@@ -105,12 +105,18 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         try:
             _ensure_escrow_secret_column(db)
 
-            # check balance (Simplified for bounty protocol)
+            # Acquire write lock before balance check to prevent TOCTOU race condition
+            db.execute("BEGIN IMMEDIATE")
+
             res = db.execute("SELECT balance_rtc FROM balances WHERE miner_pk = ?", (from_wallet,)).fetchone()
-            if not res or res[0] < amount:
+            if not res:
+                db.rollback()
+                return jsonify({"error": "Insufficient balance for escrow"}), 400
+            if res[0] < amount:
+                db.rollback()
                 return jsonify({"error": "Insufficient balance for escrow"}), 400
 
-            # Lock funds
+            # Atomic balance deduction (protected by write lock)
             db.execute("UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ?", (amount, from_wallet))
 
             db.execute(
@@ -126,7 +132,15 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.commit()
             # escrow_secret is intentionally returned once to allow participant-auth for release/refund.
             return jsonify({"ok": True, "job_id": job_id, "status": "locked", "escrow_secret": escrow_secret})
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e):
+                return jsonify({"error": "Escrow busy — please retry"}), 409
+            if db.in_transaction:
+                db.rollback()
+            return jsonify({"error": str(e)}), 500
         except sqlite3.Error as e:
+            if db.in_transaction:
+                db.rollback()
             return jsonify({"error": str(e)}), 500
         finally:
             db.close()
@@ -145,16 +159,23 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         db = get_db()
         try:
             _ensure_escrow_secret_column(db)
+            # Serialize to prevent concurrent release/refund double-credit
+            db.execute("BEGIN IMMEDIATE")
             job = db.execute("SELECT * FROM render_escrow WHERE job_id = ?", (job_id,)).fetchone()
             if not job:
+                db.rollback()
                 return jsonify({"error": "Job not found"}), 404
             if job["status"] != "locked":
+                db.rollback()
                 return jsonify({"error": "Job not in locked state"}), 409
             if actor_wallet not in {job["from_wallet"], job["to_wallet"]}:
+                db.rollback()
                 return jsonify({"error": "actor_wallet must be escrow participant"}), 403
             if actor_wallet != job["from_wallet"]:
+                db.rollback()
                 return jsonify({"error": "only payer can release escrow"}), 403
             if _hash_job_secret(escrow_secret) != (job["escrow_secret_hash"] or ""):
+                db.rollback()
                 return jsonify({"error": "invalid escrow_secret"}), 403
 
             # Atomic state transition first to prevent races/double-processing.
@@ -170,7 +191,15 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?", (job["amount_rtc"], job["to_wallet"]))
             db.commit()
             return jsonify({"ok": True, "status": "released"})
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e):
+                return jsonify({"error": "Release busy — please retry"}), 409
+            if db.in_transaction:
+                db.rollback()
+            return jsonify({"error": str(e)}), 500
         except sqlite3.Error as e:
+            if db.in_transaction:
+                db.rollback()
             return jsonify({"error": str(e)}), 500
         finally:
             db.close()
@@ -189,16 +218,23 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
         db = get_db()
         try:
             _ensure_escrow_secret_column(db)
+            # Serialize to prevent concurrent refund/release double-credit
+            db.execute("BEGIN IMMEDIATE")
             job = db.execute("SELECT * FROM render_escrow WHERE job_id = ?", (job_id,)).fetchone()
             if not job:
+                db.rollback()
                 return jsonify({"error": "Job not found"}), 404
             if job["status"] != "locked":
+                db.rollback()
                 return jsonify({"error": "Job not in locked state"}), 409
             if actor_wallet not in {job["from_wallet"], job["to_wallet"]}:
+                db.rollback()
                 return jsonify({"error": "actor_wallet must be escrow participant"}), 403
             if actor_wallet != job["to_wallet"]:
+                db.rollback()
                 return jsonify({"error": "only provider can request refund"}), 403
             if _hash_job_secret(escrow_secret) != (job["escrow_secret_hash"] or ""):
+                db.rollback()
                 return jsonify({"error": "invalid escrow_secret"}), 403
 
             # Atomic state transition first to prevent races/double-processing.
@@ -214,7 +250,15 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
             db.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?", (job["amount_rtc"], job["from_wallet"]))
             db.commit()
             return jsonify({"ok": True, "status": "refunded"})
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e):
+                return jsonify({"error": "Refund busy — please retry"}), 409
+            if db.in_transaction:
+                db.rollback()
+            return jsonify({"error": str(e)}), 500
         except sqlite3.Error as e:
+            if db.in_transaction:
+                db.rollback()
             return jsonify({"error": str(e)}), 500
         finally:
             db.close()
