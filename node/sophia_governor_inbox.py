@@ -588,7 +588,7 @@ def _scott_notification_headers() -> dict[str, str]:
     }
     bearer = (
         os.getenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_BEARER", "").strip()
-        or os.getenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", "elya2025").strip()
+        or os.getenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", "").strip()
     )
     if bearer:
         headers["Authorization"] = f"Bearer {bearer}"

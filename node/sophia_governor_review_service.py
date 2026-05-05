@@ -31,7 +31,7 @@ DB_PATH = os.getenv("SOPHIA_GOVERNOR_REVIEW_DB", "/tmp/sophia_governor_review.db
 OLLAMA_URL = os.getenv("SOPHIA_GOVERNOR_OLLAMA_URL", "http://192.168.0.160:11434")
 OLLAMA_MODEL = os.getenv("SOPHIA_GOVERNOR_REVIEW_MODEL", "glm-4.7-flash:latest")
 SCOTT_NOTIFICATION_QUEUE_URL = os.getenv("SCOTT_NOTIFICATION_QUEUE_URL", "").strip()
-SCOTT_NOTIFICATION_SERVICE_TOKEN = os.getenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", "elya2025").strip()
+SCOTT_NOTIFICATION_SERVICE_TOKEN = os.getenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", "").strip()
 TRUE_VALUES = {"1", "true", "yes", "on"}
 SECTION_PATTERN = re.compile(
     r"(?is)(?:\*\*|\b)(assessment|analysis(?: of the event)?|reasoning|risk|next step|next steps|recommended action|action|decision)\s*:\s*"
