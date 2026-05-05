@@ -1,0 +1,31 @@
+[Unit]
+Description=RustChain Miner (Rust Native)
+Documentation=https://github.com/Scottcjn/rustchain-bounties/tree/main/rustchain-miner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+Group=YOUR_USERNAME
+
+# Path to the compiled binary
+ExecStart=/usr/local/bin/rustchain-miner --wallet YOUR_MINER_ID
+
+# Restart on failure with a 30-second delay
+Restart=on-failure
+RestartSec=30
+
+# Logging — stdout/stderr go to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rustchain-miner
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

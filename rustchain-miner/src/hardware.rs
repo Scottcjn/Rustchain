@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Hardware information collection
 
 use serde::{Deserialize, Serialize};

@@ -1,61 +1,11 @@
-# Cargo configuration for cross-compilation
-# Place this file at: .cargo/config.toml
+[target.powerpc64-unknown-linux-gnu]
+linker = "powerpc64-linux-gnu-gcc"
 
-[build]
-# Default target - change based on your needs
-# For RISC-V: riscv64gc-unknown-linux-gnu
-# For ARM64: aarch64-unknown-linux-gnu
-# For x86_64: x86_64-unknown-linux-gnu
-# target = "riscv64gc-unknown-linux-gnu"
+[target.powerpc-unknown-linux-gnu]
+linker = "powerpc-linux-gnu-gcc"
 
-# RISC-V target configuration
-[target.riscv64gc-unknown-linux-gnu]
-linker = "riscv64-linux-gnu-gcc"
-rustflags = [
-    "-C", "link-arg=-Wl,--allow-multiple-definition",
-    "-C", "target-feature=+m,+a,+f,+d",
-    "-C", "target-cpu=generic-rv64",
-]
-
-[target.riscv64gc-unknown-linux-musl]
-linker = "riscv64-linux-musl-gcc"
-rustflags = [
-    "-C", "link-arg=-Wl,--allow-multiple-definition",
-    "-C", "target-feature=+m,+a,+f,+d",
-    "-C", "target-cpu=generic-rv64",
-]
-
-# ARM64 target configuration
-[target.aarch64-unknown-linux-gnu]
-linker = "aarch64-linux-gnu-gcc"
-rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
+[target.x86_64-unknown-linux-musl]
+linker = "x86_64-linux-musl-gcc"
 
 [target.aarch64-unknown-linux-musl]
 linker = "aarch64-linux-musl-gcc"
-rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
-
-# x86_64 target configuration
-[target.x86_64-unknown-linux-gnu]
-linker = "gcc"
-rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
-
-[target.x86_64-unknown-linux-musl]
-linker = "musl-gcc"
-rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
-
-# PowerPC64 LE target configuration
-[target.powerpc64le-unknown-linux-gnu]
-linker = "powerpc64le-linux-gnu-gcc"
-rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
-
-# IBM s390x target configuration
-[target.s390x-unknown-linux-gnu]
-linker = "s390x-linux-gnu-gcc"
-rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
-
-# Helper aliases
-[alias]
-build-riscv = "build --target riscv64gc-unknown-linux-gnu"
-build-riscv-musl = "build --target riscv64gc-unknown-linux-musl"
-build-arm64 = "build --target aarch64-unknown-linux-gnu"
-build-x86_64 = "build --target x86_64-unknown-linux-gnu"

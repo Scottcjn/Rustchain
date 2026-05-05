@@ -1,0 +1,142 @@
+name: Cross-Compile Rust Miner
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rustchain-miner/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'rustchain-miner/**'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── x86_64 Linux (musl static) ──
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            name: linux-x86_64
+            cross: true
+
+          # ── aarch64 Linux (musl static) ──
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            name: linux-aarch64
+            cross: true
+
+          # ── PowerPC 64-bit Linux (gnu, big-endian) ──
+          - target: powerpc64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: linux-ppc64
+            cross: true
+
+          # ── RISC-V 64-bit Linux (gnu) — StarFive VisionFive 2, SiFive Unmatched, Milk-V Pioneer ──
+          - target: riscv64gc-unknown-linux-gnu
+            os: ubuntu-latest
+            name: linux-riscv64
+            cross: true
+
+          # ── Windows x86_64 (MSVC) ──
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: windows-x86_64
+            cross: false
+
+          # ── macOS x86_64 ──
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: macos-x86_64
+            cross: false
+
+          # ── macOS aarch64 (Apple Silicon) ──
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: macos-aarch64
+            cross: false
+
+    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross (Linux cross-compilation)
+        if: matrix.cross
+        run: cargo install cross --locked
+
+      - name: Build (cross)
+        if: matrix.cross
+        working-directory: rustchain-miner
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Build (native)
+        if: "!matrix.cross"
+        working-directory: rustchain-miner
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Run tests (native only)
+        if: "!matrix.cross && matrix.target != 'aarch64-apple-darwin'"
+        working-directory: rustchain-miner
+        run: cargo test --target ${{ matrix.target }}
+
+      # ── Determine binary name ──
+      - name: Set binary path (Unix)
+        if: runner.os != 'Windows'
+        run: echo "BINARY=rustchain-miner/target/${{ matrix.target }}/release/rustchain-miner" >> $GITHUB_ENV
+
+      - name: Set binary path (Windows)
+        if: runner.os == 'Windows'
+        run: echo "BINARY=rustchain-miner\target\${{ matrix.target }}\release\rustchain-miner.exe" >> $env:GITHUB_ENV
+
+      # ── Upload artifact ──
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustchain-miner-${{ matrix.name }}
+          path: ${{ env.BINARY }}
+          if-no-files-found: error
+
+  # ── Verify all targets compiled ──
+  verify:
+    needs: build
+    runs-on: ubuntu-latest
+    name: Verify all targets
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries/
+
+      - name: List binaries
+        run: |
+          echo "=== Cross-compiled binaries ==="
+          find binaries/ -type f | while read f; do
+            echo "  $(basename $(dirname $f))/$(basename $f) — $(file $f | cut -d: -f2)"
+          done
+
+      - name: Verify expected targets
+        run: |
+          expected="linux-x86_64 linux-aarch64 linux-ppc64 linux-riscv64 windows-x86_64 macos-x86_64 macos-aarch64"
+          for target in $expected; do
+            dir="binaries/rustchain-miner-$target"
+            if [ ! -d "$dir" ]; then
+              echo "MISSING: $target"
+              exit 1
+            fi
+            echo "✓ $target"
+          done
+          echo "All targets verified!"

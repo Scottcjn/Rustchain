@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Node transport layer with HTTPS direct or HTTP proxy fallback
 
 use reqwest::{Client, Response};

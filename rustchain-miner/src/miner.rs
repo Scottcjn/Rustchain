@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Main miner implementation with enrollment and mining loop
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

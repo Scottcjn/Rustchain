@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Architecture detection tests for RISC-V and other platforms
 
 #[cfg(test)]

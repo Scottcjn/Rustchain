@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! RustChain Miner - Production-ready Rust implementation
 //!
 //! This crate provides a complete miner implementation for RustChain, including:

@@ -1,275 +1,144 @@
-# RustChain Miner (Rust)
+# rustchain-miner
 
-Production-ready Rust implementation of the RustChain miner with RIP-PoA (Proof of Antiquity) hardware attestation.
+Native Rust miner for [RustChain](https://github.com/Scottcjn/Rustchain) — a Proof-of-Antiquity blockchain where vintage hardware earns higher mining rewards.
 
 ## Features
 
-- **Hardware Attestation**: Complete challenge/response protocol with entropy collection
-- **RIP-PoA Support**: Hardware fingerprint attestation for anti-emulation
-- **Cross-Platform**: Linux, macOS, Windows support
-- **Config/Env Support**: Flexible configuration via CLI args, environment variables, or `.env` file
-- **Health Checks**: Node health probing and connectivity validation
-- **Dry-Run Mode**: Preflight checks without network state modification
-- **Logging**: Structured logging with configurable verbosity
+- **Single binary** — no Python, pip, or venv needed
+- **Full RIP-PoA fingerprinting** — all 6 hardware fingerprint checks in native Rust
+- **Inline assembly** — `rdtsc` (x86_64) / `mftb` (PowerPC) for precise timing
+- **Cross-platform** — x86_64, aarch64, PowerPC, RISC-V (riscv64gc) targets
+- **Self-signed TLS** — works with the RustChain node out of the box
 
-## Requirements
-
-- Rust 1.70 or later
-- OpenSSL or rustls for HTTPS support
-- Network access to RustChain node
-
-## Installation
-
-### From Source
+## Quick Start
 
 ```bash
-# Clone the repository
-cd rustchain-miner
-
-# Build in release mode
+# Build
 cargo build --release
 
-# The binary will be at:
-# ./target/release/rustchain-miner
+# Start mining
+./target/release/rustchain-miner --wallet YOUR_WALLET_NAME
+
+# Run fingerprint checks only
+./target/release/rustchain-miner --test-only
+
+# Show the attestation payload (without submitting)
+./target/release/rustchain-miner --wallet YOUR_WALLET --show-payload
+
+# Dry run (build + display payload, no submission)
+./target/release/rustchain-miner --wallet YOUR_WALLET --dry-run
+
+# Use a custom node
+./target/release/rustchain-miner --wallet YOUR_WALLET --node https://your-node:port
 ```
 
-### Quick Install
+## RIP-PoA Fingerprint Checks
+
+| # | Check | What It Measures |
+|---|-------|-----------------|
+| 1 | Clock-Skew & Oscillator Drift | Timing variance from `rdtsc`/`mftb` |
+| 2 | Cache Timing Fingerprint | L1/L2/L3 latency sweep across buffer sizes |
+| 3 | SIMD Unit Identity | SSE/AVX/AltiVec/NEON instruction timing |
+| 4 | Thermal Drift Entropy | Entropy quality across thermal states |
+| 5 | Instruction Path Jitter | Cycle-level jitter across int/FP/branch units |
+| 6 | Anti-Emulation | VM/hypervisor detection |
+
+## Architecture Detection
+
+| CPU Pattern | Family | Arch | Multiplier |
+|------------|--------|------|-----------|
+| PowerPC 7450/7447/7455 | PowerPC | g4 | 2.5x |
+| PowerPC 970 | PowerPC | g5 | 2.0x |
+| PowerPC 750 | PowerPC | g3 | 1.8x |
+| Apple M1/M2/M3 | ARM | apple_silicon | 1.2x |
+| Core 2 | x86_64 | core2duo | 1.3x |
+| StarFive JH7110 | RISC-V | starfive_jh7110 | 1.1x |
+| SiFive Unmatched (FU740) | RISC-V | sifive_unmatched | 1.0x |
+| Milk-V Pioneer (SG2380) | RISC-V | milkv_pioneer | 0.9x |
+| Generic RISC-V 64-bit | RISC-V | riscv_modern | 0.95x |
+| Everything else | x86_64 | modern | 1.0x |
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Node health check |
+| `/epoch` | GET | Current epoch info |
+| `/attest/challenge` | POST | Request attestation nonce |
+| `/attest/submit` | POST | Submit attestation payload |
+| `/epoch/enroll` | POST | Enroll in current epoch |
+| `/wallet/balance` | GET | Check RTC balance |
+
+Default node: `https://50.28.86.131` (self-signed cert)
+
+## Cross-Compilation
 
 ```bash
-# Build and install to ~/.cargo/bin
-cargo install --path .
+# Install cross
+cargo install cross
+
+# Build for targets
+cross build --release --target x86_64-unknown-linux-musl
+cross build --release --target aarch64-unknown-linux-musl
+cross build --release --target powerpc64-unknown-linux-gnu
+cross build --release --target riscv64gc-unknown-linux-gnu
 ```
 
-## Configuration
+## Running as a Service (Linux)
 
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `RUSTCHAIN_NODE_URL` | Node URL (HTTPS) | `https://50.28.86.131` |
-| `RUSTCHAIN_PROXY_URL` | HTTP proxy for legacy systems | (none) |
-| `RUSTCHAIN_WALLET` | Wallet address | (auto-generated) |
-| `RUSTCHAIN_MINER_ID` | Custom miner ID | (auto-generated) |
-| `RUSTCHAIN_BLOCK_TIME` | Block time in seconds | `600` |
-| `RUSTCHAIN_ATTESTATION_TTL` | Attestation TTL in seconds | `580` |
-| `RUSTCHAIN_DRY_RUN` | Enable dry-run mode | `false` |
-| `RUSTCHAIN_VERBOSE` | Enable verbose logging | `false` |
-| `RUSTCHAIN_DEV_INSECURE_TLS` | Disable TLS cert validation (dev only) | `false` |
-
-### .env File
-
-Create a `.env` file in the project root:
+A sample systemd unit file is included in `contrib/rustchain-miner.service`:
 
 ```bash
-RUSTCHAIN_NODE_URL=https://50.28.86.131
-RUSTCHAIN_WALLET=my_wallet_RTC
-RUSTCHAIN_VERBOSE=true
+# Install the binary
+sudo cp target/release/rustchain-miner /usr/local/bin/
+
+# Install the service file (edit YOUR_USERNAME and YOUR_MINER_ID first)
+sudo cp contrib/rustchain-miner.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now rustchain-miner
+
+# Check status
+sudo systemctl status rustchain-miner
+journalctl -u rustchain-miner -f
 ```
 
-### CLI Arguments
+## Logging & Log Rotation
+
+The miner logs to stderr via `env_logger`. Control verbosity with `RUST_LOG`:
 
 ```bash
-rustchain-miner --help
+RUST_LOG=debug ./rustchain-miner --wallet my-wallet   # Verbose
+RUST_LOG=warn  ./rustchain-miner --wallet my-wallet   # Quiet
 ```
 
-| Argument | Short | Long | Env | Description |
-|----------|-------|------|-----|-------------|
-| `-w` | `--wallet` | `RUSTCHAIN_WALLET` | Wallet address |
-| `-m` | `--miner-id` | `RUSTCHAIN_MINER_ID` | Custom miner ID |
-| `-n` | `--node` | `RUSTCHAIN_NODE_URL` | Node URL |
-| `-p` | `--proxy` | `RUSTCHAIN_PROXY_URL` | HTTP proxy |
-| | `--dry-run` | `RUSTCHAIN_DRY_RUN` | Preflight checks only |
-| `-v` | `--verbose` | `RUSTCHAIN_VERBOSE` | Verbose logging |
-| | `--block-time` | `RUSTCHAIN_BLOCK_TIME` | Block time (seconds) |
-| | `--attestation-ttl` | `RUSTCHAIN_ATTESTATION_TTL` | Attestation TTL |
-
-## Usage
-
-### Basic Mining
+When running as a systemd service, logs go to journald (auto-rotated). For manual runs, pipe to a file with rotation:
 
 ```bash
-# Run with auto-generated wallet
-./target/release/rustchain-miner
+# Using logrotate (create /etc/logrotate.d/rustchain-miner):
+/var/log/rustchain-miner.log {
+    daily
+    rotate 7
+    compress
+    missingok
+    notifempty
+}
 
-# Run with specific wallet
-./target/release/rustchain-miner --wallet my_wallet_RTC
+# Then run with:
+./rustchain-miner --wallet my-wallet 2>&1 | tee -a /var/log/rustchain-miner.log
 ```
 
-### Dry-Run Mode
+## TLS Certificate
 
-Test your setup without attesting or mining:
+The node at `50.28.86.131` uses a self-signed certificate. By default the miner accepts it (matching the Python miner's `verify=False`). For stricter security, you can pin the node's certificate:
 
 ```bash
-./target/release/rustchain-miner --dry-run --verbose
+# Download the node's cert
+openssl s_client -connect 50.28.86.131:443 </dev/null 2>/dev/null | \
+  openssl x509 -outform PEM > rustchain-node.pem
 ```
 
-### Verbose Logging
-
-```bash
-./target/release/rustchain-miner --verbose
-```
-
-### With Custom Node
-
-```bash
-./target/release/rustchain-miner --node https://your-node.com
-```
-
-### With Proxy (Legacy Systems)
-
-```bash
-./target/release/rustchain-miner --proxy http://192.168.0.160:8089
-```
-
-## Architecture
-
-### Modules
-
-- **`config`**: Configuration management with environment variable support
-- **`hardware`**: Hardware information collection (CPU, memory, serial, MACs)
-- **`transport`**: Node communication with HTTPS/proxy fallback
-- **`attestation`**: Challenge/response protocol and entropy collection
-- **`miner`**: Main mining loop with enrollment and health checks
-
-### Attestation Flow
-
-1. **Challenge**: Request nonce from node (`/attest/challenge`)
-2. **Entropy Collection**: Measure CPU timing variance
-3. **Commitment**: Build hash commitment with nonce + wallet + entropy
-4. **Submit**: Send attestation report (`/attest/submit`)
-5. **Enroll**: Join epoch with attested hardware (`/epoch/enroll`)
-6. **Mine**: Wait for block time, repeat
-
-### Hardware Fingerprint
-
-The miner collects hardware information for RIP-PoA:
-
-- CPU brand and architecture
-- Core count
-- Memory size
-- Hardware serial (when available)
-- MAC addresses
-- Hostname
-
-This data is used to:
-- Generate unique miner ID
-- Detect VMs/emulators (reduced rewards)
-- Calculate Proof of Antiquity weight
-
-## Comparison with Python Miner
-
-| Feature | Python Miner | Rust Miner |
-|---------|-------------|------------|
-| Hardware Attestation | ✓ | ✓ |
-| Challenge/Response | ✓ | ✓ |
-| Epoch Enrollment | ✓ | ✓ |
-| Entropy Collection | ✓ | ✓ |
-| Config/Env Support | Partial | ✓ Full |
-| Dry-Run Mode | ✓ | ✓ |
-| Verbose Logging | Basic | ✓ Structured |
-| Cross-Platform | ✓ | ✓ |
-| Binary Distribution | PyInstaller | ✓ Native |
-| Memory Safety | No | ✓ Yes |
-| Performance | Good | ✓ Excellent |
-
-## Building for Production
-
-### Linux
-
-```bash
-cargo build --release
-strip target/release/rustchain-miner
-```
-
-### macOS
-
-```bash
-# Universal binary (Intel + Apple Silicon)
-rustup target add x86_64-apple-darwin
-rustup target add aarch64-apple-darwin
-cargo build --release --target x86_64-apple-darwin
-cargo build --release --target aarch64-apple-darwin
-lipo -create \
-  target/x86_64-apple-darwin/release/rustchain-miner \
-  target/aarch64-apple-darwin/release/rustchain-miner \
-  -output target/release/rustchain-miner-universal
-```
-
-### Windows
-
-```bash
-cargo build --release
-# Binary at: target\release\rustchain-miner.exe
-```
-
-## Troubleshooting
-
-### TLS/SSL Errors
-
-TLS certificate validation is **enabled by default**. If you encounter TLS errors
-on legacy systems or local test servers with self-signed certificates, you have
-two options:
-
-1. **Use an HTTP proxy** (recommended for legacy systems):
-   ```bash
-   ./target/release/rustchain-miner --proxy http://192.168.0.160:8089
-   ```
-
-2. **Disable TLS validation** (development only — **INSECURE**):
-   ```bash
-   export RUSTCHAIN_DEV_INSECURE_TLS=1
-   ./target/release/rustchain-miner
-   ```
-   **WARNING**: This disables TLS certificate validation and exposes the miner to
-   **man-in-the-middle attacks**. Never use this in production.
-
-### Attestation Failed
-
-Ensure:
-- Network connectivity to node
-- System time is synchronized
-- Hardware serial is accessible (some VMs don't provide this)
-
-### Reduced Rewards
-
-If you receive reduced rewards, your hardware fingerprint may indicate:
-- Running in a VM or container
-- Missing hardware serial
-- Emulated hardware
-
-Run on real hardware for full rewards.
-
-## Development
-
-### Run Tests
-
-```bash
-cargo test
-```
-
-### Run with Debug Logging
-
-```bash
-RUST_LOG=debug cargo run -- --dry-run
-```
-
-### Check Code
-
-```bash
-cargo clippy
-cargo fmt --check
-```
+Certificate pinning support via a `--tls-cert` flag is planned for a future release.
 
 ## License
 
-MIT OR Apache-2.0
-
-## Contributing
-
-See the main [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
-
-## Support
-
-- Documentation: [RustChain Docs](https://rustchain.org/docs)
-- Issues: [GitHub Issues](https://github.com/Scottcjn/Rustchain/issues)
-- Discord: [RustChain Discord](https://discord.gg/rustchain)
+MIT
