@@ -14,6 +14,8 @@ Checks:
 6. Device-Age Oracle Fields (Historicity Attestation)
 7. Anti-Emulation Behavioral Checks
 8. ROM Fingerprint (retro platforms only; optional)
+9. GPU Fingerprinting — Channel 8 (RIP-0308): Shader Jitter, VRAM Timing,
+   CU Asymmetry, Thermal Throttle, VM Passthrough Detection
 """
 
 import hashlib
@@ -36,6 +38,22 @@ try:
     ROM_DB_AVAILABLE = True
 except ImportError:
     ROM_DB_AVAILABLE = False
+
+# Import GPU fingerprinting (Channel 8, RIP-0308)
+try:
+    from gpu_fingerprint_checks import (
+        validate_gpu_fingerprint,
+        check_shader_execution_jitter,
+        check_vram_timing,
+        check_compute_unit_asymmetry,
+        check_thermal_throttle_signature,
+        check_gpu_vm_passthrough,
+        compute_gpu_silicone_signature,
+        _detect_gpu_vendor,
+    )
+    GPU_FINGERPRINT_AVAILABLE = True
+except ImportError:
+    GPU_FINGERPRINT_AVAILABLE = False
 
 def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict]:
     """Check 1: Clock-Skew & Oscillator Drift"""
@@ -874,6 +892,15 @@ def validate_all_checks(include_rom_check: bool = True) -> Tuple[bool, Dict]:
     # Add ROM check for retro platforms
     if include_rom_check and ROM_DB_AVAILABLE:
         checks.append(("rom_fingerprint", "ROM Fingerprint (Retro)", check_rom_fingerprint))
+
+    # Add GPU fingerprinting (Channel 8) if available
+    if GPU_FINGERPRINT_AVAILABLE:
+        try:
+            gpu_vendor = _detect_gpu_vendor()
+            if gpu_vendor:
+                checks.append(("gpu_fingerprint", "GPU Fingerprint (Channel 8, RIP-0308)", validate_gpu_fingerprint))
+        except Exception:
+            pass  # Skip GPU checks if detection fails
 
     print(f"Running {len(checks)} Hardware Fingerprint Checks...")
     print("=" * 50)
