@@ -333,7 +333,8 @@ def utxo_transfer():
         amount_rtc = _parse_rtc_amount(data.get('amount_rtc', 0))
         fee_rtc = _parse_rtc_amount(data.get('fee_rtc', 0))
     except (ValueError, InvalidOperation) as e:
-        return jsonify({'error': f'Invalid amount: {e}'}), 400
+        current_app.logger.warning(f"Invalid amount in transaction: {e}")
+        return jsonify({'error': 'Invalid amount format'}), 400
 
     # --- validation ---------------------------------------------------------
 

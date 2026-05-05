@@ -7230,7 +7230,8 @@ def resolve_bcn_wallet(bcn_id: str) -> dict:
             "status": row["status"]
         }
     except Exception as e:
-        return {"found": False, "error": f"atlas_lookup_failed:{e}"}
+        logger.error(f"Atlas lookup failed: {e}")
+        return {"found": False, "error": "Atlas lookup failed"}
 
 
 def is_bcn_address(addr: str) -> bool:
