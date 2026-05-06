@@ -682,7 +682,48 @@ def register_bridge_routes(app):
         admin_key = request.headers.get("X-Admin-Key", "")
         expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
         admin_initiated = bool(expected_admin_key) and hmac.compare_digest(admin_key, expected_admin_key)
-        
+
+        # SECURITY FIX: Verify source wallet ownership via signature
+        if not admin_initiated:
+            source_sig = data.get("source_signature", "")
+            source_ts = data.get("timestamp")
+            if not source_sig or not source_ts:
+                return jsonify({"error": "source_signature and timestamp required to prove wallet ownership"}), 401
+
+            try:
+                ts = int(source_ts)
+            except (TypeError, ValueError):
+                return jsonify({"error": "invalid timestamp"}), 400
+
+            # Reject stale signatures (5-minute window)
+            if abs(time.time() - ts) > 300:
+                return jsonify({"error": "signature expired"}), 401
+
+            # Verify Ed25519 signature for hex-encoded public keys
+            verified = False
+            try:
+                from nacl.signing import VerifyKey
+                verify_key = VerifyKey(bytes.fromhex(data["source_address"]))
+                message = f"bridge:{data['source_address']}:{data['amount_rtc']}:{ts}".encode()
+                verify_key.verify(message, bytes.fromhex(source_sig))
+                verified = True
+            except Exception:
+                pass
+
+            # Fallback: HMAC verification for Solana/Base address strings
+            if not verified:
+                secret = os.environ.get("RC_BRIDGE_HMAC_SECRET", "")
+                if secret:
+                    expected = hmac.new(
+                        secret.encode(),
+                        f"bridge:{data['source_address']}:{data['amount_rtc']}:{ts}".encode(),
+                        hashlib.sha256
+                    ).hexdigest()
+                    verified = hmac.compare_digest(source_sig, expected)
+
+            if not verified:
+                return jsonify({"error": "invalid source_signature — prove you control the source wallet"}), 401
+
         # Create bridge transfer
         req = BridgeTransferRequest(
             direction=data["direction"],

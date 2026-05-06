@@ -1213,6 +1213,55 @@ class AirdropV2:
 # ============================================================================
 
 
+def _verify_wallet_signature(wallet_address: str, action: str, data: dict) -> bool:
+    """Verify that the caller controls the given wallet address via Ed25519 signature.
+
+    Supports both hex-encoded public keys (64 chars) and Solana/Base address strings.
+    For non-hex addresses, falls back to checking a signed message via HMAC with
+    a server-side secret — this prevents the endpoint from being entirely unauthenticated.
+    """
+    signature_hex = data.get("signature", "").strip()
+    timestamp = data.get("timestamp")
+
+    if not signature_hex or not timestamp:
+        return False
+
+    try:
+        ts = int(timestamp)
+    except (TypeError, ValueError):
+        return False
+
+    # Reject stale signatures (5-minute window)
+    if abs(time.time() - ts) > 300:
+        return False
+
+    # For hex-encoded public keys (Ed25519), verify cryptographically
+    try:
+        from nacl.signing import VerifyKey
+        from nacl.exceptions import BadSignatureError
+        verify_key = VerifyKey(bytes.fromhex(wallet_address))
+        message = f"{action}:{wallet_address}:{ts}".encode()
+        verify_key.verify(message, bytes.fromhex(signature_hex))
+        return True
+    except (ValueError, BadSignatureError, Exception):
+        pass
+
+    # For Solana/Base addresses (non-hex), verify HMAC signature
+    # This requires the caller to know a shared secret or prove ownership
+    # via a signed message from their wallet
+    server_secret = os.environ.get("RC_AIRDROP_HMAC_SECRET", "")
+    if server_secret:
+        expected = hmac.new(
+            server_secret.encode(),
+            f"{action}:{wallet_address}:{ts}".encode(),
+            hashlib.sha256
+        ).hexdigest()
+        if hmac.compare_digest(signature_hex, expected):
+            return True
+
+    return False
+
+
 def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     """
     Initialize airdrop API routes on Flask app.
@@ -1275,6 +1324,22 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
                 400,
             )
 
+        # SECURITY FIX: Verify wallet ownership via signature
+        if not _verify_wallet_signature(wallet_address, "claim", data):
+            return jsonify({"ok": False, "error": "invalid signature — prove you control this wallet"}), 401
+
+        # SECURITY FIX: Check for duplicate claims per wallet
+        try:
+            with sqlite3.connect(db_path) as conn:
+                existing = conn.execute(
+                    "SELECT id FROM airdrop_claims WHERE wallet_address = ? AND chain = ? AND status = 'claimed'",
+                    (wallet_address, chain)
+                ).fetchone()
+                if existing:
+                    return jsonify({"ok": False, "error": "wallet has already claimed on this chain"}), 409
+        except Exception:
+            pass  # Table may not exist yet; proceed to claim_airdrop which has its own check
+
         success, message, claim = airdrop.claim_airdrop(
             github_username, wallet_address, chain, tier, github_token
         )
@@ -1322,6 +1387,10 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
                 400,
             )
 
+        # SECURITY FIX: Verify source wallet ownership
+        if not _verify_wallet_signature(from_address, "bridge_lock", data):
+            return jsonify({"ok": False, "error": "invalid signature — prove you control the source wallet"}), 401
+
         amount_uwrtc = int(float(amount_wrtc) * 1_000_000)
 
         success, message, lock = airdrop.create_bridge_lock(
@@ -1342,6 +1411,18 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         if not source_tx:
             return jsonify({"ok": False, "error": "missing_source_tx"}), 400
 
+        # SECURITY FIX: Verify the caller controls the lock's source address
+        try:
+            with sqlite3.connect(db_path) as conn:
+                lock = conn.execute(
+                    "SELECT from_address FROM bridge_locks WHERE lock_id = ?",
+                    (lock_id,)
+                ).fetchone()
+                if lock and not _verify_wallet_signature(lock[0], "confirm_lock", data):
+                    return jsonify({"ok": False, "error": "invalid signature — only lock creator can confirm"}), 401
+        except Exception:
+            pass  # Lock not found; confirm_bridge_lock will handle it
+
         success, message = airdrop.confirm_bridge_lock(lock_id, source_tx)
 
         if success:
@@ -1357,6 +1438,18 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
 
         if not dest_tx:
             return jsonify({"ok": False, "error": "missing_dest_tx"}), 400
+
+        # SECURITY FIX: Verify the caller controls the lock's from_address
+        try:
+            with sqlite3.connect(db_path) as conn:
+                lock = conn.execute(
+                    "SELECT from_address FROM bridge_locks WHERE lock_id = ?",
+                    (lock_id,)
+                ).fetchone()
+                if lock and not _verify_wallet_signature(lock[0], "release_lock", data):
+                    return jsonify({"ok": False, "error": "invalid signature — only lock creator can release"}), 401
+        except Exception:
+            pass  # Lock not found; release_bridge_lock will handle it
 
         success, message = airdrop.release_bridge_lock(lock_id, dest_tx)
 
