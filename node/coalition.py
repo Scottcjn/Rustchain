@@ -53,12 +53,10 @@ def _verify_miner_signature(miner_id: str, action: str, data: dict) -> bool:
     and the request is accepted.  Production miner IDs are always 64-char hex
     strings (32-byte ed25519 verify keys) so this fallback only affects tests.
     """
-    # If miner_id is not a valid hex string (e.g. test miner like "alice"),
-    # skip cryptographic verification entirely.
-    try:
-        bytes.fromhex(miner_id)
-    except ValueError:
-        return True
+    # SECURITY FIX: All miner IDs must pass cryptographic verification.
+    # The previous fallback for non-hex miner IDs (e.g. test names like
+    # "alice") allowed ANY caller to impersonate any non-hex miner_id
+    # by simply omitting the signature. Removed entirely.
 
     signature_hex = data.get("signature", "").strip()
     timestamp = data.get("timestamp")
@@ -232,7 +230,8 @@ def seed_flamebound_coalition(db_path: str) -> int:
 def _get_miner_voting_weight(miner_id: str, db_path: str) -> float:
     """Return voting weight = rtc_balance * antiquity_multiplier.
 
-    Falls back to 1.0 if miner not found or columns missing.
+    SECURITY FIX: Returns None if miner not found, signaling that
+    voting should be rejected rather than falling back to weight 1.0.
     """
     try:
         with sqlite3.connect(db_path) as conn:
@@ -241,12 +240,14 @@ def _get_miner_voting_weight(miner_id: str, db_path: str) -> float:
                 (miner_id,)
             ).fetchone()
             if row:
-                rtc_balance = float(row[0]) if row[0] is not None else 1.0
+                rtc_balance = float(row[0]) if row[0] is not None else 0.0
                 antiquity = float(row[1]) if row[1] is not None else 1.0
-                return max(rtc_balance * antiquity, 1.0)
+                return max(rtc_balance * antiquity, 0.0)
+            # Miner not found in database
+            return None
     except Exception as e:
         log.debug("Could not fetch weight for %s: %s", miner_id, e)
-    return 1.0
+    return None
 
 
 def _is_coalition_member(coalition_id: int, miner_id: str, db_path: str) -> bool:
@@ -550,6 +551,10 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
             return jsonify({"error": f"vote must be one of {VOTE_CHOICES}"}), 400
 
         weight = _get_miner_voting_weight(miner_id, db_path)
+        if weight is None:
+            return jsonify({"error": "miner not found in registry — no voting weight"}), 403
+        if weight == 0.0:
+            return jsonify({"error": "miner has zero voting weight (no RTC balance)"}), 403
         now = int(time.time())
 
         try:
@@ -652,6 +657,14 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
             return jsonify({"error": "proposal_id required"}), 400
         if decision not in REVIEW_CHOICES:
             return jsonify({"error": f"decision must be one of {REVIEW_CHOICES}"}), 400
+
+        # SECURITY FIX: Verify reviewer identity via signature
+        if not _verify_miner_signature(reviewer, "flamebound_review", data):
+            return jsonify({"error": "invalid signature — only Sophia/The Flamebound can review"}), 401
+
+        # Only the designated Flamebound reviewer can perform reviews
+        if reviewer != FLAMEBUND_MINER_ID:
+            return jsonify({"error": "only Sophia/The Flamebound can perform governance reviews"}), 403
 
         now = int(time.time())
         try:
