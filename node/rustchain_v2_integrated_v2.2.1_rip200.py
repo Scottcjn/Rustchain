@@ -3031,17 +3031,25 @@ def get_challenge():
     Deployments with multiple attestation backends should keep submit traffic
     sticky to the issuing node or share the nonce store across nodes.
     """
+    # Rate limit challenge issuance to prevent SQLite DoS (#2751)
+    client_ip = request.remote_addr or "unknown"
+    allowed, remaining, retry_after, msg = check_api_endpoint_rate_limit(client_ip, "/attest/challenge")
+    if not allowed:
+        return jsonify({"error": msg}), 429
+
     nonce = secrets.token_hex(32)
     expires = int(time.time()) + 300  # 5 minutes
 
     with sqlite3.connect(DB_PATH) as c:
         c.execute("INSERT INTO nonces (nonce, expires_at) VALUES (?, ?)", (nonce, expires))
 
-    return jsonify({
+    response = jsonify({
         "nonce": nonce,
         "expires_at": expires,
         "server_time": int(time.time())
     })
+    response.headers["X-RateLimit-Remaining"] = str(remaining)
+    return response
 
 
 # ============= HARDWARE BINDING (Anti Multi-Wallet Attack) =============

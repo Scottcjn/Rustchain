@@ -280,12 +280,12 @@ impl Miner {
         // Sign enrollment request using the SAME Ed25519 keypair from attestation.
         // The signature binds (miner_pubkey|miner_id|epoch) to prove the enrollment
         // caller is the same entity that performed the attestation.
-        let enroll_message = format!("{}|{}|{}", self.wallet, self.miner_id, epoch);
+        let enroll_message = format!("{}|{}|{}", self.public_key_hex, self.miner_id, epoch);
         let signature = self.signing_key.sign(enroll_message.as_bytes());
         let signature_hex = hex::encode(signature.to_bytes());
 
         let payload = serde_json::json!({
-            "miner_pubkey": self.wallet,
+            "miner_pubkey": self.public_key_hex,
             "miner_id": self.miner_id,
             "device": {
                 "family": self.hw_info.family,
