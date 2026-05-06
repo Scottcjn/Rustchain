@@ -1,0 +1,43 @@
+name: 🏆 Award RTC Bounty for Merged PRs
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  award-rtc:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for Bounty Label
+        id: check-label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            const hasBounty = labels.some(l => l.includes('bounty'));
+            core.setOutput('has_bounty', hasBounty);
+            
+      - name: Calculate RTC Reward
+        if: steps.check-label.outputs.has_bounty == 'true'
+        id: calc-reward
+        run: |
+          # Base reward: 5 RTC
+          # +1 RTC per 100 lines added
+          LINES_ADDED=${{ github.event.pull_request.additions }}
+          REWARD=$(( 5 + LINES_ADDED / 100 ))
+          echo "reward=$REWARD" >> $GITHUB_OUTPUT
+          
+      - name: Post Reward Comment
+        if: steps.check-label.outputs.has_bounty == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const reward = ${{ steps.calc-reward.outputs.reward }};
+            const author = context.payload.pull_request.user.login;
+            github.rest.issues.createComment({
+              issue_number: context.payload.pull_request.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🎉 Congratulations @${author}! Your PR has been merged and qualifies for **${reward} RTC** bounty reward. \n\nPlease claim your reward by commenting \`/claim-rtc ${reward}\` below.`
+            });
