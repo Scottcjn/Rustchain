@@ -12,6 +12,7 @@ Features:
 import logging
 import time
 import threading
+import random
 
 from sophia_core import SophiaCoreInspector, OLLAMA_FAILOVER_CHAIN
 from sophia_db import (
@@ -29,7 +30,8 @@ class SophiaScheduler:
     """Periodic batch inspector with anomaly re-inspection."""
 
     def __init__(self, db_path=None, interval_hours=DEFAULT_INTERVAL_HOURS,
-                 ollama_endpoints=None, fingerprint_fetcher=None):
+                 ollama_endpoints=None, fingerprint_fetcher=None,
+                 rate_limit_delay=1.0, rate_limit_jitter=0.5):
         """
         Args:
             db_path: SQLite database path
@@ -37,9 +39,13 @@ class SophiaScheduler:
             ollama_endpoints: Ollama failover chain (defaults to OLLAMA_FAILOVER_CHAIN)
             fingerprint_fetcher: callable(miner_id) -> fingerprint dict.
                 Must be provided for real operation; can be None for testing.
+            rate_limit_delay: Base delay in seconds between batch inspections.
+            rate_limit_jitter: Random jitter added to delay to prevent thundering herd.
         """
         self.db_path = db_path or DB_PATH
         self.interval_seconds = interval_hours * 3600
+        self.rate_limit_delay = rate_limit_delay
+        self.rate_limit_jitter = rate_limit_jitter
         self.inspector = SophiaCoreInspector(
             db_path=self.db_path,
             ollama_endpoints=list(OLLAMA_FAILOVER_CHAIN) if ollama_endpoints is None else ollama_endpoints,
@@ -77,6 +83,10 @@ class SophiaScheduler:
                 )
             except Exception as exc:
                 logger.error("Batch inspection failed for %s: %s", miner_id, exc)
+            # Rate limiting: sleep between inspections to avoid overwhelming downstream APIs
+            if self.rate_limit_delay > 0:
+                delay = self.rate_limit_delay + random.uniform(0, self.rate_limit_jitter)
+                time.sleep(delay)
 
         logger.info("Batch complete: %d/%d inspected", len(results), len(miner_ids))
         return results
@@ -116,6 +126,10 @@ class SophiaScheduler:
                 results.append(result)
             except Exception as exc:
                 logger.error("Anomaly re-inspection failed for %s: %s", miner_id, exc)
+            # Rate limiting: sleep between reinspections
+            if self.rate_limit_delay > 0:
+                delay = self.rate_limit_delay + random.uniform(0, self.rate_limit_jitter)
+                time.sleep(delay)
 
         logger.info("Anomaly re-inspection complete: %d miners", len(results))
         return results
