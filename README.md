@@ -261,7 +261,7 @@ curl -sk https://rustchain.org/epoch           # Current epoch
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 
 # Dry-run: test hardware fingerprint without mining
-rustchain-miner --dry-run
+python3 ~/.rustchain/rustchain_miner.py --dry-run --wallet test
 ```
 
 Works on Linux (x86_64, ppc64le, aarch64, mips, sparc, m68k, riscv64, ia64, s390x), macOS (Intel, Apple Silicon, PowerPC), IBM POWER8, and Windows. If it runs Python, it can mine.
@@ -400,6 +400,11 @@ Named after a 486 laptop with oxidized serial ports that still boots to DOS and 
 
 </div>
 
+
+## Wallets / 钱包
+
+- **Browser Extension**: [RustChain Wallet (Chrome)](https://rustchain.org/wallet)
+- **CLI**: `pip install clawrtc` — command-line wallet & miner management
 
 ## Contributing
 Please read the [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and the [Bounty Board](https://github.com/Scottcjn/rustchain-bounties) for active tasks and rewards.
