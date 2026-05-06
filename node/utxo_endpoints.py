@@ -498,7 +498,7 @@ def utxo_transfer():
                 slot = _current_slot_fn()
                 c.execute(
                     "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
-                    (now, slot, from_address, -amount_i64,
+                    (now, slot, from_address, -(amount_i64 + fee_i64),
                      f"utxo_transfer_out:{to_address[:20]}:{memo[:30]}")
                 )
                 c.execute(
