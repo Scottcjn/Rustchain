@@ -1087,7 +1087,7 @@ def init_db():
 
         # Epoch tables
         c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
-        c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
+        c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight INTEGER, PRIMARY KEY (epoch, miner_pk))")
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
         ensure_fingerprint_history_table(c)
         ensure_epoch_fingerprint_rotation_table(c)
@@ -2790,7 +2790,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         total_reward = Decimal(str(per_block_rtc)) * Decimal(EPOCH_SLOTS)
 
         # WEIGHT VALIDATION: Cap maximum weight to prevent drain attacks
-        MAX_WEIGHT = 10000
+        MAX_WEIGHT = 10000 * 10**18  # Scaled to match INTEGER weight storage (#2752)
         # Filter out miners with 0 weight (VM/emulator detected)
         valid_miners = [(pk, w) for pk, w in miners if w > 0]
         zero_weight_miners = [pk for pk, w in miners if w == 0]
@@ -2859,7 +2859,8 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
             # Distribute rewards with precision
             for pk, weight in miners:
                 # Use Decimal arithmetic to avoid float precision loss
-                amount_decimal = Decimal(0) if Decimal(total_weight) == 0 else total_reward * Decimal(weight) / Decimal(total_weight)
+                # weight is now stored as INTEGER (scaled by 1e18) - #2752 fix
+                amount_decimal = Decimal(0) if total_weight == 0 else total_reward * Decimal(weight) / Decimal(total_weight)
                 amount_i64 = int(amount_decimal * Decimal(100000000))
 
                 # OVERFLOW PROTECTION: Ensure amount_i64 fits in signed 64-bit int
@@ -3464,7 +3465,7 @@ def _submit_attestation_impl():
             # "attestation overwrite causes prior-epoch reward loss".
             enroll_conn.execute(
                 "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
-                (epoch, miner, enroll_weight)
+                (epoch, miner, int(enroll_weight * 1e18))
             )
             enroll_conn.execute(
                 "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
@@ -3692,7 +3693,7 @@ def enroll_epoch():
         # or default device data.
         c.execute(
             "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
-            (epoch, miner_pk, weight)
+            (epoch, miner_pk, int(weight * 1e18))
         )
 
         # FIX: Register pubkey in miner_header_keys for block submission
@@ -3762,10 +3763,11 @@ def vrf_is_selected(miner_pk: str, slot: int) -> bool:
     rand_val = int.from_bytes(hash_val[:8], 'big')
 
     # Calculate cumulative weights
+    # weights are now INTEGER scaled by 1e18 (#2752)
     total_weight = sum(w for _, w in all_miners)
-    threshold = (rand_val % int(total_weight * 1000000)) / 100000000.0
+    threshold = rand_val % total_weight
 
-    cumulative = 0.0
+    cumulative = 0
     for pk, w in all_miners:
         cumulative += w
         if pk == miner_pk and cumulative >= threshold:

@@ -411,8 +411,34 @@ class GossipLayer:
                 for (epoch,) in rows:
                     self.epoch_crdt.add(epoch)
 
+                # Issue #2753: Persist epoch_votes table for crash recovery
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS epoch_votes (
+                        epoch INTEGER NOT NULL,
+                        proposal_hash TEXT NOT NULL,
+                        voter TEXT NOT NULL,
+                        vote TEXT NOT NULL,
+                        ts INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+                        PRIMARY KEY (epoch, proposal_hash, voter)
+                    )
+                """)
+
+                # Load pending epoch votes from DB
+                if not hasattr(self, '_epoch_votes'):
+                    self._epoch_votes: Dict = {}
+                rows = conn.execute("""
+                    SELECT epoch, proposal_hash, voter, vote FROM epoch_votes
+                    ORDER BY ts
+                """).fetchall()
+                for epoch, proposal_hash, voter, vote in rows:
+                    key = (epoch, proposal_hash)
+                    if key not in self._epoch_votes:
+                        self._epoch_votes[key] = {}
+                    self._epoch_votes[key][voter] = vote
+
                 logger.info(f"Loaded {len(self.attestation_crdt.data)} attestations, "
-                           f"{len(self.epoch_crdt.items)} settled epochs")
+                           f"{len(self.epoch_crdt.items)} settled epochs, "
+                           f"{len(self._epoch_votes)} pending vote groups")
         except Exception as e:
             logger.error(f"Failed to load state from DB: {e}")
 
@@ -887,6 +913,17 @@ class GossipLayer:
             return {"status": "duplicate", "epoch": epoch, "voter": voter}
 
         self._epoch_votes[key][voter] = vote
+
+        # Issue #2753: Persist vote to DB for crash recovery
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO epoch_votes (epoch, proposal_hash, voter, vote, ts)
+                    VALUES (?, ?, ?, ?, strftime('%s','now'))
+                """, (epoch, proposal_hash, voter, vote))
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"Failed to persist epoch vote to DB: {e}")
 
         # Count votes for THIS specific proposal_hash only.
         total_nodes = len(self.peers) + 1  # peers + self
