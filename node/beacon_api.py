@@ -862,6 +862,10 @@ def chat():
         agent_id = data.get('agent_id')
         message = data.get('message')
         
+        # Sanitize user input to prevent stored XSS
+        import html
+        message = html.escape(str(message))
+        
         if not agent_id or not message:
             return jsonify({'error': 'Missing agent_id or message'}), 400
         
