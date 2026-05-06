@@ -54,6 +54,18 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         # Initialize database tables
         init_beacon_tables(cls.test_db_path)
         
+        # Register test agents in relay_agents (required for authenticated contract creation)
+        import time as _time
+        now = int(_time.time())
+        with sqlite3.connect(cls.test_db_path) as conn:
+            for agent_id in ['bcn_alice_test', 'bcn_bob_test', 'bcn_test_from', 'bcn_test_to']:
+                conn.execute(
+                    "INSERT OR IGNORE INTO relay_agents (agent_id, pubkey_hex, name, status, created_at) "
+                    "VALUES (?, ?, ?, 'active', ?)",
+                    (agent_id, f'pubkey_{agent_id}', agent_id, now)
+                )
+            conn.commit()
+        
         cls.client = cls.app.test_client()
 
     @classmethod
@@ -95,7 +107,8 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         create_response = self.client.post(
             '/api/contracts',
             data=json.dumps(contract_data),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_alice_test'}
         )
         self.assertEqual(create_response.status_code, 201)
         
@@ -114,11 +127,12 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(len(contracts), 1)
         self.assertEqual(contracts[0]['id'], contract_id)
         
-        # Update contract state to active
+        # Update contract state to active (must be done by to_agent)
         update_response = self.client.put(
             f'/api/contracts/{contract_id}',
             data=json.dumps({'state': 'active'}),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_bob_test'}
         )
         self.assertEqual(update_response.status_code, 200)
         
@@ -249,8 +263,10 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         create_response = self.client.post(
             '/api/contracts',
             data=json.dumps(contract_data),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_test_from'}
         )
+        self.assertEqual(create_response.status_code, 201)
         contract_id = json.loads(create_response.data)['id']
         
         # Try invalid state
