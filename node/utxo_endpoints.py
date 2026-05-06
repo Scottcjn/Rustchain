@@ -471,6 +471,7 @@ def utxo_transfer():
             conn = sqlite3.connect(_db_path)
             c = conn.cursor()
             amount_i64 = int(amount_rtc * ACCOUNT_UNIT)
+            fee_i64 = int(fee_rtc * ACCOUNT_UNIT)
 
             # Re-check sender shadow-balance before debit (security: prevent
             # negative-balance minting when account-model diverges from UTXO
@@ -490,7 +491,7 @@ def utxo_transfer():
                 c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
                           (to_address,))
                 c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
-                          (amount_i64, from_address))
+                          (amount_i64 + fee_i64, from_address))
                 c.execute("UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
                           (amount_i64, to_address))
                 now = int(time.time())

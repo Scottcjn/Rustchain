@@ -57,7 +57,7 @@ def load_account_balances(db_path: str) -> list:
         # Try alternate column names
         rows = conn.execute(
             """SELECT miner_pk AS miner_id,
-                      CAST(balance_rtc * 1000000 AS INTEGER) AS amount_i64
+                      CAST(ROUND(balance_rtc * 1000000) AS INTEGER) AS amount_i64
                FROM balances
                WHERE balance_rtc > 0
                ORDER BY miner_pk ASC"""
@@ -170,6 +170,15 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
             boxes_created += 1
 
         if not dry_run:
+            # CRITICAL FIX: Compute state root and integrity check BEFORE commit.
+            # If validation fails, the transaction will be rolled back.
+            state_root = utxo_db.compute_state_root()
+            integrity = utxo_db.integrity_check(expected_total=total_account)
+            if not integrity['ok']:
+                raise ValueError(
+                    f"Integrity check failed: UTXO total={integrity['total_unspent_nrtc']}, "
+                    f"expected={total_account}, diff={integrity.get('diff_nrtc', 'N/A')}"
+                )
             conn.execute("COMMIT")
 
     except Exception as e:
@@ -183,14 +192,11 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
     finally:
         conn.close()
 
-    # Compute and verify state root
-    state_root = utxo_db.compute_state_root()
-
-    # Integrity check
-    if not dry_run:
-        integrity = utxo_db.integrity_check(expected_total=total_account)
-    else:
+    # Compute and verify state root (already done inside transaction if not dry_run)
+    if dry_run:
+        state_root = utxo_db.compute_state_root()
         integrity = {'ok': True, 'models_agree': True}
+    # else: state_root and integrity already computed above
 
     result = {
         'wallets_migrated': boxes_created,

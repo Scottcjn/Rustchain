@@ -457,6 +457,8 @@ class UtxoDB:
             for inp in sorted(inputs, key=lambda i: i['box_id']):
                 tx_seed_h.update(bytes.fromhex(inp['box_id']))
             tx_seed_h.update(ts.to_bytes(8, 'little'))
+            # SECURITY FIX: Include fee in tx_id to prevent fee manipulation attacks
+            tx_seed_h.update(fee.to_bytes(8, 'little'))
             # For coinbase, include tx_type + outputs to differentiate
             if not inputs:
                 tx_seed_h.update(tx_type.encode())
