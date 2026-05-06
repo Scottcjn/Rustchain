@@ -131,6 +131,7 @@ class Transaction:
             hasher.update(inp.box_id)
         for out in self.outputs:
             hasher.update(out.box_id)
+        hasher.update(self.fee.to_bytes(8, 'little'))  # FIX: include fee in tx_id
         hasher.update(self.timestamp.to_bytes(8, 'little'))
         return hasher.digest()
 
