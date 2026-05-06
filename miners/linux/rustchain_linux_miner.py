@@ -59,8 +59,10 @@ def get_linux_serial():
 
 class LocalMiner:
     def __init__(self, wallet=None, wart_address=None, wart_pool=None,
-                 bzminer_path=None, manage_bzminer=False):
+                 bzminer_path=None, manage_bzminer=False, verbose=False, show_payload=False):
         self.node_url = NODE_URL
+        self.verbose = verbose
+        self.show_payload = show_payload
         self.wallet = wallet or self._gen_wallet()
         self.hw_info = {}
         self.enrolled = False
@@ -464,6 +466,32 @@ class LocalMiner:
         else:
             print("[DRY-RUN] Fingerprint checks available: no")
 
+        # Verbose: show attest/enroll API payloads
+        if self.verbose or self.show_payload:
+            print("\n[DRY-RUN] === API Payload Preview ===")
+            # Simulate attest payload
+            attest_payload = {
+                "wallet": self.wallet,
+                "hostname": self.hw_info.get("hostname", ""),
+                "cpu": self.hw_info.get("cpu", ""),
+                "cores": self.hw_info.get("cores", 0),
+                "memory_gb": self.hw_info.get("memory_gb", 0),
+                "serial": self.hw_info.get("serial", ""),
+                "macs": self.hw_info.get("macs", []),
+            }
+            print(f"[DRY-RUN] POST {self.node_url}/api/attest")
+            print(f"[DRY-RUN] Payload: {json.dumps(attest_payload, indent=2)}")
+
+            # Simulate enroll payload
+            enroll_payload = {
+                "wallet": self.wallet,
+                "hostname": self.hw_info.get("hostname", ""),
+                "fingerprint": self.fingerprint_data if self.fingerprint_data else "pending",
+            }
+            print(f"[DRY-RUN] POST {self.node_url}/api/enroll")
+            print(f"[DRY-RUN] Payload: {json.dumps(enroll_payload, indent=2)}")
+            print(f"[DRY-RUN] === End Payload Preview ===\n")
+
         # Optional health probe (read-only)
         try:
             r = requests.get(f"{self.node_url}/health", timeout=8, verify=TLS_VERIFY)
@@ -471,6 +499,8 @@ class LocalMiner:
             if r.ok:
                 data = r.json()
                 print(f"[DRY-RUN] Node version: {data.get('version', 'n/a')}")
+                if self.verbose:
+                    print(f"[DRY-RUN] Health response: {json.dumps(data, indent=2)}")
         except Exception as e:
             print(f"[DRY-RUN] Health probe failed: {e}")
 
@@ -528,6 +558,8 @@ if __name__ == "__main__":
     parser.add_argument("--bzminer-path", help="Path to BzMiner binary")
     parser.add_argument("--manage-bzminer", action="store_true", help="Auto-start/stop BzMiner")
     parser.add_argument("--dry-run", action="store_true", help="Run preflight checks only; do not start mining")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output in dry-run mode")
+    parser.add_argument("--show-payload", action="store_true", help="Show API request payload in dry-run mode")
     args = parser.parse_args()
 
     miner = LocalMiner(
@@ -536,6 +568,8 @@ if __name__ == "__main__":
         wart_pool=args.wart_pool,
         bzminer_path=args.bzminer_path,
         manage_bzminer=args.manage_bzminer,
+        verbose=args.verbose,
+        show_payload=args.show_payload,
     )
     if args.dry_run:
         miner.dry_run()
