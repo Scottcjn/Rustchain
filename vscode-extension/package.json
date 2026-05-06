@@ -1,0 +1,40 @@
+{
+  "name": "rustchain-dashboard",
+  "displayName": "RustChain Dashboard",
+  "description": "Shows wallet balance, miner status, and bounty board in VS Code sidebar",
+  "version": "0.1.0",
+  "publisher": "BossChaos",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [{ "id": "rustchain", "title": "RustChain", "icon": "media/icon.svg" }]
+    },
+    "views": {
+      "rustchain": [
+        { "id": "rustchain.wallet", "name": "Wallet Balance" },
+        { "id": "rustchain.miner", "name": "Miner Status" },
+        { "id": "rustchain.bounties", "name": "Bounty Board" }
+      ]
+    },
+    "commands": [
+      { "command": "rustchain.refresh", "title": "Refresh Dashboard" },
+      { "command": "rustchain.claimBounty", "title": "Claim Selected Bounty" }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "20.x",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
+}
