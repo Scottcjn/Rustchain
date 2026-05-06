@@ -188,8 +188,8 @@ def create_passport():
     admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
     expected_admin_key = os.environ.get('ADMIN_KEY', '')
     
-    if expected_admin_key and admin_key != expected_admin_key:
-        return jsonify({
+ if expected_admin_key and not hmac.compare_digest(admin_key, expected_admin_key):
+            return jsonify({
             'ok': False,
             'error': 'unauthorized',
             'message': 'Admin key required',
@@ -284,7 +284,7 @@ def update_passport(machine_id: str):
     
     # Check authorization
     if expected_admin_key:
-        if admin_key != expected_admin_key:
+        if not hmac.compare_digest(admin_key, expected_admin_key):
             # Allow owner to update their own passport
             data = request.get_json()
             if data and data.get('owner_miner_id') != passport.owner_miner_id:

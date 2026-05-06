@@ -5483,7 +5483,7 @@ def api_nodes():
     def _is_admin() -> bool:
         need = os.environ.get("RC_ADMIN_KEY", "")
         got = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-        return bool(need and got and need == got)
+        return bool(need and got and hmac.compare_digest(need, got))
 
     def _should_redact_url(u: str) -> bool:
         try:

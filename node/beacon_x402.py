@@ -9,6 +9,7 @@ Usage in beacon_chat.py:
 
 import json
 import logging
+import hmac
 import os
 import sqlite3
 import time
@@ -176,7 +177,7 @@ def init_app(app, get_db_func):
         expected = os.environ.get("BEACON_ADMIN_KEY", "")
         if not expected:
             return _cors_json({"error": "Admin key not configured"}, 503)
-        if admin_key != expected:
+        if not hmac.compare_digest(admin_key, expected):
             return _cors_json({"error": "Unauthorized — admin key required"}, 401)
 
         data = request.get_json(silent=True) or {}

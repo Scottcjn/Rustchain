@@ -551,9 +551,10 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         reason = data.get("reason", "Security-critical change").strip()
 
         # Admin key is validated via environment variable (not hardcoded)
-        import os
+        import hmac
+import os
         expected_key = os.environ.get("RUSTCHAIN_ADMIN_KEY", "")
-        if not expected_key or admin_key != expected_key:
+        if not expected_key or not hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "invalid admin_key"}), 403
 
         try:
