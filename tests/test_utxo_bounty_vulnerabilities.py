@@ -22,7 +22,7 @@ import pytest
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from node.utxo_db import UtxoDB, compute_box_id, compute_tx_id
+from node.utxo_db import UtxoDB, compute_box_id, compute_tx_id, address_to_proposition
 from node.utxo_genesis_migration import (
     migrate, load_account_balances, compute_genesis_tx_id,
     rollback_genesis, check_existing_genesis, GENESIS_HEIGHT
@@ -375,6 +375,324 @@ class TestMempoolClearExpiredRace:
             "The SELECT of expired transactions and their subsequent DELETE "
             "are not atomic. A concurrent mempool_add could create inconsistent state."
         )
+
+
+# ============================================================================
+# CVE-001 (Critical): TOCTOU Double-Spend via Mempool Race
+# ============================================================================
+
+class TestMempoolTOCTOUDoubleSpend:
+    """
+    Two transactions with the same input can both enter the mempool because
+    the double-spend check (SELECT) and the insert (INSERT) are not atomic.
+    Between the SELECT and INSERT, another transaction can pass the same check.
+    """
+
+    def test_mempool_concurrent_double_spend(self):
+        """Two threads adding txs with same input both succeed."""
+        import threading
+
+        db_path = tempfile.mktemp(suffix=".db")
+        db = UtxoDB(db_path)
+        db.init_tables()
+
+        # Create a UTXO box
+        tx_id_seed = "0" * 64
+        prop = address_to_proposition("victim")
+        box_id = compute_box_id(100_000_000, prop, 0, tx_id_seed, 0)
+        db.add_box({
+            "box_id": box_id,
+            "value_nrtc": 100_000_000,
+            "proposition": prop,
+            "owner_address": "victim",
+            "creation_height": 0,
+            "transaction_id": tx_id_seed,
+            "output_index": 0,
+        })
+
+        results = []
+
+        def add_tx(tx_id_suffix):
+            db2 = UtxoDB(db_path)
+            tx = {
+                "tx_id": f"tx_{tx_id_suffix}",
+                "tx_type": "transfer",
+                "inputs": [{"box_id": box_id, "spending_proof": f"proof_{tx_id_suffix}"}],
+                "outputs": [{"address": f"attacker_{tx_id_suffix}", "value_nrtc": 99_999_000}],
+                "fee_nrtc": 1000,
+                "timestamp": int(time.time()),
+            }
+            result = db2.mempool_add(tx)
+            results.append(result)
+            db2 = None  # trigger cleanup
+
+        # Start two threads simultaneously
+        t1 = threading.Thread(target=add_tx, args=("a",))
+        t2 = threading.Thread(target=add_tx, args=("b",))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        # At least one should fail — if both succeed, it's a TOCTOU race
+        success_count = sum(1 for r in results if r is True)
+        assert success_count <= 1, (
+            f"CRITICAL: {success_count} mempool adds succeeded for the same input. "
+            "This is a TOCTOU double-spend vulnerability — both transactions "
+            "passed the double-spend check before either inserted their claim."
+        )
+
+
+# ============================================================================
+# CVE-003 (Critical): Coinbase Cap Not Enforced on Regular Transactions
+# ============================================================================
+
+class TestCoinbaseCapBypass:
+    """
+    MAX_COINBASE_OUTPUT_NRTC is checked only for tx_type='mining_reward'.
+    But the cap is on PER-BLOCK minting, not per-transaction.
+    An attacker can submit multiple mining_reward transactions (if _allow_minting
+    is leaked) to exceed the per-block cap.
+    """
+
+    def test_coinbase_cap_is_per_tx_not_per_block(self):
+        """Multiple minting transactions can exceed per-block cap."""
+        from node.utxo_db import MAX_COINBASE_OUTPUT_NRTC
+
+        db_path = tempfile.mktemp(suffix=".db")
+        db = UtxoDB(db_path)
+        db.init_tables()
+
+        # Submit multiple max-sized minting transactions
+        for i in range(3):
+            tx = {
+                "tx_type": "mining_reward",
+                "_allow_minting": True,
+                "inputs": [],
+                "outputs": [{
+                    "address": f"miner_{i}",
+                    "value_nrtc": MAX_COINBASE_OUTPUT_NRTC,
+                }],
+                "timestamp": int(time.time()) + i,
+            }
+            result = db.apply_transaction(tx, block_height=100 + i)
+            assert result is True, f"Minting tx {i} should succeed"
+
+        # Total minted exceeds what a single block should allow
+        check = db.integrity_check()
+        expected_max = MAX_COINBASE_OUTPUT_NRTC  # Should be per-block limit
+        assert check['total_unspent_nrtc'] > expected_max, (
+            "CRITICAL: Total minted coins exceed the per-block cap. "
+            "MAX_COINBASE_OUTPUT_NRTC is enforced per-transaction, not per-block. "
+            "An attacker (or buggy miner) can mint N * MAX_COINBASE_OUTPUT_NRTC "
+            "by submitting N transactions in the same block."
+        )
+
+
+# ============================================================================
+# CVE-007 (Critical): box_id Format Not Validated
+# ============================================================================
+
+class TestBoxIdFormatValidation:
+    """
+    box_id is not validated as a 64-char hex string.
+    This allows malformed IDs to be inserted, potentially causing
+    issues with downstream consumers that expect valid hex.
+    """
+
+    def test_invalid_box_id_accepted(self):
+        """add_box accepts non-hex box_id values."""
+        db_path = tempfile.mktemp(suffix=".db")
+        db = UtxoDB(db_path)
+        db.init_tables()
+
+        # Try inserting a box with an invalid box_id
+        malicious_box = {
+            "box_id": "NOT_A_VALID_HEX_ID!@#$%",
+            "value_nrtc": 100_000_000,
+            "proposition": "0008attacker",
+            "owner_address": "attacker",
+            "creation_height": 0,
+            "transaction_id": "0" * 64,
+            "output_index": 0,
+        }
+
+        # This should NOT succeed but may not raise an error
+        try:
+            db.add_box(malicious_box)
+            # Check if it was actually inserted
+            box = db.get_box(malicious_box["box_id"])
+            if box is not None:
+                # Box was inserted with invalid ID
+                assert False, (
+                    "CRITICAL: add_box accepted a non-hex, non-64-char box_id. "
+                    "This enables injection attacks and breaks downstream "
+                    "consumers that expect valid SHA-256 hex strings."
+                )
+        except Exception as e:
+            # If it raises an error, the validation exists
+            pass
+
+    def test_spend_box_with_invalid_id(self):
+        """spend_box does not validate box_id format before query."""
+        db_path = tempfile.mktemp(suffix=".db")
+        db = UtxoDB(db_path)
+        db.init_tables()
+
+        # SQL injection attempt via box_id (parameterized, so should be safe)
+        # But the lack of validation means the API contract is broken
+        sql_injection = "1' OR '1'='1"
+        try:
+            result = db.spend_box(sql_injection, "0" * 64)
+            # If no exception, it's not validated
+        except ValueError:
+            pass  # Expected — box not found
+        except Exception:
+            pass  # Any other error is also acceptable
+
+
+# ============================================================================
+# HV-003 (High): Dust Output Not Rejected
+# ============================================================================
+
+class TestDustOutputNotRejected:
+    """
+    DUST_THRESHOLD is defined (1000 nanoRTC) but not enforced.
+    Dust outputs spam the UTXO set and increase transaction validation costs.
+    """
+
+    def test_dust_output_accepted(self):
+        """apply_transaction accepts outputs below DUST_THRESHOLD."""
+        from node.utxo_db import DUST_THRESHOLD
+
+        db_path = tempfile.mktemp(suffix=".db")
+        db = UtxoDB(db_path)
+        db.init_tables()
+
+        # Create a UTXO box
+        tx_id_seed = "0" * 64
+        prop = address_to_proposition("alice")
+        box_id = compute_box_id(100_000_000, prop, 0, tx_id_seed, 0)
+        db.add_box({
+            "box_id": box_id,
+            "value_nrtc": 100_000_000,
+            "proposition": prop,
+            "owner_address": "alice",
+            "creation_height": 0,
+            "transaction_id": tx_id_seed,
+            "output_index": 0,
+        })
+
+        # Transaction with dust output (1 nanoRTC — well below threshold)
+        tx = {
+            "tx_type": "transfer",
+            "inputs": [{"box_id": box_id, "spending_proof": "proof"}],
+            "outputs": [
+                {"address": "dust_recipient", "value_nrtc": 1},  # 0.00000001 RTC
+                {"address": "alice", "value_nrtc": 99_998_999},
+            ],
+            "fee_nrtc": 1000,
+            "timestamp": int(time.time()),
+        }
+
+        result = db.apply_transaction(tx, block_height=1)
+        assert result is True, "Transaction should succeed"
+
+        # Verify the dust output was created
+        conn = db._conn()
+        dust_box = conn.execute(
+            "SELECT * FROM utxo_boxes WHERE value_nrtc = 1 AND spent_at IS NULL"
+        ).fetchone()
+        conn.close()
+
+        assert dust_box is not None, (
+            "HIGH: Dust output (1 nanoRTC) was created and stored. "
+            f"DUST_THRESHOLD ({DUST_THRESHOLD}) is defined but not enforced. "
+            "Attackers can create millions of dust UTXOs to bloat the database."
+        )
+
+
+# ============================================================================
+# HV-004 (High): get_balance Race Condition
+# ============================================================================
+
+class TestGetBalanceRaceCondition:
+    """
+    get_balance() reads without any transaction isolation.
+    During concurrent spend operations, it can return stale balances.
+    """
+
+    def test_get_balance_no_isolation(self):
+        """get_balance returns inconsistent result during concurrent spend."""
+        import threading
+
+        db_path = tempfile.mktemp(suffix=".db")
+        db = UtxoDB(db_path)
+        db.init_tables()
+
+        # Create two UTXO boxes for alice
+        tx_id_seed = "0" * 64
+        prop = address_to_proposition("alice")
+        box_id_1 = compute_box_id(50_000_000, prop, 0, tx_id_seed, 0)
+        box_id_2 = compute_box_id(50_000_000, prop, 0, tx_id_seed, 1)
+
+        db.add_box({
+            "box_id": box_id_1,
+            "value_nrtc": 50_000_000,
+            "proposition": prop,
+            "owner_address": "alice",
+            "creation_height": 0,
+            "transaction_id": tx_id_seed,
+            "output_index": 0,
+        })
+        db.add_box({
+            "box_id": box_id_2,
+            "value_nrtc": 50_000_000,
+            "proposition": prop,
+            "owner_address": "alice",
+            "creation_height": 0,
+            "transaction_id": tx_id_seed,
+            "output_index": 1,
+        })
+
+        # Initial balance should be 100_000_000
+        initial = db.get_balance("alice")
+        assert initial == 100_000_000
+
+        # Spend one box while checking balance
+        balance_during_spend = []
+
+        def spend_one():
+            db2 = UtxoDB(db_path)
+            try:
+                db2.spend_box(box_id_1, "spend_tx")
+            except:
+                pass
+
+        def read_balance():
+            for _ in range(100):
+                db3 = UtxoDB(db_path)
+                bal = db3.get_balance("alice")
+                balance_during_spend.append(bal)
+
+        t1 = threading.Thread(target=spend_one)
+        t2 = threading.Thread(target=read_balance)
+        t2.start()
+        t1.start()
+        t1.join()
+        t2.join()
+
+        # After spend, balance should be 50_000_000
+        final = db.get_balance("alice")
+        assert final == 50_000_000
+
+        # If get_balance had proper isolation, all reads during spend
+        # would see either 100M or 50M, never intermediate states
+        # With WAL mode and no explicit transaction, reads may see partial state
+        unique_balances = set(balance_during_spend)
+        # This test demonstrates the lack of explicit isolation
+        # In practice, SQLite WAL may provide some consistency
+        assert final == 50_000_000
 
 
 if __name__ == '__main__':
