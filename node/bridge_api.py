@@ -669,6 +669,11 @@ def register_bridge_routes(app):
         if not validation.ok:
             return jsonify({"error": validation.error}), 400
         
+        # Enforce maximum bridge amount to prevent excessive single transfers
+        amount = data.get("amount", 0)
+        if amount > 1_000_000:
+            return jsonify({"error": "Amount exceeds maximum bridge limit (1,000,000)"}), 400
+        
         # Validate address formats
         for chain, addr in [
             (data["source_chain"], data["source_address"]),
@@ -735,7 +740,10 @@ def register_bridge_routes(app):
         source = request.args.get("source_address")
         dest = request.args.get("dest_address")
         direction = request.args.get("direction")
-        limit = int(request.args.get("limit", 100))
+        try:
+            limit = min(int(request.args.get("limit", 100)), 1000)
+        except ValueError:
+            return jsonify({"error": "Invalid limit parameter"}), 400
         
         conn = sqlite3.connect(DB_PATH)
         try:
@@ -761,7 +769,9 @@ def register_bridge_routes(app):
         """Admin: Void a bridge transfer."""
         admin_key = request.headers.get("X-Admin-Key", "")
         expected_key = os.environ.get("RC_ADMIN_KEY", "")
-        if not admin_key or not expected_key or not hmac.compare_digest(admin_key, expected_key):
+        if not expected_key:
+            return jsonify({"error": "Admin API not configured (RC_ADMIN_KEY missing)", "status": "service_unavailable"}), 503
+        if not admin_key or not hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "unauthorized"}), 401
         
         data = request.get_json(silent=True)
@@ -788,10 +798,12 @@ def register_bridge_routes(app):
     @app.route('/api/bridge/update-external', methods=['POST'])
     def update_external():
         """Update external confirmation data (for bridge service callbacks)."""
-        # Optional: require API key for callbacks
+        # Require API key - fail closed if not configured
         api_key = request.headers.get("X-API-Key", "")
         expected_key = os.environ.get("RC_BRIDGE_API_KEY", "")
-        if expected_key and not hmac.compare_digest(api_key, expected_key):
+        if not expected_key:
+            return jsonify({"error": "Bridge API not configured (RC_BRIDGE_API_KEY missing)", "status": "service_unavailable"}), 503
+        if not hmac.compare_digest(api_key, expected_key):
             return jsonify({"error": "Unauthorized"}), 401
         
         data = request.get_json(silent=True)
