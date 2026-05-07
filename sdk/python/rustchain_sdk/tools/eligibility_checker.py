@@ -4,8 +4,8 @@ import sys
 from rustchain_sdk import RustChainClient
 
 async def check_eligibility(miner_id, epoch, node_url):
-    # Use verify=False by default for PoC tools as many nodes use self-signed certs
-    async with RustChainClient(base_url=node_url, verify=False) as client:
+    # TLS verification enabled by default
+    async with RustChainClient(base_url=node_url, verify=True) as client:
         try:
             # Use public SDK method
             response = await client.get_epoch_rewards(epoch)

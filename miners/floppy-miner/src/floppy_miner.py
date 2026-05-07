@@ -147,8 +147,10 @@ def submit_attestation(node_url: str, payload: dict) -> dict:
     
     # Allow self-signed certs for local nodes
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    # TLS verification enabled by default
+    if os.environ.get('RC_SKIP_TLS_VERIFY', '0') == '1':
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
     
     req = urllib.request.Request(
         url,
@@ -174,8 +176,10 @@ def get_epoch(node_url: str) -> dict:
     
     url = f"{node_url}{EPOCH_ENDPOINT}"
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    # TLS verification enabled by default
+    if os.environ.get('RC_SKIP_TLS_VERIFY', '0') == '1':
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
     
     try:
         req = urllib.request.Request(url)

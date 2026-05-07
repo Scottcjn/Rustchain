@@ -11,11 +11,13 @@ import urllib.error
 BASE_URL = "https://50.28.86.131"
 VERIFY_SSL = False
 
-# Disable SSL verification
+# TLS verification enabled by default
+# To skip (not recommended), set RC_SKIP_TLS_VERIFY=1
 import ssl
 SSL_CTX = ssl.create_default_context()
-SSL_CTX.check_hostname = False
-SSL_CTX.verify_mode = ssl.CERT_NONE
+if os.environ.get('RC_SKIP_TLS_VERIFY', '0') == '1':
+    SSL_CTX.check_hostname = False
+    SSL_CTX.verify_mode = ssl.CERT_NONE
 
 def api_get(path):
     url = f"{BASE_URL}{path}"

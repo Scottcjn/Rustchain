@@ -63,10 +63,11 @@ class BoTTubeClient:
 
         if not verify_ssl:
             self._ctx = ssl.create_default_context()
+            # Skip verification only when explicitly requested (not recommended)
             self._ctx.check_hostname = False
             self._ctx.verify_mode = ssl.CERT_NONE
         else:
-            self._ctx = None
+            self._ctx = ssl.create_default_context()  # Enable verification by default
 
     def _get_headers(self) -> Dict[str, str]:
         """Get request headers with optional auth"""
