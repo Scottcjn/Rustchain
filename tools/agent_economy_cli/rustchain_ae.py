@@ -14,8 +14,8 @@ VERIFY_SSL = False
 # Disable SSL verification
 import ssl
 SSL_CTX = ssl.create_default_context()
-SSL_CTX.check_hostname = False
-SSL_CTX.verify_mode = ssl.CERT_NONE
+# SSL_CTX.check_hostname = False  # Disabled: use default secure verification
+# SSL_CTX.verify_mode = ssl.CERT_NONE  # Disabled: use default secure verification
 
 def api_get(path):
     url = f"{BASE_URL}{path}"

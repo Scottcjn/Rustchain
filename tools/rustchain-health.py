@@ -68,8 +68,8 @@ def status_dot(ok: bool) -> str:
 
 def _ssl_ctx() -> ssl.SSLContext:
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    # ctx.check_hostname = False  # Disabled: use default secure verification
+    # ctx.verify_mode = ssl.CERT_NONE  # Disabled: use default secure verification
     return ctx
 
 def fetch(url: str, timeout: int = 8) -> Tuple[bool, Any, float]:
