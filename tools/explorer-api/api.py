@@ -18,6 +18,7 @@ import time
 import hashlib
 import threading
 from functools import wraps
+from collections import defaultdict
 
 import requests
 from flask import Flask, jsonify, request
@@ -41,6 +42,55 @@ CORS(app)
 
 _cache: dict = {}
 _cache_lock = threading.Lock()
+
+
+# ─── Rate Limiter ──────────────────────────────────────────────────────── #
+class RateLimiter:
+    """Simple in-memory rate limiter using sliding window."""
+    def __init__(self, max_requests: int = 60, window_seconds: int = 60):
+        self.max_requests = max_requests
+        self.window = window_seconds
+        self._requests = defaultdict(list)
+        self._lock = threading.Lock()
+
+    def is_allowed(self, key: str) -> bool:
+        now = time.time()
+        with self._lock:
+            # Clean old entries
+            self._requests[key] = [t for t in self._requests[key] if now - t < self.window]
+            if len(self._requests[key]) >= self.max_requests:
+                return False
+            self._requests[key].append(now)
+            return True
+
+    def get_remaining(self, key: str) -> int:
+        now = time.time()
+        with self._lock:
+            recent = [t for t in self._requests[key] if now - t < self.window]
+            return max(0, self.max_requests - len(recent))
+
+rate_limiter = RateLimiter(max_requests=60, window_seconds=60)
+
+def rate_limit(f):
+    """Decorator to apply rate limiting to Flask routes."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        client_ip = request.remote_addr or "unknown"
+        if not rate_limiter.is_allowed(client_ip):
+            return jsonify({
+                "ok": False,
+                "error": "rate_limit_exceeded",
+                "message": f"Too many requests. Max {rate_limiter.max_requests} requests per {rate_limiter.window}s."
+            }), 429
+        response = f(*args, **kwargs)
+        # Add rate limit headers
+        if hasattr(response, 'headers'):
+            remaining = rate_limiter.get_remaining(client_ip)
+            response.headers['X-RateLimit-Limit'] = str(rate_limiter.max_requests)
+            response.headers['X-RateLimit-Remaining'] = str(remaining)
+            response.headers['X-RateLimit-Window'] = str(rate_limiter.window)
+        return response
+    return decorated
 
 
 def _cache_key(prefix: str, *parts) -> str:
@@ -291,6 +341,7 @@ def address_info(addr: str):
 
 @app.route("/api/search", methods=["GET"])
 @cached("search", ttl=10)
+@rate_limit
 def search():
     """Search blocks, addresses, and transactions.
 
@@ -354,6 +405,7 @@ def search():
 
 @app.route("/api/stats", methods=["GET"])
 @cached("stats", ttl=30)
+@rate_limit
 def network_stats():
     """Return aggregated network statistics."""
     node_stats = _get("/api/stats")
