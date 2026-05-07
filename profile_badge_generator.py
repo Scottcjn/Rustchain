@@ -216,4 +216,4 @@ def list_badges():
 
 if __name__ == '__main__':
     init_badge_db()
-    app.run(debug=True, port=5003)
+    app.run(debug=False, port=5003)

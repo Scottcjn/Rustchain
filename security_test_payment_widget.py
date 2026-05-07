@@ -10,7 +10,10 @@ import json
 from urllib.parse import unquote
 
 app = Flask(__name__)
-app.secret_key = 'test_key_for_security_testing_only'
+SECRET_KEY = os.environ.get('TEST_WIDGET_SECRET_KEY')
+if not SECRET_KEY:
+    raise RuntimeError("TEST_WIDGET_SECRET_KEY environment variable is required")
+app.secret_key = SECRET_KEY
 
 DB_PATH = 'rustchain.db'
 
@@ -265,11 +268,12 @@ def admin_payments():
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
     password = request.form.get('password', '')
-    if password == 'admin123':
+    TEST_PASSWORD = os.environ.get('TEST_WIDGET_ADMIN_PASSWORD', '')
+    if password == TEST_PASSWORD and TEST_PASSWORD:
         return jsonify({'token': 'admin_token_123', 'message': 'Login successful'})
     return jsonify({'error': 'Invalid credentials'})
 
 if __name__ == '__main__':
     if not os.path.exists(DB_PATH):
         init_db()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)
