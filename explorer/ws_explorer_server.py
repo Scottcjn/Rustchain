@@ -24,7 +24,7 @@ POLL_INTERVAL = float(os.environ.get("WS_POLL_INTERVAL", "10"))
 PORT = int(os.environ.get("WS_EXPLORER_PORT", "8060"))
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "rustchain-ws-explorer")
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or os.environ.get("FLASK_SECRET_KEY", os.urandom(32).hex())
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 # ── State ─────────────────────────────────────────────────────────
