@@ -8,7 +8,7 @@ import os
 import hashlib
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'bcos-directory-dev-key'
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', os.urandom(32).hex())
 
 DATABASE = 'bcos_directory.db'
 
@@ -482,4 +482,4 @@ def serve_dist(filename):
 if __name__ == '__main__':
     init_db()
     load_projects_from_json()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)
