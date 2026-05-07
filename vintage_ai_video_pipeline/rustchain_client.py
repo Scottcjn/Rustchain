@@ -28,7 +28,7 @@ class RustChainClient:
     def __init__(
         self,
         base_url: str = DEFAULT_BASE_URL,
-        verify_ssl: bool = False,
+        verify_ssl: bool = True,
         timeout: int = 30,
         retry_count: int = 3,
         retry_delay: float = 1.0
@@ -38,7 +38,7 @@ class RustChainClient:
 
         Args:
             base_url: Base URL of the RustChain API
-            verify_ssl: Enable SSL verification (default: False for self-signed certs)
+            verify_ssl: Enable SSL verification (default: True)
             timeout: Request timeout in seconds
             retry_count: Number of retries on failure
             retry_delay: Delay between retries (seconds)
