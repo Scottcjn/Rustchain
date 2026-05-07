@@ -13,7 +13,7 @@ def preflight():
     ok &= check("Wallet exists", os.path.exists(os.path.expanduser("~/.clawrtc/wallets")))
     ok &= check("Disk > 1GB free", shutil.disk_usage("/").free > 1e9)
     try:
-        ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+        ctx = ssl.create_default_context(); # Verification enabled by default
         urllib.request.urlopen("https://rustchain.org/health", timeout=5, context=ctx)
         ok &= check("Node reachable", True)
     except:
