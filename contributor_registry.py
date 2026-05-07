@@ -132,10 +132,28 @@ def index():
         ).fetchall()
     
     from flask import render_template_string
+from collections import defaultdict
+import time
+
+# Simple in-memory rate limiter
+_rate_limits = defaultdict(list)
+def _check_rate_limit(ip, limit=5, window=3600):
+    now = time.time()
+    _rate_limits[ip] = [t for t in _rate_limits[ip] if now - t < window]
+    if len(_rate_limits[ip]) >= limit:
+        return False
+    _rate_limits[ip].append(now)
+    return True
     return render_template_string(html, contributors=contributors)
 
 @app.route('/register', methods=['POST'])
 def register():
+    # Simple rate limiting: max 5 registrations per IP per hour
+    client_ip = request.remote_addr
+    if not _check_rate_limit(client_ip, limit=5, window=3600):
+        flash('Too many registration attempts. Please try again later.')
+        return redirect('/')
+    
     github_username = request.form['github_username']
     contributor_type = request.form['contributor_type']
     rtc_wallet = request.form['rtc_wallet']

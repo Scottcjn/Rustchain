@@ -36,6 +36,11 @@ def inspect_fingerprint():
     """Submit a hardware fingerprint for Sophia inspection."""
     data = request.get_json(force=True)
 
+    # Enforce API key for Sophia inspection submissions
+    req_key = request.headers.get("X-API-Key", "")
+    if not req_key or req_key != os.environ.get("SOPHIA_API_KEY", ""):
+        return jsonify({"error": "unauthorized"}), 401
+
     miner_id = data.get("miner_id")
     fingerprint = data.get("fingerprint")
 

@@ -73,6 +73,12 @@ def api_create():
     if not data or "machine_id" not in data:
         return jsonify({"error": "machine_id required"}), 400
 
+    # Enforce API key for passport writes
+    req_key = request.headers.get("X-API-Key", "")
+    if not req_key or req_key != os.environ.get("PASSPORT_API_KEY", ""):
+        return jsonify({"error": "unauthorized"}), 401
+        return jsonify({"error": "machine_id required"}), 400
+
     # Check if exists (update) or new (create)
     existing = ledger.get(data["machine_id"])
     if existing:

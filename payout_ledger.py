@@ -169,6 +169,10 @@ def register_ledger_routes(app):
     def api_ledger_create():
         init_payout_ledger_tables()
         data = request.get_json(force=True)
+        # Enforce API key for ledger writes
+        req_key = request.headers.get("X-API-Key", "")
+        if not req_key or req_key != os.environ.get("LEDGER_API_KEY", ""):
+            return jsonify({"error": "unauthorized"}), 401
         required = ["bounty_id", "contributor", "amount_rtc"]
         for field in required:
             if field not in data:
