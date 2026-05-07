@@ -1202,3 +1202,13 @@ def register_sophia_governor_inbox_endpoints(app, db_path: str | None = None) ->
         except KeyError:
             return jsonify({"error": "inbox_entry_not_found"}), 404
         return jsonify({"ok": True, "entry": updated})
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
+

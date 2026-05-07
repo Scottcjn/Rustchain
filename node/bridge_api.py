@@ -876,3 +876,13 @@ def init_bridge_schema(cursor):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_dest ON bridge_transfers(dest_address)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_lock_epoch ON bridge_transfers(lock_epoch)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bridge_tx_hash ON bridge_transfers(tx_hash)")
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
+

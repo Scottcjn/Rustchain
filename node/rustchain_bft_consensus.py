@@ -1066,6 +1066,16 @@ def create_bft_routes(app, bft: BFTConsensus):
 # MAIN (Testing)
 # ============================================================================
 
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
+
+
 if __name__ == "__main__":
     import sys
 
