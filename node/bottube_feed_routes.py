@@ -245,7 +245,7 @@ def rss_feed():
         )
         
     except ValueError as e:
-        return jsonify({"error": "Invalid parameter", "message": str(e)}), 400
+        return jsonify({"error": "Invalid parameter"}), 400
     except Exception as e:
         current_app.logger.error(f"RSS feed error: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -303,7 +303,7 @@ def atom_feed():
         )
         
     except ValueError as e:
-        return jsonify({"error": "Invalid parameter", "message": str(e)}), 400
+        return jsonify({"error": "Invalid parameter"}), 400
     except Exception as e:
         current_app.logger.error(f"Atom feed error: {e}")
         return jsonify({"error": "Internal server error"}), 500
