@@ -27,12 +27,13 @@ import socket
 import time
 from typing import Optional, Tuple, Dict, Any
 
-# Disable SSL warnings for self-signed certs
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# Conditionally disable SSL warnings only when verification is off
+if not VERIFY_SSL:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Configuration
 NODE_URL = "https://rustchain.org"
-VERIFY_SSL = False
+VERIFY_SSL = os.environ.get("RUSTCHAIN_VERIFY_SSL", "true").lower() != "false"
 
 # Retry configuration
 MAX_RETRIES = 3
