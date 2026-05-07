@@ -194,8 +194,8 @@ class HardwareEntropyCollector:
             elapsed = time.perf_counter_ns() - start
             timing_samples.append(elapsed)
 
-        data["timing_mean"] = sum(timing_samples) / len(timing_samples)
-        data["timing_variance"] = sum((t - data["timing_mean"])**2 for t in timing_samples) / len(timing_samples)
+        data["timing_mean"] = sum(timing_samples) / len(timing_samples) if timing_samples else 0.0
+        data["timing_variance"] = sum((t - data["timing_mean"])**2 for t in timing_samples) / len(timing_samples) if timing_samples else 0.0
 
         # Hash the data
         fingerprint = hashlib.sha256(str(data).encode()).hexdigest()
@@ -787,7 +787,7 @@ class DriftDetector:
             if old_hash and new_hash and old_hash != new_hash:
                 # Calculate drift percentage (simplified - hash difference)
                 diff_chars = sum(1 for a, b in zip(old_hash, new_hash) if a != b)
-                drift_pct = (diff_chars / len(old_hash)) * 100
+                drift_pct = (diff_chars / len(old_hash)) * 100 if old_hash else 0.0
 
                 if drift_pct > 0:
                     event = DriftEvent(

@@ -484,6 +484,8 @@ class DeepEntropyVerifier:
                 if result.get("detected") and result.get("confidence", 0) > 0.8:
                     detected += 1
 
+        if not profile.expected_quirks:
+            return 0.0
         return detected / len(profile.expected_quirks)
 
 

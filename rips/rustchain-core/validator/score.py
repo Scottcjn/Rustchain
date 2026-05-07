@@ -234,7 +234,9 @@ class DriftLockManager:
 
         # Update baseline (rolling average)
         if len(self._history[wallet]) >= 10:
-            self._baselines[wallet] = sum(self._history[wallet]) / len(self._history[wallet])
+            history = self._history[wallet]
+            if history:
+                self._baselines[wallet] = sum(history) / len(history)
 
     def check_drift(self, wallet: str, current_score: float) -> DriftRecord:
         """
