@@ -362,11 +362,28 @@ class RustChainMiner:
         apply the PoW bonus multiplier to this miner's RTC rewards.
         """
         try:
-            challenge = requests.post(
+            resp = requests.post(
                 f"{self.node_url}/attest/challenge", json={}, timeout=10
-            ).json()
+            )
+            if resp.status_code != 200:
+                print(f"[WARN] Challenge request failed: HTTP {resp.status_code}")
+                return False
+            challenge = resp.json()
             nonce = challenge.get("nonce")
-        except Exception:
+            if not nonce:
+                print("[WARN] Challenge response missing nonce field")
+                return False
+        except requests.exceptions.ConnectionError:
+            print(f"[ERROR] Cannot connect to node at {self.node_url}")
+            return False
+        except requests.exceptions.Timeout:
+            print(f"[ERROR] Challenge request timed out (10s)")
+            return False
+        except ValueError as e:
+            print(f"[ERROR] Invalid JSON in challenge response: {e}")
+            return False
+        except Exception as e:
+            print(f"[ERROR] Unexpected challenge error: {e}")
             return False
 
         entropy = self._collect_entropy()
@@ -410,11 +427,23 @@ class RustChainMiner:
             resp = requests.post(
                 f"{self.node_url}/attest/submit", json=attestation, timeout=30
             )
-            if resp.status_code == 200 and resp.json().get("ok"):
-                self.attestation_valid_until = time.time() + 580
-                return True
-        except Exception:
-            pass
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("ok"):
+                    self.attestation_valid_until = time.time() + 580
+                    return True
+                else:
+                    print(f"[WARN] Attestation rejected: {data.get('error', 'unknown')}")
+            else:
+                print(f"[WARN] Attestation submission failed: HTTP {resp.status_code}")
+        except requests.exceptions.ConnectionError:
+            print(f"[ERROR] Cannot connect to node for attestation submission")
+        except requests.exceptions.Timeout:
+            print(f"[ERROR] Attestation submission timed out (30s)")
+        except ValueError as e:
+            print(f"[ERROR] Invalid JSON in attestation response: {e}")
+        except Exception as e:
+            print(f"[ERROR] Unexpected attestation error: {e}")
         return False
 
     def enroll(self):
@@ -432,22 +461,41 @@ class RustChainMiner:
             resp = requests.post(
                 f"{self.node_url}/epoch/enroll", json=payload, timeout=15
             )
-            if resp.status_code == 200 and resp.json().get("ok"):
-                self.enrolled = True
-                self.last_enroll = time.time()
-                return True
-        except Exception:
-            pass
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("ok"):
+                    self.enrolled = True
+                    self.last_enroll = time.time()
+                    return True
+                else:
+                    print(f"[WARN] Enrollment rejected: {data.get('error', 'unknown')}")
+            else:
+                print(f"[WARN] Enrollment failed: HTTP {resp.status_code}")
+        except requests.exceptions.ConnectionError:
+            print(f"[ERROR] Cannot connect to node for enrollment")
+        except requests.exceptions.Timeout:
+            print(f"[ERROR] Enrollment request timed out (15s)")
+        except ValueError as e:
+            print(f"[ERROR] Invalid JSON in enrollment response: {e}")
+        except Exception as e:
+            print(f"[ERROR] Unexpected enrollment error: {e}")
         return False
 
     def check_eligibility(self):
         """Check if eligible to mine"""
         try:
             response = requests.get(
-                f"{RUSTCHAIN_API}/lottery/eligibility?miner_id={self.miner_id}"
+                f"{RUSTCHAIN_API}/lottery/eligibility?miner_id={self.miner_id}",
+                timeout=10
             )
             if response.ok:
                 return response.json().get("eligible", False)
+        except requests.exceptions.ConnectionError:
+            pass  # Silently fail - eligibility check is non-critical
+        except requests.exceptions.Timeout:
+            pass
+        except ValueError:
+            pass  # Invalid JSON
         except Exception:
             pass
         return False
@@ -486,8 +534,18 @@ class RustChainMiner:
             response = requests.post(
                 f"{RUSTCHAIN_API}/headers/ingest_signed", json=header, timeout=5
             )
-            return response.status_code == 200
-        except Exception:
+            if response.status_code == 200:
+                return True
+            print(f"[WARN] Header submission failed: HTTP {response.status_code}")
+            return False
+        except requests.exceptions.ConnectionError:
+            print(f"[ERROR] Cannot connect to submit header")
+            return False
+        except requests.exceptions.Timeout:
+            print(f"[ERROR] Header submission timed out (5s)")
+            return False
+        except Exception as e:
+            print(f"[ERROR] Unexpected header submit error: {e}")
             return False
 
 
