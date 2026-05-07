@@ -48,7 +48,7 @@ except ImportError:
 
 # Initialize Flask app
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'bcos-badge-generator-dev-key'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or os.urandom(32).hex()
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
 
 # Database path

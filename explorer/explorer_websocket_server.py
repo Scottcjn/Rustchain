@@ -286,7 +286,7 @@ def start_explorer_poller():
 
 # ─── Flask App ──────────────────────────────────────────────────────────────── #
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'rustchain-explorer-secret')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or os.urandom(32).hex()
 
 # ─── Flask Blueprint ────────────────────────────────────────────────────────── #
 ws_bp = Blueprint("explorer_ws", __name__)
