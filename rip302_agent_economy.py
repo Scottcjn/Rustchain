@@ -710,9 +710,12 @@ def register_agent_economy(app: Flask, db_path: str):
     def agent_list_jobs():
         category = request.args.get("category", "").strip().lower()
         status_filter = request.args.get("status", STATUS_OPEN).strip().lower()
-        limit = min(int(request.args.get("limit", 50)), 100)
-        offset = max(int(request.args.get("offset", 0)), 0)
-        min_reward = float(request.args.get("min_reward", 0))
+        try:
+            limit = min(int(request.args.get("limit", 50)), 100)
+            offset = max(int(request.args.get("offset", 0)), 0)
+            min_reward = float(request.args.get("min_reward", 0))
+        except (ValueError, TypeError):
+            return jsonify({"error": "invalid_query_params"}), 400
 
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
