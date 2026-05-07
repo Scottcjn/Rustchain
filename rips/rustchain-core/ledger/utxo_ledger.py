@@ -459,6 +459,18 @@ class BalanceTracker:
 
         Selects UTXOs to cover amount + fee, creates change output.
         """
+        # Security: validate inputs
+        if amount <= 0:
+            raise ValueError("Transfer amount must be positive")
+        if fee < 0:
+            raise ValueError("Fee cannot be negative")
+        if not from_address or not to_address:
+            raise ValueError("Addresses cannot be empty")
+        if from_address == to_address:
+            raise ValueError("Cannot transfer to same address")
+        if fee > amount:
+            raise ValueError("Fee cannot exceed transfer amount")
+
         boxes = self._utxo_set.get_boxes_for_address(from_address)
         available = sum(b.value for b in boxes)
 
