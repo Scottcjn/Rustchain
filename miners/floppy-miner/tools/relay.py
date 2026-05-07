@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """
 RustChain Floppy Miner — Serial/Stdout Relay Bridge
@@ -29,10 +30,16 @@ ATTEST_ENDPOINT = "/attest/submit"
 
 
 def create_ssl_context():
-    """Create SSL context that accepts self-signed certs."""
+    """Create SSL context for secure relay communication.
+    
+    In production, always verify the server certificate to prevent MitM attacks.
+    For development/testing with self-signed certs, set RUSTCHAIN_ALLOW_INSECURE_TLS=1.
+    """
+    allow_insecure = os.environ.get("RUSTCHAIN_ALLOW_INSECURE_TLS", "0").lower() in ("1", "true")
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    if allow_insecure:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
     return ctx
 
 
