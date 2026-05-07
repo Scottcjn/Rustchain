@@ -436,8 +436,14 @@ class LocalMiner:
                 balance = result.get('balance_rtc', 0)
                 print(f"\n💰 Balance: {balance} RTC")
                 return balance
-        except:
-            pass
+            elif resp.status_code == 404:
+                print(f"\n⚠️  Wallet not found on node. Have you enrolled this miner?")
+        except requests.exceptions.ConnectionError:
+            print(f"\n⚠️  Cannot connect to node at {self.node_url} to check balance.")
+        except requests.exceptions.Timeout:
+            print(f"\n⚠️  Balance check timed out. Node may be offline.")
+        except Exception as e:
+            print(f"\n⚠️  Balance check failed: {e}")
         return 0
 
 
