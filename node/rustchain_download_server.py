@@ -201,7 +201,14 @@ def index():
 
 @app.route('/downloads/<path:filename>')
 def download_file(filename):
-    return send_from_directory(DOWNLOAD_DIR, filename, as_attachment=True)
+    from flask import abort
+    # Prevent path traversal
+    if '..' in filename or filename.startswith('/') or os.path.isabs(filename):
+        abort(403)
+    safe = os.path.normpath(filename)
+    if safe.startswith('..'):
+        abort(403)
+    return send_from_directory(DOWNLOAD_DIR, safe, as_attachment=True)
 
 if __name__ == '__main__':
     print(f"🦀 RustChain Download Server starting on port 8090...")
