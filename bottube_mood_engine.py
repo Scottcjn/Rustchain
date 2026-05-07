@@ -947,7 +947,7 @@ def get_agent_mood_endpoint(agent_name: str):
         return jsonify(mood_info)
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "internal server error"}), 500
 
 
 @mood_bp.route("/<agent_name>/mood/signal", methods=["POST"])
@@ -980,7 +980,7 @@ def record_mood_signal(agent_name: str):
         return jsonify(result)
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "internal server error"}), 500
 
 
 @mood_bp.route("/<agent_name>/mood/title", methods=["POST"])
@@ -1011,7 +1011,7 @@ def generate_mood_title(agent_name: str):
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "internal server error"}), 500
 
 
 @mood_bp.route("/<agent_name>/mood/comment", methods=["POST"])
@@ -1038,7 +1038,7 @@ def generate_mood_comment(agent_name: str):
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "internal server error"}), 500
 
 
 @mood_bp.route("/<agent_name>/mood/post-probability", methods=["GET"])
@@ -1061,7 +1061,7 @@ def get_post_probability(agent_name: str):
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "internal server error"}), 500
 
 
 @mood_bp.route("/<agent_name>/mood/statistics", methods=["GET"])
@@ -1077,7 +1077,7 @@ def get_mood_statistics_endpoint(agent_name: str):
         return jsonify(stats)
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "internal server error"}), 500
 
 
 def init_mood_routes(app):

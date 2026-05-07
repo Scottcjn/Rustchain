@@ -48,7 +48,7 @@ def proxy(path):
     except requests.exceptions.Timeout:
         return jsonify({'error': 'Local server timeout'}), 504
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'internal server error'}), 500
 
 @app.route('/status')
 def status():
