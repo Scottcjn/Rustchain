@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import hmac
 import re
 import sqlite3
 import time
@@ -142,7 +143,7 @@ def _is_authorized(req) -> bool:
     required_admin = os.getenv("RC_ADMIN_KEY", "").strip()
     if required_admin:
         provided_admin = (req.headers.get("X-Admin-Key") or req.headers.get("X-API-Key") or "").strip()
-        if provided_admin == required_admin:
+        if hmac.compare_digest(provided_admin, required_admin):
             return True
 
     auth_header = (req.headers.get("Authorization") or "").strip()
