@@ -24,8 +24,13 @@ POLL_INTERVAL = float(os.environ.get("WS_POLL_INTERVAL", "10"))
 PORT = int(os.environ.get("WS_EXPLORER_PORT", "8060"))
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "rustchain-ws-explorer")
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+secret_key = os.environ.get("SECRET_KEY")
+if not secret_key:
+    import secrets
+    secret_key = secrets.token_hex(32)
+    print(f"[WARNING] Using auto-generated SECRET_KEY. Set SECRET_KEY env var for production.")
+app.config["SECRET_KEY"] = secret_key
+socketio = SocketIO(app, cors_allowed_origins=os.environ.get("WS_ALLOWED_ORIGINS", "http://localhost,http://127.0.0.1").split(","), async_mode="threading")
 
 # ── State ─────────────────────────────────────────────────────────
 state = {

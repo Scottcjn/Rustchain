@@ -16,7 +16,7 @@ Standalone usage:
 
 Integration:
     from explorer_websocket_server import socketio, app, start_explorer_poller
-    socketio.init_app(app, cors_allowed_origins="*", async_mode="threading")
+    socketio.init_app(app, cors_allowed_origins=os.environ.get("WS_ALLOWED_ORIGINS", "http://localhost,http://127.0.0.1").split(","), async_mode="threading")
     start_explorer_poller()
 
 Author: RustChain Team
@@ -286,14 +286,19 @@ def start_explorer_poller():
 
 # ─── Flask App ──────────────────────────────────────────────────────────────── #
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'rustchain-explorer-secret')
+secret_key = os.environ.get('SECRET_KEY')
+if not secret_key:
+    import secrets
+    secret_key = secrets.token_hex(32)
+    print(f"[WARNING] Using auto-generated SECRET_KEY. Set SECRET_KEY env var for production.")
+app.config['SECRET_KEY'] = secret_key
 
 # ─── Flask Blueprint ────────────────────────────────────────────────────────── #
 ws_bp = Blueprint("explorer_ws", __name__)
 
 if HAVE_SOCKETIO:
     socketio = SocketIO(
-        cors_allowed_origins="*",
+        cors_allowed_origins=os.environ.get("WS_ALLOWED_ORIGINS", "http://localhost,http://127.0.0.1").split(","),
         async_mode="threading",
         ping_timeout=HEARTBEAT_S,
         ping_interval=HEARTBEAT_S,

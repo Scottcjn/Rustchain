@@ -150,7 +150,7 @@ class WebSocketFeed:
         self.app = app
         self.socketio = SocketIO(
             app, 
-            cors_allowed_origins="*",
+            cors_allowed_origins=os.environ.get("WS_ALLOWED_ORIGINS", "http://localhost,http://127.0.0.1").split(","),
             async_mode='threading',
             ping_timeout=60,
             ping_interval=25,
