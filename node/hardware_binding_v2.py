@@ -14,6 +14,7 @@ from typing import Tuple, Dict, Optional
 DB_PATH = os.environ.get('RUSTCHAIN_DB_PATH') or os.environ.get('DB_PATH') or '/root/rustchain/rustchain_v2.db'
 ENTROPY_TOLERANCE = 0.30  # 30% tolerance for entropy drift
 MIN_COMPARABLE_FIELDS = 3  # require at least 3 non-zero entropy fields for quality
+MIN_COLLISION_FIELDS = 2  # require at least 2 fields for collision detection (prevents bypass with sparse profiles)
 CORE_ENTROPY_FIELDS = ['clock_cv', 'cache_l1', 'cache_l2', 'thermal_ratio', 'jitter_cv']
 
 def init_hardware_bindings_v2():
@@ -145,7 +146,7 @@ def check_entropy_collision(entropy_profile: Dict, exclude_serial: str = None) -
     # Count non-zero fields in current profile
     nonzero_fields = _count_nonzero_fields(entropy_profile)
     
-    if nonzero_fields < MIN_COMPARABLE_FIELDS:
+    if nonzero_fields < MIN_COLLISION_FIELDS:
         # Not enough entropy data to detect collisions reliably
         return None
     
@@ -199,89 +200,100 @@ def bind_hardware_v2(
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         
-        # Check existing binding
-        c.execute('SELECT bound_wallet, entropy_profile, macs_seen, attestation_count FROM hardware_bindings_v2 WHERE serial_hash = ?',
-                  (serial_hash,))
-        row = c.fetchone()
-        
-        if row is None:
-            # NEW HARDWARE - enforce entropy quality first
-            nonzero_fields = _count_nonzero_fields(entropy_profile)
-            if nonzero_fields < MIN_COMPARABLE_FIELDS:
-                return False, 'entropy_insufficient', {
-                    'error': 'Entropy profile quality too low for secure binding',
-                    'required_nonzero_fields': MIN_COMPARABLE_FIELDS,
-                    'provided_nonzero_fields': nonzero_fields,
-                    'action': 'submit a fuller fingerprint payload'
-                }
+        # FIX: Use BEGIN IMMEDIATE to acquire write lock early, preventing
+        # race conditions where concurrent requests both pass the SELECT check
+        # before either inserts. This ensures serializable isolation.
+        c.execute('BEGIN IMMEDIATE')
+        try:
+            # Check existing binding
+            c.execute('SELECT bound_wallet, entropy_profile, macs_seen, attestation_count FROM hardware_bindings_v2 WHERE serial_hash = ?',
+                      (serial_hash,))
+            row = c.fetchone()
+            
+            if row is None:
+                # NEW HARDWARE - enforce entropy quality first
+                nonzero_fields = _count_nonzero_fields(entropy_profile)
+                if nonzero_fields < MIN_COMPARABLE_FIELDS:
+                    return False, 'entropy_insufficient', {
+                        'error': 'Entropy profile quality too low for secure binding',
+                        'required_nonzero_fields': MIN_COMPARABLE_FIELDS,
+                        'provided_nonzero_fields': nonzero_fields,
+                        'action': 'submit a fuller fingerprint payload'
+                    }
 
-            # NEW HARDWARE - Check for entropy collision first
-            collision = check_entropy_collision(entropy_profile)
-            if collision:
-                return False, 'entropy_collision', {
-                    'error': 'This hardware entropy matches an existing registration',
-                    'collision_hash': collision[:16],
-                    'suspected': 'serial_spoofing'
+                # NEW HARDWARE - Check for entropy collision first
+                # NOTE: check_entropy_collision uses MIN_COLLISION_FIELDS (lower threshold)
+                # to prevent bypass with sparse profiles
+                collision = check_entropy_collision(entropy_profile)
+                if collision:
+                    return False, 'entropy_collision', {
+                        'error': 'This hardware entropy matches an existing registration',
+                        'collision_hash': collision[:16],
+                        'suspected': 'serial_spoofing'
+                    }
+                
+                # Create new binding
+                c.execute('''
+                    INSERT INTO hardware_bindings_v2 
+                    (serial_hash, serial_raw, bound_wallet, arch, cores, entropy_profile, macs_seen, first_seen, last_seen, attestation_count)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                ''', (serial_hash, serial, wallet, arch, cores, json.dumps(entropy_profile), macs_str, now, now))
+                conn.commit()
+                
+                return True, 'new_binding', {
+                    'serial_hash': serial_hash[:16],
+                    'wallet': wallet[:20],
+                    'status': 'bound'
                 }
             
-            # Create new binding
-            c.execute('''
-                INSERT INTO hardware_bindings_v2 
-                (serial_hash, serial_raw, bound_wallet, arch, cores, entropy_profile, macs_seen, first_seen, last_seen, attestation_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-            ''', (serial_hash, serial, wallet, arch, cores, json.dumps(entropy_profile), macs_str, now, now))
-            conn.commit()
+            # EXISTING HARDWARE
+            bound_wallet, stored_entropy_json, stored_macs, attest_count = row
             
-            return True, 'new_binding', {
-                'serial_hash': serial_hash[:16],
-                'wallet': wallet[:20],
-                'status': 'bound'
-            }
-        
-        # EXISTING HARDWARE
-        bound_wallet, stored_entropy_json, stored_macs, attest_count = row
-        
-        # Check wallet match
-        if bound_wallet != wallet:
-            return False, 'hardware_already_bound', {
-                'error': 'This hardware is permanently bound to another wallet',
-                'bound_to': bound_wallet[:20],
-                'attempted': wallet[:20]
-            }
-        
-        # Validate entropy profile
-        stored_entropy = json.loads(stored_entropy_json) if stored_entropy_json else {}
-        is_valid, similarity, reason = compare_entropy_profiles(stored_entropy, entropy_profile)
-        
-        if not is_valid:
-            return False, 'suspected_spoof', {
-                'error': 'Entropy profile does not match registered hardware',
-                'similarity': f'{similarity:.1%}',
-                'reason': reason,
-                'suspected': 'serial_spoofing_or_hardware_swap'
-            }
-        
-        # Update record
-        new_macs = stored_macs
-        if macs_str and macs_str not in (stored_macs or ''):
-            new_macs = f'{stored_macs},{macs_str}' if stored_macs else macs_str
-        
-        flags = None
-        if 'drift' in reason:
-            flags = f'entropy_drift:{now}'
-        
-        c.execute('''
-            UPDATE hardware_bindings_v2 
-            SET last_seen = ?, attestation_count = attestation_count + 1, macs_seen = ?, flags = COALESCE(flags || ';' || ?, flags, ?)
-            WHERE serial_hash = ?
-        ''', (now, new_macs, flags, flags, serial_hash))
-        conn.commit()
+            # Check wallet match
+            if bound_wallet != wallet:
+                return False, 'hardware_already_bound', {
+                    'error': 'This hardware is permanently bound to another wallet',
+                    'bound_to': bound_wallet[:20],
+                    'attempted': wallet[:20]
+                }
+            
+            # Validate entropy profile
+            stored_entropy = json.loads(stored_entropy_json) if stored_entropy_json else {}
+            is_valid, similarity, reason = compare_entropy_profiles(stored_entropy, entropy_profile)
+            
+            if not is_valid:
+                return False, 'suspected_spoof', {
+                    'error': 'Entropy profile does not match registered hardware',
+                    'similarity': f'{similarity:.1%}',
+                    'reason': reason,
+                    'suspected': 'serial_spoofing_or_hardware_swap'
+                }
+            
+            # Update record
+            new_macs = stored_macs
+            if macs_str and macs_str not in (stored_macs or ''):
+                new_macs = f'{stored_macs},{macs_str}' if stored_macs else macs_str
+            
+            flags = None
+            if 'drift' in reason:
+                flags = f'entropy_drift:{now}'
+            
+            c.execute('''
+                UPDATE hardware_bindings_v2 
+                SET last_seen = ?, attestation_count = attestation_count + 1, macs_seen = ?, flags = COALESCE(flags || ';' || ?, flags, ?)
+                WHERE serial_hash = ?
+            ''', (now, new_macs, flags, flags, serial_hash))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         
         return True, 'authorized', {
             'serial_hash': serial_hash[:16],
             'similarity': f'{similarity:.1%}',
             'attestations': attest_count + 1
         }
+
 
 # Initialize on import.
 # If DB path is explicitly configured and init fails, fail fast (safer for prod).
