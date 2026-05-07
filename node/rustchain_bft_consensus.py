@@ -1076,7 +1076,7 @@ if __name__ == "__main__":
     # Test with mock data
     node_id = sys.argv[1] if len(sys.argv) > 1 else "node-131"
     db_path = "/tmp/bft_test.db"
-    secret_key = "rustchain_bft_testnet_key_2025"
+    secret_key = os.environ.get("BFT_SECRET_KEY", os.urandom(32).hex())
 
     bft = BFTConsensus(node_id, db_path, secret_key)
 

@@ -3073,7 +3073,7 @@ def submit_attestation():
         # Log the error for debugging but return a graceful error response
         import traceback
         app.logger.error(f"[ATTEST/submit] Unhandled exception: {e}")
-        app.logger.error(f"[ATTEST/submit] Traceback: {traceback.format_exc()}")
+        app.logger.error("[ATTEST/submit] Internal error occurred")
         return jsonify({
             "ok": False,
             "error": "internal_error",
