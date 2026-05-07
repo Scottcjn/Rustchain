@@ -161,18 +161,21 @@ class RustChainNode:
         block = self.poa.process_block(previous_hash)
 
         if block:
-            self.blocks.append(block)
+            # Fix: Protect all state mutations with lock to prevent race conditions
+            # API endpoints read wallets/total_minted/mining_pool concurrently
+            with self.lock:
+                self.blocks.append(block)
 
-            # Update wallet balances
-            for miner in block.miners:
-                wallet_addr = miner.wallet.address
-                if wallet_addr not in self.wallets:
-                    self.wallets[wallet_addr] = TokenAmount(0)
-                self.wallets[wallet_addr] += miner.reward
+                # Update wallet balances
+                for miner in block.miners:
+                    wallet_addr = miner.wallet.address
+                    if wallet_addr not in self.wallets:
+                        self.wallets[wallet_addr] = TokenAmount(0)
+                    self.wallets[wallet_addr] += miner.reward
 
-            # Update totals
-            self.total_minted += block.total_reward
-            self.mining_pool -= block.total_reward
+                # Update totals
+                self.total_minted += block.total_reward
+                self.mining_pool -= block.total_reward
 
             print(f"⛏️  Block #{block.height} processed")
 
