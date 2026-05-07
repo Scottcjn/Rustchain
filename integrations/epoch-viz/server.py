@@ -29,10 +29,12 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
         import ssl
         url = f"{NODE_URL}{path}"
         try:
-            # Create SSL context that ignores certificate verification
+            # Create SSL context with configurable verification
             ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
+            if os.environ.get("EPOCH_VIZ_TLS_NO_VERIFY", "").lower() in ("1", "true"):
+                print("[WARN] TLS verification disabled for epoch-viz proxy (dev only)")
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
             
             req = urllib.request.Request(url)
             with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
