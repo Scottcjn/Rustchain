@@ -6,6 +6,7 @@ Serves static files and proxies API requests to bypass CORS
 
 import http.server
 import json
+import re
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -13,26 +14,43 @@ from pathlib import Path
 NODE_URL = "https://50.28.86.131"
 PORT = 8888
 
+# Allowed API path patterns (prevent SSRF)
+ALLOWED_PATHS = re.compile(r"^/(?:api/(?:epoch|block|status|reputation)|epoch)$")
+
 class ProxyHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         # Proxy API requests
-        if self.path.startswith('/api/'):
+        if self.path.startswith('/api/') or self.path == '/epoch':
             self.proxy_request(self.path)
-        elif self.path == '/epoch':
-            self.proxy_request('/epoch')
         else:
             # Serve static files
             super().do_GET()
     
     def proxy_request(self, path):
-        """Proxy request to RustChain node"""
+        """Proxy request to RustChain node with SSRF protection"""
         import ssl
+        
+        # SSRF protection: validate path
+        if not ALLOWED_PATHS.match(path):
+            self.send_response(400)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid API path"}).encode())
+            return
+        
+        # Strip query strings for path validation but pass through
+        clean_path = path.split('?')[0]
+        if not ALLOWED_PATHS.match(clean_path):
+            self.send_response(400)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid API path"}).encode())
+            return
+        
         url = f"{NODE_URL}{path}"
         try:
-            # Create SSL context that ignores certificate verification
+            # Proper SSL verification (no CERT_NONE)
             ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
             
             req = urllib.request.Request(url)
             with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
@@ -59,6 +77,5 @@ if __name__ == '__main__':
     os.chdir(Path(__file__).parent)
     
     with http.server.HTTPServer(('', PORT), ProxyHandler) as httpd:
-        print(f"🌐 Server running at http://localhost:{PORT}")
-        print(f"📡 Proxying API to {NODE_URL}")
+        print(f"Server running on port {PORT}")
         httpd.serve_forever()
