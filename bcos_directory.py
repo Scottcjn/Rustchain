@@ -482,4 +482,4 @@ def serve_dist(filename):
 if __name__ == '__main__':
     init_db()
     load_projects_from_json()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true', host='0.0.0.0', port=5000)
