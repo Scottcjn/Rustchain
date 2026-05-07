@@ -65,10 +65,13 @@ def fetch_node(endpoint, timeout=5):
     if not requests:
         return None
     try:
+        import os
+        # Allow disabling TLS verification for dev/self-signed certs via env var
+        verify_tls = os.environ.get('RUSTCHAIN_VERIFY_TLS', 'true').lower() == 'true'
         resp = requests.get(
             f"{RUSTCHAIN_NODE}{endpoint}",
             timeout=timeout,
-            verify=False  # Self-signed cert
+            verify=verify_tls
         )
         if resp.status_code == 200:
             return resp.json()
