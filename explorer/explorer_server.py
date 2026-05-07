@@ -55,8 +55,10 @@ class ExplorerHandler(SimpleHTTPRequestHandler):
             self.path = '/explorer/index.html'
         else:
             # Try to serve from explorer directory
-            explorer_path = os.path.join(os.path.dirname(__file__), path.lstrip('/'))
-            if os.path.isfile(explorer_path):
+            base_dir = os.path.realpath(os.path.dirname(__file__))
+            explorer_path = os.path.realpath(os.path.join(base_dir, path.lstrip('/')))
+            # Security: prevent path traversal
+            if explorer_path.startswith(base_dir) and os.path.isfile(explorer_path):
                 self.path = path
             else:
                 self.path = '/explorer/index.html'
