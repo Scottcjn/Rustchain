@@ -5223,10 +5223,30 @@ def governance_vote():
         if not miner_active:
             return jsonify({"ok": False, "error": "inactive_miner", "reason": miner_reason}), 403
 
-        base_balance_i64 = _balance_i64_for_wallet(c, wallet)
-        base_balance_rtc = base_balance_i64 / 1_000_000.0
-        if base_balance_rtc <= 0:
-            return jsonify({"ok": False, "error": "no_balance"}), 403
+        # FIX: Use snapshot balance from proposal creation time to prevent
+        # flash vote attacks where attackers accumulate balance just before voting.
+        # If a snapshot doesn't exist yet, create one on first vote.
+        snapshot_row = c.execute(
+            "SELECT balance_rtc FROM governance_balance_snapshots WHERE proposal_id = ? AND wallet = ?",
+            (proposal_id, wallet),
+        ).fetchone()
+        
+        if snapshot_row is None:
+            # First vote from this wallet on this proposal - snapshot current balance
+            base_balance_i64 = _balance_i64_for_wallet(c, wallet)
+            base_balance_rtc = base_balance_i64 / 1_000_000.0
+            if base_balance_rtc <= 0:
+                return jsonify({"ok": False, "error": "no_balance"}), 403
+            # Record the snapshot
+            c.execute(
+                "INSERT INTO governance_balance_snapshots (proposal_id, wallet, balance_rtc, snap_time) VALUES (?, ?, ?, ?)",
+                (proposal_id, wallet, base_balance_rtc, int(time.time())),
+            )
+        else:
+            # Use the snapshotted balance to prevent balance manipulation between votes
+            base_balance_rtc = float(snapshot_row[0])
+            if base_balance_rtc <= 0:
+                return jsonify({"ok": False, "error": "no_balance_at_snapshot"}), 403
 
         weight = base_balance_rtc * multiplier
         c.execute(
@@ -7075,6 +7095,13 @@ def _ensure_governance_tables(c: sqlite3.Cursor) -> None:
         )
     """)
     c.execute("""
+        CREATE TABLE IF NOT EXISTS governance_balance_snapshots (
+            proposal_id INTEGER NOT NULL,
+            wallet TEXT NOT NULL,
+            balance_rtc REAL NOT NULL,
+            snap_time INTEGER NOT NULL,
+            PRIMARY KEY (proposal_id, wallet)
+        );
         CREATE TABLE IF NOT EXISTS governance_votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             proposal_id INTEGER NOT NULL,
