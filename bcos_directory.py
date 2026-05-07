@@ -8,7 +8,7 @@ import os
 import hashlib
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'bcos-directory-dev-key'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or os.urandom(32).hex()
 
 DATABASE = 'bcos_directory.db'
 
@@ -476,10 +476,27 @@ def build_static():
 
 @app.route('/dist/<path:filename>')
 def serve_dist(filename):
-    """Serve files from dist directory"""
+    """Serve files from dist directory with path traversal protection"""
+    # Prevent path traversal: reject any filename containing '..' or starting with '/'
+    if '..' in filename or filename.startswith('/') or os.path.isabs(filename):
+        from flask import abort
+        abort(403, description='Invalid filename')
+    # Normalize and verify the resolved path stays within dist directory
+    dist_dir = os.path.realpath('dist')
+    safe_path = os.path.realpath(os.path.join('dist', filename))
+    if not safe_path.startswith(dist_dir + os.sep) and safe_path != dist_dir:
+        from flask import abort
+        abort(403, description='Access denied')
     return send_from_directory('dist', filename)
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
 
 if __name__ == '__main__':
     init_db()
     load_projects_from_json()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)
