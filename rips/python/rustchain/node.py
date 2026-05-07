@@ -364,7 +364,7 @@ def create_api_server(node: RustChainNode):
         return None
 
     app = Flask(__name__)
-    CORS(app)
+    CORS(app, origins=os.environ.get("NODE_ALLOWED_ORIGINS", "").split(",") if os.environ.get("NODE_ALLOWED_ORIGINS") else [])
 
     @app.route("/api/stats")
     def stats():

@@ -28,7 +28,7 @@ FAUCET_DB = "faucet_service/faucet.db"
 PORT = 8095
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=os.environ.get("ALLOWED_ORIGINS", "").split(",") if os.environ.get("ALLOWED_ORIGINS") else [])
 
 # --- Faucet Logic (Integrated) ---
 
