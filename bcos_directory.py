@@ -8,7 +8,12 @@ import os
 import hashlib
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'bcos-directory-dev-key'
+app.config['SECRET_KEY'] = os.environ.get('BCOS_SECRET_KEY')
+if not app.config['SECRET_KEY']:
+    import secrets
+    app.config['SECRET_KEY'] = secrets.token_hex(32)
+    import warnings
+    warnings.warn("BCOS_SECRET_KEY not set. Using random key — sessions will NOT persist across restarts.", UserWarning)
 
 DATABASE = 'bcos_directory.db'
 
@@ -482,4 +487,4 @@ def serve_dist(filename):
 if __name__ == '__main__':
     init_db()
     load_projects_from_json()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true', host='0.0.0.0', port=5000)
