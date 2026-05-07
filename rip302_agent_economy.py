@@ -161,7 +161,8 @@ def _get_balance_i64(c: sqlite3.Cursor, wallet_id: str) -> int:
     except Exception:
         pass
     # Legacy fallback
-    for col, key in (("balance_rtc", "miner_pk"), ("balance_rtc", "miner_id")):
+    # Security: use hardcoded column names instead of f-string interpolation
+    for col, key in [("balance_rtc", "miner_pk"), ("balance_rtc", "miner_id")]:
         try:
             row = c.execute(f"SELECT {col} FROM balances WHERE {key} = ?",
                             (wallet_id,)).fetchone()
@@ -208,6 +209,10 @@ def _update_reputation(c: sqlite3.Cursor, wallet_id: str, field: str,
         VALUES (?, ?, ?)
         ON CONFLICT(wallet_id) DO UPDATE SET last_active = ?
     """, (wallet_id, now, now, now))
+    # Security: validate field name against whitelist
+    allowed_fields = {"success_count", "failure_count", "response_time_ms", "uptime_seconds"}
+    if field not in allowed_fields:
+        raise ValueError(f"Invalid reputation field: {field}")
     c.execute(f"""
         UPDATE agent_reputation SET {field} = {field} + ? WHERE wallet_id = ?
     """, (increment, wallet_id))
