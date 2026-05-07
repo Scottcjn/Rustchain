@@ -201,7 +201,22 @@ def index():
 
 @app.route('/downloads/<path:filename>')
 def download_file(filename):
+    # Prevent path traversal: reject any filename containing '..' or starting with '/'
+    if '..' in filename or filename.startswith('/') or os.path.isabs(filename):
+        abort(403, description='Invalid filename')
+    # Normalize and verify the resolved path stays within DOWNLOAD_DIR
+    safe_path = os.path.realpath(os.path.join(DOWNLOAD_DIR, filename))
+    if not safe_path.startswith(os.path.realpath(DOWNLOAD_DIR) + os.sep) and safe_path != os.path.realpath(DOWNLOAD_DIR):
+        abort(403, description='Access denied')
     return send_from_directory(DOWNLOAD_DIR, filename, as_attachment=True)
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
 
 if __name__ == '__main__':
     print(f"🦀 RustChain Download Server starting on port 8090...")
