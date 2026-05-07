@@ -26,7 +26,7 @@ def check_health():
         data = resp.json()
         return data
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": "Internal error"}
 
 def get_miners():
     try:
@@ -34,7 +34,7 @@ def get_miners():
         resp.raise_for_status()
         return resp.json()
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": "Internal error"}
 
 def get_epoch():
     try:
@@ -42,7 +42,7 @@ def get_epoch():
         resp.raise_for_status()
         return resp.json()
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": "Internal error"}
 
 def print_health(data):
     if "error" in data:
