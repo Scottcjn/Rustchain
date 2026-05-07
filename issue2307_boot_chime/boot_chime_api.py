@@ -6,6 +6,7 @@ Integrates with RustChain node for miner attestation.
 """
 
 from flask import Flask, request, jsonify, send_file
+from werkzeug.utils import secure_filename
 from flask_cors import CORS
 import json
 import os
@@ -158,6 +159,15 @@ def submit_proof():
         audio_data = None
         if 'audio' in request.files:
             audio_file = request.files['audio']
+            # Security fix: validate filename and file type
+            filename = secure_filename(audio_file.filename or '')
+            if not filename.lower().endswith(('.wav', '.mp3', '.flac', '.ogg')):
+                return jsonify({'error': 'Invalid file type. Only audio files allowed.'}), 400
+            # Security fix: limit file size (max 10MB)
+            audio_file.seek(0, 2)
+            if audio_file.tell() > 10 * 1024 * 1024:
+                return jsonify({'error': 'File too large. Max size: 10MB.'}), 413
+            audio_file.seek(0)
             with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
                 audio_file.save(tmp)
                 tmp_path = tmp.name
@@ -238,6 +248,13 @@ def enroll_miner():
         audio_file = None
         if 'audio' in request.files:
             audio = request.files['audio']
+            filename = secure_filename(audio.filename or '')
+            if not filename.lower().endswith(('.wav', '.mp3', '.flac', '.ogg')):
+                return jsonify({'error': 'Invalid file type. Only audio files allowed.'}), 400
+            audio.seek(0, 2)
+            if audio.tell() > 10 * 1024 * 1024:
+                return jsonify({'error': 'File too large. Max size: 10MB.'}), 413
+            audio.seek(0)
             with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
                 audio.save(tmp)
                 audio_file = tmp.name
@@ -413,6 +430,13 @@ def analyze_audio():
             return jsonify({'error': 'audio file required'}), 400
         
         audio_file = request.files['audio']
+        filename = secure_filename(audio_file.filename or '')
+        if not filename.lower().endswith(('.wav', '.mp3', '.flac', '.ogg')):
+            return jsonify({'error': 'Invalid file type. Only audio files allowed.'}), 400
+        audio_file.seek(0, 2)
+        if audio_file.tell() > 10 * 1024 * 1024:
+            return jsonify({'error': 'File too large. Max size: 10MB.'}), 413
+        audio_file.seek(0)
         
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
             audio_file.save(tmp)
