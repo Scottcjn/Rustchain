@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """
 BoTTube Agent Memory API Routes
@@ -107,7 +108,7 @@ def record_content() -> tuple:
         }), 201
 
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": "invalid_request"}), 400
     except Exception as e:
         current_app.logger.error(f"Record content error: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -151,7 +152,7 @@ def get_recent() -> tuple:
         })
 
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": "invalid_request"}), 400
     except Exception as e:
         current_app.logger.error(f"Get recent error: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -198,7 +199,7 @@ def search_topic() -> tuple:
         })
 
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": "invalid_request"}), 400
     except Exception as e:
         current_app.logger.error(f"Search error: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -253,7 +254,7 @@ def search_tags() -> tuple:
         })
 
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": "invalid_request"}), 400
     except Exception as e:
         current_app.logger.error(f"Tags search error: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -315,7 +316,7 @@ def get_context() -> tuple:
         })
 
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": "invalid_request"}), 400
     except Exception as e:
         current_app.logger.error(f"Context error: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -363,7 +364,7 @@ def generate_reference() -> tuple:
         })
 
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": "invalid_request"}), 400
     except Exception as e:
         current_app.logger.error(f"Generate reference error: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -422,7 +423,7 @@ def link_content() -> tuple:
         return jsonify({"success": True})
 
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": "invalid_request"}), 400
     except Exception as e:
         current_app.logger.error(f"Link content error: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -460,7 +461,7 @@ def get_stats() -> tuple:
         })
 
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": "invalid_request"}), 400
     except Exception as e:
         current_app.logger.error(f"Stats error: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -471,6 +472,7 @@ def clear_memory() -> tuple:
     """
     Clear all memory for an agent.
 
+    Requires X-API-Key header for authentication.
     Query Parameters:
         agent_id - Agent identifier (required)
 
@@ -480,6 +482,11 @@ def clear_memory() -> tuple:
             "deleted_count": 42
         }
     """
+    api_key = request.headers.get("X-API-Key", "")
+    expected_key = os.environ.get("MEMORY_API_KEY", "")
+    if expected_key and api_key != expected_key:
+        return jsonify({"error": "unauthorized"}), 401
+
     try:
         agent_id = _validate_agent_id(request.args.get("agent_id"))
 
@@ -492,7 +499,7 @@ def clear_memory() -> tuple:
         })
 
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": "invalid_request"}), 400
     except Exception as e:
         current_app.logger.error(f"Clear memory error: {e}")
         return jsonify({"error": "Internal server error"}), 500
