@@ -109,6 +109,8 @@ class RustChainSyncManager:
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
+            if table_name not in self.SYNC_TABLES:
+                return None
             cursor.execute(f"SELECT * FROM {table_name} ORDER BY {pk} ASC")
             rows = cursor.fetchall()
 
@@ -278,6 +280,8 @@ class RustChainSyncManager:
             return 0
         conn = self._get_connection()
         try:
+            if table_name not in self.SYNC_TABLES:
+                return 0
             cursor = conn.cursor()
             cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
             count = cursor.fetchone()[0]
