@@ -519,10 +519,11 @@ def generate_qr(machine_id: str):
     # Generate QR code
     passport_url = f"{request.host_url.rstrip('/')}passport/{machine_id}"
     
-    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-        tmp_path = tmp.name
-    
+    tmp_path = None
     try:
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+            tmp_path = tmp.name
+        
         success, msg = generate_qr_code(passport_url, tmp_path)
         
         if not success:
