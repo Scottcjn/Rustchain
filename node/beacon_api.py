@@ -730,6 +730,12 @@ def claim_bounty(bounty_id):
             return jsonify({'error': 'Missing agent_id'}), 400
         
         db = get_db()
+        bounty = db.execute("SELECT state FROM beacon_bounties WHERE id = ?", (bounty_id,)).fetchone()
+        if not bounty:
+            return jsonify({'error': 'Bounty not found'}), 404
+        if bounty['state'] != 'open':
+            return jsonify({'error': f'Bounty cannot be claimed - current state: {bounty["state"]}'}), 409
+        
         db.execute(
             "UPDATE beacon_bounties SET state = 'claimed', claimant_agent = ?, updated_at = ? WHERE id = ?",
             (agent_id, int(time.time()), bounty_id)

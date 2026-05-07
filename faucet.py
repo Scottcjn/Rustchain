@@ -13,12 +13,14 @@ import sqlite3
 import time
 import os
 from datetime import datetime, timedelta
+import threading
 from flask import Flask, request, jsonify, render_template_string
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 DATABASE = 'faucet.db'
+_drip_lock = threading.Lock()
 
 # Rate limiting settings (per 24 hours)
 MAX_DRIP_AMOUNT = 0.5  # RTC
@@ -318,27 +320,36 @@ def drip():
     
     ip = get_client_ip()
 
-    # Check rate limit for IP
-    if not can_drip(ip):
-        next_available = get_next_available(ip)
-        return jsonify({
-            'ok': False,
-            'error': 'IP rate limit exceeded',
-            'next_available': next_available
-        }), 429
+    # Use lock to prevent race conditions on rate limiting (TOCTOU protection)
+    with _drip_lock:
+        # Check rate limit for IP
+        if not can_drip(ip):
+            next_available = get_next_available(ip)
+            return jsonify({
+                'ok': False,
+                'error': 'IP rate limit exceeded',
+                'next_available': next_available
+            }), 429
 
-    # Check rate limit for Wallet
-    if not can_drip(wallet, is_wallet=True):
-        next_available = get_next_available(wallet, is_wallet=True)
+        # Check rate limit for Wallet
+        if not can_drip(wallet, is_wallet=True):
+            next_available = get_next_available(wallet, is_wallet=True)
+            return jsonify({
+                'ok': False,
+                'error': 'Wallet rate limit exceeded',
+                'next_available': next_available
+            }), 429
+        # Record the drip (in production, this would actually transfer tokens)
+        # For now, we simulate the drip
+        amount = MAX_DRIP_AMOUNT
+        record_drip(wallet, ip, amount)
+    
         return jsonify({
-            'ok': False,
-            'error': 'Wallet rate limit exceeded',
-            'next_available': next_available
-        }), 429
-    # Record the drip (in production, this would actually transfer tokens)
-    # For now, we simulate the drip
-    amount = MAX_DRIP_AMOUNT
-    record_drip(wallet, ip, amount)
+            'ok': True,
+            'amount': amount,
+            'wallet': wallet,
+            'next_available': (datetime.now() + timedelta(hours=RATE_LIMIT_HOURS)).isoformat()
+        })
     
     return jsonify({
         'ok': True,
