@@ -499,7 +499,7 @@ class ProofOfIron:
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
             
-            features_data = pickle.dumps({
+            features_data = json.dumps({
                 'mfcc_mean': features.mfcc_mean.tolist(),
                 'mfcc_std': features.mfcc_std.tolist(),
                 'spectral_centroid': features.spectral_centroid,
@@ -536,7 +536,7 @@ class ProofOfIron:
             conn.close()
             
             if row:
-                data = pickle.loads(row[0])
+                data = json.loads(row[0])
                 return FingerprintFeatures(
                     mfcc_mean=np.array(data['mfcc_mean']),
                     mfcc_std=np.array(data['mfcc_std']),
