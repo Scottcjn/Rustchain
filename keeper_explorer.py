@@ -369,4 +369,4 @@ RETRO_HTML = """
 if __name__ == '__main__':
     import hashlib # needed for mock hash
     print(f"[*] Starting Fossil-Punk Keeper Explorer on port {PORT}...")
-    app.run(host='0.0.0.0', port=PORT, debug=True)
+    app.run(host='0.0.0.0', port=PORT, debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true')

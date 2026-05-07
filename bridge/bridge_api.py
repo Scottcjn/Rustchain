@@ -621,4 +621,4 @@ if __name__ == "__main__":
     app = Flask(__name__)
     register_bridge_routes(app)
     print("Bridge dev server on http://0.0.0.0:8096")
-    app.run(host="0.0.0.0", port=8096, debug=True)
+    app.run(host="0.0.0.0", port=8096, debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true')
