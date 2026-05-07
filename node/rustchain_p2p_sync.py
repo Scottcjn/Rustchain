@@ -4,6 +4,7 @@ RustChain v2 - P2P Synchronization Module
 Enables multi-node blockchain synchronization with peer discovery and block gossip
 """
 
+import ipaddress
 import requests
 import sqlite3
 import time
@@ -47,15 +48,42 @@ class PeerManager:
             conn.commit()
 
     def add_peer(self, peer_url: str) -> bool:
-        """Add a new peer to the network"""
+        """Add a new peer to the network with SSRF protection"""
         if peer_url == self.local_url:
             return False  # Don't add self
 
         try:
             # Extract host and port
-            parts = peer_url.replace("http://", "").replace("https://", "").split(":")
-            peer_host = parts[0]
-            peer_port = int(parts[1]) if len(parts) > 1 else 8088
+            clean_url = peer_url.replace("http://", "").replace("https://", "")
+            # Handle IPv6 addresses in brackets
+            if clean_url.startswith('['):
+                bracket_end = clean_url.index(']')
+                peer_host = clean_url[1:bracket_end]
+                rest = clean_url[bracket_end+1:]
+                peer_port = int(rest.lstrip(':')) if rest.lstrip(':') else 8088
+            else:
+                parts = clean_url.split(":")
+                peer_host = parts[0]
+                peer_port = int(parts[1]) if len(parts) > 1 else 8088
+
+            # FIX: SSRF prevention - reject private/reserved IP ranges
+            try:
+                ip = ipaddress.ip_address(peer_host)
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                    print(f"[P2P/SECURITY] Rejected peer {peer_url}: private/reserved IP ({peer_host})")
+                    return False
+            except ValueError:
+                # It's a hostname, not an IP - resolve and check
+                import socket
+                try:
+                    resolved = socket.getaddrinfo(peer_host, None)
+                    for fam, _, _, _, sockaddr in resolved:
+                        ip = ipaddress.ip_address(sockaddr[0])
+                        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                            print(f"[P2P/SECURITY] Rejected peer {peer_url}: resolves to private IP ({sockaddr[0]})")
+                            return False
+                except (socket.gaierror, OSError):
+                    pass  # DNS resolution failed, allow (will fail connection attempt later)
 
             with self.lock:
                 with sqlite3.connect(self.db_path) as conn:
