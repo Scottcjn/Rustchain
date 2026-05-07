@@ -26,6 +26,7 @@ import time
 import uuid
 import json
 import os
+import hmac
 import logging
 from functools import wraps
 
@@ -406,9 +407,23 @@ def register_routes(app):
     """Register GPU Render Protocol routes with a Flask app."""
     protocol = GPURenderProtocol()
 
+
+def _require_api_key():
+    """Validate X-API-Key header for escrow endpoints."""
+    api_key = request.headers.get("X-API-Key", "")
+    expected_key = os.environ.get("RC_RENDER_API_KEY", "")
+    if not expected_key:
+        return None, (jsonify({"error": "RC_RENDER_API_KEY not configured"}), 503)
+    if not hmac.compare_digest(api_key, expected_key):
+        return None, (jsonify({"error": "Unauthorized"}), 401)
+    return api_key, None
+
     @app.route("/gpu/attest", methods=["POST"])
     def gpu_attest():
         from flask import request, jsonify
+        _, err = _require_api_key()
+        if err:
+            return err
         data = request.get_json(force=True)
         miner_id = data.get("miner_id")
         if not miner_id:
@@ -430,6 +445,9 @@ def register_routes(app):
     @app.route("/llm/escrow", methods=["POST"])
     def create_escrow():
         from flask import request, jsonify
+        _, err = _require_api_key()
+        if err:
+            return err
         data = request.get_json(force=True)
         # Infer job_type from path
         path = request.path
@@ -455,16 +473,28 @@ def register_routes(app):
     @app.route("/llm/release", methods=["POST"])
     def release_escrow():
         from flask import request, jsonify
+        _, err = _require_api_key()
+        if err:
+            return err
         data = request.get_json(force=True)
-        result = protocol.release_escrow(data.get("job_id", ""))
+        job_id = data.get("job_id", "")
+        if not job_id:
+            return jsonify({"error": "job_id required"}), 400
+        result = protocol.release_escrow(job_id)
         status_code = 200 if "error" not in result else 400
         return jsonify(result), status_code
 
     @app.route("/render/refund", methods=["POST"])
     def refund_escrow():
         from flask import request, jsonify
+        _, err = _require_api_key()
+        if err:
+            return err
         data = request.get_json(force=True)
-        result = protocol.refund_escrow(data.get("job_id", ""))
+        job_id = data.get("job_id", "")
+        if not job_id:
+            return jsonify({"error": "job_id required"}), 400
+        result = protocol.refund_escrow(job_id)
         status_code = 200 if "error" not in result else 400
         return jsonify(result), status_code
 
