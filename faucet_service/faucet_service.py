@@ -99,8 +99,8 @@ DEFAULT_CONFIG = {
         'backup_count': 5
     },
     'security': {
-        'cors_origins': ['*'],
-        'csrf_enabled': False,
+        'cors_origins': os.environ.get('FAUCET_CORS_ORIGINS', '').split(',') if os.environ.get('FAUCET_CORS_ORIGINS') else [],  # Restrict by default
+        'csrf_enabled': True,  # Enable CSRF by default for security
         'request_timeout': 30,
         'max_body_size': 1048576
     },
