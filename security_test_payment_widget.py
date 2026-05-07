@@ -10,7 +10,7 @@ import json
 from urllib.parse import unquote
 
 app = Flask(__name__)
-app.secret_key = 'test_key_for_security_testing_only'
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(32).hex())
 
 DB_PATH = 'rustchain.db'
 
@@ -272,4 +272,4 @@ def admin_login():
 if __name__ == '__main__':
     if not os.path.exists(DB_PATH):
         init_db()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)
