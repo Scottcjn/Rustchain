@@ -48,8 +48,11 @@ SLOTS_PER_EPOCH = 43200  # default assumption; overridden if API provides it
 
 def _ssl_ctx() -> ssl.SSLContext:
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    # Certificate verification enabled for security
+    # To skip (not recommended), set RC_SKIP_TLS_VERIFY=1
+    if os.environ.get("RC_SKIP_TLS_VERIFY", "0") == "1":
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
     return ctx
 
 
