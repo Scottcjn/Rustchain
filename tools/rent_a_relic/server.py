@@ -39,6 +39,7 @@ from tools.rent_a_relic.provenance import generate_receipt, verify_receipt
 
 app = Flask(__name__)
 DB_PATH = "rent_a_relic.db"
+RELIC_API_SECRET = os.environ.get("RELIC_API_SECRET", "relic-default-secret")
 
 
 def get_db_path() -> str:
@@ -202,9 +203,49 @@ def _expire_stale_reservations() -> None:
             """, (now, row["session_id"]))
 
 
+def verify_relic_auth() -> bool:
+    """Verify API request has valid HMAC signature."""
+    auth_header = request.headers.get("X-Relic-Auth", "")
+    if not auth_header:
+        return False
+    
+    try:
+        timestamp, signature = auth_header.split(":")
+    except ValueError:
+        return False
+    
+    # Reject requests older than 5 minutes (prevent replay)
+    if abs(time.time() - float(timestamp)) > 300:
+        return False
+    
+    # Build message to verify
+    body = request.get_data()
+    message = f"{timestamp}:{request.method}:{request.path}:{body.decode()}"
+    
+    expected = hmac.new(
+        RELIC_API_SECRET.encode(),
+        message.encode(),
+        hashlib.sha256
+    ).hexdigest()
+    
+    return hmac.compare_digest(expected, signature)
+
 @app.before_request
 def sweep_expired() -> None:
     _expire_stale_reservations()
+    
+    # Skip auth for read-only endpoints
+    if request.method == "GET" and request.path not in ("/relic/reservation/",):
+        return
+    
+    # Skip auth for health/metadata
+    if request.path in ("/relic/available", "/relic/machines", "/relic/leaderboard"):
+        return
+    
+    # Require auth for write operations
+    if request.method in ("POST", "PUT", "DELETE"):
+        if not verify_relic_auth():
+            return jsonify({"error": "unauthorized", "message": "Valid X-Relic-Auth header required"}), 401
 
 
 @app.get("/relic/available")
