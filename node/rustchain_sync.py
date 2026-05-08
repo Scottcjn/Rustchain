@@ -37,6 +37,22 @@ class RustChainSyncManager:
         self.logger = logging.getLogger("RustChainSync")
         self._schema_cache: Dict[str, Dict[str, Any]] = {}
 
+    
+    def _validate_table_name(self, table_name: str) -> str:
+        """Validate table name against SQL injection."""
+        import re
+        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table_name):
+            raise ValueError(f"Invalid table name: {table_name}")
+        return table_name
+
+    def _validate_column_name(self, col_name: str) -> str:
+        """Validate column name against SQL injection."""
+        import re
+        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', col_name):
+            raise ValueError(f"Invalid column name: {col_name}")
+        return col_name
+
+
     def _get_connection(self):
         """Open and return a new SQLite connection to the node database.
 
@@ -64,7 +80,7 @@ class RustChainSyncManager:
             if not self._table_exists(conn, table_name):
                 return None
 
-            rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+            rows = conn.execute(f"PRAGMA table_info({self._validate_table_name(table_name)})").fetchall()
             if not rows:
                 return None
 
@@ -109,7 +125,7 @@ class RustChainSyncManager:
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute(f"SELECT * FROM {table_name} ORDER BY {pk} ASC")
+            cursor.execute(f"SELECT * FROM {self._validate_table_name(table_name)} ORDER BY {self._validate_column_name(pk)} ASC")
             rows = cursor.fetchall()
 
             hasher = hashlib.sha256()
@@ -147,7 +163,7 @@ class RustChainSyncManager:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            f"SELECT * FROM {table_name} ORDER BY {pk} ASC LIMIT ? OFFSET ?",
+            f"SELECT * FROM {self._validate_table_name(table_name)} ORDER BY {self._validate_column_name(pk)} ASC LIMIT ? OFFSET ?",
             (int(limit), int(offset)),
         )
         data = [dict(row) for row in cursor.fetchall()]
@@ -196,7 +212,7 @@ class RustChainSyncManager:
                 # Conflict resolution: Latest timestamp wins for attestations
                 if table_name == "miner_attest_recent":
                     if "last_attest" in sanitized:
-                        cursor.execute(f"SELECT last_attest FROM {table_name} WHERE {pk} = ?", (sanitized[pk],))
+                        cursor.execute(f"SELECT last_attest FROM {self._validate_table_name(table_name)} WHERE {self._validate_column_name(pk)} = ?", (sanitized[pk],))
                         local_row = cursor.fetchone()
                         if local_row and local_row["last_attest"] is not None and local_row["last_attest"] >= sanitized["last_attest"]:
                             continue
@@ -216,7 +232,7 @@ class RustChainSyncManager:
 
                     if candidate_balance_col and candidate_balance_col in sanitized:
                         cursor.execute(
-                            f"SELECT {candidate_balance_col} FROM {table_name} WHERE {pk} = ?",
+                            f"SELECT {self._validate_column_name(candidate_balance_col)} FROM {self._validate_table_name(table_name)} WHERE {self._validate_column_name(pk)} = ?",
                             (sanitized[pk],),
                         )
                         local_row = cursor.fetchone()
@@ -279,7 +295,7 @@ class RustChainSyncManager:
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+            cursor.execute(f"SELECT COUNT(*) FROM {self._validate_table_name(table_name)}")
             count = cursor.fetchone()[0]
             return int(count)
         finally:
