@@ -8,6 +8,14 @@ import os
 import hashlib
 
 app = Flask(__name__)
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Content-Security-Policy'] = "default-src 'self'"
+    return response
+
 app.config['SECRET_KEY'] = 'bcos-directory-dev-key'
 
 DATABASE = 'bcos_directory.db'
@@ -482,4 +490,4 @@ def serve_dist(filename):
 if __name__ == '__main__':
     init_db()
     load_projects_from_json()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)
