@@ -579,7 +579,7 @@ def create_p2p_auth_middleware(auth_manager: P2PAuthManager):
             if not signature or not timestamp:
                 return jsonify({'error': 'Missing authentication headers'}), 401
 
-            body = request.get_data().decode()
+            body = request.get_data(1048576).decode()  # 1MB limit
 
             if not auth_manager.verify_peer_signature(signature, body, timestamp):
                 return jsonify({'error': 'Invalid signature'}), 401
