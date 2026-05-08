@@ -43,10 +43,16 @@ def register_gpu_render_endpoints(app, db_path, admin_key):
     # 1. GPU Node Attestation (Extension)
     @app.route("/api/gpu/attest", methods=["POST"])
     def gpu_attest():
+        import hmac, os
         data = request.get_json(silent=True) or {}
         miner_id = data.get("miner_id")
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
+        # Auth check: require admin key
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        provided_key = request.headers.get("X-Admin-Key", "")
+        if admin_key and not hmac.compare_digest(provided_key, admin_key):
+            return jsonify({"error": "Unauthorized"}), 401
 
         # In a real node, we'd verify the signed hardware fingerprint here.
         # For the bounty, we implement the protocol storage and API.

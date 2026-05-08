@@ -408,11 +408,17 @@ def register_routes(app):
 
     @app.route("/gpu/attest", methods=["POST"])
     def gpu_attest():
+        import hmac, os
         from flask import request, jsonify
         data = request.get_json(force=True)
         miner_id = data.get("miner_id")
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
+        # Auth check: require admin key or valid signature
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        provided_key = request.headers.get("X-Admin-Key", "")
+        if admin_key and not hmac.compare_digest(provided_key, admin_key):
+            return jsonify({"error": "Unauthorized"}), 401
         result = protocol.attest_gpu(miner_id, data)
         status_code = 200 if "error" not in result else 400
         return jsonify(result), status_code

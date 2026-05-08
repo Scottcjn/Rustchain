@@ -372,6 +372,12 @@ def add_attestation(machine_id: str):
     
     Typically called automatically during mining attestation.
     """
+    import hmac, os
+    # Auth check: require admin key
+    admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    provided_key = request.headers.get("X-Admin-Key", "")
+    if admin_key and not hmac.compare_digest(provided_key, admin_key):
+        return jsonify({'ok': False, 'error': 'unauthorized'}), 401
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
