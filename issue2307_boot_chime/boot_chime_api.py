@@ -54,6 +54,25 @@ fingerprint_extractor = AcousticFingerprint()
 # ============= Health & Info =============
 
 @app.route('/health', methods=['GET'])
+
+def _validate_and_save_audio(audio_file):
+    """Validate audio file size and type before saving."""
+    # Check file size (max 10MB for audio)
+    audio_file.seek(0, 2)  # Seek to end
+    size = audio_file.tell()
+    audio_file.seek(0)  # Reset
+    if size > 10 * 1024 * 1024:
+        raise ValueError("Audio file too large (max 10MB)")
+    
+    # Check file extension
+    if audio_file.filename and not audio_file.filename.lower().endswith(('.wav', '.mp3', '.ogg', '.flac')):
+        raise ValueError("Invalid audio format (wav, mp3, ogg, flac only)")
+    
+    import tempfile
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
+        audio_file.save(tmp)
+        return tmp.name
+
 def health_check():
     """Health check endpoint"""
     return jsonify({
@@ -158,9 +177,7 @@ def submit_proof():
         audio_data = None
         if 'audio' in request.files:
             audio_file = request.files['audio']
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
-                audio_file.save(tmp)
-                tmp_path = tmp.name
+            tmp_path = _validate_and_save_audio(audio_file)
             
             try:
                 captured = audio_capture.capture_from_file(tmp_path)
