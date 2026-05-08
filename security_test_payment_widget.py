@@ -114,9 +114,16 @@ def index():
 
 @app.route('/widget')
 def widget():
-    amount = request.args.get('amount', '0')
+    try:
+        amount = float(request.args.get('amount', '0'))
+    except (ValueError, TypeError):
+        return "Invalid amount", 400
     recipient = request.args.get('recipient', '')
+    if len(recipient) > 100:
+        return "Recipient too long", 400
     memo = request.args.get('memo', '')
+    if len(memo) > 500:
+        return "Memo too long", 400
     origin = request.headers.get('Origin', 'unknown')
     
     with sqlite3.connect(DB_PATH) as conn:

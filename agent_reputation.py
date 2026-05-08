@@ -331,7 +331,12 @@ def check_eligibility():
     Returns whether an agent is eligible to claim a job of given value.
     """
     agent_id  = request.args.get("agent_id", "").strip()
-    job_value = float(request.args.get("job_value", 0))
+    try:
+        job_value = float(request.args.get("job_value", 0))
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid job_value"}), 400
+    if job_value < 0:
+        return jsonify({"error": "job_value must be non-negative"}), 400
 
     if not agent_id:
         return jsonify({"error": "agent_id required"}), 400
