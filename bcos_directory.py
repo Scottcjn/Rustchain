@@ -5,10 +5,11 @@ from flask import Flask, render_template_string, request, jsonify, send_from_dir
 import sqlite3
 import json
 import os
+import secrets
 import hashlib
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'bcos-directory-dev-key'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', sec.token_hex(32))
 
 DATABASE = 'bcos_directory.db'
 

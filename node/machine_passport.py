@@ -848,7 +848,10 @@ def main():
             print("Error: --machine-id and --data required")
             sys.exit(1)
         
-        updates = json.loads(args.data)
+        try:
+            updates = json.loads(args.data)
+        except (json.JSONDecodeError, TypeError):
+            updates = {}
         success, msg = ledger.update_passport(args.machine_id, updates)
         print(f"{'✓' if success else '✗'} {msg}")
         sys.exit(0 if success else 1)
@@ -877,7 +880,10 @@ def main():
             print("Error: --machine-id required")
             sys.exit(1)
         
-        data = json.loads(args.data) if args.data else {}
+        try:
+            data = json.loads(args.data) if args.data else {}
+        except (json.JSONDecodeError, TypeError):
+            data = {}
         success, msg = ledger.add_attestation(
             machine_id=args.machine_id,
             attestation_ts=data.get('attestation_ts', int(time.time())),
@@ -896,7 +902,10 @@ def main():
             print("Error: --machine-id required")
             sys.exit(1)
         
-        data = json.loads(args.data) if args.data else {}
+        try:
+            data = json.loads(args.data) if args.data else {}
+        except (json.JSONDecodeError, TypeError):
+            data = {}
         success, msg = ledger.add_benchmark(
             machine_id=args.machine_id,
             benchmark_ts=data.get('benchmark_ts', int(time.time())),

@@ -136,9 +136,9 @@ def index():
 
 @app.route('/register', methods=['POST'])
 def register():
-    github_username = request.form['github_username']
-    contributor_type = request.form['contributor_type']
-    rtc_wallet = request.form['rtc_wallet']
+    github_username = (request.form.get('github_username', '') or '')[:100]
+    contributor_type = (request.form.get('contributor_type', '') or '')[:50]
+    rtc_wallet = (request.form.get('rtc_wallet', '') or '')[:100]
     contribution_history = request.form.get('contribution_history', '')
     
     try:

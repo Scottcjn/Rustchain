@@ -512,7 +512,10 @@ def _update_review_record(
 
 
 def _rebuild_review_row(review_id: int, request_json: str, db_path: str | None = None) -> dict[str, Any]:
-    data = json.loads(request_json)
+    try:
+        data = json.loads(request_json)
+    except (json.JSONDecodeError, TypeError):
+        data = {}
     prompt = _build_prompt(data)
     try:
         raw_review_text, model_used = _call_ollama(prompt)
