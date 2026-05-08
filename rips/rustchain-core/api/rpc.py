@@ -70,7 +70,7 @@ class RpcRegistry:
             result = handler(params)
             return ApiResponse(success=True, data=result)
         except Exception as e:
-            return ApiResponse(success=False, error=str(e))
+            return ApiResponse(success=False, error="Internal server error")
 
 
 # =============================================================================

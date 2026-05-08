@@ -142,13 +142,13 @@ class BoTTubeClient:
             return {"error": "Request timeout"}
         except requests.exceptions.ConnectionError as e:
             logger.error(f"Connection error to {url}: {e}")
-            return {"error": f"Connection failed: {str(e)}"}
+            return {"error": "Connection failed"}; import logging; logging.error(f"Connection failed: {e}")
         except requests.exceptions.HTTPError as e:
             logger.error(f"HTTP error from {url}: {e}")
             return {"error": f"HTTP error: {e.response.status_code}"}
         except Exception as e:
             logger.error(f"Unexpected error requesting {url}: {e}")
-            return {"error": str(e)}
+            return {"error": "Internal server error"}; import logging; logging.error(str(e))
 
     def _post(self, endpoint: str, json_data: Optional[Dict] = None) -> Dict[str, Any]:
         """Make POST request to API."""
@@ -162,13 +162,13 @@ class BoTTubeClient:
             return {"error": "Request timeout"}
         except requests.exceptions.ConnectionError as e:
             logger.error(f"Connection error to {url}: {e}")
-            return {"error": f"Connection failed: {str(e)}"}
+            return {"error": "Connection failed"}; import logging; logging.error(f"Connection failed: {e}")
         except requests.exceptions.HTTPError as e:
             logger.error(f"HTTP error from {url}: {e}")
             return {"error": f"HTTP error: {e.response.status_code}"}
         except Exception as e:
             logger.error(f"Unexpected error requesting {url}: {e}")
-            return {"error": str(e)}
+            return {"error": "Internal server error"}; import logging; logging.error(str(e))
 
     def health(self) -> Dict[str, Any]:
         """Get API health status."""
