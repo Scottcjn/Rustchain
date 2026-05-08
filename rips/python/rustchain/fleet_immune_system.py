@@ -385,7 +385,7 @@ def record_fleet_signals(db_path_or_conn, miner: str, device: dict,
         record_fleet_signals_from_request(db, miner, epoch, ip_address,
                                           attest_ts, fingerprint)
     except Exception as e:
-        print(f"[RIP-201] Fleet signal recording error: {e}")
+        print("[RIP-201] Fleet signal recording error")
     finally:
         if own:
             db.close()

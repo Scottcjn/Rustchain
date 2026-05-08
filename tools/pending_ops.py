@@ -77,7 +77,7 @@ def main(argv: list[str]) -> int:
         print(f"HTTP {e.code}: {body}", file=sys.stderr)
         return 1
     except Exception as e:
-        print(f"error: {e}", file=sys.stderr)
+        print("error", file=sys.stderr)
         return 1
 
 

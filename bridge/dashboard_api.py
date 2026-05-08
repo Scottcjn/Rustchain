@@ -367,7 +367,7 @@ def get_wrtc_price():
                             "last_updated": int(time.time()),
                         })
         except Exception as e:
-            print(f"[dashboard] Raydium fetch error: {e}")
+            print("[dashboard] Raydium fetch error")
 
     # Fallback to DexScreener
     if DEXSCREENER_API_URL:
@@ -393,7 +393,7 @@ def get_wrtc_price():
                         "last_updated": int(time.time()),
                     })
         except Exception as e:
-            print(f"[dashboard] DexScreener fetch error: {e}")
+            print("[dashboard] DexScreener fetch error")
 
     return jsonify({
         "price_usd": 0,

@@ -306,7 +306,7 @@ class MessageHandler:
             try:
                 handler(message)
             except Exception as e:
-                print(f"Handler error: {e}")
+                print("Handler error")
 
         return True
 

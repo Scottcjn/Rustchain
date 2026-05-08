@@ -157,7 +157,7 @@ def poller_loop():
         try:
             poll_all()
         except Exception as e:
-            print(f"Poller error: {e}")
+            print("Poller error")
         time.sleep(POLL_INTERVAL)
 
 
