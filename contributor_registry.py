@@ -139,7 +139,7 @@ def register():
     github_username = request.form['github_username']
     contributor_type = request.form['contributor_type']
     rtc_wallet = request.form['rtc_wallet']
-    contribution_history = request.form.get('contribution_history', '')
+    contribution_history = (request.form.get('contribution_history', '') or '')[:500]
     
     try:
         with sqlite3.connect(DB_PATH) as conn:
