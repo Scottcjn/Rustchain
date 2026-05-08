@@ -86,7 +86,7 @@ def _run_cmd(cmd: List[str], timeout: int = 120) -> Tuple[int, str, str]:
     except subprocess.TimeoutExpired:
         return -2, "", f"timeout after {timeout}s: {' '.join(cmd)}"
     except Exception as e:
-        return -3, "", str(e)
+        return -3, "", "Internal error"
 
 
 def _git_head_sha(repo_path: str) -> str:

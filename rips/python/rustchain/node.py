@@ -250,7 +250,7 @@ class RustChainNode:
                     anti_emulation_hash=anti_emulation_hash,
                 )
             except Exception as e:
-                return {"success": False, "error": str(e)}
+                return {"success": False, "error": "Internal error"}
 
     def _detect_hardware_profile(self, hardware: HardwareInfo) -> str:
         """Detect hardware profile from HardwareInfo"""

@@ -43,7 +43,7 @@ class BountyVerifier:
                 "repos": scott_stars[:10]  # Sample
             }
         except GithubException as e:
-            return {"error": str(e), "count": 0}
+            return {"error": "Verification failed", "count": 0}
 
     def verify_following(self, username: str) -> bool:
         """Check if user follows Scottcjn."""
@@ -67,7 +67,7 @@ class BountyVerifier:
                 return {"exists": True, "balance": data.get("balance", 0)}
             return {"exists": False, "error": resp.status_code}
         except Exception as e:
-            return {"exists": False, "error": str(e)}
+            return {"exists": False, "error": "Check failed"}
 
     def ai_quality_check(self, content: str) -> Dict[str, Any]:
         """Use Gemini to evaluate article/contribution quality."""
