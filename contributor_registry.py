@@ -136,10 +136,15 @@ def index():
 
 @app.route('/register', methods=['POST'])
 def register():
-    github_username = request.form['github_username']
-    contributor_type = request.form['contributor_type']
-    rtc_wallet = request.form['rtc_wallet']
+    github_username = request.form.get('github_username', '').strip()
+    contributor_type = request.form.get('contributor_type', '').strip()
+    rtc_wallet = request.form.get('rtc_wallet', '').strip()
     contribution_history = request.form.get('contribution_history', '')
+    
+    if not github_username or not contributor_type or not rtc_wallet:
+        return {'error': 'Missing required fields'}, 400
+    if len(github_username) > 64 or len(contributor_type) > 32:
+        return {'error': 'Field too long'}, 400
     
     try:
         with sqlite3.connect(DB_PATH) as conn:
