@@ -151,7 +151,7 @@ def fetch(url: str, timeout: int = TIMEOUT_SECONDS) -> Optional[dict]:
     """Fetch JSON from a URL. Returns None on failure."""
     ctx = __import__("ssl").create_default_context()
     ctx.check_hostname = False
-    ctx.verify_mode = __import__("ssl").CERT_NONE
+    ctx.verify_mode = ssl.CERT_REQUIRED
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "rustchain-ledger-verify/1.0"})
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:

@@ -32,7 +32,7 @@ def create_ssl_context():
     """Create SSL context that accepts self-signed certs."""
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    ctx.verify_mode = ssl.CERT_REQUIRED
     return ctx
 
 

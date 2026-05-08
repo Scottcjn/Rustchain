@@ -627,7 +627,7 @@ def sync_bounties():
             import logging
             logging.warning('[beacon_api] SSL verification disabled via RC_DISABLE_SSL_VERIFY — not recommended for production')
             ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
+            ctx.verify_mode = ssl.CERT_REQUIRED
         
         for repo in repos:
             try:

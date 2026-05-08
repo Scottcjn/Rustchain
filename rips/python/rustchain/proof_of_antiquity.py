@@ -404,11 +404,11 @@ def select_block_validator(proofs: List[ValidatedProof]) -> Optional[ValidatedPr
     if not proofs:
         return None
 
-    import random
+    import secrets
 
     total_as = sum(p.antiquity_score for p in proofs)
     if total_as == 0:
-        return random.choice(proofs)
+        return proofs[secrets.randbelow(len(proofs))]
 
     # Weighted random selection via cumulative distribution: pick a random point
     # on [0, total_as] and return the proof whose range contains it.

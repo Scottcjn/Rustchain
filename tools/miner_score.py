@@ -3,7 +3,7 @@
 import json, urllib.request, ssl, os, sys
 NODE = os.environ.get("RUSTCHAIN_NODE", "https://rustchain.org")
 def api(p):
-    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_REQUIRED
     try: return json.loads(urllib.request.urlopen(f"{NODE}{p}", timeout=10, context=ctx).read())
     except: return {}
 def score(miner_id=None):
