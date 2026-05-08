@@ -14,6 +14,7 @@ from flask import Flask, send_from_directory, render_template_string, jsonify, r
 import requests
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max payload
 
 DOWNLOAD_DIR = "/root/rustchain/downloads"
 

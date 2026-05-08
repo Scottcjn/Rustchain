@@ -619,6 +619,7 @@ def register_bridge_routes(app: Flask):
 # ─── Standalone dev server ─────────────────────────────────────────────────────
 if __name__ == "__main__":
     app = Flask(__name__)
+    app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB max payload
     register_bridge_routes(app)
     print("Bridge dev server on http://0.0.0.0:8096")
     app.run(host="0.0.0.0", port=8096, debug=True)
