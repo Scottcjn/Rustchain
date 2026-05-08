@@ -680,7 +680,11 @@ def format_uptime(seconds):
 @app.route('/downloads/<path:filename>')
 def download_file(filename):
     from flask import send_from_directory
-    return send_from_directory(DOWNLOAD_DIR, filename, as_attachment=True)
+    # Prevent path traversal
+    safe_path = os.path.join(DOWNLOAD_DIR, os.path.basename(filename))
+    if not os.path.normpath(safe_path).startswith(os.path.normpath(DOWNLOAD_DIR)):
+        return jsonify({'error': 'Invalid path'}), 400
+    return send_from_directory(DOWNLOAD_DIR, os.path.basename(filename), as_attachment=True)
 
 if __name__ == '__main__':
     # Run on all interfaces, port 8099 (dashboard)

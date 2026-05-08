@@ -477,7 +477,11 @@ def build_static():
 @app.route('/dist/<path:filename>')
 def serve_dist(filename):
     """Serve files from dist directory"""
-    return send_from_directory('dist', filename)
+    # Prevent path traversal
+    safe_path = os.path.join('dist', os.path.basename(filename))
+    if not os.path.normpath(safe_path).startswith('dist'):
+        return jsonify({'error': 'Invalid path'}), 400
+    return send_from_directory('dist', os.path.basename(filename))
 
 if __name__ == '__main__':
     init_db()
