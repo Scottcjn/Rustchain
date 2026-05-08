@@ -73,7 +73,7 @@ log = logging.getLogger("otc_bridge")
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__, static_folder="static")
-CORS(app)
+CORS(app, origins=['http://localhost', 'http://127.0.0.1'])  # Restrict in production
 
 
 # ---------------------------------------------------------------------------

@@ -24,7 +24,7 @@ from proof_of_iron import ProofOfIron, ProofOfIronError, AttestationStatus
 
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=['http://localhost', 'http://127.0.0.1'])  # Restrict in production
 
 # Configuration
 API_HOST = os.getenv('BOOT_CHIME_API_HOST', '0.0.0.0')

@@ -243,7 +243,7 @@ def create_app():
         sys.exit(1)
 
     app = Flask(__name__)
-    CORS(app)
+    CORS(app, origins=['http://localhost', 'http://127.0.0.1'])  # Restrict in production
 
     # Load historical data
     _fork_store["history"] = _load_history()

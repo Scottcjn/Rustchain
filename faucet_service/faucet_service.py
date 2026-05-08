@@ -99,7 +99,7 @@ DEFAULT_CONFIG = {
         'backup_count': 5
     },
     'security': {
-        'cors_origins': ['*'],
+        'cors_origins': [],  # Restrict to specific origins in production
         'csrf_enabled': False,
         'request_timeout': 30,
         'max_body_size': 1048576
@@ -479,7 +479,7 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
     
     # Enable CORS
     cors_origins = config.get('security', {}).get('cors_origins', ['*'])
-    CORS(app, origins=cors_origins)
+    CORS(app, origins=cors_origins if cors_origins else ['http://localhost'])
     
     # Store components in app config
     app.config['faucet_config'] = config

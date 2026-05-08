@@ -364,7 +364,7 @@ def create_api_server(node: RustChainNode):
         return None
 
     app = Flask(__name__)
-    CORS(app)
+    CORS(app, origins=['http://localhost', 'http://127.0.0.1'])  # Restrict in production
 
     @app.route("/api/stats")
     def stats():

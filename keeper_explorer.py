@@ -28,7 +28,7 @@ FAUCET_DB = "faucet_service/faucet.db"
 PORT = 8095
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=['http://localhost', 'http://127.0.0.1'])  # Restrict in production
 
 # --- Faucet Logic (Integrated) ---
 
