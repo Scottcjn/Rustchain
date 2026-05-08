@@ -173,7 +173,9 @@ def widget():
     '''
     
     response = make_response(widget_html)
-    response.headers.pop('X-Frame-Options', None)
+    # Allow embedding only from same origin to prevent clickjacking
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['Content-Security-Policy'] = "frame-ancestors 'self'"
     return response
 
 @app.route('/process_payment', methods=['POST'])
