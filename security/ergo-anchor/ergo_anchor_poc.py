@@ -41,7 +41,7 @@ class MockErgoClient:
 
     def __init__(self):
         self.transactions = {}
-        self.api_key = "hardcoded_secret_key_2025"  # C1: exposed
+        self.api_key = os.environ.get("ERGO_API_KEY", "[REDACTED]")  # C1: fixed via env var
 
     def create_anchor_transaction(self, commitment, fee=1000000):
         tx_id = hashlib.sha256(

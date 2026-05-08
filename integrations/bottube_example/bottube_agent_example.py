@@ -97,7 +97,7 @@ def main(argv: list[str]) -> int:
     args = p.parse_args(argv)
 
     if not args.api_key:
-        args.api_key = ""
+        args.api_key = os.environ.get("BOT_API_KEY", "")
 
     session = requests.Session()
     session.trust_env = True
