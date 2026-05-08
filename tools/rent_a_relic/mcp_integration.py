@@ -110,8 +110,7 @@ class RelicMCPClient:
         return {"machines": machines, "count": len(machines)}
 
     def reserve_relic(self, agent_id: str, machine_id: str, duration_hours: int, rtc_amount: float) -> dict:
-        resp = requests.post(
-            f"{self.base_url}/relic/reserve",
+        resp = requests.post(            f"{self.base_url}/relic/reserve",
             json={"agent_id": agent_id, "machine_id": machine_id,
                   "duration_hours": duration_hours, "rtc_amount": rtc_amount},
             timeout=self.timeout,

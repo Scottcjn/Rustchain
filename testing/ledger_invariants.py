@@ -286,7 +286,7 @@ def fetch_api(path: str, timeout: int = 10) -> Optional[Any]:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         ctx = __import__("ssl").create_default_context()
         ctx.check_hostname = False
-        ctx.verify_mode = __import__("ssl").CERT_NONE
+        ctx.verify_mode = __import__("ssl").CERT_REQUIRED
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
             return json.loads(resp.read())
     except Exception as e:

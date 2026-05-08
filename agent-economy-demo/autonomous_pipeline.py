@@ -60,8 +60,7 @@ class Agent:
 
     def get_balance(self) -> float:
         try:
-            r = requests.get(
-                f"{NODE_URL}/wallet/balance",
+            r = requests.get(                f"{NODE_URL}/wallet/balance",
                 params={"miner_id": self.wallet},
                 verify=VERIFY_SSL, timeout=TIMEOUT
             )
@@ -76,8 +75,7 @@ class Agent:
         """Post a job to the Agent Economy marketplace. Returns job_id."""
         self.log.info(f"Posting job: '{title}' for {reward_rtc} RTC")
         try:
-            r = requests.post(
-                f"{NODE_URL}/agent/jobs",
+            r = requests.post(                f"{NODE_URL}/agent/jobs",
                 json={
                     "poster_wallet": self.wallet,
                     "title": title,
@@ -108,8 +106,7 @@ class Agent:
         """Claim an open job."""
         self.log.info(f"Claiming job: {job_id}")
         try:
-            r = requests.post(
-                f"{NODE_URL}/agent/jobs/{job_id}/claim",
+            r = requests.post(                f"{NODE_URL}/agent/jobs/{job_id}/claim",
                 json={"worker_wallet": self.wallet},
                 verify=VERIFY_SSL, timeout=TIMEOUT
             )
@@ -131,8 +128,7 @@ class Agent:
         try:
             # Generate a content hash for the deliverable
             content_hash = hashlib.sha256(summary.encode()).hexdigest()[:16]
-            r = requests.post(
-                f"{NODE_URL}/agent/jobs/{job_id}/deliver",
+            r = requests.post(                f"{NODE_URL}/agent/jobs/{job_id}/deliver",
                 json={
                     "worker_wallet": self.wallet,
                     "deliverable_url": deliverable_url,
@@ -156,8 +152,7 @@ class Agent:
         """Accept a delivery and release escrow."""
         self.log.info(f"Accepting delivery for: {job_id}")
         try:
-            r = requests.post(
-                f"{NODE_URL}/agent/jobs/{job_id}/accept",
+            r = requests.post(                f"{NODE_URL}/agent/jobs/{job_id}/accept",
                 json={"poster_wallet": self.wallet, "rating": rating},
                 verify=VERIFY_SSL, timeout=TIMEOUT
             )
@@ -178,8 +173,7 @@ class Agent:
     def get_reputation(self) -> dict:
         """Check this agent's reputation score."""
         try:
-            r = requests.get(
-                f"{NODE_URL}/agent/reputation/{self.wallet}",
+            r = requests.get(                f"{NODE_URL}/agent/reputation/{self.wallet}",
                 verify=VERIFY_SSL, timeout=TIMEOUT
             )
             if r.ok:
@@ -194,8 +188,7 @@ class Agent:
     def get_job_detail(self, job_id: str) -> Optional[dict]:
         """Get full details of a job including activity log."""
         try:
-            r = requests.get(
-                f"{NODE_URL}/agent/jobs/{job_id}",
+            r = requests.get(                f"{NODE_URL}/agent/jobs/{job_id}",
                 verify=VERIFY_SSL, timeout=TIMEOUT
             )
             if r.ok:
