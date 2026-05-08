@@ -6,13 +6,13 @@ from datetime import datetime
 def get_bios_date():
     try:
         if platform.system() == "Windows":
-            output = subprocess.check_output("wmic bios get releasedate", shell=True).decode().splitlines()
+            output = subprocess.check_output(["wmic", "bios", "get", "releasedate"]).decode().splitlines()
             for line in output:
                 if line.strip().isdigit() and len(line.strip()) >= 8:
                     date_str = line.strip()
                     return datetime.strptime(date_str[:8], "%Y%m%d")
         elif platform.system() == "Linux":
-            output = subprocess.check_output("dmidecode -t bios", shell=True, stderr=subprocess.DEVNULL).decode().splitlines()
+            output = subprocess.check_output(["dmidecode", "-t", "bios"], stderr=subprocess.DEVNULL).decode().splitlines()
             for line in output:
                 if "Release Date" in line:
                     date_str = line.split(":")[1].strip()

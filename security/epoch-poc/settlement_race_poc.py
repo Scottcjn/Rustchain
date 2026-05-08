@@ -139,7 +139,7 @@ def poc_race_condition():
     
     # Use a file-based DB so two connections can race
     import tempfile, os
-    db_file = tempfile.mktemp(suffix=".db")
+    fd, db_file = tempfile.mkstemp(suffix=".db"); os.close(fd)
     
     try:
         conn = sqlite3.connect(db_file)

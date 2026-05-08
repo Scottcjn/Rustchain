@@ -34,7 +34,7 @@ class RustChainUser(HttpUser):
     # ------------------------------------------------------------------
     @task(3)
     def health(self):
-        with self.client.get("/health", verify=False, catch_response=True) as r:
+        with self.client.get("/health", verify=True, catch_response=True) as r:
             if r.status_code == 200:
                 body = r.json()
                 if body.get("ok") is not True:
@@ -47,7 +47,7 @@ class RustChainUser(HttpUser):
     # ------------------------------------------------------------------
     @task(2)
     def epoch(self):
-        with self.client.get("/epoch", verify=False, catch_response=True) as r:
+        with self.client.get("/epoch", verify=True, catch_response=True) as r:
             if r.status_code == 200:
                 body = r.json()
                 if "epoch" not in body:
@@ -60,7 +60,7 @@ class RustChainUser(HttpUser):
     # ------------------------------------------------------------------
     @task(2)
     def headers_tip(self):
-        with self.client.get("/headers/tip", verify=False, catch_response=True) as r:
+        with self.client.get("/headers/tip", verify=True, catch_response=True) as r:
             if r.status_code != 200:
                 r.failure(f"status {r.status_code}")
 
@@ -69,7 +69,7 @@ class RustChainUser(HttpUser):
     # ------------------------------------------------------------------
     @task(2)
     def api_miners(self):
-        with self.client.get("/api/miners", verify=False, catch_response=True) as r:
+        with self.client.get("/api/miners", verify=True, catch_response=True) as r:
             if r.status_code != 200:
                 r.failure(f"status {r.status_code}")
 
@@ -80,7 +80,7 @@ class RustChainUser(HttpUser):
     def wallet_balance(self):
         with self.client.get(
             f"/wallet/balance?miner_id={MINER_ID}",
-            verify=False,
+            verify=True,
             catch_response=True,
         ) as r:
             if r.status_code == 200:
