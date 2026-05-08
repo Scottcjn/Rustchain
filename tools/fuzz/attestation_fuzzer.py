@@ -310,7 +310,7 @@ class AttestationFuzzHarness:
                     self.node_url,
                     json=payload,
                     timeout=timeout,
-                    verify=False,
+                    verify=True,  # Enforce TLS validation (use CA bundle for test env)
                 )
                 status_code = resp.status_code
                 if status_code >= 500:

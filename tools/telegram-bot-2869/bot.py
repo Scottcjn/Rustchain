@@ -97,7 +97,7 @@ class RustChainAPI:
         self.base_url = base_url.rstrip("/")
         # RustChain nodes use self-signed certs — disable verification
         self.client = httpx.AsyncClient(
-            verify=False,
+            verify=True,  # Enforce TLS certificate validation
             timeout=httpx.Timeout(timeout),
             headers={"User-Agent": "RustChainTelegramBot/1.0"},
         )

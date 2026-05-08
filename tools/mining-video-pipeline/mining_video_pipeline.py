@@ -145,14 +145,16 @@ class MinerData:
 
 def fetch_miners() -> list[MinerData]:
     """Fetch active miners from RustChain API."""
-    resp = requests.get(f"{RUSTCHAIN_API}/api/miners", verify=False, timeout=30)
+    resp = requests.get(f"{RUSTCHAIN_API}/api/miners", verify=True,  # Enforce TLS validation
+            timeout=30)
     resp.raise_for_status()
     return [MinerData.from_api(m) for m in resp.json()]
 
 
 def fetch_epoch() -> dict:
     """Fetch current epoch info."""
-    resp = requests.get(f"{RUSTCHAIN_API}/epoch", verify=False, timeout=30)
+    resp = requests.get(f"{RUSTCHAIN_API}/epoch", verify=True,  # Enforce TLS validation
+            timeout=30)
     resp.raise_for_status()
     return resp.json()
 
