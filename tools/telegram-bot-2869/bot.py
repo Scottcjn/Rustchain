@@ -95,9 +95,11 @@ class RustChainAPI:
 
     def __init__(self, base_url: str, timeout: int = REQUEST_TIMEOUT) -> None:
         self.base_url = base_url.rstrip("/")
-        # RustChain nodes use self-signed certs — disable verification
+        # Security: Enforce SSL verification by default.
+        # If nodes use self-signed certs, set ALLOW_INSECURE_SSL=true (not recommended for production).
+        allow_insecure = os.getenv("ALLOW_INSECURE_SSL", "false").lower() == "true"
         self.client = httpx.AsyncClient(
-            verify=False,
+            verify=allow_insecure,
             timeout=httpx.Timeout(timeout),
             headers={"User-Agent": "RustChainTelegramBot/1.0"},
         )

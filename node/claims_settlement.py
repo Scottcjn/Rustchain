@@ -241,10 +241,10 @@ def sign_and_broadcast_transaction(
         return True, "0x" + tx_hash, None
 
     # Simulate success (90% success rate for testing)
-    import random
+    import secrets
     if random.random() < 0.9:
         # Generate mock transaction hash
-        tx_hash = "0x" + "".join(random.choices("0123456789abcdef", k=64))
+        tx_hash = "0x" + secrets.token_hex(32)
         return True, tx_hash, None
     else:
         return False, None, "Simulated transaction failure"

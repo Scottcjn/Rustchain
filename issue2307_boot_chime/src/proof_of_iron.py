@@ -6,6 +6,7 @@ verifiable hardware proofs.
 """
 
 import hashlib
+import secrets
 import json
 import time
 from typing import Dict, List, Optional, Tuple, Any
@@ -376,12 +377,12 @@ class ProofOfIron:
     
     def _generate_challenge_id(self, miner_id: str) -> str:
         """Generate unique challenge ID"""
-        data = f"{miner_id}:{time.time()}:{np.random.random()}"
+        data = f"{miner_id}:{time.time()}:{secrets.token_hex(8)}"
         return hashlib.sha256(data.encode()).hexdigest()[:16]
     
     def _generate_nonce(self) -> str:
         """Generate random nonce"""
-        return hashlib.sha256(str(np.random.random()).encode()).hexdigest()[:16]
+        return secrets.token_hex(8)
     
     def _generate_device_id(self, miner_id: str, signature: str) -> str:
         """Generate unique device ID"""
@@ -536,7 +537,7 @@ class ProofOfIron:
             conn.close()
             
             if row:
-                data = pickle.loads(row[0])
+                data = json.loads(row[0])
                 return FingerprintFeatures(
                     mfcc_mean=np.array(data['mfcc_mean']),
                     mfcc_std=np.array(data['mfcc_std']),
