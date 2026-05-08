@@ -187,6 +187,11 @@ def register_ledger_routes(app):
     @app.route("/api/ledger/<record_id>/status", methods=["PATCH"])
     def api_ledger_update(record_id):
         init_payout_ledger_tables()
+        # Require admin authentication
+        auth = request.headers.get("Authorization", "")
+        admin_key = os.environ.get("LEDGER_ADMIN_KEY", "")
+        if not admin_key or auth != f"Bearer {admin_key}":
+            return jsonify({"error": "unauthorized"}), 401
         data = request.get_json(force=True)
         new_status = data.get("status")
         if not new_status:
