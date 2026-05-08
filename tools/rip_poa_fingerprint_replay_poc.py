@@ -12,7 +12,7 @@ CONTEXT: AUTHORIZED security research under Scottcjn's bug bounty program.
 """
 
 import hashlib
-import json
+import json, tempfile, os
 import os
 import random
 import statistics
@@ -105,7 +105,8 @@ def replay_fingerprint(captured_path: str = "/tmp/captured_fingerprint.json") ->
     There is NO challenge-response binding — the server trusts the client's claim.
 
     Attack: Replace _run_fingerprint_checks() with:
-        self.fingerprint_data = json.load(open("/tmp/captured_fingerprint.json"))
+        fp_path = os.path.join(tempfile.gettempdir(), "captured_fingerprint.json")
+        self.fingerprint_data = json.load(open(fp_path))
         self.fingerprint_passed = True
     """
     with open(captured_path) as f:

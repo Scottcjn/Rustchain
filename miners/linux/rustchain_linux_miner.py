@@ -484,7 +484,8 @@ class LocalMiner:
         print(f"Press Ctrl+C to stop\n")
 
         # Save wallet
-        with open("/tmp/local_miner_wallet.txt", "w") as f:
+        wallet_path = os.path.join(tempfile.gettempdir(), "local_miner_wallet.txt")
+        with open(wallet_path, "w") as f:
             f.write(self.wallet)
         print(f"💾 Wallet saved to: /tmp/local_miner_wallet.txt\n")
 
