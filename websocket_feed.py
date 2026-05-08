@@ -4,7 +4,7 @@ Bounty #748: RustChain WebSocket Real-Time Feed
 
 Integration (add to your Flask app):
     from websocket_feed import ws_bp, socketio, start_event_poller
-    socketio.init_app(app, cors_allowed_origins="*", async_mode="threading")
+    socketio.init_app(app, cors_allowed_origins=[], async_mode="threading")
     app.register_blueprint(ws_bp)
     start_event_poller()
 
@@ -183,7 +183,7 @@ def start_event_poller():
 ws_bp = Blueprint("ws", __name__)
 
 if HAVE_SOCKETIO:
-    socketio = SocketIO(cors_allowed_origins="*", async_mode="threading",
+    socketio = SocketIO(cors_allowed_origins=[], async_mode="threading",
                         ping_timeout=HEARTBEAT_S, ping_interval=HEARTBEAT_S,
                         max_http_buffer_size=1024 * 64)
 

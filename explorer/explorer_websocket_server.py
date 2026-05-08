@@ -16,7 +16,7 @@ Standalone usage:
 
 Integration:
     from explorer_websocket_server import socketio, app, start_explorer_poller
-    socketio.init_app(app, cors_allowed_origins="*", async_mode="threading")
+    socketio.init_app(app, cors_allowed_origins=[], async_mode="threading")
     start_explorer_poller()
 
 Author: RustChain Team
@@ -293,7 +293,7 @@ ws_bp = Blueprint("explorer_ws", __name__)
 
 if HAVE_SOCKETIO:
     socketio = SocketIO(
-        cors_allowed_origins="*",
+        cors_allowed_origins=[],
         async_mode="threading",
         ping_timeout=HEARTBEAT_S,
         ping_interval=HEARTBEAT_S,

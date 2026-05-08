@@ -25,7 +25,7 @@ PORT = int(os.environ.get("WS_EXPLORER_PORT", "8060"))
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "rustchain-ws-explorer")
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+socketio = SocketIO(app, cors_allowed_origins=[], async_mode="threading")
 
 # ── State ─────────────────────────────────────────────────────────
 state = {

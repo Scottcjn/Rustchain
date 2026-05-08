@@ -23,7 +23,7 @@ POLL_INTERVAL = float(os.environ.get('POLL_INTERVAL', '5'))  # seconds
 # Flask app with SocketIO
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'rustchain-explorer-secret')
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(app, cors_allowed_origins=[], async_mode='threading')
 
 # State tracking
 class ExplorerState:
