@@ -263,7 +263,7 @@ class SubmissionValidator:
             sys.path.insert(0, 'vintage_miner')
             from hardware_profiles import get_bounty
             return get_bounty(device_arch)
-        except:
+        except Exception:
             # Default bounty
             return 100
     
@@ -322,7 +322,7 @@ class SubmissionValidator:
                 try:
                     from hardware_profiles import get_era
                     results["era"] = get_era(device_arch)
-                except:
+                except Exception:
                     results["era"] = "Unknown"
         
         if writeup_path:

@@ -406,7 +406,7 @@ def get_real_hardware_rom_signature() -> Optional[Dict]:
                         "header_md5": hashlib.md5(header).hexdigest(),
                         "source": path,
                     }
-                except:
+                except Exception:
                     pass
 
     # 68K would need different detection
