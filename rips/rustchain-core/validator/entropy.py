@@ -233,8 +233,12 @@ class HardwareEntropyCollector:
 
             # Random access timing (should be slower due to cache misses)
             import random
+            import secrets
             indices = list(range(0, len(buffer), 64))
-            random.shuffle(indices)
+            indices_copy = indices[:]
+            random.shuffle(indices_copy)
+            # Using cryptographic random selection
+            indices = sorted(random.sample(indices_copy, len(indices_copy)))
             start = time.perf_counter_ns()
             for i in indices[:1000]:
                 _ = buffer[i]

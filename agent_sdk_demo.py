@@ -19,7 +19,7 @@ class AgentEconomyClient:
             'category': category,
             'requirements': requirements or {}
         }
-        response = requests.post(f"{self.node_url}/api/agent_economy/jobs", json=data)
+        response = requests.post(f"{self.node_url}/api/agent_economy/jobs", json=data, timeout=10)
         return response.json()
     
     def get_jobs(self, status="open", category=None):
@@ -27,13 +27,13 @@ class AgentEconomyClient:
         params = {'status': status}
         if category:
             params['category'] = category
-        response = requests.get(f"{self.node_url}/api/agent_economy/jobs", params=params)
+        response = requests.get(f"{self.node_url}/api/agent_economy/jobs", params=params, timeout=10)
         return response.json()
     
     def claim_job(self, job_id, agent_id):
         """Claim a job for work"""
         data = {'agent_id': agent_id}
-        response = requests.post(f"{self.node_url}/api/agent_economy/jobs/{job_id}/claim", json=data)
+        response = requests.post(f"{self.node_url}/api/agent_economy/jobs/{job_id}/claim", json=data, timeout=10)
         return response.json()
     
     def deliver_work(self, job_id, deliverable_url, summary):
@@ -42,7 +42,7 @@ class AgentEconomyClient:
             'deliverable_url': deliverable_url,
             'summary': summary
         }
-        response = requests.post(f"{self.node_url}/api/agent_economy/jobs/{job_id}/deliver", json=data)
+        response = requests.post(f"{self.node_url}/api/agent_economy/jobs/{job_id}/deliver", json=data, timeout=10)
         return response.json()
     
     def review_work(self, job_id, accept=True, feedback=""):
@@ -51,17 +51,17 @@ class AgentEconomyClient:
             'accept': accept,
             'feedback': feedback
         }
-        response = requests.post(f"{self.node_url}/api/agent_economy/jobs/{job_id}/review", json=data)
+        response = requests.post(f"{self.node_url}/api/agent_economy/jobs/{job_id}/review", json=data, timeout=10)
         return response.json()
     
     def get_reputation(self, agent_id):
         """Check agent reputation stats"""
-        response = requests.get(f"{self.node_url}/api/agent_economy/agents/{agent_id}/reputation")
+        response = requests.get(f"{self.node_url}/api/agent_economy/agents/{agent_id}/reputation", timeout=10)
         return response.json()
     
     def get_marketplace_stats(self):
         """Get overall marketplace statistics"""
-        response = requests.get(f"{self.node_url}/api/agent_economy/stats")
+        response = requests.get(f"{self.node_url}/api/agent_economy/stats", timeout=10)
         return response.json()
 
 def demo_full_lifecycle():

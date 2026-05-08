@@ -16,6 +16,7 @@ Formula: AS = (current_year - release_year) * log10(uptime_days + 1)
 import hashlib
 import math
 import random
+import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
@@ -187,7 +188,7 @@ def select_validator(proofs: List[ValidatedProof]) -> Optional[ValidatedProof]:
 
     total_as = sum(p.antiquity_score for p in proofs)
     if total_as == 0:
-        return random.choice(proofs)
+        return secrets.choice(proofs)
 
     # Weighted random selection
     r = random.uniform(0, total_as)
