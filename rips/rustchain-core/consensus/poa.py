@@ -187,7 +187,9 @@ def select_validator(proofs: List[ValidatedProof]) -> Optional[ValidatedProof]:
 
     total_as = sum(p.antiquity_score for p in proofs)
     if total_as == 0:
-        return random.choice(proofs)
+        import secrets
+        if not proofs: return None
+        return proofs[secrets.randbelow(len(proofs))]
 
     # Weighted random selection
     r = random.uniform(0, total_as)
