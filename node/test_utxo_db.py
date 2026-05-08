@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests for utxo_db.py — RustChain UTXO Database Layer
 =====================================================
 
@@ -708,6 +708,39 @@ class TestCoinSelect(unittest.TestCase):
         self.assertLessEqual(len(selected), 20)
 
 
+
+    def test_conservation_law_strict_equality(self):
+        "\"\"Conservation law must be strictly enforced.
+        If outputs + fee < inputs, funds are destroyed (bounty #2819 HIGH-2)."\"\"
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id'], 'spending_proof': 'sig'}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 90 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        # 90 + 0 < 100. The transaction destroys 10 RTC. It MUST fail.
+        self.assertFalse(ok)
+
+    def test_mempool_conservation_law_strict_equality(self):
+        "\"\"Mempool must also strictly enforce conservation law."\"\"
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'dest' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 80 * UNIT}],
+            'fee_nrtc': 5 * UNIT,
+        }
+        # 80 + 5 = 85 < 100. Destroys 15 RTC. MUST fail.
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+
 class TestMultiInputTransfer(unittest.TestCase):
     """Test transfers that consume multiple UTXOs."""
 
@@ -780,3 +813,4 @@ class TestMultiInputTransfer(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
