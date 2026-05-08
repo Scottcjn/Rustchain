@@ -44,6 +44,9 @@ def query_one(conn: sqlite3.Connection, sql: str) -> str:
 
 
 def count_rows(conn: sqlite3.Connection, table: str) -> int:
+    # Validate table name to prevent SQL injection
+    if not table.isidentifier():
+        raise ValueError(f"Invalid table name: {table}")
     return int(query_one(conn, f"SELECT COUNT(*) FROM {table};") or 0)
 
 
