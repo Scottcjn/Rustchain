@@ -158,6 +158,13 @@ def submit_proof():
         audio_data = None
         if 'audio' in request.files:
             audio_file = request.files['audio']
+            # Validate extension and size
+            if audio_file.filename and not audio_file.filename.lower().endswith(('.wav', '.mp3')):
+                return jsonify({"error": "Invalid audio format"}), 400
+            audio_file.seek(0, 2)
+            if audio_file.tell() > 50 * 1024 * 1024:  # 50MB limit
+                return jsonify({"error": "Audio too large"}), 413
+            audio_file.seek(0)
             with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
                 audio_file.save(tmp)
                 tmp_path = tmp.name

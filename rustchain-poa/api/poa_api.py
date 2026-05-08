@@ -14,6 +14,17 @@ def validate():
     file = request.files['file']
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
+    
+    # Validate extension
+    if not file.filename.lower().endswith('.json'):
+        return jsonify({"error": "Invalid file type, .json required"}), 400
+
+    # Limit file size (10MB)
+    file.seek(0, 2)
+    size = file.tell()
+    file.seek(0)
+    if size > 10 * 1024 * 1024:
+        return jsonify({"error": "File too large, max 10MB"}), 413
 
     # Save the file temporarily
     with tempfile.NamedTemporaryFile(delete=False, suffix='.json') as tmp:
