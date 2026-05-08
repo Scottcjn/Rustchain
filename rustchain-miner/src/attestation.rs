@@ -210,14 +210,17 @@ pub async fn attest_with_key(
     tracing::info!("[ATTEST] Starting hardware attestation...");
 
     // Step 1: Get challenge nonce from node
-    let response = transport.post_json("/attest/challenge", &serde_json::json!({})).await?;
+    let response = transport
+        .post_json("/attest/challenge", &serde_json::json!({}))
+        .await?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(crate::error::MinerError::Attestation(
-            format!("Challenge failed: HTTP {} - {}", status, body)
-        ));
+        return Err(crate::error::MinerError::Attestation(format!(
+            "Challenge failed: HTTP {} - {}",
+            status, body
+        )));
     }
 
     let challenge: serde_json::Value = response.json().await?;
@@ -229,11 +232,14 @@ pub async fn attest_with_key(
 
     if nonce.is_empty() {
         return Err(crate::error::MinerError::Attestation(
-            "No nonce in challenge response".to_string()
+            "No nonce in challenge response".to_string(),
         ));
     }
 
-    tracing::info!("[ATTEST] Got challenge nonce: {}...", &nonce[..nonce.len().min(16)]);
+    tracing::info!(
+        "[ATTEST] Got challenge nonce: {}...",
+        &nonce[..nonce.len().min(16)]
+    );
 
     // Step 2: Collect entropy
     let entropy = collect_entropy(48, 25000);
@@ -255,7 +261,7 @@ pub async fn attest_with_key(
     // Verify the provided public_key_hex matches the signing key
     if computed_pubkey_hex != public_key_hex {
         return Err(crate::error::MinerError::Attestation(
-            "Public key mismatch: provided key doesn't match signing key".to_string()
+            "Public key mismatch: provided key doesn't match signing key".to_string(),
         ));
     }
 
@@ -289,9 +295,10 @@ pub async fn attest_with_key(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(crate::error::MinerError::Attestation(
-            format!("Submit failed: HTTP {} - {}", status, body)
-        ));
+        return Err(crate::error::MinerError::Attestation(format!(
+            "Submit failed: HTTP {} - {}",
+            status, body
+        )));
     }
 
     let result: serde_json::Value = response.json().await?;
@@ -300,9 +307,10 @@ pub async fn attest_with_key(
         tracing::info!("[ATTEST] Attestation accepted!");
         Ok(true)
     } else {
-        Err(crate::error::MinerError::Attestation(
-            format!("Attestation rejected: {:?}", result)
-        ))
+        Err(crate::error::MinerError::Attestation(format!(
+            "Attestation rejected: {:?}",
+            result
+        )))
     }
 }
 
@@ -318,14 +326,17 @@ pub async fn attest(
     tracing::info!("[ATTEST] Starting hardware attestation...");
 
     // Step 1: Get challenge nonce from node
-    let response = transport.post_json("/attest/challenge", &serde_json::json!({})).await?;
+    let response = transport
+        .post_json("/attest/challenge", &serde_json::json!({}))
+        .await?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(crate::error::MinerError::Attestation(
-            format!("Challenge failed: HTTP {} - {}", status, body)
-        ));
+        return Err(crate::error::MinerError::Attestation(format!(
+            "Challenge failed: HTTP {} - {}",
+            status, body
+        )));
     }
 
     let challenge: serde_json::Value = response.json().await?;
@@ -337,11 +348,14 @@ pub async fn attest(
 
     if nonce.is_empty() {
         return Err(crate::error::MinerError::Attestation(
-            "No nonce in challenge response".to_string()
+            "No nonce in challenge response".to_string(),
         ));
     }
 
-    tracing::info!("[ATTEST] Got challenge nonce: {}...", &nonce[..nonce.len().min(16)]);
+    tracing::info!(
+        "[ATTEST] Got challenge nonce: {}...",
+        &nonce[..nonce.len().min(16)]
+    );
 
     // Step 2: Collect entropy
     let entropy = collect_entropy(48, 25000);
@@ -391,9 +405,10 @@ pub async fn attest(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(crate::error::MinerError::Attestation(
-            format!("Submit failed: HTTP {} - {}", status, body)
-        ));
+        return Err(crate::error::MinerError::Attestation(format!(
+            "Submit failed: HTTP {} - {}",
+            status, body
+        )));
     }
 
     let result: serde_json::Value = response.json().await?;
@@ -402,9 +417,10 @@ pub async fn attest(
         tracing::info!("[ATTEST] Attestation accepted!");
         Ok(true)
     } else {
-        Err(crate::error::MinerError::Attestation(
-            format!("Attestation rejected: {:?}", result)
-        ))
+        Err(crate::error::MinerError::Attestation(format!(
+            "Attestation rejected: {:?}",
+            result
+        )))
     }
 }
 
@@ -421,7 +437,12 @@ mod tests {
     }
 
     /// Helper: sign a message and return (signature_hex, public_key_hex)
-    fn sign_message(miner_id: &str, wallet: &str, nonce: &str, commitment: &str) -> (String, String) {
+    fn sign_message(
+        miner_id: &str,
+        wallet: &str,
+        nonce: &str,
+        commitment: &str,
+    ) -> (String, String) {
         let signing_key = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
         let verifying_key = signing_key.verifying_key();
         let public_key_hex = hex::encode(verifying_key.as_bytes());
@@ -448,19 +469,20 @@ mod tests {
             return false;
         }
 
-        let verifying_key = match ed25519_dalek::VerifyingKey::from_bytes(
-            &public_key_bytes.try_into().unwrap()
-        ) {
-            Ok(k) => k,
-            Err(_) => return false,
-        };
+        let verifying_key =
+            match ed25519_dalek::VerifyingKey::from_bytes(&public_key_bytes.try_into().unwrap()) {
+                Ok(k) => k,
+                Err(_) => return false,
+            };
 
         let signature = match ed25519_dalek::Signature::from_slice(&signature_bytes) {
             Ok(s) => s,
             Err(_) => return false,
         };
 
-        verifying_key.verify_strict(message.as_bytes(), &signature).is_ok()
+        verifying_key
+            .verify_strict(message.as_bytes(), &signature)
+            .is_ok()
     }
 
     #[test]

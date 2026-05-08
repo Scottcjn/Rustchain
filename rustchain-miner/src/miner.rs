@@ -1,9 +1,9 @@
 //! Main miner implementation with enrollment and mining loop
 
+use ed25519_dalek::Signer;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use ed25519_dalek::Signer;
 use tokio::time::sleep;
 
 use crate::attestation::{attest_with_key, FingerprintData};
@@ -111,10 +111,16 @@ impl Miner {
         let hw_info = HardwareInfo::collect()?;
 
         // Generate or use provided miner_id
-        let miner_id = config.miner_id.clone().unwrap_or_else(|| hw_info.generate_miner_id());
+        let miner_id = config
+            .miner_id
+            .clone()
+            .unwrap_or_else(|| hw_info.generate_miner_id());
 
         // Generate or use provided wallet
-        let wallet = config.wallet.clone().unwrap_or_else(|| hw_info.generate_wallet(&miner_id));
+        let wallet = config
+            .wallet
+            .clone()
+            .unwrap_or_else(|| hw_info.generate_wallet(&miner_id));
 
         // Generate Ed25519 signing keypair (reused for attestation + enrollment)
         let signing_key = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
@@ -169,7 +175,10 @@ impl Miner {
     /// Print miner banner
     pub fn print_banner(&self) {
         println!("{}", "=".repeat(70));
-        println!("RustChain Miner v{} - RIP-PoA Hardware Attestation", env!("CARGO_PKG_VERSION"));
+        println!(
+            "RustChain Miner v{} - RIP-PoA Hardware Attestation",
+            env!("CARGO_PKG_VERSION")
+        );
         println!("{}", "=".repeat(70));
         println!("Miner ID:    {}", self.miner_id);
         println!("Wallet:      {}", self.wallet);
@@ -177,9 +186,19 @@ impl Miner {
         if let Some(proxy) = &self.config.proxy_url {
             println!("Proxy:       {}", proxy);
         }
-        println!("Transport:   {}", if self.transport.using_proxy() { "HTTP Proxy" } else { "Direct HTTPS" });
+        println!(
+            "Transport:   {}",
+            if self.transport.using_proxy() {
+                "HTTP Proxy"
+            } else {
+                "Direct HTTPS"
+            }
+        );
         println!("{}", "-".repeat(70));
-        println!("Platform:    {} / {}", self.hw_info.platform, self.hw_info.machine);
+        println!(
+            "Platform:    {} / {}",
+            self.hw_info.platform, self.hw_info.machine
+        );
         println!("CPU:         {}", self.hw_info.cpu);
         println!("Cores:       {}", self.hw_info.cores);
         println!("Memory:      {} GB", self.hw_info.memory_gb);
@@ -204,7 +223,11 @@ impl Miner {
         println!("[DRY-RUN] MAC count: {}", self.hw_info.macs.len());
         println!(
             "[DRY-RUN] Serial present: {}",
-            if self.hw_info.serial.is_some() { "yes" } else { "no" }
+            if self.hw_info.serial.is_some() {
+                "yes"
+            } else {
+                "no"
+            }
         );
 
         // Health probe
@@ -253,7 +276,8 @@ impl Miner {
                     .unwrap()
                     .as_secs()
                     + self.config.attestation_ttl_secs;
-                self.attestation_valid_until.store(valid_until, Ordering::Relaxed);
+                self.attestation_valid_until
+                    .store(valid_until, Ordering::Relaxed);
                 Ok(())
             }
             Err(e) => Err(e),
@@ -275,7 +299,10 @@ impl Miner {
 
         let epoch_response = self.transport.get("/epoch").await?;
         let epoch_state: serde_json::Value = epoch_response.json().await?;
-        let epoch = epoch_state.get("epoch").and_then(|e| e.as_u64()).unwrap_or(0);
+        let epoch = epoch_state
+            .get("epoch")
+            .and_then(|e| e.as_u64())
+            .unwrap_or(0);
 
         // Sign enrollment request using the SAME Ed25519 keypair from attestation.
         // The signature binds (miner_pubkey|miner_id|epoch) to prove the enrollment
@@ -322,13 +349,19 @@ impl Miner {
             Ok(true)
         } else {
             self.stats.record_enrollment_failed();
-            Err(MinerError::Enrollment(format!("Enrollment rejected: {:?}", result)))
+            Err(MinerError::Enrollment(format!(
+                "Enrollment rejected: {:?}",
+                result
+            )))
         }
     }
 
     /// Check balance
     pub async fn check_balance(&self) -> Result<f64> {
-        let response = self.transport.get(&format!("/balance/{}", self.wallet)).await?;
+        let response = self
+            .transport
+            .get(&format!("/balance/{}", self.wallet))
+            .await?;
 
         if !response.status().is_success() {
             return Ok(0.0);
@@ -376,7 +409,11 @@ impl Miner {
 
             cycle += 1;
             println!("\n{}", "=".repeat(70));
-            println!("Cycle #{} - {}", cycle, chrono::Local::now().format("%Y-%m-%d %H:%M:%S"));
+            println!(
+                "Cycle #{} - {}",
+                cycle,
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+            );
             println!("{}", "=".repeat(70));
 
             // Ensure attestation is valid
@@ -393,7 +430,10 @@ impl Miner {
             // Enroll in epoch
             match self.enroll().await {
                 Ok(_) => {
-                    println!("⏳ Mining for {} minutes...", self.config.block_time_secs / 60);
+                    println!(
+                        "⏳ Mining for {} minutes...",
+                        self.config.block_time_secs / 60
+                    );
 
                     // Mining wait loop
                     let block_duration = Duration::from_secs(self.config.block_time_secs);

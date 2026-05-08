@@ -1,7 +1,7 @@
 //! Chain adapter interfaces for Solana and Base L2
 
 use crate::error::Result;
-use crate::models::{TargetChain, WalletVerification, WalletTier};
+use crate::models::{TargetChain, WalletTier, WalletVerification};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
@@ -51,7 +51,7 @@ impl SolanaAdapter {
         Self {
             rpc_url,
             min_balance_lamports: 100_000_000, // 0.1 SOL
-            min_age_seconds: 7 * 24 * 60 * 60,  // 7 days
+            min_age_seconds: 7 * 24 * 60 * 60, // 7 days
         }
     }
 }
@@ -102,12 +102,14 @@ impl ChainAdapter for SolanaAdapter {
             .await
             .map_err(|e| {
                 crate::error::AirdropError::WalletVerification(format!(
-                    "Solana RPC request failed: {}", e
+                    "Solana RPC request failed: {}",
+                    e
                 ))
             })?;
         let result: serde_json::Value = response.json().await.map_err(|e| {
             crate::error::AirdropError::WalletVerification(format!(
-                "Solana RPC response parse failed: {}", e
+                "Solana RPC response parse failed: {}",
+                e
             ))
         })?;
         Ok(result["result"]["value"].as_u64().unwrap_or(0))
@@ -126,9 +128,10 @@ impl ChainAdapter for SolanaAdapter {
     fn validate_address(&self, address: &str) -> Result<()> {
         // Solana addresses are base58-encoded, 32-44 characters
         if address.len() < 32 || address.len() > 44 {
-            return Err(crate::error::AirdropError::WalletVerification(
-                format!("Invalid Solana address length: {}", address.len()),
-            ));
+            return Err(crate::error::AirdropError::WalletVerification(format!(
+                "Invalid Solana address length: {}",
+                address.len()
+            )));
         }
 
         // Basic base58 validation (no 0, O, I, l)
@@ -145,9 +148,10 @@ impl ChainAdapter for SolanaAdapter {
             Ok(_) => Err(crate::error::AirdropError::WalletVerification(
                 "Solana address must decode to 32 bytes".to_string(),
             )),
-            Err(e) => Err(crate::error::AirdropError::WalletVerification(
-                format!("Invalid base58 encoding: {}", e),
-            )),
+            Err(e) => Err(crate::error::AirdropError::WalletVerification(format!(
+                "Invalid base58 encoding: {}",
+                e
+            ))),
         }
     }
 
@@ -187,7 +191,7 @@ impl BaseAdapter {
         Self {
             rpc_url,
             min_balance_wei: 10_000_000_000_000_000, // 0.01 ETH
-            min_age_seconds: 7 * 24 * 60 * 60,        // 7 days
+            min_age_seconds: 7 * 24 * 60 * 60,       // 7 days
         }
     }
 }
@@ -238,21 +242,23 @@ impl ChainAdapter for BaseAdapter {
             .await
             .map_err(|e| {
                 crate::error::AirdropError::WalletVerification(format!(
-                    "Base RPC request failed: {}", e
+                    "Base RPC request failed: {}",
+                    e
                 ))
             })?;
         let result: serde_json::Value = response.json().await.map_err(|e| {
             crate::error::AirdropError::WalletVerification(format!(
-                "Base RPC response parse failed: {}", e
+                "Base RPC response parse failed: {}",
+                e
             ))
         })?;
         let balance_hex = result["result"].as_str().unwrap_or("0x0");
-        u64::from_str_radix(balance_hex.trim_start_matches("0x"), 16)
-            .map_err(|e| {
-                crate::error::AirdropError::WalletVerification(format!(
-                    "Base balance hex parse failed: {}", e
-                ))
-            })
+        u64::from_str_radix(balance_hex.trim_start_matches("0x"), 16).map_err(|e| {
+            crate::error::AirdropError::WalletVerification(format!(
+                "Base balance hex parse failed: {}",
+                e
+            ))
+        })
     }
 
     async fn get_wallet_age(&self, _address: &str) -> Result<u64> {
@@ -272,9 +278,10 @@ impl ChainAdapter for BaseAdapter {
 
         let hex_part = &address[2..];
         if hex_part.len() != 40 {
-            return Err(crate::error::AirdropError::WalletVerification(
-                format!("Invalid Base address length: {} (expected 42)", address.len()),
-            ));
+            return Err(crate::error::AirdropError::WalletVerification(format!(
+                "Invalid Base address length: {} (expected 42)",
+                address.len()
+            )));
         }
 
         // Validate hex characters
@@ -321,8 +328,9 @@ mod tests {
 
     #[test]
     fn test_solana_address_validation_valid() {
-        let adapter = SolanaAdapter::with_defaults("https://api.mainnet-beta.solana.com".to_string());
-        
+        let adapter =
+            SolanaAdapter::with_defaults("https://api.mainnet-beta.solana.com".to_string());
+
         // Valid Solana addresses
         assert!(adapter
             .validate_address("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU")
@@ -334,13 +342,16 @@ mod tests {
 
     #[test]
     fn test_solana_address_validation_invalid() {
-        let adapter = SolanaAdapter::with_defaults("https://api.mainnet-beta.solana.com".to_string());
-        
+        let adapter =
+            SolanaAdapter::with_defaults("https://api.mainnet-beta.solana.com".to_string());
+
         // Too short
         assert!(adapter.validate_address("tooshort").is_err());
-        
+
         // Invalid base58 chars
-        assert!(adapter.validate_address("0xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU").is_err());
+        assert!(adapter
+            .validate_address("0xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU")
+            .is_err());
     }
 
     #[test]
@@ -359,15 +370,15 @@ mod tests {
     #[test]
     fn test_base_address_validation_invalid() {
         let adapter = BaseAdapter::with_defaults("https://mainnet.base.org".to_string());
-        
+
         // Missing 0x prefix
         assert!(adapter
             .validate_address("742d35Cc6634C0532925a3b844Bc9e7595f0bEb")
             .is_err());
-        
+
         // Wrong length
         assert!(adapter.validate_address("0x1234").is_err());
-        
+
         // Invalid hex
         assert!(adapter
             .validate_address("0xGGGG567890123456789012345678901234567890")
@@ -376,23 +387,18 @@ mod tests {
 
     #[test]
     fn test_solana_tier_calculation() {
-        let adapter = SolanaAdapter::with_defaults("https://api.mainnet-beta.solana.com".to_string());
-        
+        let adapter =
+            SolanaAdapter::with_defaults("https://api.mainnet-beta.solana.com".to_string());
+
         // 0.05 SOL (below minimum)
-        assert_eq!(
-            adapter.calculate_tier(50_000_000),
-            WalletTier::Minimum
-        );
-        
+        assert_eq!(adapter.calculate_tier(50_000_000), WalletTier::Minimum);
+
         // 0.5 SOL
-        assert_eq!(
-            adapter.calculate_tier(500_000_000),
-            WalletTier::Minimum
-        );
-        
+        assert_eq!(adapter.calculate_tier(500_000_000), WalletTier::Minimum);
+
         // 5 SOL
         assert_eq!(adapter.calculate_tier(5_000_000_000), WalletTier::Mid);
-        
+
         // 50 SOL
         assert_eq!(adapter.calculate_tier(50_000_000_000), WalletTier::High);
     }
@@ -414,7 +420,10 @@ mod tests {
         );
 
         // 0.5 ETH
-        assert_eq!(adapter.calculate_tier(500_000_000_000_000_000), WalletTier::Mid);
+        assert_eq!(
+            adapter.calculate_tier(500_000_000_000_000_000),
+            WalletTier::Mid
+        );
 
         // 5 ETH
         assert_eq!(
@@ -439,7 +448,10 @@ mod tests {
             .await;
 
         let adapter = SolanaAdapter::new(mock.url(), 100_000_000, 7 * 24 * 60 * 60);
-        let balance = adapter.get_balance("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU").await.unwrap();
+        let balance = adapter
+            .get_balance("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU")
+            .await
+            .unwrap();
         assert_eq!(balance, 350_000_000); // 0.35 SOL
     }
 
@@ -455,15 +467,22 @@ mod tests {
             .await;
 
         let adapter = SolanaAdapter::new(mock.url(), 100_000_000, 7 * 24 * 60 * 60);
-        let balance = adapter.get_balance("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU").await.unwrap();
+        let balance = adapter
+            .get_balance("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU")
+            .await
+            .unwrap();
         assert_eq!(balance, 0);
     }
 
     #[tokio::test]
     async fn test_solana_get_wallet_age_returns_zero() {
-        let adapter = SolanaAdapter::with_defaults("https://api.mainnet-beta.solana.com".to_string());
+        let adapter =
+            SolanaAdapter::with_defaults("https://api.mainnet-beta.solana.com".to_string());
         // Age is conservatively 0 since it requires historical tx data
-        let age = adapter.get_wallet_age("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU").await.unwrap();
+        let age = adapter
+            .get_wallet_age("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU")
+            .await
+            .unwrap();
         assert_eq!(age, 0);
     }
 
@@ -479,7 +498,10 @@ mod tests {
             .await;
 
         let adapter = BaseAdapter::new(mock.url(), 10_000_000_000_000_000, 7 * 24 * 60 * 60);
-        let balance = adapter.get_balance("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1").await.unwrap();
+        let balance = adapter
+            .get_balance("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1")
+            .await
+            .unwrap();
         assert_eq!(balance, 100_000_000_000_000_000); // 0.1 ETH
     }
 
@@ -495,7 +517,10 @@ mod tests {
             .await;
 
         let adapter = BaseAdapter::new(mock.url(), 10_000_000_000_000_000, 7 * 24 * 60 * 60);
-        let balance = adapter.get_balance("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1").await.unwrap();
+        let balance = adapter
+            .get_balance("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1")
+            .await
+            .unwrap();
         assert_eq!(balance, 0);
     }
 
@@ -503,7 +528,10 @@ mod tests {
     async fn test_base_get_wallet_age_returns_zero() {
         let adapter = BaseAdapter::with_defaults("https://mainnet.base.org".to_string());
         // Age is conservatively 0 since it requires historical tx data
-        let age = adapter.get_wallet_age("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1").await.unwrap();
+        let age = adapter
+            .get_wallet_age("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1")
+            .await
+            .unwrap();
         assert_eq!(age, 0);
     }
 }

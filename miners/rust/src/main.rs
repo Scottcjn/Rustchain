@@ -10,11 +10,10 @@
 ///   rustchain-miner --node-url http://localhost:8333 \
 ///                   --miner-id my-rig-01 \
 ///                   --interval 60
-
 mod fingerprint;
 
-use clap::Parser;
 use chrono::Utc;
+use clap::Parser;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -174,7 +173,11 @@ fn build_payload(miner_id: &str) -> AttestationPayload {
     let cache_timing = fingerprint::measure_cache_timing();
     log_info(&format!(
         "  cache_timing=[{}]",
-        cache_timing.iter().map(|v| format!("{:.1}ns", v)).collect::<Vec<_>>().join(", ")
+        cache_timing
+            .iter()
+            .map(|v| format!("{:.1}ns", v))
+            .collect::<Vec<_>>()
+            .join(", ")
     ));
 
     let thermal_drift = estimate_thermal_drift();
@@ -216,7 +219,9 @@ async fn submit_attestation(
     let mut backoff = initial_backoff_ms;
 
     for attempt in 1..=max_retries {
-        log_info(&format!("Submitting attestation (attempt {attempt}/{max_retries}) → {endpoint}"));
+        log_info(&format!(
+            "Submitting attestation (attempt {attempt}/{max_retries}) → {endpoint}"
+        ));
 
         match client
             .post(&endpoint)
@@ -258,7 +263,9 @@ async fn submit_attestation(
         }
     }
 
-    Err(format!("All {max_retries} attempts failed — skipping this cycle"))
+    Err(format!(
+        "All {max_retries} attempts failed — skipping this cycle"
+    ))
 }
 
 // ---------------------------------------------------------------------------

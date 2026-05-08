@@ -20,19 +20,19 @@
 //! }
 //! ```
 
+pub mod attestation;
 pub mod config;
 pub mod error;
 pub mod hardware;
-pub mod transport;
-pub mod attestation;
 pub mod miner;
+pub mod transport;
 
 #[cfg(test)]
 mod arch_tests;
 
-pub use config::Config;
-pub use error::{Result, MinerError};
-pub use hardware::HardwareInfo;
-pub use transport::NodeTransport;
 pub use attestation::AttestationReport;
+pub use config::Config;
+pub use error::{MinerError, Result};
+pub use hardware::HardwareInfo;
 pub use miner::Miner;
+pub use transport::NodeTransport;

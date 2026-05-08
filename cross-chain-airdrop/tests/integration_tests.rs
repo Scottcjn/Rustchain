@@ -96,7 +96,8 @@ fn test_eligibility_both_chains_eligible() {
     assert_eq!(result.final_allocation, 50);
 
     // Test Base eligibility
-    let wallet_base = mock_wallet_verification(TargetChain::Base, 20_000_000_000_000_000, 14 * 86400);
+    let wallet_base =
+        mock_wallet_verification(TargetChain::Base, 20_000_000_000_000_000, 14 * 86400);
     let result_base = EligibilityResult::new(Some(github), Some(wallet_base));
     assert!(result_base.eligible);
     assert_eq!(result_base.final_allocation, 50);
@@ -169,7 +170,8 @@ fn test_wallet_multiplier_high_tier() {
 
 #[tokio::test]
 async fn test_chain_adapters_validate_addresses() {
-    let solana_adapter = SolanaAdapter::with_defaults("https://api.mainnet-beta.solana.com".to_string());
+    let solana_adapter =
+        SolanaAdapter::with_defaults("https://api.mainnet-beta.solana.com".to_string());
     let base_adapter = BaseAdapter::with_defaults("https://mainnet.base.org".to_string());
 
     // Valid addresses
@@ -188,7 +190,8 @@ async fn test_chain_adapters_validate_addresses() {
 
 #[tokio::test]
 async fn test_chain_adapters_calculate_tiers() {
-    let solana_adapter = SolanaAdapter::with_defaults("https://api.mainnet-beta.solana.com".to_string());
+    let solana_adapter =
+        SolanaAdapter::with_defaults("https://api.mainnet-beta.solana.com".to_string());
     let base_adapter = BaseAdapter::with_defaults("https://mainnet.base.org".to_string());
 
     // Solana tiers
@@ -200,7 +203,10 @@ async fn test_chain_adapters_calculate_tiers() {
         solana_adapter.calculate_tier(500_000_000),
         WalletTier::Minimum
     );
-    assert_eq!(solana_adapter.calculate_tier(5_000_000_000), WalletTier::Mid);
+    assert_eq!(
+        solana_adapter.calculate_tier(5_000_000_000),
+        WalletTier::Mid
+    );
     assert_eq!(
         solana_adapter.calculate_tier(50_000_000_000),
         WalletTier::High
@@ -237,9 +243,18 @@ fn test_github_tier_allocations() {
 
 #[test]
 fn test_target_chain_parsing() {
-    assert_eq!("solana".parse::<TargetChain>().unwrap(), TargetChain::Solana);
-    assert_eq!("SOLANA".parse::<TargetChain>().unwrap(), TargetChain::Solana);
-    assert_eq!("Solana".parse::<TargetChain>().unwrap(), TargetChain::Solana);
+    assert_eq!(
+        "solana".parse::<TargetChain>().unwrap(),
+        TargetChain::Solana
+    );
+    assert_eq!(
+        "SOLANA".parse::<TargetChain>().unwrap(),
+        TargetChain::Solana
+    );
+    assert_eq!(
+        "Solana".parse::<TargetChain>().unwrap(),
+        TargetChain::Solana
+    );
     assert_eq!("base".parse::<TargetChain>().unwrap(), TargetChain::Base);
     assert_eq!("BASE".parse::<TargetChain>().unwrap(), TargetChain::Base);
     assert_eq!("Base".parse::<TargetChain>().unwrap(), TargetChain::Base);
@@ -268,10 +283,7 @@ async fn test_pipeline_initialization() {
         "https://mainnet.base.org".to_string(),
     ));
 
-    let pipeline = VerificationPipeline::new(
-        github_verifier,
-        vec![solana_adapter, base_adapter],
-    );
+    let pipeline = VerificationPipeline::new(github_verifier, vec![solana_adapter, base_adapter]);
 
     let stats = pipeline.get_stats().unwrap();
     assert_eq!(stats.total_claims, 0);

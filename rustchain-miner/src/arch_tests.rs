@@ -12,7 +12,7 @@ mod architecture_detection_tests {
         // Simulate SiFive U74 detection (HiFive Unmatched)
         let cpu = "SiFive U74-MC";
         let machine = "riscv64";
-        
+
         // We can't directly call detect_cpu_family_arch as it's private,
         // but we can test the HardwareInfo generation
         let hw = HardwareInfo {
@@ -28,7 +28,7 @@ mod architecture_detection_tests {
             macs: vec!["00:00:00:00:00:01".to_string()],
             mac: "00:00:00:00:00:01".to_string(),
         };
-        
+
         assert_eq!(hw.family, "RISC-V");
         assert_eq!(hw.arch, "SiFive U74");
         assert_eq!(hw.machine, "riscv64");
@@ -39,7 +39,7 @@ mod architecture_detection_tests {
         // Simulate StarFive JH7110 detection (VisionFive 2)
         let cpu = "StarFive JH7110";
         let machine = "riscv64";
-        
+
         let hw = HardwareInfo {
             platform: "Linux".to_string(),
             machine: machine.to_string(),
@@ -53,7 +53,7 @@ mod architecture_detection_tests {
             macs: vec!["00:00:00:00:00:01".to_string()],
             mac: "00:00:00:00:00:01".to_string(),
         };
-        
+
         assert_eq!(hw.family, "RISC-V");
         assert_eq!(hw.arch, "StarFive JH7110");
     }
@@ -63,7 +63,7 @@ mod architecture_detection_tests {
         // Generic RISC-V 64-bit system
         let cpu = "Generic RISC-V CPU";
         let machine = "riscv64";
-        
+
         let hw = HardwareInfo {
             platform: "Linux".to_string(),
             machine: machine.to_string(),
@@ -77,7 +77,7 @@ mod architecture_detection_tests {
             macs: vec!["00:00:00:00:00:01".to_string()],
             mac: "00:00:00:00:00:01".to_string(),
         };
-        
+
         assert_eq!(hw.family, "RISC-V");
         assert!(hw.arch.contains("64-bit"));
     }
@@ -87,7 +87,7 @@ mod architecture_detection_tests {
         // Allwinner D1 (Nezha board)
         let cpu = "Allwinner D1";
         let machine = "riscv64";
-        
+
         let hw = HardwareInfo {
             platform: "Linux".to_string(),
             machine: machine.to_string(),
@@ -101,7 +101,7 @@ mod architecture_detection_tests {
             macs: vec!["00:00:00:00:00:01".to_string()],
             mac: "00:00:00:00:00:01".to_string(),
         };
-        
+
         assert_eq!(hw.family, "RISC-V");
         assert_eq!(hw.arch, "Allwinner D1");
     }
@@ -111,7 +111,7 @@ mod architecture_detection_tests {
         // T-Head C910 (high-performance RISC-V)
         let cpu = "T-Head C910";
         let machine = "riscv64";
-        
+
         let hw = HardwareInfo {
             platform: "Linux".to_string(),
             machine: machine.to_string(),
@@ -125,7 +125,7 @@ mod architecture_detection_tests {
             macs: vec!["00:00:00:00:00:01".to_string()],
             mac: "00:00:00:00:00:01".to_string(),
         };
-        
+
         assert_eq!(hw.family, "RISC-V");
         assert!(hw.arch.contains("T-Head"));
     }
@@ -135,7 +135,7 @@ mod architecture_detection_tests {
         // Original VisionFive
         let cpu = "StarFive JH7100";
         let machine = "riscv64";
-        
+
         let hw = HardwareInfo {
             platform: "Linux".to_string(),
             machine: machine.to_string(),
@@ -149,7 +149,7 @@ mod architecture_detection_tests {
             macs: vec!["00:00:00:00:00:01".to_string()],
             mac: "00:00:00:00:00:01".to_string(),
         };
-        
+
         assert_eq!(hw.family, "RISC-V");
         assert_eq!(hw.arch, "StarFive JH7100");
     }
@@ -170,9 +170,9 @@ mod architecture_detection_tests {
             macs: vec!["aa:bb:cc:dd:ee:ff".to_string()],
             mac: "aa:bb:cc:dd:ee:ff".to_string(),
         };
-        
+
         let miner_id = hw.generate_miner_id();
-        
+
         // Miner ID should contain architecture info
         assert!(miner_id.contains("risc-v") || miner_id.contains("sifive"));
         assert!(miner_id.contains("hifive-u"));
@@ -194,10 +194,10 @@ mod architecture_detection_tests {
             macs: vec!["11:22:33:44:55:66".to_string()],
             mac: "11:22:33:44:55:66".to_string(),
         };
-        
+
         let miner_id = hw.generate_miner_id();
         let wallet = hw.generate_wallet(&miner_id);
-        
+
         // Wallet should be properly formatted
         assert!(wallet.contains("RTC"));
         assert!(wallet.len() > 20);
@@ -219,7 +219,7 @@ mod architecture_detection_tests {
             macs: vec!["aa:bb:cc:dd:ee:ff".to_string()],
             mac: "aa:bb:cc:dd:ee:ff".to_string(),
         };
-        
+
         assert_eq!(hw.family, "Apple Silicon");
         assert_eq!(hw.arch, "M1");
     }
@@ -240,7 +240,7 @@ mod architecture_detection_tests {
             macs: vec!["aa:bb:cc:dd:ee:ff".to_string()],
             mac: "aa:bb:cc:dd:ee:ff".to_string(),
         };
-        
+
         assert_eq!(hw.family, "x86_64");
     }
 
@@ -260,7 +260,7 @@ mod architecture_detection_tests {
             macs: vec!["aa:bb:cc:dd:ee:ff".to_string()],
             mac: "aa:bb:cc:dd:ee:ff".to_string(),
         };
-        
+
         assert_eq!(hw.family, "PowerPC");
         assert_eq!(hw.arch, "G4");
     }
@@ -276,14 +276,16 @@ mod architecture_detection_tests {
             "Allwinner D1",
             "T-Head C910/C906",
         ];
-        
+
         for arch in riscv_archs {
             // All RISC-V architectures should be recognized
-            assert!(arch.contains("RISC-V") || 
-                    arch.contains("SiFive") || 
-                    arch.contains("StarFive") ||
-                    arch.contains("Allwinner") ||
-                    arch.contains("T-Head"));
+            assert!(
+                arch.contains("RISC-V")
+                    || arch.contains("SiFive")
+                    || arch.contains("StarFive")
+                    || arch.contains("Allwinner")
+                    || arch.contains("T-Head")
+            );
         }
     }
 
@@ -303,15 +305,15 @@ mod architecture_detection_tests {
             macs: vec!["aa:bb:cc:dd:ee:ff".to_string()],
             mac: "aa:bb:cc:dd:ee:ff".to_string(),
         };
-        
+
         // Serialize to JSON
         let json = serde_json::to_string(&hw).unwrap();
-        
+
         // Verify it contains expected fields
         assert!(json.contains("RISC-V"));
         assert!(json.contains("SiFive U74"));
         assert!(json.contains("riscv64"));
-        
+
         // Deserialize back
         let hw2: HardwareInfo = serde_json::from_str(&json).unwrap();
         assert_eq!(hw.family, hw2.family);

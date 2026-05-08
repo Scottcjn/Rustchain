@@ -21,7 +21,11 @@ impl NodeTransport {
     /// with self-signed certificates), set the environment variable
     /// `RUSTCHAIN_DEV_INSECURE_TLS=1`. This is **strongly discouraged** in
     /// production — it exposes the miner to man-in-the-middle attacks.
-    pub fn new(node_url: String, proxy_url: Option<String>, timeout: Duration) -> crate::Result<Self> {
+    pub fn new(
+        node_url: String,
+        proxy_url: Option<String>,
+        timeout: Duration,
+    ) -> crate::Result<Self> {
         let insecure = std::env::var("RUSTCHAIN_DEV_INSECURE_TLS")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
@@ -65,14 +69,22 @@ impl NodeTransport {
     }
 
     /// GET request with query parameters
-    pub async fn get_with_params<T: Serialize + ?Sized>(&self, path: &str, params: &T) -> crate::Result<Response> {
+    pub async fn get_with_params<T: Serialize + ?Sized>(
+        &self,
+        path: &str,
+        params: &T,
+    ) -> crate::Result<Response> {
         let url = format!("{}{}", self.base_url(), path);
         let response = self.client.get(&url).query(params).send().await?;
         Ok(response)
     }
 
     /// POST request with JSON body
-    pub async fn post_json<T: Serialize + ?Sized>(&self, path: &str, body: &T) -> crate::Result<Response> {
+    pub async fn post_json<T: Serialize + ?Sized>(
+        &self,
+        path: &str,
+        body: &T,
+    ) -> crate::Result<Response> {
         let url = format!("{}{}", self.base_url(), path);
         let response = self.client.post(&url).json(body).send().await?;
         Ok(response)
@@ -97,7 +109,7 @@ impl NodeTransport {
     pub async fn probe_transport(&mut self) {
         // Try direct HTTPS first
         let health_url = format!("{}/health", self.node_url);
-        
+
         if let Ok(response) = self.client.get(&health_url).send().await {
             if response.status().is_success() {
                 tracing::info!("[TRANSPORT] Direct HTTPS to node: OK");

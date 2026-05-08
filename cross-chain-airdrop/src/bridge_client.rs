@@ -65,9 +65,10 @@ impl BridgeClient {
 
         request = request.json(&body);
 
-        let response = request.send().await.map_err(|e| {
-            AirdropError::Bridge(format!("Failed to lock RTC: {}", e))
-        })?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| AirdropError::Bridge(format!("Failed to lock RTC: {}", e)))?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -78,9 +79,10 @@ impl BridgeClient {
             )));
         }
 
-        let lock_response: BridgeLockResponse = response.json().await.map_err(|e| {
-            AirdropError::Bridge(format!("Failed to parse lock response: {}", e))
-        })?;
+        let lock_response: BridgeLockResponse = response
+            .json()
+            .await
+            .map_err(|e| AirdropError::Bridge(format!("Failed to parse lock response: {}", e)))?;
 
         Ok(lock_response)
     }
@@ -107,9 +109,10 @@ impl BridgeClient {
                 "notes": notes,
             }));
 
-        let response = request.send().await.map_err(|e| {
-            AirdropError::Bridge(format!("Failed to confirm lock: {}", e))
-        })?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| AirdropError::Bridge(format!("Failed to confirm lock: {}", e)))?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -186,9 +189,10 @@ impl BridgeClient {
             )));
         }
 
-        let status: BridgeLockStatus = response.json().await.map_err(|e| {
-            AirdropError::Bridge(format!("Failed to parse lock status: {}", e))
-        })?;
+        let status: BridgeLockStatus = response
+            .json()
+            .await
+            .map_err(|e| AirdropError::Bridge(format!("Failed to parse lock status: {}", e)))?;
 
         Ok(status)
     }
@@ -211,9 +215,10 @@ impl BridgeClient {
             )));
         }
 
-        let stats: BridgeStats = response.json().await.map_err(|e| {
-            AirdropError::Bridge(format!("Failed to parse bridge stats: {}", e))
-        })?;
+        let stats: BridgeStats = response
+            .json()
+            .await
+            .map_err(|e| AirdropError::Bridge(format!("Failed to parse bridge stats: {}", e)))?;
 
         Ok(stats)
     }
@@ -299,9 +304,18 @@ mod tests {
 
     #[test]
     fn test_bridge_state_conversion() {
-        assert_eq!(bridge_state_to_claim_state("requested"), ClaimStatus::Pending);
-        assert_eq!(bridge_state_to_claim_state("confirmed"), ClaimStatus::Verified);
-        assert_eq!(bridge_state_to_claim_state("complete"), ClaimStatus::Complete);
+        assert_eq!(
+            bridge_state_to_claim_state("requested"),
+            ClaimStatus::Pending
+        );
+        assert_eq!(
+            bridge_state_to_claim_state("confirmed"),
+            ClaimStatus::Verified
+        );
+        assert_eq!(
+            bridge_state_to_claim_state("complete"),
+            ClaimStatus::Complete
+        );
         assert_eq!(bridge_state_to_claim_state("failed"), ClaimStatus::Failed);
     }
 }

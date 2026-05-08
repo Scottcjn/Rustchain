@@ -69,7 +69,10 @@ impl HardwareInfo {
 
         // Get MAC addresses
         let macs = get_mac_addresses();
-        let mac = macs.first().cloned().unwrap_or_else(|| "00:00:00:00:00:00".to_string());
+        let mac = macs
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "00:00:00:00:00:00".to_string());
 
         Ok(Self {
             platform,
@@ -90,7 +93,11 @@ impl HardwareInfo {
     pub fn generate_miner_id(&self) -> String {
         use sha2::{Digest, Sha256};
 
-        let hw_string = format!("{}-{}", self.hostname, self.serial.as_deref().unwrap_or("unknown"));
+        let hw_string = format!(
+            "{}-{}",
+            self.hostname,
+            self.serial.as_deref().unwrap_or("unknown")
+        );
         let hash = Sha256::digest(hw_string.as_bytes());
         let hw_hash = hex::encode(&hash[..4]);
 
@@ -110,7 +117,11 @@ impl HardwareInfo {
         let hash = Sha256::digest(wallet_string.as_bytes());
         let wallet_hash = hex::encode(&hash[..19]);
 
-        format!("{}_{}RTC", self.family.to_lowercase().replace(' ', "_"), wallet_hash)
+        format!(
+            "{}_{}RTC",
+            self.family.to_lowercase().replace(' ', "_"),
+            wallet_hash
+        )
     }
 }
 
@@ -184,9 +195,15 @@ fn detect_cpu_family_arch(cpu: &str, machine: &str) -> (String, String) {
                 return ("x86_64".to_string(), "ivy_bridge".to_string());
             }
             return ("x86_64".to_string(), "xeon".to_string());
-        } else if cpu_lower.contains("i7-3") || cpu_lower.contains("i5-3") || cpu_lower.contains("i3-3") {
+        } else if cpu_lower.contains("i7-3")
+            || cpu_lower.contains("i5-3")
+            || cpu_lower.contains("i3-3")
+        {
             return ("x86_64".to_string(), "ivy_bridge".to_string());
-        } else if cpu_lower.contains("i7-2") || cpu_lower.contains("i5-2") || cpu_lower.contains("i3-2") {
+        } else if cpu_lower.contains("i7-2")
+            || cpu_lower.contains("i5-2")
+            || cpu_lower.contains("i3-2")
+        {
             return ("x86_64".to_string(), "sandy_bridge".to_string());
         } else if cpu_lower.contains("i7-9") && cpu_lower.contains("900") {
             return ("x86_64".to_string(), "nehalem".to_string());

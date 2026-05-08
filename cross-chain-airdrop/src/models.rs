@@ -35,12 +35,12 @@ impl std::str::FromStr for TargetChain {
 /// GitHub contribution tier for airdrop eligibility
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum GitHubTier {
-    Stargazer,    // 10+ repos starred
-    Contributor,  // 1+ merged PR
-    Builder,      // 3+ merged PRs
-    Security,     // Verified vulnerability
-    Core,         // 5+ merged PRs or Star King badge
-    Miner,        // Active attestation history
+    Stargazer,   // 10+ repos starred
+    Contributor, // 1+ merged PR
+    Builder,     // 3+ merged PRs
+    Security,    // Verified vulnerability
+    Core,        // 5+ merged PRs or Star King badge
+    Miner,       // Active attestation history
 }
 
 impl GitHubTier {
@@ -137,10 +137,7 @@ pub struct EligibilityResult {
 
 impl EligibilityResult {
     /// Create a new eligibility result
-    pub fn new(
-        github: Option<GitHubVerification>,
-        wallet: Option<WalletVerification>,
-    ) -> Self {
+    pub fn new(github: Option<GitHubVerification>, wallet: Option<WalletVerification>) -> Self {
         let mut rejection_reasons = Vec::new();
         let mut base_allocation = 0u64;
         let mut multiplier = 1.0f64;
@@ -224,12 +221,12 @@ pub struct ClaimResponse {
 /// Claim status
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ClaimStatus {
-    Pending,      // Awaiting admin review
-    Verified,     // Eligibility verified, ready for bridge
-    Bridging,     // Bridge lock in progress
-    Complete,     // wRTC minted on target chain
-    Rejected,     // Claim rejected
-    Failed,       // Claim failed during processing
+    Pending,  // Awaiting admin review
+    Verified, // Eligibility verified, ready for bridge
+    Bridging, // Bridge lock in progress
+    Complete, // wRTC minted on target chain
+    Rejected, // Claim rejected
+    Failed,   // Claim failed during processing
 }
 
 impl std::fmt::Display for ClaimStatus {
@@ -296,8 +293,14 @@ mod tests {
 
     #[test]
     fn test_target_chain_from_str() {
-        assert_eq!("solana".parse::<TargetChain>().unwrap(), TargetChain::Solana);
-        assert_eq!("SOLANA".parse::<TargetChain>().unwrap(), TargetChain::Solana);
+        assert_eq!(
+            "solana".parse::<TargetChain>().unwrap(),
+            TargetChain::Solana
+        );
+        assert_eq!(
+            "SOLANA".parse::<TargetChain>().unwrap(),
+            TargetChain::Solana
+        );
         assert_eq!("base".parse::<TargetChain>().unwrap(), TargetChain::Base);
         assert_eq!("BASE".parse::<TargetChain>().unwrap(), TargetChain::Base);
         assert!("ethereum".parse::<TargetChain>().is_err());

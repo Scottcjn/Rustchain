@@ -279,7 +279,7 @@ pub struct ClaimsByTier {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chain_adapter::{SolanaAdapter, BaseAdapter};
+    use crate::chain_adapter::{BaseAdapter, SolanaAdapter};
     use std::sync::Arc;
 
     #[tokio::test]
@@ -292,10 +292,8 @@ mod tests {
             "https://mainnet.base.org".to_string(),
         ));
 
-        let pipeline = VerificationPipeline::new(
-            github_verifier,
-            vec![solana_adapter, base_adapter],
-        );
+        let pipeline =
+            VerificationPipeline::new(github_verifier, vec![solana_adapter, base_adapter]);
 
         let stats = pipeline.get_stats().unwrap();
         assert_eq!(stats.total_claims, 0);

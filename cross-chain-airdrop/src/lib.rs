@@ -63,9 +63,9 @@ pub mod models;
 pub mod pipeline;
 
 // Re-export commonly used types
-pub use claim_store::{ClaimStore, InMemoryClaimStore};
 #[cfg(feature = "sqlite-store")]
 pub use claim_store::SqliteClaimStore;
+pub use claim_store::{ClaimStore, InMemoryClaimStore};
 pub use config::AirdropConfig as Config;
 pub use error::{AirdropError, Result};
 pub use github_verifier::GitHubVerifier;
@@ -79,4 +79,5 @@ pub use pipeline::VerificationPipeline;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// RIP-305 specification reference
-pub const RIP_305_SPEC: &str = "https://github.com/Scottcjn/Rustchain/blob/main/docs/RIP-305-cross-chain-airdrop.md";
+pub const RIP_305_SPEC: &str =
+    "https://github.com/Scottcjn/Rustchain/blob/main/docs/RIP-305-cross-chain-airdrop.md";

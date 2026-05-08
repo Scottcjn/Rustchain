@@ -3,7 +3,6 @@
 /// Collects CPU identity, cache-timing signatures, clock-drift coefficients,
 /// and architecture detection. These values feed the attestation payload and
 /// are used by the node to score "proof of antiquity" (genuine old hardware).
-
 use std::time::{Duration, Instant};
 
 // ---------------------------------------------------------------------------
@@ -100,7 +99,13 @@ pub fn get_cpu_info() -> CpuInfo {
     let cache_sizes = probe_cache_sizes();
     let simd_features = detect_simd_features();
 
-    CpuInfo { arch, cores, model, cache_sizes, simd_features }
+    CpuInfo {
+        arch,
+        cores,
+        model,
+        cache_sizes,
+        simd_features,
+    }
 }
 
 fn num_logical_cores() -> usize {
@@ -117,7 +122,10 @@ fn cpu_model_name() -> String {
         if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
             for line in content.lines() {
                 let lower = line.to_lowercase();
-                if lower.starts_with("model name") || lower.starts_with("cpu model") || lower.starts_with("hardware") {
+                if lower.starts_with("model name")
+                    || lower.starts_with("cpu model")
+                    || lower.starts_with("hardware")
+                {
                     if let Some(val) = line.splitn(2, ':').nth(1) {
                         let trimmed = val.trim().to_string();
                         if !trimmed.is_empty() {
@@ -181,17 +189,29 @@ fn detect_simd_features() -> Vec<String> {
     let mut features = Vec::new();
     #[cfg(target_arch = "x86_64")]
     {
-        if std::is_x86_feature_detected!("sse2") { features.push("sse2".to_string()); }
-        if std::is_x86_feature_detected!("sse4.2") { features.push("sse4.2".to_string()); }
-        if std::is_x86_feature_detected!("avx") { features.push("avx".to_string()); }
-        if std::is_x86_feature_detected!("avx2") { features.push("avx2".to_string()); }
-        if std::is_x86_feature_detected!("avx512f") { features.push("avx512f".to_string()); }
+        if std::is_x86_feature_detected!("sse2") {
+            features.push("sse2".to_string());
+        }
+        if std::is_x86_feature_detected!("sse4.2") {
+            features.push("sse4.2".to_string());
+        }
+        if std::is_x86_feature_detected!("avx") {
+            features.push("avx".to_string());
+        }
+        if std::is_x86_feature_detected!("avx2") {
+            features.push("avx2".to_string());
+        }
+        if std::is_x86_feature_detected!("avx512f") {
+            features.push("avx512f".to_string());
+        }
     }
     #[cfg(target_arch = "aarch64")]
     {
         // NEON is mandatory on AArch64
         features.push("neon".to_string());
-        if std::arch::is_aarch64_feature_detected!("sve") { features.push("sve".to_string()); }
+        if std::arch::is_aarch64_feature_detected!("sve") {
+            features.push("sve".to_string());
+        }
     }
     if features.is_empty() {
         features.push("none".to_string());

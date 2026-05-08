@@ -37,9 +37,13 @@ impl GitHubVerifier {
     pub async fn verify(&self, oauth_token: &str) -> Result<GitHubVerification> {
         // Get user profile
         let profile = self.get_user_profile(oauth_token).await?;
-        
+
         // Check account age
-        let account_age_days = profile.created_at.signed_duration_since(Utc::now()).num_days().abs() as u64;
+        let account_age_days = profile
+            .created_at
+            .signed_duration_since(Utc::now())
+            .num_days()
+            .abs() as u64;
         if account_age_days < self.min_account_age_days {
             return Err(AirdropError::GitHubVerification(format!(
                 "GitHub account too young: {} days (minimum {})",
@@ -87,9 +91,10 @@ impl GitHubVerifier {
             request = request.bearer_auth(token);
         }
 
-        let response = request.send().await.map_err(|e| {
-            AirdropError::GitHub(format!("Failed to fetch user profile: {}", e))
-        })?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| AirdropError::GitHub(format!("Failed to fetch user profile: {}", e)))?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -100,9 +105,10 @@ impl GitHubVerifier {
             )));
         }
 
-        let profile: GitHubProfileResponse = response.json().await.map_err(|e| {
-            AirdropError::GitHub(format!("Failed to parse user profile: {}", e))
-        })?;
+        let profile: GitHubProfileResponse = response
+            .json()
+            .await
+            .map_err(|e| AirdropError::GitHub(format!("Failed to parse user profile: {}", e)))?;
 
         // Parse created_at timestamp
         let created_at = DateTime::parse_from_rfc3339(&profile.created_at)
@@ -135,9 +141,10 @@ impl GitHubVerifier {
         // Request only 1 item per page to get total count efficiently
         request = request.query(&[("per_page", "1")]);
 
-        let response = request.send().await.map_err(|e| {
-            AirdropError::GitHub(format!("Failed to fetch starred repos: {}", e))
-        })?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| AirdropError::GitHub(format!("Failed to fetch starred repos: {}", e)))?;
 
         if !response.status().is_success() {
             return Err(AirdropError::GitHub(format!(
@@ -165,7 +172,7 @@ impl GitHubVerifier {
         // Search for merged PRs by the user in Scottcjn/Rustchain repo
         let query = format!("repo:Scottcjn/Rustchain type:pr author:{} is:merged", login);
         let per_page = "1".to_string();
-        
+
         let request = self
             .client
             .get(format!("{}/search/issues", self.api_base))
@@ -173,9 +180,10 @@ impl GitHubVerifier {
             .header("User-Agent", "RustChain-Airdrop")
             .query(&[("q", &query), ("per_page", &per_page)]);
 
-        let response = request.send().await.map_err(|e| {
-            AirdropError::GitHub(format!("Failed to fetch merged PRs: {}", e))
-        })?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| AirdropError::GitHub(format!("Failed to fetch merged PRs: {}", e)))?;
 
         if !response.status().is_success() {
             return Err(AirdropError::GitHub(format!(
@@ -184,9 +192,10 @@ impl GitHubVerifier {
             )));
         }
 
-        let result: SearchResponse = response.json().await.map_err(|e| {
-            AirdropError::GitHub(format!("Failed to parse search results: {}", e))
-        })?;
+        let result: SearchResponse = response
+            .json()
+            .await
+            .map_err(|e| AirdropError::GitHub(format!("Failed to parse search results: {}", e)))?;
 
         Ok(result.total_count)
     }

@@ -25,7 +25,12 @@ struct Args {
     miner_id: Option<String>,
 
     /// Node URL
-    #[arg(short = 'n', long = "node", env = "RUSTCHAIN_NODE_URL", default_value = "https://50.28.86.131")]
+    #[arg(
+        short = 'n',
+        long = "node",
+        env = "RUSTCHAIN_NODE_URL",
+        default_value = "https://50.28.86.131"
+    )]
     node: String,
 
     /// HTTP proxy URL for legacy systems
@@ -41,11 +46,19 @@ struct Args {
     verbose: bool,
 
     /// Block time in seconds
-    #[arg(long = "block-time", env = "RUSTCHAIN_BLOCK_TIME", default_value = "600")]
+    #[arg(
+        long = "block-time",
+        env = "RUSTCHAIN_BLOCK_TIME",
+        default_value = "600"
+    )]
     block_time: u64,
 
     /// Attestation TTL in seconds
-    #[arg(long = "attestation-ttl", env = "RUSTCHAIN_ATTESTATION_TTL", default_value = "580")]
+    #[arg(
+        long = "attestation-ttl",
+        env = "RUSTCHAIN_ATTESTATION_TTL",
+        default_value = "580"
+    )]
     attestation_ttl: u64,
 }
 

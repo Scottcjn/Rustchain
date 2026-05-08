@@ -165,7 +165,10 @@ impl ClaimStore for InMemoryClaimStore {
             claim.rejection_reason = rejection_reason;
             Ok(())
         } else {
-            Err(AirdropError::Claim(format!("Claim not found: {}", claim_id)))
+            Err(AirdropError::Claim(format!(
+                "Claim not found: {}",
+                claim_id
+            )))
         }
     }
 
@@ -195,9 +198,8 @@ pub struct SqliteClaimStore {
 impl SqliteClaimStore {
     /// Open (or create) a SQLite database at the given path.
     pub fn open(path: &str) -> Result<Self> {
-        let conn = rusqlite::Connection::open(path).map_err(|e| {
-            AirdropError::Claim(format!("Failed to open claim store DB: {}", e))
-        })?;
+        let conn = rusqlite::Connection::open(path)
+            .map_err(|e| AirdropError::Claim(format!("Failed to open claim store DB: {}", e)))?;
 
         conn.execute_batch(
             "
@@ -228,9 +230,10 @@ impl SqliteClaimStore {
 #[cfg(feature = "sqlite-store")]
 impl ClaimStore for SqliteClaimStore {
     fn is_github_claimed(&self, github_id: u64) -> Result<bool> {
-        let conn = self.conn.lock().map_err(|e| {
-            AirdropError::Claim(format!("Lock poisoning: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AirdropError::Claim(format!("Lock poisoning: {}", e)))?;
         let mut stmt = conn
             .prepare("SELECT COUNT(*) FROM claims WHERE github_id = ?")
             .map_err(|e| AirdropError::Claim(format!("SQL prepare error: {}", e)))?;
@@ -241,9 +244,10 @@ impl ClaimStore for SqliteClaimStore {
     }
 
     fn is_wallet_claimed(&self, chain: &str, address: &str) -> Result<bool> {
-        let conn = self.conn.lock().map_err(|e| {
-            AirdropError::Claim(format!("Lock poisoning: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AirdropError::Claim(format!("Lock poisoning: {}", e)))?;
         let mut stmt = conn
             .prepare("SELECT COUNT(*) FROM claims WHERE chain = ? AND address = ?")
             .map_err(|e| AirdropError::Claim(format!("SQL prepare error: {}", e)))?;
@@ -260,18 +264,24 @@ impl ClaimStore for SqliteClaimStore {
         address: &str,
         record: ClaimRecord,
     ) -> Result<()> {
-        let json = serde_json::to_string(&record).map_err(|e| {
-            AirdropError::Claim(format!("Failed to serialize claim: {}", e))
-        })?;
+        let json = serde_json::to_string(&record)
+            .map_err(|e| AirdropError::Claim(format!("Failed to serialize claim: {}", e)))?;
 
-        let conn = self.conn.lock().map_err(|e| {
-            AirdropError::Claim(format!("Lock poisoning: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AirdropError::Claim(format!("Lock poisoning: {}", e)))?;
 
         conn.execute(
             "INSERT INTO claims (claim_id, github_id, chain, address, record_json)
              VALUES (?, ?, ?, ?, ?)",
-            [&record.claim_id, &github_id.to_string(), chain, address, &json],
+            [
+                &record.claim_id,
+                &github_id.to_string(),
+                chain,
+                address,
+                &json,
+            ],
         )
         .map_err(|e: rusqlite::Error| {
             let msg = e.to_string();
@@ -296,9 +306,10 @@ impl ClaimStore for SqliteClaimStore {
     }
 
     fn get_claim(&self, claim_id: &str) -> Result<Option<ClaimRecord>> {
-        let conn = self.conn.lock().map_err(|e| {
-            AirdropError::Claim(format!("Lock poisoning: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AirdropError::Claim(format!("Lock poisoning: {}", e)))?;
         let mut stmt = conn
             .prepare("SELECT record_json FROM claims WHERE claim_id = ?")
             .map_err(|e| AirdropError::Claim(format!("SQL prepare error: {}", e)))?;
@@ -324,9 +335,10 @@ impl ClaimStore for SqliteClaimStore {
         lock_id: Option<String>,
         rejection_reason: Option<String>,
     ) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| {
-            AirdropError::Claim(format!("Lock poisoning: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AirdropError::Claim(format!("Lock poisoning: {}", e)))?;
 
         let mut stmt = conn
             .prepare("SELECT record_json FROM claims WHERE claim_id = ?")
@@ -341,9 +353,8 @@ impl ClaimStore for SqliteClaimStore {
             other => AirdropError::Claim(format!("SQL query error: {}", other)),
         })?;
 
-        let mut record: ClaimRecord = serde_json::from_str(&json).map_err(|e| {
-            AirdropError::Claim(format!("Failed to deserialize claim: {}", e))
-        })?;
+        let mut record: ClaimRecord = serde_json::from_str(&json)
+            .map_err(|e| AirdropError::Claim(format!("Failed to deserialize claim: {}", e)))?;
 
         record.status = status;
         record.updated_at = Utc::now();
@@ -352,9 +363,8 @@ impl ClaimStore for SqliteClaimStore {
         }
         record.rejection_reason = rejection_reason;
 
-        let json = serde_json::to_string(&record).map_err(|e| {
-            AirdropError::Claim(format!("Failed to serialize claim: {}", e))
-        })?;
+        let json = serde_json::to_string(&record)
+            .map_err(|e| AirdropError::Claim(format!("Failed to serialize claim: {}", e)))?;
         conn.execute(
             "UPDATE claims SET record_json = ? WHERE claim_id = ?",
             [&json, claim_id],
@@ -365,9 +375,10 @@ impl ClaimStore for SqliteClaimStore {
     }
 
     fn get_claims(&self) -> Result<Vec<ClaimRecord>> {
-        let conn = self.conn.lock().map_err(|e| {
-            AirdropError::Claim(format!("Lock poisoning: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AirdropError::Claim(format!("Lock poisoning: {}", e)))?;
         let mut stmt = conn
             .prepare("SELECT record_json FROM claims")
             .map_err(|e| AirdropError::Claim(format!("SQL prepare error: {}", e)))?;
@@ -376,15 +387,15 @@ impl ClaimStore for SqliteClaimStore {
             .map_err(|e| AirdropError::Claim(format!("SQL query error: {}", e)))?;
 
         let mut claims = Vec::new();
-        while let Some(row) = rows.next().map_err(|e| {
-            AirdropError::Claim(format!("SQL row iteration error: {}", e))
-        })? {
-            let json: String = row.get(0).map_err(|e| {
-                AirdropError::Claim(format!("SQL row error: {}", e))
-            })?;
-            let record: ClaimRecord = serde_json::from_str(&json).map_err(|e| {
-                AirdropError::Claim(format!("Failed to deserialize claim: {}", e))
-            })?;
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| AirdropError::Claim(format!("SQL row iteration error: {}", e)))?
+        {
+            let json: String = row
+                .get(0)
+                .map_err(|e| AirdropError::Claim(format!("SQL row error: {}", e)))?;
+            let record: ClaimRecord = serde_json::from_str(&json)
+                .map_err(|e| AirdropError::Claim(format!("Failed to deserialize claim: {}", e)))?;
             claims.push(record);
         }
         Ok(claims)
@@ -470,7 +481,12 @@ mod tests {
 
         // Update
         store
-            .update_claim(&rec.claim_id, ClaimStatus::Complete, Some("lock-1".to_string()), None)
+            .update_claim(
+                &rec.claim_id,
+                ClaimStatus::Complete,
+                Some("lock-1".to_string()),
+                None,
+            )
             .unwrap();
 
         let updated = store.get_claim(&rec.claim_id).unwrap().unwrap();
@@ -544,7 +560,9 @@ mod tests {
         {
             let store = SqliteClaimStore::open(path.to_str().unwrap()).unwrap();
             assert!(store.is_github_claimed(12345).unwrap());
-            assert!(store.is_wallet_claimed("solana", "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU").unwrap());
+            assert!(store
+                .is_wallet_claimed("solana", "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU")
+                .unwrap());
 
             let rec2 = test_record();
             let addr2 = rec2.target_address.clone();
@@ -570,7 +588,12 @@ mod tests {
         assert_eq!(found.status, ClaimStatus::Pending);
 
         store
-            .update_claim(&rec.claim_id, ClaimStatus::Complete, Some("lock-1".to_string()), None)
+            .update_claim(
+                &rec.claim_id,
+                ClaimStatus::Complete,
+                Some("lock-1".to_string()),
+                None,
+            )
             .unwrap();
 
         let updated = store.get_claim(&rec.claim_id).unwrap().unwrap();

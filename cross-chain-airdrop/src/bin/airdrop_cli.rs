@@ -101,8 +101,7 @@ async fn main() -> Result<()> {
         .with_target(false)
         .without_time()
         .finish();
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("Failed to set tracing subscriber");
+    tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
 
     // Load configuration
     let mut config = AirdropConfig::from_env()?;
@@ -151,15 +150,9 @@ async fn main() -> Result<()> {
 
             if eligibility.eligible {
                 println!("✅ ELIGIBLE for airdrop!");
-                println!(
-                    "   Base allocation: {} wRTC",
-                    eligibility.base_allocation
-                );
+                println!("   Base allocation: {} wRTC", eligibility.base_allocation);
                 println!("   Wallet multiplier: {:.1}x", eligibility.multiplier);
-                println!(
-                    "   Final allocation: {} wRTC",
-                    eligibility.final_allocation
-                );
+                println!("   Final allocation: {} wRTC", eligibility.final_allocation);
 
                 if let Some(ref gh) = eligibility.github {
                     println!("   GitHub tier: {:?}", gh.tier);
@@ -237,10 +230,13 @@ async fn main() -> Result<()> {
 
         Commands::VerifyAddress { chain, address } => {
             let target_chain = parse_chain(&chain)?;
-            let adapter = match target_chain {
-                TargetChain::Solana => solana_adapter.as_ref() as &dyn cross_chain_airdrop::chain_adapter::ChainAdapter,
-                TargetChain::Base => base_adapter.as_ref() as &dyn cross_chain_airdrop::chain_adapter::ChainAdapter,
-            };
+            let adapter =
+                match target_chain {
+                    TargetChain::Solana => solana_adapter.as_ref()
+                        as &dyn cross_chain_airdrop::chain_adapter::ChainAdapter,
+                    TargetChain::Base => base_adapter.as_ref()
+                        as &dyn cross_chain_airdrop::chain_adapter::ChainAdapter,
+                };
 
             match adapter.validate_address(&address) {
                 Ok(_) => {
@@ -249,12 +245,23 @@ async fn main() -> Result<()> {
                     // Also check balance and age
                     match adapter.verify_wallet(&address).await {
                         Ok(verification) => {
-                            println!("   Balance: {} {}",
+                            println!(
+                                "   Balance: {} {}",
                                 format_balance(&verification.balance_base_units, &target_chain),
-                                chain.to_uppercase());
-                            println!("   Wallet age: {} days", verification.wallet_age_seconds / 86400);
-                            println!("   Meets minimum balance: {}", verification.meets_minimum_balance);
-                            println!("   Meets age requirement: {}", verification.meets_age_requirement);
+                                chain.to_uppercase()
+                            );
+                            println!(
+                                "   Wallet age: {} days",
+                                verification.wallet_age_seconds / 86400
+                            );
+                            println!(
+                                "   Meets minimum balance: {}",
+                                verification.meets_minimum_balance
+                            );
+                            println!(
+                                "   Meets age requirement: {}",
+                                verification.meets_age_requirement
+                            );
                             println!("   Wallet tier: {:?}", verification.tier);
                         }
                         Err(e) => {
@@ -274,9 +281,9 @@ async fn main() -> Result<()> {
 }
 
 fn parse_chain(chain: &str) -> Result<TargetChain> {
-    chain.parse::<TargetChain>().map_err(|e| {
-        cross_chain_airdrop::AirdropError::Parse(format!("Invalid chain: {}", e))
-    })
+    chain
+        .parse::<TargetChain>()
+        .map_err(|e| cross_chain_airdrop::AirdropError::Parse(format!("Invalid chain: {}", e)))
 }
 
 fn format_balance(balance_base_units: &u64, chain: &TargetChain) -> String {
@@ -287,7 +294,10 @@ fn format_balance(balance_base_units: &u64, chain: &TargetChain) -> String {
         }
         TargetChain::Base => {
             // ETH has 18 decimals
-            format!("{:.18}", *balance_base_units as f64 / 1_000_000_000_000_000_000.0)
+            format!(
+                "{:.18}",
+                *balance_base_units as f64 / 1_000_000_000_000_000_000.0
+            )
         }
     }
 }
