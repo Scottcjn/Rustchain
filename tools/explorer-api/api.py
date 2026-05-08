@@ -33,7 +33,7 @@ CACHE_TTL = int(os.environ.get("CACHE_TTL", "15"))
 REQUEST_TIMEOUT = float(os.environ.get("REQUEST_TIMEOUT", "10"))
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": os.environ.get("CORS_ORIGINS", "*")}})
 
 # ---------------------------------------------------------------------------
 # In-memory response cache

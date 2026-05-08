@@ -243,7 +243,7 @@ def create_app():
         sys.exit(1)
 
     app = Flask(__name__)
-    CORS(app)
+    CORS(app, resources={r"/*": {"origins": os.environ.get("CORS_ORIGINS", "*")}})
 
     # Load historical data
     _fork_store["history"] = _load_history()

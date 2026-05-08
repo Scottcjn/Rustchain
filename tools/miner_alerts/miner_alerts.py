@@ -177,6 +177,8 @@ class AlertDB:
         cur = self.conn.cursor()
         if alert_type:
             col = f"alert_{alert_type}"
+            if not col.isidentifier() or not col.startswith("alert_"):
+                raise ValueError("Invalid alert_type")
             cur.execute(
                 f"SELECT * FROM subscriptions WHERE miner_id = ? AND active = 1 AND {col} = 1",
                 (miner_id,),
