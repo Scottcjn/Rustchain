@@ -18,6 +18,7 @@ import hashlib
 import math
 import time
 import random
+import secrets
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any
 from enum import Enum
@@ -267,10 +268,10 @@ class DeepEntropyVerifier:
         # The randomised values ensure each challenge is unique, preventing
         # a cached replay attack where an attacker pre-records a real machine's response.
         operations = [
-            {"op": "mul", "value": random.randint(1, 1000000)},
-            {"op": "div", "value": random.randint(1, 1000)},
-            {"op": "fadd", "value": random.uniform(0, 1000)},
-            {"op": "memory", "stride": random.choice([1, 4, 16, 64, 256])},
+            {"op": "mul", "value": secrets.randbelow(1000000) + 1},
+            {"op": "div", "value": secrets.randbelow(1000) + 1},
+            {"op": "fadd", "value": secrets.randbelow(1000000) / 1000.0},
+            {"op": "memory", "stride": secrets.choice([1, 4, 16, 64, 256])},
         ] * 25  # 100 operations
 
         return {
