@@ -188,6 +188,18 @@ def process_payment():
         recipient = request.form.get('recipient', '')
         memo = request.form.get('memo', '')
     
+    # Input validation
+    try:
+        amount_val = float(amount)
+        if amount_val < 0 or amount_val > 1000000:
+            return jsonify({"error": "Invalid amount"}), 400
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid amount"}), 400
+    if len(recipient) > 100:
+        return jsonify({"error": "Recipient too long"}), 400
+    if len(memo) > 500:
+        return jsonify({"error": "Memo too long"}), 400
+    
     origin = request.headers.get('Origin', 'unknown')
     referer = request.headers.get('Referer', 'unknown')
     
