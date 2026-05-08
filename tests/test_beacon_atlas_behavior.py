@@ -69,6 +69,15 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             conn.execute("DELETE FROM beacon_bounties")
             conn.execute("DELETE FROM beacon_reputation")
             conn.execute("DELETE FROM beacon_chat")
+            # Ensure test agents exist in relay_agents for contract tests
+            conn.execute("""
+                INSERT OR IGNORE INTO relay_agents (agent_id, pubkey_hex, name, status, created_at, updated_at)
+                VALUES 
+                    ('bcn_alice_test', '0xalice', 'Alice', 'active', ?, ?),
+                    ('bcn_bob_test', '0xbob', 'Bob', 'active', ?, ?),
+                    ('bcn_test_from', '0xfrom', 'From', 'active', ?, ?),
+                    ('bcn_test_to', '0xto', 'To', 'active', ?, ?)
+            """, (int(time.time()),) * 8)
             conn.commit()
 
     def test_health_endpoint_returns_ok(self):
@@ -91,11 +100,12 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             'amount': 100.0,
             'term': '30d'
         }
-        
+
         create_response = self.client.post(
             '/api/contracts',
             data=json.dumps(contract_data),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_alice_test'},
         )
         self.assertEqual(create_response.status_code, 201)
         
@@ -114,11 +124,12 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(len(contracts), 1)
         self.assertEqual(contracts[0]['id'], contract_id)
         
-        # Update contract state to active
+        # Update contract state to active (must be done by recipient/to_agent)
         update_response = self.client.put(
             f'/api/contracts/{contract_id}',
             data=json.dumps({'state': 'active'}),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_bob_test'},
         )
         self.assertEqual(update_response.status_code, 200)
         
@@ -249,7 +260,8 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         create_response = self.client.post(
             '/api/contracts',
             data=json.dumps(contract_data),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_test_from'},
         )
         contract_id = json.loads(create_response.data)['id']
         
@@ -257,7 +269,8 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         update_response = self.client.put(
             f'/api/contracts/{contract_id}',
             data=json.dumps({'state': 'invalid_state'}),
-            content_type='application/json'
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_test_from'},
         )
         self.assertEqual(update_response.status_code, 400)
 

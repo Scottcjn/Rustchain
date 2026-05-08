@@ -536,7 +536,7 @@ def update_contract(contract_id):
             return jsonify({'error': 'Missing X-Agent-Key header — authentication required'}), 401
         
         from_agent = contract['from_agent']
-        to_agent = contract.get('to_agent', '')
+        to_agent = contract['to_agent'] if contract['to_agent'] else ''
         
         # Caller must be either the from_agent or to_agent
         if agent_key != from_agent and agent_key != to_agent:
