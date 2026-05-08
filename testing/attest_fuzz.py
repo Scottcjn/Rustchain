@@ -259,8 +259,8 @@ class FuzzResult:
 def send_payload(payload: Any, is_raw: bool = False) -> Tuple[Optional[int], str, float]:
     """Send a payload to the attestation endpoint."""
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
 
     if is_raw:
         body = rand_str(random.randint(1, 10000)).encode()

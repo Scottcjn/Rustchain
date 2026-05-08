@@ -10,7 +10,7 @@ import json
 from urllib.parse import unquote
 
 app = Flask(__name__)
-app.secret_key = 'test_key_for_security_testing_only'
+app.secret_key = os.environ.get('SECRET_KEY', '[REDACTED]')
 
 DB_PATH = 'rustchain.db'
 
@@ -265,7 +265,7 @@ def admin_payments():
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
     password = request.form.get('password', '')
-    if password == 'admin123':
+    if password == os.environ.get('ADMIN_PASSWORD', '[REDACTED]'):
         return jsonify({'token': 'admin_token_123', 'message': 'Login successful'})
     return jsonify({'error': 'Invalid credentials'})
 

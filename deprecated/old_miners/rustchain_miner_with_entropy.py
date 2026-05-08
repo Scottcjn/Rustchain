@@ -160,13 +160,11 @@ class EnhancedMiner:
         """Run shell command safely"""
         try:
             if isinstance(cmd, str):
-                result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE,
-                                      stderr=subprocess.PIPE, text=True, timeout=10)
-            else:
-                result = subprocess.run(cmd, stdout=subprocess.PIPE,
-                                      stderr=subprocess.PIPE, text=True, timeout=10)
+                cmd = cmd.split()
+            result = subprocess.run(cmd, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, text=True, timeout=10)
             return result.stdout.strip()
-        except:
+        except Exception:
             return ""
 
     def _get_mac_address(self):
