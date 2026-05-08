@@ -99,7 +99,7 @@ DEFAULT_CONFIG = {
         'backup_count': 5
     },
     'security': {
-        'cors_origins': ['*'],
+        'cors_origins': ['https://rustchain.io', 'https://app.rustchain.io'],
         'csrf_enabled': False,
         'request_timeout': 30,
         'max_body_size': 1048576

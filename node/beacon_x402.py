@@ -92,7 +92,7 @@ def _cors_json(data, status=200):
     """Return JSON response with CORS headers (matching beacon_chat.py pattern)."""
     resp = jsonify(data) if not isinstance(data, str) else data
     if hasattr(resp, 'headers'):
-        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Origin"] = os.environ.get("ALLOWED_ORIGIN", "https://rustchain.io")
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-PAYMENT"
         resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, OPTIONS"
     return resp, status
