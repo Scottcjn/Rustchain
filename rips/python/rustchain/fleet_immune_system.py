@@ -1019,7 +1019,11 @@ def register_fleet_endpoints(app, DB_PATH):
             return jsonify({"error": "Unauthorized"}), 401
 
         miner = request.args.get('miner')
+        if miner and len(miner) > 100:
+            return jsonify({"error": "miner parameter too long"}), 400
         limit = request.args.get('limit', 10, type=int)
+        if limit is not None and (limit < 1 or limit > 1000):
+            return jsonify({"error": "limit must be between 1 and 1000"}), 400
 
         with sqlite3.connect(DB_PATH) as db:
             if miner:
