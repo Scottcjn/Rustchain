@@ -87,7 +87,7 @@ class BountyVerifier:
                 return json.loads(match.group())
             return {"error": "AI response format invalid"}
         except Exception as e:
-            return {"error": str(e)}
+            return {"error": "Internal server error"}
 
     def generate_report(self, username: str, wallet: str, article_url: Optional[str] = None) -> str:
         """Compile a full markdown report."""

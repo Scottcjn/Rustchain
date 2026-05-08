@@ -451,7 +451,7 @@ def post_complete(session_id: str):
 @app.errorhandler(409)
 @app.errorhandler(500)
 def handle_error(e):
-    return jsonify({"error": str(e.description), "code": e.code}), e.code
+    return jsonify({"error": "Internal server error", "code": e.code}), e.code
 
 
 if __name__ == "__main__":
