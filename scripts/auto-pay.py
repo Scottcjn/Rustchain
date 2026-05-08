@@ -75,7 +75,7 @@ def fetch_pr_comments(repo: str, pr_number: str) -> list:
     page = 1
     while True:
         url = f"{GITHUB_API}/repos/{repo}/issues/{pr_number}/comments"
-        resp = requests.get(url, headers=gh_headers(), params={"per_page": 100, "page": page})
+        resp = requests.get(url, headers=gh_foot(), params={"per_page": 100, "page": page})
         resp.raise_for_status()
         batch = resp.json()
         if not batch:
@@ -88,7 +88,7 @@ def fetch_pr_comments(repo: str, pr_number: str) -> list:
 def post_comment(repo: str, pr_number: str, body: str) -> None:
     """Post a comment on a PR."""
     url = f"{GITHUB_API}/repos/{repo}/issues/{pr_number}/comments"
-    resp = requests.post(url, headers=gh_headers(), json={"body": body})
+    resp = requests.post(url, headers=gh_foot(), json={"body": body})
     resp.raise_for_status()
     print(f"Posted confirmation comment on PR #{pr_number}")
 

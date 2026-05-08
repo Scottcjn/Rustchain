@@ -252,7 +252,7 @@ class BlockchainIntegration:
         
         try:
             # Get current blockchain state
-            response = requests.get(f"{self.node_url}/api/blocks")
+            response = requests.get(f"{self.node_url}/api/blocks", timeout=30)
             data = response.json()
             blocks = data.get('blocks', [])
             
