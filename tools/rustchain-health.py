@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import platform
 import ssl
 import sys
@@ -334,7 +335,7 @@ examples:
 
 def clear_screen() -> None:
     if sys.platform == "win32":
-        os.system("cls")
+        subprocess.run("cls", shell=True, check=False)
     else:
         sys.stdout.write("\033[2J\033[H")
         sys.stdout.flush()

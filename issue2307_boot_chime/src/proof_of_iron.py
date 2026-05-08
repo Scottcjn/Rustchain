@@ -495,11 +495,11 @@ class ProofOfIron:
         """Cache features for future comparison"""
         try:
             import sqlite3
-            import pickle
+            import json
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
             
-            features_data = pickle.dumps({
+            features_data = json.dumps({
                 'mfcc_mean': features.mfcc_mean.tolist(),
                 'mfcc_std': features.mfcc_std.tolist(),
                 'spectral_centroid': features.spectral_centroid,
@@ -527,7 +527,7 @@ class ProofOfIron:
         """Load cached features"""
         try:
             import sqlite3
-            import pickle
+            import json
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
             c.execute('SELECT features FROM feature_cache WHERE hash = ?',
