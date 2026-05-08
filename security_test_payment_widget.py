@@ -197,7 +197,7 @@ def process_payment():
             return jsonify({'status': 'error', 'message': 'Negative amounts detected but processed anyway!'})
         elif amount_float > 1000000:
             return jsonify({'status': 'error', 'message': 'Amount overflow detected but processed anyway!'})
-    except:
+    except Exception:
         pass
     
     with sqlite3.connect(DB_PATH) as conn:

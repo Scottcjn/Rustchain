@@ -351,7 +351,7 @@ class RustChainWallet:
                 try:
                     dt = datetime.fromisoformat(timestamp)
                     time_str = dt.strftime("%Y-%m-%d %H:%M")
-                except:
+                except Exception:
                     time_str = timestamp[:16] if timestamp else "N/A"
 
                 self.tx_tree.insert("", tk.END, values=(

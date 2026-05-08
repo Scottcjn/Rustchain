@@ -282,17 +282,23 @@ def update_passport(machine_id: str):
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    # Check authorization
-    if expected_admin_key:
-        if admin_key != expected_admin_key:
-            # Allow owner to update their own passport
-            data = request.get_json()
-            if data and data.get('owner_miner_id') != passport.owner_miner_id:
-                return jsonify({
-                    'ok': False,
-                    'error': 'unauthorized',
-                    'message': 'Admin key required or must be owner',
-                }), 401
+    # Check authorization - deny if admin key not configured
+    if not expected_admin_key:
+        return jsonify({
+            'ok': False,
+            'error': 'admin_key_not_configured',
+            'message': 'ADMIN_KEY environment variable required',
+        }), 503
+    
+    if admin_key != expected_admin_key:
+        # Allow owner to update their own passport
+        data = request.get_json()
+        if not data or data.get('owner_miner_id') != passport.owner_miner_id:
+            return jsonify({
+                'ok': False,
+                'error': 'unauthorized',
+                'message': 'Admin key required or must be owner',
+            }), 401
     
     data = request.get_json()
     if not data:

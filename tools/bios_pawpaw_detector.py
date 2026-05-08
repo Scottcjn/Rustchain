@@ -17,7 +17,7 @@ def get_bios_date():
                 if "Release Date" in line:
                     date_str = line.split(":")[1].strip()
                     return datetime.strptime(date_str, "%m/%d/%Y")
-    except:
+    except Exception:
         pass
     return None
 

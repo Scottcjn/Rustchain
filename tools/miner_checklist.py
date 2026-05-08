@@ -16,7 +16,7 @@ def preflight():
         ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
         urllib.request.urlopen("https://rustchain.org/health", timeout=5, context=ctx)
         ok &= check("Node reachable", True)
-    except:
+    except Exception:
         ok &= check("Node reachable", False)
     print(f"\n{'Ready to mine!' if ok else 'Fix issues above first.'}")
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ def check_server(url):
     try:
         resp = requests.get(url, timeout=5)
         return resp.status_code == 200
-    except:
+    except Exception:
         return False
 
 def main():

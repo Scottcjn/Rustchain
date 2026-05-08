@@ -49,7 +49,7 @@ def detect_legacy_os_badges():
         for system_key, terms in simulated_os_data.items():
             if any(term.lower() in output for term in terms):
                 detected_keywords.append(system_key)
-    except:
+    except Exception:
         pass
 
     for key in detected_keywords:
