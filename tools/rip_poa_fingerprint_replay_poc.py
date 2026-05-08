@@ -21,7 +21,10 @@ import time
 
 # ─── ATTACK 1: Fingerprint Replay ────────────────────────────────────
 
-def capture_fingerprint(output_path: str = "/tmp/captured_fingerprint.json") -> dict:
+def capture_fingerprint(output_path: str = None) -> dict:
+    if output_path is None:
+        import tempfile
+        output_path = tempfile.mkstemp(suffix="_captured_fingerprint.json")[1]
     """
     Simulates capturing a REAL machine's fingerprint output.
     In practice, an attacker runs the miner once on real hardware,
@@ -96,7 +99,10 @@ def capture_fingerprint(output_path: str = "/tmp/captured_fingerprint.json") -> 
     return real_fingerprint
 
 
-def replay_fingerprint(captured_path: str = "/tmp/captured_fingerprint.json") -> dict:
+def replay_fingerprint(captured_path: str = None) -> dict:
+    if captured_path is None:
+        import tempfile
+        captured_path = tempfile.mkstemp(suffix="_captured_fingerprint.json")[1]
     """
     Replays a previously captured fingerprint from ANY machine.
 
@@ -105,7 +111,7 @@ def replay_fingerprint(captured_path: str = "/tmp/captured_fingerprint.json") ->
     There is NO challenge-response binding — the server trusts the client's claim.
 
     Attack: Replace _run_fingerprint_checks() with:
-        self.fingerprint_data = json.load(open("/tmp/captured_fingerprint.json"))
+        self.fingerprint_data = json.load(open(captured_path))
         self.fingerprint_passed = True
     """
     with open(captured_path) as f:
