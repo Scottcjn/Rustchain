@@ -1214,6 +1214,17 @@ class AirdropV2:
 
 
 def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
+    # Rate limiting store for airdrop claims
+    import time
+    _claim_rate_store = {}
+    def _check_claim_rate(ip, max_req=3, window=60):
+        now = time.time()
+        _claim_rate_store[ip] = [t for t in _claim_rate_store.get(ip, []) if now - t < window]
+        if len(_claim_rate_store[ip]) >= max_req:
+            return False
+        _claim_rate_store[ip].append(now)
+        return True
+
     """
     Initialize airdrop API routes on Flask app.
 
@@ -1226,6 +1237,11 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     @app.route("/api/airdrop/eligibility", methods=["POST"])
     def check_airdrop_eligibility():
         """Check airdrop eligibility."""
+        # Rate limit check
+        client_ip = request.remote_addr
+        if not _check_claim_rate(client_ip, max_req=3, window=60):
+            return jsonify({"ok": False, "error": "rate_limited", "message": "Too many claims. Please wait."}), 429
+        
         data = request.get_json(silent=True)
         if not data:
             return jsonify({"ok": False, "error": "invalid_json"}), 400
