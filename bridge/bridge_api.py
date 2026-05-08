@@ -21,6 +21,21 @@ import threading
 import uuid
 from functools import wraps
 from flask import Flask, Blueprint, request, jsonify
+# Simple in-memory rate limiter
+_rate_limit_store = {}
+
+def _check_rate_limit(key: str, limit: int = 10, window: int = 60) -> bool:
+    import time
+    now = time.time()
+    _rate_limit_store.setdefault(key, [])
+    # Clean old entries
+    _rate_limit_store[key] = [t for t in _rate_limit_store[key] if now - t < window]
+    if len(_rate_limit_store[key]) >= limit:
+        return False
+    _rate_limit_store[key].append(now)
+    return True
+
+
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 BRIDGE_DB_PATH = os.environ.get("BRIDGE_DB_PATH", "bridge_ledger.db")

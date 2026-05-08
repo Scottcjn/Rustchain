@@ -2,11 +2,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt ./
+COPY --chown=appuser:appuser requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY rustchain-exporter.py ./
+COPY --chown=appuser:appuser rustchain-exporter.py ./
 
 EXPOSE 9100
+
+RUN adduser --disabled-password --gecos '' appuser
+USER appuser
 
 CMD ["python3", "rustchain-exporter.py"]

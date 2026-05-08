@@ -5,6 +5,20 @@ import sqlite3
 import os
 import secrets
 from datetime import datetime
+# Rate limiting
+_rate_limit_store = {}
+
+def _check_rate_limit(key: str, limit: int = 5, window: int = 300) -> bool:
+    import time
+    now = time.time()
+    _rate_limit_store.setdefault(key, [])
+    _rate_limit_store[key] = [t for t in _rate_limit_store[key] if now - t < window]
+    if len(_rate_limit_store[key]) >= limit:
+        return False
+    _rate_limit_store[key].append(now)
+    return True
+
+
 
 app = Flask(__name__)
 
