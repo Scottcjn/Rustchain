@@ -409,7 +409,7 @@ def register_routes(app):
     @app.route("/gpu/attest", methods=["POST"])
     def gpu_attest():
         from flask import request, jsonify
-        data = request.get_json(force=True)
+        data = request.get_json(silent=True)
         miner_id = data.get("miner_id")
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
@@ -430,7 +430,7 @@ def register_routes(app):
     @app.route("/llm/escrow", methods=["POST"])
     def create_escrow():
         from flask import request, jsonify
-        data = request.get_json(force=True)
+        data = request.get_json(silent=True)
         # Infer job_type from path
         path = request.path
         if path.startswith("/voice"):
@@ -455,7 +455,7 @@ def register_routes(app):
     @app.route("/llm/release", methods=["POST"])
     def release_escrow():
         from flask import request, jsonify
-        data = request.get_json(force=True)
+        data = request.get_json(silent=True)
         result = protocol.release_escrow(data.get("job_id", ""))
         status_code = 200 if "error" not in result else 400
         return jsonify(result), status_code
@@ -463,7 +463,7 @@ def register_routes(app):
     @app.route("/render/refund", methods=["POST"])
     def refund_escrow():
         from flask import request, jsonify
-        data = request.get_json(force=True)
+        data = request.get_json(silent=True)
         result = protocol.refund_escrow(data.get("job_id", ""))
         status_code = 200 if "error" not in result else 400
         return jsonify(result), status_code
@@ -485,7 +485,7 @@ def register_routes(app):
     @app.route("/render/pricing/check", methods=["POST"])
     def check_pricing():
         from flask import request, jsonify
-        data = request.get_json(force=True)
+        data = request.get_json(silent=True)
         result = protocol.detect_price_manipulation(
             data.get("job_type", "render"),
             data.get("price", 0),

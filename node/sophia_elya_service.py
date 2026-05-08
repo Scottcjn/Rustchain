@@ -186,7 +186,7 @@ def get_epoch():
 @app.post("/epoch/enroll")
 def epoch_enroll():
     """Enroll miner in current epoch"""
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True) or {}
 
     miner_pk = data.get("miner_pubkey", "")
     weights = data.get("weights", {}) or {}
@@ -233,7 +233,7 @@ def balance(miner_pk):
 @app.post("/api/register")
 def api_register():
     """Register node with hardware fingerprint"""
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True)
 
     system_id = data.get("system_id")
     fingerprint = data.get("fingerprint", {})
@@ -272,7 +272,7 @@ def attest_challenge():
 @app.post("/attest/submit")
 def attest_submit():
     """Submit Silicon Ticket attestation"""
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True)
     report = data.get("report", {})
 
     # Basic validation
@@ -316,7 +316,7 @@ def api_submit_block():
     """Submit block with VRF proof and Silicon Ticket"""
     global LAST_HASH_B3, LAST_EPOCH
 
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True)
     header = data.get("header", {})
     ext = data.get("header_ext", {})
 

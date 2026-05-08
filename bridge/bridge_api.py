@@ -200,7 +200,7 @@ def lock_rtc():
       - Rejects requests with invalid proof signatures
       - Validates proof before accepting lock into ledger
     """
-    data = request.get_json(force=True, silent=True) or {}
+    data = request.get_json(silent=True) or {}
 
     # ── Validate inputs ──
     sender = data.get("sender_wallet", "").strip()
@@ -344,7 +344,7 @@ def lock_rtc():
 @_require_admin
 def confirm_lock():
     """Admin: confirm a requested lock after reviewing proof."""
-    data = request.get_json(force=True, silent=True) or {}
+    data = request.get_json(silent=True) or {}
     lock_id = data.get("lock_id", "").strip()
     proof_ref = data.get("proof_ref", "").strip()
     notes = data.get("notes", "").strip() or None
@@ -405,7 +405,7 @@ def release_wrtc():
 
     Returns success/error.
     """
-    data = request.get_json(force=True, silent=True) or {}
+    data = request.get_json(silent=True) or {}
     lock_id = data.get("lock_id", "").strip()
     release_tx = data.get("release_tx", "").strip()
     notes = data.get("notes", "").strip() or None
