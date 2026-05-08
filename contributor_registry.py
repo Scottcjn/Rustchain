@@ -136,10 +136,18 @@ def index():
 
 @app.route('/register', methods=['POST'])
 def register():
-    github_username = request.form['github_username']
-    contributor_type = request.form['contributor_type']
-    rtc_wallet = request.form['rtc_wallet']
+    github_username = request.form.get('github_username', '').strip()
+    if not github_username or len(github_username) > 100:
+        return "Invalid github_username", 400
+    contributor_type = request.form.get('contributor_type', '').strip()
+    if contributor_type not in ('developer', 'auditor', 'researcher', 'community'):
+        return "Invalid contributor_type", 400
+    rtc_wallet = request.form.get('rtc_wallet', '').strip()
+    if not rtc_wallet or len(rtc_wallet) > 100:
+        return "Invalid rtc_wallet", 400
     contribution_history = request.form.get('contribution_history', '')
+    if len(contribution_history) > 5000:
+        return "contribution_history too long", 400
     
     try:
         with sqlite3.connect(DB_PATH) as conn:
