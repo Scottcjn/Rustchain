@@ -76,6 +76,9 @@ def process_message() -> Response:
     """
     engine = get_engine()
     
+    if not agent_id or len(agent_id) > 100:
+        return jsonify({"error": "Invalid agent_id"}), 400
+    
     data = request.get_json() or {}
     
     agent_id = data.get("agent_id", "")
@@ -123,6 +126,9 @@ def register_agent(agent_id: str) -> Response:
     }
     """
     engine = get_engine()
+    
+    if not agent_id or len(agent_id) > 100:
+        return jsonify({"error": "Invalid agent_id"}), 400
     
     data = request.get_json() or {}
     template = data.get("template")
@@ -363,6 +369,9 @@ def update_config() -> Response:
     """
     engine = get_engine()
     
+    if not agent_id or len(agent_id) > 100:
+        return jsonify({"error": "Invalid agent_id"}), 400
+    
     data = request.get_json() or {}
     
     if "enabled" in data:
@@ -494,6 +503,9 @@ def trigger_glitch() -> Response:
     }
     """
     engine = get_engine()
+    
+    if not agent_id or len(agent_id) > 100:
+        return jsonify({"error": "Invalid agent_id"}), 400
     
     data = request.get_json() or {}
     agent_id = data.get("agent_id", "test_agent")

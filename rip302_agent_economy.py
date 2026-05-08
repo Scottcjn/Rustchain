@@ -352,6 +352,8 @@ def register_agent_economy(app: Flask, db_path: str):
 
         if not worker:
             return jsonify({"error": "worker_wallet required"}), 400
+        if len(worker) > 100:
+            return jsonify({"error": "worker_wallet too long"}), 400
 
         conn = sqlite3.connect(db_path)
         try:
