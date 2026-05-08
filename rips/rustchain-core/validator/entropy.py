@@ -180,7 +180,7 @@ class HardwareEntropyCollector:
                 data["cpuinfo"] = cpuinfo[:2000]  # First 2KB
             else:
                 data["platform_processor"] = platform.processor()
-        except:
+        except Exception:
             data["platform_processor"] = platform.processor()
 
         # Measure instruction timing (simplified - real impl would use rdtsc)
@@ -282,7 +282,7 @@ class HardwareEntropyCollector:
                     )
                     if result.returncode == 0:
                         data["dmi_memory"] = result.stdout[:2000]
-                except:
+                except Exception:
                     pass
 
             elif platform.system() == "Darwin":  # macOS
@@ -292,7 +292,7 @@ class HardwareEntropyCollector:
                         capture_output=True, text=True, timeout=10
                     )
                     data["system_profiler"] = result.stdout[:2000]
-                except:
+                except Exception:
                     pass
 
         except Exception as e:
@@ -332,7 +332,7 @@ class HardwareEntropyCollector:
                                 with open(temp_file, "r") as f:
                                     temp = int(f.read().strip()) / 1000.0
                                     data[zone.name] = temp
-                        except:
+                        except Exception:
                             pass
 
                 # CPU frequency (varies with thermal throttling)
@@ -344,7 +344,7 @@ class HardwareEntropyCollector:
                             try:
                                 with open(fpath, "r") as f:
                                     data[freq_file] = int(f.read().strip())
-                            except:
+                            except Exception:
                                 pass
 
             elif platform.system() == "Darwin":
@@ -357,7 +357,7 @@ class HardwareEntropyCollector:
                     for line in result.stdout.split('\n'):
                         if 'temperature' in line.lower() or 'thermal' in line.lower():
                             data[line.split(':')[0].strip()] = line.split(':')[1].strip() if ':' in line else ''
-                except:
+                except Exception:
                     pass
 
         except Exception as e:
@@ -398,7 +398,7 @@ class HardwareEntropyCollector:
                             try:
                                 with open(fpath, "r") as f:
                                     data[field] = f.read().strip()
-                            except:
+                            except Exception:
                                 pass
 
             elif platform.system() == "Darwin":
@@ -409,7 +409,7 @@ class HardwareEntropyCollector:
                         capture_output=True, text=True, timeout=10
                     )
                     data["hardware_profile"] = result.stdout[:2000]
-                except:
+                except Exception:
                     pass
 
                 # NVRAM
@@ -419,7 +419,7 @@ class HardwareEntropyCollector:
                         capture_output=True, text=True, timeout=5
                     )
                     data["nvram"] = result.stdout[:1000]
-                except:
+                except Exception:
                     pass
 
         except Exception as e:
@@ -454,7 +454,7 @@ class HardwareEntropyCollector:
                     )
                     if result.returncode == 0:
                         data["pci_devices"] = result.stdout[:4000]
-                except:
+                except Exception:
                     pass
 
                 # USB devices
@@ -465,7 +465,7 @@ class HardwareEntropyCollector:
                     )
                     if result.returncode == 0:
                         data["usb_devices"] = result.stdout[:2000]
-                except:
+                except Exception:
                     pass
 
                 # Block devices
@@ -476,7 +476,7 @@ class HardwareEntropyCollector:
                     )
                     if result.returncode == 0:
                         data["block_devices"] = result.stdout[:2000]
-                except:
+                except Exception:
                     pass
 
             elif platform.system() == "Darwin":
@@ -486,7 +486,7 @@ class HardwareEntropyCollector:
                         capture_output=True, text=True, timeout=15
                     )
                     data["devices"] = result.stdout[:4000]
-                except:
+                except Exception:
                     pass
 
         except Exception as e:
@@ -532,7 +532,7 @@ class SoftwareEntropyCollector:
                 try:
                     with open("/proc/cmdline", "r") as f:
                         data["cmdline"] = f.read().strip()[:500]
-                except:
+                except Exception:
                     pass
 
         except Exception as e:
@@ -568,7 +568,7 @@ class SoftwareEntropyCollector:
                             try:
                                 with open(addr_file, "r") as f:
                                     data[iface.name] = f.read().strip()
-                            except:
+                            except Exception:
                                 pass
 
         except Exception as e:
@@ -602,7 +602,7 @@ class SoftwareEntropyCollector:
                     )
                     if result.returncode == 0:
                         data["system"] = result.stdout[:2000]
-                except:
+                except Exception:
                     pass
 
         except Exception as e:
@@ -638,7 +638,7 @@ class SoftwareEntropyCollector:
                     )
                     if result.returncode == 0:
                         data["root_uuid"] = result.stdout.strip()
-                except:
+                except Exception:
                     pass
 
             elif platform.system() == "Darwin":
@@ -648,7 +648,7 @@ class SoftwareEntropyCollector:
                         capture_output=True, text=True, timeout=10
                     )
                     data["diskutil"] = result.stdout[:1000]
-                except:
+                except Exception:
                     pass
 
         except Exception as e:
@@ -703,7 +703,7 @@ class EntropyProfileBuilder:
         try:
             with open("/proc/uptime", "r") as f:
                 uptime = int(float(f.read().split()[0]))
-        except:
+        except Exception:
             uptime = 0
 
         # Build profile
