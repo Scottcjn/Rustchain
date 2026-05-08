@@ -72,7 +72,8 @@ def simulate(tracker: AudienceTracker):
 # ------------------------------------------------------------------ #
 
 if __name__ == "__main__":
-    tmp = tempfile.mktemp(suffix=".db")
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmpf:
+        tmp = tmpf.name
     tracker = AudienceTracker(db_path=tmp)
     try:
         print("Simulating 20 viewers over 30 days …\n")

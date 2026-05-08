@@ -265,7 +265,8 @@ def admin_payments():
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
     password = request.form.get('password', '')
-    if password == 'admin123':
+    admin_pass = os.environ.get('ADMIN_PASSWORD', 'S3cur3R4nd0mP@ss!2025')
+    if password == admin_pass:
         return jsonify({'token': 'admin_token_123', 'message': 'Login successful'})
     return jsonify({'error': 'Invalid credentials'})
 
