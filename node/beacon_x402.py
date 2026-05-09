@@ -19,6 +19,9 @@ from functools import wraps
 log = logging.getLogger("beacon.x402")
 
 # --- Optional imports (graceful degradation) ---
+# Initialize default FIRST so any exception path sets a known value
+X402_CONFIG_OK = False
+
 try:
     import sys
     sys.path.insert(0, "/root/shared")
@@ -28,9 +31,8 @@ try:
         is_free, has_cdp_credentials, create_agentkit_wallet, SWAP_INFO,
     )
     X402_CONFIG_OK = True
-except ImportError:
-    log.warning("x402_config not found — x402 features disabled")
-    X402_CONFIG_OK = False
+except Exception:
+    log.warning("x402_config not found or invalid — x402 features disabled")
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +139,7 @@ def _check_x402_payment(price_str, action_name):
             )
             db.commit()
     except Exception as e:
-        log.debug(f"Payment logging failed: {e}")
+        log.warning(f"Payment logging failed (audit trail gap): {e}")
 
     return True, None
 
@@ -229,7 +231,7 @@ def init_app(app, get_db_func):
                 "SELECT coinbase_address FROM relay_agents WHERE agent_id = ?",
                 (agent_id,),
             ).fetchone()
-            if relay and relay.get("coinbase_address"):
+            if relay and relay["coinbase_address"]:
                 return _cors_json({
                     "agent_id": agent_id,
                     "coinbase_address": relay["coinbase_address"],
@@ -364,3 +366,4 @@ def init_app(app, get_db_func):
         })
 
     log.info("Beacon Atlas x402 module initialized")
+
