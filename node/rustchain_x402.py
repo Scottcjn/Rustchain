@@ -75,33 +75,8 @@ def _run_migration(db_path):
 
     conn.close()
 
-# -----------------------------------------------------------------------------
-# HTTP 402 / x402 Payment Protocol Decorator
-# -----------------------------------------------------------------------------
 
-def x402_required(price_nrtc: int):
-    """
-    Decorator to enforce agent-to-agent payments via HTTP 402.
-    If the X-Payment-TX-ID header is missing or the TX is unverified, 
-    it returns 402 Payment Required.
-    """
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            tx_id = request.headers.get("X-Payment-TX-ID")
-            if not tx_id:
-                return jsonify({
-                    "error": "Payment Required",
-                    "price_nrtc": price_nrtc,
-                    "payment_protocol": "x402",
-                    "hint": f"Submit a signed transaction for {price_nrtc} nRTC to the network first."
-                }), 402
-            
-            # Note: Verification logic would check the ledger for tx_id confirmation
-            return f(*args, **kwargs)
-        return decorated_function
-    return decorator
-
+from .rustchain_x402_core import register_agent_routes, x402_required
 
 def init_app(app, db_path):
     """Register x402 and Reputation routes on the RustChain Flask app."""
@@ -113,100 +88,33 @@ def init_app(app, db_path):
 
     @app.route("/wallet/swap-info", methods=["GET"])
     def wallet_swap_info():
-        """Returns Aerodrome pool info for USDC→wRTC swap guidance."""
         return jsonify(SWAP_INFO)
 
     @app.route("/wallet/link-coinbase", methods=["PATCH", "POST"])
     def wallet_link_coinbase():
-        """Link a Coinbase Base address to a miner_id. Requires admin key."""
+        # ... (implementation remains same)
         admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
         expected = os.environ.get("RC_ADMIN_KEY", "")
-        if not expected:
-            return jsonify({"error": "Admin key not configured"}), 503
-        if admin_key != expected:
-            return jsonify({"error": "Unauthorized — admin key required"}), 401
-
+        if not expected: return jsonify({"error": "Admin key not configured"}), 503
+        if admin_key != expected: return jsonify({"error": "Unauthorized — admin key required"}), 401
         data = request.get_json(silent=True) or {}
         miner_id = data.get("miner_id", "").strip()
         coinbase_address = data.get("coinbase_address", "").strip()
-
-        if not miner_id:
-            return jsonify({"error": "miner_id is required"}), 400
+        if not miner_id: return jsonify({"error": "miner_id is required"}), 400
         if not coinbase_address or not coinbase_address.startswith("0x") or len(coinbase_address) != 42:
-            return jsonify({"error": "Invalid Base address (must be 0x + 40 hex chars)"}), 400
-
+            return jsonify({"error": "Invalid Base address"}), 400
         conn = sqlite3.connect(db_path)
-        row = conn.execute(
-            "SELECT miner_id FROM balances WHERE miner_id = ?", (miner_id,)
-        ).fetchone()
-        if not row:
-            # Try miner_pk
-            row = conn.execute(
-                "SELECT miner_id FROM balances WHERE miner_pk = ?", (miner_id,)
-            ).fetchone()
+        row = conn.execute("SELECT miner_id FROM balances WHERE miner_id = ?", (miner_id,)).fetchone()
+        if not row: row = conn.execute("SELECT miner_id FROM balances WHERE miner_pk = ?", (miner_id,)).fetchone()
         if not row:
             conn.close()
-            return jsonify({"error": f"Miner '{miner_id}' not found in balances"}), 404
-
-        actual_id = row[0]
-        conn.execute(
-            "UPDATE balances SET coinbase_address = ? WHERE miner_id = ?",
-            (coinbase_address, actual_id),
-        )
+            return jsonify({"error": f"Miner '{miner_id}' not found"}), 404
+        conn.execute("UPDATE balances SET coinbase_address = ? WHERE miner_id = ?", (coinbase_address, row[0]))
         conn.commit()
         conn.close()
+        return jsonify({"ok": True, "miner_id": row[0], "coinbase_address": coinbase_address, "network": "Base"})
 
-        return jsonify({
-            "ok": True,
-            "miner_id": actual_id,
-            "coinbase_address": coinbase_address,
-            "network": "Base (eip155:8453)",
-        })
-
-    # -------------------------------------------------------------------------
-    # Agent Reputation & Payments (Bounty #35)
-    # -------------------------------------------------------------------------
-
-    @app.route("/reputation/vote", methods=["POST"])
-    def reputation_vote():
-        """Record an agent upvote, optionally including an RTC microtip."""
-        data = request.get_json(silent=True) or {}
-        voter_id = data.get("voter_id")
-        target_entity = data.get("target_entity")
-        donation_nrtc = data.get("donation_nrtc", 0)
-
-        if not voter_id or not target_entity:
-            return jsonify({"error": "voter_id and target_entity required"}), 400
-
-        now = int(time.time())
-        tx_id = data.get("tx_id")
-
-        with sqlite3.connect(db_path) as conn:
-            conn.execute("""
-                INSERT INTO reputation_votes (voter_id, target_entity, vote_type, donation_nrtc, tx_id, created_at)
-                VALUES (?, ?, 'upvote', ?, ?, ?)
-            """, (voter_id, target_entity, donation_nrtc, tx_id, now))
-            conn.commit()
-
-        return jsonify({
-            "ok": True,
-            "message": f"Vote recorded for {target_entity}",
-            "donation": donation_nrtc,
-            "tx_id": tx_id
-        })
-
-    @app.route("/reputation/stats/<target>", methods=["GET"])
-    def reputation_stats(target):
-        """Get aggregate upvotes and donations for a target repo or user."""
-        with sqlite3.connect(db_path) as conn:
-            row = conn.execute("""
-                SELECT COUNT(*), SUM(donation_nrtc) FROM reputation_votes WHERE target_entity = ?
-            """, (target,)).fetchone()
-        
-        return jsonify({
-            "target": target,
-            "upvotes": row[0],
-            "total_donations_nrtc": row[1] or 0
-        })
+    # Register shared agent routes
+    register_agent_routes(app, db_path)
 
     log.info("RustChain x402 module initialized with Agent Payments support")
