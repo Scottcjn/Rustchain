@@ -860,7 +860,7 @@ def chat():
     try:
         data = request.get_json()
         agent_id = data.get('agent_id')
-        message = data.get('message')
+        message = html.escape(data.get('message', ''))
         
         if not agent_id or not message:
             return jsonify({'error': 'Missing agent_id or message'}), 400
@@ -880,7 +880,8 @@ def chat():
             "Contract terms acceptable. Ready to proceed.",
             "Reputation check complete. Trust level adequate.",
         ]
-        import random
+        import html
+import random
         response = random.choice(responses)
         
         # Store agent response
