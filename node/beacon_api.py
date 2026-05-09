@@ -453,15 +453,22 @@ def create_contract():
         # Generate contract ID
         contract_id = f"ctr_{int(time.time())}_{hashlib.blake2b(str(time.time()).encode(), digest_size=4).hexdigest()}"
         
+        try:
+            amount_val = float(data['amount'])
+            if amount_val <= 0:
+                return jsonify({'error': 'amount must be positive'}), 400
+        except (ValueError, TypeError):
+            return jsonify({'error': 'amount must be a valid number'}), 400
+        
         contract = {
             'id': contract_id,
             'from': data['from'],
             'to': data['to'],
             'type': data['type'],
-            'amount': float(data['amount']),
+            'amount': amount_val,
             'currency': data.get('currency', 'RTC'),
             'term': data['term'],
-            'state': 'offered',  # Initial state
+            'state': 'offered',
             'created_at': int(time.time()),
         }
         
@@ -641,17 +648,33 @@ def sync_bounties():
                     if 'pull_request' in issue:
                         continue
                     
-                    # Extract reward from title
+                    # Extract reward from title (support both 1,000 and 1.000 notation)
                     reward_text = None
                     reward_rtc = None
                     import re
                     match = re.search(r'\((?:Pool:\s*)?(\d[\d,.\-\/a-z ]*RTC[^)]*)\)', issue['title'], re.IGNORECASE)
                     if match:
                         reward_text = match.group(1).strip()
-                        # Try to extract numeric value
-                        num_match = re.search(r'(\d+(?:\.\d+)?)', reward_text)
-                        if num_match:
-                            reward_rtc = float(num_match.group(1).replace(',', ''))
+                        # Try comma (EU) then dot (US)
+                        for sep in [',', '.']:
+                            parts = reward_text.replace(',', '.').split('.')
+                            # If last part is just 0-3 digits (decimal) vs thousands-sep
+                            num_match = re.search(r'(\d+(?:[.,]\d+)?)', reward_text.replace(',', '.'))
+                            if num_match:
+                                raw = num_match.group(1)
+                                if raw.count('.') > 1 or (sep == ',' and raw.count(',') > 1):
+                                    # Multiple separators = thousands with comma
+                                    try:
+                                        reward_rtc = float(raw.replace(',', ''))
+                                        break
+                                    except ValueError:
+                                        pass
+                                else:
+                                    try:
+                                        reward_rtc = float(raw)
+                                        break
+                                    except ValueError:
+                                        pass
                     
                     if not reward_text:
                         continue
@@ -765,7 +788,10 @@ def complete_bounty(bounty_id):
         
         db = get_db()
 
-        # Verify bounty exists and is in claimable state
+        # Verify agent_id exists and bounty state
+        if not agent_id or not isinstance(agent_id, str) or len(agent_id) > 200:
+            return jsonify({'error': 'Invalid agent_id'}), 400
+
         bounty = db.execute(
             "SELECT state, claimant_agent FROM beacon_bounties WHERE id = ?",
             (bounty_id,)
