@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """
 RustChain x402 Integration — Swap Info + Coinbase Wallet Linking + Agent Payments
 Adds /wallet/swap-info, /wallet/link-coinbase, /reputation/vote endpoints.
