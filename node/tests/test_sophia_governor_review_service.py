@@ -1,6 +1,8 @@
+import gc
 import os
 import tempfile
 import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -25,10 +27,15 @@ def client(monkeypatch):
     try:
         yield review_service.app.test_client()
     finally:
-        try:
-            os.unlink(db_path)
-        except FileNotFoundError:
-            pass
+        for _ in range(5):
+            try:
+                os.unlink(db_path)
+                break
+            except FileNotFoundError:
+                break
+            except PermissionError:
+                gc.collect()
+                time.sleep(0.05)
 
 
 def _payload():
@@ -50,6 +57,33 @@ def _payload():
 def test_review_requires_auth(client):
     response = client.post("/review", json=_payload())
     assert response.status_code == 401
+
+
+def test_review_admin_auth_uses_constant_time_compare(client, monkeypatch):
+    calls = []
+
+    def spy_compare_digest(provided, expected):
+        calls.append((provided, expected))
+        return provided == expected
+
+    monkeypatch.setattr(review_service.hmac, "compare_digest", spy_compare_digest)
+    monkeypatch.setattr(
+        review_service,
+        "_call_ollama",
+        lambda prompt: ("Assessment: ok.\nRisk: low.\nNext step: approve.", "glm-test"),
+    )
+
+    denied = client.post("/review", headers={"X-Admin-Key": "wrong-admin"}, json=_payload())
+    assert denied.status_code == 401
+
+    accepted = client.post("/review", headers={"X-API-Key": "test-admin"}, json=_payload())
+    assert accepted.status_code == 200
+    assert accepted.get_json()["ok"] is True
+
+    assert calls == [
+        ("wrong-admin", "test-admin"),
+        ("test-admin", "test-admin"),
+    ]
 
 
 def test_review_endpoint_calls_model_and_stores(client, monkeypatch):
