@@ -358,6 +358,31 @@ class TestUtxoDB(unittest.TestCase):
         # Highest fee first
         self.assertEqual(candidates[0]['tx_id'], 'high' * 16)
 
+    def test_mempool_block_candidates_ignore_expired_transactions(self):
+        self._apply_coinbase('alice', 100 * UNIT, block_height=1)
+        box = self.db.get_unspent_for_address('alice')[0]
+        tx_id = 'expired' * 8
+
+        self.assertTrue(self.db.mempool_add({
+            'tx_id': tx_id,
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT - 1000}],
+            'fee_nrtc': 1000,
+        }))
+
+        conn = self.db._conn()
+        try:
+            conn.execute(
+                "UPDATE utxo_mempool SET expires_at = ? WHERE tx_id = ?",
+                (int(time.time()) - 1, tx_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+        self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+
     def test_mempool_nonexistent_input_rejected(self):
         tx = {
             'tx_id': 'cccc' * 16,

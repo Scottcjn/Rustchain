@@ -810,13 +810,16 @@ class UtxoDB:
 
     def mempool_get_block_candidates(self, max_count: int = 100) -> List[dict]:
         """Get highest-fee transactions from mempool for block inclusion."""
+        self.mempool_clear_expired()
         conn = self._conn()
         try:
+            now = int(time.time())
             rows = conn.execute(
                 """SELECT tx_data_json FROM utxo_mempool
+                   WHERE expires_at > ?
                    ORDER BY fee_nrtc DESC
                    LIMIT ?""",
-                (max_count,),
+                (now, max_count),
             ).fetchall()
             return [json.loads(r['tx_data_json']) for r in rows]
         finally:
