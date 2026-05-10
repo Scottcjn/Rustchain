@@ -52,6 +52,21 @@ def test_review_requires_auth(client):
     assert response.status_code == 401
 
 
+def test_review_admin_auth_uses_compare_digest(client, monkeypatch):
+    calls = []
+
+    def spy_compare_digest(provided, expected):
+        calls.append((provided, expected))
+        return True
+
+    monkeypatch.setattr(review_service.hmac, "compare_digest", spy_compare_digest)
+
+    response = client.post("/review", headers={"X-Admin-Key": "test-admin"}, json=_payload())
+
+    assert response.status_code == 200
+    assert calls == [("test-admin", "test-admin")]
+
+
 def test_review_endpoint_calls_model_and_stores(client, monkeypatch):
     monkeypatch.setattr(
         review_service,
