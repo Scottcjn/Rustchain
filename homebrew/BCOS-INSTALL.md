@@ -421,7 +421,7 @@ jobs:
 - [Homebrew Formula Cookbook](https://docs.brew.sh/Formula-Cookbook)
 - [RustChain Repository](https://github.com/Scottcjn/Rustchain)
 - [BCOS Documentation](../BCOS.md)
-- [Issue #2293](https://github.com/rustchain-bounties/rustchain-bounties/issues/2293)
+- [Issue #2293](https://github.com/Scottcjn/rustchain-bounties/issues/2293)
 
 ---
 
