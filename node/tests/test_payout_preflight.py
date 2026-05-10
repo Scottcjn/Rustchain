@@ -45,6 +45,13 @@ class PayoutPreflightTests(unittest.TestCase):
         self.assertTrue(r.ok)
         self.assertEqual(r.details.get("amount_i64"), 249)
 
+    def test_node_module_admin_quantizes_raw_decimal_before_float_conversion(self):
+        r = node_payout_preflight.validate_wallet_transfer_admin(
+            {"from_miner": "a", "to_miner": "b", "amount_rtc": "0.123456999999999999999999"}
+        )
+        self.assertTrue(r.ok)
+        self.assertEqual(r.details.get("amount_i64"), 123456)
+
     def test_signed_rejects_missing(self):
         r = validate_wallet_transfer_signed({"from_address": "RTC" + "a" * 40})
         self.assertFalse(r.ok)
@@ -113,6 +120,19 @@ class PayoutPreflightTests(unittest.TestCase):
         r = node_payout_preflight.validate_wallet_transfer_signed(payload)
         self.assertTrue(r.ok)
         self.assertEqual(r.details.get("amount_i64"), 489)
+
+    def test_node_module_signed_quantizes_raw_decimal_before_float_conversion(self):
+        payload = {
+            "from_address": "RTC" + "a" * 40,
+            "to_address": "RTC" + "b" * 40,
+            "amount_rtc": "0.000001999999999999999999",
+            "nonce": "123",
+            "signature": "00",
+            "public_key": "00",
+        }
+        r = node_payout_preflight.validate_wallet_transfer_signed(payload)
+        self.assertTrue(r.ok)
+        self.assertEqual(r.details.get("amount_i64"), 1)
 
 
 if __name__ == "__main__":
