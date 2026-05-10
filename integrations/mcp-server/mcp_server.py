@@ -371,6 +371,101 @@ class RustChainMCP:
                         },
                     },
                 ),
+                # Required bounty tools
+                Tool(
+                    name="rustchain_health",
+                    description="Check RustChain node health and connectivity status",
+                    inputSchema={"type": "object", "properties": {}},
+                ),
+                Tool(
+                    name="rustchain_balance",
+                    description="Query wallet balance for a given wallet address",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "wallet": {
+                                "type": "string",
+                                "description": "Wallet address to query balance for",
+                            }
+                        },
+                        "required": ["wallet"],
+                    },
+                ),
+                Tool(
+                    name="rustchain_miners",
+                    description="List active miners with optional filters",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "limit": {
+                                "type": "integer",
+                                "description": "Maximum number of miners to return (default: 50)",
+                            },
+                            "hardware_type": {
+                                "type": "string",
+                                "description": "Filter by hardware type",
+                            },
+                            "min_score": {
+                                "type": "number",
+                                "description": "Minimum score threshold",
+                            },
+                        },
+                    },
+                ),
+                Tool(
+                    name="rustchain_epoch",
+                    description="Get current epoch information",
+                    inputSchema={"type": "object", "properties": {}},
+                ),
+                Tool(
+                    name="rustchain_create_wallet",
+                    description="Register a new agent wallet on RustChain",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "agent_name": {
+                                "type": "string",
+                                "description": "Name for the new agent/wallet",
+                            }
+                        },
+                        "required": ["agent_name"],
+                    },
+                ),
+                Tool(
+                    name="rustchain_submit_attestation",
+                    description="Submit hardware fingerprint/attestation for mining eligibility",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "cpu_model": {
+                                "type": "string",
+                                "description": "CPU model name",
+                            },
+                            "architecture": {
+                                "type": "string",
+                                "description": "CPU architecture (e.g., PowerPC, x86_64)",
+                            },
+                            "is_vm": {
+                                "type": "boolean",
+                                "description": "Whether running in a VM",
+                            },
+                        },
+                        "required": ["cpu_model", "architecture"],
+                    },
+                ),
+                Tool(
+                    name="rustchain_bounties",
+                    description="List open bounties with rewards",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "min_reward": {
+                                "type": "integer",
+                                "description": "Minimum reward in RTC",
+                            },
+                        },
+                    },
+                ),
             ]
 
         # List available resources
@@ -1080,6 +1175,91 @@ class RustChainMCP:
                 }
             else:
                 return {"error": f"API error: {resp.status}"}
+
+    # Bounty-required tool implementations
+
+    async def _tool_rustchain_health(self, args: dict[str, Any] = None) -> dict[str, Any]:
+        """Check RustChain node health."""
+        url = f"{RUSTCHAIN_NODE_URL}/api/health"
+        try:
+            async with self.session.get(url) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return {"status": "healthy", "data": data}
+                else:
+                    return {"status": "degraded", "error": f"Health check failed: {resp.status}"}
+        except Exception as e:
+            return {"status": "unhealthy", "error": str(e)}
+
+    async def _tool_rustchain_balance(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Query wallet balance."""
+        wallet = args.get("wallet", "")
+        return await self._get_wallet_balance_impl(wallet)
+
+    async def _tool_rustchain_miners(self, args: dict[str, Any]) -> dict[str, Any]:
+        """List active miners."""
+        limit = args.get("limit", 50)
+        hardware_type = args.get("hardware_type")
+        min_score = args.get("min_score")
+        return await self._get_active_miners_impl(limit, hardware_type, min_score)
+
+    async def _tool_rustchain_epoch(self, args: dict[str, Any] = None) -> dict[str, Any]:
+        """Get current epoch information."""
+        return await self._get_epoch_info_impl(None)
+
+    async def _tool_rustchain_create_wallet(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Register a new agent wallet."""
+        agent_name = args.get("agent_name", "")
+        url = f"{RUSTCHAIN_API_BASE}/api/wallets/create"
+        payload = {"name": agent_name}
+
+        try:
+            async with self.session.post(url, json=payload) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return {
+                        "success": True,
+                        "wallet_address": data.get("wallet_address"),
+                        "message": f"Wallet created for agent '{agent_name}'",
+                    }
+                else:
+                    return {"success": False, "error": f"Failed to create wallet: {resp.status}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def _tool_rustchain_submit_attestation(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Submit hardware attestation."""
+        cpu_model = args.get("cpu_model", "")
+        architecture = args.get("architecture", "")
+        is_vm = args.get("is_vm", False)
+
+        url = f"{RUSTCHAIN_NODE_URL}/api/attestations"
+        payload = {
+            "cpu_model": cpu_model,
+            "architecture": architecture,
+            "is_vm": is_vm,
+            "timestamp": __import__("time").time(),
+        }
+
+        try:
+            async with self.session.post(url, json=payload) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return {
+                        "success": True,
+                        "attestation_id": data.get("id"),
+                        "eligible": data.get("eligible", True),
+                        "message": "Attestation submitted successfully",
+                    }
+                else:
+                    return {"success": False, "error": f"Attestation failed: {resp.status}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def _tool_rustchain_bounties(self, args: dict[str, Any]) -> dict[str, Any]:
+        """List open bounties."""
+        min_reward = args.get("min_reward")
+        return await self._get_bounty_info_impl(None, min_reward)
 
     def _get_quickstart_guide(self) -> str:
         """Get quickstart guide content."""
