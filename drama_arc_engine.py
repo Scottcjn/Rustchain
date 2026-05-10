@@ -27,6 +27,7 @@ Usage:
 
 import time
 import random
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Callable
 from enum import Enum
@@ -175,6 +176,7 @@ class DramaArcEngine:
         self.rel_engine = relationship_engine
         self.auto_progress = auto_progress
         self._active_arcs: Dict[str, ArcStatus] = {}
+        self._arc_lock = threading.Lock()  # Protects _active_arcs from concurrent access
         self._event_callbacks: List[Callable] = []
     
     def _get_arc_key(self, agent_a: str, agent_b: str) -> str:
@@ -233,41 +235,43 @@ class DramaArcEngine:
         Returns:
             Dictionary with arc initialization result
         """
-        # Idempotency check: if arc already exists for this pair, return existing
         arc_key = self._get_arc_key(agent_a, agent_b)
-        if arc_key in self._active_arcs:
-            existing = self._active_arcs[arc_key]
-            return {
-                "success": True,
-                "arc": existing.to_dict(),
-                "relationship": self.rel_engine.get_relationship(agent_a, agent_b),
-                "idempotent": True,
-            }
+        
+        # Check for existing active arc under lock (prevents race condition)
+        with self._arc_lock:
+            if arc_key in self._active_arcs:
+                existing = self._active_arcs[arc_key]
+                return {
+                    "success": False,
+                    "error": f"Active arc already exists between {agent_a} and {agent_b}",
+                    "arc_type": existing.arc_type.value,
+                    "phase": existing.phase.value,
+                }
 
-                # Initialize relationship with arc
-        result = self.rel_engine.start_drama_arc(agent_a, agent_b, arc_type)
+            # Initialize relationship with arc
+            result = self.rel_engine.start_drama_arc(agent_a, agent_b, arc_type)
+            
+            if not result["success"]:
+                return result
+            
+            template = DRAMA_ARC_TEMPLATES[arc_type]
+            now = time.time()
+            
+            arc_status = ArcStatus(
+                agent_a=agent_a,
+                agent_b=agent_b,
+                arc_type=arc_type,
+                phase=ArcPhase.INITIATION,
+                start_time=now,
+                last_progress=now,
+                events_triggered=0,
+                expected_duration_days=template["typical_duration_days"],
+                is_expired=False,
+            )
+            
+            self._active_arcs[arc_key] = arc_status
         
-        if not result["success"]:
-            return result
-        
-        template = DRAMA_ARC_TEMPLATES[arc_type]
-        now = time.time()
-        
-        arc_status = ArcStatus(
-            agent_a=agent_a,
-            agent_b=agent_b,
-            arc_type=arc_type,
-            phase=ArcPhase.INITIATION,
-            start_time=now,
-            last_progress=now,
-            events_triggered=0,
-            expected_duration_days=template["typical_duration_days"],
-            is_expired=False,
-        )
-        
-        self._active_arcs[self._get_arc_key(agent_a, agent_b)] = arc_status
-        
-        # Notify callbacks
+        # Notify callbacks outside the lock to avoid deadlocks
         self._notify_callbacks("arc_started", arc_status.to_dict())
         
         return {
@@ -291,32 +295,33 @@ class DramaArcEngine:
         """
         arc_key = self._get_arc_key(agent_a, agent_b)
         
-        if arc_key not in self._active_arcs:
-            # Try to reconstruct from relationship
-            rel = self.rel_engine.get_relationship(agent_a, agent_b)
-            if not rel or not rel.get("arc_type"):
-                return {"success": False, "error": "No active arc found"}
+        with self._arc_lock:
+            if arc_key not in self._active_arcs:
+                # Try to reconstruct from relationship
+                rel = self.rel_engine.get_relationship(agent_a, agent_b)
+                if not rel or not rel.get("arc_type"):
+                    return {"success": False, "error": "No active arc found"}
+                
+                arc_type = DramaArcType(rel["arc_type"])
+                phase = self._determine_phase(rel, arc_type)
+                
+                template = DRAMA_ARC_TEMPLATES.get(arc_type, {})
+                now = time.time()
+                
+                arc_status = ArcStatus(
+                    agent_a=rel["agent_a"],
+                    agent_b=rel["agent_b"],
+                    arc_type=arc_type,
+                    phase=phase,
+                    start_time=rel.get("arc_start_time", now),
+                    last_progress=now,
+                    events_triggered=0,
+                    expected_duration_days=template.get("typical_duration_days", 7),
+                    is_expired=False,
+                )
+                self._active_arcs[arc_key] = arc_status
             
-            arc_type = DramaArcType(rel["arc_type"])
-            phase = self._determine_phase(rel, arc_type)
-            
-            template = DRAMA_ARC_TEMPLATES.get(arc_type, {})
-            now = time.time()
-            
-            arc_status = ArcStatus(
-                agent_a=rel["agent_a"],
-                agent_b=rel["agent_b"],
-                arc_type=arc_type,
-                phase=phase,
-                start_time=rel.get("arc_start_time", now),
-                last_progress=now,
-                events_triggered=0,
-                expected_duration_days=template.get("typical_duration_days", 7),
-                is_expired=False,
-            )
-            self._active_arcs[arc_key] = arc_status
-        
-        arc_status = self._active_arcs[arc_key]
+            arc_status = self._active_arcs[arc_key]
         
         # Check for expiration
         days_elapsed = (time.time() - arc_status.start_time) / 86400
@@ -333,7 +338,9 @@ class DramaArcEngine:
         arc_status.phase = self._determine_phase(rel, arc_status.arc_type)
         
         if arc_status.phase == ArcPhase.COMPLETED:
-            del self._active_arcs[arc_key]
+            with self._arc_lock:
+                if arc_key in self._active_arcs:
+                    del self._active_arcs[arc_key]
             return {
                 "success": True,
                 "completed": True,
@@ -410,38 +417,40 @@ class DramaArcEngine:
         """Get the status of an active arc."""
         arc_key = self._get_arc_key(agent_a, agent_b)
         
-        if arc_key not in self._active_arcs:
-            # Try to reconstruct from relationship
-            rel = self.rel_engine.get_relationship(agent_a, agent_b)
-            if not rel or not rel.get("arc_type"):
-                return None
+        with self._arc_lock:
+            if arc_key not in self._active_arcs:
+                # Try to reconstruct from relationship
+                rel = self.rel_engine.get_relationship(agent_a, agent_b)
+                if not rel or not rel.get("arc_type"):
+                    return None
+                
+                arc_type = DramaArcType(rel["arc_type"])
+                phase = self._determine_phase(rel, arc_type)
+                
+                template = DRAMA_ARC_TEMPLATES.get(arc_type, {})
+                now = time.time()
+                
+                days_elapsed = 0
+                if rel.get("arc_start_time"):
+                    days_elapsed = (now - rel["arc_start_time"]) / 86400
+                
+                return {
+                    "agent_a": rel["agent_a"],
+                    "agent_b": rel["agent_b"],
+                    "arc_type": arc_type.value,
+                    "phase": phase.value,
+                    "start_time": rel.get("arc_start_time"),
+                    "days_elapsed": round(days_elapsed, 1),
+                    "expected_duration_days": template.get("typical_duration_days", 7),
+                    "is_expired": days_elapsed > template.get("typical_duration_days", 7) * 2,
+                }
             
-            arc_type = DramaArcType(rel["arc_type"])
-            phase = self._determine_phase(rel, arc_type)
-            
-            template = DRAMA_ARC_TEMPLATES.get(arc_type, {})
-            now = time.time()
-            
-            days_elapsed = 0
-            if rel.get("arc_start_time"):
-                days_elapsed = (now - rel["arc_start_time"]) / 86400
-            
-            return {
-                "agent_a": rel["agent_a"],
-                "agent_b": rel["agent_b"],
-                "arc_type": arc_type.value,
-                "phase": phase.value,
-                "start_time": rel.get("arc_start_time"),
-                "days_elapsed": round(days_elapsed, 1),
-                "expected_duration_days": template.get("typical_duration_days", 7),
-                "is_expired": days_elapsed > template.get("typical_duration_days", 7) * 2,
-            }
-        
-        return self._active_arcs[arc_key].to_dict()
+            return self._active_arcs[arc_key].to_dict()
     
     def get_all_active_arcs(self) -> List[Dict[str, Any]]:
         """Get all active drama arcs."""
-        return [arc.to_dict() for arc in self._active_arcs.values()]
+        with self._arc_lock:
+            return [arc.to_dict() for arc in self._active_arcs.values()]
     
     def end_arc(self, agent_a: str, agent_b: str, 
                 reason: str = "manual") -> Dict[str, Any]:
@@ -458,18 +467,19 @@ class DramaArcEngine:
         """
         arc_key = self._get_arc_key(agent_a, agent_b)
         
-        if arc_key not in self._active_arcs:
-            return {"success": False, "error": "No active arc found"}
-        
-        arc_status = self._active_arcs[arc_key]
-        
-        # Force reconciliation
-        result = self.rel_engine.record_reconciliation(
-            agent_a, agent_b,
-            description=f"Arc ended: {reason}"
-        )
-        
-        del self._active_arcs[arc_key]
+        with self._arc_lock:
+            if arc_key not in self._active_arcs:
+                return {"success": False, "error": "No active arc found"}
+            
+            arc_status = self._active_arcs[arc_key]
+            
+            # Force reconciliation
+            result = self.rel_engine.record_reconciliation(
+                agent_a, agent_b,
+                description=f"Arc ended: {reason}"
+            )
+            
+            del self._active_arcs[arc_key]
         
         self._notify_callbacks("arc_ended", {
             "arc": arc_status.to_dict(),
@@ -511,7 +521,8 @@ class DramaArcEngine:
             "details": [],
         }
         
-        arcs_to_process = list(self._active_arcs.values())
+        with self._arc_lock:
+            arcs_to_process = list(self._active_arcs.values())
         
         for arc in arcs_to_process:
             results["processed"] += 1
