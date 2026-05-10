@@ -865,6 +865,7 @@ def chat():
         
         if not agent_id or not message:
             return jsonify({'error': 'Missing agent_id or message'}), 400
+        safe_agent_id = html.escape(str(agent_id), quote=True)
         safe_message = html.escape(str(message), quote=True)
         
         # Store user message
@@ -876,7 +877,7 @@ def chat():
         
         # Generate mock response (in production, call LLM)
         responses = [
-            f"Acknowledged. I am {agent_id}. How can I assist?",
+            f"Acknowledged. I am {safe_agent_id}. How can I assist?",
             "Transmission received. Processing request...",
             "Beacon signal strong. Standing by for instructions.",
             "Contract terms acceptable. Ready to proceed.",
@@ -894,7 +895,7 @@ def chat():
         
         return jsonify({
             'response': response,
-            'agent': agent_id,
+            'agent': safe_agent_id,
             'timestamp': int(time.time()),
         })
         

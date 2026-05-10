@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 import sqlite3
+import random
 
 from flask import Flask
 
@@ -44,3 +45,39 @@ def test_chat_endpoint_escapes_user_message_before_storage(tmp_path, monkeypatch
     )
     assert "<script>" not in stored
     assert 'onerror="' not in stored
+
+
+def test_chat_endpoint_escapes_agent_id_in_response(tmp_path, monkeypatch):
+    client, db_path = _make_client(tmp_path, monkeypatch)
+    payload = '<img src=x onerror="alert(1)">'
+    monkeypatch.setattr(random, "choice", lambda responses: responses[0])
+
+    response = client.post(
+        "/api/chat",
+        json={"agent_id": payload, "message": "hello"},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+
+    assert body["agent"] == '&lt;img src=x onerror=&quot;alert(1)&quot;&gt;'
+    assert body["agent"] in body["response"]
+    assert "<img" not in body["agent"]
+    assert "<img" not in body["response"]
+    assert 'onerror="' not in body["agent"]
+    assert 'onerror="' not in body["response"]
+
+    with sqlite3.connect(db_path) as conn:
+        stored = conn.execute(
+            """
+            SELECT content
+            FROM beacon_chat
+            WHERE agent_id = ? AND role = ?
+            ORDER BY id
+            LIMIT 1
+            """,
+            (payload, "assistant"),
+        ).fetchone()[0]
+
+    assert body["agent"] in stored
+    assert "<img" not in stored
