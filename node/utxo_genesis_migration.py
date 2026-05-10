@@ -57,7 +57,7 @@ def load_account_balances(db_path: str) -> list:
         # Try alternate column names
         rows = conn.execute(
             """SELECT miner_pk AS miner_id,
-                      CAST(balance_rtc * 1000000 AS INTEGER) AS amount_i64
+                      CAST(balance_rtc * 100000000 AS INTEGER) AS amount_i64
                FROM balances
                WHERE balance_rtc > 0
                ORDER BY miner_pk ASC"""
@@ -234,6 +234,14 @@ def rollback_genesis(db_path: str) -> int:
     conn = sqlite3.connect(db_path, timeout=30)
     try:
         conn.execute("BEGIN IMMEDIATE")
+
+        # Prevent rollback if any genesis boxes have already been spent
+        spent_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM utxo_boxes WHERE creation_height = ? AND spent_at IS NOT NULL",
+            (GENESIS_HEIGHT,),
+        ).fetchone()['n']
+        if spent_count > 0:
+            raise ValueError("Cannot rollback genesis: some genesis boxes have already been spent.")
 
         # Delete genesis boxes first (child table)
         deleted = conn.execute(
