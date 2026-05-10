@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import io
 import json
+import hmac
 import os
 import sqlite3
 import time
@@ -169,7 +170,7 @@ def bcos_attest():
     - Valid Ed25519 signature in the report
     """
     admin_key = request.headers.get("X-Admin-Key", "")
-    is_admin = admin_key and admin_key == _get_admin_key()
+    is_admin = admin_key and hmac.compare_digest(admin_key, _get_admin_key() or "")
 
     data = request.get_json(silent=True)
     if not data:
@@ -247,7 +248,9 @@ def bcos_attest():
     except sqlite3.IntegrityError:
         return jsonify({"error": f"Certificate {cert_id} already exists"}), 409
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 @bcos_bp.route("/bcos/verify/<cert_id>", methods=["GET"])
@@ -305,7 +308,9 @@ def bcos_verify(cert_id):
             "pdf_url": f"https://50.28.86.131/bcos/cert/{cert_id}.pdf",
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 @bcos_bp.route("/bcos/cert/<cert_id>.pdf", methods=["GET"])
@@ -345,7 +350,9 @@ def bcos_certificate_pdf(cert_id):
             download_name=f"{cert_id}.pdf",
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 @bcos_bp.route("/bcos/badge/<cert_id>.svg", methods=["GET"])
@@ -430,7 +437,9 @@ def bcos_directory():
             "certificates": certs,
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import logging
+        logging.exception("bcos_handler failed")
+        return jsonify({"error": "internal_error"}), 500
 
 
 # ── Registration ──────────────────────────────────────────────────

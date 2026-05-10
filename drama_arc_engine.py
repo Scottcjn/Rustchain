@@ -233,7 +233,18 @@ class DramaArcEngine:
         Returns:
             Dictionary with arc initialization result
         """
-        # Initialize relationship with arc
+        # Idempotency check: if arc already exists for this pair, return existing
+        arc_key = self._get_arc_key(agent_a, agent_b)
+        if arc_key in self._active_arcs:
+            existing = self._active_arcs[arc_key]
+            return {
+                "success": True,
+                "arc": existing.to_dict(),
+                "relationship": self.rel_engine.get_relationship(agent_a, agent_b),
+                "idempotent": True,
+            }
+
+                # Initialize relationship with arc
         result = self.rel_engine.start_drama_arc(agent_a, agent_b, arc_type)
         
         if not result["success"]:

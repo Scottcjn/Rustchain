@@ -6,6 +6,7 @@ Central configuration for all chain constants.
 """
 
 from decimal import Decimal
+from datetime import datetime
 
 # =============================================================================
 # Core Chain Parameters
@@ -33,6 +34,8 @@ HALVING_COUNT: int = 4  # After 4 halvings, tail emission
 # Token precision
 DECIMALS: int = 8
 ONE_RTC: int = 100_000_000  # 1 RTC = 10^8 units
+
+CURRENT_YEAR: int = datetime.now().year
 
 # =============================================================================
 # Founder Wallets
