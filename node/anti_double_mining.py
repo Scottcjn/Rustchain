@@ -555,7 +555,7 @@ def calculate_anti_double_mining_rewards(
                 # Last miner gets remainder (prevents rounding issues)
                 share = remaining
             else:
-                share = int((weight / total_weight) * total_reward_urtc)
+                share = 0 if total_weight == 0 else int((weight / total_weight) * total_reward_urtc)
                 remaining -= share
 
             rewards[miner_id] = share
@@ -814,7 +814,7 @@ def _calculate_anti_double_mining_rewards_conn(
         if i == len(positive_weight_miners) - 1:
             share = remaining
         else:
-            share = int((weight / total_weight) * total_reward_urtc)
+            share = 0 if total_weight == 0 else int((weight / total_weight) * total_reward_urtc)
             remaining -= share
         rewards[miner_id] = share
 

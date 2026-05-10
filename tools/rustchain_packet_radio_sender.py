@@ -17,8 +17,7 @@ def generate_validator_proof():
 
 # Simulate radio packet send
 def transmit_packet(packet):
-    print(f"📡 Transmitting via RF...
->>> {packet}")
+    print(f"📡 Transmitting via RF... >>> {packet}")
     time.sleep(2)
     print("✅ Transmission complete. Awaiting 73 confirmation...")
 

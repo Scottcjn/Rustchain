@@ -1,0 +1,27 @@
+name: Award RTC on PR Merge
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  award-rtc:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Award RTC to Contributor
+        uses: BossChaos/rtc-award-action@main
+        with:
+          wallet_file: '.rtc-wallet'
+          amount: '5'
+          api_url: 'https://bulbous-bouffant.metalseed.net/transfer'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Store wallet as secret: Settings > Secrets > RTC_WALLET_JSON
+          # The action will read from the secret instead of a file

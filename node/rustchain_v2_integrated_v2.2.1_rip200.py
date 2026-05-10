@@ -926,7 +926,7 @@ OPENAPI = {
                     {
                         "name": "miner_pk",
                         "in": "path",
-                        "required": true,
+                        "required": True,
                         "schema": {"type": "string"},
                         "description": "Miner public key (hex)"
                     }
@@ -957,7 +957,7 @@ OPENAPI = {
                     {
                         "name": "address",
                         "in": "query",
-                        "required": true,
+                        "required": True,
                         "schema": {"type": "string"},
                         "description": "Wallet address (RTC...)"
                     }
@@ -2859,7 +2859,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
             # Distribute rewards with precision
             for pk, weight in miners:
                 # Use Decimal arithmetic to avoid float precision loss
-                amount_decimal = total_reward * Decimal(weight) / Decimal(total_weight)
+                amount_decimal = Decimal(0) if Decimal(total_weight) == 0 else total_reward * Decimal(weight) / Decimal(total_weight)
                 amount_i64 = int(amount_decimal * Decimal(100000000))
 
                 # OVERFLOW PROTECTION: Ensure amount_i64 fits in signed 64-bit int
@@ -4539,7 +4539,7 @@ def register_withdrawal_key():
     # SECURITY: prevent unauthenticated key overwrite (withdrawal takeover).
     # First-time registration is allowed. Rotation requires admin key.
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    is_admin = admin_key == os.environ.get("RC_ADMIN_KEY", "")
+    is_admin = hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", ""))
 
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as c:
@@ -6054,7 +6054,7 @@ def ops_readiness():
     """Single PASS/FAIL aggregator for all go/no-go checks"""
     # SECURITY FIX 2026-02-15: Only show detailed checks to admin
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    is_admin = admin_key == ADMIN_KEY
+    is_admin = hmac.compare_digest(admin_key, ADMIN_KEY or "")
     out = {"ok": True, "checks": []}
 
     # Health check

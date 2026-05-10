@@ -147,6 +147,33 @@ def create_lock(
         return False, {"error": "unlock_at must be in the future"}
     
     try:
+        # Deduct locked amount from miner's balance atomically.
+        # This ensures locked funds are unavailable for withdrawal/transfer.
+        # INSERT OR IGNORE creates the row if the miner has no prior balance record.
+        cursor.execute(
+            "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+            (miner_id,)
+        )
+        cursor.execute(
+            "UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
+            (amount_i64, miner_id)
+        )
+
+        # Verify the deduction did not go negative (sanity check)
+        row = cursor.execute(
+            "SELECT amount_i64 FROM balances WHERE miner_id = ?",
+            (miner_id,)
+        ).fetchone()
+        if row and row[0] < 0:
+            # Roll back the deduction — this should never happen if callers
+            # checked available balance before calling create_lock
+            db_conn.rollback()
+            return False, {
+                "error": "Balance went negative after lock — insufficient available balance",
+                "miner_id": miner_id,
+                "amount_i64": amount_i64
+            }
+
         cursor.execute("""
             INSERT INTO lock_ledger (
                 bridge_transfer_id,
@@ -238,6 +265,13 @@ def release_lock(
         }
     
     try:
+        # Credit the locked amount back to the miner's available balance.
+        # This is the core fix: without this, locked funds are permanently lost.
+        cursor.execute(
+            "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+            (amount_i64, miner_id)
+        )
+
         # Update lock status
         cursor.execute("""
             UPDATE lock_ledger
@@ -764,12 +798,13 @@ def register_lock_ledger_routes(app):
     @app.route('/api/lock/auto-release', methods=['POST'])
     def auto_release_endpoint():
         """Worker: Auto-release expired locks."""
-        # Optional: require worker key
+        # Require worker key authentication
         worker_key = request.headers.get("X-Worker-Key", "")
         expected_worker = os.environ.get("RC_WORKER_KEY", "")
-        if expected_worker and worker_key != expected_worker:
+        if not expected_worker:
+            return jsonify({"error": "RC_WORKER_KEY not configured — worker endpoints disabled"}), 503
+        if not hmac.compare_digest(worker_key, expected_worker):
             return jsonify({"error": "Unauthorized"}), 401
-        
         batch_size = int(request.args.get("batch_size", 100))
         
         conn = sqlite3.connect(DB_PATH)

@@ -15,6 +15,7 @@ Formula: AS = (current_year - release_year) * log10(uptime_days + 1)
 import hashlib
 import math
 import time
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from decimal import Decimal
@@ -28,7 +29,6 @@ from .core_types import (
     TokenAmount,
     BLOCK_REWARD,
     BLOCK_TIME_SECONDS,
-    CURRENT_YEAR,
 )
 
 
@@ -61,19 +61,23 @@ def calculate_antiquity_score(release_year: int, uptime_days: int) -> float:
 
     Examples:
         >>> calculate_antiquity_score(1992, 276)  # 486 DX2
-        80.46  # (2025-1992) * log10(277) ≈ 33 * 2.44
+        80.46  # (current_year-1992) * log10(277) ≈ 33 * 2.44
 
         >>> calculate_antiquity_score(2002, 276)  # PowerPC G4
-        56.10  # (2025-2002) * log10(277) ≈ 23 * 2.44
+        56.10  # (current_year-2002) * log10(277) ≈ 23 * 2.44
 
         >>> calculate_antiquity_score(2023, 30)   # Modern CPU
-        2.96   # (2025-2023) * log10(31) ≈ 2 * 1.49
+        2.96   # (current_year-2023) * log10(31) ≈ 2 * 1.49
     """
-    age = max(0, CURRENT_YEAR - release_year)
+    # Calculate age using current year to ensure calculations remain accurate
+    current_year = datetime.now().year
+    age = max(0, current_year - release_year)
+
     # log10 gives diminishing returns on uptime: day 1→0, day 10→1, day 100→2,
     # day 1000→3. This prevents a node that just rebooted from earning zero while
     # also preventing infinite score growth for nodes with extreme uptime.
     uptime_factor = math.log10(uptime_days + 1)
+
     return age * uptime_factor
 
 
@@ -434,11 +438,16 @@ if __name__ == "__main__":
         ("Ryzen 9 7950X", 2022, 30),
     ]
 
+    current_year = datetime.now().year
     print("=" * 60)
     print("RUSTCHAIN PROOF OF ANTIQUITY - ANTIQUITY SCORE CALCULATOR")
     print("=" * 60)
-    print(f"Formula: AS = (2025 - release_year) * log10(uptime_days + 1)")
+    print(f"Formula: AS = ({current_year} - release_year) * log10(uptime_days + 1)")
     print("=" * 60)
+    print()
+
+    print("💡 Remember: This is NOT Proof of Work!")
+    print("   Older hardware with longer uptime wins, not faster hardware.")
     print()
 
     for model, year, uptime in examples:
