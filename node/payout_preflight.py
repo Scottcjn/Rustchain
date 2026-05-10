@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Dict, Optional, Tuple
 
 
@@ -44,7 +45,7 @@ def validate_wallet_transfer_admin(payload: Any) -> PreflightResult:
         return PreflightResult(ok=False, error=aerr, details={})
     if amount_rtc is None or amount_rtc <= 0:
         return PreflightResult(ok=False, error="amount_must_be_positive", details={})
-    amount_i64 = int(amount_rtc * 1_000_000)
+    amount_i64 = int(Decimal(str(amount_rtc)) * 1_000_000)
     if amount_i64 <= 0:
         return PreflightResult(
             ok=False,
@@ -82,7 +83,7 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
         return PreflightResult(ok=False, error=aerr, details={})
     if amount_rtc is None or amount_rtc <= 0:
         return PreflightResult(ok=False, error="amount_must_be_positive", details={})
-    amount_i64 = int(amount_rtc * 1_000_000)
+    amount_i64 = int(Decimal(str(amount_rtc)) * 1_000_000)
     if amount_i64 <= 0:
         return PreflightResult(
             ok=False,
@@ -115,4 +116,3 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
             "nonce": nonce_int,
         },
     )
-
