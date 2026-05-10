@@ -316,6 +316,69 @@ class TestUtxoDB(unittest.TestCase):
             self.db.mempool_check_double_spend(boxes[0]['box_id'])
         )
 
+    def _expire_mempool_tx(self, tx_id: str):
+        conn = self.db._conn()
+        try:
+            conn.execute(
+                "UPDATE utxo_mempool SET expires_at = ? WHERE tx_id = ?",
+                (int(time.time()) - 1, tx_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_mempool_expired_tx_not_returned_or_locked(self):
+        """Expired mempool rows must not be mined or keep UTXOs locked."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx_id = 'old_' * 16
+        ok = self.db.mempool_add({
+            'tx_id': tx_id,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        })
+        self.assertTrue(ok)
+
+        self._expire_mempool_tx(tx_id)
+
+        self.assertEqual(self.db.mempool_get_block_candidates(), [])
+        self.assertFalse(
+            self.db.mempool_check_double_spend(boxes[0]['box_id'])
+        )
+
+    def test_mempool_add_releases_expired_input_claim(self):
+        """A valid replacement must not be blocked by an expired claim."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+        box_id = boxes[0]['box_id']
+
+        old_tx_id = 'stale' * 16
+        ok = self.db.mempool_add({
+            'tx_id': old_tx_id,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box_id}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        })
+        self.assertTrue(ok)
+        self._expire_mempool_tx(old_tx_id)
+
+        new_tx_id = 'fresh' * 16
+        ok = self.db.mempool_add({
+            'tx_id': new_tx_id,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box_id}],
+            'outputs': [{'address': 'carol', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        })
+
+        self.assertTrue(ok)
+        candidates = self.db.mempool_get_block_candidates()
+        self.assertEqual([tx['tx_id'] for tx in candidates], [new_tx_id])
+
     def test_mempool_rejects_user_supplied_mining_reward(self):
         """Public mempool must not admit minting transactions.
 
