@@ -59,7 +59,7 @@ def get_linux_serial():
 
 class LocalMiner:
     def __init__(self, wallet=None, wart_address=None, wart_pool=None,
-                 bzminer_path=None, manage_bzminer=False):
+                 bzminer_path=None, manage_bzminer=False, verbose=False, show_payload=False):
         self.node_url = NODE_URL
         self.wallet = wallet or self._gen_wallet()
         self.hw_info = {}
@@ -68,6 +68,8 @@ class LocalMiner:
         self.last_entropy = {}
         self.fingerprint_data = {}
         self.fingerprint_passed = False
+        self.verbose = verbose
+        self.show_payload = show_payload
 
         # Warthog dual-mining sidecar
         self.warthog = None
@@ -446,6 +448,12 @@ class LocalMiner:
         print("\n[DRY-RUN] RustChain Linux Miner preflight")
         print("[DRY-RUN] No mining or network state will be modified")
 
+        if self.verbose:
+            print("[DRY-RUN] Verbose mode: ON")
+            print(f"[DRY-RUN] Node URL: {self.node_url}")
+            print(f"[DRY-RUN] API endpoint: {self.node_url}/health")
+            print(f"[DRY-RUN] TLS verify: {True}")
+
         self._get_hw_info()
         print(f"[DRY-RUN] Node URL: {self.node_url}")
         print(f"[DRY-RUN] Wallet: {self.wallet}")
@@ -466,13 +474,25 @@ class LocalMiner:
 
         # Optional health probe (read-only)
         try:
-            r = requests.get(f"{self.node_url}/health", timeout=8, verify=TLS_VERIFY)
+            url = f"{self.node_url}/health"
+            if self.verbose:
+                print(f"[DRY-RUN] GET {url}")
+                print(f"[DRY-RUN] Headers: {{'User-Agent': 'RustChain-Miner/2.2.1'}}")
+            r = requests.get(url, timeout=8, verify=TLS_VERIFY)
             print(f"[DRY-RUN] Health probe: HTTP {r.status_code}")
+            if self.verbose:
+                print(f"[DRY-RUN] Response headers: {dict(r.headers)}")
             if r.ok:
                 data = r.json()
                 print(f"[DRY-RUN] Node version: {data.get('version', 'n/a')}")
+                if self.show_payload:
+                    import json
+                    print(f"[DRY-RUN] Response body: {json.dumps(data, indent=2)}")
         except Exception as e:
             print(f"[DRY-RUN] Health probe failed: {e}")
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
 
         print("[DRY-RUN] Next real steps would be: attest -> enroll -> mine loop")
         return True
@@ -528,6 +548,8 @@ if __name__ == "__main__":
     parser.add_argument("--bzminer-path", help="Path to BzMiner binary")
     parser.add_argument("--manage-bzminer", action="store_true", help="Auto-start/stop BzMiner")
     parser.add_argument("--dry-run", action="store_true", help="Run preflight checks only; do not start mining")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output showing API endpoints, headers, and response details")
+    parser.add_argument("--show-payload", action="store_true", help="Show request payload in dry-run mode")
     args = parser.parse_args()
 
     miner = LocalMiner(
@@ -536,6 +558,8 @@ if __name__ == "__main__":
         wart_pool=args.wart_pool,
         bzminer_path=args.bzminer_path,
         manage_bzminer=args.manage_bzminer,
+            verbose=args.verbose,
+            show_payload=args.show_payload,
     )
     if args.dry_run:
         miner.dry_run()
