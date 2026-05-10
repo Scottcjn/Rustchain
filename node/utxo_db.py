@@ -451,20 +451,30 @@ class UtxoDB:
                 return abort()
 
             # -- compute output box IDs and build tx_id ----------------------
-            # We need a preliminary tx_id for box_id computation.
-            # Use SHA256(sorted input box_ids + timestamp) as tx seed.
-            tx_seed_h = hashlib.sha256()
-            for inp in sorted(inputs, key=lambda i: i['box_id']):
-                tx_seed_h.update(bytes.fromhex(inp['box_id']))
-            tx_seed_h.update(ts.to_bytes(8, 'little'))
-            # For coinbase, include tx_type + outputs to differentiate
-            if not inputs:
-                tx_seed_h.update(tx_type.encode())
-                tx_seed_h.update(block_height.to_bytes(8, 'little'))
-                for out in outputs:
-                    tx_seed_h.update(out['address'].encode())
-                    tx_seed_h.update(out['value_nrtc'].to_bytes(8, 'little'))
-            tx_id_hex = tx_seed_h.hexdigest()
+            # We need a preliminary tx_id for box_id computation. Bind it to
+            # the full transaction intent, not just inputs+timestamp, so two
+            # different transfers cannot share one tx_id.
+            tx_identity = {
+                'tx_type': tx_type,
+                'inputs': sorted(i['box_id'] for i in inputs),
+                'data_inputs': sorted(tx.get('data_inputs', [])),
+                'outputs': [
+                    {
+                        'address': out['address'],
+                        'value_nrtc': out['value_nrtc'],
+                        'tokens_json': out.get('tokens_json', '[]'),
+                        'registers_json': out.get('registers_json', '{}'),
+                    }
+                    for out in outputs
+                ],
+                'fee_nrtc': fee,
+                'timestamp': ts,
+                'block_height': block_height,
+            }
+            tx_seed = json.dumps(
+                tx_identity, sort_keys=True, separators=(',', ':')
+            ).encode()
+            tx_id_hex = hashlib.sha256(tx_seed).hexdigest()
 
             # -- assign box_ids to outputs -----------------------------------
             output_records = []
