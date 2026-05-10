@@ -260,8 +260,8 @@ curl -sk https://rustchain.org/epoch           # Current epoch
 # One-line install — auto-detects your platform
 curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
 
-# Dry-run: test hardware fingerprint without mining
-rustchain-miner --dry-run
+# Dry-run: preview installer actions without installing or mining
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --dry-run
 ```
 
 Works on Linux (x86_64, ppc64le, aarch64, mips, sparc, m68k, riscv64, ia64, s390x), macOS (Intel, Apple Silicon, PowerPC), IBM POWER8, and Windows. If it runs Python, it can mine.
