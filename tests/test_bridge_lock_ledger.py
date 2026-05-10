@@ -23,6 +23,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from dataclasses import dataclass
 from typing import Optional, Tuple, Dict, Any, List
+from flask import Flask
 
 # Add node directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "node"))
@@ -662,7 +663,7 @@ class TestIntegration:
         assert locks[0].status == "released"
         
         conn.close()
-    
+
     def test_void_releases_lock(self, setup_test_db, funded_miner):
         """Test that voiding a transfer releases the lock."""
         bridge_api = setup_test_db["bridge_api"]
@@ -693,6 +694,68 @@ class TestIntegration:
         assert locks[0].status == "released"
         
         conn.close()
+
+
+class TestBridgeCallbackAuth:
+    """Test bridge service callback authentication."""
+
+    def _client(self, bridge_api):
+        app = Flask(__name__)
+        bridge_api.register_bridge_routes(app)
+        return app.test_client()
+
+    def test_update_external_fails_closed_when_api_key_unconfigured(
+        self, setup_test_db, monkeypatch
+    ):
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api)
+        monkeypatch.delenv("RC_BRIDGE_API_KEY", raising=False)
+
+        response = client.post(
+            "/api/bridge/update-external",
+            json={"tx_hash": "bridge_tx", "external_tx_hash": "external_tx"},
+        )
+
+        assert response.status_code == 503
+        assert response.get_json()["error"] == "Bridge API key not configured"
+
+    def test_update_external_uses_constant_time_api_key_compare(
+        self, setup_test_db, monkeypatch
+    ):
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api)
+        monkeypatch.setenv("RC_BRIDGE_API_KEY", "expected-key")
+        calls = []
+
+        def fake_compare(provided, expected):
+            calls.append((provided, expected))
+            return False
+
+        monkeypatch.setattr(bridge_api.hmac, "compare_digest", fake_compare)
+
+        response = client.post(
+            "/api/bridge/update-external",
+            headers={"X-API-Key": "wrong-key"},
+            json={"tx_hash": "bridge_tx", "external_tx_hash": "external_tx"},
+        )
+
+        assert response.status_code == 401
+        assert calls == [("wrong-key", "expected-key")]
+
+    def test_update_external_accepts_configured_api_key_before_payload_validation(
+        self, setup_test_db, monkeypatch
+    ):
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api)
+        monkeypatch.setenv("RC_BRIDGE_API_KEY", "expected-key")
+
+        response = client.post(
+            "/api/bridge/update-external",
+            headers={"X-API-Key": "expected-key"},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Request body required"
 
 
 if __name__ == "__main__":
