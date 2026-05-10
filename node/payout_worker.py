@@ -96,8 +96,10 @@ class PayoutWorker:
                 conn.execute("BEGIN IMMEDIATE")
                 try:
                     # Check sender has sufficient balance
+                    # SECURITY FIX: Read from 'balances.amount_i64' (system standard) instead of
+                    # 'accounts.balance' which is a different/inconsistent table.
                     row = conn.execute(
-                        "SELECT balance FROM accounts WHERE public_key = ?",
+                        "SELECT amount_i64 FROM balances WHERE miner_id = ?",
                         (withdrawal['miner_pk'],)
                     ).fetchone()
                     current_balance = row[0] if row else 0
@@ -117,7 +119,7 @@ class PayoutWorker:
 
                     # Deduct balance BEFORE broadcasting transaction
                     conn.execute(
-                        "UPDATE accounts SET balance = balance - ? WHERE public_key = ?",
+                        "UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
                         (total_deduction, withdrawal['miner_pk'])
                     )
 
@@ -159,7 +161,7 @@ class PayoutWorker:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("BEGIN IMMEDIATE")
                 conn.execute(
-                    "UPDATE accounts SET balance = balance + ? WHERE public_key = ?",
+                    "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
                     (withdrawal['amount'] + withdrawal.get('fee', 0),
                      withdrawal['miner_pk'])
                 )
