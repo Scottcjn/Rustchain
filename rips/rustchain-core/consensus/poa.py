@@ -15,7 +15,7 @@ Formula: AS = (current_year - release_year) * log10(uptime_days + 1)
 
 import hashlib
 import math
-import random
+import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
@@ -187,10 +187,14 @@ def select_validator(proofs: List[ValidatedProof]) -> Optional[ValidatedProof]:
 
     total_as = sum(p.antiquity_score for p in proofs)
     if total_as == 0:
-        return random.choice(proofs)
+        # Use cryptographically secure random selection
+        idx = secrets.randbelow(len(proofs))
+        return proofs[idx]
 
-    # Weighted random selection
-    r = random.uniform(0, total_as)
+    # Weighted random selection using cryptographically secure randomness.
+    # SECURITY FIX: Previously used random.uniform() which is NOT cryptographically
+    # secure — the sequence is predictable, enabling targeted validator attacks.
+    r = secrets.randbelow(int(total_as * 1_000_000)) / 1_000_000
     cumulative = 0.0
 
     for proof in proofs:
