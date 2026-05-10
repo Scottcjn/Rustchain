@@ -295,9 +295,19 @@ class UtxoSet:
             return True
 
         except Exception as e:
-            # Rollback on failure (restore spent boxes)
-            # In production, this would be more sophisticated
-            print(f"Transaction failed: {e}")
+            # Rollback on failure: restore spent boxes to UTXO set
+            # FIX(#4182): Previously, spent boxes were not restored on failure,
+            # causing permanent fund destruction when output creation failed.
+            for box in spent_boxes:
+                self._boxes[box.box_id] = box
+                owner = self._proposition_to_address(box.proposition_bytes)
+                if owner not in self._by_address:
+                    self._by_address[owner] = set()
+                self._by_address[owner].add(box.box_id)
+            # Remove from spent tracking
+            for box in spent_boxes:
+                self._spent.discard(box.box_id)
+            print(f"Transaction failed (rolled back): {e}")
             return False
 
     def _proposition_to_address(self, prop: bytes) -> str:
@@ -465,10 +475,26 @@ class BalanceTracker:
         if available < amount + fee:
             return None  # Insufficient funds
 
-        # Select inputs (simple: use all boxes, create change)
+        # Select inputs using greedy coin selection (smallest boxes first)
+        # FIX(#4182): Previously used ALL boxes as inputs, which was:
+        # - Inefficient (unnecessarily large transactions)
+        # - Privacy-leaking (exposes all UTXOs to recipient)
+        # Now selects minimum boxes needed to cover amount + fee
+        sorted_boxes = sorted(boxes, key=lambda b: b.value)
+        selected = []
+        selected_total = 0
+        for box in sorted_boxes:
+            selected.append(box)
+            selected_total += box.value
+            if selected_total >= amount + fee:
+                break
+
+        if selected_total < amount + fee:
+            return None  # Should not happen (already checked above)
+
         inputs = [
             TransactionInput(box_id=b.box_id, spending_proof=b'\x00')
-            for b in boxes
+            for b in selected
         ]
 
         # Create outputs
@@ -483,8 +509,8 @@ class BalanceTracker:
             )
         ]
 
-        # Change output
-        change = available - amount - fee
+        # Change output (based on selected inputs, not all boxes)
+        change = selected_total - amount - fee
         if change > 0:
             outputs.append(Box(
                 box_id=b'',
