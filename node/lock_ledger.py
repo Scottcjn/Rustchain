@@ -256,8 +256,13 @@ def release_lock(
             "hint": "Only locked entries can be released"
         }
     
-    # Check if unlock time has passed (unless admin override)
-    if now < unlock_at and released_by != "admin":
+    # Check if unlock time has passed (unless properly authorized admin override).
+    # SECURITY FIX: string comparison "admin" was trivially bypassable by any caller.
+    # Now requires the released_by to match a configured admin public key.
+    authorized_admin_key = os.environ.get("RC_ADMIN_PUBKEY", "")
+    is_admin_authorized = bool(authorized_admin_key and released_by == authorized_admin_key)
+
+    if now < unlock_at and not is_admin_authorized:
         return False, {
             "error": "Lock has not yet unlocked",
             "unlock_at": unlock_at,
