@@ -26,13 +26,13 @@ import sys
 import json
 import sqlite3
 import logging
-import hashlib
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from contextlib import contextmanager
 
 import yaml
+from Crypto.Hash import keccak
 from flask import Flask, request, jsonify, render_template_string, g
 from flask_cors import CORS
 from functools import wraps
@@ -280,14 +280,19 @@ class RateLimiter:
         conn.close()
         
         if count >= max_requests:
-            # Calculate next available time
-            c = sqlite3.connect(self.config['database']['path']).cursor()
-            c.execute('''
-                SELECT MAX(timestamp) FROM drip_requests
-                WHERE (ip_address = ? OR wallet = ?)
-                AND timestamp > ?
-            ''', (ip_address, wallet, cutoff.isoformat()))
-            last_request = c.fetchone()[0]
+            # Calculate next available time.
+            conn = sqlite3.connect(self.config['database']['path'])
+            try:
+                c = conn.cursor()
+                c.execute('''
+                    SELECT MAX(timestamp) FROM drip_requests
+                    WHERE (ip_address = ? OR wallet = ?)
+                    AND timestamp > ?
+                ''', (ip_address, wallet, cutoff.isoformat()))
+                last_request = c.fetchone()[0]
+            finally:
+                conn.close()
+
             if last_request:
                 last_time = datetime.fromisoformat(last_request)
                 next_available = last_time + timedelta(seconds=window_seconds)
@@ -391,8 +396,10 @@ class FaucetValidator:
         if not all(c in '0123456789abcdefABCDEF' for c in address):
             return False
         
-        # Simple checksum validation
-        hash_lower = hashlib.keccak256(address.lower().encode()).hexdigest()
+        # EIP-55 uses the original Keccak-256, not FIPS SHA3-256.
+        hasher = keccak.new(digest_bits=256)
+        hasher.update(address.lower().encode())
+        hash_lower = hasher.hexdigest()
         for i, c in enumerate(address):
             if c in '0123456789':
                 continue

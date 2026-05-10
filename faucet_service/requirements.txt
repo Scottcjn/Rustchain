@@ -10,6 +10,9 @@ flask-cors>=6.0.2
 # Configuration
 PyYAML>=6.0.3
 
+# EIP-55 checksum validation
+pycryptodome>=3.23.0
+
 # Optional: Redis for distributed rate limiting
 # redis>=4.5.0
 
