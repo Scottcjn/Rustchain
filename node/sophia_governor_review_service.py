@@ -16,7 +16,7 @@ import os
 import re
 import sqlite3
 import time
-from typing import Any
+from typing import Any, Iterable
 
 from flask import Flask, jsonify, request
 
@@ -132,24 +132,34 @@ def _env_truthy(name: str, default: str = "false") -> bool:
     return str(os.getenv(name, default)).strip().lower() in TRUE_VALUES
 
 
-def _bearer_tokens() -> set[str]:
+def _bearer_tokens() -> tuple[str, ...]:
     raw = os.getenv("SOPHIA_GOVERNOR_REVIEW_BEARER", "").strip()
     if not raw:
-        return set()
-    return {token.strip() for token in raw.split(",") if token.strip()}
+        return ()
+    return tuple(token.strip() for token in raw.split(",") if token.strip())
+
+
+def _matches_secret(candidate: str, secrets: Iterable[str]) -> bool:
+    if not candidate:
+        return False
+    matched = False
+    for secret in secrets:
+        if secret and hmac.compare_digest(candidate, secret):
+            matched = True
+    return matched
 
 
 def _is_authorized(req) -> bool:
     required_admin = os.getenv("RC_ADMIN_KEY", "").strip()
     if required_admin:
         provided_admin = (req.headers.get("X-Admin-Key") or req.headers.get("X-API-Key") or "").strip()
-        if provided_admin and hmac.compare_digest(provided_admin, required_admin):
+        if _matches_secret(provided_admin, (required_admin,)):
             return True
 
     auth_header = (req.headers.get("Authorization") or "").strip()
     if auth_header.lower().startswith("bearer "):
         token = auth_header.split(" ", 1)[1].strip()
-        if token and token in _bearer_tokens():
+        if _matches_secret(token, _bearer_tokens()):
             return True
 
     return False

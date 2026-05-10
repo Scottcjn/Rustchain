@@ -59,7 +59,7 @@ def test_review_requires_auth(client):
     assert response.status_code == 401
 
 
-def test_review_admin_auth_uses_constant_time_compare(client, monkeypatch):
+def test_review_auth_uses_constant_time_compare(client, monkeypatch):
     calls = []
 
     def spy_compare_digest(provided, expected):
@@ -67,6 +67,7 @@ def test_review_admin_auth_uses_constant_time_compare(client, monkeypatch):
         return provided == expected
 
     monkeypatch.setattr(review_service.hmac, "compare_digest", spy_compare_digest)
+    monkeypatch.setenv("SOPHIA_GOVERNOR_REVIEW_BEARER", "review-token,other-token")
     monkeypatch.setattr(
         review_service,
         "_call_ollama",
@@ -76,12 +77,23 @@ def test_review_admin_auth_uses_constant_time_compare(client, monkeypatch):
     denied = client.post("/review", headers={"X-Admin-Key": "wrong-admin"}, json=_payload())
     assert denied.status_code == 401
 
-    accepted = client.post("/review", headers={"X-API-Key": "test-admin"}, json=_payload())
-    assert accepted.status_code == 200
-    assert accepted.get_json()["ok"] is True
+    denied_bearer = client.post("/review", headers={"Authorization": "Bearer wrong-token"}, json=_payload())
+    assert denied_bearer.status_code == 401
+
+    accepted_bearer = client.post("/review", headers={"Authorization": "Bearer review-token"}, json=_payload())
+    assert accepted_bearer.status_code == 200
+    assert accepted_bearer.get_json()["ok"] is True
+
+    accepted_admin = client.post("/review", headers={"X-API-Key": "test-admin"}, json=_payload())
+    assert accepted_admin.status_code == 200
+    assert accepted_admin.get_json()["ok"] is True
 
     assert calls == [
         ("wrong-admin", "test-admin"),
+        ("wrong-token", "review-token"),
+        ("wrong-token", "other-token"),
+        ("review-token", "review-token"),
+        ("review-token", "other-token"),
         ("test-admin", "test-admin"),
     ]
 
