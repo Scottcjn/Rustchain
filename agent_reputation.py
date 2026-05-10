@@ -4,7 +4,7 @@ Bounty #754: Agent Reputation Score — On-Chain Trust for Agent Economy
 
 Integration:
     from agent_reputation import reputation_bp, ReputationEngine
-    engine = ReputationEngine(db_path="rustchain.db", node_url="https://50.28.86.131")
+    engine = ReputationEngine(db_path="rustchain.db", node_url="https://rustchain.org")
     engine.start_cache_refresh()
     app.register_blueprint(reputation_bp)
 
@@ -21,17 +21,17 @@ import threading
 import sqlite3
 import os
 import json
-import ssl
 import urllib.request
 from flask import Blueprint, jsonify, request
+from node.tls_config import get_ssl_context
 
 # ─── Config ─────────────────────────────────────────────────────────────────── #
 DB_PATH       = os.environ.get("RUSTCHAIN_DB_PATH", "rustchain.db")
-NODE_URL      = os.environ.get("RUSTCHAIN_NODE_URL", "https://50.28.86.131")
+NODE_URL      = os.environ.get("RUSTCHAIN_NODE_URL", "https://rustchain.org")
 CACHE_TTL_S   = 3600       # Refresh reputation cache every epoch (~1hr)
 DECAY_DAYS    = 30         # Lose 1 point per 30 days inactive
 
-CTX = ssl._create_unverified_context()
+CTX = get_ssl_context()
 
 # ─── Reputation Levels ───────────────────────────────────────────────────────── #
 LEVELS = [
