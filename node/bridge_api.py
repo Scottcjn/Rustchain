@@ -346,7 +346,32 @@ def create_bridge_transfer(
         bridge_id = cursor.lastrowid
         
         # Create lock ledger entry for deposits
+        # SECURITY FIX: Also deduct from available balance to prevent double-spending.
+        # Previously this only inserted into lock_ledger without deducting balance,
+        # allowing the same funds to be spent while supposedly "locked" for bridge.
         if request.direction == "deposit":
+            # Deduct balance atomically (create OR IGNORE for new miners)
+            cursor.execute(
+                "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+                (request.source_address,)
+            )
+            cursor.execute(
+                "UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
+                (amount_i64, request.source_address)
+            )
+            # Verify deduction didn't go negative
+            row = cursor.execute(
+                "SELECT amount_i64 FROM balances WHERE miner_id = ?",
+                (request.source_address,)
+            ).fetchone()
+            if row and row[0] < 0:
+                db_conn.rollback()
+                return False, {
+                    "error": "Balance went negative after bridge lock — insufficient available balance",
+                    "miner_id": request.source_address,
+                    "amount_i64": amount_i64
+                }
+            
             cursor.execute("""
                 INSERT INTO lock_ledger (
                     bridge_transfer_id,
@@ -544,7 +569,9 @@ def void_bridge_transfer(
             WHERE tx_hash = ?
         """, (voided_by, reason, now, tx_hash))
         
-        # Release associated lock
+        # Release associated lock AND credit balance back to miner
+        # SECURITY FIX: Previously only updated lock_ledger status without
+        # crediting the balance back, causing permanent fund loss on void.
         cursor.execute("""
             UPDATE lock_ledger
             SET status = 'released',
@@ -553,6 +580,22 @@ def void_bridge_transfer(
             WHERE bridge_transfer_id = ?
               AND status = 'locked'
         """, (now, voided_by, transfer["id"]))
+        
+        # Credit the locked amount back to miner's available balance
+        # Note: transfer dict from get_bridge_transfer_by_hash has amount_rtc (float),
+        # so we query amount_i64 directly from the database for precision.
+        amount_row = cursor.execute(
+            "SELECT amount_i64 FROM bridge_transfers WHERE tx_hash = ?",
+            (tx_hash,)
+        ).fetchone()
+        amount_i64 = amount_row[0] if amount_row else 0
+        cursor.execute("""
+            INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)
+        """, (transfer["source_address"],))
+        cursor.execute("""
+            UPDATE balances SET amount_i64 = amount_i64 + ?
+            WHERE miner_id = ?
+        """, (amount_i64, transfer["source_address"]))
         
         db_conn.commit()
         
@@ -788,10 +831,14 @@ def register_bridge_routes(app):
     @app.route('/api/bridge/update-external', methods=['POST'])
     def update_external():
         """Update external confirmation data (for bridge service callbacks)."""
-        # Optional: require API key for callbacks
+        # SECURITY FIX: Require authentication even when RC_BRIDGE_API_KEY is not set.
+        # Previously, if the env var was missing, ANYONE could mark transfers as completed.
         api_key = request.headers.get("X-API-Key", "")
         expected_key = os.environ.get("RC_BRIDGE_API_KEY", "")
-        if expected_key and not hmac.compare_digest(api_key, expected_key):
+        if not expected_key:
+            # No API key configured — reject all requests. Admin must configure key first.
+            return jsonify({"error": "Bridge API key not configured. Contact administrator."}), 503
+        if not hmac.compare_digest(api_key, expected_key):
             return jsonify({"error": "Unauthorized"}), 401
         
         data = request.get_json(silent=True)
