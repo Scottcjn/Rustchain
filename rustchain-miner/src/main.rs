@@ -3,8 +3,7 @@
 //! Production-ready Rust miner with hardware attestation and RIP-PoA support.
 
 use clap::Parser;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use rustchain_miner::{Config, Miner};
@@ -49,6 +48,25 @@ struct Args {
     attestation_ttl: u64,
 }
 
+#[cfg(unix)]
+async fn wait_for_shutdown_signal() -> anyhow::Result<&'static str> {
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+
+    tokio::select! {
+        result = tokio::signal::ctrl_c() => {
+            result?;
+            Ok("Ctrl+C")
+        }
+        _ = sigterm.recv() => Ok("SIGTERM"),
+    }
+}
+
+#[cfg(not(unix))]
+async fn wait_for_shutdown_signal() -> anyhow::Result<&'static str> {
+    tokio::signal::ctrl_c().await?;
+    Ok("Ctrl+C")
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -80,28 +98,27 @@ async fn main() -> anyhow::Result<()> {
     // Create miner (async)
     let miner = Miner::new(config).await?;
 
-    // Setup Ctrl+C handler
-    let shutdown_flag = Arc::new(AtomicBool::new(false));
-    let shutdown_flag_clone = shutdown_flag.clone();
-
-    tokio::spawn(async move {
-        match tokio::signal::ctrl_c().await {
-            Ok(()) => {
-                println!("\n\n🛑 Shutdown signal received...");
-                shutdown_flag_clone.store(true, Ordering::Relaxed);
+    // Wire process signals into the miner's shutdown flag so SIGTERM and Ctrl+C
+    // both follow the same graceful shutdown path.
+    let shutdown_flag = miner.shutdown_flag();
+    let signal_task = tokio::spawn(async move {
+        match wait_for_shutdown_signal().await {
+            Ok(signal_name) => {
+                println!("\n\nShutdown signal received ({signal_name}); stopping miner...");
+                shutdown_flag.store(true, Ordering::Relaxed);
             }
             Err(e) => {
-                eprintln!("Error setting up Ctrl+C handler: {}", e);
+                eprintln!("Error setting up shutdown handler: {}", e);
             }
         }
     });
 
-    // Store shutdown flag in miner (we need to modify Miner to support this)
-    // For now, we'll just run the miner and let it handle signals internally
-
     // Run miner
-    if let Err(e) = miner.run().await {
-        eprintln!("❌ Miner error: {}", e);
+    let run_result = miner.run().await;
+    signal_task.abort();
+
+    if let Err(e) = run_result {
+        eprintln!("Miner error: {}", e);
         std::process::exit(1);
     }
 
