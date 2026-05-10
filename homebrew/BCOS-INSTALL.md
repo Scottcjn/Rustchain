@@ -24,7 +24,7 @@ This Homebrew formula provides a production-safe, minimal installation method fo
 
 ```bash
 # Add the RustChain bounties tap
-brew tap rustchain-bounties/rustchain-bounties
+brew tap Scottcjn/rustchain-bounties
 
 # Install the BCOS engine
 brew install bcos
@@ -226,7 +226,7 @@ cat bcos_report.json
 brew uninstall bcos
 
 # Remove tap (optional)
-brew untap rustchain-bounties/rustchain-bounties
+brew untap Scottcjn/rustchain-bounties
 
 # Clean up residual files (optional)
 rm -f ~/Library/LaunchAgents/homebrew.mxcl.bcos.plist
@@ -421,7 +421,7 @@ jobs:
 - [Homebrew Formula Cookbook](https://docs.brew.sh/Formula-Cookbook)
 - [RustChain Repository](https://github.com/Scottcjn/Rustchain)
 - [BCOS Documentation](../BCOS.md)
-- [Issue #2293](https://github.com/rustchain-bounties/rustchain-bounties/issues/2293)
+- [Issue #2293](https://github.com/Scottcjn/rustchain-bounties/issues/2293)
 
 ---
 
