@@ -331,10 +331,13 @@ def check_eligibility():
     Returns whether an agent is eligible to claim a job of given value.
     """
     agent_id  = request.args.get("agent_id", "").strip()
-    job_value = float(request.args.get("job_value", 0))
-
     if not agent_id:
         return jsonify({"error": "agent_id required"}), 400
+
+    try:
+        job_value = float(request.args.get("job_value", 0))
+    except (ValueError, TypeError):
+        return jsonify({"error": "job_value must be a number"}), 400
 
     rep = _engine.get(agent_id)
     max_val = rep["max_job_value_rtc"]
@@ -364,7 +367,10 @@ def leaderboard():
     GET /agent/reputation/leaderboard?limit=20
     Returns top agents by reputation (from cache).
     """
-    limit = min(int(request.args.get("limit", 20)), 100)
+    try:
+        limit = min(int(request.args.get("limit", 20)), 100)
+    except (ValueError, TypeError):
+        return jsonify({"error": "limit must be an integer"}), 400
     with _engine._lock:
         entries = [(w, d["reputation_score"]) for w, (d, _) in _engine._cache.items()]
     entries.sort(key=lambda x: x[1], reverse=True)
