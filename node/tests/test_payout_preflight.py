@@ -1,9 +1,12 @@
 import unittest
+from importlib import import_module
 
 try:
     from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
 except ImportError:
     from node.payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
+
+node_payout_preflight = import_module("node.payout_preflight")
 
 
 class PayoutPreflightTests(unittest.TestCase):
@@ -34,6 +37,20 @@ class PayoutPreflightTests(unittest.TestCase):
         )
         self.assertTrue(r.ok)
         self.assertEqual(r.details.get("amount_i64"), 1)
+
+    def test_node_module_admin_quantizes_micro_amounts_without_float_loss(self):
+        r = node_payout_preflight.validate_wallet_transfer_admin(
+            {"from_miner": "a", "to_miner": "b", "amount_rtc": "0.000249"}
+        )
+        self.assertTrue(r.ok)
+        self.assertEqual(r.details.get("amount_i64"), 249)
+
+    def test_node_module_admin_quantizes_raw_decimal_before_float_conversion(self):
+        r = node_payout_preflight.validate_wallet_transfer_admin(
+            {"from_miner": "a", "to_miner": "b", "amount_rtc": "0.123456999999999999999999"}
+        )
+        self.assertTrue(r.ok)
+        self.assertEqual(r.details.get("amount_i64"), 123456)
 
     def test_signed_rejects_missing(self):
         r = validate_wallet_transfer_signed({"from_address": "RTC" + "a" * 40})
@@ -88,6 +105,32 @@ class PayoutPreflightTests(unittest.TestCase):
             "public_key": "00",
         }
         r = validate_wallet_transfer_signed(payload)
+        self.assertTrue(r.ok)
+        self.assertEqual(r.details.get("amount_i64"), 1)
+
+    def test_node_module_signed_quantizes_micro_amounts_without_float_loss(self):
+        payload = {
+            "from_address": "RTC" + "a" * 40,
+            "to_address": "RTC" + "b" * 40,
+            "amount_rtc": "0.000489",
+            "nonce": "123",
+            "signature": "00",
+            "public_key": "00",
+        }
+        r = node_payout_preflight.validate_wallet_transfer_signed(payload)
+        self.assertTrue(r.ok)
+        self.assertEqual(r.details.get("amount_i64"), 489)
+
+    def test_node_module_signed_quantizes_raw_decimal_before_float_conversion(self):
+        payload = {
+            "from_address": "RTC" + "a" * 40,
+            "to_address": "RTC" + "b" * 40,
+            "amount_rtc": "0.000001999999999999999999",
+            "nonce": "123",
+            "signature": "00",
+            "public_key": "00",
+        }
+        r = node_payout_preflight.validate_wallet_transfer_signed(payload)
         self.assertTrue(r.ok)
         self.assertEqual(r.details.get("amount_i64"), 1)
 
