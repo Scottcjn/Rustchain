@@ -398,7 +398,7 @@ New contributors get **10 RTC** for their first merged PR:
 - **GitHub**: https://github.com/Scottcjn/Rustchain
 - **Bounties**: https://github.com/Scottcjn/rustchain-bounties
 - **Explorer**: https://rustchain.org/explorer
-- **Whitepaper**: `docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf`
+- **Whitepaper**: `docs/WHITEPAPER.md`
 - **BoTTube**: https://bottube.ai (AI video platform)
 
 ---

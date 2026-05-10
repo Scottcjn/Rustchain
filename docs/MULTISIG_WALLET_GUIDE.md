@@ -539,7 +539,7 @@ curl -sk "https://rustchain.org/health"
 
 ### 官方文档
 
-- [RustChain 白皮书](https://github.com/Scottcjn/Rustchain/blob/main/docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+- [RustChain 白皮书](https://github.com/Scottcjn/Rustchain/blob/main/docs/WHITEPAPER.md)
 - [协议规范](https://github.com/Scottcjn/Rustchain/blob/main/docs/PROTOCOL.md)
 - [API 参考](https://github.com/Scottcjn/Rustchain/blob/main/docs/API.md)
 - [钱包用户指南](https://github.com/Scottcjn/Rustchain/blob/main/docs/WALLET_USER_GUIDE.md)
