@@ -2871,15 +2871,24 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                     (amount_i64, amount_i64, pk)
                 )
 
-                # Sync to UTXO layer (Atomic Dual-Write)
-                from utxo_db import UtxoDB
-                utxo_tx = {
-                    "tx_type": "mining_reward",
-                    "inputs": [],
-                    "outputs": [{"address": pk, "value_nrtc": amount_i64}],
-                    "_allow_minting": True
-                }
-                UtxoDB().apply_transaction(utxo_tx, epoch * 144, conn=conn)
+                # Sync to UTXO layer only when the dual-write feature is enabled.
+                # A rejected UTXO write must abort the surrounding account-model
+                # settlement or the two ledgers diverge while the epoch is marked
+                # settled.
+                if UTXO_DUAL_WRITE:
+                    utxo_tx = {
+                        "tx_type": "mining_reward",
+                        "inputs": [],
+                        "outputs": [{"address": pk, "value_nrtc": amount_i64}],
+                        "_allow_minting": True
+                    }
+                    utxo_ok = UtxoDB(DB_PATH).apply_transaction(
+                        utxo_tx, epoch * 144, conn=conn
+                    )
+                    if not utxo_ok:
+                        raise RuntimeError(
+                            f"UTXO reward settlement failed for {pk[:20]}..."
+                        )
                 # Update metrics with decimal value for accuracy
                 balance_gauge.labels(miner_pk=pk).set(float(amount_decimal))
 
