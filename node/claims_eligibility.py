@@ -319,9 +319,54 @@ def is_epoch_settled(
     """
     Check if epoch has been settled
     
-    Epochs are typically settled within 1-2 epochs after completion.
-    For simplicity, we consider an epoch settled if we're at least 2 epochs past it.
+    Priority order:
+    1. Check epoch_state.settled in database (authoritative source)
+    2. Fallback to epoch_state.finalized for legacy schemas
+    3. Time-based heuristic only when database has no record for this epoch
+    
+    Security fix (#3960): Previously ignored db_path entirely, allowing claims
+    for epochs that were never actually settled (e.g., settlement failed,
+    rolled back, or had no eligible miners).
     """
+    # First, try to check the database for authoritative settlement status
+    try:
+        import sqlite3
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Check if epoch_state table exists and has a 'settled' column
+            try:
+                cursor.execute("""
+                    SELECT settled FROM epoch_state WHERE epoch = ?
+                """, (epoch,))
+                row = cursor.fetchone()
+                
+                if row is not None:
+                    # Database has a record for this epoch - use it as authoritative
+                    return bool(row[0])
+                
+                # No row yet - settlement may be in progress, fall back to time heuristic
+                
+            except sqlite3.OperationalError:
+                # Column 'settled' doesn't exist, try legacy 'finalized' column
+                try:
+                    cursor.execute("""
+                        SELECT finalized FROM epoch_state WHERE epoch = ?
+                    """, (epoch,))
+                    row = cursor.fetchone()
+                    
+                    if row is not None:
+                        return bool(row[0])
+                    
+                except sqlite3.OperationalError:
+                    # epoch_state table doesn't exist at all, fall back to time heuristic
+                    pass
+                    
+    except sqlite3.Error:
+        # Database unavailable, fall back to time heuristic
+        pass
+    
+    # Fallback: time-based heuristic for epochs without database records
     settled_epoch = max(0, current_slot // 144 - 2)
     return epoch <= settled_epoch
 
