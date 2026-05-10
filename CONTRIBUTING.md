@@ -102,10 +102,10 @@ curl -sk https://rustchain.org/epoch
 ## RTC Payout Process
 
 1. PR gets reviewed and merged
-3. We comment asking for your wallet address
-4. RTC is transferred from the community fund
-5. Bridge RTC to wRTC (Solana) via [bottube.ai/bridge](https://bottube.ai/bridge)
-6. Trade on [Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X)
+2. We comment asking for your wallet address
+3. RTC is transferred from the community fund
+4. Bridge RTC to wRTC (Solana) via [bottube.ai/bridge](https://bottube.ai/bridge)
+5. Trade on [Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X)
 
 
 ## Documentation Quality Checklist
