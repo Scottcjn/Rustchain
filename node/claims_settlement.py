@@ -308,30 +308,25 @@ def update_claims_failed(
 
 def generate_batch_id() -> str:
     """
-    Generate unique batch identifier
+    Generate unique batch identifier using UUID to prevent TOCTOU race conditions.
     
-    Format: batch_YYYY_MM_DD_NNN
+    Previous /tmp file-based approach had TOCTOU vulnerability with concurrent
+    processes reading/writing the same batch counter file.
+    
+    Format: batch_YYYY_MM_DD_<uuid8>
     """
     now = datetime.now(timezone.utc)
     timestamp = now.strftime("%Y_%m_%d")
     
-    # Get batch number for today
+    # Use UUID-based batch ID to eliminate race conditions from /tmp file locking
     try:
-        import os
-        batch_file = f"/tmp/rustchain_settlement_batch_{timestamp}.txt"
-        if os.path.exists(batch_file):
-            with open(batch_file, 'r') as f:
-                batch_num = int(f.read().strip()) + 1
-        else:
-            batch_num = 1
-        
-        with open(batch_file, 'w') as f:
-            f.write(str(batch_num))
-        
-        return f"batch_{timestamp}_{batch_num:03d}"
+        import uuid
+        unique_suffix = uuid.uuid4().hex[:8]
+        return f"batch_{timestamp}_{unique_suffix}"
     except Exception:
-        # Fallback: use timestamp
-        return f"batch_{timestamp}_001"
+        # Fallback: use microsecond timestamp
+        micro = now.strftime("%H%M%S%f")
+        return f"batch_{timestamp}_{micro}"
 
 
 def process_claims_batch(
