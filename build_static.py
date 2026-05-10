@@ -365,6 +365,15 @@ def generate_project_card(project):
     )
     
     badge_embed = f'<img src="https://img.shields.io/badge/BCOS-{project.get("bcos_tier", "Unknown")}-{"green" if project.get("bcos_tier") == "L0" else "yellow" if project.get("bcos_tier") == "L1" else "red"}" alt="BCOS {project.get("bcos_tier", "Unknown")}" />'
+    review_note = project.get('review_note')
+    review_html = (
+        f'''<div class="project-review">
+            <div class="review-label">Review Note:</div>
+            <div>{review_note}</div>
+        </div>'''
+        if review_note
+        else ''
+    )
     
     return f'''
     <div class="project-card" data-project-index="{projects.index(project)}">
@@ -405,10 +414,7 @@ def generate_project_card(project):
             </div>
         </div>
         
-        {f'''<div class="project-review">
-            <div class="review-label">Review Note:</div>
-            <div>{project.get('review_note', 'No review available')}</div>
-        </div>''' if project.get('review_note') else ''}
+        {review_html}
         
         <div class="badge-code" title="Click to copy badge embed code">
             {badge_embed}
@@ -418,6 +424,16 @@ def generate_project_card(project):
 
 def generate_project_page(project):
     """Generate individual project page HTML"""
+    review_note = project.get('review_note')
+    review_html = (
+        f'''<h2>Review Note</h2>
+        <div style="background: #2a2a2a; padding: 15px; border-radius: 4px; border-left: 3px solid #ff6b35;">
+            {review_note}
+        </div>'''
+        if review_note
+        else ''
+    )
+
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -492,10 +508,7 @@ def generate_project_page(project):
             <div class="meta-value">{', '.join(project.get('categories', []))}</div>
         </div>
         
-        {f'''<h2>Review Note</h2>
-        <div style="background: #2a2a2a; padding: 15px; border-radius: 4px; border-left: 3px solid #ff6b35;">
-            {project.get('review_note', 'No review available')}
-        </div>''' if project.get('review_note') else ''}
+        {review_html}
     </div>
 </body>
 </html>'''
