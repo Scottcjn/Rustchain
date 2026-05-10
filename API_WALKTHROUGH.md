@@ -68,7 +68,7 @@ POST /wallet/transfer/signed
 ```json
 {
   "from": "sender_wallet_id",
-  "to": "recipient_wallet_id", 
+  "to": "recipient_wallet_id",
   "amount": 10,
   "fee": 0.001,
   "signature": "hex_encoded_signature",
