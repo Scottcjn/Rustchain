@@ -274,12 +274,13 @@ class UtxoSet:
 
         # Atomic application: spend inputs, create outputs
         spent_boxes = []
+        created_output_box_ids = []  # Track outputs created for rollback
         try:
             # Spend all inputs
             for inp in tx.inputs:
                 spent = self.spend_box(inp.box_id)
                 if not spent:
-                    raise ValueError("Failed to spend input")
+                    raise ValueError('Failed to spend input')
                 spent_boxes.append(spent)
 
             # Create all outputs
@@ -291,12 +292,34 @@ class UtxoSet:
                 # Derive owner address from proposition
                 owner = self._proposition_to_address(output.proposition_bytes)
                 self.add_box(output, owner)
+                created_output_box_ids.append(output.box_id)
 
             return True
 
         except Exception as e:
-            # Rollback on failure (restore spent boxes)
-            # In production, this would be more sophisticated
+            # Rollback on failure: restore all spent boxes to their original state
+            for box in spent_boxes:
+                # Restore box to _boxes dictionary
+                self._boxes[box.box_id] = box
+                # Restore to address index
+                owner = self._proposition_to_address(box.proposition_bytes)
+                if owner not in self._by_address:
+                    self._by_address[owner] = set()
+                self._by_address[owner].add(box.box_id)
+                # Remove from spent tracking
+                self._spent.discard(box.box_id)
+
+            # Clean up any partially created outputs
+            for box_id in created_output_box_ids:
+                if box_id in self._boxes:
+                    box = self._boxes.pop(box_id)
+                    # Remove from address index
+                    owner = self._proposition_to_address(box.proposition_bytes)
+                    if owner in self._by_address:
+                        self._by_address[owner].discard(box_id)
+                        if not self._by_address[owner]:
+                            del self._by_address[owner]
+
             print(f"Transaction failed: {e}")
             return False
 
