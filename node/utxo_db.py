@@ -645,6 +645,29 @@ class UtxoDB:
 
     # -- mempool -------------------------------------------------------------
 
+    def _mempool_clear_expired_locked(
+        self, conn: sqlite3.Connection, now: Optional[int] = None
+    ) -> int:
+        """Remove expired mempool rows using the caller's transaction."""
+        if now is None:
+            now = int(time.time())
+        expired = conn.execute(
+            "SELECT tx_id FROM utxo_mempool WHERE expires_at <= ?",
+            (now,),
+        ).fetchall()
+        count = 0
+        for row in expired:
+            conn.execute(
+                "DELETE FROM utxo_mempool_inputs WHERE tx_id = ?",
+                (row['tx_id'],),
+            )
+            conn.execute(
+                "DELETE FROM utxo_mempool WHERE tx_id = ?",
+                (row['tx_id'],),
+            )
+            count += 1
+        return count
+
     def mempool_add(self, tx: dict) -> bool:
         """
         Add a transaction to the mempool.
@@ -660,13 +683,6 @@ class UtxoDB:
         # paths and leak the transaction-in-progress lock.
         manage_tx = True
         try:
-            # Check pool size
-            row = conn.execute(
-                "SELECT COUNT(*) AS n FROM utxo_mempool"
-            ).fetchone()
-            if row['n'] >= MAX_POOL_SIZE:
-                return False
-
             tx_id = tx.get('tx_id', '')
             # FIX(#2179): Reject empty/whitespace-only tx_id to prevent
             # INSERT OR IGNORE collisions that create orphan input claims.
@@ -690,6 +706,17 @@ class UtxoDB:
                 return False
 
             conn.execute("BEGIN IMMEDIATE")
+            self._mempool_clear_expired_locked(conn, now)
+
+            # Check pool size after clearing expired entries; stale rows must
+            # not be able to keep the pool full or block valid replacements.
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM utxo_mempool"
+            ).fetchone()
+            if row['n'] >= MAX_POOL_SIZE:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
+                return False
 
             # Check for double-spend in mempool
             for inp in inputs:
@@ -812,13 +839,22 @@ class UtxoDB:
         """Get highest-fee transactions from mempool for block inclusion."""
         conn = self._conn()
         try:
+            conn.execute("BEGIN IMMEDIATE")
+            self._mempool_clear_expired_locked(conn)
             rows = conn.execute(
                 """SELECT tx_data_json FROM utxo_mempool
                    ORDER BY fee_nrtc DESC
                    LIMIT ?""",
                 (max_count,),
             ).fetchall()
+            conn.execute("COMMIT")
             return [json.loads(r['tx_data_json']) for r in rows]
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
         finally:
             conn.close()
 
@@ -826,24 +862,16 @@ class UtxoDB:
         """Remove expired transactions from mempool. Returns count removed."""
         conn = self._conn()
         try:
-            now = int(time.time())
-            expired = conn.execute(
-                "SELECT tx_id FROM utxo_mempool WHERE expires_at <= ?",
-                (now,),
-            ).fetchall()
-            count = 0
-            for row in expired:
-                conn.execute(
-                    "DELETE FROM utxo_mempool_inputs WHERE tx_id = ?",
-                    (row['tx_id'],),
-                )
-                conn.execute(
-                    "DELETE FROM utxo_mempool WHERE tx_id = ?",
-                    (row['tx_id'],),
-                )
-                count += 1
+            conn.execute("BEGIN IMMEDIATE")
+            count = self._mempool_clear_expired_locked(conn)
             conn.commit()
             return count
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
         finally:
             conn.close()
 
@@ -851,11 +879,20 @@ class UtxoDB:
         """Return True if box_id is claimed by a pending mempool TX."""
         conn = self._conn()
         try:
+            conn.execute("BEGIN IMMEDIATE")
+            self._mempool_clear_expired_locked(conn)
             row = conn.execute(
                 "SELECT tx_id FROM utxo_mempool_inputs WHERE box_id = ?",
                 (box_id,),
             ).fetchone()
+            conn.execute("COMMIT")
             return row is not None
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
         finally:
             conn.close()
 
