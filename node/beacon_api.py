@@ -4,6 +4,7 @@ Beacon Atlas API - Flask routes for 3D visualization backend
 Provides endpoints for agents, contracts, bounties, reputation, and chat.
 """
 import json
+import html
 import os
 import time
 import hashlib
@@ -864,12 +865,13 @@ def chat():
         
         if not agent_id or not message:
             return jsonify({'error': 'Missing agent_id or message'}), 400
+        safe_message = html.escape(str(message), quote=True)
         
         # Store user message
         db = get_db()
         db.execute(
             "INSERT INTO beacon_chat (agent_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-            (agent_id, 'user', message, int(time.time()))
+            (agent_id, 'user', safe_message, int(time.time()))
         )
         
         # Generate mock response (in production, call LLM)
