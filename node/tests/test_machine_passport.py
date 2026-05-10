@@ -463,6 +463,9 @@ class TestAPIEndpoints(unittest.TestCase):
         """Set up test Flask app."""
         from flask import Flask
         from machine_passport_api import machine_passport_bp
+
+        self._prev_admin_key = os.environ.get('ADMIN_KEY')
+        os.environ.pop('ADMIN_KEY', None)
         
         self.app = Flask(__name__)
         self.app.config['TESTING'] = True
@@ -470,9 +473,9 @@ class TestAPIEndpoints(unittest.TestCase):
         
         # Set test database
         import machine_passport_api
-        machine_passport_api.PASSPORT_DB_PATH = tempfile.NamedTemporaryFile(
-            delete=False, suffix='.db'
-        ).name
+        temp_db = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
+        temp_db.close()
+        machine_passport_api.PASSPORT_DB_PATH = temp_db.name
         machine_passport_api._ledger = None
         
         self.client = self.app.test_client()
@@ -480,8 +483,13 @@ class TestAPIEndpoints(unittest.TestCase):
     def tearDown(self):
         """Clean up."""
         import machine_passport_api
+        machine_passport_api._ledger = None
         if os.path.exists(machine_passport_api.PASSPORT_DB_PATH):
             os.unlink(machine_passport_api.PASSPORT_DB_PATH)
+        if self._prev_admin_key is None:
+            os.environ.pop('ADMIN_KEY', None)
+        else:
+            os.environ['ADMIN_KEY'] = self._prev_admin_key
     
     def test_list_passports_empty(self):
         """Test listing passports when empty."""
@@ -512,6 +520,62 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 201)
         self.assertTrue(data['ok'])
         self.assertIn('machine_id', data)
+
+    def test_update_passport_rejects_owner_claim_without_admin_key(self):
+        """Client-supplied owner_miner_id is not proof of ownership."""
+        self.client.post(
+            '/api/machine-passport',
+            json={
+                'name': 'Owner Claim Test',
+                'owner_miner_id': 'miner_owner',
+                'machine_id': 'owner_claim_test',
+            },
+        )
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
+
+        with patch('hmac.compare_digest', return_value=False) as compare_digest:
+            resp = self.client.put(
+                '/api/machine-passport/owner_claim_test',
+                headers={'X-Admin-Key': 'wrong-admin-key'},
+                json={
+                    'owner_miner_id': 'miner_owner',
+                    'name': 'Unauthorized Rename',
+                },
+            )
+
+        data = json.loads(resp.data)
+        self.assertEqual(resp.status_code, 401)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'unauthorized')
+        compare_digest.assert_called_once_with('wrong-admin-key', 'expected-admin-key')
+
+        get_resp = self.client.get('/api/machine-passport/owner_claim_test')
+        passport = json.loads(get_resp.data)['passport']['passport']
+        self.assertEqual(passport['name'], 'Owner Claim Test')
+
+    def test_update_passport_accepts_valid_admin_key(self):
+        """Configured admin key still authorizes passport updates."""
+        self.client.post(
+            '/api/machine-passport',
+            json={
+                'name': 'Admin Update Test',
+                'owner_miner_id': 'miner_owner',
+                'machine_id': 'admin_update_test',
+            },
+        )
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
+
+        with patch('hmac.compare_digest', return_value=True) as compare_digest:
+            resp = self.client.put(
+                '/api/machine-passport/admin_update_test',
+                headers={'X-Admin-Key': 'expected-admin-key'},
+                json={'name': 'Authorized Rename'},
+            )
+
+        data = json.loads(resp.data)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(data['ok'])
+        compare_digest.assert_called_once_with('expected-admin-key', 'expected-admin-key')
     
     def test_get_nonexistent_passport(self):
         """Test getting a nonexistent passport."""

@@ -15,6 +15,7 @@ import json
 import time
 import hashlib
 import sqlite3
+from contextlib import contextmanager
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, asdict
 from datetime import datetime
@@ -246,11 +247,19 @@ class MachinePassportLedger:
         self.db_path = db_path
         self._ensure_schema()
     
-    def _get_connection(self) -> sqlite3.Connection:
-        """Get a database connection with row factory."""
+    @contextmanager
+    def _get_connection(self):
+        """Get a database connection with row factory and close it after use."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
     
     def _ensure_schema(self) -> None:
         """Ensure the database schema is initialized."""
