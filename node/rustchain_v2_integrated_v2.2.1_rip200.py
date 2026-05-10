@@ -3574,6 +3574,8 @@ def enroll_epoch():
     pubkey_hex = (data.get('public_key') or '').strip().lower()
     epoch = slot_to_epoch(current_slot())
 
+    verified_signed_enrollment = False
+
     if sig_hex and pubkey_hex:
         if HAVE_NACL:
             # Look up the signing pubkey stored during the miner's attestation
@@ -3611,8 +3613,11 @@ def enroll_epoch():
                         "message": "Ed25519 signature verification failed",
                         "code": "INVALID_ENROLLMENT_SIGNATURE",
                     }), 400
+                verified_signed_enrollment = True
             else:
-                # No stored signing pubkey — accept with warning (legacy attestation)
+                # No stored signing pubkey — accept insert with warning (legacy
+                # attestation), but do not treat this request as an ownership-
+                # proven overwrite for an existing epoch enrollment.
                 logging.warning(
                     "[ENROLL/SIG] No stored signing pubkey for %s... "
                     "(legacy attestation — accepting unsigned path)",
@@ -3676,22 +3681,41 @@ def enroll_epoch():
         else:
             weight = hw_weight * rotation_eval['active_ratio']
 
+        existing_enrollment = c.execute(
+            "SELECT weight FROM epoch_enroll WHERE epoch = ? AND miner_pk = ?",
+            (epoch, miner_pk)
+        ).fetchone()
+        if existing_enrollment and not verified_signed_enrollment:
+            logging.warning(
+                "[ENROLL/SIG] BLOCKED overwrite for %s... existing epoch enrollment "
+                "requires verified signed ownership proof",
+                miner_pk[:20],
+            )
+            return jsonify({
+                "ok": False,
+                "error": "signed_enrollment_required",
+                "message": (
+                    "Existing enrollment for this epoch can only be updated by a "
+                    "verified signed enrollment. Re-attest and resubmit with "
+                    "signature/public_key if you need to override a preemption."
+                ),
+                "code": "SIGNED_ENROLLMENT_REQUIRED",
+            }), 409
+
         # Ensure miner has balance entry
         c.execute(
             "INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
             (miner_pk,)
         )
 
-        # Enroll in epoch
-        # FIX: Use INSERT OR IGNORE to prevent external actors from downgrading
-        # a miner's epoch weight via repeated /epoch/enroll calls. The first
-        # enrollment in an epoch wins (whether from auto-enroll or explicit).
-        # This closes the "zero-weight miner reward distortion" vector where an
-        # attacker could overwrite a legitimate miner's weight (e.g. 2.5) with
-        # a near-zero value (1e-9) by calling this endpoint with failed-fingerprint
-        # or default device data.
+        # Enroll in epoch. New enrollments remain backward-compatible, but any
+        # overwrite now requires verified ownership proof before this UPSERT runs.
         c.execute(
-            "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+            """
+            INSERT INTO epoch_enroll (epoch, miner_pk, weight)
+            VALUES (?, ?, ?)
+            ON CONFLICT(epoch, miner_pk) DO UPDATE SET weight = excluded.weight
+            """,
             (epoch, miner_pk, weight)
         )
 

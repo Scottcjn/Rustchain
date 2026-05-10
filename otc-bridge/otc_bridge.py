@@ -24,6 +24,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -53,6 +54,7 @@ elif _tls_verify_env in ("false", "0", "no"):
 else:
     TLS_VERIFY = True                 # Default: full CA verification
 
+RC_ADMIN_KEY = os.environ.get("RC_ADMIN_KEY", "").strip()
 ESCROW_WALLET = "otc_bridge_escrow"
 ORDER_TTL_DEFAULT = 7 * 86400       # 7 days
 ORDER_TTL_MAX = 30 * 86400          # 30 days
@@ -175,6 +177,100 @@ def generate_htlc_secret():
     secret = secrets.token_hex(32)  # 256-bit secret
     hash_val = hashlib.sha256(bytes.fromhex(secret)).hexdigest()
     return secret, hash_val
+
+
+_MINER_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+
+
+def is_valid_wallet_id(wallet_id):
+    wallet_id = str(wallet_id or "").strip()
+    return bool(_MINER_ID_RE.fullmatch(wallet_id))
+
+
+def send_bridge_alert(level, message, fields):
+    """Best-effort alert hook for payout failures and manual recovery events."""
+    webhook = os.environ.get("RC_SOPHIACHECK_WEBHOOK", "").strip()
+    if not webhook:
+        return
+
+    colors = {
+        "warning": 16776960,
+        "critical": 16711680,
+        "info": 3447003,
+    }
+    embed = {
+        "title": f"OTC Bridge {level.upper()}",
+        "description": message,
+        "color": colors.get(level, 3447003),
+        "fields": [
+            {"name": str(k), "value": str(v), "inline": True}
+            for k, v in (fields or {}).items()
+        ],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    try:
+        requests.post(webhook, json={"embeds": [embed]}, timeout=5)
+    except Exception as exc:
+        log.warning(f"Bridge alert delivery failed: {exc}")
+
+
+def rtc_transfer_from_worker(recipient_wallet, amount_rtc, order_id):
+    """Queue admin payout from the bridge worker to the actual OTC recipient."""
+    last_error = "unknown payout error"
+    last_payload = {}
+    retry_delays = (0, 1, 2, 4)
+
+    for attempt, delay_seconds in enumerate(retry_delays, start=1):
+        if delay_seconds:
+            time.sleep(delay_seconds)
+
+        try:
+            transfer_r = requests.post(
+                f"{RUSTCHAIN_NODE}/wallet/transfer",
+                headers={"X-Admin-Key": RC_ADMIN_KEY},
+                json={
+                    "from_miner": "otc_bridge_worker",
+                    "to_miner": recipient_wallet,
+                    "amount_rtc": amount_rtc,
+                    "reason": f"otc_payout:{order_id}",
+                },
+                verify=TLS_VERIFY, timeout=15
+            )
+        except Exception as exc:
+            last_error = str(exc)
+            if attempt < len(retry_delays):
+                log.warning(
+                    f"Worker payout attempt {attempt}/{len(retry_delays)} failed for "
+                    f"{order_id}: {last_error}"
+                )
+                continue
+            return {"ok": False, "error": last_error, "details": last_payload}
+
+        try:
+            last_payload = transfer_r.json()
+        except ValueError:
+            last_payload = {}
+
+        if transfer_r.ok:
+            last_payload.setdefault("phase", "pending")
+            return {"ok": True, "details": last_payload}
+
+        last_error = last_payload.get("error") or transfer_r.text.strip() or f"HTTP {transfer_r.status_code}"
+        should_retry = (
+            transfer_r.status_code >= 500
+            or "insufficient available balance" in last_error.lower()
+        )
+        if should_retry and attempt < len(retry_delays):
+            log.warning(
+                f"Worker payout attempt {attempt}/{len(retry_delays)} for {order_id} "
+                f"failed, retrying: {last_error}"
+            )
+            continue
+
+        break
+
+    return {"ok": False, "error": last_error, "details": last_payload}
 
 
 # ---------------------------------------------------------------------------
@@ -650,6 +746,20 @@ def confirm_order(order_id):
             return jsonify({"error": "Invalid HTLC secret (preimage hash mismatch)"}), 400
 
         now = int(time.time())
+        rtc_recipient = order["taker_wallet"] if order["side"] == "sell" else order["maker_wallet"]
+        if not is_valid_wallet_id(rtc_recipient):
+            return jsonify({
+                "error": "Invalid RTC recipient wallet on matched order",
+                "rtc_recipient": rtc_recipient,
+            }), 400
+
+        if not RC_ADMIN_KEY:
+            return jsonify({
+                "error": "Bridge payout unavailable: RC_ADMIN_KEY not configured"
+            }), 500
+
+        payout_status = "not_started"
+        payout_result = {}
 
         # Release RTC escrow
         if order["escrow_job_id"]:
@@ -682,26 +792,54 @@ def confirm_order(order_id):
                         json={"poster_wallet": escrow_poster, "rating": 5},
                         verify=TLS_VERIFY, timeout=15
                     )
-                    if not accept_r.ok:
+                    if accept_r.ok:
+                        payout_result = rtc_transfer_from_worker(
+                            rtc_recipient,
+                            order["amount_rtc"],
+                            order_id,
+                        )
+                        if payout_result["ok"]:
+                            payout_status = payout_result["details"].get("phase", "pending")
+                        else:
+                            payout_status = "manual_recovery_required"
+                            log.error(
+                                f"Bridge payout failed after escrow accept for {order_id}: "
+                                f"{payout_result['error']}"
+                            )
+                            send_bridge_alert(
+                                "critical",
+                                "OTC payout failed after escrow accept",
+                                {
+                                    "order_id": order_id,
+                                    "recipient": rtc_recipient,
+                                    "amount_rtc": order["amount_rtc"],
+                                    "error": payout_result["error"],
+                                },
+                            )
+                    else:
+                        payout_status = "escrow_accept_failed"
                         log.error(f"Escrow accept failed: {accept_r.text}")
-
-        # Determine RTC recipient
-        if order["side"] == "sell":
-            rtc_recipient = order["taker_wallet"]
+                else:
+                    payout_status = "escrow_deliver_failed"
+            else:
+                payout_status = "escrow_claim_failed"
         else:
-            rtc_recipient = order["maker_wallet"]
+            payout_status = "missing_escrow_job"
+
+        payout_details = payout_result.get("details", {})
+        payout_tx = payout_details.get("tx_hash")
 
         # Record trade
         trade_id = generate_trade_id(order_id, order["taker_wallet"])
         c.execute("""
             INSERT INTO trades
             (trade_id, order_id, pair, side, maker_wallet, taker_wallet,
-             amount_rtc, price_per_rtc, total_quote, quote_tx, completed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             amount_rtc, price_per_rtc, total_quote, rtc_tx, quote_tx, completed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (trade_id, order_id, order["pair"], order["side"],
               order["maker_wallet"], order["taker_wallet"],
               order["amount_rtc"], order["price_per_rtc"],
-              order["total_quote"], quote_tx, now))
+              order["total_quote"], payout_tx, quote_tx, now))
 
         # Update order
         c.execute("""
@@ -711,6 +849,27 @@ def confirm_order(order_id):
         """, (now, quote_tx, order_id))
         conn.commit()
 
+        if payout_status == "pending":
+            message = (
+                f"Trade completed. {order['amount_rtc']} RTC payout to {rtc_recipient} "
+                "was queued successfully. HTLC secret verified and revealed."
+            )
+        elif payout_status == "manual_recovery_required":
+            message = (
+                f"Trade completed, but payout to {rtc_recipient} failed after escrow "
+                "accept. Operators were alerted for manual recovery."
+            )
+        elif payout_status == "escrow_accept_failed":
+            message = (
+                "Trade recorded, but escrow accept failed before payout could be queued. "
+                "Manual review required."
+            )
+        else:
+            message = (
+                f"Trade completed with payout status '{payout_status}'. "
+                "HTLC secret verified and revealed."
+            )
+
         return jsonify({
             "ok": True,
             "order_id": order_id,
@@ -719,7 +878,10 @@ def confirm_order(order_id):
             "htlc_secret": secret,
             "amount_rtc": order["amount_rtc"],
             "rtc_recipient": rtc_recipient,
-            "message": f"Trade completed. {order['amount_rtc']} RTC released to {rtc_recipient}. HTLC secret verified and revealed."
+            "rtc_transfer_status": payout_status,
+            "rtc_transfer_pending_id": payout_details.get("pending_id"),
+            "rtc_transfer_tx_hash": payout_tx,
+            "message": message
         })
 
     except Exception as e:
