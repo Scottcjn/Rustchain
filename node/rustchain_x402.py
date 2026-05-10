@@ -7,6 +7,7 @@ Usage in rustchain server:
     rustchain_x402.init_app(app, DB_PATH)
 """
 
+import hmac
 import logging
 import os
 import sqlite3
@@ -73,7 +74,7 @@ def init_app(app, db_path):
         expected = os.environ.get("RC_ADMIN_KEY", "")
         if not expected:
             return jsonify({"error": "Admin key not configured"}), 503
-        if admin_key != expected:
+        if not hmac.compare_digest(admin_key, expected):
             return jsonify({"error": "Unauthorized — admin key required"}), 401
 
         data = request.get_json(silent=True) or {}
