@@ -500,8 +500,10 @@ class GossipLayer:
     def create_message(self, msg_type: MessageType, payload: Dict, ttl: int = GOSSIP_TTL) -> GossipMessage:
         """Create a new gossip message"""
         # Generate msg_id first for signature binding (Issue #2272)
+        # Issue #2268: Use cryptographically secure random nonce instead of predictable time.time()
         temp_content = f"{msg_type.value}:{self.node_id}:{json.dumps(payload, sort_keys=True)}"
-        msg_id = hashlib.sha256(f"{temp_content}:{time.time()}".encode()).hexdigest()[:24]
+        secure_nonce = secrets.token_hex(16)  # 128-bit cryptographically secure random value
+        msg_id = hashlib.sha256(f"{temp_content}:{secure_nonce}".encode()).hexdigest()[:24]
         
         content = self._signed_content(msg_type.value, self.node_id, msg_id, ttl, payload)
         sig, ts = self._sign_message(content)
@@ -937,8 +939,10 @@ class GossipLayer:
         # Uses the Phase A signed-content shape (msg_type:sender_id:payload)
         # so verify_message() on the requester side accepts it.
         payload = {"state": state_data}
+        # Issue #2268: Use cryptographically secure random nonce instead of predictable time.time()
+        state_nonce = secrets.token_hex(16)
         state_msg_id = hashlib.sha256(
-            f"STATE:{self.node_id}:{json.dumps(payload, sort_keys=True)}:{time.time()}".encode()
+            f"STATE:{self.node_id}:{json.dumps(payload, sort_keys=True)}:{state_nonce}".encode()
         ).hexdigest()[:24]
         
         content = self._signed_content(MessageType.STATE.value, self.node_id, state_msg_id, 0, payload)
