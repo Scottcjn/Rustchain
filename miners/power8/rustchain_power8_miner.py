@@ -23,6 +23,34 @@ BLOCK_TIME = 600  # 10 minutes
 
 WALLET_FILE = os.path.expanduser("~/rustchain/power8_wallet.txt")
 
+
+def _parse_lscpu_model(output):
+    for line in output.splitlines():
+        key, _, value = line.partition(":")
+        if key.strip().lower() == "model name" and value.strip():
+            return value.strip()
+    return ""
+
+
+def _parse_proc_cpu_model(output):
+    for line in output.splitlines():
+        key, _, value = line.partition(":")
+        if key.strip().lower() == "cpu" and value.strip():
+            return value.strip()
+    return ""
+
+
+def _parse_free_memory_gb(output):
+    for line in output.splitlines():
+        parts = line.split()
+        if parts and parts[0].lower().rstrip(":") == "mem" and len(parts) > 1:
+            try:
+                return int(parts[1])
+            except ValueError:
+                return None
+    return None
+
+
 class LocalMiner:
     def __init__(self, wallet=None):
         self.node_url = NODE_URL
@@ -86,10 +114,10 @@ class LocalMiner:
         data = f"power8-s824-{uuid.uuid4().hex}-{time.time()}"
         return hashlib.sha256(data.encode()).hexdigest()[:38] + "RTC"
 
-    def _run_cmd(self, cmd):
+    def _run_cmd(self, args):
         try:
-            return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, timeout=10, shell=True).stdout.strip()
+            return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, timeout=10).stdout.strip()
         except:
             return ""
 
@@ -170,18 +198,22 @@ class LocalMiner:
         }
 
         # Get CPU info for POWER8
-        cpu = self._run_cmd("lscpu | grep 'Model name' | cut -d: -f2 | xargs")
+        cpu = _parse_lscpu_model(self._run_cmd(["lscpu"]))
         if not cpu:
-            cpu = self._run_cmd("cat /proc/cpuinfo | grep 'cpu' | head -1 | cut -d: -f2 | xargs")
+            try:
+                with open("/proc/cpuinfo", "r") as f:
+                    cpu = _parse_proc_cpu_model(f.read())
+            except Exception:
+                cpu = ""
         hw["cpu"] = cpu or "IBM POWER8"
 
         # Get cores (POWER8 has 16 cores, 128 threads with SMT8)
-        cores = self._run_cmd("nproc")
+        cores = self._run_cmd(["nproc"])
         hw["cores"] = int(cores) if cores else 128
 
         # Get memory (576GB on S824)
-        mem = self._run_cmd("free -g | grep Mem | awk '{print $2}'")
-        hw["memory_gb"] = int(mem) if mem else 576
+        mem = _parse_free_memory_gb(self._run_cmd(["free", "-g"]))
+        hw["memory_gb"] = mem if mem is not None else 576
 
         # Get MACs
         macs = self._get_mac_addresses()

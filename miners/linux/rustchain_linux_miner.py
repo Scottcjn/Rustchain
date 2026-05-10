@@ -31,6 +31,26 @@ BLOCK_TIME = 600  # 10 minutes
 _CERT_PATH = os.path.expanduser("~/.rustchain/node_cert.pem")
 TLS_VERIFY = _CERT_PATH if os.path.exists(_CERT_PATH) else True
 
+
+def _parse_lscpu_model(output):
+    for line in output.splitlines():
+        key, _, value = line.partition(":")
+        if key.strip().lower() == "model name" and value.strip():
+            return value.strip()
+    return ""
+
+
+def _parse_free_memory_gb(output):
+    for line in output.splitlines():
+        parts = line.split()
+        if parts and parts[0].lower().rstrip(":") == "mem" and len(parts) > 1:
+            try:
+                return int(parts[1])
+            except ValueError:
+                return None
+    return None
+
+
 def get_linux_serial():
     """Get hardware serial number for Linux systems"""
     # Try various sources
@@ -119,10 +139,10 @@ class LocalMiner:
         data = f"ryzen5-{uuid.uuid4().hex}-{time.time()}"
         return hashlib.sha256(data.encode()).hexdigest()[:38] + "RTC"
 
-    def _run_cmd(self, cmd):
+    def _run_cmd(self, args):
         try:
-            return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, timeout=10, shell=True).stdout.strip()
+            return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, timeout=10).stdout.strip()
         except:
             return ""
 
@@ -240,16 +260,16 @@ class LocalMiner:
             hw["arch"] = machine
 
         # Get CPU
-        cpu = self._run_cmd("lscpu | grep 'Model name' | cut -d: -f2 | xargs")
+        cpu = _parse_lscpu_model(self._run_cmd(["lscpu"]))
         hw["cpu"] = cpu or "Unknown"
 
         # Get cores
-        cores = self._run_cmd("nproc")
+        cores = self._run_cmd(["nproc"])
         hw["cores"] = int(cores) if cores else 6
 
         # Get memory
-        mem = self._run_cmd("free -g | grep Mem | awk '{print $2}'")
-        hw["memory_gb"] = int(mem) if mem else 32
+        mem = _parse_free_memory_gb(self._run_cmd(["free", "-g"]))
+        hw["memory_gb"] = mem if mem is not None else 32
 
         # Get MACs (ensures PoA signal uses real hardware data)
         macs = self._get_mac_addresses()
