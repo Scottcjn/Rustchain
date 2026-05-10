@@ -172,6 +172,12 @@ def funded_miner(setup_test_db):
     return "RTC_test_miner"
 
 
+def assert_generic_database_error(result):
+    assert result == {"error": "Database error"}
+    assert "details" not in result
+    assert "no such table" not in str(result).lower()
+
+
 # =============================================================================
 # Bridge API Validation Tests
 # =============================================================================
@@ -415,6 +421,27 @@ class TestBridgeTransferCreation:
         
         conn.close()
 
+    def test_database_errors_do_not_leak_details(self, setup_test_db):
+        """DB failures should not expose SQLite schema details to callers."""
+        bridge_api = setup_test_db["bridge_api"]
+        conn = sqlite3.connect(":memory:")
+
+        req = bridge_api.BridgeTransferRequest(
+            direction="withdraw",
+            source_chain="solana",
+            dest_chain="rustchain",
+            source_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            dest_address="RTC_dest123",
+            amount_rtc=5.0
+        )
+
+        success, result = bridge_api.create_bridge_transfer(conn, req)
+
+        assert success is False
+        assert_generic_database_error(result)
+
+        conn.close()
+
 
 # =============================================================================
 # Bridge Status Query Tests
@@ -489,6 +516,24 @@ class TestLockLedger:
         assert result["lock_id"] > 0
         assert result["amount_rtc"] == 10.0
         
+        conn.close()
+
+    def test_database_errors_do_not_leak_details(self, setup_test_db):
+        """DB failures should not expose SQLite schema details to callers."""
+        lock_ledger = setup_test_db["lock_ledger"]
+        conn = sqlite3.connect(":memory:")
+
+        success, result = lock_ledger.create_lock(
+            conn,
+            miner_id="RTC_test_miner",
+            amount_i64=10 * 1000000,
+            lock_type="bridge_deposit",
+            unlock_at=int(time.time()) + 3600
+        )
+
+        assert success is False
+        assert_generic_database_error(result)
+
         conn.close()
     
     def test_release_lock(self, setup_test_db, funded_miner):

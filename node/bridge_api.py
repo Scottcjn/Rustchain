@@ -18,6 +18,7 @@ import sqlite3
 import time
 import hmac
 import hashlib
+import logging
 import os
 from typing import Optional, Tuple, Dict, Any
 from decimal import Decimal
@@ -55,6 +56,7 @@ BRIDGE_DEFAULT_CONFIRMATIONS = int(os.environ.get("RC_BRIDGE_DEFAULT_CONFIRMATIO
 BRIDGE_LOCK_EXPIRY_SECONDS = int(os.environ.get("RC_BRIDGE_LOCK_EXPIRY_SECONDS", "604800"))  # 7 days
 BRIDGE_MIN_AMOUNT_RTC = float(os.environ.get("RC_BRIDGE_MIN_AMOUNT_RTC", "1.0"))
 BRIDGE_UNIT = 1000000  # Micro-units per RTC
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -385,11 +387,11 @@ def create_bridge_transfer(
             "amount_rtc": request.amount_rtc
         }
         
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         db_conn.rollback()
+        logger.exception("Failed to create bridge transfer")
         return False, {
-            "error": "Database error",
-            "details": str(e)
+            "error": "Database error"
         }
 
 
@@ -568,11 +570,11 @@ def void_bridge_transfer(
             "lock_released": True
         }
         
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         db_conn.rollback()
+        logger.exception("Failed to void bridge transfer")
         return False, {
-            "error": "Database error",
-            "details": str(e)
+            "error": "Database error"
         }
 
 
@@ -643,11 +645,11 @@ def update_external_confirmation(
             "required_confirmations": req_conf
         }
         
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         db_conn.rollback()
+        logger.exception("Failed to update bridge external confirmation")
         return False, {
-            "error": "Database error",
-            "details": str(e)
+            "error": "Database error"
         }
 
 
