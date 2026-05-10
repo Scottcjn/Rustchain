@@ -171,6 +171,24 @@ class TestFaucetValidator(unittest.TestCase):
         self.assertTrue(valid)
         self.assertIsNone(error)
 
+    def test_checksum_validation_accepts_valid_eip55_wallet(self):
+        """Test checksum validation with a known-valid EIP-55 address."""
+        self.config['validation']['require_checksum'] = True
+        validator = FaucetValidator(self.config, self.logger)
+
+        valid, error = validator.validate_wallet('0x52908400098527886E0F7030069857D2E4169EE7')
+        self.assertTrue(valid)
+        self.assertIsNone(error)
+
+    def test_checksum_validation_rejects_invalid_eip55_wallet(self):
+        """Test checksum validation rejects bad casing without raising."""
+        self.config['validation']['require_checksum'] = True
+        validator = FaucetValidator(self.config, self.logger)
+
+        valid, error = validator.validate_wallet('0x52908400098527886e0f7030069857d2e4169ee7')
+        self.assertFalse(valid)
+        self.assertEqual(error, "Invalid wallet checksum")
+
 
 class TestRateLimiter(unittest.TestCase):
     """Test rate limiting."""
@@ -350,6 +368,20 @@ class TestFlaskApp(unittest.TestCase):
         self.assertIn('wallet', data)
         self.assertIn('next_available', data)
     
+    def test_drip_success_with_checksum_validation_enabled(self):
+        """Test checksum validation does not turn drip requests into 500s."""
+        self.config['validation']['require_checksum'] = True
+        app = create_app(self.config)
+        client = app.test_client()
+
+        response = client.post('/faucet/drip',
+                               json={'wallet': '0x52908400098527886E0F7030069857D2E4169EE7'},
+                               content_type='application/json')
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertTrue(data['ok'])
+
     def test_drip_missing_wallet(self):
         """Test drip request without wallet."""
         response = self.client.post('/faucet/drip',
