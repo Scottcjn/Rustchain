@@ -604,7 +604,10 @@ def list_passports():
     # Get query parameters
     owner = request.args.get('owner')
     architecture = request.args.get('architecture')
-    limit = min(int(request.args.get('limit', 100)), 500)
+    try:
+        limit = max(1, min(int(request.args.get('limit', 100)), 500))
+    except (ValueError, TypeError):
+        limit = 100
     
     passports = ledger.list_passports(
         owner_miner_id=owner,
