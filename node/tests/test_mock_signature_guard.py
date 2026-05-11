@@ -1,6 +1,8 @@
 import importlib.util
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -58,6 +60,38 @@ class MockSignatureGuardTests(unittest.TestCase):
         os.environ.pop("RUSTCHAIN_ENV", None)
 
         integrated_node.enforce_mock_signature_runtime_guard()
+
+    def test_wsgi_startup_enforces_mock_signature_guard(self):
+        project_root = Path(__file__).resolve().parents[2]
+        node_dir = project_root / "node"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_node = Path(temp_dir)
+            shutil.copy2(node_dir / "wsgi.py", temp_node / "wsgi.py")
+            (temp_node / "rustchain_v2_integrated_v2.2.1_rip200.py").write_text(
+                "\n".join(
+                    [
+                        "TESTNET_ALLOW_MOCK_SIG = True",
+                        "app = object()",
+                        "DB_PATH = ':memory:'",
+                        "def init_db():",
+                        "    raise AssertionError('init_db should not run before guard')",
+                        "def enforce_mock_signature_runtime_guard():",
+                        "    raise RuntimeError('TESTNET_ALLOW_MOCK_SIG blocked by WSGI guard')",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            spec = importlib.util.spec_from_file_location(
+                "wsgi_mock_guard_test",
+                str(temp_node / "wsgi.py"),
+            )
+            module = importlib.util.module_from_spec(spec)
+
+            with self.assertRaisesRegex(RuntimeError, "TESTNET_ALLOW_MOCK_SIG"):
+                spec.loader.exec_module(module)
 
 
 if __name__ == "__main__":
