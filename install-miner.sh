@@ -96,7 +96,7 @@ verify_sum() {
 download_miner() {
     cd "$INSTALL_DIR"
     case "$PLATFORM" in
-        macos) FILE="macos/rustchain_mac_miner_v2.4.py" ;;
+        macos) FILE="macos/rustchain_mac_miner_v2.5.py" ;;
         rpi|linux) FILE="linux/rustchain_linux_miner.py" ;;
         *) FILE="linux/rustchain_linux_miner.py" ;;
     esac
