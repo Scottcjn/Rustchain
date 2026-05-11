@@ -157,6 +157,29 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
         self.assertEqual(self.db.get_balance('bob'), 0)
 
+    def test_fractional_fee_rejected(self):
+        """fee_nrtc must be an integer nanoRTC amount.
+
+        A fractional fee can pass conservation by pairing it with a one-nanoRTC
+        output reduction, but SQLite stores the fee in an INTEGER column and
+        truncates it. That silently destroys value without recording the fee.
+        """
+        self._apply_coinbase('alice', 100 * UNIT)
+        alice_boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT - 1}],
+            'fee_nrtc': 0.5,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        # Balances unchanged
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+
     # -- double-spend --------------------------------------------------------
 
     def test_double_spend_rejected(self):
@@ -563,6 +586,29 @@ class TestUtxoDB(unittest.TestCase):
             'inputs': [{'box_id': boxes[0]['box_id']}],
             'outputs': [{'address': 'bob', 'value_nrtc': 50 * UNIT}],
             'fee_nrtc': -50 * UNIT,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        # Box should NOT be locked
+        self.assertFalse(
+            self.db.mempool_check_double_spend(boxes[0]['box_id'])
+        )
+
+    def test_mempool_rejects_fractional_fee(self):
+        """Mempool must reject non-integer fee_nrtc values.
+
+        Otherwise a transaction can lock inputs with fee accounting that will
+        diverge when persisted to SQLite's INTEGER fee column.
+        """
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'ffee' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT - 1}],
+            'fee_nrtc': 0.5,
         }
         ok = self.db.mempool_add(tx)
         self.assertFalse(ok)

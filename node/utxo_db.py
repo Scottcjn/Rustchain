@@ -445,6 +445,8 @@ class UtxoDB:
             if tx_type in MINTING_TX_TYPES and output_total > MAX_COINBASE_OUTPUT_NRTC:
                 return abort()
 
+            if type(fee) is not int:
+                return abort()
             if fee < 0:
                 return abort()
             if inputs and (output_total + fee) > input_total:
@@ -718,6 +720,10 @@ class UtxoDB:
             # Prevent mempool admission of transactions that would fail
             # apply_transaction(), locking UTXOs until expiry (DoS vector).
             fee = tx.get('fee_nrtc', 0)
+            if type(fee) is not int:
+                if manage_tx:
+                        conn.execute("ROLLBACK")
+                return False
             if fee < 0:
                 if manage_tx:
                         conn.execute("ROLLBACK")
