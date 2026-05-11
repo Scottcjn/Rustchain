@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 from pathlib import Path
 
 
@@ -29,4 +31,3 @@ def test_status_dashboard_escapes_node_status_fields_before_inner_html():
     assert "${escapeHtml(node.version || 'unknown')}" in source
     assert "${escapeHtml(node.epoch || '--')}" in source
     assert "${escapeHtml(node.miners || 0)}" in source
-
