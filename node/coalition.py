@@ -39,6 +39,16 @@ log = logging.getLogger("rip0278_coalition")
 _SIGNATURE_MAX_AGE_SECONDS = 300  # 5 minutes
 
 
+def _parse_bounded_int_arg(name: str, default: int, minimum: int, maximum: int):
+    """Parse a bounded integer query arg for public coalition endpoints."""
+    raw = request.args.get(name, str(default))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None, jsonify({"error": f"{name} must be an integer"}), 400
+    return max(minimum, min(value, maximum)), None, None
+
+
 def _verify_miner_signature(miner_id: str, action: str, data: dict) -> bool:
     """Verify ed25519 signature proving the caller controls miner_id.
 
@@ -700,8 +710,12 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
     @bp.route("/list", methods=["GET"])
     def list_coalitions():
         status_filter = request.args.get("status")
-        limit = min(int(request.args.get("limit", 50)), 200)
-        offset = int(request.args.get("offset", 0))
+        limit, error_response, status = _parse_bounded_int_arg("limit", 50, 1, 200)
+        if error_response is not None:
+            return error_response, status
+        offset, error_response, status = _parse_bounded_int_arg("offset", 0, 0, 10_000)
+        if error_response is not None:
+            return error_response, status
 
         try:
             with sqlite3.connect(db_path) as conn:
@@ -774,8 +788,12 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
             return jsonify({"error": "coalition not found or inactive"}), 404
 
         status_filter = request.args.get("status")
-        limit = min(int(request.args.get("limit", 50)), 200)
-        offset = int(request.args.get("offset", 0))
+        limit, error_response, status = _parse_bounded_int_arg("limit", 50, 1, 200)
+        if error_response is not None:
+            return error_response, status
+        offset, error_response, status = _parse_bounded_int_arg("offset", 0, 0, 10_000)
+        if error_response is not None:
+            return error_response, status
 
         try:
             with sqlite3.connect(db_path) as conn:

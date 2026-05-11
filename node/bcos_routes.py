@@ -53,26 +53,6 @@ def _get_admin_key():
     return os.environ.get("RC_ADMIN_KEY", "")
 
 
-def _parse_non_negative_query_int(name: str, default: int, max_value: int | None = None) -> int:
-    """Parse pagination query params without letting malformed input become a 500."""
-    raw_value = request.args.get(name)
-    if raw_value is None:
-        parsed = default
-    else:
-        try:
-            parsed = int(raw_value, 10)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"{name} must be an integer") from exc
-
-    if parsed < 0:
-        raise ValueError(f"{name} must be non-negative")
-
-    if max_value is not None:
-        parsed = min(parsed, max_value)
-
-    return parsed
-
-
 def _parse_trust_score(raw_score) -> int:
     """Validate BCOS trust scores before they are stored or rendered."""
     if isinstance(raw_score, bool):
@@ -87,6 +67,20 @@ def _parse_trust_score(raw_score) -> int:
         raise ValueError("trust_score must be between 0 and 100")
 
     return score
+
+
+def _parse_bounded_int_arg(name: str, default: int, maximum: int):
+    """Parse a bounded integer query arg for public BCOS endpoints."""
+    raw = request.args.get(name, str(default))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None, jsonify({"error": "invalid_pagination", "message": f"{name} must be an integer"}), 400
+
+    if value < 0:
+        return None, jsonify({"error": "invalid_pagination", "message": f"{name} must be non-negative"}), 400
+
+    return min(value, maximum), None, None
 
 
 def _verify_commitment(report_json_str: str, claimed_commitment: str) -> bool:
@@ -429,11 +423,12 @@ def bcos_badge_svg(cert_id):
 def bcos_directory():
     """List all BCOS-certified repos with latest attestation."""
     tier_filter = request.args.get("tier", "").upper()
-    try:
-        limit = _parse_non_negative_query_int("limit", 100, max_value=500)
-        offset = _parse_non_negative_query_int("offset", 0)
-    except ValueError as e:
-        return jsonify({"error": "invalid_pagination", "message": str(e)}), 400
+    limit, error_response, status = _parse_bounded_int_arg("limit", 100, 500)
+    if error_response is not None:
+        return error_response, status
+    offset, error_response, status = _parse_bounded_int_arg("offset", 0, 10_000)
+    if error_response is not None:
+        return error_response, status
 
     try:
         with sqlite3.connect(_DB_PATH) as conn:
