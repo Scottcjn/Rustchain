@@ -190,6 +190,49 @@ class TestEligibilityChecks(unittest.TestCase):
         self.assertFalse(result.eligible)
         self.assertIn("Already claimed", result.reason)
 
+    def test_same_github_cannot_claim_with_different_wallet(self):
+        """A GitHub account cannot bypass claim limits by changing wallets."""
+        success, _, _ = self.airdrop.claim_airdrop(
+            github_username="testuser",
+            wallet_address="RTC1111111111111111111111111111111111111111",
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+        self.assertTrue(success)
+
+        result = self.airdrop.check_eligibility(
+            github_username="testuser",
+            wallet_address="RTC2222222222222222222222222222222222222222",
+            chain="base",
+            skip_antisybil=True,
+        )
+
+        self.assertFalse(result.eligible)
+        self.assertIn("Already claimed", result.reason)
+
+    def test_same_wallet_cannot_claim_with_different_github(self):
+        """A wallet cannot bypass claim limits by changing GitHub accounts."""
+        wallet = "RTC3333333333333333333333333333333333333333"
+        success, _, _ = self.airdrop.claim_airdrop(
+            github_username="firstuser",
+            wallet_address=wallet,
+            chain="base",
+            tier="contributor",
+            skip_antisybil=True,
+        )
+        self.assertTrue(success)
+
+        result = self.airdrop.check_eligibility(
+            github_username="seconduser",
+            wallet_address=wallet,
+            chain="base",
+            skip_antisybil=True,
+        )
+
+        self.assertFalse(result.eligible)
+        self.assertIn("Already claimed", result.reason)
+
 
 class TestClaimProcessing(unittest.TestCase):
     """Test claim creation and finalization."""

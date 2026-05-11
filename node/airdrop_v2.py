@@ -660,16 +660,16 @@ class AirdropV2:
     def _has_claimed(
         self, github_username: str, wallet_address: str, chain: str
     ) -> bool:
-        """Check if user already claimed airdrop."""
+        """Check if a GitHub account or wallet already claimed an airdrop."""
         conn = self._get_conn()
         cursor = conn.cursor()
         cursor.execute(
             """
             SELECT 1 FROM airdrop_claims
-            WHERE github_username = ? AND wallet_address = ? AND chain = ?
+            WHERE (github_username = ? OR wallet_address = ?)
             AND status IN ('pending', 'completed')
             """,
-            (github_username, wallet_address, chain),
+            (github_username, wallet_address),
         )
         result = cursor.fetchone() is not None
         self._close_conn(conn)
