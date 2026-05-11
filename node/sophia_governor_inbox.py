@@ -561,7 +561,7 @@ def _scott_notification_headers() -> dict[str, str]:
     }
     bearer = (
         os.getenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_BEARER", "").strip()
-        or os.getenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", "elya2025").strip()
+        or os.getenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", "").strip()
     )
     if bearer:
         headers["Authorization"] = f"Bearer {bearer}"
@@ -681,6 +681,8 @@ def _queue_scott_notification_for_entry(
     queue_url = _scott_notification_queue_url()
     if not queue_url:
         return {"status": "not_configured", "phase": phase}
+    if "Authorization" not in _scott_notification_headers():
+        return {"status": "token_not_configured", "phase": phase}
 
     sent_column = _phase_notify_column(phase)
     if entry.get(sent_column):
