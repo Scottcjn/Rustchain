@@ -83,18 +83,23 @@ def _parse_bounded_int_arg(name: str, default: int, maximum: int):
     return min(value, maximum), None, None
 
 
+def _compute_report_commitment(report: dict) -> str:
+    """Return the BLAKE2b commitment digest for a BCOS report payload."""
+    report_copy = {
+        key: value
+        for key, value in report.items()
+        if key not in ("cert_id", "commitment")
+    }
+    canonical = json.dumps(report_copy, sort_keys=True, separators=(",", ":"))
+    return blake2b(canonical.encode(), digest_size=32).hexdigest()
+
+
 def _verify_commitment(report_json_str: str, claimed_commitment: str) -> bool:
     """Recompute BLAKE2b commitment and compare."""
     try:
-        # Reparse and re-serialize to canonical form
         report = json.loads(report_json_str)
-        # Remove cert_id and commitment before recomputing
-        # (they were added after the commitment was computed)
-        report_copy = {k: v for k, v in report.items()
-                       if k not in ("cert_id", "commitment")}
-        canonical = json.dumps(report_copy, sort_keys=True, separators=(",", ":"))
-        computed = blake2b(canonical.encode(), digest_size=32).hexdigest()
-        return computed == claimed_commitment
+        computed = _compute_report_commitment(report)
+        return hmac.compare_digest(computed, str(claimed_commitment))
     except Exception:
         return False
 
@@ -229,6 +234,13 @@ def bcos_attest():
         return jsonify({"error": "invalid_trust_score", "message": str(e)}), 400
     report["trust_score"] = trust_score
 
+    report_json_str = json.dumps(report, sort_keys=True, separators=(",", ":"))
+    if not _verify_commitment(report_json_str, commitment):
+        return jsonify({
+            "error": "invalid_commitment",
+            "message": "commitment does not match report",
+        }), 400
+
     # Auth: admin key OR valid Ed25519 signature
     sig_valid = False
     if signature and signer_pubkey:
@@ -239,9 +251,6 @@ def bcos_attest():
             "error": "Unauthorized - admin key or valid Ed25519 signature required",
             "hint": "Use X-Admin-Key header or sign the commitment with Ed25519",
         }), 401
-
-    # Verify commitment matches report
-    report_json_str = json.dumps(report, sort_keys=True, separators=(",", ":"))
 
     # Store
     now = int(time.time())
@@ -308,10 +317,7 @@ def bcos_verify(cert_id):
 
         # Recompute commitment from stored report
         report = json.loads(row["report_json"])
-        report_copy = {k: v for k, v in report.items()
-                       if k not in ("cert_id", "commitment")}
-        canonical = json.dumps(report_copy, sort_keys=True, separators=(",", ":"))
-        recomputed = blake2b(canonical.encode(), digest_size=32).hexdigest()
+        recomputed = _compute_report_commitment(report)
         commitment_valid = recomputed == row["commitment"]
 
         # Verify Ed25519 signature if present

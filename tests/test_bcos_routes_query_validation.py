@@ -1,9 +1,21 @@
 import sqlite3
+import json
+from hashlib import blake2b
 
 import pytest
 from flask import Flask
 
 from bcos_routes import init_bcos_table, register_bcos_routes
+
+
+def _commitment_for(report):
+    report_copy = {
+        key: value
+        for key, value in report.items()
+        if key not in ("cert_id", "commitment")
+    }
+    canonical = json.dumps(report_copy, sort_keys=True, separators=(",", ":"))
+    return blake2b(canonical.encode(), digest_size=32).hexdigest()
 
 
 @pytest.fixture
@@ -98,17 +110,19 @@ def test_bcos_attest_rejects_invalid_trust_score(bcos_client, trust_score, messa
 
 
 def test_bcos_attest_stores_numeric_trust_score(bcos_client):
+    report = {
+        "cert_id": "cert-good-score",
+        "repo": "Scottcjn/Rustchain",
+        "commit_sha": "abcdef1234567890",
+        "tier": "L1",
+        "trust_score": "81",
+    }
+    report["commitment"] = _commitment_for({**report, "trust_score": 81})
+
     response = bcos_client.post(
         "/bcos/attest",
         headers={"X-Admin-Key": "0" * 32},
-        json={
-            "cert_id": "cert-good-score",
-            "commitment": "commitment",
-            "repo": "Scottcjn/Rustchain",
-            "commit_sha": "abcdef1234567890",
-            "tier": "L1",
-            "trust_score": "81",
-        },
+        json=report,
     )
 
     assert response.status_code == 200
@@ -117,3 +131,22 @@ def test_bcos_attest_stores_numeric_trust_score(bcos_client):
     verify_response = bcos_client.get("/bcos/verify/cert-good-score")
     assert verify_response.status_code == 200
     assert verify_response.get_json()["trust_score"] == 81
+
+
+def test_bcos_attest_rejects_mismatched_commitment(bcos_client):
+    response = bcos_client.post(
+        "/bcos/attest",
+        headers={"X-Admin-Key": "0" * 32},
+        json={
+            "cert_id": "cert-stale-commitment",
+            "commitment": "stale-commitment",
+            "repo": "Scottcjn/Rustchain",
+            "commit_sha": "abcdef1234567890",
+            "tier": "L1",
+            "trust_score": 81,
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["error"] == "invalid_commitment"
