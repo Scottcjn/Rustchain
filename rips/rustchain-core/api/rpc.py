@@ -273,7 +273,8 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         try:
             params = json.loads(body) if body else {}
         except json.JSONDecodeError:
-            params = {}
+            self._send_response(ApiResponse(success=False, error="Invalid JSON body"))
+            return
 
         parsed = urlparse(self.path)
         response = self._route_request(parsed.path, params)
