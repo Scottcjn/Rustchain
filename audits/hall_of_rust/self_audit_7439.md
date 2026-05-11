@@ -148,7 +148,7 @@ def set_eulogy(fingerprint):
 
 **Attack Scenario:**
 ```bash
-curl -X POST https://api.rustchain.io/hall/eulogy/abc123def456... \
+curl -X POST https://50.28.86.131/hall/eulogy/abc123def456... \
   -H "Content-Type: application/json" \
   -d '{"nickname": "DESTROYED", "eulogy": "RIP", "is_deceased": true}'
 ```
@@ -572,7 +572,7 @@ limit = request.args.get('limit', 50, type=int)
 
 No maximum limit validation:
 ```bash
-curl "https://api.rustchain.io/hall/leaderboard?limit=999999999"
+curl "https://50.28.86.131/hall/leaderboard?limit=999999999"
 ```
 
 **Impact:** Resource exhaustion, database performance degradation.
