@@ -69,6 +69,15 @@ except Exception as _e:
 # Ed25519 signature verification
 TESTNET_ALLOW_INLINE_PUBKEY = False  # PRODUCTION: Disabled
 TESTNET_ALLOW_MOCK_SIG = False  # PRODUCTION: Disabled
+_MOCK_SIG_ALLOWED_ENVS = {"test", "testing", "dev", "development", "local", "testnet"}
+
+
+def enforce_mock_signature_runtime_guard():
+    runtime_env = (os.environ.get("RC_RUNTIME_ENV") or os.environ.get("RUSTCHAIN_ENV") or "production").strip().lower()
+    if TESTNET_ALLOW_MOCK_SIG and runtime_env not in _MOCK_SIG_ALLOWED_ENVS:
+        raise RuntimeError(
+            "TESTNET_ALLOW_MOCK_SIG must not be enabled outside test/dev runtimes"
+        )
 
 try:
     from nacl.signing import VerifyKey
@@ -7935,6 +7944,8 @@ def beacon_envelopes_list():
     return jsonify({"ok": True, "count": len(envelopes), "envelopes": envelopes})
 
 if __name__ == "__main__":
+    enforce_mock_signature_runtime_guard()
+
     # CRITICAL: SR25519 library is REQUIRED for production
     if not SR25519_AVAILABLE:
         print("=" * 70, file=sys.stderr)
