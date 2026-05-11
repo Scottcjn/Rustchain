@@ -290,6 +290,11 @@ class SubmissionValidator:
             "bounty": None,
             "era": None
         }
+
+        if not any([photo_path, screenshot_path, attestation_log_path, writeup_path, wallet_address]):
+            results["valid"] = False
+            results["errors"].append("At least one validation input is required")
+            return results
         
         # Validate each component
         if photo_path:
