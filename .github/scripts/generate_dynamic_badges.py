@@ -16,9 +16,7 @@ Badge types:
     - total_bounties.json     — Total bounties paid out
     - weekly_growth.json      — Weekly growth percentage
     - top_hunters.json        — Top 3 bounty hunters summary
-    - category_docs.json      — Documentation bounties count
-    - category_outreach.json  — Outreach/community bounties count
-    - category_bugs.json      — Bug bounties count
+    - category_<name>.json    — Per-category bounty count for categories in data
     - hunter_<slug>.json      — Per-hunter badge (collision-safe slug)
 """
 

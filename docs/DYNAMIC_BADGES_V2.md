@@ -29,10 +29,12 @@ Add any of these to your `README.md`:
 
 ## Category Badges
 
+Category badges are generated for categories present in the current bounty data.
+Check `.github/badges/manifest.json` for the generated `category_<name>.json`
+files before embedding one.
+
 ```markdown
-![Docs Bounties](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/category_docs.json)
-![Bug Bounties](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/category_bugs.json)
-![Outreach](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/category_outreach.json)
+![Feature Bounties](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/.github/badges/category_feature.json)
 ```
 
 ## Per-Hunter Badge
