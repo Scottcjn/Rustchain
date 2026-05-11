@@ -32,6 +32,11 @@ from ..config.chain_params import (
 )
 
 
+MAX_MESSAGE_BYTES = 1024 * 1024
+MAX_PAYLOAD_BYTES = 256 * 1024
+MAX_CLOCK_SKEW_SECONDS = 300
+
+
 # =============================================================================
 # Message Types
 # =============================================================================
@@ -135,13 +140,52 @@ class Message:
     @classmethod
     def from_bytes(cls, data: bytes, sender: PeerId) -> 'Message':
         """Deserialize message from bytes"""
-        parsed = json.loads(data.decode())
+        if not isinstance(data, (bytes, bytearray)):
+            raise ValueError("message data must be bytes")
+        if len(data) > MAX_MESSAGE_BYTES:
+            raise ValueError("message too large")
+
+        try:
+            parsed = json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("invalid message encoding") from exc
+
+        if not isinstance(parsed, dict):
+            raise ValueError("message must be a JSON object")
+
+        missing = {"type", "payload", "timestamp", "nonce"} - parsed.keys()
+        if missing:
+            raise ValueError(f"missing message fields: {', '.join(sorted(missing))}")
+
+        try:
+            msg_type = MessageType[parsed["type"]]
+        except KeyError as exc:
+            raise ValueError("unknown message type") from exc
+
+        payload = parsed["payload"]
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be a JSON object")
+        payload_size = len(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+        if payload_size > MAX_PAYLOAD_BYTES:
+            raise ValueError("payload too large")
+
+        timestamp = parsed["timestamp"]
+        if not isinstance(timestamp, int) or isinstance(timestamp, bool):
+            raise ValueError("timestamp must be an integer")
+        now = int(time.time())
+        if timestamp <= 0 or timestamp > now + MAX_CLOCK_SKEW_SECONDS:
+            raise ValueError("timestamp outside accepted range")
+
+        nonce = parsed["nonce"]
+        if not isinstance(nonce, int) or isinstance(nonce, bool) or nonce <= 0 or nonce > 2**64 - 1:
+            raise ValueError("nonce must be a positive 64-bit integer")
+
         return cls(
-            msg_type=MessageType[parsed["type"]],
+            msg_type=msg_type,
             sender=sender,
-            payload=parsed["payload"],
-            timestamp=parsed["timestamp"],
-            nonce=parsed["nonce"],
+            payload=payload,
+            timestamp=timestamp,
+            nonce=nonce,
         )
 
     def compute_hash(self) -> str:
