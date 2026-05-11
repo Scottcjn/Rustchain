@@ -22,6 +22,11 @@ JITTER_SAMPLES = 500
 THERMAL_SAMPLES = 50
 
 
+def current_utc_year() -> int:
+    """Return the current UTC year for device age calculations."""
+    return time.gmtime().tm_year
+
+
 class HardwareFingerprint:
     """Collects comprehensive hardware fingerprints for attestation"""
     
@@ -433,7 +438,7 @@ class HardwareFingerprint:
             release_year = 2023
         
         oracle["estimated_release_year"] = release_year
-        oracle["estimated_age_years"] = 2025 - release_year
+        oracle["estimated_age_years"] = max(0, current_utc_year() - release_year)
         oracle["valid"] = "cpu_model" in oracle or "processor" in oracle
         
         return oracle
