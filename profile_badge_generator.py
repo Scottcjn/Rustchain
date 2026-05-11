@@ -126,7 +126,9 @@ def badge_generator():
 @app.route('/api/badge/create', methods=['POST'])
 def create_badge():
     init_badge_db()
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "error": "Invalid JSON payload"}), 400
     
     username = data.get('username', '').strip()
     wallet = data.get('wallet', '').strip()

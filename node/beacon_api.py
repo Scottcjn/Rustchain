@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 #!/usr/bin/env python3
 """
 Beacon Atlas API - Flask routes for 3D visualization backend
@@ -419,7 +420,9 @@ def create_contract():
     Validates that the from_agent exists in the relay_agents table.
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid JSON payload"}), 400
         
         # Validate required fields
         required = ['from', 'to', 'type', 'amount', 'term']
@@ -491,7 +494,9 @@ def update_contract(contract_id):
     Validates state transitions to prevent invalid jumps.
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid JSON payload"}), 400
         new_state = data.get('state')
         
         if not new_state:
@@ -723,7 +728,9 @@ def claim_bounty(bounty_id):
         if not hmac.compare_digest(provided_key, admin_key):
             return jsonify({'error': 'Unauthorized — admin key required to claim bounties'}), 401
 
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid JSON payload"}), 400
         agent_id = data.get('agent_id')
         
         if not agent_id:
@@ -757,7 +764,9 @@ def complete_bounty(bounty_id):
         if not hmac.compare_digest(provided_key, admin_key):
             return jsonify({'error': 'Unauthorized — admin key required to complete bounties'}), 401
 
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid JSON payload"}), 400
         agent_id = data.get('agent_id')
         
         if not agent_id:
@@ -858,7 +867,9 @@ def get_agent_reputation(agent_id):
 def chat():
     """Send message to an agent (mock response for demo)."""
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid JSON payload"}), 400
         agent_id = data.get('agent_id')
         message = data.get('message')
         

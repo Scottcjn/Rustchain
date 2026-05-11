@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 #!/usr/bin/env python3
 """
 Machine Passport Web Viewer
@@ -604,7 +605,14 @@ def list_passports():
     # Get query parameters
     owner = request.args.get('owner')
     architecture = request.args.get('architecture')
-    limit = min(int(request.args.get('limit', 100)), 500)
+    try:
+        limit_raw = request.args.get('limit', '100')
+        limit = int(limit_raw)
+        if limit < 1:
+            return jsonify({"error": "limit must be >= 1"}), 400
+        limit = min(limit, 500)
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid limit parameter: must be an integer"}), 400
     
     passports = ledger.list_passports(
         owner_miner_id=owner,

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 #!/usr/bin/env python3
 """
 RustChain v2 - Integrated Server
@@ -5831,7 +5832,13 @@ def api_miner_attestations(miner_id: str):
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
     if not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
         return jsonify({"error": "Unauthorized - admin key required"}), 401
-    limit = int(request.args.get("limit", "120") or 120)
+    try:
+        limit_raw = request.args.get("limit", "120")
+        limit = int(limit_raw or "120")
+        if limit < 1:
+            return jsonify({"error": "limit must be >= 1"}), 400
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid limit parameter"}), 400
     limit = max(1, min(limit, 500))
 
     with sqlite3.connect(DB_PATH) as conn:
@@ -5874,7 +5881,13 @@ def api_balances():
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
     if not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
         return jsonify({"error": "Unauthorized - admin key required"}), 401
-    limit = int(request.args.get("limit", "2000") or 2000)
+    try:
+        limit_raw = request.args.get("limit", "2000")
+        limit = int(limit_raw or "2000")
+        if limit < 1:
+            return jsonify({"error": "limit must be >= 1"}), 400
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid limit parameter"}), 400
     limit = max(1, min(limit, 5000))
 
     with sqlite3.connect(DB_PATH) as conn:
@@ -6617,7 +6630,14 @@ def list_pending():
         return jsonify({"error": "Unauthorized"}), 401
 
     status_filter = request.args.get('status', 'pending')
-    limit = min(int(request.args.get('limit', 100)), 500)
+    try:
+        limit_raw = request.args.get('limit', '100')
+        limit = int(limit_raw)
+        if limit < 1:
+            return jsonify({"error": "limit must be >= 1"}), 400
+        limit = min(limit, 500)
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid limit parameter"}), 400
     
     with sqlite3.connect(DB_PATH) as db:
         if status_filter == 'all':

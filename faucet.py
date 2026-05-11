@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 #!/usr/bin/env python3
 """
 RustChain Testnet Faucet
@@ -305,7 +306,9 @@ def drip():
     Response:
         {"ok": true, "amount": 0.5, "next_available": "2026-03-08T12:00:00Z"}
     """
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "Invalid JSON payload"}), 400
     
     if not data or 'wallet' not in data:
         return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
