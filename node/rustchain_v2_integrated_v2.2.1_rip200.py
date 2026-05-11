@@ -370,6 +370,15 @@ def attest_ensure_tables(conn):
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_used_nonces_expires_at ON used_nonces(expires_at)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS attest_challenge_rate_limit (
+            client_ip TEXT PRIMARY KEY,
+            window_start INTEGER NOT NULL,
+            request_count INTEGER NOT NULL
+        )
+        """
+    )
 
 
 def attest_cleanup_expired(conn, now_ts: Optional[int] = None):
@@ -2581,6 +2590,60 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
 # -- IP Rate Limiting for Attestations (SQLite-backed, gunicorn-safe) --
 ATTEST_IP_LIMIT = 15      # Max unique miners per IP per hour
 ATTEST_IP_WINDOW = 3600  # 1 hour window
+ATTEST_CHALLENGE_IP_LIMIT = int(os.environ.get("ATTEST_CHALLENGE_IP_LIMIT", "10"))
+ATTEST_CHALLENGE_IP_WINDOW = int(os.environ.get("ATTEST_CHALLENGE_IP_WINDOW", "60"))
+
+
+def check_challenge_rate_limit(client_ip):
+    """Rate limit challenge issuance before allocating a nonce row."""
+    now = int(time.time())
+    window = max(1, int(ATTEST_CHALLENGE_IP_WINDOW))
+    limit = max(1, int(ATTEST_CHALLENGE_IP_LIMIT))
+    window_start = now - (now % window)
+    cutoff = now - window
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        attest_ensure_tables(conn)
+        conn.execute(
+            "DELETE FROM attest_challenge_rate_limit WHERE window_start < ?",
+            (cutoff,),
+        )
+        row = conn.execute(
+            """
+            SELECT window_start, request_count
+            FROM attest_challenge_rate_limit
+            WHERE client_ip = ?
+            """,
+            (client_ip,),
+        ).fetchone()
+        if row and int(row[0]) == window_start:
+            count = int(row[1]) + 1
+            conn.execute(
+                """
+                UPDATE attest_challenge_rate_limit
+                SET request_count = ?
+                WHERE client_ip = ?
+                """,
+                (count, client_ip),
+            )
+        else:
+            count = 1
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO attest_challenge_rate_limit
+                    (client_ip, window_start, request_count)
+                VALUES (?, ?, ?)
+                """,
+                (client_ip, window_start, count),
+            )
+        conn.commit()
+
+    if count > limit:
+        print(f"[RATE_LIMIT] challenge IP {client_ip} has {count} requests in {window}s (limit {limit})")
+        return False, f"challenge_rate_limit:{count}_requests_from_same_ip"
+    return True, "ok"
+
 
 def check_ip_rate_limit(client_ip, miner_id):
     """Rate limit attestations per source IP using SQLite (shared across workers)."""
@@ -2986,6 +3049,17 @@ def get_challenge():
     Deployments with multiple attestation backends should keep submit traffic
     sticky to the issuing node or share the nonce store across nodes.
     """
+    client_ip = get_client_ip()
+    rate_ok, rate_reason = check_challenge_rate_limit(client_ip)
+    if not rate_ok:
+        return jsonify({
+            "ok": False,
+            "error": "rate_limited",
+            "message": "Too many attestation challenge requests from this IP address",
+            "code": "CHALLENGE_RATE_LIMIT",
+            "reason": rate_reason,
+        }), 429
+
     nonce = secrets.token_hex(32)
     expires = int(time.time()) + 300  # 5 minutes
 
