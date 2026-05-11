@@ -59,6 +59,20 @@ def _get_db_connection():
     return conn
 
 
+def _parse_limit_arg(default: int = 20, max_value: int = 100) -> int:
+    """Parse and clamp a non-negative feed limit query parameter."""
+    raw_limit = request.args.get("limit", default)
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("limit must be an integer") from exc
+
+    if limit < 0:
+        raise ValueError("limit must be non-negative")
+
+    return min(limit, max_value)
+
+
 def _fetch_videos(
     limit: int = 20,
     agent: Optional[str] = None,
@@ -224,7 +238,7 @@ def rss_feed():
     """
     try:
         # Parse parameters
-        limit = min(int(request.args.get("limit", 20)), 100)
+        limit = _parse_limit_arg()
         agent = request.args.get("agent")
         cursor = request.args.get("cursor")
         
@@ -278,7 +292,7 @@ def atom_feed():
     """
     try:
         # Parse parameters
-        limit = min(int(request.args.get("limit", 20)), 100)
+        limit = _parse_limit_arg()
         agent = request.args.get("agent")
         cursor = request.args.get("cursor")
         
@@ -340,7 +354,7 @@ def feed_index():
     
     # Parse parameters
     try:
-        limit = min(int(request.args.get("limit", 20)), 100)
+        limit = _parse_limit_arg()
     except ValueError:
         return jsonify({"error": "Invalid limit parameter"}), 400
     

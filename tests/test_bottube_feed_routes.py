@@ -73,6 +73,11 @@ class TestFeedRoutes(unittest.TestCase):
         self.assertIn("rss", data["_links"])
         self.assertIn("atom", data["_links"])
 
+    def test_feed_index_negative_limit(self):
+        """Test JSON feed rejects negative limit."""
+        response = self.client.get("/api/feed?limit=-1")
+        self.assertEqual(response.status_code, 400)
+
     def test_feed_index_rss_accept_header(self):
         """Test feed index returns RSS with Accept header."""
         response = self.client.get(
@@ -103,6 +108,11 @@ class TestFeedRoutes(unittest.TestCase):
         response = self.client.get("/api/feed/rss?limit=invalid")
         self.assertEqual(response.status_code, 400)
 
+    def test_rss_feed_negative_limit(self):
+        """Test RSS feed rejects negative limit."""
+        response = self.client.get("/api/feed/rss?limit=-1")
+        self.assertEqual(response.status_code, 400)
+
     def test_rss_feed_excessive_limit(self):
         """Test RSS feed caps limit to 100."""
         response = self.client.get("/api/feed/rss?limit=999")
@@ -121,6 +131,11 @@ class TestFeedRoutes(unittest.TestCase):
         """Test Atom feed respects limit parameter."""
         response = self.client.get("/api/feed/atom?limit=5")
         self.assertEqual(response.status_code, 200)
+
+    def test_atom_feed_negative_limit(self):
+        """Test Atom feed rejects negative limit."""
+        response = self.client.get("/api/feed/atom?limit=-1")
+        self.assertEqual(response.status_code, 400)
 
     def test_atom_feed_agent_filter(self):
         """Test Atom feed with agent filter."""
