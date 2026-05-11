@@ -390,7 +390,7 @@ class RustChainPoller:
 
     def _check_miners(self):
         miners_data = self._get("/api/miners")
-        if not miners_data or not isinstance(miners_data, list):
+        if miners_data is None or not isinstance(miners_data, list):
             return
         current_miners = {m["miner"] for m in miners_data if "miner" in m}
 
@@ -422,7 +422,7 @@ class RustChainPoller:
 
     def _check_large_tx(self):
         balances_data = self._get("/api/balances")
-        if not balances_data or not isinstance(balances_data, list):
+        if balances_data is None or not isinstance(balances_data, list):
             return
 
         current_balances: Dict[str, float] = {}
