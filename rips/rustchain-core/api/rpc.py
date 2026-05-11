@@ -325,6 +325,14 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         # JSON-RPC endpoint
         if path == "/rpc":
             method = params.get("method", "")
+            # FIX(#4601): Restrict to read-only methods to prevent arbitrary invocation
+            RPC_SAFE_METHODS = {
+                "getStats", "getNodeInfo", "getPeers", "getWallet",
+                "getBlock", "getBlockByHash", "getProposal", "getProposals",
+                "getEntropyProfile",
+            }
+            if method not in RPC_SAFE_METHODS:
+                return ApiResponse(success=False, error=f"Method not allowed: {method}")
             rpc_params = params.get("params", {})
             return self.api.rpc.call(method, rpc_params)
 
