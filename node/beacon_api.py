@@ -4,6 +4,7 @@ Beacon Atlas API - Flask routes for 3D visualization backend
 Provides endpoints for agents, contracts, bounties, reputation, and chat.
 """
 import json
+import math
 import os
 import time
 import hashlib
@@ -35,6 +36,14 @@ def get_db():
         g.db = sqlite3.connect(DB_PATH)
         g.db.row_factory = sqlite3.Row
     return g.db
+
+
+def _json_object():
+    """Decode a request body that must be a JSON object."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({'error': 'JSON object required'}), 400)
+    return data, None
 
 
 @beacon_api.teardown_request
@@ -419,7 +428,9 @@ def create_contract():
     Validates that the from_agent exists in the relay_agents table.
     """
     try:
-        data = request.get_json()
+        data, error = _json_object()
+        if error:
+            return error
         
         # Validate required fields
         required = ['from', 'to', 'type', 'amount', 'term']
@@ -449,6 +460,14 @@ def create_contract():
             return jsonify({
                 'error': f'from_agent not found: {from_agent}'
             }), 400
+
+        try:
+            amount = float(data['amount'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Invalid amount'}), 400
+
+        if not math.isfinite(amount) or amount <= 0:
+            return jsonify({'error': 'Invalid amount'}), 400
         
         # Generate contract ID
         contract_id = f"ctr_{int(time.time())}_{hashlib.blake2b(str(time.time()).encode(), digest_size=4).hexdigest()}"
@@ -458,7 +477,7 @@ def create_contract():
             'from': data['from'],
             'to': data['to'],
             'type': data['type'],
-            'amount': float(data['amount']),
+            'amount': amount,
             'currency': data.get('currency', 'RTC'),
             'term': data['term'],
             'state': 'offered',  # Initial state
@@ -491,7 +510,9 @@ def update_contract(contract_id):
     Validates state transitions to prevent invalid jumps.
     """
     try:
-        data = request.get_json()
+        data, error = _json_object()
+        if error:
+            return error
         new_state = data.get('state')
         
         if not new_state:
@@ -742,7 +763,9 @@ def claim_bounty(bounty_id):
         if not hmac.compare_digest(provided_key, admin_key):
             return jsonify({'error': 'Unauthorized — admin key required to claim bounties'}), 401
 
-        data = request.get_json()
+        data, error = _json_object()
+        if error:
+            return error
         agent_id = data.get('agent_id')
         
         if not agent_id:
@@ -776,7 +799,9 @@ def complete_bounty(bounty_id):
         if not hmac.compare_digest(provided_key, admin_key):
             return jsonify({'error': 'Unauthorized — admin key required to complete bounties'}), 401
 
-        data = request.get_json()
+        data, error = _json_object()
+        if error:
+            return error
         agent_id = data.get('agent_id')
         
         if not agent_id:
@@ -877,7 +902,9 @@ def get_agent_reputation(agent_id):
 def chat():
     """Send message to an agent (mock response for demo)."""
     try:
-        data = request.get_json()
+        data, error = _json_object()
+        if error:
+            return error
         agent_id = data.get('agent_id')
         message = data.get('message')
         

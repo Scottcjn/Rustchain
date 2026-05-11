@@ -168,6 +168,65 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         data = json.loads(response.data)
         self.assertIn('error', data)
 
+    def test_mutating_routes_require_json_object_body(self):
+        """Routes that read JSON fields reject non-object JSON bodies."""
+        routes = [
+            ('post', '/api/contracts', {}),
+            ('put', '/api/contracts/ctr_test', {}),
+            ('post', '/api/chat', {}),
+            (
+                'post',
+                '/api/bounties/gh_test_bounty/claim',
+                {'X-Admin-Key': 'test-admin'},
+            ),
+            (
+                'post',
+                '/api/bounties/gh_test_bounty/complete',
+                {'X-Admin-Key': 'test-admin'},
+            ),
+        ]
+
+        with patch.dict(os.environ, {'RC_ADMIN_KEY': 'test-admin'}, clear=False):
+            for method, path, headers in routes:
+                response = getattr(self.client, method)(
+                    path,
+                    data=json.dumps([]),
+                    content_type='application/json',
+                    headers=headers,
+                )
+
+                self.assertEqual(response.status_code, 400, path)
+                self.assertEqual(
+                    json.loads(response.data),
+                    {'error': 'JSON object required'},
+                    path,
+                )
+
+    def test_contract_creation_rejects_invalid_amount(self):
+        """Contract creation rejects malformed amount fields with 400."""
+        invalid_amounts = ['not-a-number', 'nan', 0, -1]
+
+        for amount in invalid_amounts:
+            with self.subTest(amount=amount):
+                response = self.client.post(
+                    '/api/contracts',
+                    data=json.dumps({
+                        'from': 'bcn_alice_test',
+                        'to': 'bcn_bob_test',
+                        'type': 'rent',
+                        'amount': amount,
+                        'term': '30d',
+                    }),
+                    content_type='application/json',
+                    headers={'X-Agent-Key': 'bcn_alice_test'},
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    json.loads(response.data),
+                    {'error': 'Invalid amount'},
+                )
+
     def test_bounty_lifecycle_workflow(self):
         """Full bounty lifecycle: create, claim, complete."""
         # Insert a test bounty directly
