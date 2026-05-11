@@ -147,7 +147,7 @@ class SubmissionValidator:
                 
             except json.JSONDecodeError as e:
                 # Not JSON, check for plain text format
-                if "miner_id" in content or "device_arch" in content:
+                if "miner_id" in content and "device_arch" in content:
                     result["status"] = "PASS"
                     result["message"] = "Attestation log appears valid (plain text format)"
                     result["checks"]["format"] = "plain_text"
