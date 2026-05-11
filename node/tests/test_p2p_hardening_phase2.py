@@ -129,6 +129,32 @@ def test_phase_c_mixed_proposals_dont_aggregate_to_quorum():
     assert len(target._epoch_votes[(9, "B")]) == 1
 
 
+def test_epoch_votes_survive_restart_and_reject_retransmit():
+    """Persisted votes prevent restart from accepting a fresh duplicate vote."""
+    peers = {"node2": "http://n2", "node3": "http://n3", "node4": "http://n4"}
+    target = _mk_layer("node1", peers)
+    voter = _mk_layer("node2", db_path=target.db_path)
+    voter.broadcast = lambda *args, **kwargs: None
+
+    first = voter.create_message(
+        mod.MessageType.EPOCH_VOTE,
+        {"epoch": 12, "proposal_hash": "persisted-proposal", "vote": "accept"},
+    )
+    assert target.handle_message(first)["status"] == "ok"
+
+    restarted = _mk_layer("node1", peers, db_path=target.db_path)
+    key = (12, "persisted-proposal")
+    assert restarted._epoch_votes[key] == {"node2": "accept"}
+
+    retransmit = voter.create_message(
+        mod.MessageType.EPOCH_VOTE,
+        {"epoch": 12, "proposal_hash": "persisted-proposal", "vote": "accept"},
+    )
+    result = restarted.handle_message(retransmit)
+    assert result["status"] == "duplicate"
+    assert restarted._epoch_votes[key] == {"node2": "accept"}
+
+
 # Phase E regression
 def test_phase_e_future_timestamp_attestation_rejected():
     """Phase E: attestations with ts_ok far in the future are rejected."""

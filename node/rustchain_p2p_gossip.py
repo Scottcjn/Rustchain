@@ -355,6 +355,7 @@ class GossipLayer:
         self.attestation_crdt = LWWRegister()
         self.balance_crdt = PNCounter()
         self.epoch_crdt = GSet()
+        self._epoch_votes: Dict[Tuple[int, str], Dict[str, str]] = {}
 
         # Phase F (#2256): per-peer Ed25519 identity, dual-mode signing.
         # Only loaded/generated when needed by the current signing mode;
@@ -389,6 +390,17 @@ class GossipLayer:
                     )
                 """)
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_p2p_seen_ts ON p2p_seen_messages(ts)")
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS p2p_epoch_votes (
+                        epoch INTEGER NOT NULL,
+                        proposal_hash TEXT NOT NULL,
+                        voter TEXT NOT NULL,
+                        vote TEXT NOT NULL,
+                        ts INTEGER NOT NULL,
+                        PRIMARY KEY (epoch, proposal_hash, voter)
+                    )
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_p2p_epoch_votes_epoch ON p2p_epoch_votes(epoch)")
                 conn.commit()
 
                 # Load attestations
@@ -411,8 +423,17 @@ class GossipLayer:
                 for (epoch,) in rows:
                     self.epoch_crdt.add(epoch)
 
+                rows = conn.execute("""
+                    SELECT epoch, proposal_hash, voter, vote
+                    FROM p2p_epoch_votes
+                """).fetchall()
+                for epoch, proposal_hash, voter, vote in rows:
+                    key = (epoch, proposal_hash)
+                    self._epoch_votes.setdefault(key, {})[voter] = vote
+
                 logger.info(f"Loaded {len(self.attestation_crdt.data)} attestations, "
-                           f"{len(self.epoch_crdt.items)} settled epochs")
+                           f"{len(self.epoch_crdt.items)} settled epochs, "
+                           f"{sum(len(votes) for votes in self._epoch_votes.values())} epoch votes")
         except Exception as e:
             logger.error(f"Failed to load state from DB: {e}")
 
@@ -455,7 +476,7 @@ class GossipLayer:
         mode = self._signing_mode
 
         from p2p_identity import unpack_signature, verify_ed25519
-        hmac_sig, ed25519_sig = unpack_signature(signature)
+        hmac_sig, ed25519_sig, _key_version = unpack_signature(signature)
 
         # "strict" mode: only Ed25519 accepted. HMAC-only sigs are rejected
         # even if valid (flag-day enforcement).
@@ -538,7 +559,7 @@ class GossipLayer:
         mode = self._signing_mode
 
         from p2p_identity import unpack_signature, verify_ed25519
-        hmac_sig, ed25519_sig = unpack_signature(msg.signature)
+        hmac_sig, ed25519_sig, _key_version = unpack_signature(msg.signature)
 
         # 1) Try Ed25519 if available AND peer is registered.
         if ed25519_sig and self._peer_registry is not None:
@@ -874,8 +895,6 @@ class GossipLayer:
             return {"status": "error", "reason": "voter_identity_mismatch"}
 
         # Phase C: index by (epoch, proposal_hash) — not just epoch.
-        if not hasattr(self, '_epoch_votes'):
-            self._epoch_votes: Dict[Tuple[int, str], Dict[str, str]] = {}
         key = (epoch, proposal_hash)
         if key not in self._epoch_votes:
             self._epoch_votes[key] = {}
@@ -887,6 +906,27 @@ class GossipLayer:
                 f"duplicate vote from {voter} ignored"
             )
             return {"status": "duplicate", "epoch": epoch, "voter": voter}
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO p2p_epoch_votes
+                    (epoch, proposal_hash, voter, vote, ts)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (epoch, proposal_hash, voter, vote, int(time.time())),
+                )
+                if conn.execute("SELECT changes()").fetchone()[0] == 0:
+                    logger.warning(
+                        f"Epoch {epoch} proposal {proposal_hash[:12]}: "
+                        f"persisted duplicate vote from {voter} ignored"
+                    )
+                    return {"status": "duplicate", "epoch": epoch, "voter": voter}
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to persist epoch vote from {voter}: {e}")
+            return {"status": "error", "reason": "vote_persist_failed"}
 
         self._epoch_votes[key][voter] = vote
 
