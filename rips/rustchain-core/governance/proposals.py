@@ -220,12 +220,19 @@ class GovernanceEngine:
     5. Passed proposals execute after delay
     """
 
-    def __init__(self, total_supply: int = TOTAL_SUPPLY):
+    def __init__(
+        self,
+        total_supply: int = TOTAL_SUPPLY,
+        token_balance_resolver: Optional[Callable[[str], int]] = None,
+        sophia_authorizer: Optional[Callable[[str], bool]] = None,
+    ):
         self.proposals: Dict[str, Proposal] = {}
         self.reputations: Dict[str, NodeReputation] = {}
         self.delegations: Dict[str, List[Delegation]] = {}
         self.total_supply = total_supply
         self.proposal_counter = 0
+        self.token_balance_resolver = token_balance_resolver
+        self.sophia_authorizer = sophia_authorizer
 
     def create_proposal(
         self,
@@ -262,8 +269,14 @@ class GovernanceEngine:
         rationale: str,
         feasibility_score: float = 0.5,
         risk_level: str = "medium",
+        actor: str = "",
+        authorizer: Optional[Callable[[str], bool]] = None,
     ) -> SophiaEvaluation:
         """Record Sophia AI's evaluation (RIP-0002)."""
+        authz = self.sophia_authorizer or authorizer
+        if not actor or authz is None or not authz(actor):
+            raise ValueError("Sophia evaluation authorization required")
+
         proposal = self.proposals.get(proposal_id)
         if not proposal:
             raise ValueError(f"Proposal {proposal_id} not found")
@@ -301,7 +314,8 @@ class GovernanceEngine:
         proposal_id: str,
         voter: str,
         support: bool,
-        token_balance: int,
+        token_balance: Optional[int] = None,
+        balance_resolver: Optional[Callable[[str], int]] = None,
     ) -> Vote:
         """Cast a vote on a proposal."""
         proposal = self.proposals.get(proposal_id)
@@ -318,10 +332,17 @@ class GovernanceEngine:
         if proposal.has_voted(voter):
             raise ValueError("Already voted on this proposal")
 
+        resolver = balance_resolver or self.token_balance_resolver
+        if resolver is None:
+            raise ValueError("Token balance verification required")
+        verified_balance = resolver(voter)
+        if token_balance is not None and token_balance != verified_balance:
+            raise ValueError("Token balance mismatch")
+
         # Calculate voting weight
         reputation = self.reputations.get(voter)
         rep_bonus = (reputation.score / 100.0) if reputation else 0.5
-        base_weight = int(token_balance * (1 + rep_bonus * 0.2))
+        base_weight = int(verified_balance * (1 + rep_bonus * 0.2))
 
         # Include delegated votes
         delegated_weight = self._get_delegated_weight(voter, now)
@@ -494,8 +515,9 @@ class SophiaEvaluator:
     For development, uses rule-based heuristics.
     """
 
-    def __init__(self, governance: GovernanceEngine):
+    def __init__(self, governance: GovernanceEngine, actor_id: str = "sophia"):
         self.governance = governance
+        self.actor_id = actor_id
 
     def evaluate(self, proposal_id: str) -> SophiaEvaluation:
         """
@@ -545,6 +567,8 @@ class SophiaEvaluator:
             rationale=rationale,
             feasibility_score=1.0 - risk,
             risk_level="high" if risk > 0.6 else "medium" if risk > 0.3 else "low",
+            actor=self.actor_id,
+            authorizer=lambda actor: actor == "sophia",
         )
 
 
