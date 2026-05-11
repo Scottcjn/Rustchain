@@ -107,8 +107,11 @@ class BountyVerifier:
         report += f"| Wallet \`{wallet}\` exists | {'✅ Balance: ' + str(wallet_info['balance']) + ' RTC' if wallet_info['exists'] else '❌ Not found'} |\n"
         
         if article_url:
-            # Mock content fetch
-            article_status = "✅ Live" if requests.head(article_url).status_code == 200 else "❌ Broken"
+            try:
+                article_resp = requests.head(article_url, allow_redirects=True, timeout=10)
+                article_status = "✅ Live" if article_resp.status_code == 200 else "❌ Broken"
+            except requests.RequestException:
+                article_status = "❌ Broken"
             report += f"| Article link | {article_status} |\n"
             
         report += f"\n**Suggested payout**: **{payout} RTC**\n"
