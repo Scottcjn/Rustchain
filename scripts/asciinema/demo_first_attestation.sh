@@ -143,7 +143,7 @@ echo "  - Check the explorer: https://rustchain.org/explorer"
 echo ""
 
 echo -e "${CYAN}🔗 Resources:${NC}"
-echo "  - Docs: https://docs.rustchain.org"
+echo "  - Docs: https://rustchain.org"
 echo "  - Explorer: https://rustchain.org/explorer"
 echo "  - Discord: https://discord.gg/rustchain"
 echo "  - Bounties: https://github.com/Scottcjn/rustchain-bounties"
