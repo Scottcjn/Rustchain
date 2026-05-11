@@ -260,6 +260,12 @@ def _sign_payload(payload_bytes: bytes, secret: str) -> str:
 
 def deliver_webhook(sub: Subscriber, event: WebhookEvent, store: SubscriberStore):
     """POST the event payload to the subscriber URL with retry + backoff."""
+    validation_error = validate_webhook_url(sub.url)
+    if validation_error:
+        log.warning("Skipping webhook delivery to %s: %s", sub.url, validation_error)
+        store.log_delivery(sub.id, event.event_type, "", None, 0, validation_error)
+        return
+
     payload = json.dumps({
         "event": event.event_type,
         "timestamp": event.timestamp,
