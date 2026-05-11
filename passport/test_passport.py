@@ -4,6 +4,7 @@
 import json
 import os
 import tempfile
+from pathlib import Path
 import pytest
 
 from passport_ledger import (
@@ -278,3 +279,34 @@ class TestAPI:
         data = json.loads(resp.data)
         assert len(data) >= 1
         assert any(p["machine_id"] == "list-test" for p in data)
+
+
+class TestPassportTemplateSecurity:
+    TEMPLATE_DIR = Path(__file__).parent / "templates"
+
+    def test_passport_index_escapes_stored_passport_fields(self):
+        template = (self.TEMPLATE_DIR / "passport_index.html").read_text(encoding="utf-8")
+
+        assert "function escapeHtml(value)" in template
+        assert 'data-machine-id="${escapeHtml(p.machine_id || \'\')}"' in template
+        assert "onclick=\"location.href='/passport/${p.machine_id}'\"" not in template
+        assert "${escapeHtml(p.name || String(p.machine_id || '').substring(0,12)+'...')}" in template
+        assert "${escapeHtml(p.architecture || 'Unknown')}" in template
+        assert "${escapeHtml(p.tier || 'modern')}" in template
+        assert "encodeURIComponent(card.dataset.machineId || '')" in template
+        assert "String(p.machine_id || '').includes(q)" in template
+
+    def test_passport_view_escapes_stored_passport_fields(self):
+        template = (self.TEMPLATE_DIR / "passport_view.html").read_text(encoding="utf-8")
+
+        assert "const machineId = {{ machine_id|tojson }};" in template
+        assert "function escapeHtml(value)" in template
+        assert "fetch('/api/passport/' + encodeURIComponent(machineId))" in template
+        assert "${escapeHtml(p.name || 'Unnamed Machine')}" in template
+        assert "${escapeHtml(p.machine_id || '')}" in template
+        assert "${escapeHtml(p.architecture || '-')}" in template
+        assert "${escapeHtml(p.cpu_model || '-')}" in template
+        assert "${escapeHtml(p.provenance)}" in template
+        assert "${escapeHtml(r.description || '')}" in template
+        assert "${formatParts(r.parts)}" in template
+        assert "${escapeHtml(p.notes)}" in template
