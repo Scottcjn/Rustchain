@@ -5181,7 +5181,11 @@ def gov_rotate_commit():
 
 @app.route('/governance/propose', methods=['POST'])
 def governance_propose():
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "JSON object required"}), 400
     proposer_wallet = str(data.get('wallet', '')).strip()
     title = str(data.get('title', '')).strip()
     description = str(data.get('description', '')).strip()
@@ -5330,8 +5334,15 @@ def governance_proposal_detail(proposal_id: int):
 
 @app.route('/governance/vote', methods=['POST'])
 def governance_vote():
-    data = request.get_json(silent=True) or {}
-    proposal_id = int(data.get('proposal_id') or 0)
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "JSON object required"}), 400
+    try:
+        proposal_id = int(data.get('proposal_id') or 0)
+    except (TypeError, ValueError):
+        proposal_id = 0
     wallet = str(data.get('wallet', '')).strip()
     vote = str(data.get('vote', '')).strip().lower()
     nonce = str(data.get('nonce', '')).strip()

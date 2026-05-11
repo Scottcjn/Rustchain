@@ -1,12 +1,30 @@
+import gc
 import json
+import shutil
 import sqlite3
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
 integrated_node = sys.modules["integrated_node"]
+
+
+@contextmanager
+def _temporary_directory():
+    path = tempfile.mkdtemp()
+    try:
+        yield path
+    finally:
+        for _ in range(5):
+            try:
+                shutil.rmtree(path)
+                break
+            except PermissionError:
+                gc.collect()
+                time.sleep(0.05)
 
 
 def _vote_payload(proposal_id: int, wallet: str, vote: str, nonce: str):
@@ -20,7 +38,7 @@ def _vote_payload(proposal_id: int, wallet: str, vote: str, nonce: str):
 
 
 def test_governance_propose_requires_gt_10_rtc_balance():
-    with tempfile.TemporaryDirectory() as td:
+    with _temporary_directory() as td:
         db_path = str(Path(td) / "gov.db")
         integrated_node.DB_PATH = db_path
         integrated_node.app.config["DB_PATH"] = db_path
@@ -40,8 +58,47 @@ def test_governance_propose_requires_gt_10_rtc_balance():
             assert resp.get_json()["error"] == "insufficient_balance_to_propose"
 
 
+def test_governance_propose_rejects_non_object_json():
+    integrated_node.app.config["TESTING"] = True
+    with integrated_node.app.test_client() as client:
+        resp = client.post("/governance/propose", json=["not", "an", "object"])
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "JSON object required"
+
+
+def test_governance_vote_rejects_non_object_json():
+    integrated_node.app.config["TESTING"] = True
+    with integrated_node.app.test_client() as client:
+        resp = client.post("/governance/vote", json=["not", "an", "object"])
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "JSON object required"
+
+
+def test_governance_vote_rejects_invalid_proposal_id():
+    integrated_node.app.config["TESTING"] = True
+    with integrated_node.app.test_client() as client:
+        resp = client.post(
+            "/governance/vote",
+            json={
+                "proposal_id": "not-an-int",
+                "wallet": "RTC-test",
+                "vote": "yes",
+                "nonce": "n-1",
+                "signature": "ab",
+                "public_key": "11" * 32,
+            },
+        )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == (
+        "proposal_id, wallet, vote(yes/no), nonce, signature, public_key are required"
+    )
+
+
 def test_governance_vote_flow_and_lifecycle_finalization():
-    with tempfile.TemporaryDirectory() as td:
+    with _temporary_directory() as td:
         db_path = str(Path(td) / "gov.db")
         integrated_node.DB_PATH = db_path
         integrated_node.app.config["DB_PATH"] = db_path
