@@ -95,15 +95,16 @@ class BountyVerifier:
         follows = self.verify_following(username)
         wallet_info = self.verify_wallet(wallet)
         
-        payout = stars["count"] * CONFIG["star_reward"]
+        star_count = stars.get("count", 0)
+        payout = star_count * CONFIG["star_reward"]
         if follows: payout += CONFIG["follow_reward"]
-        if stars["is_star_king"]: payout += CONFIG["star_king_bonus"]
+        if stars.get("is_star_king", False): payout += CONFIG["star_king_bonus"]
         
         report = f"## 🤖 Automated Verification for @{username}\n\n"
         report += "| Check | Result |\n"
         report += "|-------|--------|\n"
         report += f"| Follows @{CONFIG['org']} | {'✅ Yes' if follows else '❌ No'} |\n"
-        report += f"| {CONFIG['org']} repos starred | {stars['count']} |\n"
+        report += f"| {CONFIG['org']} repos starred | {star_count} |\n"
         report += f"| Wallet \`{wallet}\` exists | {'✅ Balance: ' + str(wallet_info['balance']) + ' RTC' if wallet_info['exists'] else '❌ Not found'} |\n"
         
         if article_url:
