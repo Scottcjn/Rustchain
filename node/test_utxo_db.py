@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 ﻿"""
 Tests for utxo_db.py — RustChain UTXO Database Layer
 =====================================================
