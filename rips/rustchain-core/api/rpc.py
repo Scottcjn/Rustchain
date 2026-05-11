@@ -13,6 +13,7 @@ Endpoints:
 """
 
 import json
+import os
 import time
 from dataclasses import dataclass
 from typing import Dict, Any, Optional, Callable
@@ -256,6 +257,20 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
 
     api: RustChainApi = None  # Set by server
 
+    @staticmethod
+    def _allowed_cors_origins() -> set[str]:
+        raw = os.getenv("RUSTCHAIN_API_ALLOWED_ORIGINS", "")
+        return {origin.strip() for origin in raw.split(",") if origin.strip() and origin.strip() != "*"}
+
+    def _send_cors_headers(self):
+        """Emit CORS headers only for explicitly allowed origins."""
+        origin = self.headers.get("Origin", "")
+        if origin and origin in self._allowed_cors_origins():
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
     def do_GET(self):
         """Handle GET requests"""
         parsed = urlparse(self.path)
@@ -278,6 +293,12 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         response = self._route_request(parsed.path, params)
         self._send_response(response)
+
+    def do_OPTIONS(self):
+        """Handle CORS preflight without wildcard access."""
+        self.send_response(204)
+        self._send_cors_headers()
+        self.end_headers()
 
     def _route_request(self, path: str, params: Dict[str, Any]) -> ApiResponse:
         """Route request to appropriate handler"""
@@ -334,7 +355,7 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         """Send HTTP response"""
         self.send_response(200 if response.success else 400)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors_headers()
         self.end_headers()
         self.wfile.write(response.to_json().encode())
 
