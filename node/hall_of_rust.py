@@ -439,6 +439,19 @@ def _table_exists(cursor, table_name):
     return row is not None
 
 
+def _parse_limit_arg(default=50, max_value=500):
+    raw_value = request.args.get('limit')
+    if raw_value is None or raw_value == '':
+        return default, None
+    try:
+        limit = int(raw_value)
+    except (TypeError, ValueError):
+        return None, ("limit must be an integer", 400)
+    if limit < 0:
+        return None, ("limit must be non-negative", 400)
+    return min(limit, max_value), None
+
+
 def _internal_error_response(context):
     logger.exception("Hall of Rust endpoint failed: %s", context)
     return jsonify({'error': 'internal_error'}), 500
@@ -451,7 +464,9 @@ def api_hall_of_fame_leaderboard():
     GET /api/hall_of_fame/leaderboard?limit=50&deceased=0|1
     Returns machines ordered by rust_score DESC with badge decoration.
     """
-    limit = min(int(request.args.get('limit', 50) or 50), 500)
+    limit, error_response = _parse_limit_arg()
+    if error_response:
+        return error_response
     deceased_filter = request.args.get('deceased')  # '0', '1', or omitted (all)
 
     try:
