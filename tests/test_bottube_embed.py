@@ -170,6 +170,17 @@ class TestOEmbedEndpoint(unittest.TestCase):
         data = response.get_json()
         self.assertLessEqual(data["height"], 360)
 
+    def test_oembed_rejects_non_positive_dimensions(self):
+        """Test that non-positive dimensions do not produce invalid iframe sizes."""
+        response = self.client.get(
+            "/oembed?url=https://bottube.ai/watch/demo-001&maxwidth=-1&maxheight=0"
+        )
+        data = response.get_json()
+        self.assertGreater(data["width"], 0)
+        self.assertGreater(data["height"], 0)
+        self.assertNotIn('width="-', data["html"])
+        self.assertNotIn('height="0"', data["html"])
+
     def test_oembed_thumbnail(self):
         """Test that oEmbed includes thumbnail URL."""
         response = self.client.get("/oembed?url=https://bottube.ai/watch/demo-001")
