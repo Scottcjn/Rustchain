@@ -35,6 +35,15 @@ CAPACITOR_PLAGUE_MODELS = [
     'Dell GX280',
 ]
 
+
+def _current_year():
+    return time.gmtime().tm_year
+
+
+def _age_years(manufacture_year):
+    return max(0, _current_year() - int(manufacture_year))
+
+
 def init_hall_tables(db_path):
     """Create Hall of Rust tables if they don't exist."""
     conn = sqlite3.connect(db_path)
@@ -85,8 +94,9 @@ def calculate_rust_score(machine):
     score = 0
     
     # Age bonus (estimated from model/arch)
-    if machine.get('manufacture_year'):
-        age = 2025 - machine['manufacture_year']
+    manufacture_year = machine.get('manufacture_year')
+    if manufacture_year is not None:
+        age = _age_years(manufacture_year)
         score += age * RUST_WEIGHTS['age_years']
     
     # Attestation loyalty
@@ -622,7 +632,10 @@ def machine_of_the_day():
         machine = dict(row)
         machine['badge'] = get_rust_badge(machine['rust_score'])
         machine['fun_fact'] = random.choice(VINTAGE_FACTS)
-        machine['age_years'] = 2025 - machine.get('manufacture_year', 2020)
+        mfg = machine.get('manufacture_year')
+        if mfg is None:
+            mfg = 2020
+        machine['age_years'] = _age_years(mfg)
         
         return jsonify(machine)
     except Exception as e:
