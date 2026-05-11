@@ -65,3 +65,55 @@ def test_bcos_directory_clamps_large_limit(bcos_client):
     body = response.get_json()
     assert body["ok"] is True
     assert body["count"] == 1
+
+
+@pytest.mark.parametrize(
+    "trust_score,message",
+    [
+        ("high", "trust_score must be a number"),
+        (None, "trust_score must be a number"),
+        (True, "trust_score must be a number"),
+        (-1, "trust_score must be between 0 and 100"),
+        (101, "trust_score must be between 0 and 100"),
+    ],
+)
+def test_bcos_attest_rejects_invalid_trust_score(bcos_client, trust_score, message):
+    response = bcos_client.post(
+        "/bcos/attest",
+        headers={"X-Admin-Key": "0" * 32},
+        json={
+            "cert_id": "cert-bad-score",
+            "commitment": "commitment",
+            "repo": "Scottcjn/Rustchain",
+            "commit_sha": "abcdef1234567890",
+            "tier": "L1",
+            "trust_score": trust_score,
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["error"] == "invalid_trust_score"
+    assert body["message"] == message
+
+
+def test_bcos_attest_stores_numeric_trust_score(bcos_client):
+    response = bcos_client.post(
+        "/bcos/attest",
+        headers={"X-Admin-Key": "0" * 32},
+        json={
+            "cert_id": "cert-good-score",
+            "commitment": "commitment",
+            "repo": "Scottcjn/Rustchain",
+            "commit_sha": "abcdef1234567890",
+            "tier": "L1",
+            "trust_score": "81",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["trust_score"] == 81
+
+    verify_response = bcos_client.get("/bcos/verify/cert-good-score")
+    assert verify_response.status_code == 200
+    assert verify_response.get_json()["trust_score"] == 81

@@ -73,6 +73,22 @@ def _parse_non_negative_query_int(name: str, default: int, max_value: int | None
     return parsed
 
 
+def _parse_trust_score(raw_score) -> int:
+    """Validate BCOS trust scores before they are stored or rendered."""
+    if isinstance(raw_score, bool):
+        raise ValueError("trust_score must be a number")
+
+    try:
+        score = int(raw_score)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("trust_score must be a number") from exc
+
+    if not (0 <= score <= 100):
+        raise ValueError("trust_score must be between 0 and 100")
+
+    return score
+
+
 def _verify_commitment(report_json_str: str, claimed_commitment: str) -> bool:
     """Recompute BLAKE2b commitment and compare."""
     try:
@@ -203,7 +219,7 @@ def bcos_attest():
     repo = report.get("repo_name", report.get("repo", ""))
     commit_sha = report.get("commit_sha", "")
     tier = report.get("tier", "L1")
-    trust_score = report.get("trust_score", 0)
+    raw_trust_score = report.get("trust_score", 0)
     reviewer = report.get("reviewer", "")
     signature = data.get("signature", report.get("signature", ""))
     signer_pubkey = data.get("signer_pubkey", report.get("signer_pubkey", ""))
@@ -213,6 +229,11 @@ def bcos_attest():
         return jsonify({"error": "cert_id and commitment required"}), 400
     if not repo:
         return jsonify({"error": "repo_name or repo required"}), 400
+    try:
+        trust_score = _parse_trust_score(raw_trust_score)
+    except ValueError as e:
+        return jsonify({"error": "invalid_trust_score", "message": str(e)}), 400
+    report["trust_score"] = trust_score
 
     # Auth: admin key OR valid Ed25519 signature
     sig_valid = False
