@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """
 Regression tests for defensive P2P Message.from_bytes() validation.
 
