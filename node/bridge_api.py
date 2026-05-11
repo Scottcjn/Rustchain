@@ -684,6 +684,13 @@ def register_bridge_routes(app):
         admin_key = request.headers.get("X-Admin-Key", "")
         expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
         admin_initiated = bool(expected_admin_key) and hmac.compare_digest(admin_key, expected_admin_key)
+        if data["direction"] == "deposit":
+            # Deposits create balance locks by source_address; require operator
+            # authorization until a wallet-owner signature flow exists.
+            if not expected_admin_key:
+                return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
+            if not admin_initiated:
+                return jsonify({"error": "unauthorized"}), 401
         
         # Create bridge transfer
         req = BridgeTransferRequest(

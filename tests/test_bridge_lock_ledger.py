@@ -40,7 +40,7 @@ def get_bridge_api(db_path: str):
     
     # Read the source code
     source_path = str(Path(__file__).parent.parent / "node" / "bridge_api.py")
-    with open(source_path, 'r') as f:
+    with open(source_path, 'r', encoding='utf-8') as f:
         source = f.read()
     
     # Create module
@@ -59,7 +59,7 @@ def get_lock_ledger(db_path: str):
     
     # Read the source code
     source_path = str(Path(__file__).parent.parent / "node" / "lock_ledger.py")
-    with open(source_path, 'r') as f:
+    with open(source_path, 'r', encoding='utf-8') as f:
         source = f.read()
     
     # Create module
@@ -442,6 +442,91 @@ class TestBridgeTransferCreation:
         assert_generic_database_error(result)
 
         conn.close()
+
+
+class TestBridgeInitiateAuth:
+    """Test route-level authorization for bridge initiation."""
+
+    def _client(self, bridge_api, db_path):
+        bridge_api.DB_PATH = db_path
+        app = Flask(__name__)
+        bridge_api.register_bridge_routes(app)
+        return app.test_client()
+
+    def _deposit_payload(self, source_address):
+        return {
+            "direction": "deposit",
+            "source_chain": "rustchain",
+            "dest_chain": "solana",
+            "source_address": source_address,
+            "dest_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            "amount_rtc": 10.0,
+        }
+
+    def _bridge_row_counts(self, db_path):
+        conn = sqlite3.connect(db_path)
+        try:
+            bridge_count = conn.execute(
+                "SELECT COUNT(*) FROM bridge_transfers"
+            ).fetchone()[0]
+            lock_count = conn.execute(
+                "SELECT COUNT(*) FROM lock_ledger"
+            ).fetchone()[0]
+            return bridge_count, lock_count
+        finally:
+            conn.close()
+
+    def test_deposit_requires_admin_key_before_creating_transfer(
+        self, setup_test_db, funded_miner, monkeypatch
+    ):
+        """Unauthenticated deposit initiation must not lock another address."""
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api, setup_test_db["db_path"])
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin-key")
+
+        response = client.post(
+            "/api/bridge/initiate",
+            json=self._deposit_payload(funded_miner),
+        )
+
+        assert response.status_code == 401
+        assert response.get_json()["error"] == "unauthorized"
+        assert self._bridge_row_counts(setup_test_db["db_path"]) == (0, 0)
+
+    def test_deposit_accepts_valid_admin_key(
+        self, setup_test_db, funded_miner, monkeypatch
+    ):
+        """Configured admin key still allows bridge deposit initiation."""
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api, setup_test_db["db_path"])
+        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin-key")
+
+        response = client.post(
+            "/api/bridge/initiate",
+            headers={"X-Admin-Key": "expected-admin-key"},
+            json=self._deposit_payload(funded_miner),
+        )
+
+        assert response.status_code == 200
+        assert response.get_json()["ok"] is True
+        assert self._bridge_row_counts(setup_test_db["db_path"]) == (1, 1)
+
+    def test_deposit_fails_closed_when_admin_key_unconfigured(
+        self, setup_test_db, funded_miner, monkeypatch
+    ):
+        """Bridge initiation must not become public when RC_ADMIN_KEY is unset."""
+        bridge_api = setup_test_db["bridge_api"]
+        client = self._client(bridge_api, setup_test_db["db_path"])
+        monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+
+        response = client.post(
+            "/api/bridge/initiate",
+            json=self._deposit_payload(funded_miner),
+        )
+
+        assert response.status_code == 503
+        assert response.get_json()["error"] == "RC_ADMIN_KEY not configured"
+        assert self._bridge_row_counts(setup_test_db["db_path"]) == (0, 0)
 
 
 # =============================================================================
