@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 import sqlite3
 
 from flask import Flask
