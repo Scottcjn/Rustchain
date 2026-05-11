@@ -1,10 +1,20 @@
 import importlib.util
 import sqlite3
 import sys
+import types
 from pathlib import Path
+
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def stub_flask_cors(monkeypatch):
+    flask_cors = types.ModuleType("flask_cors")
+    flask_cors.CORS = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "flask_cors", flask_cors)
 
 
 def load_keeper_explorer(tmp_path, monkeypatch):
