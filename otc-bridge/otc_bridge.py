@@ -177,6 +177,41 @@ def generate_htlc_secret():
     return secret, hash_val
 
 
+def positive_int_arg(name, default, max_value=None):
+    raw_value = request.args.get(name)
+    if raw_value is None:
+        return default, None
+
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None, f"{name}_must_be_integer"
+
+    if value < 1:
+        return None, f"{name}_must_be_positive"
+
+    if max_value is not None:
+        value = min(value, max_value)
+
+    return value, None
+
+
+def non_negative_int_arg(name, default):
+    raw_value = request.args.get(name)
+    if raw_value is None:
+        return default, None
+
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None, f"{name}_must_be_integer"
+
+    if value < 0:
+        return None, f"{name}_must_be_non_negative"
+
+    return value, None
+
+
 # ---------------------------------------------------------------------------
 # Rate Limiting
 # ---------------------------------------------------------------------------
@@ -422,8 +457,13 @@ def list_orders():
     """List open orders with optional filters."""
     pair = request.args.get("pair", "").strip().upper()
     side = request.args.get("side", "").strip().lower()
-    limit = min(int(request.args.get("limit", 50)), 200)
-    offset = max(int(request.args.get("offset", 0)), 0)
+    limit, error = positive_int_arg("limit", 50, max_value=200)
+    if error:
+        return jsonify({"error": error}), 400
+
+    offset, error = non_negative_int_arg("offset", 0)
+    if error:
+        return jsonify({"error": error}), 400
 
     conn = get_db()
     try:
@@ -778,7 +818,9 @@ def cancel_order(order_id):
 def list_trades():
     """Trade history."""
     pair = request.args.get("pair", "").strip().upper()
-    limit = min(int(request.args.get("limit", 50)), 200)
+    limit, error = positive_int_arg("limit", 50, max_value=200)
+    if error:
+        return jsonify({"error": error}), 400
 
     conn = get_db()
     try:
