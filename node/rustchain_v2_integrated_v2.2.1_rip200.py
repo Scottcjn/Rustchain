@@ -8,6 +8,7 @@ import ipaddress
 from urllib.parse import urlparse
 from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect
 import json
+from decimal import Decimal, ROUND_HALF_UP
 from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, VALID_KINDS
 try:
     # Deployment compatibility: production may run this file as a single script.
@@ -1012,6 +1013,56 @@ GOVERNANCE_ACTIVE_SECONDS = 7 * 24 * 60 * 60
 GOVERNANCE_MIN_PROPOSER_BALANCE_RTC = 10.0
 GOVERNANCE_ACTIVE_MINER_WINDOW_SECONDS = 3600
 
+EPOCH_WEIGHT_SCALE = 1_000_000_000
+MAX_EPOCH_WEIGHT = 10_000
+MAX_EPOCH_WEIGHT_UNITS = MAX_EPOCH_WEIGHT * EPOCH_WEIGHT_SCALE
+MIN_FAILED_FINGERPRINT_WEIGHT_UNITS = 1
+
+
+def epoch_weight_to_units(weight) -> int:
+    """Convert a display weight to fixed-point integer units."""
+    try:
+        value = Decimal(str(weight))
+    except Exception:
+        return 0
+    if value <= 0:
+        return 0
+    units = int((value * Decimal(EPOCH_WEIGHT_SCALE)).to_integral_value(rounding=ROUND_HALF_UP))
+    return max(0, units)
+
+
+def epoch_weight_units_to_display(weight_units: int) -> float:
+    """Convert fixed-point weight units to a display/API weight."""
+    return float(Decimal(int(weight_units)) / Decimal(EPOCH_WEIGHT_SCALE))
+
+
+def normalize_epoch_weight_units(raw_weight) -> int:
+    """Read either new INTEGER weights or legacy REAL weights deterministically."""
+    if isinstance(raw_weight, int):
+        return max(0, raw_weight)
+    return epoch_weight_to_units(raw_weight)
+
+
+def ensure_epoch_enroll_integer_weights(conn: sqlite3.Connection):
+    """Migrate legacy REAL epoch weights to fixed-point INTEGER storage."""
+    columns = conn.execute("PRAGMA table_info(epoch_enroll)").fetchall()
+    weight_column = next((col for col in columns if col[1] == "weight"), None)
+    if not weight_column:
+        return
+    if str(weight_column[2]).upper() == "INTEGER":
+        return
+
+    rows = conn.execute("SELECT epoch, miner_pk, weight FROM epoch_enroll").fetchall()
+    conn.execute("ALTER TABLE epoch_enroll RENAME TO epoch_enroll_legacy_real")
+    conn.execute(
+        "CREATE TABLE epoch_enroll (epoch INTEGER, miner_pk TEXT, weight INTEGER, PRIMARY KEY (epoch, miner_pk))"
+    )
+    conn.executemany(
+        "INSERT OR REPLACE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+        [(epoch, miner_pk, epoch_weight_to_units(weight)) for epoch, miner_pk, weight in rows],
+    )
+    conn.execute("DROP TABLE epoch_enroll_legacy_real")
+
 
 # Prometheus metrics
 withdrawal_requests = Counter('rustchain_withdrawal_requests', 'Total withdrawal requests')
@@ -1087,7 +1138,8 @@ def init_db():
 
         # Epoch tables
         c.execute("CREATE TABLE IF NOT EXISTS epoch_state (epoch INTEGER PRIMARY KEY, accepted_blocks INTEGER DEFAULT 0, finalized INTEGER DEFAULT 0)")
-        c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight REAL, PRIMARY KEY (epoch, miner_pk))")
+        c.execute("CREATE TABLE IF NOT EXISTS epoch_enroll (epoch INTEGER, miner_pk TEXT, weight INTEGER, PRIMARY KEY (epoch, miner_pk))")
+        ensure_epoch_enroll_integer_weights(c)
         c.execute("CREATE TABLE IF NOT EXISTS balances (miner_pk TEXT PRIMARY KEY, balance_rtc REAL DEFAULT 0)")
         ensure_fingerprint_history_table(c)
         ensure_epoch_fingerprint_rotation_table(c)
@@ -2756,7 +2808,6 @@ def current_slot():
 
 def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
     """Finalize epoch and distribute rewards with security hardening"""
-    from decimal import Decimal, ROUND_DOWN
 
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
@@ -2770,10 +2821,11 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
             return
 
         # Get all enrolled miners
-        miners = c.execute(
+        raw_miners = c.execute(
             "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
             (epoch,)
         ).fetchall()
+        miners = [(pk, normalize_epoch_weight_units(weight)) for pk, weight in raw_miners]
 
         if not miners:
             return
@@ -2789,8 +2841,6 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         # PRECISION: Use Decimal for exact financial calculations
         total_reward = Decimal(str(per_block_rtc)) * Decimal(EPOCH_SLOTS)
 
-        # WEIGHT VALIDATION: Cap maximum weight to prevent drain attacks
-        MAX_WEIGHT = 10000
         # Filter out miners with 0 weight (VM/emulator detected)
         valid_miners = [(pk, w) for pk, w in miners if w > 0]
         zero_weight_miners = [pk for pk, w in miners if w == 0]
@@ -2819,9 +2869,12 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         # Adjust weights based on active fingerprint checks
         adjusted_miners = []
         for pk, weight in miners:
-            if weight > MAX_WEIGHT:
-                print(f"[SECURITY] Capping weight {weight} for miner {pk} to {MAX_WEIGHT}")
-                weight = MAX_WEIGHT
+            if weight > MAX_EPOCH_WEIGHT_UNITS:
+                print(
+                    f"[SECURITY] Capping weight {epoch_weight_units_to_display(weight)} "
+                    f"for miner {pk} to {MAX_EPOCH_WEIGHT}"
+                )
+                weight = MAX_EPOCH_WEIGHT_UNITS
 
             # RIP-309: zero out weight if any active check failed
             if weight > 0:
@@ -2858,8 +2911,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
 
             # Distribute rewards with precision
             for pk, weight in miners:
-                # Use Decimal arithmetic to avoid float precision loss
-                amount_decimal = Decimal(0) if Decimal(total_weight) == 0 else total_reward * Decimal(weight) / Decimal(total_weight)
+                amount_decimal = Decimal(0) if total_weight == 0 else total_reward * Decimal(weight) / Decimal(total_weight)
                 amount_i64 = int(amount_decimal * Decimal(100000000))
 
                 # OVERFLOW PROTECTION: Ensure amount_i64 fits in signed 64-bit int
@@ -3451,9 +3503,10 @@ def _submit_attestation_impl():
                 fingerprint if isinstance(fingerprint, dict) else {},
             )
             if not fingerprint_passed:
-                enroll_weight = 0.000000001
+                enroll_weight_units = MIN_FAILED_FINGERPRINT_WEIGHT_UNITS
             else:
-                enroll_weight = hw_weight * rotation_eval["active_ratio"]
+                enroll_weight_units = epoch_weight_to_units(hw_weight * rotation_eval["active_ratio"])
+            enroll_weight = epoch_weight_units_to_display(enroll_weight_units)
             enroll_conn.execute(
                 "INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
                 (miner,)
@@ -3464,7 +3517,7 @@ def _submit_attestation_impl():
             # "attestation overwrite causes prior-epoch reward loss".
             enroll_conn.execute(
                 "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
-                (epoch, miner, enroll_weight)
+                (epoch, miner, enroll_weight_units)
             )
             enroll_conn.execute(
                 "INSERT OR REPLACE INTO miner_header_keys (miner_id, pubkey_hex) VALUES (?, ?)",
@@ -3671,10 +3724,12 @@ def enroll_epoch():
             data.get('fingerprint') if isinstance(data.get('fingerprint'), dict) else {},
         )
         if fingerprint_failed:
-            weight = 0.000000001  # 9 zeros - technically earns, but ~1 billionth of real hardware
+            weight_units = MIN_FAILED_FINGERPRINT_WEIGHT_UNITS
+            weight = epoch_weight_units_to_display(weight_units)
             print(f"[ENROLL] Miner {miner_pk[:16]}... fingerprint FAILED - VM weight: {weight}")
         else:
-            weight = hw_weight * rotation_eval['active_ratio']
+            weight_units = epoch_weight_to_units(hw_weight * rotation_eval['active_ratio'])
+            weight = epoch_weight_units_to_display(weight_units)
 
         # Ensure miner has balance entry
         c.execute(
@@ -3692,7 +3747,7 @@ def enroll_epoch():
         # or default device data.
         c.execute(
             "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
-            (epoch, miner_pk, weight)
+            (epoch, miner_pk, weight_units)
         )
 
         # FIX: Register pubkey in miner_header_keys for block submission
@@ -3742,13 +3797,19 @@ def vrf_is_selected(miner_pk: str, slot: int) -> bool:
         if not row:
             return False  # Not enrolled
 
-        weight = row[0]
+        weight = normalize_epoch_weight_units(row[0])
+        if weight <= 0:
+            return False
 
         # Get all enrolled miners for this epoch
-        all_miners = c.execute(
+        raw_miners = c.execute(
             "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
             (epoch,)
         ).fetchall()
+        all_miners = [
+            (pk, normalize_epoch_weight_units(stored_weight))
+            for pk, stored_weight in raw_miners
+        ]
 
     if not all_miners:
         return False
@@ -3761,11 +3822,13 @@ def vrf_is_selected(miner_pk: str, slot: int) -> bool:
     # Convert first 8 bytes to int for randomness
     rand_val = int.from_bytes(hash_val[:8], 'big')
 
-    # Calculate cumulative weights
+    # Calculate cumulative fixed-point weights
     total_weight = sum(w for _, w in all_miners)
-    threshold = (rand_val % int(total_weight * 1000000)) / 100000000.0
+    if total_weight <= 0:
+        return False
+    threshold = rand_val % total_weight
 
-    cumulative = 0.0
+    cumulative = 0
     for pk, w in all_miners:
         cumulative += w
         if pk == miner_pk and cumulative >= threshold:
