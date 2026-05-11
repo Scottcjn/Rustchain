@@ -788,10 +788,11 @@ def register_bridge_routes(app):
     @app.route('/api/bridge/update-external', methods=['POST'])
     def update_external():
         """Update external confirmation data (for bridge service callbacks)."""
-        # Optional: require API key for callbacks
         api_key = request.headers.get("X-API-Key", "")
         expected_key = os.environ.get("RC_BRIDGE_API_KEY", "")
-        if expected_key and not hmac.compare_digest(api_key, expected_key):
+        if not expected_key:
+            return jsonify({"error": "Bridge API key not configured"}), 503
+        if not hmac.compare_digest(api_key, expected_key):
             return jsonify({"error": "Unauthorized"}), 401
         
         data = request.get_json(silent=True)
