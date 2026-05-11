@@ -25,6 +25,16 @@ RUST_WEIGHTS = {
     'first_attestation': 50,   # Bonus for being among first 100 miners
 }
 
+
+def _json_object_body():
+    data = request.get_json(silent=True)
+    if data is None:
+        return {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({'error': 'JSON object required'}), 400)
+    return data, None
+
+
 # Capacitor plague era models (infamous bad electrolytic caps)
 CAPACITOR_PLAGUE_MODELS = [
     'PowerMac3,',      # G4 Quicksilver/MDD 2001-2003
@@ -148,7 +158,9 @@ def estimate_manufacture_year(model, arch):
 @hall_bp.route('/hall/induct', methods=['POST'])
 def induct_machine():
     """Automatically induct a machine into the Hall of Rust on first attestation."""
-    data = request.json or {}
+    data, error = _json_object_body()
+    if error:
+        return error
     
     # Generate fingerprint hash from hardware identifiers
     # SECURITY FIX: Fingerprint based on HARDWARE ONLY (not wallet ID)
@@ -301,7 +313,9 @@ def rust_leaderboard():
 @hall_bp.route('/hall/eulogy/<fingerprint>', methods=['POST'])
 def set_eulogy(fingerprint):
     """Set a eulogy/nickname for a machine. For when it finally dies."""
-    data = request.json or {}
+    data, error = _json_object_body()
+    if error:
+        return error
     
     try:
         from flask import current_app
