@@ -30,6 +30,12 @@ class SubmissionValidator:
         self.checks: Dict[str, Dict[str, Any]] = {}
         self.errors: list = []
         self.warnings: list = []
+
+    def _add_hardware_profile_path(self) -> None:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        profile_dir = os.path.abspath(os.path.join(script_dir, "..", "vintage_miner"))
+        if profile_dir not in sys.path:
+            sys.path.insert(0, profile_dir)
     
     def validate_photo(self, photo_path: str) -> Dict[str, Any]:
         """Validate photo evidence"""
@@ -260,7 +266,7 @@ class SubmissionValidator:
         """Calculate bounty based on architecture era"""
         # Import from hardware_profiles if available
         try:
-            sys.path.insert(0, 'vintage_miner')
+            self._add_hardware_profile_path()
             from hardware_profiles import get_bounty
             return get_bounty(device_arch)
         except:
@@ -320,6 +326,7 @@ class SubmissionValidator:
                 
                 # Determine era
                 try:
+                    self._add_hardware_profile_path()
                     from hardware_profiles import get_era
                     results["era"] = get_era(device_arch)
                 except:
