@@ -419,7 +419,9 @@ def create_contract():
     Validates that the from_agent exists in the relay_agents table.
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'error': 'JSON object required'}), 400
         
         # Validate required fields
         required = ['from', 'to', 'type', 'amount', 'term']
@@ -491,7 +493,9 @@ def update_contract(contract_id):
     Validates state transitions to prevent invalid jumps.
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'error': 'JSON object required'}), 400
         new_state = data.get('state')
         
         if not new_state:

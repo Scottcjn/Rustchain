@@ -168,6 +168,47 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         data = json.loads(response.data)
         self.assertIn('error', data)
 
+    def test_contract_create_rejects_non_object_json(self):
+        """Contract creation rejects valid JSON that is not an object."""
+        response = self.client.post(
+            '/api/contracts',
+            data='null',
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertEqual(data['error'], 'JSON object required')
+
+    def test_contract_update_rejects_non_object_json(self):
+        """Contract update rejects valid JSON that is not an object."""
+        contract_data = {
+            'from': 'bcn_alice_test',
+            'to': 'bcn_bob_test',
+            'type': 'rent',
+            'amount': 100.0,
+            'term': '30d',
+        }
+        create_response = self.client.post(
+            '/api/contracts',
+            data=json.dumps(contract_data),
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_alice_test'},
+        )
+        self.assertEqual(create_response.status_code, 201)
+        contract_id = json.loads(create_response.data)['id']
+
+        response = self.client.put(
+            f'/api/contracts/{contract_id}',
+            data='null',
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_bob_test'},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertEqual(data['error'], 'JSON object required')
+
     def test_bounty_lifecycle_workflow(self):
         """Full bounty lifecycle: create, claim, complete."""
         # Insert a test bounty directly
