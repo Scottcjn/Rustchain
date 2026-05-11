@@ -4683,8 +4683,7 @@ def reject_v1_mine():
 @app.route('/withdraw/register', methods=['POST'])
 def register_withdrawal_key():
     # SECURITY: Registering withdrawal keys allows fund extraction; require admin key.
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not admin_key or not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
+    if not is_admin(request):
         return jsonify({"error": "Unauthorized - admin key required"}), 401
     """Register sr25519 public key for withdrawals"""
     data = request.get_json(silent=True)
@@ -4706,8 +4705,7 @@ def register_withdrawal_key():
 
     # SECURITY: prevent unauthenticated key overwrite (withdrawal takeover).
     # First-time registration is allowed. Rotation requires admin key.
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    is_admin = hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", ""))
+    admin_ok = is_admin(request)
 
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as c:
@@ -4717,7 +4715,7 @@ def register_withdrawal_key():
         ).fetchone()
 
         if row and row[0] and row[0] != pubkey_sr25519:
-            if not is_admin:
+            if not admin_ok:
                 return jsonify({"error": "pubkey already registered; admin required to rotate"}), 409
             c.execute(
                 "UPDATE miner_keys SET pubkey_sr25519 = ?, registered_at = ? WHERE miner_pk = ?",
@@ -4958,8 +4956,7 @@ def withdrawal_status(withdrawal_id):
 def withdrawal_history(miner_pk):
     """Get withdrawal history for miner"""
     # SECURITY FIX 2026-02-15: Require admin key - exposes withdrawal history
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not admin_key or not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
+    if not is_admin(request):
         return jsonify({"error": "Unauthorized - admin key required"}), 401
     limit = request.args.get('limit', 50, type=int)
 
@@ -5013,8 +5010,7 @@ def admin_required(f):
     from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
-        key = request.headers.get("X-API-Key") or ""
-        if not hmac.compare_digest(key, ADMIN_KEY or ""):
+        if not is_admin(request):
             return jsonify({"ok": False, "reason": "admin_required"}), 401
         return f(*args, **kwargs)
     return decorated
@@ -6175,8 +6171,7 @@ def api_miner_dashboard(miner_id):
 def api_miner_attestations(miner_id: str):
     """Best-effort attestation history for a single miner (museum detail view)."""
     # SECURITY FIX 2026-02-15: Require admin key - exposes miner attestation history/timing
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
+    if not is_admin(request):
         return jsonify({"error": "Unauthorized - admin key required"}), 401
     limit = int(request.args.get("limit", "120") or 120)
     limit = max(1, min(limit, 500))
@@ -6218,8 +6213,7 @@ def api_miner_attestations(miner_id: str):
 def api_balances():
     """Return wallet balances (best-effort across schema variants)."""
     # SECURITY FIX 2026-02-15: Require admin key - dumps all wallet balances
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
+    if not is_admin(request):
         return jsonify({"error": "Unauthorized - admin key required"}), 401
     limit = int(request.args.get("limit", "2000") or 2000)
     limit = max(1, min(limit, 5000))
@@ -6373,8 +6367,7 @@ def metrics_mac():
 def attest_debug():
     """Debug endpoint: show miner's enrollment eligibility"""
     # SECURITY FIX 2026-02-15: Require admin key - exposes internal config + MAC hashes
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
+    if not is_admin(request):
         return jsonify({"error": "Unauthorized - admin key required"}), 401
     data = request.get_json()
 
@@ -6490,8 +6483,7 @@ METRICS_SNAPSHOT = {}
 def ops_readiness():
     """Single PASS/FAIL aggregator for all go/no-go checks"""
     # SECURITY FIX 2026-02-15: Only show detailed checks to admin
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    is_admin = hmac.compare_digest(admin_key, ADMIN_KEY or "")
+    admin_ok = is_admin(request)
     out = {"ok": True, "checks": []}
 
     # Health check
@@ -6547,7 +6539,7 @@ def ops_readiness():
         out["ok"] = False
 
     # Strip detailed checks for non-admin requests
-    if not is_admin:
+    if not admin_ok:
         return jsonify({"ok": out["ok"]}), (200 if out["ok"] else 503)
     return jsonify(out), (200 if out["ok"] else 503)
 
@@ -6586,8 +6578,7 @@ def metrics():
 def api_rewards_settle():
     """Settle rewards for a specific epoch (admin/cron callable)"""
     # SECURITY: settling rewards mutates chain state; require admin key.
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not is_admin(request):
         return jsonify({"ok": False, "reason": "admin_required"}), 401
 
     body = request.get_json(force=True, silent=True) or {}
@@ -6860,8 +6851,7 @@ def send_sophiacheck_alert(alert_type, message, data):
 def wallet_transfer_v2():
     """Transfer RTC between miner wallets - NOW WITH 2-PHASE COMMIT"""
     # SECURITY: Require admin key for internal transfers
-    admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not is_admin(request):
         return jsonify({
             "error": "Unauthorized - admin key required",
             "hint": "Use /wallet/transfer/signed for user transfers"
@@ -6959,8 +6949,7 @@ def wallet_transfer_v2():
 @app.route('/pending/list', methods=['GET'])
 def list_pending():
     """List all pending transfers"""
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not is_admin(request):
         return jsonify({"error": "Unauthorized"}), 401
 
     status_filter = request.args.get('status', 'pending')
@@ -7002,8 +6991,7 @@ def list_pending():
 @app.route('/pending/void', methods=['POST'])
 def void_pending():
     """Admin: Void a pending transfer before confirmation"""
-    admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not is_admin(request):
         return jsonify({"error": "Unauthorized"}), 401
     
     data = request.get_json()
@@ -7076,8 +7064,7 @@ def void_pending():
 @app.route('/pending/confirm', methods=['POST'])
 def confirm_pending():
     """Worker: Confirm pending transfers that have passed the delay period"""
-    admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not is_admin(request):
         return jsonify({"error": "Unauthorized"}), 401
     
     now = int(time.time())
@@ -7166,8 +7153,7 @@ def confirm_pending():
 @app.route('/pending/integrity', methods=['GET'])
 def check_integrity():
     """Check balance integrity: sum of ledger should match balances"""
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not is_admin(request):
         return jsonify({"error": "Unauthorized"}), 401
 
     with sqlite3.connect(DB_PATH) as db:
@@ -7221,8 +7207,7 @@ def check_integrity():
 @app.route('/wallet/transfer_OLD_DISABLED', methods=['POST'])
 def wallet_transfer_OLD():
     # SECURITY FIX: Require admin key for internal transfers
-    admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not is_admin(request):
         return jsonify({"error": "Unauthorized - admin key required", "hint": "Use /wallet/transfer/signed for user transfers"}), 401
     """Transfer RTC between miner wallets"""
     data = request.get_json()
@@ -7277,8 +7262,7 @@ def wallet_transfer_OLD():
 def api_wallet_ledger():
     """Get transaction ledger (optionally filtered by miner)"""
     # SECURITY: ledger entries include transfer reasons + wallet identifiers; require admin key.
-    admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not is_admin(request):
         return jsonify({"ok": False, "reason": "admin_required"}), 401
 
     miner_id = request.args.get("miner_id", "").strip()
@@ -7323,8 +7307,7 @@ def api_wallet_ledger():
 def api_wallet_balances_all():
     """Get all miner balances"""
     # SECURITY: exporting all balances is sensitive; require admin key.
-    admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not is_admin(request):
         return jsonify({"ok": False, "reason": "admin_required"}), 401
 
     with sqlite3.connect(DB_PATH) as db:
