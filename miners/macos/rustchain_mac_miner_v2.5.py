@@ -22,6 +22,7 @@ import subprocess
 import statistics
 import re
 import socket
+import signal
 from datetime import datetime
 
 # Color helper stubs (no-op if terminal doesn't support ANSI)
@@ -378,12 +379,30 @@ class MacMiner:
         self.shares_accepted = 0
         self.last_entropy = {}
         self._last_system_time = time.monotonic()
+        self._shutdown_requested = False
+
+        try:
+            signal.signal(signal.SIGTERM, self._request_shutdown)
+        except (AttributeError, ValueError):
+            # Some legacy Python/macOS launch contexts may not allow signal handlers.
+            pass
 
         self._print_banner()
 
         # Run initial fingerprint check
         if FINGERPRINT_AVAILABLE:
             self._run_fingerprint_checks()
+
+    def _request_shutdown(self, signum, frame):
+        """Request a graceful shutdown from launchd/system signals."""
+        self._shutdown_requested = True
+        print("\n\nReceived signal {}; shutting down miner...".format(signum))
+
+    def _sleep_or_shutdown(self, seconds):
+        """Sleep in short intervals so SIGTERM exits promptly on macOS launchd."""
+        deadline = time.time() + seconds
+        while not self._shutdown_requested and time.time() < deadline:
+            time.sleep(min(1, max(0, deadline - time.time())))
 
     def _run_fingerprint_checks(self):
         """Run hardware fingerprint checks for RIP-PoA."""
@@ -596,14 +615,17 @@ class MacMiner:
         print("\n[{}] Starting miner...".format(ts))
 
         # Initial attestation
-        while not self.attest():
+        while not self._shutdown_requested and not self.attest():
             print("  Retrying attestation in 30 seconds...")
-            time.sleep(30)
+            self._sleep_or_shutdown(30)
+
+        if self._shutdown_requested:
+            return
 
         last_slot = 0
         status_counter = 0
 
-        while True:
+        while not self._shutdown_requested:
             try:
                 # Detect sleep/wake — force re-attest
                 if self._detect_sleep_wake():
@@ -646,7 +668,7 @@ class MacMiner:
                     ))
                     status_counter = 0
 
-                time.sleep(LOTTERY_CHECK_INTERVAL)
+                self._sleep_or_shutdown(LOTTERY_CHECK_INTERVAL)
 
             except KeyboardInterrupt:
                 print("\n\nShutting down miner...")
@@ -654,7 +676,7 @@ class MacMiner:
             except Exception as e:
                 ts = datetime.now().strftime('%H:%M:%S')
                 print("[{}] Error: {}".format(ts, e))
-                time.sleep(30)
+                self._sleep_or_shutdown(30)
 
 
 if __name__ == "__main__":
