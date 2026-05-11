@@ -73,6 +73,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("miner_alerts")
 
+ALERT_TYPE_COLUMNS = {
+    "offline": "alert_offline",
+    "rewards": "alert_rewards",
+    "large_transfer": "alert_large_transfer",
+    "attestation_fail": "alert_attestation_fail",
+}
+
 
 # ─── Database ─────────────────────────────────────────────────────────────────
 
@@ -176,7 +183,9 @@ class AlertDB:
         """Get active subscriptions for a miner, optionally filtered by alert type."""
         cur = self.conn.cursor()
         if alert_type:
-            col = f"alert_{alert_type}"
+            col = ALERT_TYPE_COLUMNS.get(alert_type)
+            if col is None:
+                raise ValueError(f"Unknown alert type: {alert_type}")
             cur.execute(
                 f"SELECT * FROM subscriptions WHERE miner_id = ? AND active = 1 AND {col} = 1",
                 (miner_id,),
