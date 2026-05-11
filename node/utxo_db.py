@@ -673,6 +673,10 @@ class UtxoDB:
         # paths and leak the transaction-in-progress lock.
         manage_tx = True
         try:
+            now = int(time.time())
+            self._mempool_clear_expired(conn, now=now)
+            conn.commit()
+
             # Check pool size
             row = conn.execute(
                 "SELECT COUNT(*) AS n FROM utxo_mempool"
@@ -688,7 +692,6 @@ class UtxoDB:
 
             inputs = tx.get('inputs', [])
             tx_type = tx.get('tx_type', 'transfer')
-            now = int(time.time())
 
             # Public mempool admission must never accept minting transactions.
             # Coinbase/mining rewards are internally constructed during block
@@ -827,10 +830,11 @@ class UtxoDB:
 
     def mempool_get_block_candidates(self, max_count: int = 100) -> List[dict]:
         """Get highest-fee transactions from mempool for block inclusion."""
-        self.mempool_clear_expired()
         conn = self._conn()
         try:
             now = int(time.time())
+            self._mempool_clear_expired(conn, now=now)
+            conn.commit()
             rows = conn.execute(
                 """SELECT tx_data_json FROM utxo_mempool
                    WHERE expires_at > ?
@@ -839,35 +843,44 @@ class UtxoDB:
                 (now, max_count),
             ).fetchall()
             return [json.loads(r['tx_data_json']) for r in rows]
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc).lower():
+                return []
+            raise
         finally:
             conn.close()
+
+    def _mempool_clear_expired(self, conn: sqlite3.Connection, now: Optional[int] = None) -> int:
+        """Remove expired mempool rows using the caller's connection."""
+        now = int(time.time()) if now is None else int(now)
+        expired = conn.execute(
+            "SELECT tx_id FROM utxo_mempool WHERE expires_at <= ?",
+            (now,),
+        ).fetchall()
+        count = 0
+        for row in expired:
+            conn.execute(
+                "DELETE FROM utxo_mempool_inputs WHERE tx_id = ?",
+                (row['tx_id'],),
+            )
+            conn.execute(
+                "DELETE FROM utxo_mempool WHERE tx_id = ?",
+                (row['tx_id'],),
+            )
+            count += 1
+        return count
 
     def mempool_clear_expired(self) -> int:
         """Remove expired transactions from mempool. Returns count removed."""
         conn = self._conn()
         try:
-            now = int(time.time())
             try:
-                expired = conn.execute(
-                    "SELECT tx_id FROM utxo_mempool WHERE expires_at <= ?",
-                    (now,),
-                ).fetchall()
+                count = self._mempool_clear_expired(conn)
             except sqlite3.OperationalError as exc:
                 if "no such table" in str(exc).lower():
                     return 0
                 raise
             else:
-                count = 0
-                for row in expired:
-                    conn.execute(
-                        "DELETE FROM utxo_mempool_inputs WHERE tx_id = ?",
-                        (row['tx_id'],),
-                    )
-                    conn.execute(
-                        "DELETE FROM utxo_mempool WHERE tx_id = ?",
-                        (row['tx_id'],),
-                    )
-                    count += 1
                 conn.commit()
                 return count
         finally:
