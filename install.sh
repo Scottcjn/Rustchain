@@ -26,8 +26,9 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 INSTALL_DIR="$HOME/.rustchain"
-MINER_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/rustchain_universal_miner.py"
-FINGERPRINT_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/fingerprint_checks.py"
+MINERS_BASE_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners"
+MINER_URL=""
+FINGERPRINT_URL="${MINERS_BASE_URL}/linux/fingerprint_checks.py"
 NODE_URL="https://50.28.86.131"
 VERSION="1.0.0"
 
@@ -81,8 +82,14 @@ OS=$(uname -s)
 ARCH=$(uname -m)
 
 case "$OS" in
-    Linux)  echo "  OS: Linux" ;;
-    Darwin) echo "  OS: macOS" ;;
+    Linux)
+        echo "  OS: Linux"
+        MINER_URL="${MINERS_BASE_URL}/linux/rustchain_linux_miner.py"
+        ;;
+    Darwin)
+        echo "  OS: macOS"
+        MINER_URL="${MINERS_BASE_URL}/macos/rustchain_mac_miner_v2.4.py"
+        ;;
     *)      echo -e "${RED}  Unsupported OS: $OS${NC}"; exit 1 ;;
 esac
 
