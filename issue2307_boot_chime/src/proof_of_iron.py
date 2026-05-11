@@ -492,14 +492,14 @@ class ProofOfIron:
     
     def _save_features(self, features_hash: str,
                       features: FingerprintFeatures) -> None:
-        """Cache features for future comparison"""
+        """Cache features for future comparison (JSON serialized, no pickle)."""
         try:
             import sqlite3
-            import pickle
+            import json
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
             
-            features_data = pickle.dumps({
+            features_data = json.dumps({
                 'mfcc_mean': features.mfcc_mean.tolist(),
                 'mfcc_std': features.mfcc_std.tolist(),
                 'spectral_centroid': features.spectral_centroid,
@@ -524,9 +524,10 @@ class ProofOfIron:
             pass
     
     def _load_features(self, features_hash: str) -> Optional[FingerprintFeatures]:
-        """Load cached features"""
+        """Load cached features with backward-compatible dual-read (JSON first, then pickle)."""
         try:
             import sqlite3
+            import json
             import pickle
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
@@ -536,7 +537,30 @@ class ProofOfIron:
             conn.close()
             
             if row:
-                data = pickle.loads(row[0])
+                raw = row[0]
+                # Try JSON first (new format)
+                try:
+                    if isinstance(raw, bytes):
+                        data = json.loads(raw.decode('utf-8'))
+                    else:
+                        data = json.loads(raw)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    # Fallback: legacy pickle data — deserialize and migrate to JSON
+                    data = pickle.loads(raw) if isinstance(raw, bytes) else pickle.loads(raw.encode())
+                    # Re-write as JSON to gradually migrate the cache
+                    self._save_features(features_hash, FingerprintFeatures(
+                        mfcc_mean=np.array(data['mfcc_mean']),
+                        mfcc_std=np.array(data['mfcc_std']),
+                        spectral_centroid=data['spectral_centroid'],
+                        spectral_bandwidth=data['spectral_bandwidth'],
+                        spectral_rolloff=data['spectral_rolloff'],
+                        zero_crossing_rate=data['zero_crossing_rate'],
+                        chroma_mean=np.array(data['chroma_mean']),
+                        temporal_envelope=np.array(data['temporal_envelope']),
+                        peak_frequencies=data['peak_frequencies'],
+                        harmonic_structure=data['harmonic_structure'],
+                    ))
+                
                 return FingerprintFeatures(
                     mfcc_mean=np.array(data['mfcc_mean']),
                     mfcc_std=np.array(data['mfcc_std']),
@@ -551,5 +575,4 @@ class ProofOfIron:
                 )
         except:
             pass
-        
         return None
