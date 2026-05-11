@@ -495,7 +495,10 @@ def fetch_balance(miner_id: str) -> Optional[float]:
             return None
         resp.raise_for_status()
         data = resp.json()
-        return float(data.get("balance", data.get("balance_rtc", 0)))
+        balance = data.get("balance")
+        if balance is None:
+            balance = data.get("balance_rtc", 0)
+        return float(balance)
     except Exception as e:
         logger.error(f"Failed to fetch balance for {miner_id}: {e}")
         return None
