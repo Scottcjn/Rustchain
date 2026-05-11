@@ -193,7 +193,12 @@
 
     const legend = el('div', { class: 'small-note' });
     legend.style.marginTop = '10px';
-    legend.innerHTML = entries.slice(0, 6).map(([n, c]) => `${c}x ${n}`).join('<br>') + (entries.length > 6 ? '<br>...' : '');
+    const legendEntries = entries.slice(0, 6).map(([n, c]) => `${c}x ${n}`);
+    if (entries.length > 6) legendEntries.push('...');
+    for (let i = 0; i < legendEntries.length; i++) {
+      if (i > 0) legend.appendChild(document.createElement('br'));
+      legend.appendChild(document.createTextNode(legendEntries[i]));
+    }
 
     const svg = `
       <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
