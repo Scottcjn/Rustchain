@@ -13,6 +13,8 @@ Endpoints:
 """
 
 import json
+import hmac
+import os
 import time
 from dataclasses import dataclass
 from typing import Dict, Any, Optional, Callable
@@ -255,6 +257,16 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
     """HTTP request handler for API"""
 
     api: RustChainApi = None  # Set by server
+    STATE_CHANGING_PATHS = {
+        "/api/mine",
+        "/api/governance/create",
+        "/api/governance/vote",
+    }
+    STATE_CHANGING_RPC_METHODS = {
+        "submitProof",
+        "createProposal",
+        "vote",
+    }
 
     def do_GET(self):
         """Handle GET requests"""
@@ -262,7 +274,7 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         path = parsed.path
         params = {k: v[0] for k, v in parse_qs(parsed.query).items()}
 
-        response = self._route_request(path, params)
+        response = self._route_request(path, params, "GET")
         self._send_response(response)
 
     def do_POST(self):
@@ -276,11 +288,41 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
             params = {}
 
         parsed = urlparse(self.path)
-        response = self._route_request(parsed.path, params)
+        response = self._route_request(parsed.path, params, "POST")
         self._send_response(response)
 
-    def _route_request(self, path: str, params: Dict[str, Any]) -> ApiResponse:
+    def do_OPTIONS(self):
+        """Handle CORS preflight requests."""
+        if not self._is_origin_allowed():
+            self.send_response(403)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(ApiResponse(
+                success=False,
+                error="Origin not allowed",
+            ).to_json().encode())
+            return
+
+        self.send_response(204)
+        self._send_cors_headers()
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
+        self.send_header("Access-Control-Max-Age", "600")
+        self.end_headers()
+
+    def _route_request(self, path: str, params: Dict[str, Any], http_method: str) -> ApiResponse:
         """Route request to appropriate handler"""
+        if self._is_state_changing_request(path, params):
+            csrf_response = self._validate_csrf_token()
+            if csrf_response:
+                return csrf_response
+
+            if http_method != "POST":
+                return ApiResponse(
+                    success=False,
+                    error="State-changing endpoints require POST",
+                )
+
         # REST endpoints
         routes = {
             "/api/stats": ("getStats", {}),
@@ -334,9 +376,48 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         """Send HTTP response"""
         self.send_response(200 if response.success else 400)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors_headers()
         self.end_headers()
         self.wfile.write(response.to_json().encode())
+
+    def _is_state_changing_request(self, path: str, params: Dict[str, Any]) -> bool:
+        """Return whether a request can mutate node state."""
+        if path in self.STATE_CHANGING_PATHS:
+            return True
+        return (
+            path == "/rpc"
+            and params.get("method", "") in self.STATE_CHANGING_RPC_METHODS
+        )
+
+    def _validate_csrf_token(self) -> Optional[ApiResponse]:
+        """Require an explicit CSRF token for state-changing operations."""
+        expected = os.environ.get("RUSTCHAIN_API_CSRF_TOKEN", "")
+        if not expected:
+            return ApiResponse(success=False, error="CSRF token is not configured")
+
+        supplied = self.headers.get("X-CSRF-Token", "")
+        if not hmac.compare_digest(supplied, expected):
+            return ApiResponse(success=False, error="Invalid CSRF token")
+        return None
+
+    def _is_origin_allowed(self) -> bool:
+        """Return whether the request Origin is configured for CORS access."""
+        origin = self.headers.get("Origin", "")
+        if not origin:
+            return True
+        return origin in self._allowed_cors_origins()
+
+    def _send_cors_headers(self):
+        """Emit CORS headers only for exact configured origins."""
+        origin = self.headers.get("Origin", "")
+        if origin and origin in self._allowed_cors_origins():
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+
+    @staticmethod
+    def _allowed_cors_origins() -> set:
+        raw = os.environ.get("RUSTCHAIN_API_ALLOWED_ORIGINS", "")
+        return {origin.strip() for origin in raw.split(",") if origin.strip()}
 
     def log_message(self, format, *args):
         """Suppress default logging"""
