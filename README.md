@@ -303,6 +303,27 @@ commands because the repository contains multiple Python and Rust subprojects.
 
 ---
 
+## Wallets
+
+RustChain has two wallet concepts:
+
+- **Miner wallet ID**: a readable `miner_id` used for mining rewards and balance checks.
+- **`RTC...` address**: an Ed25519-backed address used for signed transfers.
+
+Start with the [wallet setup guide](docs/WALLET_SETUP.md) if you are not sure which one you need.
+
+| Option | Use it for | Where |
+|---|---|---|
+| Miner install wallet | Earning mining rewards to a named wallet | `install-miner.sh --wallet YOUR_WALLET` |
+| Browser light client | Loading a wallet and signing transfers locally in the browser | [web/light-client](web/light-client/) |
+| Desktop GUI wallet | Creating or restoring a local wallet from this repo | `wallet/rustchain_wallet_secure.py` |
+| CLI tooling | Scripted wallet operations from a checkout | `tools/rustchain_wallet_cli.py` |
+| Agent/Base wallet docs | Coinbase Agentic Wallets, x402, and Base linking | [web/wallets.html](web/wallets.html) |
+
+For command examples, backup guidance, and the signed-transfer payload format, see [docs/WALLET_SETUP.md](docs/WALLET_SETUP.md) and [START_HERE.md](START_HERE.md).
+
+---
+
 ## How Proof-of-Antiquity Works
 
 ### 1 CPU = 1 Vote
