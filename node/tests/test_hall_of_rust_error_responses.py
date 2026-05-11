@@ -44,3 +44,45 @@ def test_hall_stats_still_returns_valid_empty_stats(tmp_path):
     assert body["total_machines"] == 0
     assert body["total_attestations"] == 0
     assert body["average_rust_score"] == 0
+
+
+def test_rust_score_uses_current_year_for_age_bonus(monkeypatch):
+    monkeypatch.setattr(hall_of_rust, "current_utc_year", lambda: 2026)
+
+    score = hall_of_rust.calculate_rust_score(
+        {
+            "manufacture_year": 2001,
+            "device_arch": "modern",
+            "device_model": "Generic",
+            "total_attestations": 0,
+            "id": 999,
+        }
+    )
+
+    assert score == 250
+
+
+def test_machine_of_the_day_uses_current_year_for_age(tmp_path, monkeypatch):
+    monkeypatch.setattr(hall_of_rust, "current_utc_year", lambda: 2026)
+    db_path = tmp_path / "hall.db"
+    hall_of_rust.init_hall_tables(str(db_path))
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        INSERT INTO hall_of_rust (
+            fingerprint_hash, miner_id, device_arch, device_model,
+            manufacture_year, first_attestation, last_attestation,
+            rust_score, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("fp-1", "miner-1", "G4", "PowerMac3,6", 2003, 1, 1, 101, 1),
+    )
+    conn.commit()
+    conn.close()
+    client = _client_for(db_path)
+
+    response = client.get("/hall/machine_of_the_day")
+
+    assert response.status_code == 200
+    assert response.get_json()["age_years"] == 23
