@@ -18,6 +18,7 @@ import time
 import unittest
 from datetime import datetime, timezone, timedelta
 from unittest.mock import Mock, patch, MagicMock
+from flask import Flask
 
 # Import airdrop module
 from airdrop_v2 import (
@@ -30,7 +31,11 @@ from airdrop_v2 import (
     AIRDROP_SCHEMA,
     TOTAL_SOLANA_ALLOCATION,
     TOTAL_BASE_ALLOCATION,
+    init_airdrop_routes,
 )
+
+ADMIN_KEY = "test-admin-key"
+ADMIN_HEADERS = {"X-Admin-Key": ADMIN_KEY}
 
 
 class TestEligibilityTier(unittest.TestCase):
@@ -464,6 +469,104 @@ class TestAllocationTracking(unittest.TestCase):
 
         self.assertFalse(success)
         self.assertIn("exhausted", message)
+
+
+class TestAirdropBridgeRoutes(unittest.TestCase):
+    """Test Flask bridge route authorization."""
+
+    def setUp(self):
+        self.temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        self.temp_db.close()
+        self.airdrop = AirdropV2(db_path=self.temp_db.name)
+        self.previous_admin_key = os.environ.get("RC_ADMIN_KEY")
+        os.environ["RC_ADMIN_KEY"] = ADMIN_KEY
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+        init_airdrop_routes(app, self.airdrop, self.temp_db.name)
+        self.client = app.test_client()
+
+    def tearDown(self):
+        if self.previous_admin_key is None:
+            os.environ.pop("RC_ADMIN_KEY", None)
+        else:
+            os.environ["RC_ADMIN_KEY"] = self.previous_admin_key
+        os.unlink(self.temp_db.name)
+
+    def _create_lock(self):
+        response = self.client.post(
+            "/api/bridge/lock",
+            json={
+                "from_address": "RTC1234567890123456789012345678901234567890",
+                "to_address": "0x1234567890123456789012345678901234567890",
+                "from_chain": "rustchain",
+                "to_chain": "base",
+                "amount_wrtc": 100,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        return response.get_json()["lock"]["lock_id"]
+
+    def test_confirm_route_requires_admin_key(self):
+        lock_id = self._create_lock()
+
+        response = self.client.post(
+            f"/api/bridge/lock/{lock_id}/confirm",
+            json={"source_tx": "attacker-source-tx"},
+        )
+
+        self.assertEqual(response.status_code, 401)
+        lock = self.airdrop.get_lock(lock_id)
+        self.assertEqual(lock.status, "pending")
+        self.assertIsNone(lock.source_tx)
+
+    def test_release_route_requires_admin_key(self):
+        lock_id = self._create_lock()
+        success, _ = self.airdrop.confirm_bridge_lock(lock_id, "operator-source-tx")
+        self.assertTrue(success)
+
+        response = self.client.post(
+            f"/api/bridge/lock/{lock_id}/release",
+            json={"dest_tx": "attacker-dest-tx"},
+        )
+
+        self.assertEqual(response.status_code, 401)
+        lock = self.airdrop.get_lock(lock_id)
+        self.assertEqual(lock.status, "locked")
+        self.assertIsNone(lock.dest_tx)
+
+    def test_confirm_and_release_accept_admin_key(self):
+        lock_id = self._create_lock()
+
+        confirm = self.client.post(
+            f"/api/bridge/lock/{lock_id}/confirm",
+            headers=ADMIN_HEADERS,
+            json={"source_tx": "operator-source-tx"},
+        )
+        self.assertEqual(confirm.status_code, 200)
+
+        release = self.client.post(
+            f"/api/bridge/lock/{lock_id}/release",
+            headers=ADMIN_HEADERS,
+            json={"dest_tx": "operator-dest-tx"},
+        )
+        self.assertEqual(release.status_code, 200)
+
+        lock = self.airdrop.get_lock(lock_id)
+        self.assertEqual(lock.status, "released")
+        self.assertEqual(lock.source_tx, "operator-source-tx")
+        self.assertEqual(lock.dest_tx, "operator-dest-tx")
+
+    def test_confirm_route_fails_closed_without_admin_key(self):
+        lock_id = self._create_lock()
+        os.environ.pop("RC_ADMIN_KEY", None)
+
+        response = self.client.post(
+            f"/api/bridge/lock/{lock_id}/confirm",
+            headers=ADMIN_HEADERS,
+            json={"source_tx": "operator-source-tx"},
+        )
+
+        self.assertEqual(response.status_code, 503)
 
 
 class TestStatistics(unittest.TestCase):
