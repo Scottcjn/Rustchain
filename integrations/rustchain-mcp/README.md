@@ -2,7 +2,7 @@
 
 [![MCP Server](https://img.shields.io/badge/MCP-Server-blue)](https://modelcontextprotocol.io)
 [![Python](https://img.shields.io/badge/Python-3.10+-yellow.svg)](https://www.python.org)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](../../../LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](../../LICENSE)
 
 **Model Context Protocol (MCP) server for RustChain blockchain** — Provides AI assistants with tools to interact with RustChain's core endpoints: health, epoch, balance, and queries.
 
