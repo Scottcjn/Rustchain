@@ -247,6 +247,12 @@ def register_routes(app: FastAPI, config: BotConfig) -> None:
             installation_id = installation.get("id")
             if not installation_id:
                 raise ValueError("Missing installation ID")
+            if "id" not in comment or "body" not in comment:
+                raise ValueError("Missing comment id or body")
+            if not comment_user.get("login"):
+                raise ValueError("Missing comment user login")
+            if "number" not in issue:
+                raise ValueError("Missing issue number")
 
         except Exception as e:
             audit_logger.log_error(
