@@ -135,13 +135,33 @@ class Message:
     @classmethod
     def from_bytes(cls, data: bytes, sender: PeerId) -> 'Message':
         """Deserialize message from bytes"""
-        parsed = json.loads(data.decode())
+        MAX_PAYLOAD_SIZE = 1 << 20  # 1 MiB
+        try:
+            parsed = json.loads(data.decode())
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ValueError(f"Invalid message format: {exc}") from exc
+
+        if not isinstance(parsed, dict):
+            raise ValueError("Message must be a JSON object")
+
+        msg_type_str = parsed.get("type")
+        if msg_type_str not in MessageType.__members__:
+            raise ValueError(f"Invalid message type: {msg_type_str}")
+
+        timestamp = parsed.get("timestamp", 0)
+        if not isinstance(timestamp, int) or timestamp < 0:
+            raise ValueError(f"Invalid timestamp: {timestamp}")
+
+        payload = parsed.get("payload", {})
+        if len(json.dumps(payload)) > MAX_PAYLOAD_SIZE:
+            raise ValueError("Payload exceeds maximum size")
+
         return cls(
-            msg_type=MessageType[parsed["type"]],
+            msg_type=MessageType[msg_type_str],
             sender=sender,
-            payload=parsed["payload"],
-            timestamp=parsed["timestamp"],
-            nonce=parsed["nonce"],
+            payload=payload,
+            timestamp=timestamp,
+            nonce=parsed.get("nonce", ""),
         )
 
     def compute_hash(self) -> str:
