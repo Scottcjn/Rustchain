@@ -144,6 +144,8 @@ def get_multiplier_for_tier(tier: str) -> float:
 
 def calculate_block_reward(height: int) -> Decimal:
     """Calculate block reward at a given height"""
+    if height < 0:
+        raise ValueError(f"Block height cannot be negative: {height}")
     halvings = height // HALVING_INTERVAL_BLOCKS
     if halvings >= HALVING_COUNT:
         # Tail emission after 4 halvings
