@@ -191,5 +191,5 @@ MIT License - see [LICENSE](LICENSE) file.
 ## Support
 
 - Documentation: https://rustchain.org/bcos/
-- Issues: https://github.com/Scottcjn/bcos-action/issues
+- Issues: https://github.com/Scottcjn/Rustchain/issues
 - Spec: https://github.com/Scottcjn/Rustchain/blob/main/docs/BEACON_CERTIFIED_OPEN_SOURCE.md
