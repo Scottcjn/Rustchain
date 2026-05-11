@@ -5833,9 +5833,12 @@ def api_miner_attestations(miner_id: str):
     if not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
         return jsonify({"error": "Unauthorized - admin key required"}), 401
     try:
-        limit = max(1, int(request.args.get("limit", "120") or 120))
+        limit_raw = request.args.get("limit", "120")
+        limit = int(limit_raw or "120")
+        if limit < 1:
+            return jsonify({"error": "limit must be >= 1"}), 400
     except (ValueError, TypeError):
-        limit = 120
+        return jsonify({"error": "Invalid limit parameter"}), 400
     limit = max(1, min(limit, 500))
 
     with sqlite3.connect(DB_PATH) as conn:
@@ -5879,9 +5882,12 @@ def api_balances():
     if not hmac.compare_digest(admin_key, ADMIN_KEY or ""):
         return jsonify({"error": "Unauthorized - admin key required"}), 401
     try:
-        limit = max(1, int(request.args.get("limit", "2000") or 2000))
+        limit_raw = request.args.get("limit", "2000")
+        limit = int(limit_raw or "2000")
+        if limit < 1:
+            return jsonify({"error": "limit must be >= 1"}), 400
     except (ValueError, TypeError):
-        limit = 2000
+        return jsonify({"error": "Invalid limit parameter"}), 400
     limit = max(1, min(limit, 5000))
 
     with sqlite3.connect(DB_PATH) as conn:
@@ -6625,9 +6631,13 @@ def list_pending():
 
     status_filter = request.args.get('status', 'pending')
     try:
-        limit = max(1, min(int(request.args.get('limit', 100)), 500))
+        limit_raw = request.args.get('limit', '100')
+        limit = int(limit_raw)
+        if limit < 1:
+            return jsonify({"error": "limit must be >= 1"}), 400
+        limit = min(limit, 500)
     except (ValueError, TypeError):
-        limit = 100
+        return jsonify({"error": "Invalid limit parameter"}), 400
     
     with sqlite3.connect(DB_PATH) as db:
         if status_filter == 'all':

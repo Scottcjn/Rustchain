@@ -468,10 +468,19 @@ def get_ledger():
     chain_filter  = request.args.get("chain", "").strip() or None
     sender_filter = request.args.get("sender", "").strip() or None
     try:
-        limit  = max(1, min(int(request.args.get("limit", 50)), 200))
-        offset = max(int(request.args.get("offset", 0)), 0)
+        limit_raw = request.args.get("limit", "50")
+        offset_raw = request.args.get("offset", "0")
+        limit  = int(limit_raw)
+        offset = int(offset_raw)
     except (ValueError, TypeError):
-        limit, offset = 50, 0
+        return jsonify({"error": "Invalid pagination parameter: limit and offset must be integers"}), 400
+    
+    # Enforce bounds
+    if limit < 1:
+        return jsonify({"error": "Invalid pagination parameter: limit must be >= 1"}), 400
+    if offset < 0:
+        return jsonify({"error": "Invalid pagination parameter: offset must be >= 0"}), 400
+    limit = min(limit, 200)
 
     where_clauses, params = [], []
     if state_filter:
