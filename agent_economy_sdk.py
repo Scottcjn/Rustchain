@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: MIT
-# SPDX-License-Identifier: MIT
 
 import asyncio
 import aiohttp
