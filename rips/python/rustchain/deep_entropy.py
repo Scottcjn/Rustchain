@@ -18,6 +18,7 @@ import hashlib
 import math
 import time
 import random
+import secrets  # FIX(#4640): crypto-safe random for challenge generation
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any
 from enum import Enum
@@ -262,16 +263,16 @@ class DeepEntropyVerifier:
 
     def generate_challenge(self) -> Dict[str, Any]:
         """Generate a challenge for hardware to solve"""
-        nonce = hashlib.sha256(str(time.time()).encode()).digest()
-        # Multiply the 4-op template by 25 to produce 100 total operations.
-        # The randomised values ensure each challenge is unique, preventing
-        # a cached replay attack where an attacker pre-records a real machine's response.
-        operations = [
-            {"op": "mul", "value": random.randint(1, 1000000)},
-            {"op": "div", "value": random.randint(1, 1000)},
-            {"op": "fadd", "value": random.uniform(0, 1000)},
-            {"op": "memory", "stride": random.choice([1, 4, 16, 64, 256])},
-        ] * 25  # 100 operations
+        # FIX(#4640): Use crypto-safe random instead of predictable PRNG
+        nonce = secrets.token_bytes(32)
+        # Generate unique operations using secrets to prevent prediction
+        STRIDES = [1, 4, 16, 64, 256]
+        operations = []
+        for _ in range(25):
+            operations.append({"op": "mul", "value": secrets.randbelow(1000000) + 1})
+            operations.append({"op": "div", "value": secrets.randbelow(1000) + 1})
+            operations.append({"op": "fadd", "value": secrets.randbelow(1000000) / 1000.0})
+            operations.append({"op": "memory", "stride": STRIDES[secrets.randbelow(len(STRIDES))]})
 
         return {
             "nonce": nonce.hex(),
