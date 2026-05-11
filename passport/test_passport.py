@@ -249,6 +249,20 @@ class TestAPI:
         resp = client.post("/api/passport", json={"name": "No ID"})
         assert resp.status_code == 400
 
+    def test_api_json_routes_reject_non_object_bodies(self, client):
+        client.post("/api/passport", json={"machine_id": "json-test", "name": "JSON Test"})
+
+        routes = (
+            "/api/passport",
+            "/api/passport/json-test/repair",
+            "/api/passport/json-test/benchmark",
+        )
+
+        for route in routes:
+            resp = client.post(route, json=["not", "object"])
+            assert resp.status_code == 400
+            assert resp.get_json() == {"error": "JSON object required"}
+
     def test_passport_view_page(self, client):
         resp = client.get("/passport/test123")
         assert resp.status_code == 200
