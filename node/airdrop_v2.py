@@ -1223,6 +1223,19 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         db_path: Database path for persistence
     """
 
+    def require_admin_key():
+        required = os.environ.get("RC_ADMIN_KEY", "").strip()
+        if not required:
+            return jsonify({"ok": False, "error": "admin_key_not_configured"}), 503
+        provided = (
+            request.headers.get("X-Admin-Key")
+            or request.headers.get("X-API-Key")
+            or ""
+        ).strip()
+        if not hmac.compare_digest(provided, required):
+            return jsonify({"ok": False, "error": "unauthorized"}), 401
+        return None
+
     @app.route("/api/airdrop/eligibility", methods=["POST"])
     def check_airdrop_eligibility():
         """Check airdrop eligibility."""
@@ -1336,6 +1349,10 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     @app.route("/api/bridge/lock/<lock_id>/confirm", methods=["POST"])
     def confirm_lock(lock_id: str):
         """Confirm bridge lock with source tx."""
+        auth_error = require_admin_key()
+        if auth_error:
+            return auth_error
+
         data = request.get_json(silent=True) or {}
         source_tx = data.get("source_tx", "").strip()
 
@@ -1352,6 +1369,10 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     @app.route("/api/bridge/lock/<lock_id>/release", methods=["POST"])
     def release_lock(lock_id: str):
         """Release bridge lock with dest tx."""
+        auth_error = require_admin_key()
+        if auth_error:
+            return auth_error
+
         data = request.get_json(silent=True) or {}
         dest_tx = data.get("dest_tx", "").strip()
 
