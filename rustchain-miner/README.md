@@ -46,7 +46,7 @@ cargo install --path .
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `RUSTCHAIN_NODE_URL` | Node URL (HTTPS) | `https://50.28.86.131` |
+| `RUSTCHAIN_NODE_URL` | Node URL (HTTPS) | `https://rustchain.org` |
 | `RUSTCHAIN_PROXY_URL` | HTTP proxy for legacy systems | (none) |
 | `RUSTCHAIN_WALLET` | Wallet address | (auto-generated) |
 | `RUSTCHAIN_MINER_ID` | Custom miner ID | (auto-generated) |
@@ -61,7 +61,7 @@ cargo install --path .
 Create a `.env` file in the project root:
 
 ```bash
-RUSTCHAIN_NODE_URL=https://50.28.86.131
+RUSTCHAIN_NODE_URL=https://rustchain.org
 RUSTCHAIN_WALLET=my_wallet_RTC
 RUSTCHAIN_VERBOSE=true
 ```

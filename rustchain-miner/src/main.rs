@@ -25,7 +25,7 @@ struct Args {
     miner_id: Option<String>,
 
     /// Node URL
-    #[arg(short = 'n', long = "node", env = "RUSTCHAIN_NODE_URL", default_value = "https://50.28.86.131")]
+    #[arg(short = 'n', long = "node", env = "RUSTCHAIN_NODE_URL", default_value = "https://rustchain.org")]
     node: String,
 
     /// HTTP proxy URL for legacy systems
