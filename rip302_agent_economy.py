@@ -258,6 +258,32 @@ def _get_json_object(required: bool = True):
     return data, None
 
 
+def _parse_job_reward(raw):
+    if isinstance(raw, bool):
+        return None, "reward_rtc must be a finite number"
+    try:
+        reward = float(raw)
+    except (TypeError, ValueError):
+        return None, "reward_rtc must be a finite number"
+    if not math.isfinite(reward):
+        return None, "reward_rtc must be a finite number"
+    if reward < 0.01:
+        return None, "Minimum reward is 0.01 RTC"
+    if reward > 10000:
+        return None, "Maximum reward is 10,000 RTC"
+    return reward, None
+
+
+def _parse_ttl_seconds(raw):
+    if isinstance(raw, bool):
+        return None, "ttl_seconds must be an integer"
+    try:
+        ttl_seconds = int(raw)
+    except (TypeError, ValueError):
+        return None, "ttl_seconds must be an integer"
+    return min(max(ttl_seconds, 3600), JOB_TTL_MAX), None
+
+
 # ---------------------------------------------------------------------------
 # Route Registration
 # ---------------------------------------------------------------------------
@@ -281,7 +307,7 @@ def register_agent_economy(app: Flask, db_path: str):
         description = str(data.get("description", "")).strip()
         category = str(data.get("category", "other")).strip().lower()
         reward_rtc = data.get("reward_rtc", 0)
-        ttl_seconds = int(data.get("ttl_seconds", JOB_TTL_DEFAULT))
+        ttl_seconds = data.get("ttl_seconds", JOB_TTL_DEFAULT)
         tags = data.get("tags", [])
 
         # Validation
@@ -294,17 +320,13 @@ def register_agent_economy(app: Flask, db_path: str):
         if category not in VALID_CATEGORIES:
             return jsonify({"error": f"category must be one of: {VALID_CATEGORIES}"}), 400
 
-        try:
-            reward_rtc = float(reward_rtc)
-        except (TypeError, ValueError):
-            return jsonify({"error": "reward_rtc must be a number"}), 400
+        reward_rtc, error = _parse_job_reward(reward_rtc)
+        if error:
+            return jsonify({"error": error}), 400
 
-        if reward_rtc < 0.01:
-            return jsonify({"error": "Minimum reward is 0.01 RTC"}), 400
-        if reward_rtc > 10000:
-            return jsonify({"error": "Maximum reward is 10,000 RTC"}), 400
-
-        ttl_seconds = min(max(ttl_seconds, 3600), JOB_TTL_MAX)  # 1h to 30d
+        ttl_seconds, error = _parse_ttl_seconds(ttl_seconds)
+        if error:
+            return jsonify({"error": error}), 400
 
         reward_i64 = int(reward_rtc * 1000000)
         platform_fee_i64 = int(reward_i64 * PLATFORM_FEE_RATE)
