@@ -166,7 +166,7 @@ def _require_admin(fn):
         key = request.headers.get("X-Admin-Key", "")
         if not BRIDGE_ADMIN_KEY:
             return jsonify({"error": "admin key not configured on server"}), 500
-        if key != BRIDGE_ADMIN_KEY:
+        if not hmac.compare_digest(key, BRIDGE_ADMIN_KEY):
             return jsonify({"error": "unauthorized"}), 403
         return fn(*args, **kwargs)
     return wrapper
