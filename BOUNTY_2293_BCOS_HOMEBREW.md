@@ -184,19 +184,19 @@ The formula uses a **stable approach** for checksum verification:
 ```ruby
 # SHA256 checksum computed from the GitHub release tarball.
 # To verify or update: curl -sSL "<url>" | sha256sum
-sha256 "a3e1c6f8e5c8d9b2a4f7e0c3d6b9a2e5f8c1d4b7a0e3f6c9d2b5a8e1f4c7d0b3"
+sha256 "5123df374138327ba506b47c64fc4069c5f08014c6b21d5a86064b962ad2fd1b"
 ```
 
 **To compute the actual checksum**:
 ```bash
 # macOS (using shasum)
-curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz" | shasum -a 256
+curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.4.0.tar.gz" | shasum -a 256
 
 # Linux (using sha256sum)
-curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz" | sha256sum
+curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.4.0.tar.gz" | sha256sum
 ```
 
-Replace the placeholder value with the computed hash before production release.
+The formula should use the computed hash for the archive tag it references.
 
 ### macOS Compatibility
 
@@ -282,14 +282,13 @@ brew style bcos
 
 ### SHA256 Checksum
 
-**BEFORE PRODUCTION RELEASE**, update the SHA256 in `bcos.rb`:
+The SHA256 in `bcos.rb` should match the archive URL:
 
 ```ruby
-# Current placeholder (MUST REPLACE)
-sha256 "a3e1c6f8e5c8d9b2a4f7e0c3d6b9a2e5f8c1d4b7a0e3f6c9d2b5a8e1f4c7d0b3"
+sha256 "5123df374138327ba506b47c64fc4069c5f08014c6b21d5a86064b962ad2fd1b"
 
 # Compute actual checksum:
-curl -sSL https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz | sha256sum
+curl -sSL https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.4.0.tar.gz | sha256sum
 ```
 
 ### Recommended vs Required
@@ -357,11 +356,11 @@ Bounty: #2293
 - [x] Follows rustchain-miner.rb pattern
 - [x] Compatible with existing homebrew/ structure
 - [x] launchd plist included
-- [x] SHA256 placeholder marked for replacement
+- [x] SHA256 checksum aligned with the archive URL
 
 ### Security
 - [x] No secrets committed
-- [x] SHA256 checksum required before release
+- [x] SHA256 checksum pinned before release
 - [x] Optional external tools (no forced dependencies)
 - [x] Local execution by default
 
