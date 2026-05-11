@@ -262,8 +262,15 @@ class GovernanceEngine:
         rationale: str,
         feasibility_score: float = 0.5,
         risk_level: str = "medium",
+        caller_authority: Optional[str] = None,
     ) -> SophiaEvaluation:
         """Record Sophia AI's evaluation (RIP-0002)."""
+        # FIX(#4606): Require authority check for Sophia evaluation
+        if caller_authority != "sophia":
+            raise ValueError(
+                "Unauthorized: only Sophia AI can call sophia_evaluate()"
+            )
+
         proposal = self.proposals.get(proposal_id)
         if not proposal:
             raise ValueError(f"Proposal {proposal_id} not found")
@@ -302,6 +309,7 @@ class GovernanceEngine:
         voter: str,
         support: bool,
         token_balance: int,
+        verified_balance: Optional[int] = None,
     ) -> Vote:
         """Cast a vote on a proposal."""
         proposal = self.proposals.get(proposal_id)
@@ -317,6 +325,16 @@ class GovernanceEngine:
 
         if proposal.has_voted(voter):
             raise ValueError("Already voted on this proposal")
+
+        # FIX(#4606): Verify token_balance against ledger if provided
+        if verified_balance is not None and token_balance != verified_balance:
+            raise ValueError(
+                f"Token balance mismatch: claimed {token_balance}, "
+                f"actual {verified_balance}"
+            )
+
+        if token_balance < 0:
+            raise ValueError("Token balance cannot be negative")
 
         # Calculate voting weight
         reputation = self.reputations.get(voter)
