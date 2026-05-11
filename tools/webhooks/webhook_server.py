@@ -368,6 +368,11 @@ class RustChainPoller:
         epoch = stats.get("epoch")
         if epoch is None:
             return
+        try:
+            epoch = int(epoch)
+        except (TypeError, ValueError):
+            log.debug("Ignoring stats response with invalid epoch value: %r", stats.get("epoch"))
+            return
         if self._prev_epoch is not None and epoch != self._prev_epoch:
             dispatch_event(WebhookEvent(
                 event_type="new_epoch",
