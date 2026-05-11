@@ -2662,6 +2662,8 @@ ATTEST_IP_LIMIT = 15      # Max unique miners per IP per hour
 ATTEST_IP_WINDOW = 3600  # 1 hour window
 ATTEST_CHALLENGE_IP_LIMIT = int(os.environ.get("ATTEST_CHALLENGE_IP_LIMIT", "10"))
 ATTEST_CHALLENGE_IP_WINDOW = int(os.environ.get("ATTEST_CHALLENGE_IP_WINDOW", "60"))
+API_MINERS_RATE_LIMIT = 100
+API_MINERS_RATE_WINDOW = 60
 
 
 def check_challenge_rate_limit(client_ip):
@@ -2737,6 +2739,69 @@ def check_ip_rate_limit(client_ip, miner_id):
             return False, f"ip_rate_limit:{unique_count}_miners_from_same_ip"
     
     return True, "ok"
+
+
+def check_api_miners_rate_limit(client_ip, now_ts=None):
+    """Rate limit public miner enumeration by source IP using SQLite."""
+    now = int(time.time()) if now_ts is None else int(now_ts)
+    cutoff = now - API_MINERS_RATE_WINDOW
+
+    with sqlite3.connect(DB_PATH, timeout=3) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS api_miners_rate_limit (
+                client_ip TEXT NOT NULL,
+                ts INTEGER NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_api_miners_rate_limit_ip_ts "
+            "ON api_miners_rate_limit(client_ip, ts)"
+        )
+        conn.execute("DELETE FROM api_miners_rate_limit WHERE ts < ?", (cutoff,))
+
+        current_count = conn.execute(
+            "SELECT COUNT(*) FROM api_miners_rate_limit WHERE client_ip = ? AND ts >= ?",
+            (client_ip, cutoff),
+        ).fetchone()[0]
+
+        if current_count >= API_MINERS_RATE_LIMIT:
+            oldest = conn.execute(
+                "SELECT MIN(ts) FROM api_miners_rate_limit WHERE client_ip = ? AND ts >= ?",
+                (client_ip, cutoff),
+            ).fetchone()[0]
+            retry_after = max(1, (oldest + API_MINERS_RATE_WINDOW) - now) if oldest else API_MINERS_RATE_WINDOW
+            return False, {
+                "limit": API_MINERS_RATE_LIMIT,
+                "remaining": 0,
+                "reset": now + retry_after,
+                "retry_after": retry_after,
+            }
+
+        conn.execute(
+            "INSERT INTO api_miners_rate_limit (client_ip, ts) VALUES (?, ?)",
+            (client_ip, now),
+        )
+        conn.commit()
+
+    remaining = max(0, API_MINERS_RATE_LIMIT - current_count - 1)
+    return True, {
+        "limit": API_MINERS_RATE_LIMIT,
+        "remaining": remaining,
+        "reset": now + API_MINERS_RATE_WINDOW,
+        "retry_after": 0,
+    }
+
+
+def add_rate_limit_headers(response, info):
+    """Attach standard rate-limit metadata to a Flask response."""
+    response.headers["X-RateLimit-Limit"] = str(info["limit"])
+    response.headers["X-RateLimit-Remaining"] = str(info["remaining"])
+    response.headers["X-RateLimit-Reset"] = str(info["reset"])
+    if info.get("retry_after"):
+        response.headers["Retry-After"] = str(info["retry_after"])
+    return response
 
 
 def check_vm_signatures_server_side(device: dict, signals: dict) -> tuple:
@@ -5665,6 +5730,16 @@ def api_miners():
     """
     import time as _time
     now = int(_time.time())
+    client_ip = client_ip_from_request(request)
+    rate_ok, rate_info = check_api_miners_rate_limit(client_ip, now_ts=now)
+    if not rate_ok:
+        response = jsonify({
+            "ok": False,
+            "error": "rate_limited",
+            "limit": f"{API_MINERS_RATE_LIMIT}/{API_MINERS_RATE_WINDOW}s",
+        })
+        add_rate_limit_headers(response, rate_info)
+        return response, 429
     
     # Pagination args
     try:
@@ -5736,7 +5811,7 @@ def api_miners():
                 "antiquity_multiplier": mult
             })
     
-    return jsonify({
+    response = jsonify({
         "miners": miners,
         "pagination": {
             "total": total_count,
@@ -5745,6 +5820,8 @@ def api_miners():
             "count": len(miners)
         }
     })
+    add_rate_limit_headers(response, rate_info)
+    return response
 
 
 def _explorer_int_arg(name, default, minimum, maximum):
