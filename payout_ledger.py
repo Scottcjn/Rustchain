@@ -28,12 +28,14 @@ def _get_json_object():
 
 
 def _parse_amount_rtc(value):
+    if isinstance(value, bool):
+        return None, (jsonify({"error": "amount_rtc must be a finite positive number"}), 400)
     try:
         amount = float(value)
     except (TypeError, ValueError):
-        return None, (jsonify({"error": "amount_rtc must be a finite number"}), 400)
-    if not math.isfinite(amount):
-        return None, (jsonify({"error": "amount_rtc must be a finite number"}), 400)
+        return None, (jsonify({"error": "amount_rtc must be a finite positive number"}), 400)
+    if not math.isfinite(amount) or amount <= 0:
+        return None, (jsonify({"error": "amount_rtc must be a finite positive number"}), 400)
     return amount, None
 
 PAYOUT_LEDGER_COLUMNS = [

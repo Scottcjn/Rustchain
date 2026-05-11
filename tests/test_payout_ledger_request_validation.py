@@ -34,8 +34,8 @@ def test_create_rejects_non_object_json(client):
     assert response.get_json() == {"error": "JSON object required"}
 
 
-@pytest.mark.parametrize("amount", ["not-a-number", "nan", "inf"])
-def test_create_rejects_non_finite_amounts(client, amount):
+@pytest.mark.parametrize("amount", ["not-a-number", "nan", "inf", True, False, 0, -1, "-0.0"])
+def test_create_rejects_invalid_amounts(client, amount):
     response = client.post(
         "/api/ledger",
         json={
@@ -46,7 +46,7 @@ def test_create_rejects_non_finite_amounts(client, amount):
     )
 
     assert response.status_code == 400
-    assert response.get_json() == {"error": "amount_rtc must be a finite number"}
+    assert response.get_json() == {"error": "amount_rtc must be a finite positive number"}
 
 
 def test_status_update_rejects_non_object_json(client):
