@@ -160,7 +160,7 @@ class TestIntegratedBalanceScale(unittest.TestCase):
                 self.db_path = db_path
 
             def apply_transaction(self, tx, height, conn=None):
-                calls.append((self.db_path, tx, height, conn))
+                calls.append((self.db_path, tx, height, conn is not None))
                 return True
 
         self.mod.UTXO_DUAL_WRITE = True
@@ -174,6 +174,7 @@ class TestIntegratedBalanceScale(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][1]["outputs"][0]["value_nrtc"], 144_000_000)
         self.assertEqual(calls[0][1]["outputs"][0]["value_nrtc"], int(1.44 * self.mod.UTXO_UNIT))
+        self.assertTrue(calls[0][3])
 
 
 if __name__ == "__main__":

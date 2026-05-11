@@ -2889,8 +2889,10 @@ def current_slot():
 
 def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
     """Finalize epoch and distribute rewards with security hardening"""
+    from contextlib import closing
+    from decimal import Decimal, ROUND_DOWN
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         c = conn.cursor()
 
         # REPLAY PROTECTION: Check if epoch already settled
