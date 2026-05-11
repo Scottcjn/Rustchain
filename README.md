@@ -290,6 +290,19 @@ tail -f ~/.rustchain/miner.log
 
 ---
 
+## Local Development
+
+Developers can build and run RustChain locally from a fresh checkout:
+
+1. Install prerequisites and run Python/Rust checks with the [Build Guide](docs/BUILD.md).
+2. Start a single-node local devnet with [Local Devnet](docs/DEVNET.md).
+3. Create a development wallet and simulate a transfer with the [CLI Wallet Walkthrough](docs/CLI.md).
+
+These guides keep local state in `.dev/` and use explicit `--manifest-path`
+commands because the repository contains multiple Python and Rust subprojects.
+
+---
+
 ## How Proof-of-Antiquity Works
 
 ### 1 CPU = 1 Vote

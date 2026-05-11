@@ -10,6 +10,9 @@
 | [Protocol Specification](./PROTOCOL.md) | Full RIP-200 consensus protocol |
 | [Mechanism Spec + Falsification Matrix](./MECHANISM_SPEC_AND_FALSIFICATION_MATRIX.md) | One-page claim-to-test map with break conditions |
 | [API Reference](./API.md) | All endpoints with curl examples |
+| [Build Guide](./BUILD.md) | Local Python and Rust build commands |
+| [Local Devnet](./DEVNET.md) | Run a single-node development server |
+| [CLI Wallet Walkthrough](./CLI.md) | Create a wallet and simulate a transaction |
 | [Glossary](./GLOSSARY.md) | Terms and definitions |
 | [Tokenomics](./tokenomics_v1.md) | RTC supply and distribution |
 | [FAQ & Troubleshooting](./FAQ_TROUBLESHOOTING.md) | Common setup/runtime issues and recovery steps |
@@ -69,4 +72,3 @@ Active bounties: [github.com/Scottcjn/rustchain-bounties](https://github.com/Sco
 
 ---
 *Documentation maintained by the RustChain community.*
-
