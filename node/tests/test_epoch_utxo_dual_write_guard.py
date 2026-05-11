@@ -19,7 +19,7 @@ SERVER_PATH = (
 
 
 def _finalize_epoch_node():
-    source = SERVER_PATH.read_text()
+    source = SERVER_PATH.read_text(encoding="utf-8")
     tree = ast.parse(source)
     for node in tree.body:
         if isinstance(node, ast.FunctionDef) and node.name == "finalize_epoch":
