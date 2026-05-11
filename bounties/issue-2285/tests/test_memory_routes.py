@@ -98,6 +98,25 @@ class MemoryRoutesTestCase(unittest.TestCase):
         data = response.get_json()
         self.assertIn("error", data)
 
+    def test_json_routes_reject_non_object_bodies(self) -> None:
+        """Test JSON mutation routes reject arrays and other non-object bodies."""
+        routes = (
+            ("post", "/api/memory/record"),
+            ("post", "/api/memory/reference"),
+            ("post", "/api/memory/link"),
+        )
+
+        for method, path in routes:
+            with self.subTest(path=path):
+                response = getattr(self.client, method)(
+                    path,
+                    json=["not", "an", "object"],
+                    content_type="application/json"
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json(), {"error": "JSON object required"})
+
     def test_get_recent(self) -> None:
         """Test getting recent content."""
         # First record some content
@@ -132,6 +151,16 @@ class MemoryRoutesTestCase(unittest.TestCase):
             "/api/memory/recent?agent_id=test-agent&limit=invalid"
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_get_recent_rejects_non_positive_limit(self) -> None:
+        """Test recent content rejects zero and negative limits."""
+        for limit in ("0", "-1"):
+            with self.subTest(limit=limit):
+                response = self.client.get(
+                    f"/api/memory/recent?agent_id=test-agent&limit={limit}"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json(), {"error": "limit must be positive"})
 
     def test_search_topic(self) -> None:
         """Test searching by topic."""
@@ -174,6 +203,16 @@ class MemoryRoutesTestCase(unittest.TestCase):
             "/api/memory/search?agent_id=test-agent"
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_search_topic_rejects_non_positive_limit(self) -> None:
+        """Test topic search rejects zero and negative limits."""
+        for limit in ("0", "-1"):
+            with self.subTest(limit=limit):
+                response = self.client.get(
+                    f"/api/memory/search?agent_id=test-agent&topic=mining&limit={limit}"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json(), {"error": "limit must be positive"})
 
     def test_search_by_tags(self) -> None:
         """Test searching by tags."""
@@ -238,6 +277,16 @@ class MemoryRoutesTestCase(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(len(data["recalls"]), 1)
 
+    def test_search_by_tags_rejects_non_positive_limit(self) -> None:
+        """Test tag search rejects zero and negative limits."""
+        for limit in ("0", "-1"):
+            with self.subTest(limit=limit):
+                response = self.client.get(
+                    f"/api/memory/tags?agent_id=test-agent&tags=mining&limit={limit}"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json(), {"error": "limit must be positive"})
+
     def test_get_context(self) -> None:
         """Test building memory context."""
         # Record content
@@ -273,6 +322,16 @@ class MemoryRoutesTestCase(unittest.TestCase):
         """Test context without agent_id."""
         response = self.client.get("/api/memory/context")
         self.assertEqual(response.status_code, 400)
+
+    def test_get_context_rejects_non_positive_max_items(self) -> None:
+        """Test context rejects zero and negative max_items values."""
+        for max_items in ("0", "-1"):
+            with self.subTest(max_items=max_items):
+                response = self.client.get(
+                    f"/api/memory/context?agent_id=test-agent&max_items={max_items}"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json(), {"error": "max_items must be positive"})
 
     def test_generate_reference_casual(self) -> None:
         """Test generating casual self-reference."""
