@@ -630,6 +630,20 @@ def auto_release_expired_locks(
     }
 
 
+def _parse_non_negative_int_arg(value: Optional[str], name: str, default=None, max_value: Optional[int] = None):
+    if value is None or value == "":
+        return default, None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None, f"{name} must be an integer"
+    if parsed < 0:
+        return None, f"{name} must be non-negative"
+    if max_value is not None:
+        parsed = min(parsed, max_value)
+    return parsed, None
+
+
 # =============================================================================
 # Flask Routes (to be integrated into main node)
 # =============================================================================
@@ -642,7 +656,9 @@ def register_lock_ledger_routes(app):
     def get_miner_locks(miner_id: str):
         """Get locks for a specific miner."""
         status = request.args.get("status")
-        limit = int(request.args.get("limit", 100))
+        limit, error = _parse_non_negative_int_arg(request.args.get("limit"), "limit", 100, max_value=500)
+        if error:
+            return jsonify({"error": error}), 400
         
         conn = sqlite3.connect(DB_PATH)
         try:
@@ -703,9 +719,12 @@ def register_lock_ledger_routes(app):
     def get_pending_unlocks():
         """Get locks ready to be released."""
         before = request.args.get("before")
-        limit = int(request.args.get("limit", 100))
-        
-        before_ts = int(before) if before else None
+        limit, error = _parse_non_negative_int_arg(request.args.get("limit"), "limit", 100, max_value=500)
+        if error:
+            return jsonify({"error": error}), 400
+        before_ts, error = _parse_non_negative_int_arg(before, "before", None)
+        if error:
+            return jsonify({"error": error}), 400
         
         conn = sqlite3.connect(DB_PATH)
         try:
@@ -807,7 +826,14 @@ def register_lock_ledger_routes(app):
             return jsonify({"error": "RC_WORKER_KEY not configured — worker endpoints disabled"}), 503
         if not hmac.compare_digest(worker_key, expected_worker):
             return jsonify({"error": "Unauthorized"}), 401
-        batch_size = int(request.args.get("batch_size", 100))
+        batch_size, error = _parse_non_negative_int_arg(
+            request.args.get("batch_size"),
+            "batch_size",
+            100,
+            max_value=500,
+        )
+        if error:
+            return jsonify({"error": error}), 400
         
         conn = sqlite3.connect(DB_PATH)
         try:
