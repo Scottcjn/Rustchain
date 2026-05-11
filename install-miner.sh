@@ -79,7 +79,10 @@ setup_python() {
         fi
     fi
     V=$(python3 -c "import sys; print(sys.version_info.minor)")
-    [ "$V" -lt 8 ] && { echo -e "${RED}[!] Python 3.8+ required (Found 3.$V)${NC}"; exit 1; }
+    if [ "$V" -lt 8 ]; then
+        echo -e "${RED}[!] Python 3.8+ required (Found 3.$V)${NC}"
+        exit 1
+    fi
 }
 
 setup_python
@@ -94,7 +97,11 @@ verify_sum() {
 }
 
 download_miner() {
-    cd "$INSTALL_DIR"
+    if [ "$DRY_RUN" = true ]; then
+        echo -e "${CYAN}[DRY-RUN]${NC} Would run: cd $INSTALL_DIR"
+    else
+        cd "$INSTALL_DIR"
+    fi
     case "$PLATFORM" in
         macos) FILE="macos/rustchain_mac_miner_v2.4.py" ;;
         rpi|linux) FILE="linux/rustchain_linux_miner.py" ;;
