@@ -169,7 +169,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
     if not flags and ("ppc" in arch or "power" in arch):
         try:
             result = subprocess.run(
-                ["grep", "-i", "vsx\|altivec\|dfp", "/proc/cpuinfo"],
+                ["grep", "-i", r"vsx\|altivec\|dfp", "/proc/cpuinfo"],
                 capture_output=True, text=True, timeout=5
             )
             if result.stdout:
