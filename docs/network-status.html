@@ -97,6 +97,16 @@
 
     const saveJson = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 
+    function escapeHtml(s) {
+      const span = document.createElement('span');
+      span.textContent = String(s);
+      return span.innerHTML;
+    }
+
+    function safeText(value, fallback = '-') {
+      return escapeHtml(value ?? fallback);
+    }
+
     async function fetchJson(url) {
       const r = await fetch(url, { cache: 'no-store' });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -169,8 +179,8 @@
       log.innerHTML = incidents.slice(0, 30).map(i => `
         <div class="rounded border border-slate-800 bg-slate-950 p-2">
           <div class="text-xs text-slate-400">${new Date(i.t).toLocaleString()}</div>
-          <div><span class="font-semibold ${i.type === 'OUTAGE' ? 'text-red-300' : 'text-emerald-300'}">${i.type}</span> · <span class="font-mono text-xs">${i.node}</span></div>
-          <div class="text-sm text-slate-300">${i.message}</div>
+          <div><span class="font-semibold ${i.type === 'OUTAGE' ? 'text-red-300' : 'text-emerald-300'}">${safeText(i.type)}</span> · <span class="font-mono text-xs">${safeText(i.node)}</span></div>
+          <div class="text-sm text-slate-300">${safeText(i.message)}</div>
         </div>
       `).join('');
     }
@@ -232,7 +242,7 @@
       await Promise.all(NODE_ENDPOINTS.map(async (base) => {
         const card = document.createElement('div');
         card.className = 'rounded-lg border border-slate-800 bg-slate-950 p-3';
-        card.innerHTML = `<div class="font-mono text-xs break-all mb-2">${base}</div><div class="text-sm">Checking...</div>`;
+        card.innerHTML = `<div class="font-mono text-xs break-all mb-2">${safeText(base)}</div><div class="text-sm">Checking...</div>`;
         grid.appendChild(card);
 
         try {
@@ -240,22 +250,22 @@
           const ok = !!health.ok;
           recordNodeStatus(base, ok);
           card.innerHTML = `
-            <div class="font-mono text-xs break-all mb-2">${base}</div>
+            <div class="font-mono text-xs break-all mb-2">${safeText(base)}</div>
             <div class="flex items-center gap-2 mb-1">
               <span class="inline-block w-2.5 h-2.5 rounded-full ${ok ? 'bg-emerald-400' : 'bg-red-500'}"></span>
               <span class="text-sm font-semibold ${ok ? 'text-emerald-300' : 'text-red-300'}">${ok ? 'UP' : 'DOWN'}</span>
             </div>
-            <div class="text-xs text-slate-400">version: ${health.version ?? '-'}</div>
+            <div class="text-xs text-slate-400">version: ${safeText(health.version)}</div>
           `;
         } catch (e) {
           recordNodeStatus(base, false);
           card.innerHTML = `
-            <div class="font-mono text-xs break-all mb-2">${base}</div>
+            <div class="font-mono text-xs break-all mb-2">${safeText(base)}</div>
             <div class="flex items-center gap-2 mb-1">
               <span class="inline-block w-2.5 h-2.5 rounded-full bg-red-500"></span>
               <span class="text-sm font-semibold text-red-300">DOWN</span>
             </div>
-            <div class="text-xs text-slate-400">${String(e.message || e)}</div>
+            <div class="text-xs text-slate-400">${safeText(e.message || e)}</div>
           `;
         }
       }));
@@ -295,7 +305,7 @@
             const pct = Math.round((n / total) * 100);
             const row = document.createElement('div');
             row.innerHTML = `
-              <div class="flex justify-between mb-1"><span>${arch}</span><span>${n} (${pct}%)</span></div>
+              <div class="flex justify-between mb-1"><span>${safeText(arch)}</span><span>${safeText(n)} (${pct}%)</span></div>
               <div class="h-2 w-full bg-slate-800 rounded"><div class="h-2 bg-cyan-400 rounded" style="width:${pct}%"></div></div>
             `;
             archList.appendChild(row);
