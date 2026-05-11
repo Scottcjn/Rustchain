@@ -55,6 +55,33 @@ def get_optional_json_object():
     return data, None
 
 
+def require_admin(req):
+    """Validate admin authentication for machine passport write endpoints."""
+    expected_admin_key = os.environ.get('ADMIN_KEY', '').strip()
+    provided_admin_key = (
+        req.headers.get('X-Admin-Key', '') or req.headers.get('X-API-Key', '')
+    ).strip()
+
+    if not expected_admin_key:
+        return jsonify({
+            'ok': False,
+            'error': 'admin_key_not_configured',
+            'message': 'ADMIN_KEY not configured - write endpoints disabled',
+        }), 503
+
+    if not provided_admin_key or not hmac.compare_digest(
+        provided_admin_key,
+        expected_admin_key,
+    ):
+        return jsonify({
+            'ok': False,
+            'error': 'unauthorized',
+            'message': 'Admin key required',
+        }), 401
+
+    return None
+
+
 # === Public Read Endpoints ===
 
 @machine_passport_bp.route('/<machine_id>', methods=['GET'])
@@ -199,16 +226,9 @@ def create_passport():
         "provenance": "eBay lot #12345"
     }
     """
-    # Admin authentication
-    admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
-    expected_admin_key = os.environ.get('ADMIN_KEY', '')
-    
-    if expected_admin_key and not hmac.compare_digest(admin_key, expected_admin_key):
-        return jsonify({
-            'ok': False,
-            'error': 'unauthorized',
-            'message': 'Admin key required',
-        }), 401
+    auth_error = require_admin(request)
+    if auth_error:
+        return auth_error
     
     data = request.get_json()
     if not data:
@@ -286,23 +306,17 @@ def update_passport(machine_id: str):
     """
     Update a machine passport.
 
-    Requires admin authentication when ADMIN_KEY is configured.
+    Requires admin authentication.
     """
-    admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
-    expected_admin_key = os.environ.get('ADMIN_KEY', '')
-    
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    if expected_admin_key and not hmac.compare_digest(admin_key, expected_admin_key):
-        return jsonify({
-            'ok': False,
-            'error': 'unauthorized',
-            'message': 'Admin key required',
-        }), 401
+    auth_error = require_admin(request)
+    if auth_error:
+        return auth_error
     
     data = request.get_json()
     if not data:
