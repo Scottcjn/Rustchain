@@ -14,10 +14,9 @@ Layers:
 5. Architectural Quirk Entropy - Known hardware bugs/quirks
 """
 
-import hashlib
 import math
+import secrets
 import time
-import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any
 from enum import Enum
@@ -262,16 +261,19 @@ class DeepEntropyVerifier:
 
     def generate_challenge(self) -> Dict[str, Any]:
         """Generate a challenge for hardware to solve"""
-        nonce = hashlib.sha256(str(time.time()).encode()).digest()
-        # Multiply the 4-op template by 25 to produce 100 total operations.
-        # The randomised values ensure each challenge is unique, preventing
+        nonce = secrets.token_bytes(32)
+        strides = [1, 4, 16, 64, 256]
+        # Build 100 total operations from cryptographically secure randomness.
+        # The randomized values ensure each challenge is unique, preventing
         # a cached replay attack where an attacker pre-records a real machine's response.
-        operations = [
-            {"op": "mul", "value": random.randint(1, 1000000)},
-            {"op": "div", "value": random.randint(1, 1000)},
-            {"op": "fadd", "value": random.uniform(0, 1000)},
-            {"op": "memory", "stride": random.choice([1, 4, 16, 64, 256])},
-        ] * 25  # 100 operations
+        operations = []
+        for _ in range(25):
+            operations.extend([
+                {"op": "mul", "value": secrets.randbelow(1_000_000) + 1},
+                {"op": "div", "value": secrets.randbelow(1_000) + 1},
+                {"op": "fadd", "value": secrets.randbelow(1_000_000) / 1000.0},
+                {"op": "memory", "stride": strides[secrets.randbelow(len(strides))]},
+            ])
 
         return {
             "nonce": nonce.hex(),
