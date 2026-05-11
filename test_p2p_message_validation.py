@@ -3,77 +3,61 @@
 Regression tests for defensive P2P Message.from_bytes() validation.
 
 The production module uses package-relative imports, so this standalone test
-loads p2p.py with the chain parameter constants supplied in a small namespace.
+loads p2p.py through importlib with the chain parameter constants supplied as a
+temporary in-memory package.
 """
 
-import hashlib
+import importlib.util
 import json
-import os
-import queue
-import socket
-import threading
+import sys
 import time
-from dataclasses import dataclass, field
-from enum import Enum, auto
-from typing import Any, Callable, Dict, List, Optional, Set
+import types
+from pathlib import Path
 
 import pytest
 
 
-def _load_p2p_namespace():
-    import re
+def _module(name: str, package_path: Path | None = None):
+    module = types.ModuleType(name)
+    if package_path:
+        module.__path__ = [str(package_path)]
+    sys.modules[name] = module
+    return module
 
-    p2p_path = os.path.join(
-        os.path.dirname(__file__),
-        "rips",
-        "rustchain-core",
-        "networking",
-        "p2p.py",
+
+def _install_chain_params_package(root: Path):
+    _module("rustchain_core", root)
+    _module("rustchain_core.config", root / "config")
+    _module("rustchain_core.networking", root / "networking")
+
+    chain_params = _module("rustchain_core.config.chain_params")
+    chain_params.DEFAULT_PORT = 8085
+    chain_params.MTLS_PORT = 4443
+    chain_params.PROTOCOL_VERSION = "1.0.0"
+    chain_params.MAX_PEERS = 50
+    chain_params.PEER_TIMEOUT_SECONDS = 30
+    chain_params.SYNC_BATCH_SIZE = 100
+
+
+def _load_p2p_module():
+    root = Path(__file__).resolve().parent / "rips" / "rustchain-core"
+    _install_chain_params_package(root)
+
+    p2p_path = root / "networking" / "p2p.py"
+    spec = importlib.util.spec_from_file_location(
+        "rustchain_core.networking.p2p_test_target",
+        p2p_path,
     )
-    with open(p2p_path) as f:
-        source = f.read()
-
-    source = re.sub(
-        r"from \.\.config\.chain_params import \(.*?\)\n",
-        "",
-        source,
-        flags=re.DOTALL,
-    )
-
-    ns = {
-        "DEFAULT_PORT": 8085,
-        "MTLS_PORT": 4443,
-        "PROTOCOL_VERSION": "1.0.0",
-        "MAX_PEERS": 50,
-        "PEER_TIMEOUT_SECONDS": 30,
-        "SYNC_BATCH_SIZE": 100,
-        "time": time,
-        "hashlib": hashlib,
-        "json": json,
-        "threading": threading,
-        "queue": queue,
-        "socket": socket,
-        "Dict": Dict,
-        "List": List,
-        "Optional": Optional,
-        "Set": Set,
-        "Any": Any,
-        "Callable": Callable,
-        "dataclass": dataclass,
-        "field": field,
-        "Enum": Enum,
-        "auto": auto,
-        "__name__": "__not_main__",
-    }
-
-    exec(compile(source, p2p_path, "exec"), ns)
-    return ns
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-P2P = _load_p2p_namespace()
-Message = P2P["Message"]
-MessageType = P2P["MessageType"]
-PeerId = P2P["PeerId"]
+P2P = _load_p2p_module()
+Message = P2P.Message
+MessageType = P2P.MessageType
+PeerId = P2P.PeerId
 
 
 def _sender():
