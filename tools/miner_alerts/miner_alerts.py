@@ -225,7 +225,13 @@ class AlertDB:
             cur.execute("""
                 INSERT INTO miner_state (miner_id, last_attest, balance_rtc, is_online, last_checked)
                 VALUES (?, ?, ?, ?, ?)
-            """, (miner_id, last_attest or 0, balance_rtc or 0, is_online or 1, now))
+            """, (
+                miner_id,
+                last_attest if last_attest is not None else 0,
+                balance_rtc if balance_rtc is not None else 0,
+                is_online if is_online is not None else 1,
+                now,
+            ))
         else:
             updates = ["last_checked = ?"]
             params = [now]
