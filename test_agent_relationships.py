@@ -18,9 +18,11 @@ import os
 import tempfile
 from typing import Dict, Any
 
+from flask import Flask
+
 from agent_relationships import (
     RelationshipEngine, RelationshipState, DramaArcType, EventType,
-    GUARDRAILS, DRAMA_ARC_TEMPLATES
+    GUARDRAILS, DRAMA_ARC_TEMPLATES, create_relationship_blueprint
 )
 from drama_arc_engine import (
     DramaArcEngine, ArcPhase, run_five_day_rivalry_scenario
@@ -638,6 +640,65 @@ class TestEdgeCases(unittest.TestCase):
         stats = self.engine.get_relationship_stats()
         self.assertEqual(stats["total_relationships"], 0)
         self.assertEqual(stats["total_events"], 0)
+
+class TestRelationshipBlueprintJsonValidation(unittest.TestCase):
+    """Test JSON parsing for relationship API write endpoints."""
+
+    def setUp(self):
+        self.test_db = tempfile.NamedTemporaryFile(
+            suffix=".db", delete=False
+        )
+        self.test_db.close()
+        self.engine = RelationshipEngine(db_path=self.test_db.name)
+        self.engine.initialize_relationship("agent_a", "agent_b")
+
+        app = Flask(__name__)
+        app.register_blueprint(create_relationship_blueprint(self.engine))
+        self.client = app.test_client()
+
+    def tearDown(self):
+        if os.path.exists(self.test_db.name):
+            os.unlink(self.test_db.name)
+
+    def test_write_endpoints_reject_non_object_json(self):
+        endpoints = [
+            "/api/relationships/agent_a/agent_b/disagree",
+            "/api/relationships/agent_a/agent_b/collaborate",
+            "/api/relationships/agent_a/agent_b/reconcile",
+            "/api/relationships/agent_a/agent_b/intervene",
+        ]
+
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(endpoint, json=["not", "an", "object"])
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.get_json()["error"],
+                    "JSON object required",
+                )
+
+    def test_write_endpoints_reject_malformed_json(self):
+        endpoints = [
+            "/api/relationships/agent_a/agent_b/disagree",
+            "/api/relationships/agent_a/agent_b/collaborate",
+            "/api/relationships/agent_a/agent_b/reconcile",
+            "/api/relationships/agent_a/agent_b/intervene",
+        ]
+
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(
+                    endpoint,
+                    data="{",
+                    content_type="application/json",
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.get_json()["error"],
+                    "JSON object required",
+                )
 
 
 # ─── Test Runner ────────────────────────────────────────────────────────────── #
