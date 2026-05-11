@@ -256,11 +256,21 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
     """HTTP request handler for API"""
 
     api: RustChainApi = None  # Set by server
+    MUTATING_RPC_METHODS = {"submitProof", "createProposal", "vote"}
+    MUTATING_REST_PATHS = {
+        "/api/mine",
+        "/api/governance/create",
+        "/api/governance/vote",
+    }
 
     @staticmethod
     def _allowed_cors_origins() -> set[str]:
         raw = os.getenv("RUSTCHAIN_API_ALLOWED_ORIGINS", "")
         return {origin.strip() for origin in raw.split(",") if origin.strip() and origin.strip() != "*"}
+
+    @staticmethod
+    def _configured_csrf_token() -> str:
+        return os.getenv("RUSTCHAIN_API_CSRF_TOKEN", "").strip()
 
     def _send_cors_headers(self):
         """Emit CORS headers only for explicitly allowed origins."""
@@ -291,6 +301,11 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
             params = {}
 
         parsed = urlparse(self.path)
+        csrf_error = self._csrf_error(parsed.path, params)
+        if csrf_error:
+            self._send_response(ApiResponse(success=False, error=csrf_error))
+            return
+
         response = self._route_request(parsed.path, params)
         self._send_response(response)
 
@@ -350,6 +365,28 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
             return self.api.rpc.call(method, rpc_params)
 
         return ApiResponse(success=False, error=f"Unknown endpoint: {path}")
+
+    def _requires_csrf(self, path: str, params: Dict[str, Any]) -> bool:
+        """Return true for state-changing REST endpoints and mutating RPC methods."""
+        if path in self.MUTATING_REST_PATHS:
+            return True
+        if path == "/rpc" and params.get("method", "") in self.MUTATING_RPC_METHODS:
+            return True
+        return False
+
+    def _csrf_error(self, path: str, params: Dict[str, Any]) -> Optional[str]:
+        if not self._requires_csrf(path, params):
+            return None
+
+        expected = self._configured_csrf_token()
+        if not expected:
+            return "RUSTCHAIN_API_CSRF_TOKEN not configured"
+
+        provided = self.headers.get("X-CSRF-Token", "").strip()
+        if not provided or provided != expected:
+            return "invalid or missing CSRF token"
+
+        return None
 
     def _send_response(self, response: ApiResponse):
         """Send HTTP response"""
