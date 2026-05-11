@@ -1064,6 +1064,7 @@ class GossipLayer:
             resp = requests.post(
                 f"{peer_url}/p2p/gossip",
                 json=msg.to_dict(),
+                headers={"X-P2P-Key": P2P_SECRET},
                 timeout=30,
                 verify=TLS_VERIFY
             )
@@ -1315,6 +1316,13 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
                     del _gossip_rate[ip]
             return True
 
+    def _require_p2p_read_auth():
+        """Require the shared P2P secret for sensitive read-only sync endpoints."""
+        provided = request.headers.get("X-P2P-Key", "")
+        if not provided or not hmac.compare_digest(provided, P2P_SECRET):
+            return jsonify({"error": "unauthorized", "message": "valid X-P2P-Key required"}), 401
+        return None
+
     @app.route('/p2p/gossip', methods=['POST'])
     def receive_gossip():
         """Receive and process gossip message"""
@@ -1330,16 +1338,25 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
     @app.route('/p2p/state', methods=['GET'])
     def get_state():
         """Get full CRDT state for sync"""
+        auth_error = _require_p2p_read_auth()
+        if auth_error:
+            return auth_error
         return jsonify(p2p_node.get_full_state())
 
     @app.route('/p2p/attestation_state', methods=['GET'])
     def get_attestation_state():
         """Get attestation timestamps for efficient sync"""
+        auth_error = _require_p2p_read_auth()
+        if auth_error:
+            return auth_error
         return jsonify(p2p_node.get_attestation_state())
 
     @app.route('/p2p/peers', methods=['GET'])
     def get_peers():
         """Get list of known peers"""
+        auth_error = _require_p2p_read_auth()
+        if auth_error:
+            return auth_error
         return jsonify({
             "node_id": p2p_node.node_id,
             "peers": list(p2p_node.peers.keys())
