@@ -455,7 +455,7 @@ class GossipLayer:
         mode = self._signing_mode
 
         from p2p_identity import unpack_signature, verify_ed25519
-        hmac_sig, ed25519_sig = unpack_signature(signature)
+        hmac_sig, ed25519_sig, _key_version = unpack_signature(signature)
 
         # "strict" mode: only Ed25519 accepted. HMAC-only sigs are rejected
         # even if valid (flag-day enforcement).
@@ -538,7 +538,7 @@ class GossipLayer:
         mode = self._signing_mode
 
         from p2p_identity import unpack_signature, verify_ed25519
-        hmac_sig, ed25519_sig = unpack_signature(msg.signature)
+        hmac_sig, ed25519_sig, _key_version = unpack_signature(msg.signature)
 
         # 1) Try Ed25519 if available AND peer is registered.
         if ed25519_sig and self._peer_registry is not None:
@@ -605,14 +605,20 @@ class GossipLayer:
         # Record as seen (Issue #2271: Persistent storage)
         try:
             with sqlite3.connect(self.db_path) as conn:
-                conn.execute("INSERT OR IGNORE INTO p2p_seen_messages (msg_id, ts) VALUES (?, ?)", 
-                             (msg.msg_id, int(time.time())))
+                now = int(time.time())
+                conn.execute("INSERT OR IGNORE INTO p2p_seen_messages (msg_id, ts) VALUES (?, ?)",
+                             (msg.msg_id, now))
+                if conn.execute("SELECT changes()").fetchone()[0] == 0:
+                    return {"status": "duplicate"}
                 # Prune old messages (> 1 hour)
-                conn.execute("DELETE FROM p2p_seen_messages WHERE ts < ?", (int(time.time()) - 3600,))
+                conn.execute("DELETE FROM p2p_seen_messages WHERE ts < ?", (now - 3600,))
                 conn.commit()
         except Exception as e:
             logger.error(f"P2P save seen DB error: {e}")
-            self.seen_messages.add(msg.msg_id)
+            with self.lock:
+                if self.seen_messages.contains(msg.msg_id):
+                    return {"status": "duplicate"}
+                self.seen_messages.add(msg.msg_id)
 
         # TTLCache handles automatic eviction (TTL + LRU)
 
