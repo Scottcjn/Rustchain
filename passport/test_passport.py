@@ -249,6 +249,57 @@ class TestAPI:
         resp = client.post("/api/passport", json={"name": "No ID"})
         assert resp.status_code == 400
 
+    @pytest.mark.parametrize("payload", [["machine_id"], "machine_id", None])
+    def test_api_create_rejects_non_object_json(self, client, payload):
+        resp = client.post("/api/passport", json=payload)
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "JSON object required"
+
+    def test_api_create_rejects_malformed_json(self, client):
+        resp = client.post(
+            "/api/passport",
+            data="{",
+            content_type="application/json",
+        )
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "JSON object required"
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "/api/passport/shape-test/repair",
+            "/api/passport/shape-test/benchmark",
+        ],
+    )
+    def test_passport_child_routes_reject_non_object_json(self, client, endpoint):
+        client.post("/api/passport", json={"machine_id": "shape-test", "name": "Shape"})
+
+        resp = client.post(endpoint, json=["not", "an", "object"])
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "JSON object required"
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "/api/passport/shape-test/repair",
+            "/api/passport/shape-test/benchmark",
+        ],
+    )
+    def test_passport_child_routes_reject_malformed_json(self, client, endpoint):
+        client.post("/api/passport", json={"machine_id": "shape-test", "name": "Shape"})
+
+        resp = client.post(
+            endpoint,
+            data="{",
+            content_type="application/json",
+        )
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "JSON object required"
+
     def test_passport_view_page(self, client):
         resp = client.get("/passport/test123")
         assert resp.status_code == 200

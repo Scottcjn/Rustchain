@@ -18,6 +18,17 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 ledger = PassportLedger(data_dir=os.environ.get("PASSPORT_DATA_DIR", "/tmp/passport-ledger"))
 
 
+def _json_object_body(allow_empty=False):
+    data = request.get_json(silent=True)
+    if data is None:
+        if allow_empty and not request.get_data(cache=True):
+            return {}, None
+        return None, (jsonify({"error": "JSON object required"}), 400)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "JSON object required"}), 400)
+    return data, None
+
+
 # ── Web Routes ────────────────────────────────────────────────────
 
 @app.route("/")
@@ -69,7 +80,9 @@ def api_get(machine_id):
 @app.route("/api/passport", methods=["POST"])
 def api_create():
     """Create or update a machine passport."""
-    data = request.get_json()
+    data, error = _json_object_body()
+    if error:
+        return error
     if not data or "machine_id" not in data:
         return jsonify({"error": "machine_id required"}), 400
 
@@ -100,7 +113,9 @@ def api_add_repair(machine_id):
     if not p:
         return jsonify({"error": "Passport not found"}), 404
 
-    data = request.get_json()
+    data, error = _json_object_body()
+    if error:
+        return error
     if not data or "date" not in data or "description" not in data:
         return jsonify({"error": "date and description required"}), 400
 
@@ -116,7 +131,9 @@ def api_add_benchmark(machine_id):
     if not p:
         return jsonify({"error": "Passport not found"}), 404
 
-    data = request.get_json() or {}
+    data, error = _json_object_body(allow_empty=True)
+    if error:
+        return error
     sig = BenchmarkSignature(**{k: v for k, v in data.items() if k in BenchmarkSignature.__dataclass_fields__})
     p.add_benchmark(sig)
     ledger.save(p)

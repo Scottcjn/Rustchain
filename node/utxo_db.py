@@ -864,6 +864,10 @@ class UtxoDB:
                 count += 1
             conn.commit()
             return count
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc).lower():
+                return 0
+            raise
         finally:
             conn.close()
 
