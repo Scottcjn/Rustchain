@@ -402,6 +402,27 @@ class TestFlaskIntegration(unittest.TestCase):
         self.assertFalse(data['success'])
         self.assertIn('error', data)
 
+    def test_generate_badge_rejects_non_numeric_score(self):
+        """Test badge generation rejects non-numeric trust scores without 500s."""
+        invalid_scores = ['high', None, True]
+
+        for score in invalid_scores:
+            with self.subTest(score=score):
+                response = self.client.post(
+                    '/api/badge/generate',
+                    json={
+                        'repo_name': 'test/repo',
+                        'tier': 'L1',
+                        'trust_score': score,
+                    },
+                    content_type='application/json',
+                )
+
+                self.assertEqual(response.status_code, 200)
+                data = json.loads(response.data)
+                self.assertFalse(data['success'])
+                self.assertEqual(data['error'], 'Trust score must be a number')
+
     def test_stats_endpoint(self):
         """Test stats endpoint."""
         # Generate a badge first
