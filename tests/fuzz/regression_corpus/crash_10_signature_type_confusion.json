@@ -1,0 +1,12 @@
+{
+  "_class": "SIGNATURE_TYPE_CONFUSION",
+  "_expected_error_code": "INVALID_SIGNATURE_TYPE",
+  "_description": "Regression for /attest/submit 500 when top-level signature is not a string.",
+  "miner": "valid-miner",
+  "report": {
+    "nonce": "challenge-nonce",
+    "commitment": "deadbeef"
+  },
+  "signature": 12345,
+  "public_key": "0000000000000000000000000000000000000000000000000000000000000000"
+}
