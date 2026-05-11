@@ -32,7 +32,7 @@ import hmac
 import os
 import sqlite3
 import time
-from typing import Optional
+from typing import Any, Optional
 from flask import Blueprint, request, jsonify
 
 log = logging.getLogger("rip0278_coalition")
@@ -72,7 +72,10 @@ def _verify_miner_signature(miner_id: str, action: str, data: dict) -> bool:
     except ValueError:
         return True
 
-    signature_hex = data.get("signature", "").strip()
+    signature_value = data.get("signature", "")
+    if not isinstance(signature_value, str):
+        return False
+    signature_hex = signature_value.strip()
     timestamp = data.get("timestamp")
 
     if not signature_hex or not timestamp:
@@ -357,6 +360,53 @@ def _admin_key_authorized() -> tuple[bool, tuple[dict, int] | None]:
     return True, None
 
 
+def _field_type_error(field: str, expected: str):
+    return (
+        jsonify(
+            {
+                "error": "invalid_field_type",
+                "field": field,
+                "expected": expected,
+            }
+        ),
+        400,
+    )
+
+
+def _json_object_body():
+    data = request.get_json(silent=True)
+    if data is None:
+        return {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "invalid_json"}), 400)
+    return data, None
+
+
+def _string_field(data: dict[str, Any], field: str, default: str = ""):
+    value = data.get(field, default)
+    if value is None:
+        value = default
+    if not isinstance(value, str):
+        return None, _field_type_error(field, "string")
+    return value.strip(), None
+
+
+def _integer_field(data: dict[str, Any], field: str):
+    value = data.get(field)
+    if value is None:
+        return None, None
+    if isinstance(value, bool):
+        return None, _field_type_error(field, "integer")
+    if isinstance(value, int):
+        return value, None
+    if isinstance(value, str):
+        try:
+            return int(value.strip()), None
+        except ValueError:
+            return None, _field_type_error(field, "integer")
+    return None, _field_type_error(field, "integer")
+
+
 # ---------------------------------------------------------------------------
 # Flask Blueprint
 # ---------------------------------------------------------------------------
@@ -370,11 +420,19 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
     # -- POST /api/coalition/create ------------------------------------------
     @bp.route("/create", methods=["POST"])
     def create_coalition():
-        data = request.get_json(silent=True) or {}
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
 
-        miner_id = data.get("miner_id", "").strip()
-        name = data.get("name", "").strip()
-        description = data.get("description", "").strip()
+        miner_id, error_response = _string_field(data, "miner_id")
+        if error_response:
+            return error_response
+        name, error_response = _string_field(data, "name")
+        if error_response:
+            return error_response
+        description, error_response = _string_field(data, "description")
+        if error_response:
+            return error_response
 
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
@@ -415,10 +473,16 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
     # -- POST /api/coalition/join --------------------------------------------
     @bp.route("/join", methods=["POST"])
     def join_coalition():
-        data = request.get_json(silent=True) or {}
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
 
-        miner_id = data.get("miner_id", "").strip()
-        coalition_id = data.get("coalition_id")
+        miner_id, error_response = _string_field(data, "miner_id")
+        if error_response:
+            return error_response
+        coalition_id, error_response = _integer_field(data, "coalition_id")
+        if error_response:
+            return error_response
 
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
@@ -468,10 +532,16 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
     # -- POST /api/coalition/leave -------------------------------------------
     @bp.route("/leave", methods=["POST"])
     def leave_coalition():
-        data = request.get_json(silent=True) or {}
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
 
-        miner_id = data.get("miner_id", "").strip()
-        coalition_id = data.get("coalition_id")
+        miner_id, error_response = _string_field(data, "miner_id")
+        if error_response:
+            return error_response
+        coalition_id, error_response = _integer_field(data, "coalition_id")
+        if error_response:
+            return error_response
 
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
@@ -506,13 +576,25 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
     @bp.route("/propose", methods=["POST"])
     def create_proposal():
         _settle_expired_proposals(db_path)
-        data = request.get_json(silent=True) or {}
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
 
-        miner_id = data.get("miner_id", "").strip()
-        coalition_id = data.get("coalition_id")
-        title = data.get("title", "").strip()
-        description = data.get("description", "").strip()
-        rip_number = data.get("rip_number")
+        miner_id, error_response = _string_field(data, "miner_id")
+        if error_response:
+            return error_response
+        coalition_id, error_response = _integer_field(data, "coalition_id")
+        if error_response:
+            return error_response
+        title, error_response = _string_field(data, "title")
+        if error_response:
+            return error_response
+        description, error_response = _string_field(data, "description")
+        if error_response:
+            return error_response
+        rip_number, error_response = _integer_field(data, "rip_number")
+        if error_response:
+            return error_response
 
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
@@ -558,11 +640,20 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
     @bp.route("/vote", methods=["POST"])
     def cast_vote():
         _settle_expired_proposals(db_path)
-        data = request.get_json(silent=True) or {}
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
 
-        miner_id = data.get("miner_id", "").strip()
-        proposal_id = data.get("proposal_id")
-        vote_choice = data.get("vote", "").strip().lower()
+        miner_id, error_response = _string_field(data, "miner_id")
+        if error_response:
+            return error_response
+        proposal_id, error_response = _integer_field(data, "proposal_id")
+        if error_response:
+            return error_response
+        vote_choice, error_response = _string_field(data, "vote")
+        if error_response:
+            return error_response
+        vote_choice = vote_choice.lower()
 
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
@@ -670,12 +761,23 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
             body, status = error
             return jsonify(body), status
 
-        data = request.get_json(silent=True) or {}
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
 
-        proposal_id = data.get("proposal_id")
-        decision = data.get("decision", "").strip().lower()
-        reason = data.get("reason", "").strip()
-        reviewer = data.get("reviewer", FLAMEBUND_MINER_ID).strip()
+        proposal_id, error_response = _integer_field(data, "proposal_id")
+        if error_response:
+            return error_response
+        decision, error_response = _string_field(data, "decision")
+        if error_response:
+            return error_response
+        decision = decision.lower()
+        reason, error_response = _string_field(data, "reason")
+        if error_response:
+            return error_response
+        reviewer, error_response = _string_field(data, "reviewer", FLAMEBUND_MINER_ID)
+        if error_response:
+            return error_response
 
         if proposal_id is None:
             return jsonify({"error": "proposal_id required"}), 400

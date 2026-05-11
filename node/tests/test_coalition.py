@@ -159,6 +159,114 @@ def test_create_coalition_no_miner_id_rejected(client):
     assert res.status_code == 400
 
 
+def test_coalition_write_routes_reject_non_object_json(client):
+    """Write routes reject JSON arrays before accessing request fields."""
+    routes = [
+        ("/api/coalition/create", {}),
+        ("/api/coalition/join", {}),
+        ("/api/coalition/leave", {}),
+        ("/api/coalition/propose", {}),
+        ("/api/coalition/vote", {}),
+        ("/api/coalition/flamebound-review", {"X-Admin-Key": "test-admin-key"}),
+    ]
+
+    for route, headers in routes:
+        res = client.post(route, json=["not", "an", "object"], headers=headers)
+
+        assert res.status_code == 400
+        assert res.get_json()["error"] == "invalid_json"
+
+
+def test_coalition_write_routes_reject_malformed_field_types(client):
+    """Write route text and ID fields are validated before business logic."""
+    cases = [
+        (
+            "/api/coalition/create",
+            {"miner_id": {"id": "alice"}, "name": "Alpha", "description": ""},
+            "miner_id",
+            "string",
+            {},
+        ),
+        (
+            "/api/coalition/join",
+            {"miner_id": "alice", "coalition_id": {"id": 1}},
+            "coalition_id",
+            "integer",
+            {},
+        ),
+        (
+            "/api/coalition/leave",
+            {"miner_id": ["alice"], "coalition_id": 1},
+            "miner_id",
+            "string",
+            {},
+        ),
+        (
+            "/api/coalition/propose",
+            {"miner_id": "alice", "coalition_id": 1, "title": ["RIP"], "description": ""},
+            "title",
+            "string",
+            {},
+        ),
+        (
+            "/api/coalition/vote",
+            {"miner_id": "alice", "proposal_id": 1, "vote": {"choice": "for"}},
+            "vote",
+            "string",
+            {},
+        ),
+        (
+            "/api/coalition/flamebound-review",
+            {"proposal_id": ["1"], "decision": "approve", "reason": ""},
+            "proposal_id",
+            "integer",
+            {"X-Admin-Key": "test-admin-key"},
+        ),
+    ]
+
+    for route, body, field, expected, headers in cases:
+        res = client.post(route, json=body, headers=headers)
+        payload = res.get_json()
+
+        assert res.status_code == 400
+        assert payload["error"] == "invalid_field_type"
+        assert payload["field"] == field
+        assert payload["expected"] == expected
+
+
+def test_coalition_proposal_rejects_malformed_rip_number(client):
+    """rip_number is optional, but provided values must be integer-like."""
+    for rip_number in ({"id": 101}, [101], True, False):
+        res = client.post("/api/coalition/propose", json={
+            "miner_id": "alice",
+            "coalition_id": 1,
+            "title": "RIP object",
+            "description": "bad rip_number",
+            "rip_number": rip_number,
+        })
+        payload = res.get_json()
+
+        assert res.status_code == 400
+        assert payload["error"] == "invalid_field_type"
+        assert payload["field"] == "rip_number"
+        assert payload["expected"] == "integer"
+
+
+def test_hex_miner_signature_field_type_returns_unauthorized(client):
+    """Malformed signature fields should fail auth instead of raising."""
+    hex_miner_id = "a" * 64
+    res = client.post("/api/coalition/create", json={
+        "miner_id": hex_miner_id,
+        "name": "Hex Miner Coalition",
+        "description": "signature type regression",
+        "signature": ["not", "hex"],
+        "timestamp": int(time.time()),
+    })
+
+    assert res.status_code == 401
+    assert "invalid or missing signature" in res.get_json()["error"]
+
+
 def test_create_coalition_creator_is_auto_member(client, rich_miner):
     """Creator should automatically be a member."""
     res = client.post("/api/coalition/create", json={
