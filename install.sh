@@ -26,10 +26,71 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 INSTALL_DIR="$HOME/.rustchain"
-MINER_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/rustchain_universal_miner.py"
-FINGERPRINT_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/fingerprint_checks.py"
+LINUX_MINER_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/rustchain_linux_miner.py"
+MACOS_MINER_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/macos/rustchain_mac_miner_v2.5.py"
+FINGERPRINT_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/fingerprint_checks.py"
+LINUX_MINER_SHA256="9475fe15d149ef7b3824c0009453c55e17fb6d1d411ea37e9f24f58c6313871c"
+MACOS_MINER_SHA256="e50cea51a24c8c0337e340287a05e6431f6d95883ab913a1a79c19e99bc03dd8"
+FINGERPRINT_SHA256="cdfca6e63ecd24f53b30140dd44df42415a3254c68aad95b1fca3c1557e15f7b"
+MINER_URL="$LINUX_MINER_URL"
+MINER_SHA256="$LINUX_MINER_SHA256"
 NODE_URL="https://50.28.86.131"
 VERSION="1.0.0"
+
+require_https_url() {
+    case "$1" in
+        https://*) return 0 ;;
+        *)
+            echo -e "${RED}  Refusing non-HTTPS download URL: $1${NC}"
+            exit 1
+            ;;
+    esac
+}
+
+download_file() {
+    local url="$1"
+    local dest="$2"
+
+    require_https_url "$url"
+    if command -v curl &>/dev/null; then
+        curl -fsSL --proto '=https' --tlsv1.2 "$url" -o "$dest"
+    elif command -v wget &>/dev/null; then
+        wget -q --https-only "$url" -O "$dest"
+    else
+        echo -e "${RED}  Neither curl nor wget found. Cannot download.${NC}"
+        exit 1
+    fi
+}
+
+sha256_file() {
+    local file="$1"
+
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "$file" | awk '{print $1}'
+    elif command -v shasum &>/dev/null; then
+        shasum -a 256 "$file" | awk '{print $1}'
+    elif command -v openssl &>/dev/null; then
+        openssl dgst -sha256 "$file" | awk '{print $NF}'
+    else
+        echo -e "${RED}  No SHA-256 tool found. Install sha256sum, shasum, or openssl.${NC}" >&2
+        exit 1
+    fi
+}
+
+verify_download() {
+    local file="$1"
+    local expected="$2"
+    local actual
+
+    actual="$(sha256_file "$file")"
+    if [ "$actual" != "$expected" ]; then
+        rm -f "$file"
+        echo -e "${RED}  SHA-256 verification failed for $file${NC}"
+        echo "  expected: $expected"
+        echo "  actual:   $actual"
+        exit 1
+    fi
+}
 
 # ─── Parse Arguments ─────────────────────────────────────────────────
 
@@ -81,8 +142,16 @@ OS=$(uname -s)
 ARCH=$(uname -m)
 
 case "$OS" in
-    Linux)  echo "  OS: Linux" ;;
-    Darwin) echo "  OS: macOS" ;;
+    Linux)
+        MINER_URL="$LINUX_MINER_URL"
+        MINER_SHA256="$LINUX_MINER_SHA256"
+        echo "  OS: Linux"
+        ;;
+    Darwin)
+        MINER_URL="$MACOS_MINER_URL"
+        MINER_SHA256="$MACOS_MINER_SHA256"
+        echo "  OS: macOS"
+        ;;
     *)      echo -e "${RED}  Unsupported OS: $OS${NC}"; exit 1 ;;
 esac
 
@@ -180,22 +249,21 @@ echo -e "${GREEN}[4/6]${NC} Downloading miner..."
 
 mkdir -p "$INSTALL_DIR"
 
-# Download miner script
-if command -v curl &>/dev/null; then
-    curl -fsSL "$MINER_URL" -o "$INSTALL_DIR/rustchain_miner.py" --insecure 2>/dev/null
-    curl -fsSL "$FINGERPRINT_URL" -o "$INSTALL_DIR/fingerprint_checks.py" --insecure 2>/dev/null
-elif command -v wget &>/dev/null; then
-    wget -q "$MINER_URL" -O "$INSTALL_DIR/rustchain_miner.py" --no-check-certificate 2>/dev/null
-    wget -q "$FINGERPRINT_URL" -O "$INSTALL_DIR/fingerprint_checks.py" --no-check-certificate 2>/dev/null
-else
-    echo -e "${RED}  Neither curl nor wget found. Cannot download.${NC}"
-    exit 1
-fi
+# Download miner script and verify integrity before execution.
+download_file "$MINER_URL" "$INSTALL_DIR/rustchain_miner.py"
+download_file "$FINGERPRINT_URL" "$INSTALL_DIR/fingerprint_checks.py"
 
 if [ ! -s "$INSTALL_DIR/rustchain_miner.py" ]; then
     echo -e "${RED}  Download failed. Check your internet connection.${NC}"
     exit 1
 fi
+if [ ! -s "$INSTALL_DIR/fingerprint_checks.py" ]; then
+    echo -e "${RED}  Fingerprint helper download failed. Check your internet connection.${NC}"
+    exit 1
+fi
+
+verify_download "$INSTALL_DIR/rustchain_miner.py" "$MINER_SHA256"
+verify_download "$INSTALL_DIR/fingerprint_checks.py" "$FINGERPRINT_SHA256"
 
 echo "  Downloaded to: $INSTALL_DIR/"
 
