@@ -347,7 +347,11 @@ class RustChainPoller:
         tip = self._get("/headers/tip")
         if not tip or tip.get("slot") is None:
             return
-        slot = int(tip["slot"])
+        try:
+            slot = int(tip["slot"])
+        except (TypeError, ValueError):
+            log.debug("Ignoring tip with invalid slot value: %r", tip.get("slot"))
+            return
         if self._prev_tip_slot is not None and slot > self._prev_tip_slot:
             dispatch_event(WebhookEvent(
                 event_type="new_block",
