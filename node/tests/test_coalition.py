@@ -639,13 +639,15 @@ def test_list_coalitions_rejects_non_integer_pagination(client):
     assert res.get_json() == {"error": "offset must be an integer"}
 
 
-def test_list_coalitions_clamps_negative_pagination(client):
-    """Negative pagination values are clamped to safe public bounds."""
-    res = client.get("/api/coalition/list?limit=-5&offset=-10")
-    assert res.status_code == 200
-    data = res.get_json()
-    assert data["count"] == 1
-    assert data["coalitions"][0]["name"] == FLAMEBUND_COALITION_NAME
+def test_list_coalitions_rejects_negative_pagination(client):
+    """Negative pagination values are invalid."""
+    res = client.get("/api/coalition/list?limit=-5")
+    assert res.status_code == 400
+    assert res.get_json() == {"error": "limit must be at least 1"}
+
+    res = client.get("/api/coalition/list?offset=-10")
+    assert res.status_code == 400
+    assert res.get_json() == {"error": "offset must be at least 0"}
 
 
 def test_get_coalition_details(client, test_coalition, rich_miner, poor_miner):
@@ -716,6 +718,17 @@ def test_list_proposals_rejects_non_integer_pagination(client, test_coalition):
     res = client.get(f"/api/coalition/{test_coalition}/proposals?offset=NaN")
     assert res.status_code == 400
     assert res.get_json() == {"error": "offset must be an integer"}
+
+
+def test_list_proposals_rejects_negative_pagination(client, test_coalition):
+    """Proposal listing rejects negative pagination before querying SQLite."""
+    res = client.get(f"/api/coalition/{test_coalition}/proposals?limit=-1")
+    assert res.status_code == 400
+    assert res.get_json() == {"error": "limit must be at least 1"}
+
+    res = client.get(f"/api/coalition/{test_coalition}/proposals?offset=-1")
+    assert res.status_code == 400
+    assert res.get_json() == {"error": "offset must be at least 0"}
 
 
 def test_list_proposals_nonexistent_coalition(client, rich_miner):

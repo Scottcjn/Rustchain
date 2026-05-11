@@ -48,7 +48,11 @@ def _parse_bounded_int_arg(name: str, default: int, minimum: int, maximum: int):
         value = int(raw)
     except (TypeError, ValueError):
         return None, jsonify({"error": f"{name} must be an integer"}), 400
-    return max(minimum, min(value, maximum)), None, None
+
+    if value < minimum:
+        return None, jsonify({"error": f"{name} must be at least {minimum}"}), 400
+
+    return min(value, maximum), None, None
 
 
 def _verify_miner_signature(miner_id: str, action: str, data: dict) -> bool:
