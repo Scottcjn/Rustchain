@@ -273,15 +273,15 @@ rm -rf /tmp/bcos-*
 
    ```bash
    # Download the release archive and compute SHA256
-   curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz" | sha256sum
+   curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.4.0.tar.gz" | sha256sum
    ```
 
    Update the `sha256` field in `bcos.rb` with the computed value.
 
 2. **Version Pinning**: For production, pin to a specific version (already done in formula):
    ```ruby
-   url "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz"
-   version "2.5.0"
+   url "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.4.0.tar.gz"
+   version "2.4.0"
    ```
 
 3. **CI/CD Integration**: Use in GitHub Actions for automated BCOS certification:
@@ -340,17 +340,17 @@ The SHA256 checksum ensures the integrity of the downloaded archive. To obtain i
 
 1. **Using curl and sha256sum** (Linux/macOS with coreutils):
    ```bash
-   curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz" | sha256sum
+   curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.4.0.tar.gz" | sha256sum
    ```
 
 2. **Using shasum** (macOS default):
    ```bash
-   curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz" | shasum -a 256
+   curl -sSL "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.4.0.tar.gz" | shasum -a 256
    ```
 
 3. **Using wget** (alternative):
    ```bash
-   wget -qO- "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.5.0.tar.gz" | sha256sum
+   wget -qO- "https://github.com/Scottcjn/Rustchain/archive/refs/tags/v2.4.0.tar.gz" | sha256sum
    ```
 
 Copy the resulting hash (64-character hex string) into the `sha256` field of `bcos.rb`.
