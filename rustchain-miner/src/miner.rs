@@ -104,6 +104,28 @@ pub struct Miner {
     shutdown: Arc<AtomicBool>,
 }
 
+fn enrollment_message(miner_pubkey: &str, miner_id: &str, epoch: u64) -> String {
+    format!("{}|{}|{}", miner_pubkey, miner_id, epoch)
+}
+
+fn enrollment_payload(
+    miner_pubkey: &str,
+    miner_id: &str,
+    hw_info: &HardwareInfo,
+    signature_hex: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "miner_pubkey": miner_pubkey,
+        "miner_id": miner_id,
+        "device": {
+            "family": hw_info.family,
+            "arch": hw_info.arch
+        },
+        "signature": signature_hex,
+        "public_key": miner_pubkey
+    })
+}
+
 impl Miner {
     /// Create a new miner with the given configuration
     pub async fn new(config: Config) -> Result<Self> {
@@ -285,20 +307,17 @@ impl Miner {
         // Sign enrollment request using the SAME Ed25519 keypair from attestation.
         // The signature binds (miner_pubkey|miner_id|epoch) to prove the enrollment
         // caller is the same entity that performed the attestation.
-        let enroll_message = format!("{}|{}|{}", self.wallet, self.miner_id, epoch);
+        let miner_pubkey = self.public_key_hex.as_str();
+        let enroll_message = enrollment_message(miner_pubkey, &self.miner_id, epoch);
         let signature = self.signing_key.sign(enroll_message.as_bytes());
         let signature_hex = hex::encode(signature.to_bytes());
 
-        let payload = serde_json::json!({
-            "miner_pubkey": self.wallet,
-            "miner_id": self.miner_id,
-            "device": {
-                "family": self.hw_info.family,
-                "arch": self.hw_info.arch
-            },
-            "signature": signature_hex,
-            "public_key": self.public_key_hex
-        });
+        let payload = enrollment_payload(
+            miner_pubkey,
+            &self.miner_id,
+            &self.hw_info,
+            &signature_hex,
+        );
 
         let response = self.transport.post_json("/epoch/enroll", &payload).await?;
 
@@ -473,5 +492,67 @@ impl Miner {
 
             sleep((deadline - now).min(Duration::from_secs(1))).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hardware_fixture() -> HardwareInfo {
+        HardwareInfo {
+            platform: "linux".to_string(),
+            machine: "x86_64".to_string(),
+            hostname: "test-host".to_string(),
+            family: "x86_64".to_string(),
+            arch: "modern".to_string(),
+            cpu: "test-cpu".to_string(),
+            cores: 4,
+            memory_gb: 16,
+            serial: Some("serial-1".to_string()),
+            macs: vec!["00:11:22:33:44:55".to_string()],
+            mac: "00:11:22:33:44:55".to_string(),
+        }
+    }
+
+    #[test]
+    fn enrollment_payload_uses_public_key_for_miner_pubkey() {
+        let public_key_hex = "aabbccdd";
+        let payload = enrollment_payload(
+            public_key_hex,
+            "miner-123",
+            &hardware_fixture(),
+            "signature-hex",
+        );
+
+        assert_eq!(payload["miner_pubkey"], public_key_hex);
+        assert_eq!(payload["public_key"], public_key_hex);
+        assert_eq!(payload["miner_id"], "miner-123");
+        assert_eq!(payload["device"]["family"], "x86_64");
+        assert_eq!(payload["device"]["arch"], "modern");
+        assert_eq!(payload["signature"], "signature-hex");
+    }
+
+    #[test]
+    fn enrollment_signature_binds_the_ed25519_public_key() {
+        let signing_key = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
+        let public_key_hex = hex::encode(signing_key.verifying_key().as_bytes());
+        let miner_id = "miner-123";
+        let epoch = 42;
+
+        let message = enrollment_message(&public_key_hex, miner_id, epoch);
+        let signature = signing_key.sign(message.as_bytes());
+
+        assert_eq!(message, format!("{}|{}|{}", public_key_hex, miner_id, epoch));
+        assert!(signing_key
+            .verifying_key()
+            .verify_strict(message.as_bytes(), &signature)
+            .is_ok());
+
+        let wallet_bound_message = enrollment_message("rtc-wallet-address", miner_id, epoch);
+        assert!(signing_key
+            .verifying_key()
+            .verify_strict(wallet_bound_message.as_bytes(), &signature)
+            .is_err());
     }
 }
