@@ -4,14 +4,34 @@ RustChain Server Proxy - Port 8089
 Allows G4 to connect via different port
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, Response, request, jsonify
 import requests
-import json
 
 app = Flask(__name__)
 
 # Local server on same machine
 LOCAL_SERVER = "http://localhost:8088"
+
+
+def _forward_upstream_response(response):
+    """Return upstream responses without crashing on non-JSON bodies."""
+    content_type = response.headers.get('Content-Type', '')
+    if 'application/json' in content_type.lower():
+        try:
+            return jsonify(response.json()), response.status_code
+        except ValueError:
+            return Response(
+                response.text,
+                status=response.status_code,
+                content_type='text/plain; charset=utf-8',
+            )
+
+    return Response(
+        response.text,
+        status=response.status_code,
+        content_type=content_type or 'text/plain; charset=utf-8',
+    )
+
 
 @app.route('/api/<path:path>', methods=['GET', 'POST'])
 def proxy(path):
@@ -32,23 +52,15 @@ def proxy(path):
             # Forward GET requests
             response = requests.get(url, timeout=10)
 
-        # Return the response from local server
-        # Safely handle non-JSON responses from upstream
-        content_type = response.headers.get('Content-Type', '')
-        if 'application/json' in content_type:
-            try:
-                return response.json(), response.status_code
-            except (ValueError, Exception):
-                # JSON parse failed, fall back to text
-                return response.text, response.status_code
-        else:
-            # Non-JSON response (e.g., HTML error page), return as-is with text
-            return response.text, response.status_code
+        return _forward_upstream_response(response)
 
     except requests.exceptions.Timeout:
         return jsonify({'error': 'Local server timeout'}), 504
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except requests.exceptions.RequestException:
+        return jsonify({'error': 'Local server request failed'}), 502
+    except Exception:
+        app.logger.exception("Proxy request failed")
+        return jsonify({'error': 'Proxy request failed'}), 500
 
 @app.route('/status')
 def status():
