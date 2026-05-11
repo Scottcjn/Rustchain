@@ -369,7 +369,7 @@ Develop attestation ROMs for additional consoles:
 
 ## References
 
-- [RIP-0683 Specification](../rips/docs/RIP-0683-console-bridge-integration.md)
+- [RIP-0683 Implementation Summary](../IMPLEMENTATION_SUMMARY.md)
 - [RIP-0304: Retro Console Mining](../rips/docs/RIP-0304-retro-console-mining.md)
 - [RIP-201: Fleet Immune System](../rips/docs/RIP-0201-fleet-immune-system.md)
 - [Legend of Elya](https://github.com/ilya-kh/legend-of-elya) - N64 neural network demo
