@@ -81,6 +81,31 @@ def test_phase_a_old_payload_voter_spoof_still_blocked():
     assert result.get("reason") == "voter_identity_mismatch"
 
 
+def test_p2p_dedup_insert_race_returns_duplicate():
+    """A concurrent handler winning the insert after precheck must stop processing."""
+    target = _mk_layer("node1", {"node2": "http://n2"})
+    sender = _mk_layer("node2", db_path=target.db_path)
+    sender.broadcast = lambda *args, **kwargs: None
+
+    msg = sender.create_message(mod.MessageType.PING, {"ping": 1})
+    original_verify = target.verify_message
+
+    def racing_verify(message):
+        verified = original_verify(message)
+        with sqlite3.connect(target.db_path) as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO p2p_seen_messages (msg_id, ts) VALUES (?, ?)",
+                (message.msg_id, int(time.time())),
+            )
+        return verified
+
+    target.verify_message = racing_verify
+
+    result = target.handle_message(msg)
+    assert result["status"] == "duplicate"
+    assert "pong" not in result
+
+
 # Phase B regression
 def test_phase_b_rr_delegate_gate_rejects_non_leader():
     """Phase B: only the scheduled RR-delegate can propose for an epoch."""
