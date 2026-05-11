@@ -28,6 +28,8 @@ Date: 2026-05-04
 """
 
 import logging
+import hmac
+import os
 import sqlite3
 import time
 from typing import Optional
@@ -331,6 +333,18 @@ def _coalition_exists(coalition_id: int, db_path: str) -> bool:
             return bool(row and row[0] == COALITION_STATUS_ACTIVE)
     except Exception:
         return False
+
+
+def _admin_key_authorized() -> tuple[bool, tuple[dict, int] | None]:
+    admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key:
+        return False, ({"error": "RC_ADMIN_KEY not configured - endpoint disabled"}, 503)
+
+    provided = request.headers.get("X-Admin-Key") or request.headers.get("X-API-Key") or ""
+    if not hmac.compare_digest(provided, admin_key):
+        return False, ({"error": "Unauthorized - admin key required"}, 401)
+
+    return True, None
 
 
 # ---------------------------------------------------------------------------
@@ -641,6 +655,11 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
     # -- POST /api/coalition/flamebound-review -------------------------------
     @bp.route("/flamebound-review", methods=["POST"])
     def flamebound_review():
+        authorized, error = _admin_key_authorized()
+        if not authorized:
+            body, status = error
+            return jsonify(body), status
+
         data = request.get_json(silent=True) or {}
 
         proposal_id = data.get("proposal_id")

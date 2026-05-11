@@ -60,7 +60,8 @@ def tmp_db():
 
 
 @pytest.fixture
-def app(tmp_db):
+def app(tmp_db, monkeypatch):
+    monkeypatch.setenv("RC_ADMIN_KEY", "test-admin-key")
     app = Flask(__name__)
     bp = create_coalition_blueprint(tmp_db)
     app.register_blueprint(bp)
@@ -501,7 +502,7 @@ def test_flamebound_approve(client, test_coalition, tmp_db, rich_miner, poor_min
         "proposal_id": pid,
         "decision": "approve",
         "reason": "Proposal is well-structured and aligns with protocol goals.",
-    })
+    }, headers={"X-Admin-Key": "test-admin-key"})
     assert res.status_code == 200
     data = res.get_json()
     assert data["decision"] == "approve"
@@ -516,7 +517,7 @@ def test_flamebound_veto(client, test_coalition, tmp_db, rich_miner, poor_miner,
         "proposal_id": pid,
         "decision": "veto",
         "reason": "Proposal contains security risks.",
-    })
+    }, headers={"X-Admin-Key": "test-admin-key"})
     assert res.status_code == 200
     data = res.get_json()
     assert data["decision"] == "veto"
@@ -532,7 +533,7 @@ def test_flamebound_veto_prevents_voting(client, test_coalition, tmp_db, rich_mi
         "proposal_id": pid,
         "decision": "veto",
         "reason": "Security risk.",
-    })
+    }, headers={"X-Admin-Key": "test-admin-key"})
     assert res.status_code == 200
 
     # Vote on vetoed proposal should fail
@@ -552,7 +553,7 @@ def test_flamebound_invalid_decision_rejected(client, test_coalition, tmp_db, ri
         "proposal_id": pid,
         "decision": "maybe",
         "reason": "Unclear.",
-    })
+    }, headers={"X-Admin-Key": "test-admin-key"})
     assert res.status_code == 400
 
 
@@ -562,8 +563,27 @@ def test_flamebound_nonexistent_proposal_rejected(client, rich_miner):
         "proposal_id": 99999,
         "decision": "approve",
         "reason": "N/A",
-    })
+    }, headers={"X-Admin-Key": "test-admin-key"})
     assert res.status_code == 404
+
+
+def test_flamebound_review_requires_admin_key(client, test_coalition, tmp_db, rich_miner, poor_miner, medium_miner):
+    """Unauthenticated callers cannot approve or veto coalition proposals."""
+    pid = _create_proposal_and_add_members(client, test_coalition, tmp_db, rich_miner, poor_miner, medium_miner)
+
+    res = client.post("/api/coalition/flamebound-review", json={
+        "proposal_id": pid,
+        "decision": "veto",
+        "reason": "Attacker should not be able to veto.",
+    })
+    assert res.status_code == 401
+
+    with sqlite3.connect(tmp_db) as conn:
+        status = conn.execute(
+            "SELECT status FROM coalition_proposals WHERE id = ?",
+            (pid,),
+        ).fetchone()[0]
+    assert status == PROPOSAL_STATUS_ACTIVE
 
 
 # ---------------------------------------------------------------------------
