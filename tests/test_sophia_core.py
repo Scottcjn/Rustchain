@@ -504,6 +504,19 @@ class TestSophiaAPI(unittest.TestCase):
         })
         self.assertEqual(resp.status_code, 400)
 
+    def test_inspect_rejects_non_object_json(self):
+        resp = self.client.post("/sophia/inspect", json=[])
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["error"], "JSON body must be an object")
+
+        resp = self.client.post(
+            "/sophia/inspect",
+            data="not-json",
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["error"], "JSON body must be an object")
+
     def test_status_endpoint(self):
         # First, create an inspection
         self.client.post("/sophia/inspect", json={
