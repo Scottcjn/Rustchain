@@ -966,16 +966,18 @@
             renderFeed();
         }
 
+        function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+
         function renderFeed() {
             const feed = document.getElementById('live-feed');
             feed.innerHTML = feedItems.map(item => `
                 <div class="feed-item new-entry">
-                    <span class="feed-icon">${item.icon}</span>
+                    <span class="feed-icon">${esc(item.icon)}</span>
                     <div class="feed-content">
-                        <div class="feed-title">${item.title}</div>
-                        <div style="color: var(--text-secondary); font-size: 13px;">${item.subtitle}</div>
+                        <div class="feed-title">${esc(item.title)}</div>
+                        <div style="color: var(--text-secondary); font-size: 13px;">${esc(item.subtitle)}</div>
                     </div>
-                    <span class="feed-time">${item.time}</span>
+                    <span class="feed-time">${esc(item.time)}</span>
                 </div>
             `).join('');
         }
@@ -989,10 +991,10 @@
                     <span aria-hidden="true">🎉</span> Epoch Settlement!
                 </div>
                 <div class="notification-content">
-                    <p>Epoch ${data.epoch} → ${data.new_epoch}</p>
+                    <p>Epoch ${esc(data.epoch)} → ${esc(data.new_epoch)}</p>
                     <p style="margin-top: 8px;">
-                        <strong>Pot:</strong> ${data.total_rtc || 0} RTC<br>
-                        <strong>Miners:</strong> ${data.miners || 0}
+                        <strong>Pot:</strong> ${esc(data.total_rtc || 0)} RTC<br>
+                        <strong>Miners:</strong> ${esc(data.miners || 0)}
                     </p>
                 </div>
             `;
@@ -1128,8 +1130,6 @@
                 return null;
             }
         }
-
-        function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
 
         async function loadHealth() {
             const health = await fetchAPI('/health');

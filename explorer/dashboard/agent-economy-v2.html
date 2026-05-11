@@ -493,21 +493,21 @@
             return `<div class="job-card">
                 <div style="display:flex; justify-content:space-between; align-items:start;">
                     <div class="job-title">${esc(j.title)}</div>
-                    <span class="badge badge-${j.status}">${j.status}</span>
+                    <span class="badge badge-${safeClass(j.status)}">${esc(j.status)}</span>
                 </div>
                 <div class="job-meta">
-                    <span class="job-reward">${j.reward_rtc} RTC</span>
-                    <span>${j.category}</span>
-                    <span>${age}</span>
-                    ${j.worker_wallet ? `<span>Worker: <span class="activity-wallet">${j.worker_wallet}</span></span>` : ''}
+                    <span class="job-reward">${esc(j.reward_rtc)} RTC</span>
+                    <span>${esc(j.category)}</span>
+                    <span>${esc(age)}</span>
+                    ${j.worker_wallet ? `<span>Worker: <span class="activity-wallet">${esc(j.worker_wallet)}</span></span>` : ''}
                 </div>
                 <div class="job-desc">${esc(j.description || '')}</div>
                 <div class="job-tags">
                     ${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}
                 </div>
                 <div style="margin-top:8px; font-size:11px; color:var(--text3);">
-                    Posted by <span class="activity-wallet">${j.poster_wallet}</span>
-                    &bull; ID: ${j.job_id}
+                    Posted by <span class="activity-wallet">${esc(j.poster_wallet)}</span>
+                    &bull; ID: ${esc(j.job_id)}
                 </div>
             </div>`;
         }).join('');
@@ -573,7 +573,7 @@
             const reps = await Promise.all(
                 [...wallets].map(async w => {
                     try {
-                        const rr = await fetch(`${NODE}/agent/reputation/${w}`);
+                        const rr = await fetch(`${NODE}/agent/reputation/${encodeURIComponent(w)}`);
                         const rd = await rr.json();
                         if (rd.reputation) return { wallet: w, ...rd.reputation };
                         return { wallet: w, trust_score: 50, trust_level: 'neutral',
@@ -595,22 +595,24 @@
             body.innerHTML = sorted.map((a, i) => {
                 const rank = i + 1;
                 const rankClass = rank <= 3 ? `rank-${rank}` : 'rank-other';
-                const trustColor = a.trust_score >= 90 ? 'var(--gold)' :
-                                   a.trust_score >= 70 ? 'var(--green)' :
-                                   a.trust_score >= 40 ? 'var(--blue)' : 'var(--red)';
+                const trustScore = Number.isFinite(Number(a.trust_score)) ?
+                    Math.max(0, Math.min(100, Number(a.trust_score))) : 50;
+                const trustColor = trustScore >= 90 ? 'var(--gold)' :
+                                   trustScore >= 70 ? 'var(--green)' :
+                                   trustScore >= 40 ? 'var(--blue)' : 'var(--red)';
                 const jobs = (a.jobs_completed_as_worker || 0) + (a.jobs_completed_as_poster || 0);
 
                 return `<tr>
                     <td><span class="rank-badge ${rankClass}">${rank}</span></td>
-                    <td><span class="activity-wallet">${a.wallet}</span></td>
+                    <td><span class="activity-wallet">${esc(a.wallet)}</span></td>
                     <td>
-                        <span style="color:${trustColor}; font-weight:600;">${a.trust_score || 50}</span>
+                        <span style="color:${trustColor}; font-weight:600;">${trustScore}</span>
                         <div class="trust-bar">
-                            <div class="trust-fill" style="width:${a.trust_score || 50}%; background:${trustColor};"></div>
+                            <div class="trust-fill" style="width:${trustScore}%; background:${trustColor};"></div>
                         </div>
                     </td>
-                    <td><span class="badge badge-${(a.trust_level||'neutral') === 'legendary' ? 'completed' : 'open'}">${a.trust_level || 'neutral'}</span></td>
-                    <td>${jobs}</td>
+                    <td><span class="badge badge-${(a.trust_level||'neutral') === 'legendary' ? 'completed' : 'open'}">${esc(a.trust_level || 'neutral')}</span></td>
+                    <td>${esc(jobs)}</td>
                     <td><span style="color:var(--gold); font-family:monospace;">${(a.total_rtc_earned || 0).toFixed(1)}</span> RTC</td>
                     <td>${a.avg_rating ? `${a.avg_rating.toFixed(1)} ★` : '--'}</td>
                 </tr>`;
@@ -670,13 +672,13 @@
                     <div>
                         <div style="font-weight:600; font-size:13px;">${esc(j.title)}</div>
                         <div style="font-size:11px; color:var(--text3);">
-                            ${j.job_id} &bull; ${j.poster_wallet}
+                            ${esc(j.job_id)} &bull; ${esc(j.poster_wallet)}
                         </div>
                     </div>
                     <div style="text-align:right;">
-                        <span class="badge badge-${j.status}">${j.status}</span>
+                        <span class="badge badge-${safeClass(j.status)}">${esc(j.status)}</span>
                         <div style="color:var(--gold); font-family:monospace; font-size:14px; font-weight:600;">
-                            ${j.reward_rtc} RTC
+                            ${esc(j.reward_rtc)} RTC
                         </div>
                     </div>
                 </div>
@@ -729,9 +731,9 @@
             feed.innerHTML = activities.slice(0, 30).map(a => {
                 const icons = { complete: '&#9989;', deliver: '&#128230;', claim: '&#9997;', post: '&#128203;' };
                 const labels = {
-                    complete: `<span class="activity-wallet">${a.worker}</span> completed "${esc(a.title)}" for <span style="color:var(--gold)">${a.reward} RTC</span>`,
-                    deliver: `<span class="activity-wallet">${a.worker}</span> delivered "${esc(a.title)}"`,
-                    claim: `<span class="activity-wallet">${a.worker}</span> claimed "${esc(a.title)}"`,
+                    complete: `<span class="activity-wallet">${esc(a.worker)}</span> completed "${esc(a.title)}" for <span style="color:var(--gold)">${esc(a.reward)} RTC</span>`,
+                    deliver: `<span class="activity-wallet">${esc(a.worker)}</span> delivered "${esc(a.title)}"`,
+                    claim: `<span class="activity-wallet">${esc(a.worker)}</span> claimed "${esc(a.title)}"`,
                 };
                 return `<div class="activity-item">
                     <div class="activity-icon ${a.type}">${icons[a.type]}</div>
@@ -762,7 +764,7 @@
             document.getElementById('category-chart').innerHTML = cats.map((c, i) => {
                 const pct = (c.jobs / maxJobs * 100).toFixed(0);
                 return `<div class="category-bar">
-                    <span class="category-label">${c.category}</span>
+                    <span class="category-label">${esc(c.category)}</span>
                     <div class="category-track">
                         <div class="category-fill" style="width:${pct}%; background:${colors[i % colors.length]};">
                             ${c.jobs} jobs (${c.total_rtc.toFixed(0)} RTC)
@@ -815,9 +817,17 @@
         return `${Math.floor(s/86400)}d ago`;
     }
     function esc(s) {
+        if (s === null || s === undefined) return '';
         const d = document.createElement('div');
         d.textContent = s;
         return d.innerHTML;
+    }
+
+    function safeClass(value) {
+        return String(value || 'unknown')
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]+/g, '-')
+            .replace(/^-+|-+$/g, '') || 'unknown';
     }
 
     // Init

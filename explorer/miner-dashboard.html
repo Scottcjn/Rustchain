@@ -321,8 +321,11 @@
         history.replaceState({}, '', url);
 
         // Show share link
-        document.getElementById('share-link').innerHTML =
-            `Share this dashboard: <a href="${url.href}">${url.href}</a>`;
+        const shareLink = document.getElementById('share-link');
+        const link = document.createElement('a');
+        link.href = url.href;
+        link.textContent = url.href;
+        shareLink.replaceChildren('Share this dashboard: ', link);
 
         // Fetch all data in parallel
         const [balanceData, epochData, historyData, activityData] = await Promise.all([
@@ -372,15 +375,15 @@
                 rewardsBody.innerHTML = rewards.slice(0, 20).map(r => `
                     <tr>
                         <td>${escapeHtml(String(r.epoch ?? r.block ?? '--'))}</td>
-                        <td style="color:var(--green);">+${r.amount ?? r.reward ?? r.value ?? '?'} RTC</td>
+                        <td style="color:var(--green);">+${escapeHtml(String(r.amount ?? r.reward ?? r.value ?? '?'))} RTC</td>
                         <td><span class="badge badge-green">${escapeHtml(r.type || 'mining')}</span></td>
-                        <td>${timeAgo(r.timestamp || r.time || r.created_at)}</td>
+                        <td>${escapeHtml(timeAgo(r.timestamp || r.time || r.created_at))}</td>
                     </tr>
                 `).join('');
             } else {
                 rewardsBody.innerHTML = `
                     <tr><td colspan="4" style="text-align:center;color:var(--text-dim);">
-                        No reward data yet. Current epoch: ${epoch.number ?? epoch.id ?? JSON.stringify(epoch).substring(0, 50)}
+                        No reward data yet. Current epoch: ${escapeHtml(String(epoch.number ?? epoch.id ?? JSON.stringify(epoch).substring(0, 50)))}
                     </td></tr>`;
             }
         } else {
@@ -393,8 +396,8 @@
             activityBody.innerHTML = `
                 <tr>
                     <td><span class="badge badge-green">Chain Tip</span></td>
-                    <td>Block ${activityData.height ?? activityData.block_height ?? '--'}</td>
-                    <td>${timeAgo(activityData.timestamp)}</td>
+                    <td>Block ${escapeHtml(String(activityData.height ?? activityData.block_height ?? '--'))}</td>
+                    <td>${escapeHtml(timeAgo(activityData.timestamp))}</td>
                 </tr>`;
         } else {
             activityBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-dim);">No recent activity</td></tr>';
@@ -404,22 +407,22 @@
         const wBody = document.getElementById('withdrawals-body');
         if (historyData && Array.isArray(historyData) && historyData.length > 0) {
             wBody.innerHTML = historyData.slice(0, 10).map(w => `
-                <tr>
-                    <td style="font-size:0.75rem;">${escapeHtml(String(w.withdrawal_id || w.id || '--').substring(0, 12))}...</td>
-                    <td>${w.amount ?? '?'} RTC</td>
-                    <td><span class="badge ${w.status === 'completed' ? 'badge-green' : w.status === 'pending' ? 'badge-yellow' : 'badge-red'}">${escapeHtml(w.status || 'unknown')}</span></td>
-                    <td>${timeAgo(w.requested_at || w.created_at || w.timestamp)}</td>
-                </tr>
-            `).join('');
+                    <tr>
+                        <td style="font-size:0.75rem;">${escapeHtml(String(w.withdrawal_id || w.id || '--').substring(0, 12))}...</td>
+                        <td>${escapeHtml(String(w.amount ?? '?'))} RTC</td>
+                        <td><span class="badge ${w.status === 'completed' ? 'badge-green' : w.status === 'pending' ? 'badge-yellow' : 'badge-red'}">${escapeHtml(w.status || 'unknown')}</span></td>
+                        <td>${escapeHtml(timeAgo(w.requested_at || w.created_at || w.timestamp))}</td>
+                    </tr>
+                `).join('');
         } else if (historyData?.withdrawals && historyData.withdrawals.length > 0) {
             wBody.innerHTML = historyData.withdrawals.slice(0, 10).map(w => `
-                <tr>
-                    <td style="font-size:0.75rem;">${escapeHtml(String(w.withdrawal_id || w.id || '--').substring(0, 12))}...</td>
-                    <td>${w.amount ?? '?'} RTC</td>
-                    <td><span class="badge ${w.status === 'completed' ? 'badge-green' : w.status === 'pending' ? 'badge-yellow' : 'badge-red'}">${escapeHtml(w.status || 'unknown')}</span></td>
-                    <td>${timeAgo(w.requested_at || w.created_at || w.timestamp)}</td>
-                </tr>
-            `).join('');
+                    <tr>
+                        <td style="font-size:0.75rem;">${escapeHtml(String(w.withdrawal_id || w.id || '--').substring(0, 12))}...</td>
+                        <td>${escapeHtml(String(w.amount ?? '?'))} RTC</td>
+                        <td><span class="badge ${w.status === 'completed' ? 'badge-green' : w.status === 'pending' ? 'badge-yellow' : 'badge-red'}">${escapeHtml(w.status || 'unknown')}</span></td>
+                        <td>${escapeHtml(timeAgo(w.requested_at || w.created_at || w.timestamp))}</td>
+                    </tr>
+                `).join('');
         } else {
             wBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-dim);">No withdrawals</td></tr>';
         }

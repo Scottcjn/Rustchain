@@ -1,0 +1,41 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Bounty 68 API response injection PoC</title>
+<h1>Bounty 68 API response injection PoC</h1>
+<p>This local PoC demonstrates the class fixed by escaping shortened API fields before assigning table markup with innerHTML.</p>
+
+<h2>Unsafe renderer</h2>
+<table border="1">
+  <tbody id="unsafe"></tbody>
+</table>
+
+<h2>Patched renderer</h2>
+<table border="1">
+  <tbody id="safe"></tbody>
+</table>
+
+<script>
+const payload = '<svg/onload="document.body.dataset.xss=1">';
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function shortenAddress(addr, chars = 64) {
+  if (!addr) return '';
+  if (addr.length <= chars * 2) return addr;
+  return `${addr.slice(0, chars)}...${addr.slice(-chars)}`;
+}
+
+document.getElementById('unsafe').innerHTML =
+  `<tr><td>${shortenAddress(payload)}</td></tr>`;
+
+document.getElementById('safe').innerHTML =
+  `<tr><td>${escapeHtml(shortenAddress(payload))}</td></tr>`;
+</script>

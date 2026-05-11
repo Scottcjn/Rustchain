@@ -388,9 +388,9 @@ class DashboardApp {
         tbody.innerHTML = sortedMiners.map((miner, index) => `
             <tr class="${miner.isNew ? 'new' : ''}">
                 <td>${index + 1}</td>
-                <td class="mono">${this.shortenAddress(miner.miner_id || 'unknown')}</td>
-                <td><span class="badge badge-${this.getArchitectureTier(miner.device_arch)}">${miner.device_arch || 'Unknown'}</span></td>
-                <td class="text-accent">${miner.score || 0}</td>
+                <td class="mono">${this.escapeHtml(this.shortenAddress(miner.miner_id || 'unknown'))}</td>
+                <td><span class="badge badge-${this.getArchitectureTier(miner.device_arch)}">${this.escapeHtml(miner.device_arch || 'Unknown')}</span></td>
+                <td class="text-accent">${this.escapeHtml(miner.score || 0)}</td>
                 <td>${(miner.multiplier || 1).toFixed(2)}x</td>
                 <td><span class="badge badge-active">● ACTIVE</span></td>
             </tr>
@@ -440,12 +440,12 @@ class DashboardApp {
             <div class="activity-item ${block.isNew ? 'new' : ''}">
                 <div class="activity-icon">📦</div>
                 <div class="activity-content">
-                    <div class="activity-title">Block #${block.height || 0}</div>
-                    <div class="activity-subtitle mono">${this.shortenHash(block.hash || '0x')}</div>
+                    <div class="activity-title">Block #${this.escapeHtml(block.height || 0)}</div>
+                    <div class="activity-subtitle mono">${this.escapeHtml(this.shortenHash(block.hash || '0x'))}</div>
                 </div>
                 <div class="activity-meta">
                     <div class="activity-time">${this.formatRelativeTime(block.timestamp)}</div>
-                    <div class="activity-value">${block.miners_count || 0} miners</div>
+                    <div class="activity-value">${this.escapeHtml(block.miners_count || 0)} miners</div>
                 </div>
             </div>
         `).join('');
@@ -473,8 +473,8 @@ class DashboardApp {
             <div class="activity-item ${tx.isNew ? 'new' : ''}">
                 <div class="activity-icon">💸</div>
                 <div class="activity-content">
-                    <div class="activity-title">${(tx.type || 'transfer').toUpperCase()}</div>
-                    <div class="activity-subtitle mono">${this.shortenAddress(tx.from || '0x')} → ${this.shortenAddress(tx.to || '0x')}</div>
+                    <div class="activity-title">${this.escapeHtml((tx.type || 'transfer').toUpperCase())}</div>
+                    <div class="activity-subtitle mono">${this.escapeHtml(this.shortenAddress(tx.from || '0x'))} → ${this.escapeHtml(this.shortenAddress(tx.to || '0x'))}</div>
                 </div>
                 <div class="activity-meta">
                     <div class="activity-time">${this.formatRelativeTime(tx.timestamp)}</div>
@@ -518,7 +518,7 @@ class DashboardApp {
             <div class="hardware-legend-item">
                 <div class="hardware-legend-color" style="background: ${item.color}"></div>
                 <div class="hardware-legend-info">
-                    <div class="hardware-legend-label">${item.label}</div>
+                    <div class="hardware-legend-label">${this.escapeHtml(item.label)}</div>
                     <div class="hardware-legend-value">${item.percent}%</div>
                 </div>
                 <div class="hardware-legend-count">${item.value}</div>
@@ -696,6 +696,16 @@ class DashboardApp {
     /**
      * Utility functions
      */
+    escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     shortenHash(hash, chars = 8) {
         if (!hash) return '';
         if (hash.length <= chars * 2) return hash;
