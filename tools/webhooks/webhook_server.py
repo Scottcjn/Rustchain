@@ -239,11 +239,17 @@ class SubscriberStore:
 
     @staticmethod
     def _row_to_sub(row) -> Subscriber:
+        try:
+            events = set(json.loads(row["events"]))
+        except (TypeError, json.JSONDecodeError):
+            log.warning("Subscriber %s has invalid events JSON; disabling event delivery", row["id"])
+            events = set()
+
         return Subscriber(
             id=row["id"],
             url=row["url"],
             secret=row["secret"],
-            events=set(json.loads(row["events"])),
+            events=events,
             active=bool(row["active"]),
             created_at=row["created_at"],
         )
