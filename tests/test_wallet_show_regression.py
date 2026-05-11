@@ -8,10 +8,12 @@ import pytest
 from unittest.mock import patch, MagicMock
 import sys
 import os
+import urllib.error
 
 # Add tools to path for importing cli module
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'tools', 'cli'))
-from rustchain_cli import fetch_api, get_node_url
+import rustchain_cli
+from rustchain_cli import RustChainAPIError, fetch_api, get_node_url
 
 
 class TestWalletBalanceEndpoint:
@@ -46,22 +48,42 @@ class TestWalletBalanceEndpoint:
             balance = resp.get("amount_rtc", resp.get("balance_rtc", resp.get("balance", 0)))
             assert isinstance(balance, (int, float))
 
-    @patch('urllib.request.urlopen')
+    @patch('rustchain_cli.urlopen')
     def test_wallet_show_handles_network_error_gracefully(self, mock_urlopen):
         """Test that wallet show handles network errors without crashing."""
-        import urllib.error
-        
         # Simulate network timeout
         mock_urlopen.side_effect = urllib.error.URLError("timeout")
-        
-        # Should not raise exception, should handle gracefully
-        # This is the behavior we want to preserve
-        try:
-            # Test the balance fetch logic directly
-            result = fetch_api("/wallet/balance?miner_id=test")
-        except Exception as e:
-            # Expected to fail with network error
-            assert "timeout" in str(e).lower() or "network" in str(e).lower()
+
+        with pytest.raises(RustChainAPIError, match="Cannot connect to node: timeout"):
+            fetch_api("/wallet/balance?miner_id=test")
+
+    @patch('rustchain_cli.urlopen')
+    def test_wallet_show_handles_http_error_gracefully(self, mock_urlopen):
+        """Test that API HTTP failures raise a catchable CLI API error."""
+        mock_urlopen.side_effect = urllib.error.HTTPError(
+            url="https://rustchain.org/wallet/balance?miner_id=test",
+            code=503,
+            msg="Service Unavailable",
+            hdrs=None,
+            fp=None,
+        )
+
+        with pytest.raises(RustChainAPIError, match="API returned 503"):
+            fetch_api("/wallet/balance?miner_id=test")
+
+    def test_main_reports_api_errors_at_cli_boundary(self, capsys):
+        """Test that main preserves CLI error printing and exit behavior."""
+        with patch.object(sys, "argv", ["rustchain-cli", "status"]):
+            with patch.object(
+                rustchain_cli,
+                "cmd_status",
+                side_effect=RustChainAPIError("sentinel-main-error"),
+            ):
+                with pytest.raises(SystemExit) as exc_info:
+                    rustchain_cli.main()
+
+        assert exc_info.value.code == 1
+        assert "Error: sentinel-main-error" in capsys.readouterr().err
 
     def test_balance_endpoint_returns_valid_json(self):
         """Integration test: verify /wallet/balance returns valid JSON."""
