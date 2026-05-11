@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """
 RIP-305 Track C: Bridge API
 Cross-chain bridge endpoints for wRTC (Wrapped RTC) on Solana + Base L2
