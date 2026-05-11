@@ -116,7 +116,9 @@ impl Transaction {
         let amount_rtc = self.amount as f64 / AMOUNT_UNIT as f64;
         let nonce_str = self.nonce.to_string();
         let memo = self.memo.as_deref().unwrap_or("");
-        Ok(canonical_message(&self.from, &self.to, amount_rtc, memo, &nonce_str, None))
+        Ok(canonical_message(
+            &self.from, &self.to, amount_rtc, memo, &nonce_str, None,
+        ))
     }
 
     /// Serialize the transaction for signing with an optional chain_id.
@@ -125,7 +127,14 @@ impl Transaction {
         let amount_rtc = self.amount as f64 / AMOUNT_UNIT as f64;
         let nonce_str = self.nonce.to_string();
         let memo = self.memo.as_deref().unwrap_or("");
-        Ok(canonical_message(&self.from, &self.to, amount_rtc, memo, &nonce_str, Some(chain_id)))
+        Ok(canonical_message(
+            &self.from,
+            &self.to,
+            amount_rtc,
+            memo,
+            &nonce_str,
+            Some(chain_id),
+        ))
     }
 
     /// Sign the transaction with a keypair
@@ -547,14 +556,7 @@ mod tests {
         //            sort_keys=True, separators=(",",":"))
         // = {"amount":1.0,"from":"RTCabc...","memo":"","nonce":"1733420000000","to":"RTCdef..."}
 
-        let msg = canonical_message(
-            "RTCabc123",
-            "RTCdef456",
-            1.0,
-            "",
-            "1733420000000",
-            None,
-        );
+        let msg = canonical_message("RTCabc123", "RTCdef456", 1.0, "", "1733420000000", None);
         let json_str = String::from_utf8(msg).unwrap();
         assert_eq!(
             json_str,
@@ -564,14 +566,7 @@ mod tests {
 
     #[test]
     fn test_canonical_message_with_memo() {
-        let msg = canonical_message(
-            "RTCabc",
-            "RTCdef",
-            0.5,
-            "hello world",
-            "42",
-            None,
-        );
+        let msg = canonical_message("RTCabc", "RTCdef", 0.5, "hello world", "42", None);
         let json_str = String::from_utf8(msg).unwrap();
         assert_eq!(
             json_str,
