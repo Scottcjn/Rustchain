@@ -1,3 +1,4 @@
+import gc
 import os
 import tempfile
 import sys
@@ -26,6 +27,7 @@ def client(monkeypatch):
         yield review_service.app.test_client()
     finally:
         try:
+            gc.collect()
             os.unlink(db_path)
         except FileNotFoundError:
             pass
@@ -152,6 +154,18 @@ def test_backfill_missing_updates_blank_reviews(client, monkeypatch):
     assert "Assessment: repaired." in repaired["review_text"]
 
 
+def test_backfill_missing_rejects_invalid_limit(client):
+    for limit in ("bad", 0, -1):
+        response = client.post(
+            "/api/sophia/governor/review/backfill-missing",
+            headers={"X-Admin-Key": "test-admin"},
+            json={"limit": limit},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "invalid_limit"
+
+
 def test_review_normalizes_verbose_action_reasoning(client, monkeypatch):
     monkeypatch.setattr(
         review_service,
@@ -196,6 +210,18 @@ def test_normalize_existing_route_rewrites_recent_rows(client, monkeypatch):
     assert "\nRisk:" in normalized["review_text"]
     assert "\nNext step:" in normalized["review_text"]
     assert normalized["recommended_resolution"]["target_inbox_status"] == "resolved"
+
+
+def test_normalize_existing_rejects_invalid_limit(client):
+    for limit in ("bad", 0, -1):
+        response = client.post(
+            "/api/sophia/governor/review/normalize-existing",
+            headers={"X-Admin-Key": "test-admin"},
+            json={"limit": limit},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "invalid_limit"
 
 
 def test_normalize_review_text_compacts_numbered_reasoning():
