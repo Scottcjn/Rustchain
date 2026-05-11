@@ -55,6 +55,30 @@ def get_optional_json_object():
     return data, None
 
 
+def _require_admin(req):
+    """Validate admin authentication for machine passport write endpoints."""
+    expected_admin_key = os.environ.get('ADMIN_KEY', '').strip()
+    provided_admin_key = (
+        req.headers.get('X-Admin-Key', '') or req.headers.get('X-API-Key', '')
+    ).strip()
+
+    if not expected_admin_key:
+        return jsonify({
+            'ok': False,
+            'error': 'admin_key_not_configured',
+            'message': 'ADMIN_KEY not configured - write endpoint disabled',
+        }), 503
+
+    if not provided_admin_key or not hmac.compare_digest(provided_admin_key, expected_admin_key):
+        return jsonify({
+            'ok': False,
+            'error': 'unauthorized',
+            'message': 'Admin key required',
+        }), 401
+
+    return None
+
+
 # === Public Read Endpoints ===
 
 @machine_passport_bp.route('/<machine_id>', methods=['GET'])
@@ -345,6 +369,10 @@ def add_repair_entry(machine_id: str):
     
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
+
+    auth_error = _require_admin(request)
+    if auth_error:
+        return auth_error
     
     data = request.get_json()
     if not data or 'repair_type' not in data or 'description' not in data:
@@ -387,6 +415,10 @@ def add_attestation(machine_id: str):
     
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
+
+    auth_error = _require_admin(request)
+    if auth_error:
+        return auth_error
     
     data, error = get_optional_json_object()
     if error:
@@ -433,6 +465,10 @@ def add_benchmark(machine_id: str):
     
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
+
+    auth_error = _require_admin(request)
+    if auth_error:
+        return auth_error
     
     data, error = get_optional_json_object()
     if error:
@@ -478,6 +514,10 @@ def add_lineage_note(machine_id: str):
     
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
+
+    auth_error = _require_admin(request)
+    if auth_error:
+        return auth_error
     
     data = request.get_json()
     if not data or 'event_type' not in data:
