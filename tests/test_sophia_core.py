@@ -531,6 +531,37 @@ class TestSophiaAPI(unittest.TestCase):
         self.assertIn("inspections", data)
         self.assertIn("total", data)
 
+    def test_history_rejects_invalid_pagination(self):
+        resp = self.client.get("/sophia/history?page=abc")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["error"], "page must be an integer")
+
+        resp = self.client.get("/sophia/history?per_page=abc")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["error"], "per_page must be an integer")
+
+    def test_history_rejects_non_positive_pagination(self):
+        resp = self.client.get("/sophia/history?page=0")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["error"], "page must be positive")
+
+        resp = self.client.get("/sophia/history?per_page=0")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["error"], "per_page must be positive")
+
+    def test_history_caps_per_page(self):
+        for idx in range(3):
+            self.client.post("/sophia/inspect", json={
+                "miner_id": f"hist_cap_{idx}",
+                "fingerprint": _good_fingerprint(),
+            })
+
+        resp = self.client.get("/sophia/history?page=1&per_page=500")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["page"], 1)
+        self.assertEqual(data["per_page"], 100)
+
     def test_dashboard_endpoint(self):
         self.client.post("/sophia/inspect", json={
             "miner_id": "dash_m",
