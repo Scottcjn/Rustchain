@@ -10,6 +10,8 @@ import sys
 import os
 import tempfile
 import sqlite3
+import gc
+from unittest.mock import Mock, patch
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -59,6 +61,9 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         """Clean up after all tests."""
+        cls.client = None
+        cls.app = None
+        gc.collect()
         os.close(cls.test_db_fd)
         os.unlink(cls.test_db_path)
 
@@ -306,6 +311,95 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         rep = json.loads(rep_response.data)
         self.assertEqual(rep['bounties_completed'], 1)
         self.assertEqual(rep['score'], 10)  # 10 points per bounty
+
+    def test_bounty_sync_requires_admin_before_network_fetch(self):
+        """Unauthenticated sync cannot trigger GitHub fetches or DB writes."""
+        with patch.dict(os.environ, {'RC_ADMIN_KEY': 'test-admin'}, clear=False):
+            with patch('ssl.create_default_context', return_value=object()):
+                with patch('urllib.request.urlopen') as mock_urlopen:
+                    response = self.client.post('/api/bounties/sync')
+
+        self.assertEqual(response.status_code, 401)
+        mock_urlopen.assert_not_called()
+
+    def test_bounty_sync_requires_admin_configuration_before_network_fetch(self):
+        """Sync fails closed when no admin key is configured."""
+        with patch.dict(os.environ, {}, clear=True):
+            with patch('ssl.create_default_context', return_value=object()):
+                with patch('urllib.request.urlopen') as mock_urlopen:
+                    response = self.client.post('/api/bounties/sync')
+
+        self.assertEqual(response.status_code, 503)
+        mock_urlopen.assert_not_called()
+
+    def test_bounty_sync_preserves_existing_lifecycle_state(self):
+        """Sync refreshes metadata without reopening locally claimed bounties."""
+        created_at = int(time.time())
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.execute("""
+                INSERT INTO beacon_bounties
+                (id, github_number, title, reward_rtc, reward_text, difficulty,
+                 github_repo, github_url, state, claimant_agent, completed_by,
+                 description, labels, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                'gh_Rustchain_123',
+                123,
+                'Old title (10 RTC)',
+                10.0,
+                '10 RTC',
+                'EASY',
+                'Scottcjn/Rustchain',
+                'https://github.com/Scottcjn/Rustchain/issues/123',
+                'claimed',
+                'bcn_alice_test',
+                None,
+                'old description',
+                '["bounty"]',
+                created_at,
+                created_at,
+            ))
+            conn.commit()
+
+        response_payload = json.dumps([
+            {
+                'number': 123,
+                'title': 'Updated title (75 RTC)',
+                'html_url': 'https://github.com/Scottcjn/Rustchain/issues/123',
+                'body': 'Updated bounty body',
+                'labels': [{'name': 'bounty'}, {'name': 'major'}],
+                'created_at': '2026-05-11T00:00:00Z',
+            }
+        ]).encode()
+        fake_response = Mock()
+        fake_response.read.return_value = response_payload
+        fake_response.__enter__ = Mock(return_value=fake_response)
+        fake_response.__exit__ = Mock(return_value=False)
+
+        with patch.dict(os.environ, {'RC_ADMIN_KEY': 'test-admin'}, clear=False):
+            with patch('ssl.create_default_context', return_value=object()):
+                with patch('urllib.request.urlopen', return_value=fake_response):
+                    response = self.client.post(
+                        '/api/bounties/sync',
+                        headers={'X-Admin-Key': 'test-admin'},
+                    )
+
+        self.assertEqual(response.status_code, 200)
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT title, reward_rtc, difficulty, state, claimant_agent, completed_by "
+                "FROM beacon_bounties WHERE id = ?",
+                ('gh_Rustchain_123',),
+            ).fetchone()
+
+        self.assertEqual(row['title'], 'Updated title (75 RTC)')
+        self.assertEqual(row['reward_rtc'], 75.0)
+        self.assertEqual(row['difficulty'], 'HARD')
+        self.assertEqual(row['state'], 'claimed')
+        self.assertEqual(row['claimant_agent'], 'bcn_alice_test')
+        self.assertIsNone(row['completed_by'])
 
 
 class TestBeaconAtlasDataValidation(unittest.TestCase):

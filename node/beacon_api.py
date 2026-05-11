@@ -609,8 +609,16 @@ def get_bounties():
 def sync_bounties():
     """Sync bounties from GitHub API."""
     try:
+        import hmac
         import urllib.request
         import ssl
+
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not admin_key:
+            return jsonify({'error': 'RC_ADMIN_KEY not configured — endpoint disabled'}), 503
+        provided_key = request.headers.get("X-Admin-Key", "")
+        if not hmac.compare_digest(provided_key, admin_key):
+            return jsonify({'error': 'Unauthorized — admin key required to sync bounties'}), 401
         
         # GitHub repos to scan
         repos = [
@@ -693,10 +701,21 @@ def sync_bounties():
         db = get_db()
         for bounty in all_bounties:
             db.execute(
-                """INSERT OR REPLACE INTO beacon_bounties 
+                """INSERT INTO beacon_bounties
                    (id, github_number, title, reward_rtc, reward_text, difficulty, 
                     github_repo, github_url, state, description, labels, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       github_number = excluded.github_number,
+                       title = excluded.title,
+                       reward_rtc = excluded.reward_rtc,
+                       reward_text = excluded.reward_text,
+                       difficulty = excluded.difficulty,
+                       github_repo = excluded.github_repo,
+                       github_url = excluded.github_url,
+                       description = excluded.description,
+                       labels = excluded.labels,
+                       updated_at = excluded.updated_at""",
                 (bounty['id'], bounty['github_number'], bounty['title'],
                  bounty['reward_rtc'], bounty['reward_text'], bounty['difficulty'],
                  bounty['github_repo'], bounty['github_url'], bounty['state'],
