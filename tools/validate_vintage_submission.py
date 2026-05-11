@@ -197,13 +197,14 @@ class SubmissionValidator:
             result["checks"]["found_sections"] = found_sections
             result["checks"]["missing_sections"] = missing_sections
             
+            messages = []
             if missing_sections:
                 result["status"] = "WARN"
-                result["message"] = f"Missing sections: {missing_sections}"
+                messages.append(f"Missing sections: {missing_sections}")
                 self.warnings.append(f"Writeup missing: {missing_sections}")
             else:
                 result["status"] = "PASS"
-                result["message"] = "Writeup contains all required sections"
+                messages.append("Writeup contains all required sections")
             
             # Check word count
             word_count = len(content.split())
@@ -211,8 +212,10 @@ class SubmissionValidator:
             
             if word_count < 100:
                 result["status"] = "WARN"
-                result["message"] = f"Writeup seems too short ({word_count} words)"
+                messages.append(f"Writeup seems too short ({word_count} words)")
                 self.warnings.append(f"Writeup is only {word_count} words")
+
+            result["message"] = "; ".join(messages)
         
         except Exception as e:
             result["message"] = f"Error reading writeup: {e}"
