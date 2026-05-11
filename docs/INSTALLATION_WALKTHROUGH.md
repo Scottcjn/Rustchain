@@ -158,7 +158,7 @@ Add to your README.md:
 ```markdown
 ## Installation
 
-See the [Installation Walkthrough](docs/INSTALLATION_WALKTHROUGH.md) for a 
+See the [Installation Walkthrough](INSTALLATION_WALKTHROUGH.md) for a 
 visual guide with asciinema recordings.
 
 Quick preview:
