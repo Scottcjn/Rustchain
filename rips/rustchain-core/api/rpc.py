@@ -273,7 +273,9 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         try:
             params = json.loads(body) if body else {}
         except json.JSONDecodeError:
-            params = {}
+            # FIX(#4615): Return 400 instead of silently proceeding
+            self._send_response(ApiResponse(success=False, error="Invalid JSON body"))
+            return
 
         parsed = urlparse(self.path)
         response = self._route_request(parsed.path, params)
@@ -334,7 +336,11 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         """Send HTTP response"""
         self.send_response(200 if response.success else 400)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # FIX(#4614): Restrict CORS to known origins instead of wildcard
+            origin = self.headers.get("Origin", "")
+            allowed = {"https://rustchain.io", "https://explorer.rustchain.io"}
+            if origin in allowed:
+                self.send_header("Access-Control-Allow-Origin", origin)
         self.end_headers()
         self.wfile.write(response.to_json().encode())
 
