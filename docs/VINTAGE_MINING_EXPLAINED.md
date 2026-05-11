@@ -279,4 +279,4 @@ See [N64 Mining Guide](N64_MINING_GUIDE.md) for setup instructions.
 - [Console Mining Setup](CONSOLE_MINING_SETUP.md) -- mine on NES, SNES, Genesis, PS1, Game Boy, and N64
 - [Protocol Overview](protocol-overview.md) -- attestation protocol specification
 - [Green Tracker](https://rustchain.org/preserved.html) -- live environmental impact dashboard
-- [Whitepaper](RustChain_Whitepaper_Flameholder_v0.97-1.pdf) -- formal specification
+- [Whitepaper](WHITEPAPER.md) -- formal specification

@@ -1129,7 +1129,7 @@ Visit the [live explorer](https://rustchain.org/explorer) to see your miner!
 ## Resources
 
 - [Full Documentation](https://github.com/Scottcjn/RustChain)
-- [Whitepaper](https://github.com/Scottcjn/RustChain/blob/main/docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+- [Whitepaper](https://github.com/Scottcjn/RustChain/blob/main/docs/WHITEPAPER.md)
 - [Discord](https://discord.gg/rustchain)
 - [Bounties](https://github.com/Scottcjn/rustchain-bounties/issues)
 

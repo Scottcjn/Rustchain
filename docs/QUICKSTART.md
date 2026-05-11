@@ -439,7 +439,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 - **Swap RTC for Solana tokens:** [wRTC Guide](wrtc.md)
 - **Run a full node:** [Protocol Docs](PROTOCOL.md)
-- **Deep dive into Proof-of-Antiquity:** [Whitepaper](RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+- **Deep dive into Proof-of-Antiquity:** [Whitepaper](WHITEPAPER.md)
 - **Contribute code:** [CONTRIBUTING.md](../CONTRIBUTING.md)
 - **API reference:** [API Walkthrough](API_WALKTHROUGH.md)
 
