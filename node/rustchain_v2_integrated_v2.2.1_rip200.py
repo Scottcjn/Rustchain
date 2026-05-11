@@ -2769,20 +2769,58 @@ def check_vm_signatures_server_side(device: dict, signals: dict) -> tuple:
 
 def check_enrollment_requirements(miner: str) -> tuple:
     """Check if miner meets enrollment requirements including fingerprint validation."""
+    attested_context = {
+        "attested_device_family": "x86",
+        "attested_device_arch": "default",
+        "attested_fingerprint": {"checks": {}},
+    }
     with sqlite3.connect(DB_PATH) as conn:
         if ENROLL_REQUIRE_TICKET:
-            # RIP-PoA: Also fetch fingerprint_passed status
-            row = conn.execute("SELECT ts_ok, fingerprint_passed FROM miner_attest_recent WHERE miner = ?", (miner,)).fetchone()
+            # RIP-PoA: Fetch the verified attestation snapshot used for enrollment weight.
+            columns = {
+                str(col[1])
+                for col in conn.execute("PRAGMA table_info(miner_attest_recent)").fetchall()
+            }
+            select_fields = [
+                "ts_ok",
+                "fingerprint_passed" if "fingerprint_passed" in columns else "1 AS fingerprint_passed",
+                "device_family" if "device_family" in columns else "'x86' AS device_family",
+                "device_arch" if "device_arch" in columns else "'default' AS device_arch",
+                "fingerprint_checks_json" if "fingerprint_checks_json" in columns else "'{}' AS fingerprint_checks_json",
+            ]
+            row = conn.execute(
+                f"SELECT {', '.join(select_fields)} FROM miner_attest_recent WHERE miner = ?",
+                (miner,),
+            ).fetchone()
             if not row:
                 return False, {"error": "no_recent_attestation", "ttl_s": ENROLL_TICKET_TTL_S}
             if (int(time.time()) - row[0]) > ENROLL_TICKET_TTL_S:
                 return False, {"error": "attestation_expired", "ttl_s": ENROLL_TICKET_TTL_S}
-            
+
+            fingerprint_checks = {}
+            if len(row) > 4 and row[4]:
+                try:
+                    parsed_checks = json.loads(row[4])
+                    if isinstance(parsed_checks, dict):
+                        fingerprint_checks = parsed_checks
+                except Exception:
+                    fingerprint_checks = {}
+            attested_context = {
+                "attested_device_family": row[2] if len(row) > 2 and row[2] else "x86",
+                "attested_device_arch": row[3] if len(row) > 3 and row[3] else "default",
+                "attested_fingerprint": {"checks": fingerprint_checks},
+            }
+
             # RIP-PoA Phase 2: Check fingerprint passed (returns status for weight calculation)
             fingerprint_passed = row[1] if len(row) > 1 else 1  # Default to passed for legacy
             if not fingerprint_passed:
                 # Don't reject - but flag for zero weight
-                return True, {"ok": True, "fingerprint_failed": True, "reason": "vm_or_emulator_detected"}
+                return True, {
+                    "ok": True,
+                    "fingerprint_failed": True,
+                    "reason": "vm_or_emulator_detected",
+                    **attested_context,
+                }
         if ENROLL_REQUIRE_MAC:
             row = conn.execute(
                 "SELECT COUNT(*) as c FROM miner_macs WHERE miner = ? AND last_ts >= ?",
@@ -2793,7 +2831,7 @@ def check_enrollment_requirements(miner: str) -> tuple:
                 return False, {"error": "mac_required", "hint": "Submit attestation with signals.macs"}
             if unique_count > MAC_MAX_UNIQUE_PER_DAY:
                 return False, {"error": "mac_churn", "unique_24h": unique_count, "limit": MAC_MAX_UNIQUE_PER_DAY}
-    return True, {"ok": True}
+    return True, {"ok": True, **attested_context}
 
 # RIP-0147a: VM-OUI Denylist (warn mode)
 # Process-local counters
@@ -3813,9 +3851,12 @@ def enroll_epoch():
         ENROLL_REJ[reason] = ENROLL_REJ.get(reason, 0) + 1
         return jsonify(check_result), 412
 
-    # Calculate weight based on hardware
-    family = device.get('family', 'x86')
-    arch = device.get('arch', 'default')
+    # Calculate weight from the last accepted attestation, not request fields.
+    # /epoch/enroll remains backward-compatible for legacy unsigned miners, but
+    # callers must not be able to upgrade reward weight by submitting a spoofed
+    # device or fingerprint only at enrollment time.
+    family = check_result.get('attested_device_family') or 'x86'
+    arch = check_result.get('attested_device_arch') or 'default'
     hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch, 1.0)
 
     # RIP-PoA Phase 2: VM miners get minimal (but non-zero) weight
@@ -3826,7 +3867,7 @@ def enroll_epoch():
         rotation_eval = evaluate_rotating_fingerprint_checks(
             c,
             epoch,
-            data.get('fingerprint') if isinstance(data.get('fingerprint'), dict) else {},
+            check_result.get('attested_fingerprint') if isinstance(check_result.get('attested_fingerprint'), dict) else {},
         )
         if fingerprint_failed:
             weight_units = MIN_FAILED_FINGERPRINT_WEIGHT_UNITS
