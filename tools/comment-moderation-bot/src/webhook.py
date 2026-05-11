@@ -163,6 +163,16 @@ def register_routes(app: FastAPI, config: BotConfig) -> None:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid JSON payload",
             )
+        if not isinstance(payload, dict):
+            audit_logger.log_error(
+                error_type="invalid_payload",
+                message="Webhook payload must be a JSON object",
+                delivery_id=x_github_delivery,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Webhook payload must be a JSON object",
+            )
 
         # Log webhook receipt
         repo = payload.get("repository", {}).get("full_name", "unknown")
