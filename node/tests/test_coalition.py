@@ -11,6 +11,7 @@ Author: Claude (via Nous Hermes)
 """
 
 import pytest
+import gc
 import sqlite3
 import tempfile
 import time
@@ -31,6 +32,17 @@ from coalition import (
     FLAMEBUND_MINER_ID, FLAMEBUND_COALITION_NAME,
 )
 from flask import Flask
+
+
+def _unlink_temp_db(db_path):
+    gc.collect()
+    for _ in range(5):
+        try:
+            os.unlink(db_path)
+            return
+        except PermissionError:
+            time.sleep(0.05)
+    # Windows can keep Flask/SQLite test handles alive until process teardown.
 
 
 # ---------------------------------------------------------------------------
@@ -56,7 +68,7 @@ def tmp_db():
         """)
 
     yield db_path
-    os.unlink(db_path)
+    _unlink_temp_db(db_path)
 
 
 @pytest.fixture
@@ -616,6 +628,26 @@ def test_list_coalitions_with_status_filter(client, rich_miner):
         assert c["status"] == COALITION_STATUS_ACTIVE
 
 
+def test_list_coalitions_rejects_non_integer_pagination(client):
+    """Malformed pagination returns 400 instead of an internal error."""
+    res = client.get("/api/coalition/list?limit=not-an-int")
+    assert res.status_code == 400
+    assert res.get_json() == {"error": "limit must be an integer"}
+
+    res = client.get("/api/coalition/list?offset=not-an-int")
+    assert res.status_code == 400
+    assert res.get_json() == {"error": "offset must be an integer"}
+
+
+def test_list_coalitions_clamps_negative_pagination(client):
+    """Negative pagination values are clamped to safe public bounds."""
+    res = client.get("/api/coalition/list?limit=-5&offset=-10")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["count"] == 1
+    assert data["coalitions"][0]["name"] == FLAMEBUND_COALITION_NAME
+
+
 def test_get_coalition_details(client, test_coalition, rich_miner, poor_miner):
     """Get coalition details with members."""
     # Add a member
@@ -673,6 +705,17 @@ def test_list_proposals_status_filter(client, test_coalition, rich_miner):
     assert res.status_code == 200
     data = res.get_json()
     assert data["count"] == 1
+
+
+def test_list_proposals_rejects_non_integer_pagination(client, test_coalition):
+    """Proposal listing validates pagination before querying SQLite."""
+    res = client.get(f"/api/coalition/{test_coalition}/proposals?limit=NaN")
+    assert res.status_code == 400
+    assert res.get_json() == {"error": "limit must be an integer"}
+
+    res = client.get(f"/api/coalition/{test_coalition}/proposals?offset=NaN")
+    assert res.status_code == 400
+    assert res.get_json() == {"error": "offset must be an integer"}
 
 
 def test_list_proposals_nonexistent_coalition(client, rich_miner):
