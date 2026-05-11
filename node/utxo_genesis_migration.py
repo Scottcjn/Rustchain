@@ -29,8 +29,6 @@ from utxo_db import (
 
 GENESIS_TX_PREFIX = "rustchain_genesis:"
 GENESIS_HEIGHT = 0
-ACCOUNT_UNIT = 1_000_000  # Account-model amount_i64 is micro-RTC.
-ACCOUNT_TO_UTXO_SCALE = UNIT // ACCOUNT_UNIT
 
 
 def compute_genesis_tx_id(miner_id: str) -> str:
@@ -43,7 +41,7 @@ def compute_genesis_tx_id(miner_id: str) -> str:
 def load_account_balances(db_path: str) -> list:
     """
     Load non-zero balances from the account model.
-    Returns sorted list of (miner_id, amount_nrtc) tuples.
+    Returns sorted list of (miner_id, amount_i64) tuples.
     """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -54,21 +52,17 @@ def load_account_balances(db_path: str) -> list:
                WHERE amount_i64 > 0
                ORDER BY miner_id ASC"""
         ).fetchall()
-        return [
-            (r['miner_id'], int(r['amount_i64']) * ACCOUNT_TO_UTXO_SCALE)
-            for r in rows
-        ]
+        return [(r['miner_id'], r['amount_i64']) for r in rows]
     except sqlite3.OperationalError:
         # Try alternate column names
         rows = conn.execute(
             """SELECT miner_pk AS miner_id,
-                      CAST(balance_rtc * ? AS INTEGER) AS amount_nrtc
+                      CAST(balance_rtc * 100000000 AS INTEGER) AS amount_i64
                FROM balances
                WHERE balance_rtc > 0
-               ORDER BY miner_pk ASC""",
-            (UNIT,),
+               ORDER BY miner_pk ASC"""
         ).fetchall()
-        return [(r['miner_id'], int(r['amount_nrtc'])) for r in rows]
+        return [(r['miner_id'], r['amount_i64']) for r in rows]
     finally:
         conn.close()
 
@@ -128,15 +122,15 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
         if not dry_run:
             conn.execute("BEGIN IMMEDIATE")
 
-        for miner_id, amount_nrtc in balances:
+        for miner_id, amount_i64 in balances:
             tx_id = compute_genesis_tx_id(miner_id)
             prop = address_to_proposition(miner_id)
             box_id = compute_box_id(
-                amount_nrtc, prop, GENESIS_HEIGHT, tx_id, 0
+                amount_i64, prop, GENESIS_HEIGHT, tx_id, 0
             )
 
             if dry_run:
-                print(f"  {miner_id:40s} | {amount_nrtc / UNIT:>14.6f} RTC | box={box_id[:16]}...")
+                print(f"  {miner_id:40s} | {amount_i64 / UNIT:>14.6f} RTC | box={box_id[:16]}...")
             else:
                 # Insert box
                 conn.execute(
@@ -146,7 +140,7 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
                         tokens_json, registers_json, created_at)
                        VALUES (?,?,?,?,?,?,?,?,?,?)""",
                     (
-                        box_id, amount_nrtc, prop, miner_id,
+                        box_id, amount_i64, prop, miner_id,
                         GENESIS_HEIGHT, tx_id, 0,
                         '[]',
                         json.dumps({'R4': 'genesis'}),
@@ -166,7 +160,7 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
                         '[]',
                         json.dumps([{
                             'box_id': box_id,
-                            'value_nrtc': amount_nrtc,
+                            'value_nrtc': amount_i64,
                             'owner': miner_id,
                         }]),
                         '[]', 0, now, GENESIS_HEIGHT, 'confirmed',
@@ -240,6 +234,14 @@ def rollback_genesis(db_path: str) -> int:
     conn = sqlite3.connect(db_path, timeout=30)
     try:
         conn.execute("BEGIN IMMEDIATE")
+
+        # Prevent rollback if any genesis boxes have already been spent
+        spent_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM utxo_boxes WHERE creation_height = ? AND spent_at IS NOT NULL",
+            (GENESIS_HEIGHT,),
+        ).fetchone()['n']
+        if spent_count > 0:
+            raise ValueError("Cannot rollback genesis: some genesis boxes have already been spent.")
 
         # Delete genesis boxes first (child table)
         deleted = conn.execute(
