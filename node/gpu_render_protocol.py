@@ -406,11 +406,49 @@ def register_routes(app):
     """Register GPU Render Protocol routes with a Flask app."""
     protocol = GPURenderProtocol()
 
+    def _field_type_error(field, expected):
+        from flask import jsonify
+        return (
+            jsonify(
+                {
+                    "error": "invalid_field_type",
+                    "field": field,
+                    "expected": expected,
+                }
+            ),
+            400,
+        )
+
+    def _json_object_body():
+        from flask import request, jsonify
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return None, (jsonify({"error": "invalid_json"}), 400)
+        return data, None
+
+    def _string_field(data, field, default=""):
+        value = data.get(field, default)
+        if value is None:
+            value = default
+        if not isinstance(value, str):
+            return None, _field_type_error(field, "string")
+        return value, None
+
+    def _number_field(data, field, default=0):
+        value = data.get(field, default)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None, _field_type_error(field, "number")
+        return value, None
+
     @app.route("/gpu/attest", methods=["POST"])
     def gpu_attest():
-        from flask import request, jsonify
-        data = request.get_json(force=True)
-        miner_id = data.get("miner_id")
+        from flask import jsonify
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
+        miner_id, error_response = _string_field(data, "miner_id")
+        if error_response:
+            return error_response
         if not miner_id:
             return jsonify({"error": "miner_id required"}), 400
         result = protocol.attest_gpu(miner_id, data)
@@ -430,21 +468,39 @@ def register_routes(app):
     @app.route("/llm/escrow", methods=["POST"])
     def create_escrow():
         from flask import request, jsonify
-        data = request.get_json(force=True)
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
         # Infer job_type from path
         path = request.path
         if path.startswith("/voice"):
-            job_type = data.get("job_type", "tts")  # tts or stt
+            job_type, error_response = _string_field(
+                data,
+                "job_type",
+                "tts",
+            )  # tts or stt
         elif path.startswith("/llm"):
             job_type = "llm"
+            error_response = None
         else:
-            job_type = data.get("job_type", "render")
+            job_type, error_response = _string_field(data, "job_type", "render")
+        if error_response:
+            return error_response
+        from_wallet, error_response = _string_field(data, "from_wallet")
+        if error_response:
+            return error_response
+        to_wallet, error_response = _string_field(data, "to_wallet")
+        if error_response:
+            return error_response
+        amount_rtc, error_response = _number_field(data, "amount_rtc")
+        if error_response:
+            return error_response
 
         result = protocol.create_escrow(
             job_type=job_type,
-            from_wallet=data.get("from_wallet", ""),
-            to_wallet=data.get("to_wallet", ""),
-            amount_rtc=data.get("amount_rtc", 0),
+            from_wallet=from_wallet,
+            to_wallet=to_wallet,
+            amount_rtc=amount_rtc,
             metadata=data.get("metadata"),
         )
         status_code = 201 if "error" not in result else 400
@@ -454,17 +510,27 @@ def register_routes(app):
     @app.route("/voice/release", methods=["POST"])
     @app.route("/llm/release", methods=["POST"])
     def release_escrow():
-        from flask import request, jsonify
-        data = request.get_json(force=True)
-        result = protocol.release_escrow(data.get("job_id", ""))
+        from flask import jsonify
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
+        job_id, error_response = _string_field(data, "job_id")
+        if error_response:
+            return error_response
+        result = protocol.release_escrow(job_id)
         status_code = 200 if "error" not in result else 400
         return jsonify(result), status_code
 
     @app.route("/render/refund", methods=["POST"])
     def refund_escrow():
-        from flask import request, jsonify
-        data = request.get_json(force=True)
-        result = protocol.refund_escrow(data.get("job_id", ""))
+        from flask import jsonify
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
+        job_id, error_response = _string_field(data, "job_id")
+        if error_response:
+            return error_response
+        result = protocol.refund_escrow(job_id)
         status_code = 200 if "error" not in result else 400
         return jsonify(result), status_code
 
@@ -484,11 +550,19 @@ def register_routes(app):
 
     @app.route("/render/pricing/check", methods=["POST"])
     def check_pricing():
-        from flask import request, jsonify
-        data = request.get_json(force=True)
+        from flask import jsonify
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
+        job_type, error_response = _string_field(data, "job_type", "render")
+        if error_response:
+            return error_response
+        price, error_response = _number_field(data, "price")
+        if error_response:
+            return error_response
         result = protocol.detect_price_manipulation(
-            data.get("job_type", "render"),
-            data.get("price", 0),
+            job_type,
+            price,
         )
         return jsonify(result)
 

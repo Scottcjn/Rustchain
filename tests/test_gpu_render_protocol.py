@@ -3,8 +3,12 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+
+from flask import Flask
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from node import gpu_render_protocol as gpu_module
 from node.gpu_render_protocol import GPURenderProtocol
 
 
@@ -133,6 +137,92 @@ class TestGPURenderProtocol(unittest.TestCase):
         self.assertEqual(result["status"], "locked")
         status = self.proto.get_escrow(result["job_id"])
         self.assertEqual(status["metadata"]["model"], "llama-70b")
+
+
+class TestGPURenderProtocolRoutes(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.db = os.path.join(self.tmp, "test_gpu_routes.db")
+        self.app = Flask(__name__)
+        with patch.object(
+            gpu_module,
+            "GPURenderProtocol",
+            lambda: GPURenderProtocol(db_path=self.db),
+        ):
+            gpu_module.register_routes(self.app)
+        self.app.config["TESTING"] = True
+        self.client = self.app.test_client()
+
+    def test_write_routes_reject_non_object_json(self):
+        routes = [
+            "/gpu/attest",
+            "/render/escrow",
+            "/voice/escrow",
+            "/llm/escrow",
+            "/render/release",
+            "/voice/release",
+            "/llm/release",
+            "/render/refund",
+            "/render/pricing/check",
+        ]
+
+        for route in routes:
+            with self.subTest(route=route):
+                response = self.client.post(route, json=["not", "an", "object"])
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json()["error"], "invalid_json")
+
+    def test_write_routes_reject_malformed_field_types(self):
+        cases = [
+            ("/gpu/attest", {"miner_id": {"id": "miner"}}, "miner_id", "string"),
+            (
+                "/render/escrow",
+                {
+                    "job_type": ["render"],
+                    "from_wallet": "a",
+                    "to_wallet": "b",
+                    "amount_rtc": 1,
+                },
+                "job_type",
+                "string",
+            ),
+            (
+                "/voice/escrow",
+                {
+                    "job_type": "tts",
+                    "from_wallet": {"wallet": "a"},
+                    "to_wallet": "b",
+                    "amount_rtc": 1,
+                },
+                "from_wallet",
+                "string",
+            ),
+            (
+                "/llm/escrow",
+                {"from_wallet": "a", "to_wallet": "b", "amount_rtc": "1.0"},
+                "amount_rtc",
+                "number",
+            ),
+            ("/render/release", {"job_id": ["job-1"]}, "job_id", "string"),
+            ("/render/refund", {"job_id": {"id": "job-1"}}, "job_id", "string"),
+            (
+                "/render/pricing/check",
+                {"job_type": "render", "price": {"value": 1}},
+                "price",
+                "number",
+            ),
+        ]
+
+        for route, body, field, expected in cases:
+            with self.subTest(route=route, field=field):
+                response = self.client.post(route, json=body)
+                payload = response.get_json()
+
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(payload["error"], "invalid_field_type")
+                self.assertEqual(payload["field"], field)
+                self.assertEqual(payload["expected"], expected)
 
 
 if __name__ == "__main__":
