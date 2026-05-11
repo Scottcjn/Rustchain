@@ -1057,16 +1057,44 @@ def index():
     return render_template_string(MAIN_TEMPLATE)
 
 
+def _json_object_body():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({'success': False, 'error': 'JSON object body is required'}), 400)
+    return data, None
+
+
+def _string_field(data, field_name, default=''):
+    value = data.get(field_name, default)
+    if value is None:
+        return ''
+    if not isinstance(value, str):
+        raise ValueError(f'{field_name} must be a string')
+    return value.strip()
+
+
+def _trust_score_field(data):
+    value = data.get('trust_score', 75)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError('trust_score must be a number')
+    return value
+
+
 @app.route('/api/badge/generate', methods=['POST'])
 def generate_badge():
     """Generate a BCOS badge."""
-    data = request.get_json()
+    data, error_response = _json_object_body()
+    if error_response:
+        return error_response
 
-    repo_name = data.get('repo_name', '').strip()
-    tier = data.get('tier', 'L1').upper()
-    raw_trust_score = data.get('trust_score', 75)
-    cert_id = data.get('cert_id', '')
-    include_qr = data.get('include_qr', False)
+    try:
+        repo_name = _string_field(data, 'repo_name')
+        tier = _string_field(data, 'tier', 'L1').upper()
+        raw_trust_score = _trust_score_field(data)
+        cert_id = _string_field(data, 'cert_id')
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    include_qr = bool(data.get('include_qr', False))
 
     # Validation
     if not repo_name:

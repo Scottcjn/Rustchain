@@ -418,10 +418,66 @@ class TestFlaskIntegration(unittest.TestCase):
                     content_type='application/json',
                 )
 
-                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.status_code, 400)
                 data = json.loads(response.data)
                 self.assertFalse(data['success'])
-                self.assertEqual(data['error'], 'Trust score must be a number')
+                self.assertEqual(data['error'], 'trust_score must be a number')
+
+    def test_generate_badge_rejects_non_object_json(self):
+        """Test badge generation rejects non-object JSON bodies."""
+        response = self.client.post(
+            '/api/badge/generate',
+            json=['repo_name'],
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'JSON object body is required')
+
+    def test_generate_badge_rejects_non_string_fields(self):
+        """Test badge generation rejects structured string fields."""
+        for field, value in (
+            ('repo_name', ['test/repo']),
+            ('tier', {'tier': 'L1'}),
+            ('cert_id', ['BCOS-test']),
+        ):
+            with self.subTest(field=field):
+                payload = {
+                    'repo_name': 'test/repo',
+                    'tier': 'L1',
+                    'trust_score': 75,
+                }
+                payload[field] = value
+
+                response = self.client.post(
+                    '/api/badge/generate',
+                    json=payload,
+                    content_type='application/json',
+                )
+
+                self.assertEqual(response.status_code, 400)
+                data = json.loads(response.data)
+                self.assertFalse(data['success'])
+                self.assertEqual(data['error'], f'{field} must be a string')
+
+    def test_generate_badge_rejects_non_numeric_trust_score(self):
+        """Test badge generation rejects structured trust scores."""
+        response = self.client.post(
+            '/api/badge/generate',
+            json={
+                'repo_name': 'test/repo',
+                'tier': 'L1',
+                'trust_score': {'score': 75},
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertFalse(data['success'])
+        self.assertEqual(data['error'], 'trust_score must be a number')
 
     def test_stats_endpoint(self):
         """Test stats endpoint."""
