@@ -245,6 +245,10 @@ rm -f /usr/local/bin/rustchain-mine
 
 ## Troubleshooting
 
+For a focused guide to common miner runtime errors such as `Wallet not found`,
+`Connection refused`, `Insufficient balance`, and architecture mismatches, see
+[`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
+
 ### Python virtualenv creation fails
 
 **Error:** `Could not create virtual environment`
