@@ -73,6 +73,22 @@ class RpcRegistry:
             return ApiResponse(success=False, error=str(e))
 
 
+JSON_RPC_ALLOWED_METHODS = {
+    "getStats",
+    "getBlock",
+    "getBlockByHash",
+    "getWallet",
+    "getBalance",
+    "getMiningStatus",
+    "getAntiquityScore",
+    "getProposals",
+    "getProposal",
+    "getNodeInfo",
+    "getPeers",
+    "getEntropyProfile",
+}
+
+
 # =============================================================================
 # API Server
 # =============================================================================
@@ -325,6 +341,8 @@ class ApiRequestHandler(BaseHTTPRequestHandler):
         # JSON-RPC endpoint
         if path == "/rpc":
             method = params.get("method", "")
+            if method not in JSON_RPC_ALLOWED_METHODS:
+                return ApiResponse(success=False, error=f"Method not allowed: {method}")
             rpc_params = params.get("params", {})
             return self.api.rpc.call(method, rpc_params)
 
