@@ -650,8 +650,14 @@ def create_defense_middleware(db_path: str = DB_PATH):
                 
                 try:
                     data = request.get_json(silent=True)
-                    if not data:
+                    if data is None:
                         return None
+                    if not isinstance(data, dict):
+                        return jsonify({
+                            "ok": False,
+                            "error": "JSON object required",
+                            "code": "INVALID_ATTESTATION_PAYLOAD"
+                        }), 400
                     
                     nonce = data.get('nonce')
                     miner = data.get('miner') or data.get('miner_id')
@@ -688,7 +694,9 @@ def create_defense_middleware(db_path: str = DB_PATH):
                 
                 try:
                     data = request.get_json(silent=True)
-                    if not data:
+                    if data is None:
+                        return response
+                    if not isinstance(data, dict):
                         return response
                     
                     nonce = data.get('nonce')
