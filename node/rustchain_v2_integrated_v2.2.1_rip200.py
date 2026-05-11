@@ -1990,6 +1990,10 @@ def _mac_hash(mac: str) -> str:
     digest = hmac.new(salt, norm.encode(), hashlib.sha256).hexdigest()
     return digest[:12]
 
+def current_utc_year():
+    """Return the current UTC year for hardware age calculations."""
+    return time.gmtime().tm_year
+
 def record_macs(miner: str, macs: list):
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as conn:
@@ -2008,7 +2012,7 @@ def calculate_rust_score_inline(mfg_year, arch, attestations, machine_id):
     """Calculate rust score for a machine."""
     score = 0
     if mfg_year:
-        score += (2025 - mfg_year) * 10  # age bonus
+        score += max(0, current_utc_year() - int(mfg_year)) * 10  # age bonus
     score += attestations * 0.001  # attestation bonus
     if machine_id <= 100:
         score += 50  # early adopter
