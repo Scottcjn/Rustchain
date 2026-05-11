@@ -52,6 +52,7 @@ DEFAULT_NODE_URL = os.getenv("RUSTCHAIN_NODE", "http://localhost:5000")
 DEFAULT_POLL_INTERVAL = int(os.getenv("WEBHOOK_POLL_INTERVAL", "10"))
 DEFAULT_LARGE_TX_THRESHOLD = float(os.getenv("LARGE_TX_THRESHOLD", "100.0"))
 DEFAULT_DB_PATH = os.getenv("WEBHOOK_DB", "webhooks.db")
+MAX_ADMIN_BODY_BYTES = 1024 * 1024
 MAX_RETRIES = 5
 INITIAL_BACKOFF = 1.0  # seconds
 BACKOFF_MULTIPLIER = 2.0
@@ -493,7 +494,12 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def _read_body(self) -> dict:
-        length = int(self.headers.get("Content-Length", 0))
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError as exc:
+            raise ValueError("invalid Content-Length") from exc
+        if length > MAX_ADMIN_BODY_BYTES:
+            raise ValueError("request body too large")
         if length == 0:
             return {}
         raw = self.rfile.read(length)
@@ -542,6 +548,10 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
     def _handle_subscribe(self):
         try:
             body = self._read_body()
+        except ValueError as exc:
+            status = 413 if "too large" in str(exc) else 400
+            self._send_json(status, {"error": str(exc)})
+            return
         except json.JSONDecodeError:
             self._send_json(400, {"error": "invalid JSON"})
             return
@@ -584,6 +594,10 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
     def _handle_unsubscribe(self):
         try:
             body = self._read_body()
+        except ValueError as exc:
+            status = 413 if "too large" in str(exc) else 400
+            self._send_json(status, {"error": str(exc)})
+            return
         except json.JSONDecodeError:
             self._send_json(400, {"error": "invalid JSON"})
             return
