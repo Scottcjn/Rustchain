@@ -578,6 +578,95 @@ class TestBridgeStatusQuery:
 # Lock Ledger Tests
 # =============================================================================
 
+class TestLockLedgerRoutes:
+    """Test lock ledger route request validation."""
+
+    @pytest.fixture
+    def client(self, setup_test_db, monkeypatch):
+        lock_ledger = setup_test_db["lock_ledger"]
+        app = Flask(__name__)
+        lock_ledger.register_lock_ledger_routes(app)
+        app.config["TESTING"] = True
+        monkeypatch.setenv("RC_ADMIN_KEY", "admin-secret")
+        monkeypatch.setenv("RC_WORKER_KEY", "worker-secret")
+        return app.test_client()
+
+    def test_admin_routes_reject_non_object_json(self, client):
+        """Admin write routes reject JSON arrays before field access."""
+        headers = {"X-Admin-Key": "admin-secret"}
+
+        for route in ["/api/lock/release", "/api/lock/forfeit"]:
+            response = client.post(route, json=["not", "an", "object"], headers=headers)
+
+            assert response.status_code == 400
+            assert response.get_json()["error"] == "Request body required"
+
+    def test_release_route_rejects_malformed_field_types(self, client):
+        """Release route validates lock ID and optional tx hash types."""
+        headers = {"X-Admin-Key": "admin-secret"}
+        cases = [
+            ({"lock_id": {"id": 1}}, "lock_id", "integer"),
+            (
+                {"lock_id": 1, "release_tx_hash": {"tx": "abc"}},
+                "release_tx_hash",
+                "string",
+            ),
+        ]
+
+        for body, field, expected in cases:
+            response = client.post("/api/lock/release", json=body, headers=headers)
+            payload = response.get_json()
+
+            assert response.status_code == 400
+            assert payload["error"] == "invalid_field_type"
+            assert payload["field"] == field
+            assert payload["expected"] == expected
+
+    def test_forfeit_route_rejects_malformed_reason_type(self, client):
+        """Forfeit route validates optional reason text type."""
+        response = client.post(
+            "/api/lock/forfeit",
+            json={"lock_id": 1, "reason": {"code": "penalty"}},
+            headers={"X-Admin-Key": "admin-secret"},
+        )
+        payload = response.get_json()
+
+        assert response.status_code == 400
+        assert payload["error"] == "invalid_field_type"
+        assert payload["field"] == "reason"
+        assert payload["expected"] == "string"
+
+    def test_auto_release_rejects_invalid_batch_size(self, client):
+        """Worker route rejects malformed and unbounded batch_size values."""
+        for batch_size in ["not-an-int", "0", "-1"]:
+            response = client.post(
+                f"/api/lock/auto-release?batch_size={batch_size}",
+                headers={"X-Worker-Key": "worker-secret"},
+            )
+            payload = response.get_json()
+
+            assert response.status_code == 400
+            assert payload["error"] == "invalid_query_param"
+            assert payload["field"] == "batch_size"
+
+    def test_query_routes_reject_malformed_integer_params(self, client):
+        """GET route query parameters fail closed on malformed integers."""
+        cases = [
+            "/api/lock/miner/alice?limit=bad",
+            "/api/lock/miner/alice?limit=0",
+            "/api/lock/pending-unlock?limit=bad",
+            "/api/lock/pending-unlock?limit=-1",
+            "/api/lock/pending-unlock?before=bad",
+        ]
+
+        for route in cases:
+            response = client.get(route)
+            payload = response.get_json()
+
+            assert response.status_code == 400
+            assert payload["error"] == "invalid_query_param"
+
+
 class TestLockLedger:
     """Test lock ledger operations."""
     
