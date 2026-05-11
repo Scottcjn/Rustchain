@@ -1028,6 +1028,8 @@ PER_EPOCH_RTC = 1.5  # Total RTC distributed per epoch across all miners
 PER_BLOCK_RTC = PER_EPOCH_RTC / EPOCH_SLOTS  # ~0.0104 RTC per block
 TOTAL_SUPPLY_RTC = 8_388_608  # Exactly 2**23 — pure binary, immutable
 TOTAL_SUPPLY_URTC = int(TOTAL_SUPPLY_RTC * 1_000_000)  # 8,388,608,000,000 uRTC
+ACCOUNT_UNIT = 1_000_000  # balances.amount_i64 uses micro-RTC.
+UTXO_UNIT = 100_000_000   # UTXO values use nano-RTC.
 ENFORCE = False  # Start with enforcement off
 CHAIN_ID = "rustchain-mainnet-v2"
 MIN_WITHDRAWAL = 0.1  # RTC
@@ -2990,15 +2992,17 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
 
             # Distribute rewards with precision
             for pk, weight in miners:
-                amount_decimal = Decimal(0) if total_weight == 0 else total_reward * Decimal(weight) / Decimal(total_weight)
-                amount_i64 = int(amount_decimal * Decimal(100000000))
+                # Use Decimal arithmetic to avoid float precision loss
+                amount_decimal = Decimal(0) if Decimal(total_weight) == 0 else total_reward * Decimal(weight) / Decimal(total_weight)
+                amount_i64 = int(amount_decimal * Decimal(ACCOUNT_UNIT))
+                amount_nrtc = int(amount_decimal * Decimal(UTXO_UNIT))
 
-                # OVERFLOW PROTECTION: Ensure amount_i64 fits in signed 64-bit int
-                if amount_i64 >= 2**63:
+                # OVERFLOW PROTECTION: Ensure stored reward units fit in signed 64-bit int
+                if amount_i64 >= 2**63 or amount_nrtc >= 2**63:
                     raise ValueError(f"Reward overflow for miner {pk}: {amount_i64}")
 
                 c.execute(
-                    "UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 100000000.0 WHERE miner_id = ?",
+                    "UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?",
                     (amount_i64, amount_i64, pk)
                 )
 
@@ -3010,7 +3014,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                     utxo_tx = {
                         "tx_type": "mining_reward",
                         "inputs": [],
-                        "outputs": [{"address": pk, "value_nrtc": amount_i64}],
+                        "outputs": [{"address": pk, "value_nrtc": amount_nrtc}],
                         "_allow_minting": True
                     }
                     utxo_ok = UtxoDB(DB_PATH).apply_transaction(
@@ -5537,7 +5541,7 @@ def bounty_multiplier():
             ("founder_community",)
         ).fetchone()
         total_paid_urtc = row[0] if row else 0
-        total_paid_rtc = total_paid_urtc / 100000000.0
+        total_paid_rtc = total_paid_urtc / ACCOUNT_UNIT
 
         # Current balance
         bal_row = c.execute(
@@ -7107,7 +7111,7 @@ def confirm_pending():
                 # Execute the actual transfer
                 c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (to_m,))
                 c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?", (amount, from_m))
-                c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 100000000.0 WHERE miner_id = ?", (amount, amount, to_m))
+                c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?", (amount, amount, to_m))
                 
                 # Log to IMMUTABLE ledger (the real chain!)
                 c.execute("""
@@ -7245,7 +7249,7 @@ def wallet_transfer_OLD():
 
         c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (to_miner,))
         c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?", (amount_i64, from_miner))
-        c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 100000000.0 WHERE miner_id = ?", (amount_i64, amount_i64, to_miner))
+        c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?", (amount_i64, amount_i64, to_miner))
 
         sender_new = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_miner,)).fetchone()[0]
         recipient_new = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (to_miner,)).fetchone()[0]
