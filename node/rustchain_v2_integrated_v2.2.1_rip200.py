@@ -4097,7 +4097,7 @@ def ingest_signed_header():
                         (slot,)
                     ).fetchone()
                     prev_block_hash = hashlib.sha256((prev_msg[0] if prev_msg else str(slot)).encode()).digest() if prev_msg else b""
-                    finalize_epoch(current_epoch, PER_EPOCH_RTC, prev_block_hash)
+                    finalize_epoch(current_epoch, PER_BLOCK_RTC, prev_block_hash)
                     print(f"[EPOCH] Auto-settled epoch {current_epoch} after {blocks_in_epoch} blocks")
                 except Exception as e:
                     print(f"[EPOCH] Settlement failed for epoch {current_epoch}: {e}")
