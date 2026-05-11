@@ -163,6 +163,14 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         data = json.loads(response.data)
         self.assertIn('error', data)
 
+    def test_bounty_sync_requires_admin_key(self):
+        """Bounty sync is admin-only because it mutates local bounty state."""
+        response = self.client.post('/api/bounties/sync')
+        self.assertEqual(response.status_code, 401)
+        data = json.loads(response.data)
+        self.assertIn('admin key required', data['error'])
+
+
     def test_bounty_lifecycle_workflow(self):
         """Full bounty lifecycle: create, claim, complete."""
         # Insert a test bounty directly

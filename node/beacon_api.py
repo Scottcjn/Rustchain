@@ -611,6 +611,14 @@ def sync_bounties():
     try:
         import urllib.request
         import ssl
+        import hmac
+
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if not admin_key:
+            return jsonify({'error': 'RC_ADMIN_KEY not configured — endpoint disabled'}), 503
+        provided_key = request.headers.get("X-Admin-Key", "")
+        if not hmac.compare_digest(provided_key, admin_key):
+            return jsonify({'error': 'Unauthorized — admin key required to sync bounties'}), 401
         
         # GitHub repos to scan
         repos = [
