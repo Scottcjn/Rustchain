@@ -59,6 +59,7 @@ class TestGPURenderProtocol(unittest.TestCase):
         result = self.proto.create_escrow("render", "wallet-a", "wallet-b", 10.0)
         self.assertEqual(result["status"], "locked")
         job_id = result["job_id"]
+        escrow_secret = result["escrow_secret"]
 
         # Check
         status = self.proto.get_escrow(job_id)
@@ -66,19 +67,45 @@ class TestGPURenderProtocol(unittest.TestCase):
         self.assertEqual(status["amount_rtc"], 10.0)
 
         # Release
-        release = self.proto.release_escrow(job_id)
+        release = self.proto.release_escrow(job_id, "wallet-a", escrow_secret)
         self.assertEqual(release["status"], "released")
         self.assertEqual(release["amount_rtc"], 10.0)
 
         # Double release fails
-        double = self.proto.release_escrow(job_id)
+        double = self.proto.release_escrow(job_id, "wallet-a", escrow_secret)
         self.assertIn("error", double)
 
     def test_escrow_refund(self):
         result = self.proto.create_escrow("tts", "wallet-a", "wallet-b", 5.0)
         job_id = result["job_id"]
 
-        refund = self.proto.refund_escrow(job_id)
+        refund = self.proto.refund_escrow(job_id, "wallet-b", result["escrow_secret"])
+        self.assertEqual(refund["status"], "refunded")
+
+    def test_escrow_release_requires_payer_secret(self):
+        result = self.proto.create_escrow("render", "payer", "provider", 10.0)
+        job_id = result["job_id"]
+
+        missing_auth = self.proto.release_escrow(job_id)
+        self.assertIn("error", missing_auth)
+
+        wrong_actor = self.proto.release_escrow(job_id, "provider", result["escrow_secret"])
+        self.assertEqual(wrong_actor["error"], "actor_wallet is not authorized for this transition")
+
+        wrong_secret = self.proto.release_escrow(job_id, "payer", "wrong-secret")
+        self.assertEqual(wrong_secret["error"], "invalid escrow_secret")
+
+        status = self.proto.get_escrow(job_id)
+        self.assertEqual(status["status"], "locked")
+
+    def test_escrow_refund_requires_provider_secret(self):
+        result = self.proto.create_escrow("render", "payer", "provider", 10.0)
+        job_id = result["job_id"]
+
+        wrong_actor = self.proto.refund_escrow(job_id, "payer", result["escrow_secret"])
+        self.assertEqual(wrong_actor["error"], "actor_wallet is not authorized for this transition")
+
+        refund = self.proto.refund_escrow(job_id, "provider", result["escrow_secret"])
         self.assertEqual(refund["status"], "refunded")
 
     def test_escrow_invalid_type(self):
