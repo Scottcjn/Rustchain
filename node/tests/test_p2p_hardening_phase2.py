@@ -180,6 +180,69 @@ def test_epoch_votes_survive_restart_and_reject_retransmit():
     assert restarted._epoch_votes[key] == {"node2": "accept"}
 
 
+def test_phase_d_state_sync_cannot_settle_epoch_without_local_quorum():
+    """Phase D: one signed peer STATE cannot bypass epoch vote quorum."""
+    target = _mk_layer("node1", {"node2": "http://n2", "node3": "http://n3", "node4": "http://n4"})
+    peer = _mk_layer("node2", db_path=target.db_path)
+    peer.broadcast = lambda *args, **kwargs: None
+
+    forged_epoch = 424242
+    proposal_hash = "forged-proposal"
+    state_msg = peer.create_message(
+        mod.MessageType.STATE,
+        {
+            "state": {
+                "epochs": {
+                    "epochs": [forged_epoch],
+                    "metadata": {
+                        str(forged_epoch): {
+                            "proposal_hash": proposal_hash,
+                            "finalized": True,
+                        }
+                    },
+                }
+            }
+        },
+    )
+
+    assert target.handle_message(state_msg)["status"] == "ok"
+    assert not target.epoch_crdt.contains(forged_epoch)
+
+
+def test_phase_d_state_sync_accepts_epoch_with_local_quorum_votes():
+    """Phase D: state sync may restore epochs only when local quorum evidence exists."""
+    target = _mk_layer("node1", {"node2": "http://n2", "node3": "http://n3", "node4": "http://n4"})
+    peer = _mk_layer("node2", db_path=target.db_path)
+    peer.broadcast = lambda *args, **kwargs: None
+
+    epoch = 15
+    proposal_hash = "locally-quorum-backed"
+    target._epoch_votes[(epoch, proposal_hash)] = {
+        "node1": "accept",
+        "node2": "accept",
+        "node3": "accept",
+    }
+    state_msg = peer.create_message(
+        mod.MessageType.STATE,
+        {
+            "state": {
+                "epochs": {
+                    "epochs": [epoch],
+                    "metadata": {
+                        str(epoch): {
+                            "proposal_hash": proposal_hash,
+                            "finalized": True,
+                        }
+                    },
+                }
+            }
+        },
+    )
+
+    assert target.handle_message(state_msg)["status"] == "ok"
+    assert target.epoch_crdt.contains(epoch)
+
+
 # Phase E regression
 def test_phase_e_future_timestamp_attestation_rejected():
     """Phase E: attestations with ts_ok far in the future are rejected."""

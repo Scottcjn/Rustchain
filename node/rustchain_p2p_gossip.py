@@ -1052,7 +1052,10 @@ class GossipLayer:
                 except Exception as e:
                     logger.warning(f"State from {sender}: attestation merge failed: {e}")
 
-        # Phase D.2: Validate + merge epochs (GSet is additive-only; schema check only)
+        # Phase D.2: Validate + merge epochs. A signed STATE message proves
+        # which peer sent the state, but it is not quorum evidence by itself.
+        # Only accept a remote settled epoch if this node already has persisted
+        # accept votes reaching quorum for that epoch/proposal hash.
         if "epochs" in state:
             raw = state["epochs"]
             if not isinstance(raw, dict):
@@ -1060,7 +1063,27 @@ class GossipLayer:
             else:
                 try:
                     remote_epochs = GSet.from_dict(raw)
-                    self.epoch_crdt.merge(remote_epochs)
+                    total_nodes = len(self.peers) + 1
+                    quorum = max(3, (total_nodes // 2) + 1)
+                    verified_epochs = GSet()
+                    for epoch in remote_epochs.items:
+                        meta = remote_epochs.metadata.get(epoch) or remote_epochs.metadata.get(str(epoch)) or {}
+                        proposal_hash = meta.get("proposal_hash") if isinstance(meta, dict) else None
+                        if not proposal_hash:
+                            logger.warning(
+                                f"State from {sender}: rejecting epoch {epoch} without proposal_hash"
+                            )
+                            continue
+                        votes = self._epoch_votes.get((epoch, proposal_hash), {})
+                        accept_count = sum(1 for v in votes.values() if v == "accept")
+                        if accept_count < quorum:
+                            logger.warning(
+                                f"State from {sender}: rejecting epoch {epoch} without local quorum "
+                                f"for proposal {proposal_hash[:12]} ({accept_count}/{quorum})"
+                            )
+                            continue
+                        verified_epochs.add(epoch, meta)
+                    self.epoch_crdt.merge(verified_epochs)
                 except Exception as e:
                     logger.warning(f"State from {sender}: epochs merge failed: {e}")
 
