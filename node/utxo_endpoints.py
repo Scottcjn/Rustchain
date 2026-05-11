@@ -101,6 +101,19 @@ def _ensure_signed_float_preserves_nrtc(amount: Decimal, nrtc: int,
 # (e.g. line 2370: amount_i64 = int(amount_decimal * Decimal(1000000))).
 ACCOUNT_UNIT = 1_000_000  # 1 RTC = 1,000,000 uRTC (6 decimals)
 
+
+def _decimal_to_account_i64(amount: Decimal, field_name: str) -> int:
+    """Convert an RTC Decimal to the legacy 6-decimal account unit exactly."""
+    units = amount * ACCOUNT_UNIT
+    integral = units.to_integral_value()
+    if units != integral:
+        raise ValueError(
+            f"{field_name} cannot be mirrored by dual-write account model "
+            "(max 6 decimal places)"
+        )
+    return int(integral)
+
+
 utxo_bp = Blueprint('utxo', __name__, url_prefix='/utxo')
 
 # These get set by register_utxo_blueprint() from the main server
@@ -376,6 +389,15 @@ def utxo_transfer():
         fee_nrtc = _decimal_to_nrtc(fee_rtc, 'fee_rtc')
         _ensure_signed_float_preserves_nrtc(amount_rtc, amount_nrtc, 'amount_rtc')
         _ensure_signed_float_preserves_nrtc(fee_rtc, fee_nrtc, 'fee_rtc')
+        amount_i64_for_dual_write = None
+        fee_i64_for_dual_write = None
+        if _dual_write:
+            amount_i64_for_dual_write = _decimal_to_account_i64(
+                amount_rtc, 'amount_rtc'
+            )
+            fee_i64_for_dual_write = _decimal_to_account_i64(
+                fee_rtc, 'fee_rtc'
+            )
     except ValueError as e:
         return jsonify({'error': f'Invalid amount: {e}'}), 400
 
@@ -505,7 +527,9 @@ def utxo_transfer():
         try:
             conn = sqlite3.connect(_db_path)
             c = conn.cursor()
-            amount_i64 = int(amount_rtc * ACCOUNT_UNIT)
+            amount_i64 = amount_i64_for_dual_write
+            fee_i64 = fee_i64_for_dual_write
+            debit_i64 = amount_i64 + fee_i64
 
             # Re-check sender shadow-balance before debit (security: prevent
             # negative-balance minting when account-model diverges from UTXO
@@ -514,26 +538,26 @@ def utxo_transfer():
                       (from_address,))
             shadow_row = c.fetchone()
             shadow_balance = shadow_row[0] if shadow_row else 0
-            if shadow_balance < amount_i64:
+            if shadow_balance < debit_i64:
                 conn.close()
                 print(
                     f"[UTXO] WARNING: dual-write skipped — insufficient "
                     f"shadow balance for {from_address[:20]}... "
-                    f"(have {shadow_balance}, need {amount_i64})"
+                    f"(have {shadow_balance}, need {debit_i64})"
                 )
             else:
                 c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
                           (to_address,))
                 c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
-                          (amount_i64, from_address))
+                          (debit_i64, from_address))
                 c.execute("UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
                           (amount_i64, to_address))
                 now = int(time.time())
                 slot = _current_slot_fn()
                 c.execute(
                     "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
-                    (now, slot, from_address, -amount_i64,
-                     f"utxo_transfer_out:{to_address[:20]}:{memo[:30]}")
+                    (now, slot, from_address, -debit_i64,
+                     f"utxo_transfer_out:{to_address[:20]}:fee={fee_i64}:{memo[:30]}")
                 )
                 c.execute(
                     "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
