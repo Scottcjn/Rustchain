@@ -62,8 +62,9 @@ class SubmissionValidator:
         # - Image content (machine + monitor)
         # - Metadata consistency
         
-        result["status"] = "PASS"
-        result["message"] = "Photo file exists and appears valid"
+        if result["status"] != "WARN":
+            result["status"] = "PASS"
+            result["message"] = "Photo file exists and appears valid"
         result["checks"] = {
             "file_exists": True,
             "file_size_bytes": file_size,
@@ -91,8 +92,9 @@ class SubmissionValidator:
             result["status"] = "WARN"
             result["message"] = f"Screenshot file seems too small: {file_size} bytes"
         
-        result["status"] = "PASS"
-        result["message"] = "Screenshot file exists"
+        if result["status"] != "WARN":
+            result["status"] = "PASS"
+            result["message"] = "Screenshot file exists"
         result["checks"] = {
             "file_exists": True,
             "file_size_bytes": file_size
