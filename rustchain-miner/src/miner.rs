@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use ed25519_dalek::Signer;
-use tokio::time::sleep;
+use tokio::time::{sleep, Instant as TokioInstant};
 
 use crate::attestation::{attest_with_key, FingerprintData};
 use crate::config::Config;
@@ -164,6 +164,11 @@ impl Miner {
     /// Get mining statistics
     pub fn stats(&self) -> &MiningStats {
         &self.stats
+    }
+
+    /// Get a clone of the shutdown flag for signal handlers.
+    pub fn shutdown_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.shutdown)
     }
 
     /// Print miner banner
@@ -385,7 +390,7 @@ impl Miner {
                 if let Err(e) = self.do_attestation().await {
                     tracing::error!("[MINER] Attestation failed: {}", e);
                     println!("❌ Attestation failed: {}", e);
-                    sleep(Duration::from_secs(30)).await;
+                    self.sleep_or_shutdown(Duration::from_secs(30)).await;
                     continue;
                 }
             }
@@ -405,7 +410,9 @@ impl Miner {
                             break;
                         }
 
-                        sleep(check_interval).await;
+                        if self.sleep_or_shutdown(check_interval).await {
+                            break;
+                        }
                         elapsed += check_interval;
                         let remaining = block_duration - elapsed;
                         println!(
@@ -425,7 +432,7 @@ impl Miner {
                     tracing::error!("[MINER] Enrollment failed: {}", e);
                     println!("❌ Enrollment failed: {}", e);
                     println!("Retrying in 60s...");
-                    sleep(Duration::from_secs(60)).await;
+                    self.sleep_or_shutdown(Duration::from_secs(60)).await;
                 }
             }
         }
@@ -449,5 +456,22 @@ impl Miner {
     /// Check if shutdown was requested
     pub fn is_shutdown(&self) -> bool {
         self.shutdown.load(Ordering::Relaxed)
+    }
+
+    async fn sleep_or_shutdown(&self, duration: Duration) -> bool {
+        let deadline = TokioInstant::now() + duration;
+
+        loop {
+            if self.is_shutdown() {
+                return true;
+            }
+
+            let now = TokioInstant::now();
+            if now >= deadline {
+                return false;
+            }
+
+            sleep((deadline - now).min(Duration::from_secs(1))).await;
+        }
     }
 }
