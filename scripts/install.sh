@@ -22,11 +22,34 @@ warn()    { printf "${YELLOW}[WARN]${NC}  %s\n" "$*"; }
 err()     { printf "${RED}[ERROR]${NC} %s\n" "$*"; }
 banner()  { printf "\n${BOLD}${GREEN}%s${NC}\n" "$*"; }
 
+download_file() {
+    local primary_url="$1"
+    local fallback_url="$2"
+    local dest="$3"
+    local label="$4"
+
+    case "$primary_url" in
+        https://*) ;;
+        *) err "Refusing non-HTTPS ${label} URL: ${primary_url}"; exit 1 ;;
+    esac
+
+    if curl -fsSL --proto '=https' --tlsv1.2 "${primary_url}" -o "${dest}"; then
+        return 0
+    fi
+
+    warn "Could not download ${label} from repo, trying fallback..."
+    case "$fallback_url" in
+        https://*) ;;
+        *) err "Refusing non-HTTPS ${label} fallback URL: ${fallback_url}"; exit 1 ;;
+    esac
+    curl -fsSL --proto '=https' --tlsv1.2 "${fallback_url}" -o "${dest}"
+}
+
 # --- Constants -------------------------------------------------------------
 INSTALL_DIR="/opt/rustchain-miner"
 REPO_RAW="https://raw.githubusercontent.com/Scottcjn/Rustchain/main"
-MINER_URL="${REPO_RAW}/miners/rustchain_linux_miner.py"
-FINGERPRINT_URL="${REPO_RAW}/miners/fingerprint_checks.py"
+MINER_URL="${REPO_RAW}/miners/linux/rustchain_linux_miner.py"
+FINGERPRINT_URL="${REPO_RAW}/miners/linux/fingerprint_checks.py"
 NODE_URL="https://50.28.86.131"
 BOUNTY_URL="https://github.com/Scottcjn/rustchain-bounties/issues/2451"
 ARCADE_REPO="https://github.com/Scottcjn/rustchain-arcade"
@@ -496,17 +519,15 @@ main() {
 
     # --- Download miner files ---
     info "Downloading miner files..."
-    curl -sL "${MINER_URL}" -o "${INSTALL_DIR}/rustchain_linux_miner.py" || {
-        warn "Could not download from repo, trying fallback..."
-        curl -sL "https://rustchain.org/rustchain_linux_miner.py" -o "${INSTALL_DIR}/rustchain_linux_miner.py"
-    }
-    curl -sL "${FINGERPRINT_URL}" -o "${INSTALL_DIR}/fingerprint_checks.py" || {
-        warn "Could not download fingerprint_checks.py, trying fallback..."
-        curl -sL "https://rustchain.org/fingerprint_checks.py" -o "${INSTALL_DIR}/fingerprint_checks.py"
-    }
+    download_file "${MINER_URL}" "https://rustchain.org/rustchain_linux_miner.py" "${INSTALL_DIR}/rustchain_linux_miner.py" "miner"
+    download_file "${FINGERPRINT_URL}" "https://rustchain.org/fingerprint_checks.py" "${INSTALL_DIR}/fingerprint_checks.py" "fingerprint helper"
 
     if [ ! -s "${INSTALL_DIR}/rustchain_linux_miner.py" ]; then
         err "Failed to download miner files. Check network connectivity."
+        exit 1
+    fi
+    if [ ! -s "${INSTALL_DIR}/fingerprint_checks.py" ]; then
+        err "Failed to download fingerprint helper. Check network connectivity."
         exit 1
     fi
     ok "Miner files downloaded"
