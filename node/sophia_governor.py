@@ -16,6 +16,7 @@ events that deserve a larger mind.
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -938,7 +939,7 @@ def register_sophia_governor_endpoints(app, db_path: str | None = None) -> None:
         if not required:
             return False
         provided = (req.headers.get("X-Admin-Key") or req.headers.get("X-API-Key") or "").strip()
-        return bool(provided and provided == required)
+        return bool(provided and hmac.compare_digest(provided, required))
 
     @app.route("/sophia/governor/status", methods=["GET"])
     def sophia_governor_status():
