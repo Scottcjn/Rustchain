@@ -534,6 +534,6 @@ Esperado: las 6 verificaciones de huella digital de hardware se ejecutan en ARM6
 
 **[Elyan Labs](https://github.com/Scottcjn)** · 1,882 commits · 97 repos · 1,334 stars · $0 recaudados
 
-[⭐ Star Rustchain](https://github.com/Scottcjn/Rustchain) · [📊 Informe de Tracción Q1 2026](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) · [Follow @Scottcjn](https://github.com/Scottcjn)
+[⭐ Star RustChain](https://github.com/Scottcjn/Rustchain) · [📊 Informe de Tracción Q1 2026](https://github.com/Scottcjn/Rustchain/blob/main/docs/DEVELOPER_TRACTION_Q1_2026.md) · [Follow @Scottcjn](https://github.com/Scottcjn)
 
 </div>
