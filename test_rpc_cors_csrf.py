@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """
 Regression tests for API CORS and CSRF handling in rips/rustchain-core/api/rpc.py.
 
