@@ -458,5 +458,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - [RustChain GitHub](https://github.com/Scottcjn/Rustchain)
 - [RIP-302 Specification](../../rips/docs/)
-- [Agent Economy Documentation](../../docs/agent-economy.md)
+- [Agent Economy Documentation](../docs/AGENT_ECONOMY_SDK.md)
 - [Go Reference](https://pkg.go.dev/github.com/Scottcjn/Rustchain/sdk/go/agenteco)
