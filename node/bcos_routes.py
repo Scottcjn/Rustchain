@@ -53,6 +53,26 @@ def _get_admin_key():
     return os.environ.get("RC_ADMIN_KEY", "")
 
 
+def _parse_non_negative_query_int(name: str, default: int, max_value: int | None = None) -> int:
+    """Parse pagination query params without letting malformed input become a 500."""
+    raw_value = request.args.get(name)
+    if raw_value is None:
+        parsed = default
+    else:
+        try:
+            parsed = int(raw_value, 10)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name} must be an integer") from exc
+
+    if parsed < 0:
+        raise ValueError(f"{name} must be non-negative")
+
+    if max_value is not None:
+        parsed = min(parsed, max_value)
+
+    return parsed
+
+
 def _verify_commitment(report_json_str: str, claimed_commitment: str) -> bool:
     """Recompute BLAKE2b commitment and compare."""
     try:
@@ -388,8 +408,11 @@ def bcos_badge_svg(cert_id):
 def bcos_directory():
     """List all BCOS-certified repos with latest attestation."""
     tier_filter = request.args.get("tier", "").upper()
-    limit = min(int(request.args.get("limit", 100)), 500)
-    offset = int(request.args.get("offset", 0))
+    try:
+        limit = _parse_non_negative_query_int("limit", 100, max_value=500)
+        offset = _parse_non_negative_query_int("offset", 0)
+    except ValueError as e:
+        return jsonify({"error": "invalid_pagination", "message": str(e)}), 400
 
     try:
         with sqlite3.connect(_DB_PATH) as conn:
