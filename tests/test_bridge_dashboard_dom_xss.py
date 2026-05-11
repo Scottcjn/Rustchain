@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 from pathlib import Path
 
 
@@ -35,4 +37,3 @@ def test_bridge_transaction_fields_are_escaped_before_inner_html_injection():
     assert "${escapeHtml(String(tx.target_chain || '').toUpperCase())}" in index
     assert "${escapeHtml(String(tx.state || '').toUpperCase())}" in index
     assert "${safeCssToken(tx.state)}" in index
-
