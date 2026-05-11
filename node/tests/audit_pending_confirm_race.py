@@ -174,7 +174,7 @@ def test_pending_confirm_concurrent_requests_do_not_double_apply(monkeypatch, tm
     def call_confirm():
         with mod.app.test_client() as client:
             resp = client.post("/pending/confirm", headers={"X-Admin-Key": ADMIN_KEY})
-            responses.append(resp.get_json())
+            responses.append((resp.status_code, resp.get_json()))
 
     t1 = threading.Thread(target=call_confirm)
     t2 = threading.Thread(target=call_confirm)
@@ -192,11 +192,16 @@ def test_pending_confirm_concurrent_requests_do_not_double_apply(monkeypatch, tm
             "SELECT status FROM pending_ledger WHERE tx_hash='racehash'"
         ).fetchone()[0]
 
+    status_codes = [status_code for status_code, _ in responses]
+    confirmed_counts = sorted(payload["confirmed_count"] for _, payload in responses)
+
     print("responses=", responses)
     print("balances=", balances)
     print("ledger_rows=", ledger_rows)
     print("status=", status)
 
+    assert status_codes == [200, 200]
+    assert confirmed_counts == [0, 1]
     assert status == "confirmed"
     assert balances["alice"] == 600_000
     assert balances["bob"] == 400_000
