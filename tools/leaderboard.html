@@ -199,8 +199,11 @@
 
                 if (!minersRes) throw new Error('Could not connect to RustChain node');
 
-                const miners = await minersRes.json();
-                const epochData = await epochRes.json();
+                const minersPayload = await minersRes.json();
+                const miners = Array.isArray(minersPayload)
+                    ? minersPayload
+                    : (minersPayload.miners || minersPayload.data || []);
+                const epochData = epochRes ? await epochRes.json() : {};
 
                 updateStats(miners, epochData);
                 updateTable(miners);
@@ -218,33 +221,49 @@
             const archs = new Set(miners.map(m => m.device_arch));
             document.getElementById('stat-diversity').textContent = archs.size;
 
-            const maxMult = Math.max(...miners.map(m => m.antiquity_multiplier));
+            const multipliers = miners.map(m => Number(m.antiquity_multiplier || 0));
+            const maxMult = multipliers.length ? Math.max(...multipliers) : 0;
             document.getElementById('stat-multiplier').textContent = maxMult.toFixed(1) + 'x';
         }
 
         function updateTable(miners) {
-            miners.sort((a, b) => b.antiquity_multiplier - a.antiquity_multiplier);
+            miners.sort((a, b) => Number(b.antiquity_multiplier || 0) - Number(a.antiquity_multiplier || 0));
 
             const tbody = document.getElementById('leaderboard-body');
             tbody.innerHTML = '';
 
             miners.forEach((m, i) => {
                 const tr = document.createElement('tr');
-                const isVintage = m.hardware_type.includes('Vintage');
-                const timeAgo = Math.floor((Date.now() / 1000) - m.last_attest);
-                
-                tr.innerHTML = `
-                    <td class="rank rank-${i+1}">${i + 1}</td>
-                    <td title="${m.miner}">${m.miner.substring(0, 12)}...</td>
-                    <td>
-                        ${m.device_family} ${m.device_arch}
-                        <span class="badge ${isVintage ? 'badge-vintage' : 'badge-modern'}">${isVintage ? 'Vintage' : 'Modern'}</span>
-                    </td>
-                    <td style="color: var(--primary)">${m.antiquity_multiplier.toFixed(1)}x</td>
-                    <td>${timeAgo}s ago</td>
-                `;
+                const hardwareType = String(m.hardware_type || '');
+                const isVintage = hardwareType.includes('Vintage');
+                const timeAgo = Math.floor((Date.now() / 1000) - Number(m.last_attest || 0));
+                const multiplier = Number(m.antiquity_multiplier || 0);
+                const miner = String(m.miner || '-');
+
+                const rankCell = appendTextCell(tr, String(i + 1));
+                rankCell.className = `rank rank-${i + 1}`;
+
+                const minerCell = appendTextCell(tr, `${miner.substring(0, 12)}...`);
+                minerCell.title = miner;
+
+                const deviceCell = appendTextCell(tr, `${m.device_family || '-'} ${m.device_arch || '-'}`);
+                const badge = document.createElement('span');
+                badge.className = `badge ${isVintage ? 'badge-vintage' : 'badge-modern'}`;
+                badge.textContent = isVintage ? 'Vintage' : 'Modern';
+                deviceCell.append(' ', badge);
+
+                const multiplierCell = appendTextCell(tr, `${multiplier.toFixed(1)}x`);
+                multiplierCell.style.color = 'var(--primary)';
+
+                appendTextCell(tr, `${timeAgo}s ago`);
                 tbody.appendChild(tr);
             });
+        }
+
+        function appendTextCell(row, text) {
+            const cell = row.insertCell();
+            cell.textContent = text;
+            return cell;
         }
 
         function sortTable(n) {
