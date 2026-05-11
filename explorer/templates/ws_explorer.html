@@ -145,6 +145,16 @@ function updateEpoch(d) {
   if (epoch) document.getElementById('epoch').textContent = epoch;
 }
 
+function escapeHtml(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function addBlockFeed(block) {
   const feed = document.getElementById('block-feed');
   if (feed.querySelector('.empty')) feed.innerHTML = '';
@@ -152,7 +162,7 @@ function addBlockFeed(block) {
   const item = document.createElement('div');
   item.className = 'feed-item new';
   item.innerHTML = `<span class="time">${new Date().toLocaleTimeString()}</span> · 
-    Epoch ${block.epoch||'?'} · <span class="hash">${hash}</span>`;
+    Epoch ${escapeHtml(block.epoch||'?')} · <span class="hash">${escapeHtml(hash)}</span>`;
   feed.insertBefore(item, feed.firstChild);
   if (feed.children.length > 50) feed.removeChild(feed.lastChild);
   setTimeout(() => item.classList.remove('new'), 2000);
@@ -171,9 +181,9 @@ function updateMiners(d) {
     const grid = document.getElementById('miner-grid');
     grid.innerHTML = d.miners.slice(0, 12).map(m => `
       <div class="miner-card">
-        <div class="miner-id">${m.miner_id || m.id || '?'}</div>
-        <div class="miner-hw">${m.hardware || m.architecture || '?'}</div>
-        <div class="miner-multi">${m.multiplier || 1.0}x</div>
+        <div class="miner-id">${escapeHtml(m.miner_id || m.id || '?')}</div>
+        <div class="miner-hw">${escapeHtml(m.hardware || m.architecture || '?')}</div>
+        <div class="miner-multi">${escapeHtml(m.multiplier || 1.0)}x</div>
       </div>
     `).join('');
   }
@@ -186,7 +196,7 @@ function updateAttestations(list) {
     const item = document.createElement('div');
     item.className = 'feed-item new';
     item.innerHTML = `<span class="time">${new Date().toLocaleTimeString()}</span> · 
-      ${a.miner_id} · ${a.hardware} · <span class="miner-multi">${a.multiplier}x</span>`;
+      ${escapeHtml(a.miner_id)} · ${escapeHtml(a.hardware)} · <span class="miner-multi">${escapeHtml(a.multiplier)}x</span>`;
     feed.insertBefore(item, feed.firstChild);
     if (feed.children.length > 50) feed.removeChild(feed.lastChild);
     setTimeout(() => item.classList.remove('new'), 2000);

@@ -47,7 +47,7 @@ const state = {
 
 // Utility Functions
 function escapeHtml(str) {
-    if (!str) return '';
+    if (str === null || str === undefined) return '';
     return String(str)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -330,7 +330,7 @@ function renderStatusBar() {
             <span>${statusText}</span>
         </div>
         <div class="status-info mono">
-            ${state.health ? `v${state.health.version || '2.2.1'}` : ''}
+            ${state.health ? `v${escapeHtml(state.health.version || '2.2.1')}` : ''}
             ${state.health && state.health.uptime ? `| Uptime: ${formatUptime(state.health.uptime)}` : ''}
             ${state.lastUpdate ? `| Updated: ${formatRelativeTime(state.lastUpdate)}` : ''}
         </div>
@@ -421,7 +421,7 @@ function renderMinersTable() {
         const badgeClass = getArchitectureBadge(miner.device_arch);
         return `
             <tr>
-                <td class="mono" title="${escapeHtml(miner.miner_id)}">${shortenAddress(miner.miner_id || 'unknown')}</td>
+                <td class="mono" title="${escapeHtml(miner.miner_id)}">${escapeHtml(shortenAddress(miner.miner_id || 'unknown'))}</td>
                 <td><span class="badge ${badgeClass}">${escapeHtml(miner.device_arch || 'Unknown')}</span></td>
                 <td><span class="badge badge-${tier}">${tier.toUpperCase()}</span></td>
                 <td class="text-accent">${formatNumber(miner.multiplier || 1.0, 2)}x</td>
@@ -462,9 +462,9 @@ function renderBlocksTable() {
     container.innerHTML = state.blocks.map(block => `
         <tr>
             <td><strong class="text-accent">#${formatNumber(block.height, 0)}</strong></td>
-            <td class="mono" title="${escapeHtml(block.hash)}">${shortenHash(block.hash || '0x')}</td>
+            <td class="mono" title="${escapeHtml(block.hash)}">${escapeHtml(shortenHash(block.hash || '0x'))}</td>
             <td class="mono">${formatTimestamp(block.timestamp)}</td>
-            <td><span class="badge badge-info">${block.miners_count || 0} miners</span></td>
+            <td><span class="badge badge-info">${escapeHtml(block.miners_count || 0)} miners</span></td>
             <td class="text-success">${formatNumber(block.reward || 0, 2)} RTC</td>
         </tr>
     `).join('');
@@ -498,10 +498,10 @@ function renderTransactionsTable() {
     
     container.innerHTML = state.transactions.map(tx => `
         <tr>
-            <td class="mono" title="${escapeHtml(tx.hash)}">${shortenHash(tx.hash || '0x', 6)}</td>
+            <td class="mono" title="${escapeHtml(tx.hash)}">${escapeHtml(shortenHash(tx.hash || '0x', 6))}</td>
             <td class="mono">${escapeHtml(tx.type || 'transfer')}</td>
-            <td class="mono" title="${escapeHtml(tx.from)}">${shortenAddress(tx.from || '0x')}</td>
-            <td class="mono" title="${escapeHtml(tx.to)}">${shortenAddress(tx.to || '0x')}</td>
+            <td class="mono" title="${escapeHtml(tx.from)}">${escapeHtml(shortenAddress(tx.from || '0x'))}</td>
+            <td class="mono" title="${escapeHtml(tx.to)}">${escapeHtml(shortenAddress(tx.to || '0x'))}</td>
             <td class="text-success">${formatNumber(tx.amount || 0, 6)} RTC</td>
             <td class="mono">${formatRelativeTime(tx.timestamp)}</td>
         </tr>
@@ -582,7 +582,7 @@ function renderHallOfRust() {
                 <span style="font-size: 1.5rem; font-weight: bold; color: ${index === 0 ? '#f59e0b' : index === 1 ? '#94a3b8' : index === 2 ? '#b45309' : '#64748b'};">#${index + 1}</span>
                 <div style="flex: 1;">
                     <div class="mono" style="font-size: 0.9rem;">${machineName}</div>
-                    <div class="text-muted" style="font-size: 0.8rem;">${escapeHtml(machine.device_arch || 'Unknown')} • ${machine.total_attestations || 0} attestations${machine.is_deceased ? ' • <span style="color:#9aa39d">☠ deceased</span>' : ''}</div>
+                    <div class="text-muted" style="font-size: 0.8rem;">${escapeHtml(machine.device_arch || 'Unknown')} • ${escapeHtml(machine.total_attestations || 0)} attestations${machine.is_deceased ? ' • <span style="color:#9aa39d">☠ deceased</span>' : ''}</div>
                 </div>
                 <div class="rust-score">${formatNumber(machine.rust_score || 0, 0)}</div>
                 <span class="rust-badge">${getRustBadge(machine.rust_score)}</span>
@@ -641,7 +641,7 @@ function renderSearchResults() {
                         const badgeClass = getArchitectureBadge(miner.device_arch);
                         return `
                             <tr>
-                                <td class="mono" title="${escapeHtml(miner.miner_id)}">${shortenAddress(miner.miner_id || 'unknown')}</td>
+                                <td class="mono" title="${escapeHtml(miner.miner_id)}">${escapeHtml(shortenAddress(miner.miner_id || 'unknown'))}</td>
                                 <td><span class="badge ${badgeClass}">${escapeHtml(miner.device_arch || 'Unknown')}</span></td>
                                 <td><span class="badge badge-${tier}">${tier.toUpperCase()}</span></td>
                                 <td class="text-accent">${formatNumber(miner.multiplier || 1.0, 2)}x</td>

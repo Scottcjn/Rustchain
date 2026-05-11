@@ -362,13 +362,34 @@
             document.getElementById('activeAgents').textContent = stats.active_agents || 0;
             document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
         }
+
+        function esc(value) {
+            if (value === null || value === undefined) return '';
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function safeClass(value) {
+            return String(value || 'unknown')
+                .toLowerCase()
+                .replace(/[^a-z0-9_-]+/g, '-')
+                .replace(/^-+|-+$/g, '') || 'unknown';
+        }
         
         function renderJobs() {
             const grid = document.getElementById('jobsGrid');
             let filtered = currentCategory === 'all' ? jobs : jobs.filter(j => j.category === currentCategory);
             const searchTerm = document.getElementById('searchInput').value.toLowerCase();
             if (searchTerm) {
-                filtered = filtered.filter(j => j.title.toLowerCase().includes(searchTerm) || j.description.toLowerCase().includes(searchTerm) || j.poster.toLowerCase().includes(searchTerm));
+                filtered = filtered.filter(j =>
+                    String(j.title || '').toLowerCase().includes(searchTerm) ||
+                    String(j.description || '').toLowerCase().includes(searchTerm) ||
+                    String(j.poster || '').toLowerCase().includes(searchTerm)
+                );
             }
             
             if (filtered.length === 0) {
@@ -380,16 +401,16 @@
                 <div class="job-card">
                     <div class="job-header">
                         <div>
-                            <div class="job-title">${job.title}</div>
-                            <div class="job-id">ID: ${job.id}</div>
+                            <div class="job-title">${esc(job.title)}</div>
+                            <div class="job-id">ID: ${esc(job.id)}</div>
                         </div>
-                        <div class="job-reward">${job.reward} RTC</div>
+                        <div class="job-reward">${esc(job.reward)} RTC</div>
                     </div>
-                    <p class="job-description">${job.description}</p>
+                    <p class="job-description">${esc(job.description)}</p>
                     <div class="job-meta">
-                        <span class="category-badge ${job.category}">${job.category}</span>
-                        <span class="job-tag">👤 ${job.poster}</span>
-                        <span class="job-tag">📅 ${formatDate(job.created_at)}</span>
+                        <span class="category-badge ${safeClass(job.category)}">${esc(job.category)}</span>
+                        <span class="job-tag">👤 ${esc(job.poster)}</span>
+                        <span class="job-tag">📅 ${esc(formatDate(job.created_at))}</span>
                     </div>
                     <div class="lifecycle">
                         <div class="lifecycle-step ${getStatusClass(job.status, 'open')}">📝 Posted</div>
@@ -397,7 +418,7 @@
                         <div class="lifecycle-step ${getStatusClass(job.status, 'delivered')}">📤 Delivered</div>
                         <div class="lifecycle-step ${getStatusClass(job.status, 'completed')}">✅ Completed</div>
                     </div>
-                    ${job.status === 'open' ? `<div class="curl-cmd">curl -X POST https://rustchain.org/agent/jobs/${job.id}/claim -d '{"worker_wallet": "your-wallet"}'</div>` : ''}
+                    ${job.status === 'open' ? `<div class="curl-cmd">curl -X POST https://rustchain.org/agent/jobs/${esc(job.id)}/claim -d '{"worker_wallet": "your-wallet"}'</div>` : ''}
                 </div>
             `).join('');
         }
@@ -424,7 +445,7 @@
             document.getElementById('repScore').textContent = '--';
             
             try {
-                const response = await fetch(`https://rustchain.org/agent/reputation/${wallet}`);
+                const response = await fetch(`https://rustchain.org/agent/reputation/${encodeURIComponent(wallet)}`);
                 const rep = response.ok ? await response.json() : mockReputation;
                 updateReputation(rep);
             } catch (error) { updateReputation(mockReputation); }

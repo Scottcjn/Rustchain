@@ -24,6 +24,7 @@ HTML = """
 <script>
 async function j(u){const r=await fetch(u);return await r.json();}
 function fmtTs(v){if(!v) return '-'; const n=Number(v); if(!Number.isFinite(n)) return String(v); const ms=n>1e12?n:n*1000; return new Date(ms).toLocaleString();}
+function esc(v){return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 async function load(){
   const d=await j('/api/dashboard');
   document.getElementById('base').textContent=d.base;
@@ -31,8 +32,8 @@ async function load(){
   document.getElementById('miners').textContent=(d.miners||[]).length;
   document.getElementById('epoch').textContent=d.epoch?.epoch ?? '-';
   document.getElementById('txcount').textContent=(d.transactions||[]).length;
-  document.getElementById('minersTbl').innerHTML=(d.miners||[]).slice(0,20).map(m=>`<tr><td>${m.miner_id||m.wallet||'-'}</td><td>${m.score||m.attestation_score||'-'}</td><td>${m.multiplier||m.antiquity_multiplier||'-'}</td></tr>`).join('');
-  document.getElementById('txTbl').innerHTML=(d.transactions||[]).slice(0,30).map(t=>`<tr><td>${fmtTs(t.timestamp||t.created_at||t.time)}</td><td>${t.from||t.sender||'-'}</td><td>${t.to||t.recipient||'-'}</td><td>${t.amount||t.value||'-'}</td></tr>`).join('');
+  document.getElementById('minersTbl').innerHTML=(d.miners||[]).slice(0,20).map(m=>`<tr><td>${esc(m.miner_id??m.wallet??'-')}</td><td>${esc(m.score??m.attestation_score??'-')}</td><td>${esc(m.multiplier??m.antiquity_multiplier??'-')}</td></tr>`).join('');
+  document.getElementById('txTbl').innerHTML=(d.transactions||[]).slice(0,30).map(t=>`<tr><td>${esc(fmtTs(t.timestamp??t.created_at??t.time))}</td><td>${esc(t.from??t.sender??'-')}</td><td>${esc(t.to??t.recipient??'-')}</td><td>${esc(t.amount??t.value??'-')}</td></tr>`).join('');
 }
 load(); setInterval(load, 30000);
 </script></body></html>

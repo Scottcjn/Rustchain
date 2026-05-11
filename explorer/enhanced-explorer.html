@@ -623,12 +623,12 @@
             if (transactions.transactions && transactions.transactions.length > 0) {
                 table.innerHTML = transactions.transactions.slice(0, 20).map(tx => `
                     <tr>
-                        <td><code>${tx.hash || tx.tx_hash || 'N/A'}</code></td>
-                        <td><code>${tx.from || 'N/A'}</code></td>
-                        <td><code>${tx.to || 'N/A'}</code></td>
+                        <td><code>${esc(tx.hash || tx.tx_hash || 'N/A')}</code></td>
+                        <td><code>${esc(tx.from || 'N/A')}</code></td>
+                        <td><code>${esc(tx.to || 'N/A')}</code></td>
                         <td>${(tx.amount / 1000000 || 0).toFixed(2)} RTC</td>
                         <td>${(tx.fee / 1000000 || 0).toFixed(4)} RTC</td>
-                        <td>${formatTime(tx.timestamp)}</td>
+                        <td>${esc(formatTime(tx.timestamp))}</td>
                         <td><span class="badge badge-success">Confirmed</span></td>
                     </tr>
                 `).join('');

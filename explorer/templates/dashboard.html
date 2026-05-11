@@ -319,16 +319,33 @@
             document.getElementById('active-miners').textContent = stats.active_miners;
             document.getElementById('difficulty').textContent = stats.difficulty;
         }
+
+        function escapeHtml(value) {
+            if (value === null || value === undefined) return '';
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function safeClass(value) {
+            return String(value || 'unknown')
+                .toLowerCase()
+                .replace(/[^a-z0-9_-]+/g, '-')
+                .replace(/^-+|-+$/g, '') || 'unknown';
+        }
         
         function updateRecentBlocks(blocks) {
             const tbody = document.getElementById('recent-blocks');
             tbody.innerHTML = blocks.map(block => `
                 <tr>
-                    <td><a href="/block/${block.hash}" class="text-decoration-none">${block.height}</a></td>
-                    <td><code class="text-muted">${block.hash.substring(0, 16)}...</code></td>
-                    <td>${block.tx_count}</td>
-                    <td>${block.miner}</td>
-                    <td class="text-muted">${block.timestamp}</td>
+                    <td><a href="/block/${encodeURIComponent(block.hash || '')}" class="text-decoration-none">${escapeHtml(block.height)}</a></td>
+                    <td><code class="text-muted">${escapeHtml(String(block.hash || '').substring(0, 16))}...</code></td>
+                    <td>${escapeHtml(block.tx_count)}</td>
+                    <td>${escapeHtml(block.miner)}</td>
+                    <td class="text-muted">${escapeHtml(block.timestamp)}</td>
                 </tr>
             `).join('');
         }
@@ -336,29 +353,31 @@
         function updateMiners(miners) {
             const tbody = document.getElementById('miners-tbody');
             tbody.innerHTML = miners.map(miner => {
-                const architectureLower = miner.architecture.toLowerCase().replace('-', '');
+                const architecture = miner.architecture || 'unknown';
+                const architectureClass = safeClass(architecture);
                 const archIcon = miner.architecture === 'x86' ? 'microchip' : 
                                miner.architecture === 'ARM' ? 'mobile-alt' :
                                miner.architecture === 'RISC-V' ? 'cpu' : 'question';
+                const status = miner.status === 'active' ? 'active' : 'inactive';
                 
                 return `
-                    <tr class="miner-row" data-miner-id="${miner.address}">
+                    <tr class="miner-row" data-miner-id="${escapeHtml(miner.address || '')}">
                         <td>
-                            <i class="fas fa-circle ${miner.status === 'active' ? 'status-active' : 'status-inactive'}"></i>
-                            <span class="ms-1">${miner.status.charAt(0).toUpperCase() + miner.status.slice(1)}</span>
+                            <i class="fas fa-circle ${status === 'active' ? 'status-active' : 'status-inactive'}"></i>
+                            <span class="ms-1">${status.charAt(0).toUpperCase() + status.slice(1)}</span>
                         </td>
                         <td>
-                            <code class="text-primary">${miner.address.substring(0, 16)}...</code>
+                            <code class="text-primary">${escapeHtml(String(miner.address || '').substring(0, 16))}...</code>
                         </td>
                         <td>
-                            <span class="badge architecture-badge badge-${architectureLower}">
+                            <span class="badge architecture-badge badge-${architectureClass}">
                                 <i class="fas fa-${archIcon} me-1"></i>
-                                ${miner.architecture}
+                                ${escapeHtml(architecture)}
                             </span>
                         </td>
-                        <td>${miner.hash_rate}</td>
-                        <td>${miner.blocks_mined}</td>
-                        <td class="text-muted">${miner.last_seen}</td>
+                        <td>${escapeHtml(miner.hash_rate)}</td>
+                        <td>${escapeHtml(miner.blocks_mined)}</td>
+                        <td class="text-muted">${escapeHtml(miner.last_seen)}</td>
                     </tr>
                 `;
             }).join('');

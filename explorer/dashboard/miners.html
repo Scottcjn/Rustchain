@@ -424,6 +424,23 @@
         };
         
         let miners = [];
+
+        function escapeHtml(value) {
+            if (value === null || value === undefined) return '';
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function safeClass(value) {
+            return String(value || 'unknown')
+                .toLowerCase()
+                .replace(/[^a-z0-9_-]+/g, '-')
+                .replace(/^-+|-+$/g, '') || 'unknown';
+        }
         
         async function fetchMiners() {
             try {
@@ -464,36 +481,42 @@
                 return;
             }
             
-            tbody.innerHTML = data.map(miner => `
-                <tr>
-                    <td>
-                        <div class="miner-name">
-                            <strong>${miner.id}</strong>
-                        </div>
-                    </td>
-                    <td>
-                        <span class="arch-badge ${miner.arch.toLowerCase().replace(' ', '-')}">
-                            ${archIcons[miner.arch] || '⚙️'} ${archLabels[miner.arch] || miner.arch}
-                        </span>
-                    </td>
-                    <td>
-                        <span class="status-badge ${miner.status}">
-                            ${miner.status === 'online' ? 'Online' : 'Offline'}
-                        </span>
-                    </td>
-                    <td><span class="multiplier">${miner.multiplier}x</span></td>
-                    <td class="timestamp">${miner.lastAttestation}</td>
-                    <td>${miner.weight.toLocaleString()}</td>
-                </tr>
-            `).join('');
+            tbody.innerHTML = data.map(miner => {
+                const minerId = miner.id ?? miner.miner_id ?? 'unknown';
+                const arch = miner.arch ?? miner.architecture ?? miner.device_arch ?? 'Unknown';
+                const status = miner.status === 'online' ? 'online' : 'offline';
+                const weight = miner.weight ?? miner.score ?? miner.balance ?? 0;
+                return `
+                    <tr>
+                        <td>
+                            <div class="miner-name">
+                                <strong>${escapeHtml(minerId)}</strong>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="arch-badge ${safeClass(arch)}">
+                                ${escapeHtml(archIcons[arch] || 'GPU')} ${escapeHtml(archLabels[arch] || arch)}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="status-badge ${status}">
+                                ${status === 'online' ? 'Online' : 'Offline'}
+                            </span>
+                        </td>
+                        <td><span class="multiplier">${escapeHtml(miner.multiplier ?? '--')}x</span></td>
+                        <td class="timestamp">${escapeHtml(miner.lastAttestation ?? miner.last_seen ?? '--')}</td>
+                        <td>${escapeHtml(weight.toLocaleString())}</td>
+                    </tr>
+                `;
+            }).join('');
         }
         
         // Search functionality
         document.getElementById('searchInput').addEventListener('input', (e) => {
             const query = e.target.value.toLowerCase();
             const filtered = miners.filter(m => 
-                m.id.toLowerCase().includes(query) ||
-                m.arch.toLowerCase().includes(query)
+                String(m.id ?? m.miner_id ?? '').toLowerCase().includes(query) ||
+                String(m.arch ?? m.architecture ?? m.device_arch ?? '').toLowerCase().includes(query)
             );
             renderTable(filtered);
         });
