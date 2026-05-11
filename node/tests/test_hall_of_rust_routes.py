@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 import os
 import sys
 
@@ -27,4 +29,3 @@ def test_hall_eulogy_rejects_non_object_json():
 
     assert response.status_code == 400
     assert response.get_json()["error"] == "JSON object required"
-
