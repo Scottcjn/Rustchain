@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 import sys
 
 integrated_node = sys.modules["integrated_node"]
