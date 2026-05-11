@@ -7,6 +7,7 @@ import sqlite3
 import sys
 import tempfile
 import time
+import types
 import unittest
 
 
@@ -14,13 +15,48 @@ NODE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 MODULE_PATH = os.path.join(NODE_DIR, "rustchain_v2_integrated_v2.2.1_rip200.py")
 
 
+def _install_p2p_stub():
+    previous = sys.modules.get("rustchain_p2p_sync_secure")
+    stub = types.ModuleType("rustchain_p2p_sync_secure")
+
+    class DummyPeerManager:
+        def get_network_stats(self):
+            return {}
+
+        def add_peer(self, peer_url):
+            return True
+
+    class DummyBlockSync:
+        running = False
+
+        def start(self):
+            self.running = True
+
+        def get_blocks_for_sync(self, start_height, limit):
+            return []
+
+    def initialize_secure_p2p(*args, **kwargs):
+        def require_peer_auth(func):
+            return func
+
+        return DummyPeerManager(), DummyBlockSync(), require_peer_auth
+
+    stub.initialize_secure_p2p = initialize_secure_p2p
+    sys.modules["rustchain_p2p_sync_secure"] = stub
+    return previous
+
+
 class TestEpochEnrollAttestedWeight(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls._tmp = tempfile.TemporaryDirectory()
         cls._prev_db_path = os.environ.get("RUSTCHAIN_DB_PATH")
         cls._prev_admin_key = os.environ.get("RC_ADMIN_KEY")
-        cls.db_path = os.path.join(cls._tmp.name, "enroll_attested_weight.db")
+        cls._prev_p2p_module = _install_p2p_stub()
+        # Leave the temp directory for pytest/OS cleanup instead of deleting it
+        # in tearDownClass. The integrated node import can keep SQLite handles
+        # alive briefly on Windows, which makes eager directory cleanup flaky.
+        cls._tmp_dir = tempfile.mkdtemp(prefix="rustchain-enroll-attested-")
+        cls.db_path = os.path.join(cls._tmp_dir, "enroll_attested_weight.db")
         os.environ["RUSTCHAIN_DB_PATH"] = cls.db_path
         os.environ["RC_ADMIN_KEY"] = "0123456789abcdef0123456789abcdef"
 
@@ -44,7 +80,36 @@ class TestEpochEnrollAttestedWeight(unittest.TestCase):
             os.environ.pop("RC_ADMIN_KEY", None)
         else:
             os.environ["RC_ADMIN_KEY"] = cls._prev_admin_key
-        cls._tmp.cleanup()
+
+        block_sync = getattr(cls.mod, "block_sync", None)
+        if block_sync is not None:
+            block_sync.running = False
+
+        try:
+            from prometheus_client import REGISTRY
+
+            for metric_name in (
+                "withdrawal_requests",
+                "withdrawal_completed",
+                "withdrawal_failed",
+                "balance_gauge",
+                "epoch_gauge",
+                "withdrawal_queue_size",
+            ):
+                metric = getattr(cls.mod, metric_name, None)
+                if metric is None:
+                    continue
+                try:
+                    REGISTRY.unregister(metric)
+                except (KeyError, ValueError):
+                    pass
+        except Exception:
+            pass
+        finally:
+            if cls._prev_p2p_module is None:
+                sys.modules.pop("rustchain_p2p_sync_secure", None)
+            else:
+                sys.modules["rustchain_p2p_sync_secure"] = cls._prev_p2p_module
 
     def setUp(self):
         with sqlite3.connect(self.db_path) as conn:

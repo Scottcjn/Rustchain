@@ -15,6 +15,8 @@ import os
 import sqlite3
 import sys
 import tempfile
+import time
+import types
 import unittest
 from pathlib import Path
 
@@ -41,6 +43,64 @@ EXTRA_SCHEMA = [
 ]
 
 
+def _install_p2p_stub():
+    previous = sys.modules.get("rustchain_p2p_sync_secure")
+    stub = types.ModuleType("rustchain_p2p_sync_secure")
+
+    class DummyPeerManager:
+        def get_network_stats(self):
+            return {}
+
+        def add_peer(self, peer_url):
+            return True
+
+    class DummyBlockSync:
+        running = False
+
+        def start(self):
+            self.running = True
+
+        def get_blocks_for_sync(self, start_height, limit):
+            return []
+
+    def initialize_secure_p2p(*args, **kwargs):
+        def require_peer_auth(func):
+            return func
+
+        return DummyPeerManager(), DummyBlockSync(), require_peer_auth
+
+    stub.initialize_secure_p2p = initialize_secure_p2p
+    sys.modules["rustchain_p2p_sync_secure"] = stub
+    return previous
+
+
+def _release_integrated_module(mod):
+    block_sync = getattr(mod, "block_sync", None)
+    if block_sync is not None:
+        block_sync.running = False
+
+    try:
+        from prometheus_client import REGISTRY
+    except Exception:
+        return
+
+    for metric_name in (
+        "withdrawal_requests",
+        "withdrawal_completed",
+        "withdrawal_failed",
+        "balance_gauge",
+        "epoch_gauge",
+        "withdrawal_queue_size",
+    ):
+        metric = getattr(mod, metric_name, None)
+        if metric is None:
+            continue
+        try:
+            REGISTRY.unregister(metric)
+        except (KeyError, ValueError):
+            pass
+
+
 def _sign_message(miner_id: str, wallet: str, nonce: str, commitment: str):
     """Sign an attestation message using Ed25519, return (signature_hex, public_key_hex)."""
     signing_key = nacl.signing.SigningKey.generate()
@@ -63,9 +123,11 @@ def _sign_enrollment(miner_pk: str, miner_id: str, epoch: int, signing_key):
 class TestEnrollSignatureVerification(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls._tmp = tempfile.TemporaryDirectory()
+        cls._tmp_dir = tempfile.mkdtemp(prefix="rustchain-enroll-sig-")
         cls._prev_admin_key = os.environ.get("RC_ADMIN_KEY")
         cls._prev_db_path = os.environ.get("RUSTCHAIN_DB_PATH")
+        cls._prev_p2p_module = _install_p2p_stub()
+        cls._loaded_modules = []
         os.environ["RC_ADMIN_KEY"] = "0123456789abcdef0123456789abcdef"
 
         if NODE_DIR not in sys.path:
@@ -81,18 +143,44 @@ class TestEnrollSignatureVerification(unittest.TestCase):
             os.environ.pop("RUSTCHAIN_DB_PATH", None)
         else:
             os.environ["RUSTCHAIN_DB_PATH"] = cls._prev_db_path
-        cls._tmp.cleanup()
+        cls._release_loaded_modules()
+        if cls._prev_p2p_module is None:
+            sys.modules.pop("rustchain_p2p_sync_secure", None)
+        else:
+            sys.modules["rustchain_p2p_sync_secure"] = cls._prev_p2p_module
+
+    @classmethod
+    def _release_loaded_modules(cls):
+        for mod in cls._loaded_modules:
+            _release_integrated_module(mod)
+        cls._loaded_modules = []
+
+    def tearDown(self):
+        self._release_loaded_modules()
 
     def _db_path(self, name: str) -> str:
-        return str(Path(self._tmp.name) / name)
+        return str(Path(self._tmp_dir) / name)
 
     def _load_module(self, module_name: str, db_name: str):
+        self._release_loaded_modules()
         db_path = self._db_path(db_name)
         os.environ["RUSTCHAIN_DB_PATH"] = db_path
         spec = importlib.util.spec_from_file_location(module_name, MODULE_PATH)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        mod.init_db()
+        self._loaded_modules.append(mod)
+        # These tests target /epoch/enroll signature behavior, not the replay
+        # defense package. Disabling that optional init avoids cross-import
+        # SQLite locks from its module-level schema setup in integrated tests.
+        mod.HAVE_REPLAY_DEFENSE = False
+        for attempt in range(5):
+            try:
+                mod.init_db()
+                break
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc).lower() or attempt == 4:
+                    raise
+                time.sleep(0.2)
         with sqlite3.connect(db_path) as conn:
             for stmt in EXTRA_SCHEMA:
                 conn.execute(stmt)
