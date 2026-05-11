@@ -8,6 +8,7 @@ import json
 import time
 import sys
 import os
+import gc
 import tempfile
 import sqlite3
 
@@ -59,6 +60,9 @@ class TestBeaconJoinRouting(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         """Clean up after all tests."""
+        cls.client = None
+        cls.app = None
+        gc.collect()
         os.close(cls.test_db_fd)
         os.unlink(cls.test_db_path)
 
@@ -274,6 +278,85 @@ class TestBeaconJoinRouting(unittest.TestCase):
                 ('bcn_wallet_test',)
             ).fetchone()
             self.assertEqual(row[0], '0x1234567890123456789012345678901234567890')
+
+    def test_join_allows_same_coinbase_with_case_and_spacing(self):
+        """POST /beacon/join treats the same normalized wallet as unchanged."""
+        pubkey = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'
+        payload1 = {
+            'agent_id': 'bcn_wallet_normalized',
+            'pubkey_hex': pubkey,
+            'name': 'Wallet Owner',
+            'coinbase_address': '  0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD  ',
+        }
+        r1 = self.client.post(
+            '/beacon/join',
+            data=json.dumps(payload1),
+            content_type='application/json',
+        )
+        self.assertEqual(r1.status_code, 200)
+
+        payload2 = {
+            'agent_id': 'bcn_wallet_normalized',
+            'pubkey_hex': pubkey,
+            'name': 'Renamed Owner',
+            'coinbase_address': '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+        }
+        r2 = self.client.post(
+            '/beacon/join',
+            data=json.dumps(payload2),
+            content_type='application/json',
+        )
+        self.assertEqual(r2.status_code, 200)
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            row = conn.execute(
+                "SELECT coinbase_address, name FROM relay_agents WHERE agent_id = ?",
+                ('bcn_wallet_normalized',),
+            ).fetchone()
+            self.assertEqual(row[0], '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd')
+            self.assertEqual(row[1], 'Renamed Owner')
+
+    def test_join_rejects_coinbase_change_for_existing_agent(self):
+        """POST /beacon/join cannot replace an existing agent wallet."""
+        pubkey = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'
+        original_wallet = '0x1111111111111111111111111111111111111111'
+        attacker_wallet = '0x2222222222222222222222222222222222222222'
+        payload1 = {
+            'agent_id': 'bcn_wallet_takeover_target',
+            'pubkey_hex': pubkey,
+            'name': 'Wallet Owner',
+            'coinbase_address': original_wallet,
+        }
+        r1 = self.client.post(
+            '/beacon/join',
+            data=json.dumps(payload1),
+            content_type='application/json',
+        )
+        self.assertEqual(r1.status_code, 200)
+
+        payload2 = {
+            'agent_id': 'bcn_wallet_takeover_target',
+            'pubkey_hex': pubkey,
+            'name': 'Renamed Owner',
+            'coinbase_address': attacker_wallet,
+        }
+        r2 = self.client.post(
+            '/beacon/join',
+            data=json.dumps(payload2),
+            content_type='application/json',
+        )
+        self.assertEqual(r2.status_code, 403)
+        data = json.loads(r2.data)
+        self.assertIn('/api/agents/bcn_wallet_takeover_target/wallet', data['error'])
+        self.assertIn('admin key', data['error'])
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            row = conn.execute(
+                "SELECT coinbase_address, name FROM relay_agents WHERE agent_id = ?",
+                ('bcn_wallet_takeover_target',),
+            ).fetchone()
+            self.assertEqual(row[0], original_wallet)
+            self.assertEqual(row[1], 'Wallet Owner')
 
     def test_join_invalid_coinbase_address_returns_400(self):
         """POST /beacon/join returns 400 for invalid coinbase_address."""
