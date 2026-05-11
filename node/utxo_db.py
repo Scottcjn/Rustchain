@@ -1,4 +1,4 @@
-"""
+﻿"""
 RustChain UTXO Database Layer
 =============================
 
@@ -445,38 +445,26 @@ class UtxoDB:
             if tx_type in MINTING_TX_TYPES and output_total > MAX_COINBASE_OUTPUT_NRTC:
                 return abort()
 
-            if type(fee) is not int:
-                return abort()
             if fee < 0:
                 return abort()
-            if inputs and (output_total + fee) > input_total:
+            if inputs and (output_total + fee) != input_total:
                 return abort()
 
             # -- compute output box IDs and build tx_id ----------------------
-            # We need a preliminary tx_id for box_id computation. Bind it to
-            # the full transaction intent, not just inputs+timestamp, so two
-            # different transfers cannot share one tx_id.
-            tx_identity = {
-                'tx_type': tx_type,
-                'inputs': sorted(i['box_id'] for i in inputs),
-                'data_inputs': sorted(tx.get('data_inputs', [])),
-                'outputs': [
-                    {
-                        'address': out['address'],
-                        'value_nrtc': out['value_nrtc'],
-                        'tokens_json': out.get('tokens_json', '[]'),
-                        'registers_json': out.get('registers_json', '{}'),
-                    }
-                    for out in outputs
-                ],
-                'fee_nrtc': fee,
-                'timestamp': ts,
-                'block_height': block_height,
-            }
-            tx_seed = json.dumps(
-                tx_identity, sort_keys=True, separators=(',', ':')
-            ).encode()
-            tx_id_hex = hashlib.sha256(tx_seed).hexdigest()
+            # We need a preliminary tx_id for box_id computation.
+            # Use SHA256(sorted input box_ids + timestamp) as tx seed.
+            tx_seed_h = hashlib.sha256()
+            for inp in sorted(inputs, key=lambda i: i['box_id']):
+                tx_seed_h.update(bytes.fromhex(inp['box_id']))
+            tx_seed_h.update(ts.to_bytes(8, 'little'))
+            # For coinbase, include tx_type + outputs to differentiate
+            if not inputs:
+                tx_seed_h.update(tx_type.encode())
+                tx_seed_h.update(block_height.to_bytes(8, 'little'))
+                for out in outputs:
+                    tx_seed_h.update(out['address'].encode())
+                    tx_seed_h.update(out['value_nrtc'].to_bytes(8, 'little'))
+            tx_id_hex = tx_seed_h.hexdigest()
 
             # -- assign box_ids to outputs -----------------------------------
             output_records = []
@@ -663,7 +651,6 @@ class UtxoDB:
         Validates inputs exist and aren't claimed by another pending TX.
         Returns False if double-spend detected or pool full.
         """
-        self.mempool_clear_expired()
         conn = self._conn()
         # FIX(#2867 C1): mempool_add() always opens its own connection and
         # begins its own BEGIN IMMEDIATE transaction below. The 7 ROLLBACK
@@ -730,10 +717,6 @@ class UtxoDB:
             # Prevent mempool admission of transactions that would fail
             # apply_transaction(), locking UTXOs until expiry (DoS vector).
             fee = tx.get('fee_nrtc', 0)
-            if type(fee) is not int:
-                if manage_tx:
-                        conn.execute("ROLLBACK")
-                return False
             if fee < 0:
                 if manage_tx:
                         conn.execute("ROLLBACK")
@@ -769,7 +752,7 @@ class UtxoDB:
                     return False
 
             output_total = sum(o['value_nrtc'] for o in outputs)
-            if input_total > 0 and (output_total + fee) > input_total:
+            if input_total > 0 and (output_total + fee) != input_total:
                 if manage_tx:
                         conn.execute("ROLLBACK")
                 return False
@@ -827,16 +810,13 @@ class UtxoDB:
 
     def mempool_get_block_candidates(self, max_count: int = 100) -> List[dict]:
         """Get highest-fee transactions from mempool for block inclusion."""
-        self.mempool_clear_expired()
         conn = self._conn()
         try:
-            now = int(time.time())
             rows = conn.execute(
                 """SELECT tx_data_json FROM utxo_mempool
-                   WHERE expires_at > ?
                    ORDER BY fee_nrtc DESC
                    LIMIT ?""",
-                (now, max_count),
+                (max_count,),
             ).fetchall()
             return [json.loads(r['tx_data_json']) for r in rows]
         finally:
@@ -930,3 +910,4 @@ def coin_select(utxos: List[dict], target_nrtc: int
         change = 0  # absorb dust into fee
 
     return selected, change
+
