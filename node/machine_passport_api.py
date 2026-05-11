@@ -55,6 +55,21 @@ def get_optional_json_object():
     return data, None
 
 
+def require_admin_key():
+    """Require the configured admin key for machine passport write events."""
+    admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
+    expected_admin_key = os.environ.get('ADMIN_KEY', '')
+
+    if not expected_admin_key or not hmac.compare_digest(admin_key, expected_admin_key):
+        return jsonify({
+            'ok': False,
+            'error': 'unauthorized',
+            'message': 'Admin key required',
+        }), 401
+
+    return None
+
+
 # === Public Read Endpoints ===
 
 @machine_passport_bp.route('/<machine_id>', methods=['GET'])
@@ -340,6 +355,10 @@ def add_repair_entry(machine_id: str):
         "notes": "Machine now stable at 1.2V"
     }
     """
+    auth_error = require_admin_key()
+    if auth_error:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
@@ -382,6 +401,10 @@ def add_attestation(machine_id: str):
     
     Typically called automatically during mining attestation.
     """
+    auth_error = require_admin_key()
+    if auth_error:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
@@ -428,6 +451,10 @@ def add_benchmark(machine_id: str):
         "entropy_throughput": 500.0
     }
     """
+    auth_error = require_admin_key()
+    if auth_error:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     
@@ -473,6 +500,10 @@ def add_lineage_note(machine_id: str):
         "tx_hash": "0x..."  # Optional blockchain transaction
     }
     """
+    auth_error = require_admin_key()
+    if auth_error:
+        return auth_error
+
     ledger = get_ledger()
     passport = ledger.get_passport(machine_id)
     

@@ -576,6 +576,62 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(data['ok'])
         compare_digest.assert_called_once_with('expected-admin-key', 'expected-admin-key')
+
+    def test_lineage_rejects_owner_tampering_without_admin_key(self):
+        """Lineage writes cannot transfer passport ownership without admin auth."""
+        self.client.post(
+            '/api/machine-passport',
+            json={
+                'name': 'Lineage Auth Test',
+                'owner_miner_id': 'miner_owner',
+                'machine_id': 'lineage_auth_test',
+            },
+        )
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
+
+        with patch('hmac.compare_digest', return_value=False) as compare_digest:
+            resp = self.client.post(
+                '/api/machine-passport/lineage_auth_test/lineage',
+                headers={'X-Admin-Key': 'wrong-admin-key'},
+                json={
+                    'event_type': 'transfer',
+                    'to_owner': 'attacker_miner',
+                },
+            )
+
+        data = json.loads(resp.data)
+        self.assertEqual(resp.status_code, 401)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'unauthorized')
+        compare_digest.assert_called_once_with('wrong-admin-key', 'expected-admin-key')
+
+        get_resp = self.client.get('/api/machine-passport/lineage_auth_test')
+        passport = json.loads(get_resp.data)['passport']['passport']
+        self.assertEqual(passport['owner_miner_id'], 'miner_owner')
+
+    def test_event_writes_fail_closed_when_admin_key_unset(self):
+        """Subresource event writes require an explicitly configured admin key."""
+        self.client.post(
+            '/api/machine-passport',
+            json={
+                'name': 'Fail Closed Test',
+                'owner_miner_id': 'miner_owner',
+                'machine_id': 'fail_closed_test',
+            },
+        )
+
+        resp = self.client.post(
+            '/api/machine-passport/fail_closed_test/repair-log',
+            json={
+                'repair_type': 'capacitor_replacement',
+                'description': 'recapped PSU',
+            },
+        )
+
+        data = json.loads(resp.data)
+        self.assertEqual(resp.status_code, 401)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'unauthorized')
     
     def test_get_nonexistent_passport(self):
         """Test getting a nonexistent passport."""
