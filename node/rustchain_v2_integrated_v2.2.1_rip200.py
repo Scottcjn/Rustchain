@@ -5732,6 +5732,270 @@ def api_miners():
     })
 
 
+def _explorer_int_arg(name, default, minimum, maximum):
+    """Parse bounded integer query args for public explorer endpoints."""
+    raw = request.args.get(name, str(default))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None, jsonify({"ok": False, "error": f"{name} must be an integer"}), 400
+    return max(minimum, min(value, maximum)), None, None
+
+
+def _sqlite_table_columns(conn, table_name):
+    try:
+        rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    except sqlite3.Error:
+        return set()
+    return {row[1] for row in rows}
+
+
+def _json_object_or_none(raw):
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _explorer_amount_rtc(amount_i64):
+    return int(amount_i64) / int(globals().get("UNIT", 1_000_000))
+
+
+@app.route("/api/blocks", methods=["GET"])
+def api_explorer_blocks():
+    """Return recent blocks for explorer clients."""
+    limit, error_response, status = _explorer_int_arg("limit", 50, 1, 200)
+    if error_response is not None:
+        return error_response, status
+    offset, error_response, status = _explorer_int_arg("offset", 0, 0, 1_000_000)
+    if error_response is not None:
+        return error_response, status
+
+    with sqlite3.connect(DB_PATH) as db:
+        db.row_factory = sqlite3.Row
+        columns = _sqlite_table_columns(db, "blocks")
+        if not columns:
+            return jsonify({"ok": True, "blocks": [], "count": 0, "total": 0})
+
+        hash_col = "block_hash" if "block_hash" in columns else "hash" if "hash" in columns else None
+        if "height" not in columns or not hash_col:
+            return jsonify({"ok": True, "blocks": [], "count": 0, "total": 0})
+
+        select_columns = ["height", f"{hash_col} AS block_hash"]
+        for optional in (
+            "prev_hash",
+            "timestamp",
+            "merkle_root",
+            "state_root",
+            "attestations_hash",
+            "producer",
+            "tx_count",
+            "attestation_count",
+            "created_at",
+            "body_json",
+            "data",
+        ):
+            if optional in columns:
+                select_columns.append(optional)
+
+        total = db.execute("SELECT COUNT(*) FROM blocks").fetchone()[0]
+        rows = db.execute(
+            f"""
+            SELECT {", ".join(select_columns)}
+            FROM blocks
+            ORDER BY height DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        ).fetchall()
+
+    blocks = []
+    for row in rows:
+        block = {
+            "height": int(row["height"]),
+            "hash": row["block_hash"],
+            "block_hash": row["block_hash"],
+        }
+        for field in (
+            "prev_hash",
+            "timestamp",
+            "merkle_root",
+            "state_root",
+            "attestations_hash",
+            "producer",
+            "created_at",
+        ):
+            if field in row.keys():
+                block[field] = row[field]
+        for field in ("tx_count", "attestation_count"):
+            if field in row.keys() and row[field] is not None:
+                block[field] = int(row[field])
+        if "body_json" in row.keys():
+            body = _json_object_or_none(row["body_json"])
+            if body is not None:
+                block["body"] = body
+        elif "data" in row.keys():
+            body = _json_object_or_none(row["data"])
+            if body is not None:
+                block["body"] = body
+        blocks.append(block)
+
+    return jsonify({"ok": True, "blocks": blocks, "count": len(blocks), "total": total})
+
+
+def _pending_ledger_explorer_transactions(db, limit):
+    columns = _sqlite_table_columns(db, "pending_ledger")
+    required = {"from_miner", "to_miner", "amount_i64"}
+    if not required.issubset(columns) or not ({"ts", "created_at"} & columns):
+        return []
+
+    if "created_at" in columns and "ts" in columns:
+        created_expr = "COALESCE(created_at, ts)"
+    elif "created_at" in columns:
+        created_expr = "created_at"
+    else:
+        created_expr = "ts"
+    select_columns = [
+        "from_miner",
+        "to_miner",
+        "amount_i64",
+        f"{created_expr} AS timestamp",
+    ]
+    for optional in ("epoch", "status", "tx_hash", "confirmed_at"):
+        if optional in columns:
+            select_columns.append(optional)
+
+    rows = db.execute(
+        f"""
+        SELECT {", ".join(select_columns)}
+        FROM pending_ledger
+        ORDER BY timestamp DESC{", id DESC" if "id" in columns else ""}
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+    transactions = []
+    for row in rows:
+        tx = {
+            "source": "pending_ledger",
+            "tx_hash": row["tx_hash"] if "tx_hash" in row.keys() else None,
+            "from": row["from_miner"],
+            "to": row["to_miner"],
+            "amount_i64": int(row["amount_i64"]),
+            "amount_rtc": _explorer_amount_rtc(row["amount_i64"]),
+            "timestamp": int(row["timestamp"] or 0),
+            "status": row["status"] if "status" in row.keys() else "pending",
+        }
+        if "epoch" in row.keys():
+            tx["epoch"] = int(row["epoch"]) if row["epoch"] is not None else None
+        if "confirmed_at" in row.keys() and row["confirmed_at"]:
+            tx["confirmed_at"] = int(row["confirmed_at"])
+        transactions.append(tx)
+    return transactions
+
+
+def _ledger_explorer_transactions(db, limit):
+    columns = _sqlite_table_columns(db, "ledger")
+    if {"from_miner", "to_miner", "amount_i64", "ts"}.issubset(columns):
+        rows = db.execute(
+            """
+            SELECT from_miner, to_miner, amount_i64, ts
+            FROM ledger
+            ORDER BY ts DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [
+            {
+                "source": "ledger",
+                "tx_hash": None,
+                "from": row["from_miner"],
+                "to": row["to_miner"],
+                "amount_i64": int(row["amount_i64"]),
+                "amount_rtc": _explorer_amount_rtc(row["amount_i64"]),
+                "timestamp": int(row["ts"] or 0),
+                "status": "confirmed",
+            }
+            for row in rows
+        ]
+
+    if not {"miner_id", "delta_i64", "ts"}.issubset(columns):
+        return []
+
+    select_columns = ["miner_id", "delta_i64", "ts"]
+    for optional in ("epoch", "reason"):
+        if optional in columns:
+            select_columns.append(optional)
+
+    rows = db.execute(
+        f"""
+        SELECT {", ".join(select_columns)}
+        FROM ledger
+        ORDER BY ts DESC, rowid DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    transactions = []
+    for row in rows:
+        amount_i64 = int(row["delta_i64"])
+        reason = str(row["reason"] or "") if "reason" in row.keys() else ""
+        counterparty = None
+        tx_hash = None
+        if reason.startswith("transfer_in:") or reason.startswith("transfer_out:"):
+            parts = reason.split(":")
+            counterparty = parts[1] if len(parts) > 1 else None
+            tx_hash = parts[2] if len(parts) > 2 else None
+        tx = {
+            "source": "ledger",
+            "tx_hash": tx_hash,
+            "miner_id": row["miner_id"],
+            "counterparty": counterparty,
+            "amount_i64": abs(amount_i64),
+            "amount_rtc": _explorer_amount_rtc(abs(amount_i64)),
+            "direction": "received" if amount_i64 >= 0 else "sent",
+            "timestamp": int(row["ts"] or 0),
+            "status": "confirmed",
+        }
+        if "epoch" in row.keys():
+            tx["epoch"] = int(row["epoch"]) if row["epoch"] is not None else None
+        transactions.append(tx)
+    return transactions
+
+
+@app.route("/api/transactions", methods=["GET"])
+def api_explorer_transactions():
+    """Return recent ledger transactions for explorer clients."""
+    limit, error_response, status = _explorer_int_arg("limit", 50, 1, 200)
+    if error_response is not None:
+        return error_response, status
+    offset, error_response, status = _explorer_int_arg("offset", 0, 0, 1_000_000)
+    if error_response is not None:
+        return error_response, status
+
+    with sqlite3.connect(DB_PATH) as db:
+        db.row_factory = sqlite3.Row
+        fetch_limit = limit + offset
+        transactions = (
+            _pending_ledger_explorer_transactions(db, fetch_limit)
+            + _ledger_explorer_transactions(db, fetch_limit)
+        )
+
+    transactions.sort(key=lambda tx: tx.get("timestamp", 0), reverse=True)
+    page = transactions[offset:offset + limit]
+    return jsonify({
+        "ok": True,
+        "transactions": page,
+        "count": len(page),
+        "total": len(transactions),
+    })
+
+
 @app.route("/api/miner/<miner_id>/streak", methods=["GET"])
 def api_miner_streak(miner_id: str):
     """Get miner's streak bonus and projected multiplier growth."""
