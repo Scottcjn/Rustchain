@@ -111,6 +111,25 @@ def _post(path: str, json_body: dict | None = None, timeout: float | None = None
         return None
 
 
+def _positive_int_arg(name: str, default: int, max_value: int | None = None):
+    raw_value = request.args.get(name)
+    if raw_value is None:
+        return default, None
+
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None, f"{name}_must_be_integer"
+
+    if value < 1:
+        return None, f"{name}_must_be_positive"
+
+    if max_value is not None:
+        value = min(value, max_value)
+
+    return value, None
+
+
 # ---------------------------------------------------------------------------
 # GET /api/blocks – paginated block list (headers)
 # ---------------------------------------------------------------------------
@@ -125,8 +144,13 @@ def list_blocks():
         page  – 1-indexed page number (default 1)
         limit – items per page, max 100 (default 20)
     """
-    page = max(1, int(request.args.get("page", 1)))
-    limit = max(1, min(int(request.args.get("limit", 20)), 100))
+    page, error = _positive_int_arg("page", 1)
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
+
+    limit, error = _positive_int_arg("limit", 20, max_value=100)
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
 
     # Fetch chain tip to know the latest slot
     tip = _get("/headers/tip")
@@ -214,7 +238,9 @@ def list_transactions():
     Query params:
         limit – max items, capped at 100 (default 25)
     """
-    limit = max(1, min(int(request.args.get("limit", 25)), 100))
+    limit, error = _positive_int_arg("limit", 25, max_value=100)
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
 
     # The node exposes /wallet/history per-wallet, but we can retrieve
     # recent withdrawal activity as a proxy for global transactions.
