@@ -557,7 +557,7 @@ def get_miner_info(miner_id: str) -> Dict:
 ### Community
 
 - RustChain Discord: [invite link]
-- GitHub Issues: [rustchain/rustchain/issues](https://github.com/rustchain/rustchain/issues)
+- GitHub Issues: [Scottcjn/Rustchain/issues](https://github.com/Scottcjn/Rustchain/issues)
 - BoTTube API docs: [bottube.ai/api/docs](https://bottube.ai/api/docs)
 
 ### Reporting Issues
