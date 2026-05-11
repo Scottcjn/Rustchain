@@ -83,6 +83,15 @@ class TestAttestSignatureVerification(unittest.TestCase):
             conn.commit()
         return mod, db_path
 
+    def _load_module_without_db(self, module_name: str, db_name: str):
+        """Load the route module for pre-DB validation tests."""
+        db_path = self._db_path(db_name)
+        os.environ["RUSTCHAIN_DB_PATH"] = db_path
+        spec = importlib.util.spec_from_file_location(module_name, MODULE_PATH)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod, db_path
+
     def _response_payload(self, resp):
         if isinstance(resp, tuple):
             body, status = resp
@@ -98,6 +107,10 @@ class TestAttestSignatureVerification(unittest.TestCase):
     def _submit(self, mod, payload):
         with mod.app.test_request_context("/attest/submit", method="POST", json=payload):
             return self._response_payload(mod._submit_attestation_impl())
+
+    def _submit_route(self, mod, payload):
+        with mod.app.test_request_context("/attest/submit", method="POST", json=payload):
+            return self._response_payload(mod.submit_attestation())
 
     def _base_payload(self, miner, nonce, commitment="deadbeef", sig_hex=None, pubkey_hex=None, miner_id=None):
         """Build a minimal valid attestation payload."""
@@ -233,6 +246,36 @@ class TestAttestSignatureVerification(unittest.TestCase):
         # Should succeed — no signature provided, so no verification attempted
         self.assertEqual(status, 200)
         self.assertTrue(body["ok"])
+
+    def test_non_string_signature_rejected_before_handler_crash(self):
+        """Non-string signature values must be validation failures, not 500s."""
+        mod, _ = self._load_module_without_db("rustchain_attest_sig_type_guard", "sig_type_guard.db")
+
+        payload = self._base_payload(
+            miner="RTC_SIG_TYPE_MINER",
+            nonce="not-a-live-challenge",
+            sig_hex=12345,
+            pubkey_hex="00" * 32,
+        )
+        status, body = self._submit_route(mod, payload)
+
+        self.assertEqual(status, 400)
+        self.assertEqual(body["code"], "INVALID_SIGNATURE_TYPE")
+
+    def test_non_string_public_key_rejected_before_handler_crash(self):
+        """Non-string public_key values must be validation failures, not 500s."""
+        mod, _ = self._load_module_without_db("rustchain_attest_pubkey_type_guard", "pubkey_type_guard.db")
+
+        payload = self._base_payload(
+            miner="RTC_PUBKEY_TYPE_MINER",
+            nonce="not-a-live-challenge",
+            sig_hex="00" * 64,
+            pubkey_hex=["not", "a", "key"],
+        )
+        status, body = self._submit_route(mod, payload)
+
+        self.assertEqual(status, 400)
+        self.assertEqual(body["code"], "INVALID_PUBLIC_KEY_TYPE")
 
     def test_signature_rejected_when_pynacl_missing(self):
         """When pynacl is not installed and a signature is provided, reject with 503.

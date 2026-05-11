@@ -132,6 +132,17 @@ def _validate_attestation_payload_shape(data: Any):
                 "INVALID_MINER", f"Field '{field_name}' must be a non-empty string"
             )
 
+    for field_name, code in (
+        ("signature", "INVALID_SIGNATURE_TYPE"),
+        ("public_key", "INVALID_PUBLIC_KEY_TYPE"),
+    ):
+        if (
+            field_name in data
+            and data[field_name] is not None
+            and not isinstance(data[field_name], str)
+        ):
+            return _attest_field_error(code, f"Field '{field_name}' must be a string")
+
     miner = _attest_valid_miner(data.get("miner")) or _attest_valid_miner(data.get("miner_id"))
     if not miner and not (
         _attest_text(data.get("miner")) or _attest_text(data.get("miner_id"))
