@@ -33,6 +33,30 @@ def init_engine(config: GlitchConfig = None) -> GlitchEngine:
     return _engine
 
 
+def get_json_object():
+    """Return a JSON object body or a Flask error response."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "JSON object required"}), 400)
+    return data, None
+
+
+def parse_limit_arg(default: int = 50, max_value: int = 200):
+    raw_value = request.args.get("limit")
+    if raw_value is None:
+        return default, None
+
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None, "limit_must_be_integer"
+
+    if value < 1:
+        return None, "limit_must_be_positive"
+
+    return min(value, max_value), None
+
+
 def get_engine() -> GlitchEngine:
     """Get the engine instance"""
     global _engine
@@ -76,7 +100,9 @@ def process_message() -> Response:
     """
     engine = get_engine()
     
-    data = request.get_json() or {}
+    data, error = get_json_object()
+    if error:
+        return error
     
     agent_id = data.get("agent_id", "")
     message = data.get("message", "")
@@ -124,7 +150,9 @@ def register_agent(agent_id: str) -> Response:
     """
     engine = get_engine()
     
-    data = request.get_json() or {}
+    data, error = get_json_object()
+    if error:
+        return error
     template = data.get("template")
     personality_data = data.get("personality")
     
@@ -234,7 +262,9 @@ def get_history() -> Response:
     engine = get_engine()
     
     agent_id = request.args.get("agent_id")
-    limit = min(int(request.args.get("limit", 50)), 200)
+    limit, error = parse_limit_arg(50, 200)
+    if error:
+        return jsonify({"error": error}), 400
     
     history = engine.get_glitch_history(agent_id, limit)
     
@@ -363,7 +393,9 @@ def update_config() -> Response:
     """
     engine = get_engine()
     
-    data = request.get_json() or {}
+    data, error = get_json_object()
+    if error:
+        return error
     
     if "enabled" in data:
         if data["enabled"]:
@@ -495,7 +527,9 @@ def trigger_glitch() -> Response:
     """
     engine = get_engine()
     
-    data = request.get_json() or {}
+    data, error = get_json_object()
+    if error:
+        return error
     agent_id = data.get("agent_id", "test_agent")
     message = data.get("message", "Test message for glitch")
     
