@@ -260,6 +260,7 @@ def test_ingest_can_queue_scott_notification(client, monkeypatch):
         return DummyResponse()
 
     monkeypatch.setenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_QUEUE_URL", "https://example.com/scott-notifications/queue")
+    monkeypatch.setenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", "relay-token")
     monkeypatch.setattr(
         "sophia_governor_inbox.requests",
         type("DummyRequests", (), {"post": staticmethod(fake_post)}),
@@ -276,8 +277,37 @@ def test_ingest_can_queue_scott_notification(client, monkeypatch):
     assert body["scott_notification"]["status"] == "queued"
     assert body["scott_notification"]["notification_id"] == "SN-GOV-INBOX-1"
     assert calls[0]["url"] == "https://example.com/scott-notifications/queue"
+    assert calls[0]["headers"]["Authorization"] == "Bearer relay-token"
     assert calls[0]["json"]["related_type"] == "rustchain_governor_inbox"
     assert calls[0]["json"]["related_id"] == str(body["inbox"]["inbox_id"])
+
+
+def test_ingest_does_not_queue_scott_notification_without_token(client, monkeypatch):
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append({"args": args, "kwargs": kwargs})
+        raise AssertionError("notification queue should not be called without a token")
+
+    monkeypatch.setenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_QUEUE_URL", "https://example.com/scott-notifications/queue")
+    monkeypatch.delenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", raising=False)
+    monkeypatch.delenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_BEARER", raising=False)
+    monkeypatch.setattr(
+        "sophia_governor_inbox.requests",
+        type("DummyRequests", (), {"post": staticmethod(fake_post)}),
+        raising=False,
+    )
+
+    response = client.post(
+        "/api/sophia/governor/ingest",
+        headers={"X-Admin-Key": "test-admin"},
+        json=_sample_envelope(),
+    )
+
+    assert response.status_code == 202
+    body = response.get_json()
+    assert body["scott_notification"]["status"] == "token_not_configured"
+    assert calls == []
 
 
 def test_manual_forward_endpoint_records_attempt(client, monkeypatch):
@@ -322,6 +352,7 @@ def test_manual_forward_endpoint_records_attempt(client, monkeypatch):
 
     monkeypatch.setenv("SOPHIA_GOVERNOR_INBOX_FORWARD_TARGETS", "https://example.com/sophia/review")
     monkeypatch.setenv("SOPHIA_GOVERNOR_SCOTT_NOTIFY_QUEUE_URL", "https://example.com/scott-notifications/queue")
+    monkeypatch.setenv("SCOTT_NOTIFICATION_SERVICE_TOKEN", "relay-token")
     monkeypatch.setattr(
         "sophia_governor_inbox.requests",
         type("DummyRequests", (), {"post": staticmethod(fake_post)}),
