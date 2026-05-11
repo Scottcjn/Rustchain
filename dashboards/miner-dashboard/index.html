@@ -419,7 +419,8 @@
                 headers: { 'Accept': 'application/json' }
             });
             if (!response.ok) throw new Error('Failed to fetch miners');
-            const miners = await response.json();
+            const payload = await response.json();
+            const miners = Array.isArray(payload) ? payload : (payload.miners || payload.data || []);
             return miners.find(m => m.miner === minerId) || null;
         }
 
@@ -438,7 +439,8 @@
                 headers: { 'Accept': 'application/json' }
             });
             if (!response.ok) throw new Error('Failed to fetch history');
-            return await response.json();
+            const payload = await response.json();
+            return Array.isArray(payload) ? payload : (payload.transactions || payload.history || []);
         }
 
         function updateBalance(balance) {
@@ -478,20 +480,22 @@
                 return;
             }
 
-            tbody.innerHTML = history.map(tx => {
+            tbody.innerHTML = '';
+            history.forEach(tx => {
                 const date = new Date(tx.timestamp * 1000).toLocaleString();
-                const statusClass = tx.status === 'confirmed' ? 'badge-success' : 
+                const statusClass = tx.status === 'confirmed' ? 'badge-success' :
                                    tx.status === 'failed' ? 'badge-warning' : '';
-                return `
-                    <tr>
-                        <td>${date}</td>
-                        <td>${tx.direction === 'received' ? '💚 Received' : '💸 Sent'}</td>
-                        <td>${tx.amount.toFixed(2)} RTC</td>
-                        <td>${tx.counterparty || '--'}</td>
-                        <td><span class="badge ${statusClass}">${tx.status}</span></td>
-                    </tr>
-                `;
-            }).join('');
+                const row = tbody.insertRow();
+                appendTextCell(row, date);
+                appendTextCell(row, tx.direction === 'received' ? 'Received' : 'Sent');
+                appendTextCell(row, `${Number(tx.amount || 0).toFixed(2)} RTC`);
+                appendTextCell(row, tx.counterparty || '--');
+                const statusCell = row.insertCell();
+                const statusBadge = document.createElement('span');
+                statusBadge.className = `badge ${statusClass}`;
+                statusBadge.textContent = tx.status || 'unknown';
+                statusCell.appendChild(statusBadge);
+            });
         }
 
         function updateActivityTable(minerData) {
@@ -502,20 +506,35 @@
             }
 
             // Show the current miner's row highlighted
-            tbody.innerHTML = `
-                <tr style="background: rgba(88, 166, 255, 0.1);">
-                    <td><strong>${minerData.miner}</strong></td>
-                    <td>${minerData.hardware_type}</td>
-                    <td>${minerData.antiquity_multiplier}x</td>
-                    <td>${minerData.last_attest ? new Date(minerData.last_attest * 1000).toLocaleString() : 'Never'}</td>
-                </tr>
-            `;
+            tbody.innerHTML = '';
+            const row = tbody.insertRow();
+            row.style.background = 'rgba(88, 166, 255, 0.1)';
+            const minerCell = row.insertCell();
+            const strong = document.createElement('strong');
+            strong.textContent = minerData.miner || '--';
+            minerCell.appendChild(strong);
+            appendTextCell(row, minerData.hardware_type || '--');
+            appendTextCell(row, `${minerData.antiquity_multiplier || 0}x`);
+            appendTextCell(
+                row,
+                minerData.last_attest ? new Date(minerData.last_attest * 1000).toLocaleString() : 'Never'
+            );
         }
 
         function showMessage(text, type) {
             const area = document.getElementById('messageArea');
-            area.innerHTML = `<div class="${type}">${text}</div>`;
-            setTimeout(() => area.innerHTML = '', 5000);
+            area.textContent = '';
+            const message = document.createElement('div');
+            message.className = type === 'success' ? 'success' : 'error';
+            message.textContent = text;
+            area.appendChild(message);
+            setTimeout(() => area.textContent = '', 5000);
+        }
+
+        function appendTextCell(row, value) {
+            const cell = row.insertCell();
+            cell.textContent = value;
+            return cell;
         }
     </script>
 </body>
