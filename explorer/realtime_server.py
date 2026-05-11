@@ -45,6 +45,22 @@ class ExplorerState:
 state = ExplorerState()
 
 
+def parse_limit_arg(default: int, max_value: int):
+    raw_value = request.args.get('limit')
+    if raw_value is None:
+        return default, None
+
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None, 'limit_must_be_integer'
+
+    if value < 1:
+        return None, 'limit_must_be_positive'
+
+    return min(value, max_value), None
+
+
 def fetch_api(endpoint):
     """Fetch data from RustChain API"""
     try:
@@ -234,7 +250,10 @@ def health():
 @app.route('/api/blocks')
 def get_blocks():
     """Get recent blocks"""
-    limit = request.args.get('limit', 50, type=int)
+    limit, error = parse_limit_arg(50, 100)
+    if error:
+        return jsonify({'error': error}), 400
+
     with state._lock:
         return jsonify(state.blocks[:limit])
 
@@ -242,7 +261,10 @@ def get_blocks():
 @app.route('/api/transactions')
 def get_transactions():
     """Get recent transactions"""
-    limit = request.args.get('limit', 100, type=int)
+    limit, error = parse_limit_arg(100, 200)
+    if error:
+        return jsonify({'error': error}), 400
+
     with state._lock:
         return jsonify(state.transactions[:limit])
 
