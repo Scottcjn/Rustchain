@@ -7,6 +7,7 @@ import time
 import requests
 import yaml
 from typing import List, Dict, Any, Optional
+from urllib.parse import urlencode
 from github import Github, GithubException
 import google.generativeai as genai
 from dotenv import load_dotenv
@@ -57,8 +58,9 @@ class BountyVerifier:
     def verify_wallet(self, wallet_name: str) -> Dict[str, Any]:
         """Check wallet existence and balance on RustChain node."""
         try:
+            query = urlencode({"miner_id": wallet_name})
             resp = requests.get(
-                f"{CONFIG['miner_node_url']}/wallet/balance?miner_id={wallet_name}",
+                f"{CONFIG['miner_node_url']}/wallet/balance?{query}",
                 verify=os.path.expanduser("~/.rustchain/node_cert.pem") if os.path.exists(os.path.expanduser("~/.rustchain/node_cert.pem")) else True,
                 timeout=10
             )
