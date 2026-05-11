@@ -26,6 +26,8 @@ except ImportError:
 
 NODE_URL = "https://rustchain.org"  # Use HTTPS via nginx
 BLOCK_TIME = 600  # 10 minutes
+NETWORK_RETRY_ATTEMPTS = 3
+NETWORK_RETRY_BASE_DELAY = 2
 
 # TLS verification: use pinned cert if available, else system CA bundle
 _CERT_PATH = os.path.expanduser("~/.rustchain/node_cert.pem")
@@ -48,6 +50,34 @@ def _parse_free_memory_gb(output):
                 return int(parts[1])
             except ValueError:
                 return None
+    return None
+
+
+def _request_with_network_retry(method, url, action, retries=NETWORK_RETRY_ATTEMPTS,
+                                base_delay=NETWORK_RETRY_BASE_DELAY, sleep_func=None,
+                                **kwargs):
+    """Run an HTTP request with bounded retries for transient network failures."""
+    if sleep_func is None:
+        sleep_func = time.sleep
+
+    for attempt in range(1, retries + 1):
+        try:
+            return method(url, **kwargs)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+            print(
+                "[WARN] Cannot connect to bootstrap node while {} "
+                "(attempt {}/{}): {}".format(action, attempt, retries, exc)
+            )
+            if attempt >= retries:
+                print("[ERROR] Cannot connect to bootstrap node.")
+                print("[ERROR] Check network connectivity and the RustChain node URL, then retry.")
+                return None
+            delay = base_delay * (2 ** (attempt - 1))
+            print("[WARN] Retrying in {}s...".format(delay))
+            sleep_func(delay)
+        except requests.exceptions.RequestException as exc:
+            print("[ERROR] Network request failed while {}: {}".format(action, exc))
+            return None
     return None
 
 
@@ -116,6 +146,32 @@ class LocalMiner:
         # Run initial fingerprint check
         if FINGERPRINT_AVAILABLE:
             self._run_fingerprint_checks()
+
+    def _get(self, path, action, **kwargs):
+        return _request_with_network_retry(
+            requests.get,
+            f"{self.node_url}{path}",
+            action,
+            **kwargs,
+        )
+
+    def _post(self, path, action, **kwargs):
+        return _request_with_network_retry(
+            requests.post,
+            f"{self.node_url}{path}",
+            action,
+            **kwargs,
+        )
+
+    def check_node_connectivity(self):
+        """Verify the configured RustChain node is reachable before mining."""
+        resp = self._get("/health", "checking bootstrap connectivity", timeout=10, verify=TLS_VERIFY)
+        if resp is None:
+            return False
+        if resp.status_code != 200:
+            print(f"[ERROR] Bootstrap node health check failed: HTTP {resp.status_code}")
+            return False
+        return True
 
     def _run_fingerprint_checks(self):
         """Run 6 hardware fingerprint checks for RIP-PoA"""
@@ -287,7 +343,15 @@ class LocalMiner:
 
         try:
             # Get challenge (verify=TLS_VERIFY for self-signed certs)
-            resp = requests.post(f"{self.node_url}/attest/challenge", json={}, timeout=10, verify=TLS_VERIFY)
+            resp = self._post(
+                "/attest/challenge",
+                "requesting attestation challenge",
+                json={},
+                timeout=10,
+                verify=TLS_VERIFY,
+            )
+            if resp is None:
+                return False
             if resp.status_code != 200:
                 print(f"❌ Challenge failed: {resp.status_code}")
                 return False
@@ -342,8 +406,15 @@ class LocalMiner:
         }
 
         try:
-            resp = requests.post(f"{self.node_url}/attest/submit",
-                               json=attestation, timeout=30, verify=TLS_VERIFY)
+            resp = self._post(
+                "/attest/submit",
+                "submitting attestation",
+                json=attestation,
+                timeout=30,
+                verify=TLS_VERIFY,
+            )
+            if resp is None:
+                return False
 
             if resp.status_code == 200:
                 result = resp.json()
@@ -404,8 +475,15 @@ class LocalMiner:
         }
 
         try:
-            resp = requests.post(f"{self.node_url}/epoch/enroll",
-                                json=payload, timeout=30, verify=TLS_VERIFY)
+            resp = self._post(
+                "/epoch/enroll",
+                "enrolling miner",
+                json=payload,
+                timeout=30,
+                verify=TLS_VERIFY,
+            )
+            if resp is None:
+                return False
 
             if resp.status_code == 200:
                 result = resp.json()
@@ -452,14 +530,16 @@ class LocalMiner:
     def check_balance(self):
         """Check balance"""
         try:
-            resp = requests.get(f"{self.node_url}/balance/{self.wallet}", timeout=10, verify=TLS_VERIFY)
+            resp = self._get(f"/balance/{self.wallet}", "checking wallet balance", timeout=10, verify=TLS_VERIFY)
+            if resp is None:
+                return 0
             if resp.status_code == 200:
                 result = resp.json()
                 balance = result.get('balance_rtc', 0)
                 print(f"\n💰 Balance: {balance} RTC")
                 return balance
-        except:
-            pass
+        except Exception as e:
+            print(f"[WARN] Balance check failed: {e}")
         return 0
 
 
@@ -498,7 +578,9 @@ class LocalMiner:
             if self.verbose:
                 print(f"[DRY-RUN] GET {url}")
                 print(f"[DRY-RUN] Headers: {{'User-Agent': 'RustChain-Miner/2.2.1'}}")
-            r = requests.get(url, timeout=8, verify=TLS_VERIFY)
+            r = self._get("/health", "running dry-run health probe", timeout=8, verify=TLS_VERIFY)
+            if r is None:
+                return True
             print(f"[DRY-RUN] Health probe: HTTP {r.status_code}")
             if self.verbose:
                 print(f"[DRY-RUN] Response headers: {dict(r.headers)}")
@@ -522,6 +604,10 @@ class LocalMiner:
         print(f"\n⛏️  Starting mining...")
         print(f"Block time: {BLOCK_TIME//60} minutes")
         print(f"Press Ctrl+C to stop\n")
+
+        if not self.check_node_connectivity():
+            print("[ERROR] Miner startup aborted before mining began.")
+            return 1
 
         # Save wallet
         with open("/tmp/local_miner_wallet.txt", "w") as f:
@@ -556,6 +642,7 @@ class LocalMiner:
             print(f"\n\n⛔ Mining stopped")
             print(f"   Wallet: {self.wallet}")
             self.check_balance()
+            return 0
 
 if __name__ == "__main__":
     import argparse
@@ -582,6 +669,8 @@ if __name__ == "__main__":
             show_payload=args.show_payload,
     )
     if args.dry_run:
-        miner.dry_run()
+        result = miner.dry_run()
     else:
-        miner.mine()
+        result = miner.mine()
+
+    sys.exit(0 if result in (None, True) else int(result))
