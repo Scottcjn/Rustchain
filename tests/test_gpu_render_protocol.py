@@ -108,6 +108,16 @@ class TestGPURenderProtocol(unittest.TestCase):
         refund = self.proto.refund_escrow(job_id, "provider", result["escrow_secret"])
         self.assertEqual(refund["status"], "refunded")
 
+    def test_get_escrow_redacts_secret_material(self):
+        result = self.proto.create_escrow(
+            "render", "payer", "provider", 10.0, escrow_secret="weak"
+        )
+
+        status = self.proto.get_escrow(result["job_id"])
+
+        self.assertNotIn("escrow_secret", status)
+        self.assertNotIn("escrow_secret_hash", status)
+
     def test_escrow_invalid_type(self):
         result = self.proto.create_escrow("invalid", "a", "b", 1.0)
         self.assertIn("error", result)

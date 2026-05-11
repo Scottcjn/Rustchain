@@ -363,6 +363,8 @@ class GPURenderProtocol:
             if not row:
                 return {"error": "Job not found"}
             result = dict(row)
+            result.pop("escrow_secret_hash", None)
+            result.pop("escrow_secret", None)
             result["metadata"] = json.loads(result.get("metadata") or "{}")
             return result
         finally:
