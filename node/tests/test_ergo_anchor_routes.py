@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Route tests for RustChain Ergo anchor API pagination."""
 
 import sqlite3
