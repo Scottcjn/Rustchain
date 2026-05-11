@@ -30,7 +30,7 @@ dependencies = []
 dev = ["pytest>=7.0", "flask>=3.0"]
 
 [project.urls]
-Homepage = "https://rustchain.ai"
+Homepage = "https://rustchain.org"
 Repository = "https://github.com/Scottcjn/Rustchain"
 Issues = "https://github.com/Scottcjn/rustchain-bounties/issues/757"
 
