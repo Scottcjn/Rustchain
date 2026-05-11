@@ -384,6 +384,8 @@ def create_api_server(node: RustChainNode):
     @app.route("/api/mine", methods=["POST"])
     def mine():
         data = request.json
+        if data is None:
+            return jsonify({"error": "Invalid or missing JSON body"}), 400
         wallet = WalletAddress(data["wallet"])
         hardware = HardwareInfo(
             cpu_model=data["hardware"],
@@ -396,6 +398,8 @@ def create_api_server(node: RustChainNode):
     @app.route("/api/node/antiquity", methods=["POST"])
     def antiquity():
         data = request.json
+        if data is None:
+            return jsonify({"error": "Invalid or missing JSON body"}), 400
         wallet = WalletAddress(data["wallet"])
         hardware = HardwareInfo(
             cpu_model=data["hardware"],
@@ -411,6 +415,8 @@ def create_api_server(node: RustChainNode):
     @app.route("/api/governance/create", methods=["POST"])
     def create_proposal():
         data = request.json
+        if data is None:
+            return jsonify({"error": "Invalid or missing JSON body"}), 400
         result = node.create_proposal(
             title=data["title"],
             description=data["description"],
@@ -423,6 +429,8 @@ def create_api_server(node: RustChainNode):
     @app.route("/api/governance/vote", methods=["POST"])
     def vote():
         data = request.json
+        if data is None:
+            return jsonify({"error": "Invalid or missing JSON body"}), 400
         result = node.vote_proposal(
             proposal_id=data["proposal_id"],
             voter=WalletAddress(data["voter"]),
