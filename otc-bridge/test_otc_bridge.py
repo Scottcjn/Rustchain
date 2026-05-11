@@ -355,5 +355,24 @@ class OTCBridgeTestCase(unittest.TestCase):
         self.assertIn(b"RustChain OTC Bridge", r.data)
 
 
+class OTCBridgeFrontendSecurityTestCase(unittest.TestCase):
+    def test_frontend_escapes_orderbook_order_and_trade_fields(self):
+        static_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
+        with open(static_path, encoding="utf-8") as f:
+            html = f.read()
+
+        self.assertIn("function escapeHtml(value)", html)
+        self.assertIn("function safeSide(value)", html)
+        self.assertIn("${escapeHtml(o.maker_wallet)}", html)
+        self.assertIn("${escapeHtml(o.amount_rtc)} RTC", html)
+        self.assertIn("${escapeHtml(o.price_per_rtc)}", html)
+        self.assertIn('data-order-index="${index}"', html)
+        self.assertIn("button.addEventListener('click'", html)
+        self.assertNotIn("onclick=\"openMatch('${o.order_id}'", html)
+        self.assertIn("Counterparty: ${escapeHtml(maker)}", html)
+        self.assertIn("${escapeHtml(side)}", html)
+        self.assertIn("${escapeHtml(quote)}", html)
+
+
 if __name__ == "__main__":
     unittest.main()
