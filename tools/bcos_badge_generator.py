@@ -362,7 +362,7 @@ def verify_certificate(cert_id: str, use_cache: bool = True) -> Dict:
                 'valid': bool(cached[0]),
                 'cached': True,
                 'verified_at': cached[2],
-                'data': json.loads(cached[3]) if cached[3] else {},
+                'data': json.loads(cached[1]) if cached[1] else {},
             }
 
     # Check local database
@@ -1064,7 +1064,7 @@ def generate_badge():
 
     repo_name = data.get('repo_name', '').strip()
     tier = data.get('tier', 'L1').upper()
-    trust_score = data.get('trust_score', 75)
+    raw_trust_score = data.get('trust_score', 75)
     cert_id = data.get('cert_id', '')
     include_qr = data.get('include_qr', False)
 
@@ -1077,6 +1077,13 @@ def generate_badge():
 
     if tier not in ['L0', 'L1', 'L2']:
         return jsonify({'success': False, 'error': 'Invalid tier. Must be L0, L1, or L2'})
+
+    if isinstance(raw_trust_score, bool):
+        return jsonify({'success': False, 'error': 'Trust score must be a number'})
+    try:
+        trust_score = int(raw_trust_score)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'Trust score must be a number'})
 
     if not (0 <= trust_score <= 100):
         return jsonify({'success': False, 'error': 'Trust score must be between 0 and 100'})
