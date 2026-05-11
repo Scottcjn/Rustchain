@@ -34,7 +34,9 @@ def _ensure_db():
 @app.route("/sophia/inspect", methods=["POST"])
 def inspect_fingerprint():
     """Submit a hardware fingerprint for Sophia inspection."""
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON body must be an object"}), 400
 
     miner_id = data.get("miner_id")
     fingerprint = data.get("fingerprint")
