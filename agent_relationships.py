@@ -1035,6 +1035,16 @@ def create_relationship_blueprint(engine: RelationshipEngine):
     from flask import Blueprint, jsonify, request
     
     bp = Blueprint("relationships", __name__)
+
+    def _get_json_object():
+        data = request.get_json(silent=True)
+        if data is None:
+            if request.get_data(cache=True):
+                return None, (jsonify({"error": "JSON object required"}), 400)
+            return {}, None
+        if not isinstance(data, dict):
+            return None, (jsonify({"error": "JSON object required"}), 400)
+        return data, None
     
     @bp.route("/api/relationships", methods=["GET"])
     def list_relationships():
@@ -1059,7 +1069,9 @@ def create_relationship_blueprint(engine: RelationshipEngine):
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/disagree", methods=["POST"])
     def disagree(agent_a: str, agent_b: str):
-        data = request.json or {}
+        data, error = _get_json_object()
+        if error:
+            return error
         try:
             result = engine.record_disagreement(
                 agent_a, agent_b,
@@ -1072,7 +1084,9 @@ def create_relationship_blueprint(engine: RelationshipEngine):
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/collaborate", methods=["POST"])
     def collaborate(agent_a: str, agent_b: str):
-        data = request.json or {}
+        data, error = _get_json_object()
+        if error:
+            return error
         try:
             result = engine.record_collaboration(
                 agent_a, agent_b,
@@ -1085,7 +1099,9 @@ def create_relationship_blueprint(engine: RelationshipEngine):
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/reconcile", methods=["POST"])
     def reconcile(agent_a: str, agent_b: str):
-        data = request.json or {}
+        data, error = _get_json_object()
+        if error:
+            return error
         try:
             result = engine.record_reconciliation(
                 agent_a, agent_b,
@@ -1097,7 +1113,9 @@ def create_relationship_blueprint(engine: RelationshipEngine):
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/intervene", methods=["POST"])
     def admin_intervene(agent_a: str, agent_b: str):
-        data = request.json or {}
+        data, error = _get_json_object()
+        if error:
+            return error
         try:
             result = engine.admin_intervene(
                 agent_a, agent_b,
