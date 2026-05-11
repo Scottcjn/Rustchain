@@ -102,6 +102,16 @@
 </div>
 
 <script>
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[char]));
+    }
+
     async function updateStatus() {
         try {
             const resp = await fetch('node_status.json');
@@ -130,29 +140,29 @@
                 card.innerHTML = `
                     <div class="node-name">
                         <span class="status-dot ${node.status === 'up' ? 'up' : 'down'}"></span>
-                        ${node.name}
+                        ${escapeHtml(node.name)}
                     </div>
-                    <div class="location">${node.location}</div>
+                    <div class="location">${escapeHtml(node.location)}</div>
                     
                     <div class="stat-row">
                         <span class="stat-label">STATUS</span>
-                        <span style="color: ${node.status === 'up' ? 'var(--green)' : 'var(--red)'}">${node.status.toUpperCase()}</span>
+                        <span style="color: ${node.status === 'up' ? 'var(--green)' : 'var(--red)'}">${escapeHtml(String(node.status || '').toUpperCase())}</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">LATENCY</span>
-                        <span>${node.latency_ms || '--'}ms</span>
+                        <span>${escapeHtml(node.latency_ms || '--')}ms</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">VERSION</span>
-                        <span>${node.version || 'unknown'}</span>
+                        <span>${escapeHtml(node.version || 'unknown')}</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">EPOCH</span>
-                        <span>${node.epoch || '--'}</span>
+                        <span>${escapeHtml(node.epoch || '--')}</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">MINERS</span>
-                        <span>${node.miners || 0}</span>
+                        <span>${escapeHtml(node.miners || 0)}</span>
                     </div>
                     
                     ${uptimeHtml}
