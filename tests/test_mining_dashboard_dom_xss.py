@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 from pathlib import Path
 
 
@@ -63,4 +65,3 @@ def test_mining_dashboard_no_longer_uses_raw_reviewed_interpolations():
     )
     for interpolation in raw_interpolations:
         assert interpolation not in source
-
