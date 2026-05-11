@@ -576,6 +576,111 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(data['ok'])
         compare_digest.assert_called_once_with('expected-admin-key', 'expected-admin-key')
+
+    def test_subresource_writes_require_configured_admin_key(self):
+        """Passport event writes fail closed when ADMIN_KEY is unset."""
+        self.client.post(
+            '/api/machine-passport',
+            json={
+                'name': 'Subresource Auth Test',
+                'owner_miner_id': 'miner_owner',
+                'machine_id': 'subresource_auth_test',
+            },
+        )
+
+        endpoints = [
+            ('/api/machine-passport/subresource_auth_test/repair-log', {
+                'repair_type': 'recap',
+                'description': 'forged repair entry',
+            }),
+            ('/api/machine-passport/subresource_auth_test/attestations', {
+                'epoch': 42,
+                'total_rtc_earned': 999,
+            }),
+            ('/api/machine-passport/subresource_auth_test/benchmarks', {
+                'compute_score': 9999,
+            }),
+            ('/api/machine-passport/subresource_auth_test/lineage', {
+                'event_type': 'transfer',
+                'to_owner': 'attacker_miner',
+            }),
+        ]
+
+        for endpoint, payload in endpoints:
+            with self.subTest(endpoint=endpoint):
+                resp = self.client.post(endpoint, json=payload)
+                data = json.loads(resp.data)
+                self.assertEqual(resp.status_code, 503)
+                self.assertFalse(data['ok'])
+                self.assertEqual(data['error'], 'admin_key_not_configured')
+
+        get_resp = self.client.get('/api/machine-passport/subresource_auth_test')
+        passport = json.loads(get_resp.data)['passport']['passport']
+        self.assertEqual(passport['owner_miner_id'], 'miner_owner')
+
+    def test_subresource_writes_reject_wrong_admin_key(self):
+        """Forged event writes cannot mutate passport history or ownership."""
+        self.client.post(
+            '/api/machine-passport',
+            json={
+                'name': 'Wrong Subresource Auth Test',
+                'owner_miner_id': 'miner_owner',
+                'machine_id': 'subresource_wrong_auth_test',
+            },
+        )
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
+
+        with patch('hmac.compare_digest', return_value=False) as compare_digest:
+            resp = self.client.post(
+                '/api/machine-passport/subresource_wrong_auth_test/lineage',
+                headers={'X-Admin-Key': 'wrong-admin-key'},
+                json={
+                    'event_type': 'transfer',
+                    'to_owner': 'attacker_miner',
+                },
+            )
+
+        data = json.loads(resp.data)
+        self.assertEqual(resp.status_code, 401)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'unauthorized')
+        compare_digest.assert_called_once_with('wrong-admin-key', 'expected-admin-key')
+
+        get_resp = self.client.get('/api/machine-passport/subresource_wrong_auth_test')
+        passport = json.loads(get_resp.data)['passport']['passport']
+        self.assertEqual(passport['owner_miner_id'], 'miner_owner')
+
+    def test_subresource_writes_accept_valid_admin_key(self):
+        """Configured admin key still authorizes passport event writes."""
+        self.client.post(
+            '/api/machine-passport',
+            json={
+                'name': 'Valid Subresource Auth Test',
+                'owner_miner_id': 'miner_owner',
+                'machine_id': 'subresource_valid_auth_test',
+            },
+        )
+        os.environ['ADMIN_KEY'] = 'expected-admin-key'
+
+        with patch('hmac.compare_digest', return_value=True) as compare_digest:
+            resp = self.client.post(
+                '/api/machine-passport/subresource_valid_auth_test/lineage',
+                headers={'X-Admin-Key': 'expected-admin-key'},
+                json={
+                    'event_type': 'transfer',
+                    'to_owner': 'new_owner',
+                    'description': 'authorized transfer',
+                },
+            )
+
+        data = json.loads(resp.data)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(data['ok'])
+        compare_digest.assert_called_once_with('expected-admin-key', 'expected-admin-key')
+
+        get_resp = self.client.get('/api/machine-passport/subresource_valid_auth_test')
+        passport = json.loads(get_resp.data)['passport']['passport']
+        self.assertEqual(passport['owner_miner_id'], 'new_owner')
     
     def test_get_nonexistent_passport(self):
         """Test getting a nonexistent passport."""

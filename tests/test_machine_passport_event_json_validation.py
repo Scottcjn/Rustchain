@@ -11,6 +11,9 @@ sys.path.insert(0, str(REPO_ROOT / "node"))
 import machine_passport_api
 
 
+ADMIN_HEADERS = {"X-Admin-Key": "expected-admin"}
+
+
 class LedgerStub:
     def __init__(self):
         self.attestation_payload = None
@@ -36,7 +39,8 @@ def ledger(monkeypatch):
 
 
 @pytest.fixture
-def client(ledger):
+def client(ledger, monkeypatch):
+    monkeypatch.setenv("ADMIN_KEY", "expected-admin")
     app = Flask(__name__)
     app.register_blueprint(machine_passport_api.machine_passport_bp)
     return app.test_client()
@@ -50,7 +54,7 @@ def client(ledger):
     ),
 )
 def test_event_routes_reject_non_object_json(client, path):
-    response = client.post(path, json=["not", "object"])
+    response = client.post(path, headers=ADMIN_HEADERS, json=["not", "object"])
 
     assert response.status_code == 400
     assert response.get_json() == {
@@ -61,7 +65,10 @@ def test_event_routes_reject_non_object_json(client, path):
 
 
 def test_attestation_route_preserves_empty_body_defaults(client, ledger):
-    response = client.post("/api/machine-passport/machine-1/attestations")
+    response = client.post(
+        "/api/machine-passport/machine-1/attestations",
+        headers=ADMIN_HEADERS,
+    )
 
     assert response.status_code == 200
     assert response.get_json() == {"ok": True, "message": "attestation added"}
@@ -70,7 +77,10 @@ def test_attestation_route_preserves_empty_body_defaults(client, ledger):
 
 
 def test_benchmark_route_preserves_empty_body_defaults(client, ledger):
-    response = client.post("/api/machine-passport/machine-1/benchmarks")
+    response = client.post(
+        "/api/machine-passport/machine-1/benchmarks",
+        headers=ADMIN_HEADERS,
+    )
 
     assert response.status_code == 200
     assert response.get_json() == {"ok": True, "message": "benchmark added"}
@@ -81,6 +91,7 @@ def test_benchmark_route_preserves_empty_body_defaults(client, ledger):
 def test_benchmark_route_accepts_object_json(client, ledger):
     response = client.post(
         "/api/machine-passport/machine-1/benchmarks",
+        headers=ADMIN_HEADERS,
         json={"compute_score": 1250.0, "memory_bandwidth": 3200.5},
     )
 
