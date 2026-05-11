@@ -11,6 +11,7 @@ import json
 import threading
 from datetime import datetime
 from typing import List, Dict, Optional
+from flask import jsonify, request
 
 # ============================================================================
 # PEER DISCOVERY & MANAGEMENT
@@ -408,7 +409,9 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
     @app.route('/p2p/announce', methods=['POST'])
     def announce_peer():
         """Endpoint for peer nodes to announce themselves"""
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"ok": False, "error": "JSON object required"}), 400
         peer_url = data.get('peer_url')
 
         if peer_url:
@@ -426,8 +429,13 @@ def add_p2p_endpoints(app, peer_manager, block_sync, tx_gossip):
     @app.route('/api/blocks', methods=['GET'])
     def get_blocks():
         """Get blocks for sync (start height, limit)"""
-        start = request.args.get('start', 0, type=int)
-        limit = request.args.get('limit', 100, type=int)
+        try:
+            start = int(request.args.get('start', 0))
+            limit = int(request.args.get('limit', 100))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "start and limit must be integers"}), 400
+        start = max(0, start)
+        limit = max(1, min(limit, 1000))
 
         # Fetch blocks from database
         with sqlite3.connect(peer_manager.db_path) as conn:
