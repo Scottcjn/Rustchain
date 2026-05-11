@@ -20,6 +20,7 @@ Functions:
 """
 
 import hmac
+import logging
 import sqlite3
 import time
 import os
@@ -50,6 +51,7 @@ except ImportError:
 # =============================================================================
 
 LOCK_UNIT = UNIT  # Micro-units per RTC
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -209,11 +211,11 @@ def create_lock(
             "status": "locked"
         }
         
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         db_conn.rollback()
+        logger.exception("Failed to create lock")
         return False, {
-            "error": "Database error",
-            "details": str(e)
+            "error": "Database error"
         }
 
 
@@ -294,11 +296,11 @@ def release_lock(
             "released_at": now
         }
         
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         db_conn.rollback()
+        logger.exception("Failed to release lock")
         return False, {
-            "error": "Database error",
-            "details": str(e)
+            "error": "Database error"
         }
 
 
@@ -368,11 +370,11 @@ def forfeit_lock(
             "note": "Forfeited assets are retained by protocol"
         }
         
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         db_conn.rollback()
+        logger.exception("Failed to forfeit lock")
         return False, {
-            "error": "Database error",
-            "details": str(e)
+            "error": "Database error"
         }
 
 
