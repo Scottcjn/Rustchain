@@ -61,5 +61,33 @@ class TestClaimsUnitConsistency(unittest.TestCase):
         self.assertAlmostEqual(wrong_rtc, 0.01)  # 100x too small
 
 
+class TestClaimsWalletBinding(unittest.TestCase):
+    """Claim payouts must stay bound to the miner's registered wallet."""
+
+    def test_submit_claim_rejects_unregistered_payout_wallet(self):
+        import claims_submission as cs
+
+        with patch.object(cs, "check_claim_eligibility", return_value={
+            "eligible": True,
+            "reason": None,
+            "wallet_address": "RTC1RegisteredWallet123456789",
+            "reward_urtc": 1_000_000,
+        }):
+            result = cs.submit_claim(
+                db_path="unused.db",
+                miner_id="wallet-bound-claimer",
+                epoch=123,
+                wallet_address="RTC1AttackerWallet9999999999",
+                signature="mock_signature",
+                public_key="mock_public_key",
+                current_slot=20000,
+                current_ts=1766000000,
+                skip_signature_verify=True,
+            )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"], "wallet_mismatch")
+
+
 if __name__ == "__main__":
     unittest.main()

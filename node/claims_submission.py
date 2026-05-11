@@ -487,6 +487,11 @@ def submit_claim(
     if not eligibility["eligible"]:
         result["error"] = f"ineligible: {eligibility['reason']}"
         return result
+
+    registered_wallet = eligibility.get("wallet_address")
+    if not registered_wallet or registered_wallet.lower() != wallet_address.lower():
+        result["error"] = "wallet_mismatch"
+        return result
     
     # Verify signature (unless skipped for testing)
     if not skip_signature_verify:
