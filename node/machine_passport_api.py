@@ -41,6 +41,20 @@ def get_ledger() -> MachinePassportLedger:
     return _ledger
 
 
+def get_optional_json_object():
+    """Return an optional JSON object body or an error response."""
+    data = request.get_json(silent=True)
+    if data is None:
+        return {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({
+            'ok': False,
+            'error': 'invalid_request',
+            'message': 'JSON object required',
+        }), 400)
+    return data, None
+
+
 # === Public Read Endpoints ===
 
 @machine_passport_bp.route('/<machine_id>', methods=['GET'])
@@ -374,7 +388,9 @@ def add_attestation(machine_id: str):
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    data = request.get_json() or {}
+    data, error = get_optional_json_object()
+    if error:
+        return error
     
     success, msg = ledger.add_attestation(
         machine_id=machine_id,
@@ -418,7 +434,9 @@ def add_benchmark(machine_id: str):
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    data = request.get_json() or {}
+    data, error = get_optional_json_object()
+    if error:
+        return error
     
     success, msg = ledger.add_benchmark(
         machine_id=machine_id,
