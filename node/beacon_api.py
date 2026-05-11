@@ -4,6 +4,7 @@ Beacon Atlas API - Flask routes for 3D visualization backend
 Provides endpoints for agents, contracts, bounties, reputation, and chat.
 """
 import json
+import math
 import os
 import time
 import hashlib
@@ -27,6 +28,35 @@ contract_store = []
 
 # Chat session store
 chat_sessions = {}
+
+
+def _json_object_body():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({'error': 'Invalid or missing JSON body'}), 400)
+    return data, None
+
+
+def _string_field(data, field):
+    value = data.get(field)
+    if value is None or value == '':
+        return ''
+    if not isinstance(value, str):
+        raise ValueError(f'{field} must be a string')
+    return value
+
+
+def _contract_amount(data):
+    raw_amount = data.get('amount')
+    if isinstance(raw_amount, bool):
+        raise ValueError('amount must be a number')
+    try:
+        amount = float(raw_amount)
+    except (TypeError, ValueError):
+        raise ValueError('amount must be a number')
+    if not math.isfinite(amount):
+        raise ValueError('amount must be finite')
+    return amount
 
 
 def get_db():
@@ -419,7 +449,9 @@ def create_contract():
     Validates that the from_agent exists in the relay_agents table.
     """
     try:
-        data = request.get_json()
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
         
         # Validate required fields
         required = ['from', 'to', 'type', 'amount', 'term']
@@ -427,7 +459,15 @@ def create_contract():
             if field not in data:
                 return jsonify({'error': f'Missing field: {field}'}), 400
         
-        from_agent = data['from']
+        try:
+            from_agent = _string_field(data, 'from')
+            to_agent = _string_field(data, 'to')
+            contract_type = _string_field(data, 'type')
+            term = _string_field(data, 'term')
+            currency = _string_field(data, 'currency') if 'currency' in data else 'RTC'
+            amount = _contract_amount(data)
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
         
         # Authentication: require X-Agent-Key header matching from_agent
         agent_key = request.headers.get('X-Agent-Key', '')
@@ -455,12 +495,12 @@ def create_contract():
         
         contract = {
             'id': contract_id,
-            'from': data['from'],
-            'to': data['to'],
-            'type': data['type'],
-            'amount': float(data['amount']),
-            'currency': data.get('currency', 'RTC'),
-            'term': data['term'],
+            'from': from_agent,
+            'to': to_agent,
+            'type': contract_type,
+            'amount': amount,
+            'currency': currency,
+            'term': term,
             'state': 'offered',  # Initial state
             'created_at': int(time.time()),
         }
@@ -491,8 +531,13 @@ def update_contract(contract_id):
     Validates state transitions to prevent invalid jumps.
     """
     try:
-        data = request.get_json()
-        new_state = data.get('state')
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
+        try:
+            new_state = _string_field(data, 'state')
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
         
         if not new_state:
             return jsonify({'error': 'Missing state field'}), 400
@@ -742,8 +787,13 @@ def claim_bounty(bounty_id):
         if not hmac.compare_digest(provided_key, admin_key):
             return jsonify({'error': 'Unauthorized — admin key required to claim bounties'}), 401
 
-        data = request.get_json()
-        agent_id = data.get('agent_id')
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
+        try:
+            agent_id = _string_field(data, 'agent_id')
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
         
         if not agent_id:
             return jsonify({'error': 'Missing agent_id'}), 400
@@ -776,8 +826,13 @@ def complete_bounty(bounty_id):
         if not hmac.compare_digest(provided_key, admin_key):
             return jsonify({'error': 'Unauthorized — admin key required to complete bounties'}), 401
 
-        data = request.get_json()
-        agent_id = data.get('agent_id')
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
+        try:
+            agent_id = _string_field(data, 'agent_id')
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
         
         if not agent_id:
             return jsonify({'error': 'Missing agent_id'}), 400
@@ -877,9 +932,14 @@ def get_agent_reputation(agent_id):
 def chat():
     """Send message to an agent (mock response for demo)."""
     try:
-        data = request.get_json()
-        agent_id = data.get('agent_id')
-        message = data.get('message')
+        data, error_response = _json_object_body()
+        if error_response:
+            return error_response
+        try:
+            agent_id = _string_field(data, 'agent_id')
+            message = _string_field(data, 'message')
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
         
         if not agent_id or not message:
             return jsonify({'error': 'Missing agent_id or message'}), 400

@@ -168,6 +168,130 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         data = json.loads(response.data)
         self.assertIn('error', data)
 
+    def test_write_routes_reject_non_object_json(self):
+        """Beacon write routes reject non-object JSON bodies before dereference."""
+        with patch.dict(os.environ, {'RC_ADMIN_KEY': 'test-admin'}, clear=False):
+            endpoints = [
+                ('post', '/api/contracts', {'X-Agent-Key': 'bcn_alice_test'}),
+                ('put', '/api/contracts/ctr_missing', {'X-Agent-Key': 'bcn_alice_test'}),
+                ('post', '/api/bounties/gh_missing/claim', {'X-Admin-Key': 'test-admin'}),
+                ('post', '/api/bounties/gh_missing/complete', {'X-Admin-Key': 'test-admin'}),
+                ('post', '/api/chat', {}),
+            ]
+
+            for method, path, headers in endpoints:
+                with self.subTest(path=path):
+                    response = getattr(self.client, method)(
+                        path,
+                        data=json.dumps(['not-an-object']),
+                        content_type='application/json',
+                        headers=headers,
+                    )
+
+                    self.assertEqual(response.status_code, 400)
+                    data = json.loads(response.data)
+                    self.assertEqual(data['error'], 'Invalid or missing JSON body')
+
+    def test_create_contract_rejects_non_string_fields(self):
+        """Contract creation rejects structured string fields."""
+        base_payload = {
+            'from': 'bcn_alice_test',
+            'to': 'bcn_bob_test',
+            'type': 'rent',
+            'amount': 100.0,
+            'term': '30d',
+        }
+
+        for field, value in (
+            ('from', ['bcn_alice_test']),
+            ('to', {'agent': 'bcn_bob_test'}),
+            ('type', ['rent']),
+            ('term', {'duration': '30d'}),
+            ('currency', ['RTC']),
+        ):
+            with self.subTest(field=field):
+                payload = dict(base_payload)
+                payload[field] = value
+
+                response = self.client.post(
+                    '/api/contracts',
+                    data=json.dumps(payload),
+                    content_type='application/json',
+                    headers={'X-Agent-Key': 'bcn_alice_test'},
+                )
+
+                self.assertEqual(response.status_code, 400)
+                data = json.loads(response.data)
+                self.assertEqual(data['error'], f'{field} must be a string')
+
+    def test_create_contract_rejects_boolean_amount(self):
+        """Contract creation rejects JSON booleans instead of coercing them to 1.0/0.0."""
+        payload = {
+            'from': 'bcn_alice_test',
+            'to': 'bcn_bob_test',
+            'type': 'rent',
+            'amount': True,
+            'term': '30d',
+        }
+
+        response = self.client.post(
+            '/api/contracts',
+            data=json.dumps(payload),
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_alice_test'},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(response.data)['error'], 'amount must be a number')
+
+    def test_contract_and_chat_reject_malformed_field_types(self):
+        """Contract update and chat reject structured string fields."""
+        create_response = self.client.post(
+            '/api/contracts',
+            data=json.dumps({
+                'from': 'bcn_alice_test',
+                'to': 'bcn_bob_test',
+                'type': 'rent',
+                'amount': 100.0,
+                'term': '30d',
+            }),
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_alice_test'},
+        )
+        contract_id = json.loads(create_response.data)['id']
+
+        update_response = self.client.put(
+            f'/api/contracts/{contract_id}',
+            data=json.dumps({'state': ['active']}),
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_bob_test'},
+        )
+        self.assertEqual(update_response.status_code, 400)
+        self.assertEqual(json.loads(update_response.data)['error'], 'state must be a string')
+
+        chat_response = self.client.post(
+            '/api/chat',
+            data=json.dumps({'agent_id': {'id': 'bcn_chat_test'}, 'message': 'hello'}),
+            content_type='application/json',
+        )
+        self.assertEqual(chat_response.status_code, 400)
+        self.assertEqual(json.loads(chat_response.data)['error'], 'agent_id must be a string')
+
+    def test_bounty_actions_reject_non_string_agent_id(self):
+        """Bounty admin actions reject structured agent IDs."""
+        with patch.dict(os.environ, {'RC_ADMIN_KEY': 'test-admin'}, clear=False):
+            for action in ('claim', 'complete'):
+                with self.subTest(action=action):
+                    response = self.client.post(
+                        f'/api/bounties/gh_test_bounty/{action}',
+                        data=json.dumps({'agent_id': ['bcn_agent']}),
+                        content_type='application/json',
+                        headers={'X-Admin-Key': 'test-admin'},
+                    )
+
+                    self.assertEqual(response.status_code, 400)
+                    self.assertEqual(json.loads(response.data)['error'], 'agent_id must be a string')
+
     def test_bounty_lifecycle_workflow(self):
         """Full bounty lifecycle: create, claim, complete."""
         # Insert a test bounty directly
