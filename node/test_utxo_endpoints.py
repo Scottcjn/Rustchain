@@ -322,6 +322,47 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertIn('signed payload', r.get_json()['error'])
         self.assertEqual(self.utxo_db.get_balance(recipient), 0)
 
+    def test_legacy_signature_rejects_nonzero_fee(self):
+        """Legacy signatures omit fee_rtc, so they cannot authorize fees."""
+        sender = 'RTC_test_aabbccdd'
+        recipient = 'bob'
+        self._seed_coinbase(sender, 100 * UNIT)
+
+        signed_message = json.dumps({
+            'from': sender,
+            'to': recipient,
+            'amount': 10.0,
+            'memo': '',
+            'nonce': 515151,
+        }, sort_keys=True, separators=(',', ':')).encode()
+
+        old_verify = utxo_endpoints._verify_sig_fn
+
+        def verify_legacy_only(pubkey_hex, message, sig_hex):
+            return sig_hex == 'legacy-sig' and message == signed_message
+
+        try:
+            utxo_endpoints._verify_sig_fn = verify_legacy_only
+            r = self.client.post('/utxo/transfer', json={
+                'from_address': sender,
+                'to_address': recipient,
+                'amount_rtc': 10.0,
+                'fee_rtc': 1.0,
+                'public_key': 'aabbccdd' * 8,
+                'signature': 'legacy-sig',
+                'nonce': 515151,
+            })
+        finally:
+            utxo_endpoints._verify_sig_fn = old_verify
+
+        self.assertEqual(r.status_code, 401)
+        self.assertEqual(
+            r.get_json()['code'],
+            'LEGACY_SIGNATURE_FEE_UNBOUND',
+        )
+        self.assertEqual(self.utxo_db.get_balance(sender), 100 * UNIT)
+        self.assertEqual(self.utxo_db.get_balance(recipient), 0)
+
 
 if __name__ == '__main__':
     unittest.main()

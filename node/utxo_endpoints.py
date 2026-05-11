@@ -421,6 +421,11 @@ def utxo_transfer():
     if _verify_sig_fn(public_key, message_v2, signature):
         pass  # New client — fee is signed, MITM-resistant
     elif _verify_sig_fn(public_key, message_legacy, signature):
+        if fee_nrtc != 0:
+            return jsonify({
+                'error': 'Legacy signature format cannot authorize nonzero fee',
+                'code': 'LEGACY_SIGNATURE_FEE_UNBOUND',
+            }), 401
         logging.warning(
             "[UTXO/SIG] DEPRECATED: signature without fee accepted for %s... "
             "Upgrade client to include fee in signed message.",
