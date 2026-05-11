@@ -125,6 +125,20 @@
 </div>
 
 <script>
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[char]));
+    }
+
+    function safeCssToken(value) {
+        return String(value ?? '').toLowerCase().replace(/[^a-z0-9_-]/g, '-') || 'unknown';
+    }
+
     async function refresh() {
         try {
             const resp = await fetch('bridge_status.json');
@@ -149,11 +163,11 @@
             data.recent_transactions.forEach(tx => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
-                    <td style="font-family:monospace; color:#888">${tx.lock_id.substring(0,12)}...</td>
-                    <td>${tx.sender_wallet}</td>
-                    <td style="color:white; font-weight:bold">${tx.amount_rtc}</td>
-                    <td><span style="color:var(--solana)">${tx.target_chain.toUpperCase()}</span></td>
-                    <td><span class="state-tag ${tx.state}">${tx.state.toUpperCase()}</span></td>
+                    <td style="font-family:monospace; color:#888">${escapeHtml(String(tx.lock_id || '').substring(0, 12))}...</td>
+                    <td>${escapeHtml(tx.sender_wallet)}</td>
+                    <td style="color:white; font-weight:bold">${escapeHtml(tx.amount_rtc)}</td>
+                    <td><span style="color:var(--solana)">${escapeHtml(String(tx.target_chain || '').toUpperCase())}</span></td>
+                    <td><span class="state-tag ${safeCssToken(tx.state)}">${escapeHtml(String(tx.state || '').toUpperCase())}</span></td>
                 `;
                 body.appendChild(row);
             });
