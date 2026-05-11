@@ -247,6 +247,17 @@ def _parse_non_negative_float_arg(name: str, default: float):
     return value, None
 
 
+def _get_json_object(required: bool = True):
+    data = request.get_json(silent=True)
+    if data is None:
+        if required:
+            return None, (jsonify({"error": "JSON body required"}), 400)
+        return {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "JSON object required"}), 400)
+    return data, None
+
+
 # ---------------------------------------------------------------------------
 # Route Registration
 # ---------------------------------------------------------------------------
@@ -261,9 +272,9 @@ def register_agent_economy(app: Flask, db_path: str):
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs", methods=["POST"])
     def agent_post_job():
-        data = request.get_json(silent=True)
-        if not data:
-            return jsonify({"error": "JSON body required"}), 400
+        data, error = _get_json_object(required=True)
+        if error:
+            return error
 
         poster = str(data.get("poster_wallet", "")).strip()
         title = str(data.get("title", "")).strip()
@@ -376,7 +387,9 @@ def register_agent_economy(app: Flask, db_path: str):
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/claim", methods=["POST"])
     def agent_claim_job(job_id):
-        data = request.get_json(silent=True) or {}
+        data, error = _get_json_object(required=False)
+        if error:
+            return error
         worker = str(data.get("worker_wallet", "")).strip()
 
         if not worker:
@@ -447,7 +460,9 @@ def register_agent_economy(app: Flask, db_path: str):
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/deliver", methods=["POST"])
     def agent_deliver_job(job_id):
-        data = request.get_json(silent=True) or {}
+        data, error = _get_json_object(required=False)
+        if error:
+            return error
         worker = str(data.get("worker_wallet", "")).strip()
         deliverable_url = str(data.get("deliverable_url", "")).strip()
         deliverable_hash = str(data.get("deliverable_hash", "")).strip()
@@ -504,7 +519,9 @@ def register_agent_economy(app: Flask, db_path: str):
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/accept", methods=["POST"])
     def agent_accept_delivery(job_id):
-        data = request.get_json(silent=True) or {}
+        data, error = _get_json_object(required=False)
+        if error:
+            return error
         poster = str(data.get("poster_wallet", "")).strip()
         rating = data.get("rating")  # 1-5 optional
 
@@ -619,7 +636,9 @@ def register_agent_economy(app: Flask, db_path: str):
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/dispute", methods=["POST"])
     def agent_dispute_job(job_id):
-        data = request.get_json(silent=True) or {}
+        data, error = _get_json_object(required=False)
+        if error:
+            return error
         poster = str(data.get("poster_wallet", "")).strip()
         reason = str(data.get("reason", "")).strip()
 
@@ -673,7 +692,9 @@ def register_agent_economy(app: Flask, db_path: str):
     # -----------------------------------------------------------------------
     @app.route("/agent/jobs/<job_id>/cancel", methods=["POST"])
     def agent_cancel_job(job_id):
-        data = request.get_json(silent=True) or {}
+        data, error = _get_json_object(required=False)
+        if error:
+            return error
         poster = str(data.get("poster_wallet", "")).strip()
 
         if not poster:

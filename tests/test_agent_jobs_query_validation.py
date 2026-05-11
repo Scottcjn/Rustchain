@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from flask import Flask
 
 from rip302_agent_economy import register_agent_economy
@@ -49,3 +50,23 @@ def test_agent_jobs_clamps_large_limit_and_preserves_empty_listing(tmp_path):
     assert payload["jobs"] == []
     assert payload["limit"] == 100
     assert payload["offset"] == 0
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "/agent/jobs",
+        "/agent/jobs/job-1/claim",
+        "/agent/jobs/job-1/deliver",
+        "/agent/jobs/job-1/accept",
+        "/agent/jobs/job-1/dispute",
+        "/agent/jobs/job-1/cancel",
+    ),
+)
+def test_agent_job_post_routes_reject_non_object_json(tmp_path, path):
+    client = make_client(tmp_path)
+
+    response = client.post(path, json=["not", "object"])
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "JSON object required"}
