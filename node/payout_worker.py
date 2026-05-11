@@ -21,6 +21,11 @@ POLL_INTERVAL = 30  # seconds
 MAX_RETRIES = 3
 MOCK_MODE = os.environ.get("RUSTCHAIN_MOCK_MODE", "0") == "1"  # Default: production (False)
 
+
+class ProductionWithdrawalNotConfigured(RuntimeError):
+    """Raised when the worker is asked to broadcast without an implementation."""
+
+
 class PayoutWorker:
     def __init__(self):
         self.db_path = DB_PATH
@@ -77,7 +82,10 @@ class PayoutWorker:
             # tx = build_transaction(withdrawal)
             # tx_hash = broadcast_transaction(tx)
             # wait_for_confirmation(tx_hash)
-            pass
+            raise ProductionWithdrawalNotConfigured(
+                "Production withdrawal execution is not configured; refusing to "
+                "complete withdrawal without a broadcast transaction hash"
+            )
 
     def process_withdrawal(self, withdrawal: Dict) -> bool:
         """Process a single withdrawal with balance deduction before execution."""
@@ -87,6 +95,20 @@ class PayoutWorker:
             logger.info(f"Processing withdrawal {withdrawal_id}")
             logger.info(f"  Amount: {withdrawal['amount']} RTC")
             logger.info(f"  Destination: {withdrawal['destination']}")
+
+            if not MOCK_MODE:
+                message = (
+                    "Production withdrawal execution is not configured; leaving "
+                    "withdrawal pending for retry"
+                )
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.execute(
+                        "UPDATE withdrawals SET error_msg = ? "
+                        "WHERE withdrawal_id = ? AND status = 'pending'",
+                        (message, withdrawal_id),
+                    )
+                logger.error(f"✗ Withdrawal {withdrawal_id}: {message}")
+                return False
 
             # ── Atomic balance check + deduction + status update ─────────
             # All three operations MUST happen in a single transaction so
