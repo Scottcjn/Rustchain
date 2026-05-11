@@ -4,6 +4,7 @@ Test suite for Issue #2127 - Beacon Join Routing
 Tests POST /beacon/join and GET /beacon/atlas endpoints.
 """
 import unittest
+import gc
 import json
 import time
 import sys
@@ -60,7 +61,13 @@ class TestBeaconJoinRouting(unittest.TestCase):
     def tearDownClass(cls):
         """Clean up after all tests."""
         os.close(cls.test_db_fd)
-        os.unlink(cls.test_db_path)
+        cls.client = None
+        cls.app = None
+        gc.collect()
+        try:
+            os.unlink(cls.test_db_path)
+        except PermissionError:
+            pass
 
     def setUp(self):
         """Reset database state before each test."""
@@ -250,6 +257,66 @@ class TestBeaconJoinRouting(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         data = json.loads(response.data)
         self.assertIn('error', data)
+
+    def test_join_rejects_non_object_json(self):
+        """POST /beacon/join returns 400 for non-object JSON bodies."""
+        response = self.client.post(
+            '/beacon/join',
+            data=json.dumps(['agent_id']),
+            content_type='application/json'
+        )
+
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertEqual(data['error'], 'Invalid or missing JSON body')
+
+    def test_join_rejects_non_string_required_fields(self):
+        """POST /beacon/join returns 400 for structured required fields."""
+        cases = [
+            (
+                {'agent_id': ['bcn_test'], 'pubkey_hex': '0x1234'},
+                'Invalid agent_id: must be a string',
+            ),
+            (
+                {'agent_id': 'bcn_test', 'pubkey_hex': ['0x1234']},
+                'Invalid pubkey_hex: must be a string',
+            ),
+        ]
+
+        for payload, expected_error in cases:
+            response = self.client.post(
+                '/beacon/join',
+                data=json.dumps(payload),
+                content_type='application/json'
+            )
+
+            self.assertEqual(response.status_code, 400)
+            data = json.loads(response.data)
+            self.assertEqual(data['error'], expected_error)
+
+    def test_join_rejects_non_string_optional_fields(self):
+        """POST /beacon/join returns 400 for structured optional string fields."""
+        cases = [
+            (
+                {'agent_id': 'bcn_test', 'pubkey_hex': '0x1234', 'name': {'display': 'agent'}},
+                'Invalid name: must be a string',
+            ),
+            (
+                {'agent_id': 'bcn_test', 'pubkey_hex': '0x1234', 'coinbase_address': ['0x123']},
+                'Invalid coinbase_address: must be a string',
+            ),
+        ]
+
+        for payload, expected_error in cases:
+            response = self.client.post(
+                '/beacon/join',
+                data=json.dumps(payload),
+                content_type='application/json'
+            )
+
+            self.assertEqual(response.status_code, 400)
+            data = json.loads(response.data)
+            self.assertEqual(data['error'], expected_error)
 
     def test_join_with_coinbase_address(self):
         """POST /beacon/join accepts valid coinbase_address."""
