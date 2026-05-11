@@ -410,11 +410,11 @@ def select_block_validator(proofs: List[ValidatedProof]) -> Optional[ValidatedPr
         return proofs[secrets.randbelow(len(proofs))]
 
     # Weighted random selection via cumulative distribution: pick a random point
-    # on [0, total_as] and return the proof whose range contains it.
+    # on [0, total_as) and return the proof whose range contains it.
     # The last proof is returned as a fallback for floating-point rounding where
     # cumulative may fall just short of total_as.
-    precision = 1_000_000
-    r = secrets.randbelow(int(total_as * precision)) / float(precision)
+    secure_unit = secrets.randbelow(2**53) / float(2**53)
+    r = secure_unit * total_as
     cumulative = 0
 
     for proof in proofs:

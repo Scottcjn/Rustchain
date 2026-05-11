@@ -42,12 +42,27 @@ def test_select_block_validator_uses_secrets_for_weighted_selection(monkeypatch)
 
     def fake_randbelow(bound):
         calls.append(bound)
-        return 1_500_000
+        return 2**52
 
     monkeypatch.setattr(poa.secrets, "randbelow", fake_randbelow)
 
     assert poa.select_block_validator(proofs) is proofs[1]
-    assert calls == [3_000_000]
+    assert calls == [2**53]
+
+
+def test_select_block_validator_handles_tiny_positive_scores(monkeypatch):
+    poa = load_proof_of_antiquity()
+    proofs = [proof(1e-9)]
+    calls = []
+
+    def fake_randbelow(bound):
+        calls.append(bound)
+        return 0
+
+    monkeypatch.setattr(poa.secrets, "randbelow", fake_randbelow)
+
+    assert poa.select_block_validator(proofs) is proofs[0]
+    assert calls == [2**53]
 
 
 def test_select_block_validator_returns_none_for_empty_proofs():
