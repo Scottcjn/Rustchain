@@ -6999,6 +6999,15 @@ def list_pending():
     return jsonify({"ok": True, "count": len(items), "pending": items})
 
 
+def _pending_json_object_body():
+    data = request.get_json(silent=True)
+    if data is None:
+        return {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "JSON object required"}), 400)
+    return data, None
+
+
 @app.route('/pending/void', methods=['POST'])
 def void_pending():
     """Admin: Void a pending transfer before confirmation"""
@@ -7006,7 +7015,9 @@ def void_pending():
     if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
         return jsonify({"error": "Unauthorized"}), 401
     
-    data = request.get_json()
+    data, error = _pending_json_object_body()
+    if error:
+        return error
     pending_id = data.get('pending_id')
     tx_hash = data.get('tx_hash')
     reason = data.get('reason', 'admin_void')
@@ -7014,6 +7025,12 @@ def void_pending():
     
     if not pending_id and not tx_hash:
         return jsonify({"error": "Provide pending_id or tx_hash"}), 400
+
+    if pending_id is not None and not isinstance(pending_id, (int, str)):
+        return jsonify({"error": "pending_id must be a string or integer"}), 400
+
+    if tx_hash is not None and not isinstance(tx_hash, str):
+        return jsonify({"error": "tx_hash must be a string"}), 400
     
     conn = sqlite3.connect(DB_PATH)
     try:
