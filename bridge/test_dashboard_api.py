@@ -236,6 +236,75 @@ class TestDashboardTransactions:
         # Should cap at 200
         assert len(data['transactions']) <= 200
 
+    def test_transactions_rejects_non_integer_limit(self, client):
+        """Test transactions limit rejects malformed values."""
+        response = client.get('/bridge/dashboard/transactions?limit=abc')
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert data['error'] == 'limit must be an integer'
+
+    def test_transactions_clamps_negative_limit(self, app, client):
+        """Test transactions limit clamps negative values to one row."""
+        import uuid
+
+        for idx in range(2):
+            insert_sample_lock(app.config['BRIDGE_DB_PATH'], {
+                'lock_id': f'lock_neg_{idx}_{uuid.uuid4().hex[:8]}',
+                'sender_wallet': f'wallet-neg-{idx}',
+                'amount_rtc': 100.0 + idx,
+                'target_chain': 'solana',
+                'target_wallet': '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
+                'tx_hash': f'tx-neg-{uuid.uuid4().hex[:8]}',
+                'state': STATE_COMPLETE,
+            })
+
+        response = client.get('/bridge/dashboard/transactions?limit=-1')
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert len(data['transactions']) == 1
+
+    def test_transactions_type_filter_wrap_and_unwrap(self, app, client):
+        """Test transactions type filter applies wrap/unwrap query parameter."""
+        import uuid
+
+        insert_sample_lock(app.config['BRIDGE_DB_PATH'], {
+            'lock_id': f'lock_wrap_{uuid.uuid4().hex[:8]}',
+            'sender_wallet': 'wallet-wrap',
+            'amount_rtc': 100.0,
+            'target_chain': 'solana',
+            'target_wallet': '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
+            'tx_hash': f'tx-wrap-{uuid.uuid4().hex[:8]}',
+            'state': STATE_COMPLETE,
+        })
+        insert_sample_lock(app.config['BRIDGE_DB_PATH'], {
+            'lock_id': f'lock_unwrap_{uuid.uuid4().hex[:8]}',
+            'sender_wallet': 'wallet-unwrap',
+            'amount_rtc': 75.0,
+            'target_chain': 'base',
+            'target_wallet': '0x1111111111111111111111111111111111111111',
+            'tx_hash': f'tx-unwrap-{uuid.uuid4().hex[:8]}',
+            'state': STATE_COMPLETE,
+        })
+
+        wrap_response = client.get('/bridge/dashboard/transactions?type=wrap')
+        unwrap_response = client.get('/bridge/dashboard/transactions?type=unwrap')
+
+        assert wrap_response.status_code == 200
+        assert unwrap_response.status_code == 200
+        wrap_data = json.loads(wrap_response.data)
+        unwrap_data = json.loads(unwrap_response.data)
+        assert wrap_data['transactions']
+        assert unwrap_data['transactions']
+        assert {tx['type'] for tx in wrap_data['transactions']} == {'wrap'}
+        assert {tx['type'] for tx in unwrap_data['transactions']} == {'unwrap'}
+
+    def test_transactions_rejects_unknown_type(self, client):
+        """Test transactions type filter rejects unsupported values."""
+        response = client.get('/bridge/dashboard/transactions?type=sideways')
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert data['error'] == 'type must be one of: all, wrap, unwrap'
+
     def test_transactions_format(self, client):
         """Test transaction format."""
         response = client.get('/bridge/dashboard/transactions')
