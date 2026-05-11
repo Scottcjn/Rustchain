@@ -39,7 +39,7 @@ New to RustChain? Get 10 RTC for your **first merged PR** — even for small imp
 ## Quick Start
 
 1. **Browse open bounties**: Check [Issues](https://github.com/Scottcjn/Rustchain/issues?q=is%3Aissue+is%3Aopen+label%3Abounty) labeled `bounty`
-2. **Find Good First Issues**: Check [Good First Issues](https://github.com/Scottcjn/Rustchain/issues?q=is%3Aissue+is%3Aopen+label%3A"good+first-issue") labeled `good first issue`
+2. **Find Good First Issues**: Check [Good First Issues](https://github.com/Scottcjn/Rustchain/issues?q=is%3Aissue+is%3Aopen+label%3A%22good%20first%20issue%22) labeled `good first issue`
 3. **Comment on the issue** you want to work on (prevents duplicate work)
 4. **Fork the repo** and create a feature branch
 5. **Submit a PR** referencing the issue number
@@ -83,11 +83,28 @@ cd Rustchain
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
+# Run the main Python test suite configured in pyproject.toml
+pytest
+
+# Or run a scoped test while working on one area
+pytest node/tests/test_balance_endpoint.py
+pytest sdk/tests/test_client_unit.py
+
 # Test against live node
 curl -sk https://rustchain.org/health
 curl -sk https://rustchain.org/api/miners
 curl -sk https://rustchain.org/epoch
 ```
+
+For package-specific work, use the closest local manifest or test folder:
+
+| Area | Example command |
+|------|-----------------|
+| Node API | `pytest node/tests` |
+| SDK | `pytest sdk/tests` |
+| Bridge | `pytest bridge/test_bridge_api.py` |
+| Rust miners | `cd miners/rust && cargo test` |
+| Frontend/package work | `cd onboard && npm test` |
 
 ## Live Infrastructure
 
