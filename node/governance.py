@@ -193,6 +193,21 @@ def _is_within_founder_veto_period() -> bool:
     return (time.time() - GENESIS_TIMESTAMP) < FOUNDER_VETO_DURATION
 
 
+def _parse_non_negative_int_arg(name: str, default: int, max_value: Optional[int] = None):
+    raw_value = request.args.get(name)
+    if raw_value is None:
+        return default, None
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None, (jsonify({"error": f"{name} must be an integer"}), 400)
+    if value < 0:
+        return None, (jsonify({"error": f"{name} must be non-negative"}), 400)
+    if max_value is not None:
+        value = min(value, max_value)
+    return value, None
+
+
 def _settle_expired_proposals(db_path: str):
     """Settle any proposals whose voting window has closed."""
     now = int(time.time())
@@ -343,8 +358,12 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
     def list_proposals():
         _settle_expired_proposals(db_path)
         status_filter = request.args.get("status")
-        limit = min(int(request.args.get("limit", 50)), 200)
-        offset = int(request.args.get("offset", 0))
+        limit, error_response = _parse_non_negative_int_arg("limit", 50, max_value=200)
+        if error_response:
+            return error_response
+        offset, error_response = _parse_non_negative_int_arg("offset", 0)
+        if error_response:
+            return error_response
 
         try:
             with sqlite3.connect(db_path) as conn:

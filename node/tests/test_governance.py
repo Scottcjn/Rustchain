@@ -262,6 +262,22 @@ def test_list_proposals_empty(client):
     assert data["count"] == 0
 
 
+def test_list_proposals_rejects_non_integer_limit(client):
+    """Malformed pagination returns a client error instead of a 500."""
+    res = client.get("/api/governance/proposals?limit=abc")
+
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "limit must be an integer"
+
+
+def test_list_proposals_rejects_negative_offset(client):
+    """Negative offsets are invalid for proposal pagination."""
+    res = client.get("/api/governance/proposals?offset=-1")
+
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "offset must be non-negative"
+
+
 def test_list_proposals_with_filter(client, active_miner, tmp_db):
     """Proposals can be filtered by status."""
     client.post("/api/governance/propose", json={
