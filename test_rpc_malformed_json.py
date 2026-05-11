@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """
 Regression tests for malformed POST bodies in rips/rustchain-core/api/rpc.py.
 
