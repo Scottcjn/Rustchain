@@ -707,6 +707,41 @@ class TestLedgerEndpoint:
         for lock in data["locks"]:
             assert lock["state"] == "confirmed"
 
+    def test_ledger_rejects_malformed_pagination(self, client):
+        resp = client.get("/bridge/ledger?limit=abc")
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "limit and offset must be integers"
+
+        resp = client.get("/bridge/ledger?offset=abc")
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "limit and offset must be integers"
+
+    def test_ledger_clamps_negative_limit_and_offset(self, client):
+        tx_hash = f"rtc-lock-ledger-limit-{int(time.time())}"
+        payload = {
+            "sender_wallet": "ledger-limit-wallet",
+            "amount": 100.0,
+            "target_chain": "solana",
+            "target_wallet": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+            "tx_hash": tx_hash,
+            "receipt_signature": _receipt_signature(
+                "ledger-limit-wallet",
+                100.0,
+                "solana",
+                "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+                tx_hash,
+            ),
+        }
+        resp_create = client.post("/bridge/lock", json=payload)
+        assert resp_create.status_code == 201
+
+        resp = client.get("/bridge/ledger?limit=-1&offset=-10")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["limit"] == 1
+        assert data["offset"] == 0
+        assert len(data["locks"]) <= 1
+
 
 class TestStatsEndpoint:
     def test_stats_structure(self, client):
