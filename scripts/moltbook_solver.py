@@ -36,12 +36,12 @@ log = logging.getLogger("moltbook_solver")
 # ─── Agent Registry ──────────────────────────────────────────────────────────
 
 AGENTS = {
-    "sophia":          {"key": "moltbook_sk_nuTK8FxFHuUtknLGrXUJKxcgBsTJ0zP7",  "persona": "warm_tech"},
-    "boris":           {"key": "moltbook_sk_mACTltXU55x6s1mYqDuWkeEcuDQ9feMB",  "persona": "soviet_enthusiast"},
-    "janitor":         {"key": "moltbook_sk_yWpLPPIp1MxWAlbgiCEdamHodyClGg08",  "persona": "sysadmin"},
-    "bottube":         {"key": "moltbook_sk_CJgvb5ecA9ZnutcmmaFy2Scm_X4SQgcz",  "persona": "platform_bot"},
-    "msgoogletoggle":  {"key": "moltbook_sk_-zuaZPUGMVoC_tdQJA-YaLVlj-VnUMdw",  "persona": "gracious_socialite"},
-    "oneo":            {"key": "moltbook_sk_BeO3rZoBKuleNwSX3sZeBNQRYhOBK436",  "persona": "minimalist"},
+    "sophia":          {"env": "MOLTBOOK_SOPHIA_API_KEY",          "persona": "warm_tech"},
+    "boris":           {"env": "MOLTBOOK_BORIS_API_KEY",           "persona": "soviet_enthusiast"},
+    "janitor":         {"env": "MOLTBOOK_JANITOR_API_KEY",         "persona": "sysadmin"},
+    "bottube":         {"env": "MOLTBOOK_BOTTUBE_API_KEY",         "persona": "platform_bot"},
+    "msgoogletoggle":  {"env": "MOLTBOOK_MSGOOGLETOGGLE_API_KEY",  "persona": "gracious_socialite"},
+    "oneo":            {"env": "MOLTBOOK_ONEO_API_KEY",            "persona": "minimalist"},
 }
 
 # Gemini for LLM solving
@@ -124,12 +124,15 @@ def get_available_agents() -> List[str]:
     # Preference order: msgoogletoggle first (it's our best solver host),
     # then sophia, boris, janitor, bottube, oneo
     preferred = ["msgoogletoggle", "sophia", "boris", "janitor", "bottube", "oneo"]
-    return [a for a in preferred if a in AGENTS and a not in suspended]
+    return [a for a in preferred if a in AGENTS and a not in suspended and get_agent_key(a)]
 
 
 def get_agent_key(agent: str) -> Optional[str]:
     """Get API key for an agent."""
-    return AGENTS.get(agent, {}).get("key")
+    env_name = AGENTS.get(agent, {}).get("env")
+    if not env_name:
+        return None
+    return os.environ.get(env_name) or None
 
 
 # ─── Content Uniqueness ─────────────────────────────────────────────────────

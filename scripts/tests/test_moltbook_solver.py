@@ -114,17 +114,25 @@ class TestContentHash:
 class TestAgentFunctions:
     """Tests for agent functions."""
 
-    def test_get_available_agents(self):
+    def test_get_available_agents(self, monkeypatch):
+        for config in AGENTS.values():
+            monkeypatch.delenv(config["env"], raising=False)
+        monkeypatch.setenv("MOLTBOOK_MSGOOGLETOGGLE_API_KEY", "test-token-msgoogletoggle")
         agents = get_available_agents()
-        assert isinstance(agents, list) and len(agents) > 0
+        assert agents == ["msgoogletoggle"]
 
-    def test_get_agent_key(self):
+    def test_get_agent_key(self, monkeypatch):
+        monkeypatch.setenv("MOLTBOOK_SOPHIA_API_KEY", "test-token-sophia")
         key = get_agent_key("sophia")
-        assert key is not None and key.startswith("moltbook_sk_")
+        assert key == "test-token-sophia"
+
+    def test_get_agent_key_missing_env(self, monkeypatch):
+        monkeypatch.delenv("MOLTBOOK_SOPHIA_API_KEY", raising=False)
+        assert get_agent_key("sophia") is None
 
     def test_agents_have_required_fields(self):
         for agent_name, config in AGENTS.items():
-            assert "key" in config and "persona" in config
+            assert "env" in config and "persona" in config
 
 
 class TestRecordPost:
