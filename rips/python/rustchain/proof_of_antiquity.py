@@ -405,6 +405,7 @@ def select_block_validator(proofs: List[ValidatedProof]) -> Optional[ValidatedPr
         return None
 
     import random
+import secrets  # FIX(#4643): crypto-safe random
 
     total_as = sum(p.antiquity_score for p in proofs)
     if total_as == 0:
