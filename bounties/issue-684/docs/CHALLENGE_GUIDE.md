@@ -454,7 +454,7 @@ python scripts/run_challenge.py --all
 ### Getting Help
 
 1. Check the [main README](../README.md)
-2. Review the [RIP-302 specification](../docs/RIP-302-agent-to-agent-test-challenge.md)
+2. Review the [RIP-302 specification](../../../rips/docs/RIP-302-agent-to-agent-test-challenge.md)
 3. Open an issue on GitHub
 4. Ask in RustChain Discord
 

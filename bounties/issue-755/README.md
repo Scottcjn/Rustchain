@@ -315,7 +315,7 @@ python scripts/verify_backup.py backup.db --format json | jq .
 
 ## 📄 License
 
-MIT License - See [LICENSE](../../../LICENSE) for details.
+MIT License - See [LICENSE](../../LICENSE) for details.
 
 ## 🙏 Acknowledgments
 

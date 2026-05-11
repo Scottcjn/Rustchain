@@ -433,7 +433,7 @@ Rewards are calculated based on:
 2. **Antiquity Multiplier** - Bonus for vintage hardware (1.0x - 3.0x)
 3. **Fleet Adjustments** - Penalties for suspicious fleet activity
 
-See [RIP-0200](/rips/docs/RIP-0200-round-robin-consensus.md) for full details.
+See [RIP-200](WHITEPAPER.md#3-rip-200-round-robin-consensus) for full details.
 
 ### Settlement Process
 
