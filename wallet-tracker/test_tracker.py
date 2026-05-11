@@ -5,6 +5,8 @@ RTC Wallet Distribution Tracker - Test Script
 
 import requests
 import json
+import os
+import unittest
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 MINERS_API_URL = "https://rustchain.org/api/miners"
@@ -60,6 +62,23 @@ def calculate_gini(balances):
     numerator = sum((i + 1) * bal for i, bal in enumerate(balances))
     gini = (2 * numerator) / (n * sum_balances) - (n + 1) / n
     return max(0, gini)
+
+
+class WalletTrackerFrontendSecurityTestCase(unittest.TestCase):
+    def test_wallet_tracker_escapes_api_wallet_fields(self):
+        static_path = os.path.join(os.path.dirname(__file__), "rtc-wallet-tracker.html")
+        with open(static_path, encoding="utf-8") as f:
+            html = f.read()
+
+        self.assertIn("function escapeHtml(value)", html)
+        self.assertIn("function founderBadge(w, className = 'badge-founder')", html)
+        self.assertIn("<strong>${escapeHtml(w.id)}</strong>", html)
+        self.assertIn("${escapeHtml(w.id)}", html)
+        self.assertIn("${founderBadge(w)}", html)
+        self.assertIn("${founderBadge(w, 'badge badge-founder')}", html)
+        self.assertNotIn("<strong>${w.id}</strong>", html)
+        self.assertNotIn("${w.id}", html)
+        self.assertNotIn("' + w.founderLabel + '", html)
 
 def main():
     print("🪙 RTC Wallet Distribution Tracker - Test\n")

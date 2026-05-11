@@ -368,9 +368,14 @@
         let refreshInterval = null;
 
         function escapeHtml(value) {
-            const el = document.createElement('div');
-            el.textContent = String(value ?? '');
-            return el.innerHTML;
+            const d = document.createElement('div');
+            d.textContent = String(value ?? '');
+            return d.innerHTML;
+        }
+
+        function founderBadge(w, className = 'badge-founder') {
+            if (!w.founder) return '';
+            return `<span class="${className}">${escapeHtml(w.founderLabel)}</span>`;
         }
 
         async function getBalance(minerId) {
@@ -484,7 +489,7 @@
                     <li>
                         <strong>${escapeHtml(w.id)}</strong><br>
                         Balance: ${formatNumber(w.balance)} (${(w.balance / TOTAL_SUPPLY * 100).toFixed(2)}%)
-                        ${w.founder ? '<span class="badge-founder">' + escapeHtml(w.founderLabel) + '</span>' : ''}
+                        ${founderBadge(w)}
                     </li>
                 `).join('');
             } else {
@@ -501,7 +506,7 @@
                         <td>${i + 1}</td>
                         <td>
                             ${escapeHtml(w.id)}
-                            ${w.founder ? '<span class="badge badge-founder">' + escapeHtml(w.founderLabel) + '</span>' : ''}
+                            ${founderBadge(w, 'badge badge-founder')}
                             ${isWhale ? '<span class="badge badge-whale">WHALE</span>' : ''}
                         </td>
                         <td>${formatNumber(w.balance)}</td>
