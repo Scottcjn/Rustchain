@@ -10,6 +10,8 @@ import sys
 import os
 import tempfile
 import sqlite3
+import gc
+from unittest.mock import patch
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -59,6 +61,9 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         """Clean up after all tests."""
+        cls.client = None
+        cls.app = None
+        gc.collect()
         os.close(cls.test_db_fd)
         os.unlink(cls.test_db_path)
 
@@ -194,6 +199,61 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         response2 = self.client.get('/api/bounties')
         bounties2 = json.loads(response2.data)
         # Bounty should no longer appear in open list (state changed to claimed)
+
+    def test_bounty_sync_requires_admin_and_preserves_local_state(self):
+        """Bounty sync must not reset claimed/completed rows without admin auth."""
+        now = int(time.time())
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.execute("""
+                INSERT INTO beacon_bounties
+                (id, github_number, title, reward_rtc, difficulty, state,
+                 claimant_agent, completed_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                'gh_Rustchain_4549',
+                4549,
+                'Beacon sync auth hardening (25 RTC)',
+                25.0,
+                'HARD',
+                'claimed',
+                'bcn_claimed',
+                None,
+                now,
+                now,
+            ))
+            conn.commit()
+
+        with patch.dict(os.environ, {}, clear=True), patch("urllib.request.urlopen") as urlopen:
+            response = self.client.post('/api/bounties/sync')
+
+        self.assertEqual(response.status_code, 503)
+        urlopen.assert_not_called()
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT state, claimant_agent, completed_by
+                FROM beacon_bounties
+                WHERE id = ?
+                """,
+                ('gh_Rustchain_4549',),
+            ).fetchone()
+
+        self.assertEqual(row[0], 'claimed')
+        self.assertEqual(row[1], 'bcn_claimed')
+        self.assertIsNone(row[2])
+
+    def test_bounty_sync_rejects_wrong_admin_key_before_network(self):
+        """Wrong admin keys fail before any GitHub sync request is made."""
+        with patch.dict(os.environ, {"RC_ADMIN_KEY": "correct"}, clear=True):
+            with patch("urllib.request.urlopen") as urlopen:
+                response = self.client.post(
+                    '/api/bounties/sync',
+                    headers={'X-Admin-Key': 'wrong'},
+                )
+
+        self.assertEqual(response.status_code, 401)
+        urlopen.assert_not_called()
         
     def test_reputation_tracking_workflow(self):
         """Reputation is tracked and updated correctly."""

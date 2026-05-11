@@ -8,6 +8,7 @@ import os
 import time
 import hashlib
 import sqlite3
+import hmac
 from datetime import datetime
 from flask import Blueprint, jsonify, request, g
 
@@ -132,6 +133,17 @@ def init_beacon_tables(db_path=DB_PATH):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_relay_agents_status ON relay_agents(status)")
 
         conn.commit()
+
+
+def require_admin_key(action):
+    """Return an auth error response unless the request has the admin key."""
+    admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not admin_key:
+        return jsonify({'error': 'RC_ADMIN_KEY not configured - endpoint disabled'}), 503
+    provided_key = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(provided_key, admin_key):
+        return jsonify({'error': f'Unauthorized - admin key required to {action}'}), 401
+    return None
 
 
 # ============================================================
@@ -607,8 +619,12 @@ def get_bounties():
 
 @beacon_api.route('/api/bounties/sync', methods=['POST'])
 def sync_bounties():
-    """Sync bounties from GitHub API."""
+    """Sync bounties from GitHub API (admin-only)."""
     try:
+        admin_error = require_admin_key("sync bounties")
+        if admin_error:
+            return admin_error
+
         import urllib.request
         import ssl
         
