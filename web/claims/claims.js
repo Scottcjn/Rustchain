@@ -51,13 +51,39 @@ function hideError(elementId) {
   element.style.display = 'none';
 }
 
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = String(value ?? '');
+  return div.innerHTML;
+}
+
+function safeCssClass(value) {
+  return String(value || 'unknown').toLowerCase().replace(/[^a-z0-9_-]/g, '-') || 'unknown';
+}
+
+function safeNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function safeInteger(value, fallback = 0) {
+  const number = Number.parseInt(value, 10);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function formatCheckName(value) {
+  return String(value || '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, l => l.toUpperCase());
+}
+
 function formatRtc(urtc) {
-  return (urtc / 100_000_000).toFixed(6);
+  return (safeNumber(urtc) / 100_000_000).toFixed(6);
 }
 
 function formatTimestamp(ts) {
   if (!ts) return 'N/A';
-  return new Date(ts * 1000).toLocaleString();
+  return new Date(safeNumber(ts) * 1000).toLocaleString();
 }
 
 function generateClaimId(minerId, epoch) {
@@ -167,23 +193,23 @@ function renderEligibilityResult(eligibility) {
     ${isEligible ? `
       <div class="summary-row">
         <span class="summary-label">Miner ID</span>
-        <span class="summary-value" style="font-family: var(--font-mono);">${eligibility.miner_id}</span>
+        <span class="summary-value" style="font-family: var(--font-mono);">${escapeHtml(eligibility.miner_id)}</span>
       </div>
       <div class="summary-row">
         <span class="summary-label">Device Architecture</span>
-        <span class="summary-value">${eligibility.attestation?.device_arch || 'N/A'}</span>
+        <span class="summary-value">${escapeHtml(eligibility.attestation?.device_arch || 'N/A')}</span>
       </div>
       <div class="summary-row">
         <span class="summary-label">Antiquity Multiplier</span>
-        <span class="summary-value">${(eligibility.attestation?.antiquity_multiplier || 1).toFixed(2)}x</span>
+        <span class="summary-value">${safeNumber(eligibility.attestation?.antiquity_multiplier, 1).toFixed(2)}x</span>
       </div>
       <div class="summary-row">
         <span class="summary-label">Wallet Address</span>
-        <span class="summary-value" style="font-family: var(--font-mono);">${eligibility.wallet_address || 'Not registered'}</span>
+        <span class="summary-value" style="font-family: var(--font-mono);">${escapeHtml(eligibility.wallet_address || 'Not registered')}</span>
       </div>
     ` : `
       <div style="color: var(--error); margin-top: 1rem;">
-        Reason: ${eligibility.reason || 'Unknown'}
+        Reason: ${escapeHtml(eligibility.reason || 'Unknown')}
       </div>
     `}
     
@@ -215,7 +241,7 @@ function renderEligibilityResult(eligibility) {
             <span class="check-icon ${passed ? 'pass' : 'fail'}">
               ${passed ? '✓' : '✗'}
             </span>
-            <span>${check.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+            <span>${escapeHtml(formatCheckName(check))}</span>
           </div>
         `).join('')}
       </div>
@@ -234,8 +260,8 @@ function renderEpochSelect(epochData) {
   epochSelect.innerHTML = `
     <option value="">-- Select an epoch --</option>
     ${unclaimedEpochs.map(epoch => `
-      <option value="${epoch.epoch}" data-reward="${epoch.reward_urtc}">
-        Epoch ${epoch.epoch} - ${formatRtc(epoch.reward_urtc)} RTC
+      <option value="${safeInteger(epoch.epoch)}" data-reward="${safeInteger(epoch.reward_urtc)}">
+        Epoch ${safeInteger(epoch.epoch)} - ${formatRtc(epoch.reward_urtc)} RTC
       </option>
     `).join('')}
   `;
@@ -247,15 +273,15 @@ function renderClaimSummary(minerId, epoch, rewardUrtc, walletAddress) {
   claimSummary.innerHTML = `
     <div class="summary-row">
       <span class="summary-label">Miner ID</span>
-      <span class="summary-value" style="font-family: var(--font-mono);">${minerId}</span>
+      <span class="summary-value" style="font-family: var(--font-mono);">${escapeHtml(minerId)}</span>
     </div>
     <div class="summary-row">
       <span class="summary-label">Epoch</span>
-      <span class="summary-value">${epoch}</span>
+      <span class="summary-value">${safeInteger(epoch)}</span>
     </div>
     <div class="summary-row">
       <span class="summary-label">Wallet Address</span>
-      <span class="summary-value" style="font-family: var(--font-mono);">${walletAddress}</span>
+      <span class="summary-value" style="font-family: var(--font-mono);">${escapeHtml(walletAddress)}</span>
     </div>
     <div class="summary-row">
       <span class="summary-label">Reward Amount</span>
@@ -282,10 +308,10 @@ function renderClaimHistory(history) {
   
   tbody.innerHTML = history.claims.map(claim => `
     <tr>
-      <td style="font-family: var(--font-mono); font-size: 0.875rem;">${claim.claim_id}</td>
-      <td>${claim.epoch}</td>
+      <td style="font-family: var(--font-mono); font-size: 0.875rem;">${escapeHtml(claim.claim_id)}</td>
+      <td>${safeInteger(claim.epoch)}</td>
       <td>
-        <span class="status-badge ${claim.status}">${claim.status}</span>
+        <span class="status-badge ${safeCssClass(claim.status)}">${escapeHtml(claim.status)}</span>
       </td>
       <td style="font-family: var(--font-mono);">${formatRtc(claim.reward_urtc)}</td>
       <td>${formatTimestamp(claim.submitted_at)}</td>
@@ -472,9 +498,9 @@ async function handleSubmitClaim() {
       // Show success message
       document.getElementById('submitSuccess').innerHTML = `
         <strong>Claim submitted successfully!</strong><br>
-        Claim ID: <code style="font-family: var(--font-mono);">${result.claim_id}</code><br>
+        Claim ID: <code style="font-family: var(--font-mono);">${escapeHtml(result.claim_id)}</code><br>
         Reward: ${formatRtc(result.reward_urtc)} RTC<br>
-        Estimated settlement: ${new Date(result.estimated_settlement * 1000).toLocaleString()}
+        Estimated settlement: ${new Date(safeNumber(result.estimated_settlement) * 1000).toLocaleString()}
       `;
       document.getElementById('submitSuccess').style.display = 'block';
       
