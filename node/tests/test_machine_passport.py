@@ -499,6 +499,33 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(data['ok'])
         self.assertEqual(data['count'], 0)
+
+    def test_list_passports_rejects_non_integer_limit(self):
+        """Non-integer limits are invalid for list pagination."""
+        resp = self.client.get('/api/machine-passport?limit=abc')
+        data = json.loads(resp.data)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'limit must be an integer')
+
+    def test_list_passports_rejects_negative_offset(self):
+        """Negative offsets are invalid for list pagination."""
+        resp = self.client.get('/api/machine-passport?offset=-1')
+        data = json.loads(resp.data)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(data['ok'])
+        self.assertEqual(data['error'], 'offset must be non-negative')
+
+    def test_list_passports_clamps_large_limit(self):
+        """Large list limits are clamped to the documented maximum."""
+        resp = self.client.get('/api/machine-passport?limit=999')
+        data = json.loads(resp.data)
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['limit'], 500)
     
     def test_create_passport(self):
         """Test creating a passport via API."""
