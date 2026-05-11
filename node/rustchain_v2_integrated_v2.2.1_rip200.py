@@ -6282,18 +6282,35 @@ def list_oui_deny():
         "entries": [{"oui": r[0], "vendor": r[1], "added_ts": r[2], "enforce": r[3]} for r in rows]
     })
 
+def _admin_json_object_body():
+    """Return an admin JSON object body or a response tuple for malformed JSON."""
+    data = request.get_json(silent=True)
+    if data is None:
+        return {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({"ok": False, "error": "JSON object required"}), 400)
+    return data, None
+
 @app.route('/admin/oui_deny/add', methods=['POST'])
 def add_oui_deny():
     """Add OUI to denylist"""
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
-    data = request.get_json()
+    data, error = _admin_json_object_body()
+    if error:
+        return error
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
+    raw_oui = data.get('oui', '')
+    if not isinstance(raw_oui, str):
+        return jsonify({"error": "Invalid OUI (must be 6 hex chars)"}), 400
+    oui = raw_oui.lower().replace(':', '').replace('-', '')
     vendor = data.get('vendor', 'Unknown')
-    enforce = int(data.get('enforce', 0))
+    try:
+        enforce = int(data.get('enforce', 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid enforce value"}), 400
 
     if len(oui) != 6 or not all(c in '0123456789abcdef' for c in oui):
         return jsonify({"error": "Invalid OUI (must be 6 hex chars)"}), 400
@@ -6312,11 +6329,16 @@ def remove_oui_deny():
     """Remove OUI from denylist"""
     if not is_admin(request):
         return jsonify({"ok": False, "error": "forbidden"}), 403
-    data = request.get_json()
+    data, error = _admin_json_object_body()
+    if error:
+        return error
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
-    oui = data.get('oui', '').lower().replace(':', '').replace('-', '')
+    raw_oui = data.get('oui', '')
+    if not isinstance(raw_oui, str):
+        return jsonify({"error": "Invalid OUI (must be 6 hex chars)"}), 400
+    oui = raw_oui.lower().replace(':', '').replace('-', '')
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("DELETE FROM oui_deny WHERE oui = ?", (oui,))
