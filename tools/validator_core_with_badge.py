@@ -1,10 +1,13 @@
 import json
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
+
+def current_utc_year():
+    return datetime.now(timezone.utc).year
 
 def simulate_entropy_score(cpu_model, bios_date):
     year = int(bios_date.split("-")[0])
-    age_weight = max(0, 2025 - year)
+    age_weight = max(0, current_utc_year() - year)
     entropy_score = round((age_weight * 0.25) + (len(cpu_model) * 0.05), 2)
     return entropy_score
 
