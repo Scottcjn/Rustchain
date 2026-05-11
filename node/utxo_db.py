@@ -847,23 +847,29 @@ class UtxoDB:
         conn = self._conn()
         try:
             now = int(time.time())
-            expired = conn.execute(
-                "SELECT tx_id FROM utxo_mempool WHERE expires_at <= ?",
-                (now,),
-            ).fetchall()
-            count = 0
-            for row in expired:
-                conn.execute(
-                    "DELETE FROM utxo_mempool_inputs WHERE tx_id = ?",
-                    (row['tx_id'],),
-                )
-                conn.execute(
-                    "DELETE FROM utxo_mempool WHERE tx_id = ?",
-                    (row['tx_id'],),
-                )
-                count += 1
-            conn.commit()
-            return count
+            try:
+                expired = conn.execute(
+                    "SELECT tx_id FROM utxo_mempool WHERE expires_at <= ?",
+                    (now,),
+                ).fetchall()
+            except sqlite3.OperationalError as exc:
+                if "no such table" in str(exc).lower():
+                    return 0
+                raise
+            else:
+                count = 0
+                for row in expired:
+                    conn.execute(
+                        "DELETE FROM utxo_mempool_inputs WHERE tx_id = ?",
+                        (row['tx_id'],),
+                    )
+                    conn.execute(
+                        "DELETE FROM utxo_mempool WHERE tx_id = ?",
+                        (row['tx_id'],),
+                    )
+                    count += 1
+                conn.commit()
+                return count
         finally:
             conn.close()
 
