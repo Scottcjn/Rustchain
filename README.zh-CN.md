@@ -12,13 +12,13 @@
 [![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
 [![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer/)
 [![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
-[![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+[![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
 [![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.19442753.svg)](https://doi.org/10.5281/zenodo.19442753)
 
 2003年的 PowerBook G4 比现代 Threadripper **多赚 2.5 倍**。
 Power Mac G5 **多赚 2.0 倍**。带有生锈串口的 486 赢得最多尊重。
 
-[浏览器](https://rustchain.org/explorer/) · [已保存的机器](https://rustchain.org/preserved.html) · [安装矿机](#quickstart) · [新手指南](docs/QUICKSTART.md) · [宣言](https://rustchain.org/manifesto.html) · [白皮书](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+[浏览器](https://rustchain.org/explorer/) · [已保存的机器](https://rustchain.org/preserved.html) · [安装矿机](#quickstart) · [新手指南](docs/QUICKSTART.md) · [宣言](https://rustchain.org/manifesto.html) · [白皮书](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
 
 </div>
 
@@ -246,7 +246,7 @@ clawrtc mine --wallet=你的钱包地址
 
 ## 文档
 
-- [白皮书](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)
+- [白皮书](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)
 - [新手指南](docs/QUICKSTART.md)
 - [API 参考](docs/API.md)
 - [RIP 文档](rips/)
@@ -279,6 +279,6 @@ MIT License - 查看 [LICENSE](LICENSE) 了解详情。
 
 <div align="center">
 
-**[网站](https://rustchain.org)** · **[浏览器](https://rustchain.org/explorer/)** · **[白皮书](docs/RustChain_Whitepaper_Flameholder_v0.97-1.pdf)** · **[Discord](https://discord.gg/VqVVS2CW9Q)**
+**[网站](https://rustchain.org)** · **[浏览器](https://rustchain.org/explorer/)** · **[白皮书](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf)** · **[Discord](https://discord.gg/VqVVS2CW9Q)**
 
 </div>
