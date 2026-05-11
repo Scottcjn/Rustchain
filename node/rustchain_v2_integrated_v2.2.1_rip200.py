@@ -5773,6 +5773,9 @@ def _explorer_amount_rtc(amount_i64):
     return int(amount_i64) / int(globals().get("UNIT", 1_000_000))
 
 
+EXPLORER_TRANSACTIONS_MAX_OFFSET = 10_000
+
+
 @app.route("/api/blocks", methods=["GET"])
 def api_explorer_blocks():
     """Return recent blocks for explorer clients."""
@@ -5983,7 +5986,9 @@ def api_explorer_transactions():
     limit, error_response, status = _explorer_int_arg("limit", 50, 1, 200)
     if error_response is not None:
         return error_response, status
-    offset, error_response, status = _explorer_int_arg("offset", 0, 0, 1_000_000)
+    offset, error_response, status = _explorer_int_arg(
+        "offset", 0, 0, EXPLORER_TRANSACTIONS_MAX_OFFSET
+    )
     if error_response is not None:
         return error_response, status
 

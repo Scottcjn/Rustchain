@@ -166,6 +166,30 @@ class TestExplorerApiRoutes(unittest.TestCase):
         self.assertEqual(body["transactions"][1]["direction"], "received")
         self.assertEqual(body["transactions"][1]["amount_rtc"], 2.5)
 
+    def test_transactions_endpoint_caps_offset_before_materializing_rows(self):
+        calls = []
+
+        def fake_pending_transactions(db, limit):
+            calls.append(("pending", limit))
+            return []
+
+        def fake_ledger_transactions(db, limit):
+            calls.append(("ledger", limit))
+            return []
+
+        previous_pending = self.mod._pending_ledger_explorer_transactions
+        previous_ledger = self.mod._ledger_explorer_transactions
+        self.mod._pending_ledger_explorer_transactions = fake_pending_transactions
+        self.mod._ledger_explorer_transactions = fake_ledger_transactions
+        try:
+            resp = self.client.get("/api/transactions?limit=10&offset=1000000")
+        finally:
+            self.mod._pending_ledger_explorer_transactions = previous_pending
+            self.mod._ledger_explorer_transactions = previous_ledger
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(calls, [("pending", 10010), ("ledger", 10010)])
+
     def test_explorer_endpoints_return_empty_without_tables(self):
         blocks_resp = self.client.get("/api/blocks")
         tx_resp = self.client.get("/api/transactions")
