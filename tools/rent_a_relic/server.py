@@ -45,6 +45,16 @@ def get_db_path() -> str:
     return app.config.get("DB_PATH", DB_PATH)
 
 
+def _get_json_object_or_empty() -> dict:
+    """Return an object JSON body, preserving empty-body behavior."""
+    data = request.get_json(silent=True)
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        abort(400, description="JSON object required")
+    return data
+
+
 @contextmanager
 def db_conn():
     conn = sqlite3.connect(get_db_path())
@@ -224,7 +234,7 @@ def get_available():
 @app.post("/relic/reserve")
 def post_reserve():
     """Reserve a machine and lock RTC in escrow."""
-    data = request.get_json(silent=True) or {}
+    data = _get_json_object_or_empty()
 
     agent_id       = data.get("agent_id", "").strip()
     machine_id     = data.get("machine_id", "").strip()
@@ -415,7 +425,7 @@ def get_reservation(session_id: str):
 @app.post("/relic/complete/<session_id>")
 def post_complete(session_id: str):
     """Mark a session as completed and release escrow."""
-    data        = request.get_json(silent=True) or {}
+    data        = _get_json_object_or_empty()
     output_hash = data.get("output_hash") or hashlib.sha256(session_id.encode()).hexdigest()
 
     with db_conn() as conn:
