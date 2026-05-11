@@ -5,35 +5,28 @@ Regression tests for API CORS and CSRF handling in rips/rustchain-core/api/rpc.p
 The API module is loaded directly because the package path contains a hyphen.
 """
 
+import importlib.util
 import json
 import os
 import threading
+from http.client import HTTPConnection
 from http.server import HTTPServer
+from pathlib import Path
 from unittest.mock import patch
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 
 
-def _load_rpc_namespace():
-    rpc_path = os.path.join(
-        os.path.dirname(__file__),
-        "rips",
-        "rustchain-core",
-        "api",
-        "rpc.py",
-    )
-    with open(rpc_path) as f:
-        source = f.read()
-
-    ns = {"__name__": "__not_main__"}
-    exec(compile(source, rpc_path, "exec"), ns)
-    return ns
+def _load_rpc_module():
+    rpc_path = Path(__file__).resolve().parent / "rips" / "rustchain-core" / "api" / "rpc.py"
+    spec = importlib.util.spec_from_file_location("rustchain_rpc_test_target", rpc_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-RPC = _load_rpc_namespace()
-ApiRequestHandler = RPC["ApiRequestHandler"]
-RustChainApi = RPC["RustChainApi"]
-MockNode = RPC["MockNode"]
+RPC = _load_rpc_module()
+ApiRequestHandler = RPC.ApiRequestHandler
+RustChainApi = RPC.RustChainApi
+MockNode = RPC.MockNode
 
 
 class _ApiServerFixture:
@@ -42,7 +35,6 @@ class _ApiServerFixture:
         self.server = HTTPServer(("127.0.0.1", 0), ApiRequestHandler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
-        self.url = f"http://127.0.0.1:{self.server.server_port}"
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -50,25 +42,27 @@ class _ApiServerFixture:
         self.thread.join(timeout=5)
 
     def get(self, path, headers=None):
-        request = Request(f"{self.url}{path}", method="GET", headers=headers or {})
+        connection = HTTPConnection("127.0.0.1", self.server.server_port, timeout=5)
         try:
-            with urlopen(request, timeout=5) as response:
-                return response.status, json.loads(response.read().decode()), response.headers
-        except HTTPError as error:
-            return error.code, json.loads(error.read().decode()), error.headers
+            connection.request("GET", path, headers=headers or {})
+            response = connection.getresponse()
+            return response.status, json.loads(response.read().decode()), response.headers
+        finally:
+            connection.close()
 
     def post(self, path, body, headers=None):
-        request = Request(
-            f"{self.url}{path}",
-            data=json.dumps(body).encode(),
-            method="POST",
-            headers={"Content-Type": "application/json", **(headers or {})},
-        )
+        connection = HTTPConnection("127.0.0.1", self.server.server_port, timeout=5)
         try:
-            with urlopen(request, timeout=5) as response:
-                return response.status, json.loads(response.read().decode()), response.headers
-        except HTTPError as error:
-            return error.code, json.loads(error.read().decode()), error.headers
+            connection.request(
+                "POST",
+                path,
+                body=json.dumps(body).encode(),
+                headers={"Content-Type": "application/json", **(headers or {})},
+            )
+            response = connection.getresponse()
+            return response.status, json.loads(response.read().decode()), response.headers
+        finally:
+            connection.close()
 
 
 def test_default_response_does_not_send_wildcard_cors():
