@@ -261,13 +261,14 @@ def beacon_join():
                 bytes.fromhex(cb_hex)
             except ValueError:
                 return jsonify({'error': 'Invalid coinbase_address: must be valid hexadecimal'}), 400
+            coinbase_address = cb_clean.lower()
 
         now = int(time.time())
 
         # Check if agent already exists
         db = get_db()
         existing = db.execute(
-            "SELECT pubkey_hex FROM relay_agents WHERE agent_id = ?",
+            "SELECT pubkey_hex, coinbase_address FROM relay_agents WHERE agent_id = ?",
             (agent_id,)
         ).fetchone()
 
@@ -282,15 +283,22 @@ def beacon_join():
                              'public key is immutable after registration'
                 }), 403
 
-            # Update mutable fields only
+            existing_coinbase = existing['coinbase_address']
+            existing_coinbase = existing_coinbase.strip().lower() if existing_coinbase else None
+            if coinbase_address and coinbase_address != existing_coinbase:
+                return jsonify({
+                    'error': 'Cannot change coinbase_address for existing agent; '
+                             f'use POST /api/agents/{agent_id}/wallet with an admin key'
+                }), 403
+
+            # Update mutable fields only. Wallet changes require the admin endpoint.
             db.execute("""
                 UPDATE relay_agents
                 SET name = COALESCE(?, name),
-                    coinbase_address = COALESCE(?, coinbase_address),
                     status = 'active',
                     updated_at = ?
                 WHERE agent_id = ?
-            """, (name, coinbase_address, now, agent_id))
+            """, (name, now, agent_id))
         else:
             # New agent — insert with pubkey_hex
             db.execute("""
