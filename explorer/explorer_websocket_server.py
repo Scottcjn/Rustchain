@@ -232,6 +232,22 @@ class ExplorerState:
 state = ExplorerState()
 
 
+def parse_limit_arg(default: int, max_value: int):
+    raw_value = request.args.get("limit")
+    if raw_value is None:
+        return default, None
+
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None, "limit_must_be_integer"
+
+    if value < 1:
+        return None, "limit_must_be_positive"
+
+    return min(value, max_value), None
+
+
 # ─── API Fetching ──────────────────────────────────────────────────────────── #
 def _fetch(path, node_url=NODE_URL):
     """Fetch JSON from node API endpoint."""
@@ -465,7 +481,10 @@ def metrics_endpoint():
 @app.route("/api/explorer/blocks")
 def get_blocks():
     """Get recent blocks."""
-    limit = request.args.get("limit", 50, type=int)
+    limit, error = parse_limit_arg(50, 100)
+    if error:
+        return jsonify({"error": error}), 400
+
     with state._lock:
         return jsonify(state.blocks[:limit])
 
