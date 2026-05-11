@@ -101,7 +101,7 @@ def demo_full_lifecycle():
     print("\nStep 4: Delivering work...")
     delivery = client.deliver_work(
         job_id,
-        "https://docs.rustchain.ai/agent-economy",
+        "https://github.com/Scottcjn/Rustchain/blob/main/sdk/docs/AGENT_ECONOMY_SDK.md",
         "Complete technical documentation with API examples and integration guides"
     )
     print("✓ Work delivered with URL and summary")
