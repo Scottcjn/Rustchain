@@ -24,6 +24,7 @@ Date: 2026-03-05
 import hashlib
 import json
 import logging
+import math
 import sqlite3
 import time
 from flask import Flask, request, jsonify
@@ -216,6 +217,34 @@ def _update_reputation(c: sqlite3.Cursor, wallet_id: str, field: str,
 def _get_client_ip():
     """Get real client IP (trust nginx X-Real-IP only)."""
     return request.headers.get("X-Real-IP", request.remote_addr)
+
+
+def _parse_non_negative_int_arg(name: str, default: int, max_value: int = None):
+    raw = request.args.get(name)
+    if raw is None:
+        return default, None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None, f"{name} must be an integer"
+    if value < 0:
+        return None, f"{name} must be non-negative"
+    if max_value is not None:
+        value = min(value, max_value)
+    return value, None
+
+
+def _parse_non_negative_float_arg(name: str, default: float):
+    raw = request.args.get(name)
+    if raw is None:
+        return default, None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None, f"{name} must be a number"
+    if not math.isfinite(value) or value < 0:
+        return None, f"{name} must be a non-negative number"
+    return value, None
 
 
 # ---------------------------------------------------------------------------
@@ -710,9 +739,15 @@ def register_agent_economy(app: Flask, db_path: str):
     def agent_list_jobs():
         category = request.args.get("category", "").strip().lower()
         status_filter = request.args.get("status", STATUS_OPEN).strip().lower()
-        limit = min(int(request.args.get("limit", 50)), 100)
-        offset = max(int(request.args.get("offset", 0)), 0)
-        min_reward = float(request.args.get("min_reward", 0))
+        limit, error = _parse_non_negative_int_arg("limit", 50, max_value=100)
+        if error:
+            return jsonify({"error": error}), 400
+        offset, error = _parse_non_negative_int_arg("offset", 0)
+        if error:
+            return jsonify({"error": error}), 400
+        min_reward, error = _parse_non_negative_float_arg("min_reward", 0)
+        if error:
+            return jsonify({"error": error}), 400
 
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
