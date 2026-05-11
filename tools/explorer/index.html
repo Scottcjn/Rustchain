@@ -336,6 +336,23 @@
       return `${date.toLocaleString()} (${Math.max(0, nowSeconds() - Number(ts))}s ago)`;
     }
 
+    function escapeHtml(value) {
+      const span = document.createElement("span");
+      span.textContent = String(value);
+      return span.innerHTML;
+    }
+
+    function safeText(value, fallback = "-") {
+      return escapeHtml(value ?? fallback);
+    }
+
+    function setSelectOptions(select, values) {
+      select.replaceChildren(new Option("All", "all"));
+      for (const value of values) {
+        select.appendChild(new Option(value, value));
+      }
+    }
+
     async function fetchJson(path) {
       const res = await fetch(path);
       if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
@@ -390,8 +407,8 @@
       ];
       document.getElementById("topCards").innerHTML = cards.map((c) => `
         <div class="card">
-          <div class="label">${c.label}</div>
-          <div class="value">${c.value}</div>
+          <div class="label">${safeText(c.label)}</div>
+          <div class="value">${safeText(c.value)}</div>
         </div>
       `).join("");
     }
@@ -405,12 +422,12 @@
         const mult = Number(m.antiquity_multiplier || 1);
         return `
           <tr>
-            <td class="mono">${m.miner || "-"}</td>
-            <td><span class="chip arch">${arch}</span></td>
+            <td class="mono">${safeText(m.miner)}</td>
+            <td><span class="chip arch">${safeText(arch)}</span></td>
             <td><span class="chip mult">${mult.toFixed(2)}x</span></td>
             <td><span class="chip ${status === "online" ? "ok" : "warn"}">${status}</span></td>
-            <td class="mono">${formatTime(m.last_attest)}</td>
-            <td>${m.hardware_type || "-"}</td>
+            <td class="mono">${safeText(formatTime(m.last_attest))}</td>
+            <td>${safeText(m.hardware_type)}</td>
           </tr>
         `;
       }).join("");
@@ -421,7 +438,7 @@
       const archSet = new Set(state.miners.map((m) => architectureLabel(m).toLowerCase()));
       const archFilter = document.getElementById("archFilter");
       const current = archFilter.value;
-      archFilter.innerHTML = '<option value="all">All</option>' + [...archSet].sort().map((a) => `<option value="${a}">${a}</option>`).join("");
+      setSelectOptions(archFilter, [...archSet].sort());
       if ([...archSet, "all"].includes(current)) {
         archFilter.value = current;
       }
@@ -439,8 +456,8 @@
       ];
       document.getElementById("agentCards").innerHTML = cards.map((c) => `
         <div class="card">
-          <div class="label">${c.label}</div>
-          <div class="value">${c.value}</div>
+          <div class="label">${safeText(c.label)}</div>
+          <div class="value">${safeText(c.value)}</div>
         </div>
       `).join("");
     }
@@ -469,7 +486,7 @@
       const categories = new Set(state.agentJobs.map((j) => String(j.category || "other")));
       const select = document.getElementById("jobCategoryFilter");
       const current = select.value;
-      select.innerHTML = '<option value="all">All</option>' + [...categories].sort().map((c) => `<option value="${c}">${c}</option>`).join("");
+      setSelectOptions(select, [...categories].sort());
       if ([...categories, "all"].includes(current)) {
         select.value = current;
       }
@@ -483,12 +500,12 @@
       const tbody = document.getElementById("jobRows");
       tbody.innerHTML = rows.map((job) => `
         <tr>
-          <td class="mono">${job.job_id || "-"}</td>
-          <td>${job.category || "other"}</td>
+          <td class="mono">${safeText(job.job_id)}</td>
+          <td>${safeText(job.category || "other")}</td>
           <td>${Number(job.reward_rtc || 0).toFixed(2)}</td>
-          <td><span class="chip ${String(job.status || "").toLowerCase() === "completed" ? "ok" : "warn"}">${job.status || "unknown"}</span></td>
-          <td class="mono">${job.poster_wallet || "-"}</td>
-          <td class="mono">${job.updated_at || job.created_at || "-"}</td>
+          <td><span class="chip ${String(job.status || "").toLowerCase() === "completed" ? "ok" : "warn"}">${safeText(job.status || "unknown")}</span></td>
+          <td class="mono">${safeText(job.poster_wallet)}</td>
+          <td class="mono">${safeText(job.updated_at || job.created_at)}</td>
         </tr>
       `).join("");
       document.getElementById("jobsEmpty").style.display = rows.length ? "none" : "block";
@@ -505,13 +522,13 @@
       document.getElementById("repEmpty").style.display = "none";
       rows.innerHTML = `
         <tr>
-          <td class="mono">${rep.wallet_id || "-"}</td>
-          <td>${rep.trust_score ?? "-"}</td>
-          <td>${rep.trust_level || "-"}</td>
-          <td>${rep.jobs_posted ?? 0}</td>
-          <td>${rep.jobs_completed_as_poster ?? 0}</td>
+          <td class="mono">${safeText(rep.wallet_id)}</td>
+          <td>${safeText(rep.trust_score)}</td>
+          <td>${safeText(rep.trust_level)}</td>
+          <td>${safeText(rep.jobs_posted ?? 0)}</td>
+          <td>${safeText(rep.jobs_completed_as_poster ?? 0)}</td>
           <td>${Number(rep.total_rtc_paid || 0).toFixed(2)}</td>
-          <td class="mono">${rep.last_active || "-"}</td>
+          <td class="mono">${safeText(rep.last_active)}</td>
         </tr>
       `;
     }
@@ -549,7 +566,7 @@
         document.getElementById("updatedAt").textContent = `Last update: ${new Date().toLocaleTimeString()}`;
         document.getElementById("agentUpdatedAt").textContent = `Agent update: ${new Date().toLocaleTimeString()}`;
       } catch (err) {
-        document.getElementById("topCards").innerHTML = `<div class="card"><div class="label">Error</div><div class="value">${String(err.message || err)}</div></div>`;
+        document.getElementById("topCards").innerHTML = `<div class="card"><div class="label">Error</div><div class="value">${safeText(err.message || err)}</div></div>`;
         document.getElementById("minerRows").innerHTML = "";
       }
     }
