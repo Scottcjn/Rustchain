@@ -228,6 +228,27 @@ class TestDatabaseOperations(unittest.TestCase):
         self.assertEqual(result['data']['tier'], 'L1')
         self.assertEqual(result['data']['trust_score'], 75)
 
+    def test_verify_certificate_cache_returns_response_data(self):
+        """Cached certificate verification should return the cached response data."""
+        init_db()
+        record_badge_generation(
+            cert_id='BCOS-CACHED',
+            repo_name='cache/repo',
+            tier='L2',
+            metadata={'trust_score': 90},
+        )
+
+        first = verify_certificate('BCOS-CACHED')
+        second = verify_certificate('BCOS-CACHED')
+
+        self.assertTrue(first['valid'])
+        self.assertFalse(first['cached'])
+        self.assertTrue(second['valid'])
+        self.assertTrue(second['cached'])
+        self.assertEqual(second['data']['repo_name'], 'cache/repo')
+        self.assertEqual(second['data']['tier'], 'L2')
+        self.assertEqual(second['data']['trust_score'], 90)
+
     def test_verify_certificate_invalid(self):
         """Test verifying an invalid certificate."""
         init_db()

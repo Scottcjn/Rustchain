@@ -362,7 +362,7 @@ def verify_certificate(cert_id: str, use_cache: bool = True) -> Dict:
                 'valid': bool(cached[0]),
                 'cached': True,
                 'verified_at': cached[2],
-                'data': json.loads(cached[3]) if cached[3] else {},
+                'data': json.loads(cached[1]) if cached[1] else {},
             }
 
     # Check local database
