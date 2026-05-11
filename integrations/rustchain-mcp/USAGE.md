@@ -510,6 +510,6 @@ async def query_with_backoff(client, query_type):
 
 <div align="center">
 
-**RustChain MCP Server** | [Documentation](README.md) | [API Reference](../../../docs/api-reference.md)
+**RustChain MCP Server** | [Documentation](README.md) | [API Reference](../../docs/api-reference.md)
 
 </div>
