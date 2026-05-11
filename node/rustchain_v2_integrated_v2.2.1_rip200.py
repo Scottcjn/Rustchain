@@ -4740,12 +4740,22 @@ def request_withdrawal():
     """Request RTC withdrawal"""
     withdrawal_requests.inc()
 
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        withdrawal_failed.inc()
+        return jsonify({"error": "JSON object required"}), 400
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
     miner_pk = data.get('miner_pk')
-    amount = float(data.get('amount', 0))
+    try:
+        amount = float(data.get('amount', 0))
+    except (TypeError, ValueError):
+        withdrawal_failed.inc()
+        return jsonify({"error": "Invalid amount"}), 400
+    if not math.isfinite(amount):
+        withdrawal_failed.inc()
+        return jsonify({"error": "Invalid amount"}), 400
     destination = data.get('destination')
     signature = data.get('signature')
     nonce = data.get('nonce')
