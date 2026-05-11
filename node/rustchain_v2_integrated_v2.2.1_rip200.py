@@ -7088,6 +7088,10 @@ def confirm_pending():
     conn = sqlite3.connect(DB_PATH)
     try:
         c = conn.cursor()
+        # Serialize the read-check-update confirmation loop. Without taking a
+        # write lock before selecting ready rows, two workers can both read the
+        # same pending transfer, then each debit/credit and ledger-log it.
+        c.execute("BEGIN IMMEDIATE")
         
         # Get all pending transfers ready for confirmation
         ready = c.execute("""
