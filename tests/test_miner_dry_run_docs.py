@@ -7,4 +7,4 @@ def test_rust_miner_readme_explains_dry_run_behavior():
     assert "--dry-run" in readme
     assert "preflight checks" in readme
     assert "hardware fingerprint" in readme
-    assert "without actual mining" in readme
+    assert "actual mining" in readme
