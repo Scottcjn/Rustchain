@@ -380,8 +380,16 @@ class TestUtxoDB(unittest.TestCase):
         finally:
             conn.close()
 
-        self.assertEqual(self.db.mempool_get_block_candidates(), [])
-        self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+        self.assertTrue(self.db.mempool_add({
+            'tx_id': 'replacement' * 6,
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{'address': 'carol', 'value_nrtc': 100 * UNIT - 2000}],
+            'fee_nrtc': 2000,
+        }))
+
+        candidates = self.db.mempool_get_block_candidates()
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]['tx_id'], 'replacement' * 6)
 
     def test_mempool_nonexistent_input_rejected(self):
         tx = {

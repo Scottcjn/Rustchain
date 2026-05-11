@@ -651,6 +651,7 @@ class UtxoDB:
         Validates inputs exist and aren't claimed by another pending TX.
         Returns False if double-spend detected or pool full.
         """
+        self.mempool_clear_expired()
         conn = self._conn()
         # FIX(#2867 C1): mempool_add() always opens its own connection and
         # begins its own BEGIN IMMEDIATE transaction below. The 7 ROLLBACK
