@@ -124,6 +124,61 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.get_balance('bob'), 90 * UNIT)
         self.assertEqual(self.db.get_balance('alice'), 9 * UNIT)
 
+    def test_transfer_tx_id_commits_to_outputs(self):
+        """Different transfer outputs must not share the same tx_id.
+
+        Previously transfer tx_id was derived from inputs + timestamp only.
+        Two nodes could apply materially different transactions with the same
+        input and timestamp, record the same tx_id, but produce different UTXO
+        sets and state roots.
+        """
+        def apply_variant(recipient: str) -> tuple:
+            tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+            tmp.close()
+            db = UtxoDB(tmp.name)
+            try:
+                db.init_tables()
+                ok = db.apply_transaction({
+                    'tx_type': 'mining_reward',
+                    'inputs': [],
+                    'outputs': [{'address': 'alice',
+                                 'value_nrtc': 100 * UNIT}],
+                    'fee_nrtc': 0,
+                    'timestamp': 1234567890,
+                    '_allow_minting': True,
+                }, block_height=1)
+                self.assertTrue(ok)
+
+                box = db.get_unspent_for_address('alice')[0]
+                ok = db.apply_transaction({
+                    'tx_type': 'transfer',
+                    'inputs': [{'box_id': box['box_id'],
+                                'spending_proof': 'sig'}],
+                    'outputs': [{'address': recipient,
+                                 'value_nrtc': 100 * UNIT}],
+                    'fee_nrtc': 0,
+                    'timestamp': 2222222222,
+                }, block_height=10)
+                self.assertTrue(ok)
+
+                conn = db._conn()
+                try:
+                    row = conn.execute(
+                        """SELECT tx_id FROM utxo_transactions
+                           WHERE tx_type = 'transfer'"""
+                    ).fetchone()
+                    return row['tx_id'], db.compute_state_root()
+                finally:
+                    conn.close()
+            finally:
+                os.unlink(tmp.name)
+
+        bob_tx_id, bob_root = apply_variant('bob')
+        eve_tx_id, eve_root = apply_variant('eve')
+
+        self.assertNotEqual(bob_root, eve_root)
+        self.assertNotEqual(bob_tx_id, eve_tx_id)
+
     def test_fee_exceeds_conservation(self):
         """Outputs + fee > inputs should fail."""
         self._apply_coinbase('alice', 100 * UNIT)
