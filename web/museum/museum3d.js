@@ -321,7 +321,16 @@ import { OrbitControls } from './vendor/OrbitControls.js';
     for (const [k, v] of rows) {
       const kv = document.createElement('div');
       kv.className = 'kv';
-      kv.innerHTML = `<div class="k">${k}</div><div class="v">${String(v || '')}</div>`;
+      const key = document.createElement('div');
+      key.className = 'k';
+      key.textContent = k;
+
+      const value = document.createElement('div');
+      value.className = 'v';
+      value.textContent = String(v || '');
+
+      kv.appendChild(key);
+      kv.appendChild(value);
       pBody.appendChild(kv);
     }
 
