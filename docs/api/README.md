@@ -494,5 +494,5 @@ curl -sk https://rustchain.org/health
 
 ## Support
 
-- GitHub: https://github.com/rustchain-bounties/rustchain-bounties
+- GitHub: https://github.com/Scottcjn/rustchain-bounties
 - Documentation: https://rustchain.org/docs
