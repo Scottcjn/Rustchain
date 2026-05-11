@@ -75,6 +75,9 @@ _BLOCKED_NETWORKS = [
     ipaddress.ip_network("172.16.0.0/12"),      # RFC 1918
     ipaddress.ip_network("192.168.0.0/16"),     # RFC 1918
     ipaddress.ip_network("169.254.0.0/16"),     # Link-local / cloud metadata
+    ipaddress.ip_network("224.0.0.0/4"),        # IPv4 multicast
+    ipaddress.ip_network("240.0.0.0/4"),        # IPv4 reserved / future use
+    ipaddress.ip_network("255.255.255.255/32"), # IPv4 limited broadcast
     ipaddress.ip_network("0.0.0.0/8"),          # "This" network
     ipaddress.ip_network("100.64.0.0/10"),      # CGNAT
     ipaddress.ip_network("192.0.0.0/24"),       # IETF protocol assignments
@@ -83,6 +86,7 @@ _BLOCKED_NETWORKS = [
     ipaddress.ip_network("203.0.113.0/24"),     # TEST-NET-3 (documentation)
     ipaddress.ip_network("fc00::/7"),           # IPv6 unique-local
     ipaddress.ip_network("fe80::/10"),          # IPv6 link-local
+    ipaddress.ip_network("ff00::/8"),           # IPv6 multicast
 ]
 
 
