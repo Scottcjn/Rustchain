@@ -70,11 +70,7 @@ All API calls are made directly from the browser (client-side only).
 
 ## 📱 Screenshots
 
-### Desktop View
-![Desktop Dashboard](./screenshot-desktop.png)
-
-### Mobile View
-![Mobile Dashboard](./screenshot-mobile.png)
+Open the live dashboard preview in [index.html](./index.html).
 
 ## 🔧 Customization
 

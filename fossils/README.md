@@ -4,7 +4,7 @@
 
 A visual timeline showing every attestation from every miner since genesis, color-coded by architecture family. G4s as ancient amber strata, G5s layered above in copper, POWER8 in deep blue, modern x86 as pale recent sediment.
 
-![Fossil Record Preview](preview.png)
+[Open the visualizer](./index.html)
 
 ## 🎯 Overview
 
