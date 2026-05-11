@@ -513,6 +513,20 @@ def list_bridge_transfers(
     ]
 
 
+def _parse_non_negative_int_arg(value: Optional[str], name: str, default: int, max_value: Optional[int] = None):
+    if value is None or value == "":
+        return default, None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None, f"{name} must be an integer"
+    if parsed < 0:
+        return None, f"{name} must be non-negative"
+    if max_value is not None:
+        parsed = min(parsed, max_value)
+    return parsed, None
+
+
 def void_bridge_transfer(
     db_conn: sqlite3.Connection,
     tx_hash: str,
@@ -744,7 +758,9 @@ def register_bridge_routes(app):
         source = request.args.get("source_address")
         dest = request.args.get("dest_address")
         direction = request.args.get("direction")
-        limit = int(request.args.get("limit", 100))
+        limit, error = _parse_non_negative_int_arg(request.args.get("limit"), "limit", 100, max_value=500)
+        if error:
+            return jsonify({"error": error}), 400
         
         conn = sqlite3.connect(DB_PATH)
         try:
