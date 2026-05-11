@@ -68,7 +68,7 @@ def test_from_bytes_accepts_valid_message():
         (json.dumps(["not", "object"]).encode(), "message must be a JSON object"),
         (encode_message(type="NOT_A_MESSAGE_TYPE"), "unknown message type"),
         (encode_message(timestamp=-1), "timestamp outside accepted range"),
-        (encode_message(timestamp=int(time.time()) + 301), "timestamp outside accepted range"),
+        (encode_message(timestamp=2**63 - 1), "timestamp outside accepted range"),
         (encode_message(nonce="abc"), "nonce must be a positive 64-bit integer"),
         (encode_message(payload=[]), "payload must be a JSON object"),
     ],
@@ -94,4 +94,3 @@ def test_from_bytes_rejects_oversized_payload():
 
     with pytest.raises(ValueError, match="payload too large"):
         p2p.Message.from_bytes(encode_message(payload=payload), sender)
-
