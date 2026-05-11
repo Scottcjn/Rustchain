@@ -533,8 +533,14 @@ def monitor_loop(db: AlertDB):
 
             # Fetch current miner data
             all_miners = fetch_miners()
-            active_miner_ids = set(m["miner"] for m in all_miners)
-            miner_data = {m["miner"]: m for m in all_miners}
+            miner_data = {}
+            for miner in all_miners:
+                miner_id = miner.get("miner") or miner.get("miner_id")
+                if not miner_id:
+                    logger.warning("Skipping miner entry without miner id: %s", miner)
+                    continue
+                miner_data[miner_id] = miner
+            active_miner_ids = set(miner_data)
 
             for miner_id in monitored_miners:
                 prev_state = db.get_miner_state(miner_id)
