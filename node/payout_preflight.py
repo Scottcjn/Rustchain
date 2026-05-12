@@ -8,6 +8,14 @@ from typing import Any, Dict, Optional, Tuple
 MICRO_RTC = Decimal("1000000")
 
 
+def _is_rtc_address(value: str) -> bool:
+    return value.startswith("RTC") and len(value) == 43
+
+
+def _is_bcn_address(value: str) -> bool:
+    return value.startswith("bcn_") and len(value) >= 8
+
+
 @dataclass(frozen=True)
 class PreflightResult:
     ok: bool
@@ -77,7 +85,7 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
     if err:
         return PreflightResult(ok=False, error=err, details={})
 
-    required = ["from_address", "to_address", "amount_rtc", "nonce", "signature", "public_key"]
+    required = ["from_address", "to_address", "amount_rtc", "nonce", "signature"]
     missing = [k for k in required if not data.get(k)]
     if missing:
         return PreflightResult(ok=False, error="missing_required_fields", details={"missing": missing})
@@ -97,12 +105,14 @@ def validate_wallet_transfer_signed(payload: Any) -> PreflightResult:
             details={"amount_rtc": float(amount_rtc), "min_rtc": 0.000001},
         )
 
-    if not (from_address.startswith("RTC") and len(from_address) == 43):
+    if not (_is_rtc_address(from_address) or _is_bcn_address(from_address)):
         return PreflightResult(ok=False, error="invalid_from_address_format", details={})
-    if not (to_address.startswith("RTC") and len(to_address) == 43):
+    if not (_is_rtc_address(to_address) or _is_bcn_address(to_address)):
         return PreflightResult(ok=False, error="invalid_to_address_format", details={})
     if from_address == to_address:
         return PreflightResult(ok=False, error="from_to_must_differ", details={})
+    if _is_rtc_address(from_address) and not data.get("public_key"):
+        return PreflightResult(ok=False, error="missing_required_fields", details={"missing": ["public_key"]})
 
     try:
         nonce_int = int(str(data.get("nonce")))
