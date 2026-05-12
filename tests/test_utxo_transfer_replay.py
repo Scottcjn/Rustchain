@@ -1,4 +1,6 @@
 import os
+import json
+import gc
 import sqlite3
 import sys
 import tempfile
@@ -12,6 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "node"))
 
 from utxo_db import UtxoDB, UNIT
+import utxo_endpoints
 from utxo_endpoints import register_utxo_blueprint
 
 
@@ -82,6 +85,32 @@ def payload(nonce=1733420000000, amount_rtc=10.0):
     }
 
 
+def cleanup_db(client, db_path):
+    try:
+        client.__exit__(None, None, None)
+    except Exception:
+        pass
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            conn.execute("PRAGMA journal_mode=DELETE")
+    except sqlite3.Error:
+        pass
+    utxo_endpoints._utxo_db = None
+    utxo_endpoints._db_path = None
+    gc.collect()
+    for path in (db_path, f"{db_path}-wal", f"{db_path}-shm"):
+        for attempt in range(20):
+            try:
+                if os.path.exists(path):
+                    os.unlink(path)
+                break
+            except PermissionError:
+                if attempt == 19:
+                    break
+                time.sleep(0.05)
+
+
 def test_utxo_transfer_rejects_duplicate_nonce():
     client, utxo_db, db_path = build_client()
     try:
@@ -104,7 +133,61 @@ def test_utxo_transfer_rejects_duplicate_nonce():
 
         assert nonce_count == 1
     finally:
-        os.unlink(db_path)
+        cleanup_db(client, db_path)
+
+
+def test_utxo_transfer_rejects_non_scalar_nonce_replay_bypass():
+    """Object nonces must not bypass replay protection via key order.
+
+    JSON signing uses sort_keys=True, so {"a":1,"b":2} and {"b":2,"a":1}
+    produce the same signed bytes. The replay table previously stored
+    str(nonce), whose order follows the submitted JSON object, allowing the
+    same signature to drain another UTXO with a reordered nonce object.
+    """
+    client, utxo_db, db_path = build_client()
+    try:
+        sender = "RTC_test_aabbccdd"
+        recipient = "bob"
+        seed_coinbase(utxo_db, sender, 20 * UNIT)
+
+        signed_message = json.dumps(
+            {
+                "from": sender,
+                "to": recipient,
+                "amount": 10.0,
+                "fee": 0.0,
+                "memo": "replay-test",
+                "nonce": {"a": 1, "b": 2},
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+
+        old_verify = utxo_endpoints._verify_sig_fn
+
+        def verify_object_nonce(pubkey_hex, message, sig_hex):
+            return sig_hex == "object-nonce-sig" and message == signed_message
+
+        try:
+            utxo_endpoints._verify_sig_fn = verify_object_nonce
+            first = payload(nonce={"a": 1, "b": 2})
+            first["signature"] = "object-nonce-sig"
+            first_response = client.post("/utxo/transfer", json=first)
+        finally:
+            utxo_endpoints._verify_sig_fn = old_verify
+
+        assert first_response.status_code == 400
+        assert "Invalid nonce" in first_response.get_json()["error"]
+        assert utxo_db.get_balance(sender) == 20 * UNIT
+        assert utxo_db.get_balance(recipient) == 0
+
+        with sqlite3.connect(db_path) as conn:
+            nonce_count = conn.execute(
+                "SELECT COUNT(*) FROM transfer_nonces"
+            ).fetchone()[0]
+        assert nonce_count == 0
+    finally:
+        cleanup_db(client, db_path)
 
 
 def test_utxo_transfer_failed_attempt_does_not_burn_nonce():
@@ -131,4 +214,4 @@ def test_utxo_transfer_failed_attempt_does_not_burn_nonce():
         assert nonce_count == 1
         assert utxo_db.get_balance("bob") == 10 * UNIT
     finally:
-        os.unlink(db_path)
+        cleanup_db(client, db_path)

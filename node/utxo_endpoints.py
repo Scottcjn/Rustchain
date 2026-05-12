@@ -141,6 +141,16 @@ def _reserve_transfer_nonce(conn: sqlite3.Connection, from_address: str, nonce) 
     return conn.execute("SELECT changes()").fetchone()[0] == 1
 
 
+def _normalize_transfer_nonce(nonce) -> str:
+    """Return the replay-key representation for accepted transfer nonces."""
+    if isinstance(nonce, bool) or not isinstance(nonce, (int, str)):
+        raise ValueError("nonce must be a string or integer")
+    nonce_key = str(nonce).strip()
+    if not nonce_key:
+        raise ValueError("nonce cannot be empty")
+    return nonce_key
+
+
 def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
                             verify_sig_fn, addr_from_pk_fn,
                             current_slot_fn, dual_write: bool = False):
@@ -361,12 +371,17 @@ def utxo_transfer():
 
     # --- validation ---------------------------------------------------------
 
-    if not all([from_address, to_address, public_key, signature, nonce]):
+    if not all([from_address, to_address, public_key, signature]) or nonce is None:
         return jsonify({
             'error': 'Missing required fields',
             'required': ['from_address', 'to_address', 'public_key',
                          'signature', 'nonce']
         }), 400
+
+    try:
+        nonce_key = _normalize_transfer_nonce(nonce)
+    except ValueError as e:
+        return jsonify({'error': f'Invalid nonce: {e}'}), 400
 
     if amount_rtc <= 0:
         return jsonify({'error': 'Amount must be positive'}), 400
@@ -476,12 +491,12 @@ def utxo_transfer():
     try:
         conn.execute("BEGIN IMMEDIATE")
 
-        if not _reserve_transfer_nonce(conn, from_address, nonce):
+        if not _reserve_transfer_nonce(conn, from_address, nonce_key):
             conn.rollback()
             return jsonify({
                 'error': 'Nonce already used (replay attack detected)',
                 'code': 'REPLAY_DETECTED',
-                'nonce': str(nonce),
+                'nonce': nonce_key,
             }), 400
 
         ok = _utxo_db.apply_transaction(tx, block_height, conn=conn)
