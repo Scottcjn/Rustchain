@@ -7,10 +7,15 @@ import json
 import urllib.parse
 import hashlib
 from datetime import datetime
+from html import escape as escape_html
 
 app = Flask(__name__)
 
 DB_PATH = "rustchain.db"
+
+
+def escape_markdown_alt_text(value):
+    return value.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
 
 def init_badge_db():
     with sqlite3.connect(DB_PATH) as conn:
@@ -109,7 +114,12 @@ def badge_generator():
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    document.getElementById('badgePreview').innerHTML = data.preview_html;
+                    const badgePreview = document.getElementById('badgePreview');
+                    badgePreview.replaceChildren();
+                    const previewImage = document.createElement('img');
+                    previewImage.src = data.shield_url;
+                    previewImage.alt = data.alt_text || 'RustChain badge';
+                    badgePreview.appendChild(previewImage);
                     document.getElementById('markdownCode').textContent = data.markdown;
                     document.getElementById('htmlCode').textContent = data.html;
                     document.getElementById('result').style.display = 'block';
@@ -145,13 +155,16 @@ def create_badge():
     
     color = badge_colors.get(badge_type, 'blue')
     label = custom_message if custom_message else badge_type.replace('-', ' ').title()
+    shield_label = urllib.parse.quote(label, safe="")
+    escaped_label = escape_html(label, quote=True)
+    markdown_label = escape_markdown_alt_text(label)
     
-    shield_url = f"https://img.shields.io/badge/RustChain-{urllib.parse.quote(label)}-{color}"
+    shield_url = f"https://img.shields.io/badge/RustChain-{shield_label}-{color}"
     repo_url = "https://github.com/Scottcjn/Rustchain"
     
-    markdown = f"[![RustChain {label}]({shield_url})]({repo_url})"
-    html = f'<a href="{repo_url}"><img src="{shield_url}" alt="RustChain {label}"></a>'
-    preview_html = f'<img src="{shield_url}" alt="RustChain {label}">'
+    markdown = f"[![RustChain {markdown_label}]({shield_url})]({repo_url})"
+    html = f'<a href="{repo_url}"><img src="{shield_url}" alt="RustChain {escaped_label}"></a>'
+    preview_html = f'<img src="{shield_url}" alt="RustChain {escaped_label}">'
     
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
@@ -167,7 +180,8 @@ def create_badge():
         'markdown': markdown,
         'html': html,
         'preview_html': preview_html,
-        'shield_url': shield_url
+        'shield_url': shield_url,
+        'alt_text': f"RustChain {label}"
     })
 
 @app.route('/api/badge/stats')
