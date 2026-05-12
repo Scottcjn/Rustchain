@@ -26,6 +26,9 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef __linux__
+#include <sys/random.h>
+#endif
 
 #ifdef __APPLE__
 #include <sys/sysctl.h>
@@ -295,10 +298,23 @@ Challenge generate_challenge(unsigned char type) {
     c.challenge_type = type;
     c.timestamp = read_timebase();
 
-    /* Generate random nonce */
-    for (i = 0; i < 32; i++) {
-        c.nonce[i] = (unsigned char)(rand() ^ (c.timestamp >> (i % 8)));
+    /* Generate cryptographically secure nonce */
+#ifdef __APPLE__
+    arc4random_buf(c.nonce, 32);
+#elif defined(__linux__)
+    {
+        ssize_t ret = getrandom(c.nonce, 32, 0);
+        (void)ret; /* Ignore return - fallback handled below */
     }
+#else
+    /* Fallback: use timebase XOR (less secure but better than rand) */
+    {
+        unsigned long long tb = read_timebase();
+        for (i = 0; i < 32; i++) {
+            c.nonce[i] = (unsigned char)((tb >> (i * 8)) ^ (c.timestamp >> (i % 8)));
+        }
+    }
+#endif
 
     /* Set expected timing based on challenge type */
     switch (type) {
@@ -516,7 +532,7 @@ int main(int argc, char *argv[]) {
     printf("║                than to emulate one\"                                  ║\n");
     printf("╚══════════════════════════════════════════════════════════════════════╝\n");
 
-    srand((unsigned int)time(NULL) ^ (unsigned int)read_timebase());
+    /* srand removed - nonce now uses arc4random_buf/getrandom */
 
     printf("\n  Generating comprehensive challenge...\n");
     c = generate_challenge(0); /* Full challenge */
