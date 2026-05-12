@@ -31,6 +31,7 @@ import json
 import time
 import random
 import threading
+import hmac
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 from enum import Enum
@@ -186,6 +187,17 @@ GUARDRAILS = {
     "admin_override_enabled": True,
     "cooling_period_days": 7,  # After beef ends, can't start new beef immediately
 }
+
+
+def _get_relationship_admin_key() -> str:
+    """Return the configured admin key for relationship interventions."""
+    return os.environ.get("RELATIONSHIP_ADMIN_KEY") or os.environ.get("RC_ADMIN_KEY", "")
+
+
+def _verify_relationship_admin_key(candidate_key: str) -> bool:
+    """Constant-time verification for relationship admin operations."""
+    configured_key = _get_relationship_admin_key()
+    return bool(configured_key and hmac.compare_digest(candidate_key or "", configured_key))
 
 
 # ─── Relationship Engine ────────────────────────────────────────────────────── #
@@ -787,7 +799,8 @@ class RelationshipEngine:
         }
     
     def admin_intervene(self, agent_a: str, agent_b: str, admin_id: str,
-                       reason: str, action: str = "reset_to_neutral") -> Dict[str, Any]:
+                       reason: str, action: str = "reset_to_neutral",
+                       admin_key: Optional[str] = None) -> Dict[str, Any]:
         """
         Admin intervention to reset or modify a relationship.
         
@@ -797,12 +810,16 @@ class RelationshipEngine:
             admin_id: Admin user ID
             reason: Reason for intervention
             action: Action to take (default: reset_to_neutral)
+            admin_key: Secret admin key for authorizing intervention
             
         Returns:
             Dictionary with intervention result
         """
         if not GUARDRAILS["admin_override_enabled"]:
             raise ValueError("Admin override is disabled")
+
+        if not _verify_relationship_admin_key(admin_key or ""):
+            raise PermissionError("Unauthorized admin intervention")
         
         agent_a, agent_b = self._normalize_pair(agent_a, agent_b)
         now = time.time()
@@ -1103,9 +1120,12 @@ def create_relationship_blueprint(engine: RelationshipEngine):
                 agent_a, agent_b,
                 admin_id=data.get("admin_id", "admin"),
                 reason=data.get("reason", "Admin intervention"),
-                action=data.get("action", "reset_to_neutral")
+                action=data.get("action", "reset_to_neutral"),
+                admin_key=request.headers.get("X-Admin-Key", "")
             )
             return jsonify(result)
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
     

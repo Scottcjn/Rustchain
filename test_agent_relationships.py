@@ -16,11 +16,12 @@ import time
 import sqlite3
 import os
 import tempfile
+import importlib.util
 from typing import Dict, Any
 
 from agent_relationships import (
     RelationshipEngine, RelationshipState, DramaArcType, EventType,
-    GUARDRAILS, DRAMA_ARC_TEMPLATES
+    GUARDRAILS, DRAMA_ARC_TEMPLATES, create_relationship_blueprint
 )
 from drama_arc_engine import (
     DramaArcEngine, ArcPhase, run_five_day_rivalry_scenario
@@ -172,6 +173,8 @@ class TestRelationshipEngine(unittest.TestCase):
     
     def test_admin_intervention(self):
         """Test admin intervention to reset relationship."""
+        os.environ["RELATIONSHIP_ADMIN_KEY"] = "test-admin-key"
+        self.addCleanup(os.environ.pop, "RELATIONSHIP_ADMIN_KEY", None)
         self.engine.initialize_relationship("agent_a", "agent_b")
         
         # Create beef
@@ -184,7 +187,8 @@ class TestRelationshipEngine(unittest.TestCase):
         result = self.engine.admin_intervene(
             "agent_a", "agent_b",
             admin_id="admin_user",
-            reason="Too much drama"
+            reason="Too much drama",
+            admin_key="test-admin-key"
         )
         
         self.assertTrue(result["success"])
@@ -194,6 +198,93 @@ class TestRelationshipEngine(unittest.TestCase):
         rel = self.engine.get_relationship("agent_a", "agent_b")
         self.assertEqual(rel["state"], "neutral")
         self.assertEqual(rel["tension_level"], 0)
+
+    def test_admin_intervention_requires_valid_admin_key(self):
+        """Test admin intervention rejects missing or invalid admin keys."""
+        os.environ["RELATIONSHIP_ADMIN_KEY"] = "test-admin-key"
+        self.addCleanup(os.environ.pop, "RELATIONSHIP_ADMIN_KEY", None)
+        self.engine.initialize_relationship("agent_a", "agent_b")
+
+        with self.assertRaises(PermissionError):
+            self.engine.admin_intervene(
+                "agent_a", "agent_b",
+                admin_id="admin_user",
+                reason="Too much drama"
+            )
+
+        with self.assertRaises(PermissionError):
+            self.engine.admin_intervene(
+                "agent_a", "agent_b",
+                admin_id="admin_user",
+                reason="Too much drama",
+                admin_key="wrong-key"
+            )
+
+    def test_admin_intervention_uses_rc_admin_key_fallback(self):
+        """Test admin intervention accepts RC_ADMIN_KEY when no relationship key is set."""
+        os.environ.pop("RELATIONSHIP_ADMIN_KEY", None)
+        os.environ["RC_ADMIN_KEY"] = "fallback-admin-key"
+        self.addCleanup(os.environ.pop, "RC_ADMIN_KEY", None)
+        self.engine.initialize_relationship("agent_a", "agent_b")
+
+        result = self.engine.admin_intervene(
+            "agent_a", "agent_b",
+            admin_id="admin_user",
+            reason="Too much drama",
+            admin_key="fallback-admin-key"
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["new_state"], "neutral")
+
+    def test_admin_intervention_fails_closed_without_configured_key(self):
+        """Test admin intervention is disabled when no admin key is configured."""
+        os.environ.pop("RELATIONSHIP_ADMIN_KEY", None)
+        os.environ.pop("RC_ADMIN_KEY", None)
+        self.engine.initialize_relationship("agent_a", "agent_b")
+
+        with self.assertRaises(PermissionError):
+            self.engine.admin_intervene(
+                "agent_a", "agent_b",
+                admin_id="admin_user",
+                reason="Too much drama",
+                admin_key="any-key"
+            )
+
+    def test_admin_intervention_endpoint_requires_admin_key(self):
+        """Test HTTP admin intervention endpoint enforces X-Admin-Key."""
+        if importlib.util.find_spec("flask") is None:
+            self.skipTest("flask is not installed")
+
+        os.environ["RELATIONSHIP_ADMIN_KEY"] = "test-admin-key"
+        self.addCleanup(os.environ.pop, "RELATIONSHIP_ADMIN_KEY", None)
+        self.engine.initialize_relationship("agent_a", "agent_b")
+
+        from flask import Flask
+        app = Flask(__name__)
+        app.register_blueprint(create_relationship_blueprint(self.engine))
+        client = app.test_client()
+
+        response = client.post(
+            "/api/relationships/agent_a/agent_b/intervene",
+            json={"admin_id": "admin_user", "reason": "Too much drama"}
+        )
+        self.assertEqual(response.status_code, 403)
+
+        response = client.post(
+            "/api/relationships/agent_a/agent_b/intervene",
+            json={"admin_id": "admin_user", "reason": "Too much drama"},
+            headers={"X-Admin-Key": "wrong-key"}
+        )
+        self.assertEqual(response.status_code, 403)
+
+        response = client.post(
+            "/api/relationships/agent_a/agent_b/intervene",
+            json={"admin_id": "admin_user", "reason": "Too much drama"},
+            headers={"X-Admin-Key": "test-admin-key"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["success"])
     
     def test_get_all_relationships(self):
         """Test retrieving all relationships."""
@@ -591,11 +682,14 @@ class TestEdgeCases(unittest.TestCase):
     
     def test_admin_intervention_without_relationship(self):
         """Test that admin intervention fails without existing relationship."""
+        os.environ["RELATIONSHIP_ADMIN_KEY"] = "test-admin-key"
+        self.addCleanup(os.environ.pop, "RELATIONSHIP_ADMIN_KEY", None)
         with self.assertRaises(ValueError):
             self.engine.admin_intervene(
                 "unknown_a", "unknown_b",
                 admin_id="admin",
-                reason="Testing"
+                reason="Test",
+                admin_key="test-admin-key"
             )
     
     def test_tension_clamping(self):
