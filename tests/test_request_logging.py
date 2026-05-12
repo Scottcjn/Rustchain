@@ -1,3 +1,4 @@
+﻿# SPDX-License-Identifier: MIT
 import json
 import sys
 from unittest.mock import patch
