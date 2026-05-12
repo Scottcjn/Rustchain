@@ -319,8 +319,8 @@ def drip():
 
     wallet = wallet_value.strip()
     
-    # Basic wallet validation (should start with 0x and be reasonably long)
-    if not wallet.startswith('0x') or len(wallet) < 10:
+    # Basic wallet validation (accept Ethereum-style and native RTC wallets)
+    if not wallet.startswith(('0x', 'RTC')) or len(wallet) < 10:
         return jsonify({'ok': False, 'error': 'Invalid wallet address'}), 400
     
     ip = get_client_ip()
