@@ -441,6 +441,8 @@ class NetworkChallengeProtocol:
     def __init__(self, validator_pubkey: str, hardware_profile: Dict):
         self.pubkey = validator_pubkey
         self.hardware = hardware_profile
+        # Generate a random signing key instead of deriving from pubkey
+        self._signing_key = secrets.token_bytes(32)
         self.validator = AntiSpoofValidator()
         self.pending_challenges: Dict[str, Challenge] = {}
         self.failure_count = 0
@@ -458,8 +460,8 @@ class NetworkChallengeProtocol:
 
     def create_challenge(self, target_pubkey: str, target_hardware: Dict) -> Challenge:
         """Create a challenge for another validator"""
-        # Use pubkey as signing key for demo (use real keys in production)
-        privkey = hashlib.sha256(self.pubkey.encode()).digest()
+        # Use randomly-generated signing key (not derivable from public key)
+        privkey = self._signing_key
 
         challenge = self.validator.generate_challenge(
             target_pubkey=target_pubkey,
