@@ -490,7 +490,7 @@ def get_pending_unlocks(
     """
     params = [now]
     
-    if before_timestamp:
+    if before_timestamp is not None:
         query += " AND unlock_at <= ?"
         params.append(before_timestamp)
     
@@ -637,12 +637,38 @@ def auto_release_expired_locks(
 def register_lock_ledger_routes(app):
     """Register lock ledger API routes with Flask app."""
     from flask import request, jsonify
+
+    pending_unlock_query = get_pending_unlocks
+
+    def parse_bounded_int_arg(
+        name: str,
+        default: Optional[int] = None,
+        *,
+        min_value: Optional[int] = None,
+        max_value: Optional[int] = None,
+    ) -> Tuple[Optional[int], Optional[Tuple[Any, int]]]:
+        raw_value = request.args.get(name)
+        if raw_value is None:
+            return default, None
+
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            return None, (jsonify({"error": f"Invalid {name} query parameter"}), 400)
+
+        if min_value is not None:
+            value = max(min_value, value)
+        if max_value is not None:
+            value = min(max_value, value)
+        return value, None
     
     @app.route('/api/lock/miner/<miner_id>', methods=['GET'])
     def get_miner_locks(miner_id: str):
         """Get locks for a specific miner."""
         status = request.args.get("status")
-        limit = int(request.args.get("limit", 100))
+        limit, error_response = parse_bounded_int_arg("limit", 100, min_value=1, max_value=500)
+        if error_response:
+            return error_response
         
         conn = sqlite3.connect(DB_PATH)
         try:
@@ -700,16 +726,18 @@ def register_lock_ledger_routes(app):
             conn.close()
     
     @app.route('/api/lock/pending-unlock', methods=['GET'])
-    def get_pending_unlocks():
+    def get_pending_unlocks_route():
         """Get locks ready to be released."""
-        before = request.args.get("before")
-        limit = int(request.args.get("limit", 100))
-        
-        before_ts = int(before) if before else None
+        before_ts, error_response = parse_bounded_int_arg("before", None, min_value=0)
+        if error_response:
+            return error_response
+        limit, error_response = parse_bounded_int_arg("limit", 100, min_value=1, max_value=500)
+        if error_response:
+            return error_response
         
         conn = sqlite3.connect(DB_PATH)
         try:
-            locks = get_pending_unlocks(conn, before_timestamp=before_ts, limit=limit)
+            locks = pending_unlock_query(conn, before_timestamp=before_ts, limit=limit)
             
             return jsonify({
                 "ok": True,
