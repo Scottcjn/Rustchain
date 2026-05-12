@@ -18,6 +18,15 @@ import statistics
 import re
 from datetime import datetime
 
+def warning(msg):
+    """Fallback warning function"""
+    print(f"WARNING: {msg}")
+
+def info(msg):
+    """Fallback info function"""
+    print(f"INFO: {msg}")
+
+
 # Import fingerprint checks
 try:
     from fingerprint_checks import validate_all_checks
