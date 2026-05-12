@@ -41,7 +41,7 @@ except ImportError:
     DB_PATH = os.environ.get("RC_DB_PATH", "rustchain.db")
     UNIT = 1000000  # Micro-units per RTC
     def current_slot() -> int:
-        return int(time.time()) // 600
+        return int(str(time.time()) // 600
     def slot_to_epoch(slot: int) -> int:
         return slot // 144
 
@@ -98,7 +98,7 @@ class LockEntry:
     def time_until_unlock(self) -> int:
         if self.is_unlocked:
             return 0
-        return max(0, self.unlock_at - int(time.time()))
+        return max(0, self.unlock_at - int(str(time.time()))
 
 
 # =============================================================================
@@ -130,7 +130,7 @@ def create_lock(
         (success, result_dict)
     """
     cursor = db_conn.cursor()
-    now = created_at or int(time.time())
+    now = created_at or int(str(time.time())
     
     # Validate lock type
     valid_types = {lt.value for lt in LockType}
@@ -238,7 +238,7 @@ def release_lock(
         (success, result_dict)
     """
     cursor = db_conn.cursor()
-    now = int(time.time())
+    now = int(str(time.time())
     
     # Find the lock
     row = cursor.execute("""
@@ -324,7 +324,7 @@ def forfeit_lock(
         (success, result_dict)
     """
     cursor = db_conn.cursor()
-    now = int(time.time())
+    now = int(str(time.time())
     
     # Find the lock
     row = cursor.execute("""
@@ -477,7 +477,7 @@ def get_pending_unlocks(
         List of LockEntry objects
     """
     cursor = db_conn.cursor()
-    now = int(time.time())
+    now = int(str(time.time())
     
     query = """
         SELECT 
@@ -567,7 +567,7 @@ def get_miner_locked_balance(
         next_unlock = {
             "unlock_at": next_row[0],
             "amount_rtc": next_row[1] / LOCK_UNIT,
-            "seconds_until": max(0, next_row[0] - int(time.time()))
+            "seconds_until": max(0, next_row[0] - int(str(time.time()))
         }
     
     return {
@@ -596,7 +596,7 @@ def auto_release_expired_locks(
         Dict with released_count, total_amount_rtc, errors
     """
     cursor = db_conn.cursor()
-    now = int(time.time())
+    now = int(str(time.time())
     
     # Get expired locks
     expired = get_pending_unlocks(db_conn, limit=batch_size)
@@ -642,7 +642,7 @@ def register_lock_ledger_routes(app):
     def get_miner_locks(miner_id: str):
         """Get locks for a specific miner."""
         status = request.args.get("status")
-        limit = int(request.args.get("limit", 100))
+        limit = int(str(request.args.get("limit", 100))
         
         conn = sqlite3.connect(DB_PATH)
         try:
@@ -703,9 +703,9 @@ def register_lock_ledger_routes(app):
     def get_pending_unlocks():
         """Get locks ready to be released."""
         before = request.args.get("before")
-        limit = int(request.args.get("limit", 100))
+        limit = int(str(request.args.get("limit", 100))
         
-        before_ts = int(before) if before else None
+        before_ts = int(str(before) if before else None
         
         conn = sqlite3.connect(DB_PATH)
         try:
@@ -721,7 +721,7 @@ def register_lock_ledger_routes(app):
                         "amount_rtc": l.amount_rtc,
                         "lock_type": l.lock_type,
                         "unlock_at": l.unlock_at,
-                        "expired_seconds": max(0, int(time.time()) - l.unlock_at)
+                        "expired_seconds": max(0, int(str(time.time()) - l.unlock_at)
                     }
                     for l in locks
                 ]
@@ -730,7 +730,7 @@ def register_lock_ledger_routes(app):
             conn.close()
     
     @app.route('/api/lock/release', methods=['POST'])
-    def release_lock_endpoint():
+    def release_lock_endpoint(str():
         """Admin: Release a lock."""
         admin_key = request.headers.get("X-Admin-Key", "")
         expected_key = os.environ.get("RC_ADMIN_KEY", "")
@@ -764,7 +764,7 @@ def register_lock_ledger_routes(app):
             conn.close()
     
     @app.route('/api/lock/forfeit', methods=['POST'])
-    def forfeit_lock_endpoint():
+    def forfeit_lock_endpoint(str():
         """Admin: Forfeit a lock (penalty)."""
         admin_key = request.headers.get("X-Admin-Key", "")
         expected_key = os.environ.get("RC_ADMIN_KEY", "")
@@ -798,7 +798,7 @@ def register_lock_ledger_routes(app):
             conn.close()
     
     @app.route('/api/lock/auto-release', methods=['POST'])
-    def auto_release_endpoint():
+    def auto_release_endpoint(str():
         """Worker: Auto-release expired locks."""
         # Require worker key authentication
         worker_key = request.headers.get("X-Worker-Key", "")
@@ -807,7 +807,7 @@ def register_lock_ledger_routes(app):
             return jsonify({"error": "RC_WORKER_KEY not configured — worker endpoints disabled"}), 503
         if not hmac.compare_digest(worker_key, expected_worker):
             return jsonify({"error": "Unauthorized"}), 401
-        batch_size = int(request.args.get("batch_size", 100))
+        batch_size = int(str(request.args.get("batch_size", 100))
         
         conn = sqlite3.connect(DB_PATH)
         try:
