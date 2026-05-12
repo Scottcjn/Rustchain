@@ -123,20 +123,48 @@ class TestApiContributors:
 
 class TestApproveRoute:
     def test_approve_pending_contributor(self, client):
-        """GET /approve/<username> should set status to approved."""
+        """POST /approve/<username> with valid admin key should approve."""
+        # Register a pending contributor
         client.post("/register", data={
             "github_username": "pendinguser",
             "contributor_type": "bot",
             "rtc_wallet": "RTC0pending",
             "contribution_history": "",
         }, follow_redirects=True)
-        response = client.get("/approve/pendinguser", follow_redirects=True)
-        assert response.status_code == 200
-        with sqlite3.connect(cr.DB_PATH) as conn:
-            row = conn.execute(
-                "SELECT status FROM contributors WHERE github_username='pendinguser'"
-            ).fetchone()
-        assert row[0] == "approved"
+        
+        # First try without admin key (should get 503)
+        response = client.post("/approve/pendinguser", follow_redirects=True)
+        assert response.status_code == 503
+        
+        # Try with wrong admin key (should get 401)
+        response = client.post(
+            "/approve/pendinguser",
+            headers={"X-Admin-Key": "wrong_key"},
+            follow_redirects=True
+        )
+        assert response.status_code == 401
+        
+        # Now with valid admin key (should approve)
+        with patch('os.environ.get') as mock_env:
+            mock_env.return_value = 'test_admin_key_12345'
+            response = client.post(
+                "/approve/pendinguser",
+                headers={"X-Admin-Key": "test_admin_key_12345"},
+                follow_redirects=True
+            )
+            assert response.status_code == 200
+            
+            # Check database
+            with sqlite3.connect(cr.DB_PATH) as conn:
+                row = conn.execute(
+                    "SELECT status FROM contributors WHERE github_username='pendinguser'"
+                ).fetchone()
+            assert row[0] == "approved"
+    
+    def test_approve_get_method_not_allowed(self, client):
+        """GET /approve/<username> should return 405."""
+        response = client.get("/approve/someuser")
+        assert response.status_code == 405  # Method Not Allowed
 
 
 class TestDatabaseConstraints:
