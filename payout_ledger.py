@@ -7,6 +7,7 @@ See: node/rustchain_v2_integrated_v2.2.1_rip200.py for DB conventions.
 Statuses: queued → pending → confirmed | voided
 """
 import os
+import hmac
 import time
 import sqlite3
 import uuid
@@ -167,12 +168,28 @@ def ledger_summary():
     return {r[0]: {"count": r[1], "total_rtc": r[2]} for r in rows}
 
 
+def _require_admin_key():
+    """Return an error response unless X-Admin-Key matches RC_ADMIN_KEY."""
+    expected_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not expected_key:
+        return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
+
+    provided_key = request.headers.get("X-Admin-Key", "")
+    if not provided_key or not hmac.compare_digest(provided_key, expected_key):
+        return jsonify({"error": "unauthorized"}), 401
+
+    return None
+
+
 # ── Flask route registration ───────────────────────────────────
 def register_ledger_routes(app):
     """Register /ledger/* routes on the given Flask app."""
 
     @app.route("/ledger")
     def ledger_page():
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
         init_payout_ledger_tables()
         status_filter = request.args.get("status")
         records = ledger_list(status=status_filter)
@@ -181,6 +198,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger", methods=["GET"])
     def api_ledger_list():
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
         init_payout_ledger_tables()
         status = request.args.get("status")
         contributor = request.args.get("contributor")
@@ -189,6 +209,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger/<record_id>", methods=["GET"])
     def api_ledger_get(record_id):
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
         init_payout_ledger_tables()
         record = ledger_get(record_id)
         if not record:
@@ -197,6 +220,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger", methods=["POST"])
     def api_ledger_create():
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
         init_payout_ledger_tables()
         data = request.get_json(force=True)
         required = ["bounty_id", "contributor", "amount_rtc"]
@@ -216,6 +242,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger/<record_id>/status", methods=["PATCH"])
     def api_ledger_update(record_id):
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
         init_payout_ledger_tables()
         data = request.get_json(force=True)
         new_status = data.get("status")
@@ -233,6 +262,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger/summary", methods=["GET"])
     def api_ledger_summary():
+        auth_error = _require_admin_key()
+        if auth_error:
+            return auth_error
         init_payout_ledger_tables()
         return jsonify(ledger_summary())
 
