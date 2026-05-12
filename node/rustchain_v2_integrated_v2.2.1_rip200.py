@@ -4068,6 +4068,23 @@ def ingest_signed_header():
     except Exception:
         slot = int(time.time())
 
+    # SECURITY: Reject headers with slots too far in the future.
+    # Without this check, a malicious miner could submit a header with an
+    # extremely high slot value (e.g., 999999999), causing the node to
+    # attempt epoch settlement for a non-existent future epoch. This could
+    # corrupt chain state, trigger reward distribution with no enrolled miners,
+    # or cause database inconsistencies.
+    # Allow ±10 slots (~100 minutes) tolerance for network/clock drift.
+    expected_slot = current_slot()
+    if slot > expected_slot + 10:
+        return jsonify({
+            "ok": False,
+            "error": "slot_too_far_in_future",
+            "message": "Header slot is too far ahead of current chain slot",
+            "submitted_slot": slot,
+            "current_slot": expected_slot,
+        }), 400
+
     # Update tip + metrics
     with sqlite3.connect(DB_PATH) as db:
         db.execute("INSERT OR REPLACE INTO headers(slot, miner_id, message_hex, signature_hex, pubkey_hex, ts) VALUES(?,?,?,?,?,strftime('%s','now'))",
