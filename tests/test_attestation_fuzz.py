@@ -243,6 +243,17 @@ def test_attest_submit_sql_like_miner_does_not_mutate_schema(client):
     assert response.get_json()["code"] == "INVALID_MINER"
 
 
+def test_attest_submit_rejects_invalid_miner_id_even_when_miner_is_valid(client):
+    payload = _attach_live_challenge(client, _base_payload())
+    payload["miner"] = "valid-miner"
+    payload["miner_id"] = "../../invalid"
+
+    response = client.post("/attest/submit", json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "INVALID_MINER"
+
+
 def test_validate_fingerprint_data_rejects_non_dict_input():
     passed, reason = integrated_node.validate_fingerprint_data(["not", "a", "dict"])
 

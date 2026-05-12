@@ -279,6 +279,12 @@ def _validate_attestation_payload_shape(data):
     for field_name in ("miner", "miner_id"):
         if field_name in data and data[field_name] is not None and not isinstance(data[field_name], str):
             return _attest_field_error("INVALID_MINER", f"Field '{field_name}' must be a non-empty string")
+        if field_name in data and _attest_text(data[field_name]) and not _attest_valid_miner(data[field_name]):
+            return _attest_field_error(
+                "INVALID_MINER",
+                "Fields 'miner' and 'miner_id' must use only letters, numbers, '.', '_', ':' or '-' "
+                "and be at most 128 characters",
+            )
 
     for field_name, code in (
         ("signature", "INVALID_SIGNATURE_TYPE"),
@@ -3269,7 +3275,7 @@ def _submit_attestation_impl():
     # in transit and claiming another miner's hardware rewards (wallet hijack).
     sig_hex = (data.get('signature') or '').strip().lower()
     pubkey_hex = (data.get('public_key') or '').strip().lower()
-    miner_id_raw = _attest_text(data.get('miner_id')) or miner
+    miner_id_raw = _attest_valid_miner(data.get('miner_id')) or miner
     commitment = report.get('commitment') or ''
     if sig_hex and pubkey_hex:
         if HAVE_NACL:
@@ -3599,7 +3605,7 @@ def _submit_attestation_impl():
         family = verified_device["device_family"]
         arch_for_weight = verified_device["device_arch"]
         hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight, HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0))
-        miner_id = data.get("miner_id", miner)
+        miner_id = _attest_valid_miner(data.get("miner_id")) or miner
 
         with sqlite3.connect(DB_PATH) as enroll_conn:
             rotation_eval = evaluate_rotating_fingerprint_checks(
