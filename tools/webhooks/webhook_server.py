@@ -525,7 +525,10 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": "WEBHOOK_ADMIN_API_KEY not configured"})
             return False
         provided = self.headers.get("X-Admin-API-Key", "")
-        if not hmac.compare_digest(provided, self.ADMIN_API_KEY):
+        if not hmac.compare_digest(
+            provided.encode("utf-8"),
+            self.ADMIN_API_KEY.encode("utf-8"),
+        ):
             self._send_json(401, {"error": "invalid or missing API key"})
             return False
         return True
@@ -533,9 +536,11 @@ class WebhookAdminHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             self._send_json(200, {"status": "ok"})
-        elif not self._check_api_key():
             return
-        elif self.path == "/webhooks":
+
+        if not self._check_api_key():
+            return
+        if self.path == "/webhooks":
             subs = self.store.list_all()
             self._send_json(200, {
                 "subscribers": [
