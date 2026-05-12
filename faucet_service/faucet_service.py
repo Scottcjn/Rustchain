@@ -658,6 +658,7 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
         @app.route(metrics_path)
         def metrics():
             """Prometheus metrics endpoint."""
+            db_path = config.get('database', {}).get('path', 'faucet.db')
             conn = sqlite3.connect(db_path)
             c = conn.cursor()
             
