@@ -4,6 +4,7 @@ from flask import Flask, request, redirect, url_for, flash, jsonify, make_respon
 import sqlite3
 import os
 import secrets
+import logging
 from datetime import datetime
 
 app = Flask(__name__)
