@@ -419,15 +419,15 @@ def update_config() -> Response:
         "base_probability": 0.2
     }
     """
+    data, error = get_json_object()
+    if error:
+        return error
+
     auth_error = require_admin()
     if auth_error is not None:
         return auth_error
 
     engine = get_engine()
-    
-    data, error = get_json_object()
-    if error:
-        return error
     
     if "enabled" in data:
         if data["enabled"]:
@@ -569,15 +569,15 @@ def trigger_glitch() -> Response:
         "message": "Test message"
     }
     """
+    data, error = get_json_object()
+    if error:
+        return error
+
     auth_error = require_admin()
     if auth_error is not None:
         return auth_error
 
     engine = get_engine()
-    
-    data, error = get_json_object()
-    if error:
-        return error
     agent_id = data.get("agent_id", "test_agent")
     message = data.get("message", "Test message for glitch")
     
