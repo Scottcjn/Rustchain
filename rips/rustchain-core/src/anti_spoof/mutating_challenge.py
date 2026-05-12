@@ -404,7 +404,10 @@ class MutatingChallengeNetwork:
             confidence -= 20.0
 
         # 5. Verify proof hash (must have correct round count)
-        # In production, we'd recompute and verify
+        expected_proof = response.compute_proof(challenge, b'')
+        if response.proof_hash and response.proof_hash != expected_proof:
+            failures.append("Proof hash mismatch - possible emulator")
+            confidence -= 50.0
 
         valid = confidence >= 50.0
 
