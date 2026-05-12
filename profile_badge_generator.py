@@ -1,3 +1,4 @@
+import os
 # SPDX-License-Identifier: MIT
 # SPDX-License-Identifier: MIT
 
@@ -216,4 +217,4 @@ def list_badges():
 
 if __name__ == '__main__':
     init_badge_db()
-    app.run(debug=True, port=5003)
+    app.run(debug=os.environ.get('FLASK_DEBUG') == '1', port=5003)
