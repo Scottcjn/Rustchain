@@ -35,16 +35,23 @@ from tools.rent_a_relic.models import (
 )
 from tools.rent_a_relic.provenance import generate_receipt, verify_receipt
 
+ADMIN_KEY = "test-admin-key"
+
 
 @pytest.fixture()
-def app(tmp_path):
+def app(tmp_path, monkeypatch):
     from tools.rent_a_relic import server
     db_file = str(tmp_path / "test_relic.db")
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN_KEY)
     server.app.config["TESTING"] = True
     server.app.config["DB_PATH"]  = db_file
     server.init_db()
     with server.app.test_client() as client:
         yield client
+
+
+def admin_headers(key: str = ADMIN_KEY) -> dict[str, str]:
+    return {"X-Admin-Key": key}
 
 
 @pytest.fixture()
@@ -149,7 +156,8 @@ class TestReservationFlow:
         })
         assert r.status_code == 201
         cr = app.post(f"/relic/complete/{r.json['session_id']}",
-                      json={"output_hash": hashlib.sha256(b"output").hexdigest()})
+                      json={"output_hash": hashlib.sha256(b"output").hexdigest()},
+                      headers=admin_headers())
         assert cr.status_code == 200
         assert cr.json["status"] == "completed"
 
@@ -160,9 +168,67 @@ class TestReservationFlow:
         })
         assert r.status_code == 201
 
-        cr = app.post(f"/relic/complete/{r.json['session_id']}", json=["not", "object"])
+        cr = app.post(f"/relic/complete/{r.json['session_id']}", json=["not", "object"],
+                      headers=admin_headers())
         assert cr.status_code == 400
         assert cr.json["error"] == "JSON object required"
+
+    def test_complete_requires_admin_key_and_preserves_escrow(self, app):
+        r = app.post("/relic/reserve", json={
+            "agent_id": "agent_no_admin", "machine_id": "riscv-hifive",
+            "duration_hours": 1, "rtc_amount": 10.0,
+        })
+        sid = r.json["session_id"]
+
+        cr = app.post(f"/relic/complete/{sid}")
+        sr = app.get(f"/relic/reservation/{sid}")
+
+        assert cr.status_code == 401
+        assert sr.json["status"] == "active"
+        assert sr.json["escrow"]["status"] == "locked"
+
+    def test_complete_rejects_wrong_admin_key_and_preserves_escrow(self, app):
+        r = app.post("/relic/reserve", json={
+            "agent_id": "agent_bad_admin", "machine_id": "g5-dual",
+            "duration_hours": 1, "rtc_amount": 8.0,
+        })
+        sid = r.json["session_id"]
+
+        cr = app.post(f"/relic/complete/{sid}", headers=admin_headers("wrong-key"))
+        sr = app.get(f"/relic/reservation/{sid}")
+
+        assert cr.status_code == 401
+        assert sr.json["status"] == "active"
+        assert sr.json["escrow"]["status"] == "locked"
+
+    def test_complete_rejects_non_ascii_admin_key_without_crashing(self, app):
+        r = app.post("/relic/reserve", json={
+            "agent_id": "agent_non_ascii_admin", "machine_id": "alpha-ds20",
+            "duration_hours": 1, "rtc_amount": 7.0,
+        })
+        sid = r.json["session_id"]
+
+        cr = app.post(f"/relic/complete/{sid}", headers=admin_headers("\u00e9"))
+        sr = app.get(f"/relic/reservation/{sid}")
+
+        assert cr.status_code == 401
+        assert sr.json["status"] == "active"
+        assert sr.json["escrow"]["status"] == "locked"
+
+    def test_complete_fails_closed_when_admin_key_unconfigured(self, app, monkeypatch):
+        r = app.post("/relic/reserve", json={
+            "agent_id": "agent_unconfigured_admin", "machine_id": "sparc-ultra",
+            "duration_hours": 1, "rtc_amount": 6.0,
+        })
+        sid = r.json["session_id"]
+        monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+
+        cr = app.post(f"/relic/complete/{sid}", headers=admin_headers())
+        sr = app.get(f"/relic/reservation/{sid}")
+
+        assert cr.status_code == 503
+        assert sr.json["status"] == "active"
+        assert sr.json["escrow"]["status"] == "locked"
 
     def test_status_endpoint(self, app):
         r = app.post("/relic/reserve", json={
@@ -218,7 +284,7 @@ class TestEscrow:
             "duration_hours": 1, "rtc_amount": 10.0,
         })
         sid = r.json["session_id"]
-        app.post(f"/relic/complete/{sid}")
+        app.post(f"/relic/complete/{sid}", headers=admin_headers())
         sr = app.get(f"/relic/reservation/{sid}")
         assert sr.json["escrow"]["status"] == "released"
         assert sr.json["escrow"]["release_reason"] == "completed"
@@ -327,7 +393,7 @@ class TestLeaderboard:
                 "duration_hours": 1, "rtc_amount": 5.0,
             })
             if r.status_code == 201:
-                app.post(f"/relic/complete/{r.json['session_id']}")
+                app.post(f"/relic/complete/{r.json['session_id']}", headers=admin_headers())
         ranks = [e["rank"] for e in app.get("/relic/leaderboard").json["leaderboard"]]
         assert ranks == sorted(ranks)
 
