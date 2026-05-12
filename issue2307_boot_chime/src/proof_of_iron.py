@@ -6,7 +6,9 @@ verifiable hardware proofs.
 """
 
 import hashlib
+import io
 import json
+import pickle
 import time
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, asdict
@@ -29,6 +31,24 @@ class AttestationStatus(Enum):
 class ProofOfIronError(Exception):
     """Proof-of-Iron protocol error"""
     pass
+
+
+class _RestrictedFeatureUnpickler(pickle.Unpickler):
+    """Legacy feature-cache unpickler that rejects arbitrary globals."""
+
+    def find_class(self, module: str, name: str) -> Any:
+        raise pickle.UnpicklingError(f"Forbidden pickle global: {module}.{name}")
+
+
+def _loads_legacy_feature_cache(raw: Any) -> Dict[str, Any]:
+    if isinstance(raw, bytes):
+        payload = raw
+    else:
+        payload = raw.encode("latin1")
+    data = _RestrictedFeatureUnpickler(io.BytesIO(payload)).load()
+    if not isinstance(data, dict):
+        raise pickle.UnpicklingError("Legacy feature cache must be a dict")
+    return data
 
 
 @dataclass
@@ -524,11 +544,10 @@ class ProofOfIron:
             pass
     
     def _load_features(self, features_hash: str) -> Optional[FingerprintFeatures]:
-        """Load cached features with backward-compatible dual-read (JSON first, then pickle)."""
+        """Load cached features with backward-compatible dual-read (JSON first, then restricted pickle)."""
         try:
             import sqlite3
             import json
-            import pickle
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
             c.execute('SELECT features FROM feature_cache WHERE hash = ?',
@@ -545,8 +564,8 @@ class ProofOfIron:
                     else:
                         data = json.loads(raw)
                 except (json.JSONDecodeError, UnicodeDecodeError):
-                    # Fallback: legacy pickle data — deserialize and migrate to JSON
-                    data = pickle.loads(raw) if isinstance(raw, bytes) else pickle.loads(raw.encode())
+                    # Fallback: legacy pickle data with arbitrary globals disabled.
+                    data = _loads_legacy_feature_cache(raw)
                     # Re-write as JSON to gradually migrate the cache
                     self._save_features(features_hash, FingerprintFeatures(
                         mfcc_mean=np.array(data['mfcc_mean']),
