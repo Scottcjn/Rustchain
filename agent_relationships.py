@@ -28,6 +28,7 @@ Author: BoTTube Team
 import sqlite3
 import os
 import json
+import hmac
 import time
 import random
 import threading
@@ -1133,6 +1134,10 @@ def create_relationship_blueprint(engine: RelationshipEngine):
     
     @bp.route("/api/relationships/<agent_a>/<agent_b>/intervene", methods=["POST"])
     def admin_intervene(agent_a: str, agent_b: str):
+        auth_error = _require_mutation_admin()
+        if auth_error:
+            return auth_error
+
         data = request.json or {}
         try:
             result = engine.admin_intervene(
