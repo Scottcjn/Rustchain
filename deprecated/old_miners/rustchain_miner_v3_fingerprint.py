@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """
+from __future__ import annotations
+
 RustChain Universal Miner v3.0 - With Full Hardware Fingerprinting
 ===================================================================
 Runs all 6 RIP-PoA fingerprint checks to prove real hardware.
