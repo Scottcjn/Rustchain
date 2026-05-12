@@ -194,6 +194,7 @@ class TestBotCommands:
         assert mock_update.message.reply_text.called
         call_args = mock_update.message.reply_text.call_args
         assert "$0.10" in call_args[0][0]
+        assert "not fetch or report a live market price" in call_args[0][0]
 
 
 class TestConfiguration:

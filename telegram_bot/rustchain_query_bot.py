@@ -46,8 +46,16 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 # Rate limiting (requests per minute per user)
 RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "10"))
-RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "5"))
-RTC_REFERENCE_RATE_USD = os.getenv("RTC_REFERENCE_RATE_USD", "0.10")
+RATE_LIMIT_COOLDOWN_SECONDS = int(
+    os.getenv(
+        "RATE_LIMIT_COOLDOWN_SECONDS",
+        os.getenv("RATE_LIMIT_WINDOW_SECONDS", "5"),
+    )
+)
+RTC_BOUNTY_REFERENCE_RATE_USD = os.getenv(
+    "RTC_BOUNTY_REFERENCE_RATE_USD",
+    os.getenv("RTC_REFERENCE_RATE_USD", "0.10"),
+)
 
 # Logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -75,7 +83,7 @@ class RateLimiter:
         self,
         max_requests: int = RATE_LIMIT_PER_MINUTE,
         window_seconds: int = 60,
-        min_interval_seconds: int = RATE_LIMIT_WINDOW_SECONDS,
+        min_interval_seconds: int = RATE_LIMIT_COOLDOWN_SECONDS,
     ):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
@@ -257,7 +265,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
   List active miners and their latest status
 
 /price
-  Show the RTC reference rate
+  Show the RTC bounty reference rate
 
 /stats
   Get network statistics (miner count)
@@ -267,11 +275,11 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 **Notes:**
 - All queries are read-only and safe
-- Rate limit: {rate_limit} requests/minute and 1 request per {window_seconds}s
+- Rate limit: {rate_limit} requests/minute plus a {cooldown_seconds}s cooldown
 - API: `{api_url}`
 """.format(
         rate_limit=RATE_LIMIT_PER_MINUTE,
-        window_seconds=RATE_LIMIT_WINDOW_SECONDS,
+        cooldown_seconds=RATE_LIMIT_COOLDOWN_SECONDS,
         api_url=RUSTCHAIN_API_URL
     )
     await update.message.reply_text(help_text, parse_mode="Markdown")
@@ -460,11 +468,12 @@ async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"User {user.id} requested RTC reference price")
     price_text = f"""
-**RTC Reference Rate**
+**RTC Bounty Reference Rate**
 
-1 RTC = ${RTC_REFERENCE_RATE_USD} USD reference rate
+1 RTC = ${RTC_BOUNTY_REFERENCE_RATE_USD} USD bounty reference rate
 
-This is the bounty reference rate, not an exchange quote.
+Source: RustChain bounty descriptions and maintainer reference wording.
+This command does not fetch or report a live market price.
 """
     await update.message.reply_text(price_text, parse_mode="Markdown")
 
@@ -532,7 +541,7 @@ def set_bot_commands(application: Application):
         BotCommand("epoch", "Get current epoch info"),
         BotCommand("balance", "Check wallet balance"),
         BotCommand("miners", "List active miners"),
-        BotCommand("price", "Show RTC reference price"),
+        BotCommand("price", "Show RTC bounty reference rate"),
         BotCommand("stats", "Get network statistics"),
     ]
     return commands
@@ -601,7 +610,7 @@ def main():
     print("\n🛡️ RustChain Query Bot starting...")
     print(f"   API: {RUSTCHAIN_API_URL}")
     print(f"   Verify SSL: {RUSTCHAIN_VERIFY_SSL}")
-    print(f"   Rate limit: {RATE_LIMIT_PER_MINUTE} req/min, {RATE_LIMIT_WINDOW_SECONDS}s between requests")
+    print(f"   Rate limit: {RATE_LIMIT_PER_MINUTE} req/min, {RATE_LIMIT_COOLDOWN_SECONDS}s cooldown")
     print("\nPress Ctrl+C to stop\n")
 
     # Run polling

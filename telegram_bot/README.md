@@ -27,7 +27,7 @@ This Telegram bot provides a simple interface to query the RustChain blockchain 
 | `/epoch` | Get current epoch information | `/epoch` |
 | `/balance` | Check wallet balance | `/balance Ivan-houzhiwen` |
 | `/miners` | List active miners and status fields | `/miners` |
-| `/price` | Show RTC reference rate | `/price` |
+| `/price` | Show the RTC bounty reference rate, not a live market quote | `/price` |
 | `/stats` | Get network statistics | `/stats` |
 
 ## Quick Start
@@ -79,8 +79,8 @@ All configuration is done via environment variables:
 | `RUSTCHAIN_API_URL` | `https://rustchain.org` | RustChain API endpoint |
 | `RUSTCHAIN_VERIFY_SSL` | `false` | Verify SSL certificates |
 | `RATE_LIMIT_PER_MINUTE` | `10` | Max requests per user per minute |
-| `RATE_LIMIT_WINDOW_SECONDS` | `5` | Minimum seconds between requests from one user |
-| `RTC_REFERENCE_RATE_USD` | `0.10` | Reference USD rate shown by `/price` |
+| `RATE_LIMIT_COOLDOWN_SECONDS` | `5` | Minimum seconds between requests from one user |
+| `RTC_BOUNTY_REFERENCE_RATE_USD` | `0.10` | Bounty reference USD rate shown by `/price`; not a live market quote |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
 ## Command Examples
@@ -176,7 +176,7 @@ pytest tests/ -v --cov=telegram_bot --cov-report=html
    - `TELEGRAM_BOT_TOKEN`
    - `RUSTCHAIN_API_URL=https://50.28.86.131`
    - `RUSTCHAIN_VERIFY_SSL=false`
-   - `RATE_LIMIT_WINDOW_SECONDS=5`
+   - `RATE_LIMIT_COOLDOWN_SECONDS=5`
 4. Use this start command:
 
 ```bash
@@ -199,7 +199,7 @@ WorkingDirectory=/opt/rustchain/telegram_bot
 Environment=TELEGRAM_BOT_TOKEN=replace-me
 Environment=RUSTCHAIN_API_URL=https://50.28.86.131
 Environment=RUSTCHAIN_VERIFY_SSL=false
-Environment=RATE_LIMIT_WINDOW_SECONDS=5
+Environment=RATE_LIMIT_COOLDOWN_SECONDS=5
 ExecStart=/usr/bin/python3 /opt/rustchain/telegram_bot/rustchain_query_bot.py
 Restart=always
 RestartSec=5
