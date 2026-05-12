@@ -4,7 +4,6 @@
 Regression tests for /tx/submit request validation.
 """
 
-import tempfile
 from pathlib import Path
 
 from flask import Flask
@@ -20,23 +19,21 @@ def _client_for_tx_routes(db_path: Path):
     return app.test_client()
 
 
-def test_tx_submit_rejects_non_object_json():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        with _client_for_tx_routes(Path(tmpdir) / "tx.db") as client:
-            response = client.post("/tx/submit", json=["not", "an", "object"])
+def test_tx_submit_rejects_non_object_json(tmp_path):
+    with _client_for_tx_routes(tmp_path / "tx.db") as client:
+        response = client.post("/tx/submit", json=["not", "an", "object"])
 
-            assert response.status_code == 400
-            assert response.get_json() == {"error": "JSON object required"}
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "JSON object required"}
 
 
-def test_tx_submit_rejects_malformed_json_without_500():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        with _client_for_tx_routes(Path(tmpdir) / "tx.db") as client:
-            response = client.post(
-                "/tx/submit",
-                data="{",
-                content_type="application/json",
-            )
+def test_tx_submit_rejects_malformed_json_without_500(tmp_path):
+    with _client_for_tx_routes(tmp_path / "tx.db") as client:
+        response = client.post(
+            "/tx/submit",
+            data="{",
+            content_type="application/json",
+        )
 
-            assert response.status_code == 400
-            assert response.get_json() == {"error": "No JSON data provided"}
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "No JSON data provided"}
