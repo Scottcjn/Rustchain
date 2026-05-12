@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from urllib.request import Request
 """
 BoTTube Auto-Upload Module for Vintage AI Miner Videos
 ========================================================
