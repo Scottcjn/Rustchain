@@ -43,7 +43,12 @@ class BountyVerifier:
                 "repos": scott_stars[:10]  # Sample
             }
         except GithubException as e:
-            return {"error": str(e), "count": 0}
+            return {
+                "error": str(e),
+                "count": 0,
+                "is_star_king": False,
+                "repos": [],
+            }
 
     def verify_following(self, username: str) -> bool:
         """Check if user follows Scottcjn."""
