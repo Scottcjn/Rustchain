@@ -87,3 +87,24 @@ def test_benchmark_route_accepts_object_json(client, ledger):
     assert response.status_code == 200
     assert ledger.benchmark_payload["compute_score"] == 1250.0
     assert ledger.benchmark_payload["memory_bandwidth"] == 3200.5
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    (
+        ("post", "/api/machine-passport", ["name", "owner_miner_id"]),
+        ("put", "/api/machine-passport/machine-1", ["name"]),
+        ("post", "/api/machine-passport/machine-1/repair-log", ["repair_type", "description"]),
+        ("post", "/api/machine-passport/machine-1/lineage", ["event_type"]),
+        ("post", "/api/machine-passport/compute-machine-id", ["not", "object"]),
+    ),
+)
+def test_required_machine_passport_routes_reject_non_object_json(client, method, path, payload):
+    response = getattr(client, method)(path, json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "ok": False,
+        "error": "invalid_request",
+        "message": "JSON object required",
+    }

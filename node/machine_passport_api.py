@@ -55,6 +55,24 @@ def get_optional_json_object():
     return data, None
 
 
+def get_required_json_object():
+    """Return a required JSON object body or an error response."""
+    data = request.get_json(silent=True)
+    if not data:
+        return None, (jsonify({
+            'ok': False,
+            'error': 'invalid_request',
+            'message': 'JSON body required',
+        }), 400)
+    if not isinstance(data, dict):
+        return None, (jsonify({
+            'ok': False,
+            'error': 'invalid_request',
+            'message': 'JSON object required',
+        }), 400)
+    return data, None
+
+
 # === Public Read Endpoints ===
 
 @machine_passport_bp.route('/<machine_id>', methods=['GET'])
@@ -210,13 +228,9 @@ def create_passport():
             'message': 'Admin key required',
         }), 401
     
-    data = request.get_json()
-    if not data:
-        return jsonify({
-            'ok': False,
-            'error': 'invalid_request',
-            'message': 'JSON body required',
-        }), 400
+    data, error = get_required_json_object()
+    if error:
+        return error
     
     # Validate required fields
     required = ['name', 'owner_miner_id']
@@ -304,13 +318,9 @@ def update_passport(machine_id: str):
             'message': 'Admin key required',
         }), 401
     
-    data = request.get_json()
-    if not data:
-        return jsonify({
-            'ok': False,
-            'error': 'invalid_request',
-            'message': 'JSON body required',
-        }), 400
+    data, error = get_required_json_object()
+    if error:
+        return error
     
     success, msg = ledger.update_passport(machine_id, data)
     
@@ -346,8 +356,10 @@ def add_repair_entry(machine_id: str):
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    data = request.get_json()
-    if not data or 'repair_type' not in data or 'description' not in data:
+    data, error = get_required_json_object()
+    if error:
+        return error
+    if 'repair_type' not in data or 'description' not in data:
         return jsonify({
             'ok': False,
             'error': 'missing_field',
@@ -479,8 +491,10 @@ def add_lineage_note(machine_id: str):
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    data = request.get_json()
-    if not data or 'event_type' not in data:
+    data, error = get_required_json_object()
+    if error:
+        return error
+    if 'event_type' not in data:
         return jsonify({
             'ok': False,
             'error': 'missing_field',
@@ -614,13 +628,9 @@ def compute_machine_id_endpoint():
     
     Request Body: Hardware fingerprint data (same as attestation)
     """
-    data = request.get_json()
-    if not data:
-        return jsonify({
-            'ok': False,
-            'error': 'invalid_request',
-            'message': 'JSON body required',
-        }), 400
+    data, error = get_required_json_object()
+    if error:
+        return error
     
     machine_id = compute_machine_id(data)
     
