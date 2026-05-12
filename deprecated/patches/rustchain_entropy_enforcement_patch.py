@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 RustChain Server-Side Entropy Enforcement Patch
 ================================================
