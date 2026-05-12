@@ -418,4 +418,4 @@ def payload_tester():
     return template
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    app.run(debug=os.environ.get('FLASK_DEBUG') == '1', port=5001)
