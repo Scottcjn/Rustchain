@@ -69,6 +69,14 @@ class TestIntegratedAdminFailClosed(unittest.TestCase):
                     amount_i64 INTEGER DEFAULT 0,
                     balance_rtc REAL DEFAULT 0
                 );
+                CREATE TABLE ledger (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts INTEGER NOT NULL,
+                    epoch INTEGER NOT NULL,
+                    miner_id TEXT NOT NULL,
+                    delta_i64 INTEGER NOT NULL,
+                    reason TEXT
+                );
                 CREATE TABLE pending_ledger (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ts INTEGER NOT NULL,
@@ -114,6 +122,13 @@ class TestIntegratedAdminFailClosed(unittest.TestCase):
         os.environ.pop("RC_ADMIN_KEY", None)
 
         resp = self.client.post("/pending/confirm", json={})
+
+        self.assertEqual(resp.status_code, 401)
+
+    def test_pending_integrity_rejects_empty_header_when_admin_key_unset(self):
+        os.environ.pop("RC_ADMIN_KEY", None)
+
+        resp = self.client.get("/pending/integrity")
 
         self.assertEqual(resp.status_code, 401)
 

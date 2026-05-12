@@ -7162,8 +7162,7 @@ def confirm_pending():
 @app.route('/pending/integrity', methods=['GET'])
 def check_integrity():
     """Check balance integrity: sum of ledger should match balances"""
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not is_admin(request):
         return jsonify({"error": "Unauthorized"}), 401
 
     with sqlite3.connect(DB_PATH) as db:
