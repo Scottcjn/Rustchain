@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Test/import shim for the integrated RustChain node module.
 
 This provides a stable import name (`integrated_node`) for tests while the
