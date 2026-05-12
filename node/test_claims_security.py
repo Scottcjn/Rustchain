@@ -61,5 +61,74 @@ class TestClaimsUnitConsistency(unittest.TestCase):
         self.assertAlmostEqual(wrong_rtc, 0.01)  # 100x too small
 
 
+class TestClaimsWalletBinding(unittest.TestCase):
+    """Claim payouts must stay bound to the miner's registered wallet."""
+
+    def test_submit_claim_rejects_registered_wallet_mismatch(self):
+        """Reject claims when submitted wallet differs from the registered wallet."""
+        import claims_submission as cs
+
+        with patch.object(cs, "check_claim_eligibility", return_value={
+            "eligible": True,
+            "reason": None,
+            "wallet_address": "RTC1RegisteredWallet123456789",
+            "reward_urtc": 1_000_000,
+        }):
+            result = cs.submit_claim(
+                db_path="unused.db",
+                miner_id="wallet-bound-claimer",
+                epoch=123,
+                wallet_address="RTC1AttackerWallet9999999999",
+                signature="mock_signature",
+                public_key="mock_public_key",
+                current_slot=20000,
+                current_ts=1766000000,
+                skip_signature_verify=True,
+            )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"], "wallet_mismatch")
+
+    def test_submit_claim_accepts_case_variant_of_registered_wallet(self):
+        import claims_submission as cs
+
+        registered_wallet = "rtc1registeredwallet123456789"
+        submitted_wallet = "RTC1REGISTEREDWALLET123456789"
+
+        with (
+            patch.object(cs, "check_claim_eligibility", return_value={
+                "eligible": True,
+                "reason": None,
+                "wallet_address": registered_wallet,
+                "reward_urtc": 1_000_000,
+            }),
+            patch.object(cs, "create_claim_record", return_value={
+                "status": "pending",
+                "submitted_at": 1766000000,
+                "estimated_settlement": 1766001800,
+            }) as create_claim_record,
+        ):
+            result = cs.submit_claim(
+                db_path="unused.db",
+                miner_id="wallet-bound-claimer",
+                epoch=123,
+                wallet_address=submitted_wallet,
+                signature="mock_signature",
+                public_key="mock_public_key",
+                current_slot=20000,
+                current_ts=1766000000,
+                skip_signature_verify=True,
+            )
+
+        self.assertTrue(result["success"])
+        self.assertIsNone(result["error"])
+        self.assertEqual(result["reward_rtc"], 1.0)
+        create_claim_record.assert_called_once()
+        self.assertEqual(
+            create_claim_record.call_args.kwargs["wallet_address"],
+            submitted_wallet,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
