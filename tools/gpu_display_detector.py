@@ -7,8 +7,8 @@ def detect_gpu_and_display():
     badges = []
 
     try:
-        output = subprocess.check_output("lspci", shell=True).decode().lower()
-    except Exception:
+        output = subprocess.check_output(["lspci"], stderr=subprocess.DEVNULL).decode().lower()
+    except (OSError, subprocess.SubprocessError):
         output = ""
 
     gpu_flags = {
