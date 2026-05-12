@@ -1,2 +1,2 @@
 pypresence>=4.6.1
-requests>=2.28.0
+requests>=2.34.0

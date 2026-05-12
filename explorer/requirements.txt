@@ -3,7 +3,7 @@
 # Real-time Dashboard Support
 
 # Core dependencies
-requests>=2.28.0
+requests>=2.34.0
 
 # Flask for real-time server
 flask>=2.3.0

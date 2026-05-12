@@ -2,7 +2,7 @@
 # For node development:
 flask>=2.0.0
 # For miner and SDK:
-requests>=2.25.0
+requests>=2.34.0
 # For wallet CLI (Ed25519 + AES-GCM):
 cryptography>=46.0.7
 # For node / Beacon Ed25519 verification:
