@@ -3,8 +3,12 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
+
+from flask import Flask
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import node.gpu_render_protocol as gpu_render_protocol
 from node.gpu_render_protocol import GPURenderProtocol
 
 
@@ -59,26 +63,56 @@ class TestGPURenderProtocol(unittest.TestCase):
         result = self.proto.create_escrow("render", "wallet-a", "wallet-b", 10.0)
         self.assertEqual(result["status"], "locked")
         job_id = result["job_id"]
+        escrow_secret = result["escrow_secret"]
 
         # Check
         status = self.proto.get_escrow(job_id)
         self.assertEqual(status["status"], "locked")
         self.assertEqual(status["amount_rtc"], 10.0)
 
-        # Release
-        release = self.proto.release_escrow(job_id)
+        # Bare job_id should not be enough to release funds
+        bare_release = self.proto.release_escrow(job_id)
+        self.assertIn("error", bare_release)
+        self.assertEqual(self.proto.get_escrow(job_id)["status"], "locked")
+
+        # Provider cannot release payer escrow
+        wrong_actor = self.proto.release_escrow(
+            job_id, actor_wallet="wallet-b", escrow_secret=escrow_secret
+        )
+        self.assertIn("error", wrong_actor)
+        self.assertEqual(self.proto.get_escrow(job_id)["status"], "locked")
+
+        # Payer can release with the escrow secret
+        release = self.proto.release_escrow(
+            job_id, actor_wallet="wallet-a", escrow_secret=escrow_secret
+        )
         self.assertEqual(release["status"], "released")
         self.assertEqual(release["amount_rtc"], 10.0)
 
         # Double release fails
-        double = self.proto.release_escrow(job_id)
+        double = self.proto.release_escrow(
+            job_id, actor_wallet="wallet-a", escrow_secret=escrow_secret
+        )
         self.assertIn("error", double)
 
     def test_escrow_refund(self):
         result = self.proto.create_escrow("tts", "wallet-a", "wallet-b", 5.0)
         job_id = result["job_id"]
+        escrow_secret = result["escrow_secret"]
 
-        refund = self.proto.refund_escrow(job_id)
+        bare_refund = self.proto.refund_escrow(job_id)
+        self.assertIn("error", bare_refund)
+        self.assertEqual(self.proto.get_escrow(job_id)["status"], "locked")
+
+        wrong_actor = self.proto.refund_escrow(
+            job_id, actor_wallet="wallet-a", escrow_secret=escrow_secret
+        )
+        self.assertIn("error", wrong_actor)
+        self.assertEqual(self.proto.get_escrow(job_id)["status"], "locked")
+
+        refund = self.proto.refund_escrow(
+            job_id, actor_wallet="wallet-b", escrow_secret=escrow_secret
+        )
         self.assertEqual(refund["status"], "refunded")
 
     def test_escrow_invalid_type(self):
@@ -133,6 +167,46 @@ class TestGPURenderProtocol(unittest.TestCase):
         self.assertEqual(result["status"], "locked")
         status = self.proto.get_escrow(result["job_id"])
         self.assertEqual(status["metadata"]["model"], "llama-70b")
+
+
+class TestGPURenderProtocolRoutes(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.db = os.path.join(self.tmp, "test_gpu_routes.db")
+        self.proto = GPURenderProtocol(db_path=self.db)
+        app = Flask(__name__)
+        with mock.patch.object(gpu_render_protocol, "GPURenderProtocol", return_value=self.proto):
+            gpu_render_protocol.register_routes(app)
+        self.client = app.test_client()
+
+    def test_release_route_requires_participant_and_secret(self):
+        create = self.client.post(
+            "/render/escrow",
+            json={
+                "from_wallet": "wallet-a",
+                "to_wallet": "wallet-b",
+                "amount_rtc": 7.5,
+            },
+        )
+        self.assertEqual(create.status_code, 201)
+        payload = create.get_json()
+        job_id = payload["job_id"]
+        escrow_secret = payload["escrow_secret"]
+
+        bare_release = self.client.post("/render/release", json={"job_id": job_id})
+        self.assertEqual(bare_release.status_code, 400)
+        self.assertEqual(self.proto.get_escrow(job_id)["status"], "locked")
+
+        release = self.client.post(
+            "/render/release",
+            json={
+                "job_id": job_id,
+                "actor_wallet": "wallet-a",
+                "escrow_secret": escrow_secret,
+            },
+        )
+        self.assertEqual(release.status_code, 200)
+        self.assertEqual(release.get_json()["status"], "released")
 
 
 if __name__ == "__main__":
