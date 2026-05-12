@@ -1,16 +1,25 @@
 # SPDX-License-Identifier: MIT
 
 from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
+BOUNTIES_MODULE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "sdk"
+    / "rustchain"
+    / "agent_economy"
+    / "bounties.py"
+)
+
 
 def load_bounties_module():
     spec = spec_from_file_location(
         "agent_economy_bounties",
-        "sdk/rustchain/agent_economy/bounties.py",
+        BOUNTIES_MODULE_PATH,
     )
     module = module_from_spec(spec)
     spec.loader.exec_module(module)
