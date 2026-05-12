@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: MIT
 
 from flask import Flask, request, redirect, url_for, flash
+from contextlib import closing
+import hmac
 import sqlite3
 import os
 import secrets
-from datetime import datetime
 
 app = Flask(__name__)
 
@@ -35,7 +36,7 @@ app.secret_key = SECRET_KEY
 DB_PATH = 'contributors.db'
 
 def init_db():
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS contributors (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -126,7 +127,7 @@ def index():
     </html>
     '''
     
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         contributors = conn.execute(
             'SELECT * FROM contributors ORDER BY registration_date DESC'
         ).fetchall()
@@ -142,7 +143,7 @@ def register():
     contribution_history = request.form.get('contribution_history', '')
     
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with closing(sqlite3.connect(DB_PATH)) as conn:
             conn.execute(
                 'INSERT INTO contributors (github_username, contributor_type, rtc_wallet, contribution_history) VALUES (?, ?, ?, ?)',
                 (github_username, contributor_type, rtc_wallet, contribution_history)
@@ -156,7 +157,7 @@ def register():
 
 @app.route('/api/contributors')
 def api_contributors():
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         contributors = conn.execute(
             'SELECT github_username, contributor_type, rtc_wallet, registration_date, status FROM contributors ORDER BY registration_date DESC'
         ).fetchall()
@@ -174,9 +175,26 @@ def api_contributors():
         ]
     }
 
-@app.route('/approve/<username>')
+def _require_admin_key():
+    expected_key = os.environ.get('CONTRIBUTOR_ADMIN_KEY', '')
+    if not expected_key:
+        return False, ('Contributor approval is disabled until CONTRIBUTOR_ADMIN_KEY is configured.', 503)
+
+    provided_key = request.headers.get('X-Admin-Key') or request.headers.get('X-API-Key') or ''
+    if not hmac.compare_digest(provided_key, expected_key):
+        return False, ('Invalid contributor admin key.', 403)
+
+    return True, None
+
+
+@app.route('/approve/<username>', methods=['POST'])
 def approve_contributor(username):
-    with sqlite3.connect(DB_PATH) as conn:
+    ok, error = _require_admin_key()
+    if not ok:
+        message, status_code = error
+        return message, status_code
+
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         conn.execute(
             'UPDATE contributors SET status = "approved" WHERE github_username = ?',
             (username,)

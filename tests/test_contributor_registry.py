@@ -1,8 +1,8 @@
 import pytest
+from contextlib import closing
 import sqlite3
 import os
 import tempfile
-from unittest.mock import patch, MagicMock
 
 # Module under test
 import contributor_registry as cr
@@ -29,7 +29,7 @@ def client(app):
 @pytest.fixture
 def seed_contributor(app):
     """Insert a test contributor into the database."""
-    with sqlite3.connect(cr.DB_PATH) as conn:
+    with closing(sqlite3.connect(cr.DB_PATH)) as conn:
         conn.execute(
             "INSERT INTO contributors (github_username, contributor_type, rtc_wallet, contribution_history, status) "
             "VALUES (?, ?, ?, ?, ?)",
@@ -41,7 +41,7 @@ def seed_contributor(app):
 class TestInitDb:
     def test_creates_table(self, app):
         """init_db should create the contributors table."""
-        with sqlite3.connect(cr.DB_PATH) as conn:
+        with closing(sqlite3.connect(cr.DB_PATH)) as conn:
             result = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='contributors'"
             ).fetchone()
@@ -77,7 +77,7 @@ class TestRegisterRoute:
             "contribution_history": "Mining and staking",
         }, follow_redirects=True)
         assert response.status_code == 200
-        with sqlite3.connect(cr.DB_PATH) as conn:
+        with closing(sqlite3.connect(cr.DB_PATH)) as conn:
             row = conn.execute(
                 "SELECT contributor_type, status FROM contributors WHERE github_username='newuser'"
             ).fetchone()
@@ -122,17 +122,84 @@ class TestApiContributors:
 
 
 class TestApproveRoute:
-    def test_approve_pending_contributor(self, client):
-        """GET /approve/<username> should set status to approved."""
+    def test_approve_rejects_get_requests(self, client, monkeypatch):
+        """GET /approve/<username> should not mutate contributor status."""
+        monkeypatch.setenv("CONTRIBUTOR_ADMIN_KEY", "secret-admin-key")
         client.post("/register", data={
             "github_username": "pendinguser",
             "contributor_type": "bot",
             "rtc_wallet": "RTC0pending",
             "contribution_history": "",
         }, follow_redirects=True)
-        response = client.get("/approve/pendinguser", follow_redirects=True)
+        response = client.get(
+            "/approve/pendinguser",
+            headers={"X-Admin-Key": "secret-admin-key"},
+            follow_redirects=True,
+        )
+        assert response.status_code == 405
+        with closing(sqlite3.connect(cr.DB_PATH)) as conn:
+            row = conn.execute(
+                "SELECT status FROM contributors WHERE github_username='pendinguser'"
+            ).fetchone()
+        assert row[0] == "pending"
+
+    def test_approve_fails_closed_without_configured_admin_key(self, client, monkeypatch):
+        """POST /approve/<username> should fail when no admin key is configured."""
+        monkeypatch.delenv("CONTRIBUTOR_ADMIN_KEY", raising=False)
+        client.post("/register", data={
+            "github_username": "pendinguser",
+            "contributor_type": "bot",
+            "rtc_wallet": "RTC0pending",
+            "contribution_history": "",
+        }, follow_redirects=True)
+        response = client.post("/approve/pendinguser", follow_redirects=True)
+        assert response.status_code == 503
+        with closing(sqlite3.connect(cr.DB_PATH)) as conn:
+            row = conn.execute(
+                "SELECT status FROM contributors WHERE github_username='pendinguser'"
+            ).fetchone()
+        assert row[0] == "pending"
+
+    def test_approve_rejects_missing_or_wrong_admin_key(self, client, monkeypatch):
+        """POST /approve/<username> should require the configured admin key."""
+        monkeypatch.setenv("CONTRIBUTOR_ADMIN_KEY", "secret-admin-key")
+        client.post("/register", data={
+            "github_username": "pendinguser",
+            "contributor_type": "bot",
+            "rtc_wallet": "RTC0pending",
+            "contribution_history": "",
+        }, follow_redirects=True)
+
+        missing_response = client.post("/approve/pendinguser", follow_redirects=True)
+        wrong_response = client.post(
+            "/approve/pendinguser",
+            headers={"X-Admin-Key": "wrong-key"},
+            follow_redirects=True,
+        )
+        assert missing_response.status_code == 403
+        assert wrong_response.status_code == 403
+        with closing(sqlite3.connect(cr.DB_PATH)) as conn:
+            row = conn.execute(
+                "SELECT status FROM contributors WHERE github_username='pendinguser'"
+            ).fetchone()
+        assert row[0] == "pending"
+
+    def test_approve_pending_contributor_with_admin_key(self, client, monkeypatch):
+        """POST /approve/<username> should approve when the admin key is valid."""
+        monkeypatch.setenv("CONTRIBUTOR_ADMIN_KEY", "secret-admin-key")
+        client.post("/register", data={
+            "github_username": "pendinguser",
+            "contributor_type": "bot",
+            "rtc_wallet": "RTC0pending",
+            "contribution_history": "",
+        }, follow_redirects=True)
+        response = client.post(
+            "/approve/pendinguser",
+            headers={"X-Admin-Key": "secret-admin-key"},
+            follow_redirects=True,
+        )
         assert response.status_code == 200
-        with sqlite3.connect(cr.DB_PATH) as conn:
+        with closing(sqlite3.connect(cr.DB_PATH)) as conn:
             row = conn.execute(
                 "SELECT status FROM contributors WHERE github_username='pendinguser'"
             ).fetchone()
@@ -142,7 +209,7 @@ class TestApproveRoute:
 class TestDatabaseConstraints:
     def test_unique_username_constraint(self, app):
         """Inserting duplicate github_username should raise IntegrityError."""
-        with sqlite3.connect(cr.DB_PATH) as conn:
+        with closing(sqlite3.connect(cr.DB_PATH)) as conn:
             conn.execute(
                 "INSERT INTO contributors (github_username, contributor_type, rtc_wallet) VALUES (?, ?, ?)",
                 ("unique_test", "human", "RTC0unique"),
@@ -160,9 +227,8 @@ class TestDatabaseConstraints:
             "contributor_type": "human",
             "rtc_wallet": "RTC0default",
         }, follow_redirects=True)
-        with sqlite3.connect(cr.DB_PATH) as conn:
+        with closing(sqlite3.connect(cr.DB_PATH)) as conn:
             row = conn.execute(
                 "SELECT status FROM contributors WHERE github_username='defaultstatus'"
             ).fetchone()
         assert row[0] == "pending"
-
