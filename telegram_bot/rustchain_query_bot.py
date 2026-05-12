@@ -18,6 +18,7 @@ Commands:
 import os
 import sys
 import logging
+import time
 from typing import Optional, Dict, Any
 
 import requests
@@ -45,6 +46,8 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 # Rate limiting (requests per minute per user)
 RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "10"))
+RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "5"))
+RTC_REFERENCE_RATE_USD = os.getenv("RTC_REFERENCE_RATE_USD", "0.10")
 
 # Logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -68,23 +71,35 @@ logger = logging.getLogger(__name__)
 class RateLimiter:
     """Simple in-memory rate limiter per user."""
 
-    def __init__(self, max_requests: int = RATE_LIMIT_PER_MINUTE):
+    def __init__(
+        self,
+        max_requests: int = RATE_LIMIT_PER_MINUTE,
+        window_seconds: int = 60,
+        min_interval_seconds: int = RATE_LIMIT_WINDOW_SECONDS,
+    ):
         self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.min_interval_seconds = min_interval_seconds
         self.user_requests: Dict[int, list] = {}
 
     def is_allowed(self, user_id: int) -> bool:
         """Check if user is allowed to make a request."""
-        import time
         current_time = time.time()
-        minute_ago = current_time - 60
+        window_start = current_time - self.window_seconds
 
         if user_id not in self.user_requests:
             self.user_requests[user_id] = []
 
         # Clean old requests
         self.user_requests[user_id] = [
-            t for t in self.user_requests[user_id] if t > minute_ago
+            t for t in self.user_requests[user_id] if t > window_start
         ]
+
+        if (
+            self.user_requests[user_id]
+            and current_time - self.user_requests[user_id][-1] < self.min_interval_seconds
+        ):
+            return False
 
         # Check rate limit
         if len(self.user_requests[user_id]) >= self.max_requests:
@@ -150,6 +165,47 @@ class RustChainClient:
 # Global API client instance
 api_client = RustChainClient()
 
+
+def _extract_miners(response: Any) -> list:
+    """Normalize the miner list from supported RustChain API shapes."""
+    if isinstance(response, list):
+        return response
+    if isinstance(response, dict):
+        for key in ("miners", "active_miners", "data", "results"):
+            value = response.get(key)
+            if isinstance(value, list):
+                return value
+    return []
+
+
+def _miner_label(miner: Any) -> str:
+    """Format one miner for Telegram output."""
+    if isinstance(miner, str):
+        return miner
+    if not isinstance(miner, dict):
+        return str(miner)
+
+    wallet = (
+        miner.get("miner_id")
+        or miner.get("wallet_name")
+        or miner.get("wallet")
+        or miner.get("miner")
+        or miner.get("id")
+        or "unknown"
+    )
+    arch = miner.get("architecture") or miner.get("arch") or miner.get("device_arch")
+    last_seen = miner.get("last_attestation") or miner.get("last_seen") or miner.get("ts_ok")
+    status = miner.get("status") or ("online" if miner.get("online") else "")
+
+    parts = [f"`{wallet}`"]
+    if arch:
+        parts.append(str(arch))
+    if status:
+        parts.append(str(status))
+    if last_seen:
+        parts.append(f"last: {last_seen}")
+    return " - ".join(parts)
+
 # =============================================================================
 # Bot Commands
 # =============================================================================
@@ -168,6 +224,8 @@ I can help you query the RustChain network.
 /health - Check node health status
 /epoch - Get current epoch info
 /balance <wallet> - Check wallet balance
+/miners - List active miners
+/price - Show RTC reference rate
 /stats - Get network statistics
 /help - Show this help message
 
@@ -195,6 +253,12 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
   Check RTC balance for a wallet/miner ID
   Example: /balance Ivan-houzhiwen
 
+/miners
+  List active miners and their latest status
+
+/price
+  Show the RTC reference rate
+
 /stats
   Get network statistics (miner count)
 
@@ -203,10 +267,11 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 **Notes:**
 - All queries are read-only and safe
-- Rate limit: {rate_limit} requests/minute
+- Rate limit: {rate_limit} requests/minute and 1 request per {window_seconds}s
 - API: `{api_url}`
 """.format(
         rate_limit=RATE_LIMIT_PER_MINUTE,
+        window_seconds=RATE_LIMIT_WINDOW_SECONDS,
         api_url=RUSTCHAIN_API_URL
     )
     await update.message.reply_text(help_text, parse_mode="Markdown")
@@ -341,6 +406,69 @@ Balance: *{amount_rtc} RTC*
     await update.message.reply_text(balance_text, parse_mode="Markdown")
 
 
+async def cmd_miners(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /miners command - list active miners."""
+    user = update.effective_user
+
+    if not rate_limiter.is_allowed(user.id):
+        await update.message.reply_text(
+            "Rate limit exceeded. Please wait before making more requests."
+        )
+        return
+
+    logger.info(f"User {user.id} requested active miners")
+    await update.message.reply_text("Fetching active miners...")
+
+    result = api_client.miners()
+    if isinstance(result, dict) and "error" in result:
+        await update.message.reply_text(f"Error: {result['error']}")
+        return
+
+    miners = _extract_miners(result)
+    if not miners:
+        await update.message.reply_text("No active miners were returned by the node.")
+        return
+
+    visible = miners[:10]
+    miner_lines = "\n".join(
+        f"{idx + 1}. {_miner_label(miner)}"
+        for idx, miner in enumerate(visible)
+    )
+    suffix = ""
+    if len(miners) > len(visible):
+        suffix = f"\n\nShowing 10 of {len(miners)} miners."
+
+    miners_text = f"""
+**Active RustChain Miners**
+
+{miner_lines}{suffix}
+
+API: `{RUSTCHAIN_API_URL}`
+"""
+    await update.message.reply_text(miners_text, parse_mode="Markdown")
+
+
+async def cmd_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /price command - show RTC reference price."""
+    user = update.effective_user
+
+    if not rate_limiter.is_allowed(user.id):
+        await update.message.reply_text(
+            "Rate limit exceeded. Please wait before making more requests."
+        )
+        return
+
+    logger.info(f"User {user.id} requested RTC reference price")
+    price_text = f"""
+**RTC Reference Rate**
+
+1 RTC = ${RTC_REFERENCE_RATE_USD} USD reference rate
+
+This is the bounty reference rate, not an exchange quote.
+"""
+    await update.message.reply_text(price_text, parse_mode="Markdown")
+
+
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /stats command - get network statistics."""
     user = update.effective_user
@@ -360,8 +488,9 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     miners_result = api_client.miners()
     miner_count = "N/A"
 
-    if "error" not in miners_result and isinstance(miners_result, list):
-        miner_count = len(miners_result)
+    if not (isinstance(miners_result, dict) and "error" in miners_result):
+        miners = _extract_miners(miners_result)
+        miner_count = len(miners) if miners else "N/A"
 
     # Get epoch info for additional stats
     epoch_result = api_client.epoch()
@@ -402,6 +531,8 @@ def set_bot_commands(application: Application):
         BotCommand("health", "Check node health"),
         BotCommand("epoch", "Get current epoch info"),
         BotCommand("balance", "Check wallet balance"),
+        BotCommand("miners", "List active miners"),
+        BotCommand("price", "Show RTC reference price"),
         BotCommand("stats", "Get network statistics"),
     ]
     return commands
@@ -456,6 +587,8 @@ def main():
     application.add_handler(CommandHandler("health", cmd_health))
     application.add_handler(CommandHandler("epoch", cmd_epoch))
     application.add_handler(CommandHandler("balance", cmd_balance))
+    application.add_handler(CommandHandler("miners", cmd_miners))
+    application.add_handler(CommandHandler("price", cmd_price))
     application.add_handler(CommandHandler("stats", cmd_stats))
 
     # Register error handler
@@ -468,7 +601,7 @@ def main():
     print("\n🛡️ RustChain Query Bot starting...")
     print(f"   API: {RUSTCHAIN_API_URL}")
     print(f"   Verify SSL: {RUSTCHAIN_VERIFY_SSL}")
-    print(f"   Rate limit: {RATE_LIMIT_PER_MINUTE} req/min")
+    print(f"   Rate limit: {RATE_LIMIT_PER_MINUTE} req/min, {RATE_LIMIT_WINDOW_SECONDS}s between requests")
     print("\nPress Ctrl+C to stop\n")
 
     # Run polling

@@ -14,6 +14,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 class TestBotCommands:
     """Tests for bot command handlers."""
 
+    @pytest.fixture(autouse=True)
+    def reset_rate_limiter(self):
+        """Use a no-delay rate limiter so command tests stay independent."""
+        import rustchain_query_bot
+
+        rustchain_query_bot.rate_limiter = rustchain_query_bot.RateLimiter(
+            min_interval_seconds=0
+        )
+
     @pytest.fixture
     def mock_update(self):
         """Create a mock update object."""
@@ -152,6 +161,40 @@ class TestBotCommands:
         call_args = mock_update.message.reply_text.call_args
         assert "2" in call_args[0][0]  # miner count
 
+    @pytest.mark.asyncio
+    @patch('rustchain_query_bot.api_client')
+    async def test_cmd_miners_success(self, mock_client, mock_update, mock_context):
+        """Test /miners command success."""
+        from rustchain_query_bot import cmd_miners
+
+        mock_client.miners.return_value = {
+            "miners": [
+                {
+                    "miner_id": "wallet-one",
+                    "architecture": "PowerPC G4",
+                    "status": "online",
+                }
+            ]
+        }
+
+        await cmd_miners(mock_update, mock_context)
+
+        assert mock_update.message.reply_text.called
+        call_args = mock_update.message.reply_text.call_args
+        assert "wallet-one" in call_args[0][0]
+        assert "PowerPC G4" in call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_cmd_price_success(self, mock_update, mock_context):
+        """Test /price command success."""
+        from rustchain_query_bot import cmd_price
+
+        await cmd_price(mock_update, mock_context)
+
+        assert mock_update.message.reply_text.called
+        call_args = mock_update.message.reply_text.call_args
+        assert "$0.10" in call_args[0][0]
+
 
 class TestConfiguration:
     """Tests for configuration validation."""
@@ -191,7 +234,7 @@ class TestBotCommandsSetup:
 
         commands = set_bot_commands(None)
 
-        assert len(commands) == 6
+        assert len(commands) == 8
         # BotCommand uses 'command' attribute for the command name
         command_names = [c.command for c in commands]
         assert "start" in command_names
@@ -199,4 +242,6 @@ class TestBotCommandsSetup:
         assert "health" in command_names
         assert "epoch" in command_names
         assert "balance" in command_names
+        assert "miners" in command_names
+        assert "price" in command_names
         assert "stats" in command_names

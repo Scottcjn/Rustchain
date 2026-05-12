@@ -144,6 +144,7 @@ class TestRateLimiter:
         """Test rate limiter initialization."""
         limiter = RateLimiter()
         assert limiter.max_requests == 10  # Default from config
+        assert limiter.min_interval_seconds == 5
 
     def test_init_custom_limit(self):
         """Test rate limiter with custom limit."""
@@ -157,7 +158,7 @@ class TestRateLimiter:
 
     def test_requests_within_limit_allowed(self):
         """Test that requests within limit are allowed."""
-        limiter = RateLimiter(max_requests=3)
+        limiter = RateLimiter(max_requests=3, min_interval_seconds=0)
         
         assert limiter.is_allowed(123) is True
         assert limiter.is_allowed(123) is True
@@ -165,7 +166,7 @@ class TestRateLimiter:
 
     def test_requests_exceeding_limit_blocked(self):
         """Test that requests exceeding limit are blocked."""
-        limiter = RateLimiter(max_requests=2)
+        limiter = RateLimiter(max_requests=2, min_interval_seconds=0)
         
         assert limiter.is_allowed(123) is True
         assert limiter.is_allowed(123) is True
@@ -173,7 +174,7 @@ class TestRateLimiter:
 
     def test_different_users_independent(self):
         """Test that rate limits are per-user."""
-        limiter = RateLimiter(max_requests=1)
+        limiter = RateLimiter(max_requests=1, min_interval_seconds=0)
         
         assert limiter.is_allowed(123) is True
         assert limiter.is_allowed(123) is False
@@ -184,7 +185,7 @@ class TestRateLimiter:
         """Test that old requests are cleaned up."""
         mock_time.return_value = 1000.0
         
-        limiter = RateLimiter(max_requests=2)
+        limiter = RateLimiter(max_requests=2, min_interval_seconds=0)
         limiter.is_allowed(123)  # Request at t=1000
         limiter.is_allowed(123)  # Request at t=1000
         
@@ -195,4 +196,18 @@ class TestRateLimiter:
         mock_time.return_value = 1061.0
         
         # Now the request should be allowed again
+        assert limiter.is_allowed(123) is True
+
+    @patch('time.time')
+    def test_minimum_interval_blocks_rapid_repeat(self, mock_time):
+        """Test 1-request-per-5-seconds throttle."""
+        limiter = RateLimiter(max_requests=10, min_interval_seconds=5)
+
+        mock_time.return_value = 1000.0
+        assert limiter.is_allowed(123) is True
+
+        mock_time.return_value = 1004.0
+        assert limiter.is_allowed(123) is False
+
+        mock_time.return_value = 1005.0
         assert limiter.is_allowed(123) is True
