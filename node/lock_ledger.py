@@ -490,7 +490,7 @@ def get_pending_unlocks(
     """
     params = [now]
     
-    if before_timestamp:
+    if before_timestamp is not None:
         query += " AND unlock_at <= ?"
         params.append(before_timestamp)
     

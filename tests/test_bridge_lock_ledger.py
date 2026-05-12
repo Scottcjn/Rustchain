@@ -773,6 +773,38 @@ class TestLockLedgerRoutes:
         assert response.status_code == 400
         assert response.get_json()["error"] == "Invalid before query parameter"
 
+    def test_get_pending_unlocks_honors_zero_before_cutoff(self, setup_test_db, funded_miner):
+        lock_ledger = setup_test_db["lock_ledger"]
+        client = self._client(lock_ledger, setup_test_db["db_path"])
+        conn = sqlite3.connect(setup_test_db["db_path"])
+        now = int(time.time())
+
+        conn.execute(
+            """
+            INSERT INTO lock_ledger (
+                bridge_transfer_id,
+                miner_id,
+                amount_i64,
+                lock_type,
+                locked_at,
+                unlock_at,
+                status,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 'locked', ?)
+            """,
+            (None, funded_miner, 5 * 1000000, "bridge_deposit", now - 60, now - 5, now - 60),
+        )
+        conn.commit()
+        conn.close()
+
+        response = client.get("/api/lock/pending-unlock?before=0")
+
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload["ok"] is True
+        assert payload["count"] == 0
+        assert payload["locks"] == []
+
     def test_get_pending_unlocks_route_returns_expired_locks(self, setup_test_db, funded_miner):
         lock_ledger = setup_test_db["lock_ledger"]
         client = self._client(lock_ledger, setup_test_db["db_path"])
