@@ -4,6 +4,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 
 
 NODE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -35,7 +36,7 @@ class TestWelcomeBonusLedgerSchema(unittest.TestCase):
             os.unlink(self.db_path)
 
     def _seed_current_schema(self, miner="RTC-new-miner"):
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.executescript(
                 """
                 CREATE TABLE miner_attest_history (
@@ -70,7 +71,7 @@ class TestWelcomeBonusLedgerSchema(unittest.TestCase):
             conn.commit()
 
     def _seed_legacy_schema(self, miner="RTC-legacy-miner"):
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.executescript(
                 """
                 CREATE TABLE miner_attest_history (
@@ -110,7 +111,7 @@ class TestWelcomeBonusLedgerSchema(unittest.TestCase):
         self.mod._check_welcome_bonus(miner)
         self.mod._check_welcome_bonus(miner)
 
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             rows = dict(
                 (miner_id, (amount_i64, balance_rtc))
                 for miner_id, amount_i64, balance_rtc in conn.execute(
@@ -144,7 +145,7 @@ class TestWelcomeBonusLedgerSchema(unittest.TestCase):
         self.mod._check_welcome_bonus(miner)
         self.mod._check_welcome_bonus(miner)
 
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             rows = dict(
                 conn.execute("SELECT miner_pk, balance_rtc FROM balances").fetchall()
             )
