@@ -21,6 +21,7 @@ License: MIT
 """
 
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -712,8 +713,8 @@ def confirm_order(order_id):
             computed_hash = hashlib.sha256(bytes.fromhex(secret)).hexdigest()
         except ValueError:
             return jsonify({"error": "Invalid HTLC secret format"}), 400
-        if computed_hash != order["htlc_hash"]:
-            return jsonify({"error": "Invalid HTLC secret (preimage hash mismatch)"}), 400
+        if not hmac.compare_digest(computed_hash, order["htlc_hash"]):
+            return jsonify({"error": "Invalid HTLC secret"}), 400
 
         now = int(time.time())
 
