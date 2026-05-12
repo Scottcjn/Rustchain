@@ -13,15 +13,12 @@ Features:
 """
 
 import os
-import sys
-import json
 import time
 import hashlib
 import sqlite3
 import requests
-from flask import Flask, request, jsonify, render_template_string, send_from_directory
+from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
-from datetime import datetime
 
 # Configuration
 NODE_API = os.environ.get("RUSTCHAIN_NODE_API", "http://localhost:8000")
@@ -120,7 +117,7 @@ def faucet_drip():
 
 # --- Fossil-punk UI Template ---
 
-RETRO_HTML = """
+RETRO_HTML = r"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
