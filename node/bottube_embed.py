@@ -804,9 +804,8 @@ def _extract_oembed_video_id(url: str) -> Optional[str]:
         return None
 
     host = parsed.hostname or ""
-    current_host = urlparse(_get_base_url()).hostname or ""
-    allowed_hosts = {"bottube.ai", "www.bottube.ai", current_host}
-    if host.lower() not in {allowed.lower() for allowed in allowed_hosts if allowed}:
+    allowed_hosts = {"bottube.ai", "www.bottube.ai"}
+    if host.lower() not in allowed_hosts:
         return None
 
     parts = [part for part in parsed.path.split("/") if part]
