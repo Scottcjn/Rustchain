@@ -11,7 +11,7 @@ from flask import Flask
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "node"))
 
-from utxo_db import UtxoDB, UNIT
+from utxo_db import UNIT, UtxoDB
 from utxo_endpoints import register_utxo_blueprint
 
 
@@ -78,11 +78,18 @@ def payload(nonce=1733420000000, amount_rtc=10.0):
         "public_key": "aabbccdd" * 8,
         "signature": "sig" * 22,
         "nonce": nonce,
-        "memo": "replay-test",
+        "memo": "nonce-required-test",
     }
 
 
-def nonce_count(db_path):
+def cleanup_db(db_path):
+    for suffix in ("", "-wal", "-shm"):
+        path = db_path + suffix
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def transfer_nonce_count(db_path):
     conn = sqlite3.connect(db_path)
     try:
         return conn.execute("SELECT COUNT(*) FROM transfer_nonces").fetchone()[0]
@@ -90,46 +97,33 @@ def nonce_count(db_path):
         conn.close()
 
 
-def test_utxo_transfer_rejects_duplicate_nonce():
+def test_utxo_transfer_accepts_numeric_zero_nonce():
     client, utxo_db, db_path = build_client()
     try:
         seed_coinbase(utxo_db, "RTC_test_aabbccdd", 100 * UNIT)
 
-        first = client.post("/utxo/transfer", json=payload())
-        assert first.status_code == 200
-        assert first.get_json()["ok"] is True
+        response = client.post("/utxo/transfer", json=payload(nonce=0))
 
-        second = client.post("/utxo/transfer", json=payload())
-        assert second.status_code == 400
-        body = second.get_json()
-        assert body["code"] == "REPLAY_DETECTED"
-        assert "Nonce already used" in body["error"]
-
-        assert utxo_db.get_balance("bob") == 10 * UNIT
-
-        assert nonce_count(db_path) == 1
+        assert response.status_code == 200
+        assert response.get_json()["ok"] is True
+        assert transfer_nonce_count(db_path) == 1
     finally:
-        os.unlink(db_path)
+        cleanup_db(db_path)
 
 
-def test_utxo_transfer_failed_attempt_does_not_burn_nonce():
-    client, utxo_db, db_path = build_client()
-    try:
-        seed_coinbase(utxo_db, "RTC_test_aabbccdd", 5 * UNIT)
-        req = payload(nonce=1733420009999, amount_rtc=10.0)
+def test_utxo_transfer_rejects_blank_nonce_values():
+    for blank_nonce in ("", "   ", None, False):
+        client, utxo_db, db_path = build_client()
+        try:
+            seed_coinbase(utxo_db, "RTC_test_aabbccdd", 100 * UNIT)
 
-        rejected = client.post("/utxo/transfer", json=req)
-        assert rejected.status_code == 400
-        assert rejected.get_json()["error"] == "Insufficient UTXO balance"
+            response = client.post(
+                "/utxo/transfer",
+                json=payload(nonce=blank_nonce),
+            )
 
-        assert nonce_count(db_path) == 0
-
-        seed_coinbase(utxo_db, "RTC_test_aabbccdd", 20 * UNIT, height=2)
-        accepted = client.post("/utxo/transfer", json=req)
-        assert accepted.status_code == 200
-        assert accepted.get_json()["ok"] is True
-
-        assert nonce_count(db_path) == 1
-        assert utxo_db.get_balance("bob") == 10 * UNIT
-    finally:
-        os.unlink(db_path)
+            assert response.status_code == 400
+            assert response.get_json()["error"] == "Missing required fields"
+            assert transfer_nonce_count(db_path) == 0
+        finally:
+            cleanup_db(db_path)
