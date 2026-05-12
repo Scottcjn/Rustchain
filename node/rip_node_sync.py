@@ -64,19 +64,45 @@ def fetch_peer_attestations(peer_url: str) -> List[Dict]:
 
 def merge_attestation(attestation: Dict):
     """Merge a remote attestation into local database"""
+    # SECURITY: Validate attestation structure before processing
+    miner = attestation.get("miner")
+    if not miner or not isinstance(miner, str) or len(miner) < 4:
+        logger.warning("Rejected attestation: missing or invalid miner field")
+        return False
+
+    # SECURITY: Validate miner ID format (should be hex or known pattern)
+    try:
+        bytes.fromhex(miner)  # Valid hex = real miner ID
+    except ValueError:
+        # Allow non-hex miners only in test mode
+        if not os.environ.get("RUSTCHAIN_TEST_MODE"):
+            logger.warning(f"Rejected attestation: non-hex miner ID: {miner[:16]}...")
+            return False
+
+    ts_ok = attestation.get("ts_ok", int(time.time()))
+
+    # SECURITY: Reject future timestamps (clock skew tolerance: 5 min)
+    now = int(time.time())
+    if ts_ok > now + 300:
+        logger.warning(f"Rejected attestation: future timestamp ts_ok={ts_ok} now={now}")
+        return False
+
+    # SECURITY: Reject very old timestamps (> 30 days)
+    if ts_ok < now - 2592000:
+        logger.warning(f"Rejected attestation: stale timestamp ts_ok={ts_ok}")
+        return False
+
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            
+
             # Check if already exists
             cursor.execute(
                 "SELECT ts_ok FROM miner_attest_recent WHERE miner = ?",
-                (attestation["miner"],)
+                (miner,)
             )
             existing = cursor.fetchone()
-            
-            ts_ok = attestation.get("ts_ok", int(time.time()))
-            
+
             if existing:
                 # Update if newer
                 if ts_ok > existing[0]:
@@ -88,9 +114,9 @@ def merge_attestation(attestation: Dict):
                         ts_ok,
                         attestation.get("device_arch", "unknown"),
                         attestation.get("device_family", "unknown"),
-                        attestation["miner"]
+                        miner
                     ))
-                    logger.info(f"Updated attestation for {attestation['miner'][:16]}...")
+                    logger.info(f"Updated attestation for {miner[:16]}...")
             else:
                 # Insert new
                 cursor.execute("""
@@ -98,12 +124,12 @@ def merge_attestation(attestation: Dict):
                     (miner, device_arch, device_family, ts_ok)
                     VALUES (?, ?, ?, ?)
                 """, (
-                    attestation["miner"],
+                    miner,
                     attestation.get("device_arch", "unknown"),
                     attestation.get("device_family", "unknown"),
                     ts_ok
                 ))
-                logger.info(f"Added new attestation for {attestation['miner'][:16]}...")
+                logger.info(f"Added new attestation for {miner[:16]}...")
             
             conn.commit()
     except Exception as e:
@@ -121,6 +147,10 @@ def get_local_hostname() -> str:
     except Exception:
         return "127.0.0.1"
 
+# Per-peer sync tracking
+_last_sync = {}
+_MAX_MERGES_PER_SYNC = 100  # Rate limit: max attestations merged per peer per cycle
+
 def sync_with_peers():
     """Main sync function - runs once"""
     local_ip = get_local_hostname()
@@ -135,14 +165,27 @@ def sync_with_peers():
         
         peer_attestations = fetch_peer_attestations(peer_url)
         
+        # SECURITY: Rate limit attestations per peer
+        if len(peer_attestations) > _MAX_MERGES_PER_SYNC:
+            logger.warning(
+                f"Peer {peer_url} sent {len(peer_attestations)} attestations, "
+                f"limiting to {_MAX_MERGES_PER_SYNC}"
+            )
+            peer_attestations = peer_attestations[:_MAX_MERGES_PER_SYNC]
+        
         new_count = 0
+        rejected_count = 0
         for attestation in peer_attestations:
             if attestation.get("miner") not in local_miners:
-                merge_attestation(attestation)
-                new_count += 1
+                if merge_attestation(attestation):
+                    new_count += 1
+                else:
+                    rejected_count += 1
         
         if new_count > 0:
             logger.info(f"Merged {new_count} new attestations from {peer_url}")
+        if rejected_count > 0:
+            logger.warning(f"Rejected {rejected_count} invalid attestations from {peer_url}")
 
 def run_sync_loop():
     """Continuous sync loop"""
