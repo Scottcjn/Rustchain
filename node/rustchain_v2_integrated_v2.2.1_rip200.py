@@ -6860,8 +6860,7 @@ def send_sophiacheck_alert(alert_type, message, data):
 def wallet_transfer_v2():
     """Transfer RTC between miner wallets - NOW WITH 2-PHASE COMMIT"""
     # SECURITY: Require admin key for internal transfers
-    admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not is_admin(request):
         return jsonify({
             "error": "Unauthorized - admin key required",
             "hint": "Use /wallet/transfer/signed for user transfers"
@@ -6959,8 +6958,7 @@ def wallet_transfer_v2():
 @app.route('/pending/list', methods=['GET'])
 def list_pending():
     """List all pending transfers"""
-    admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not is_admin(request):
         return jsonify({"error": "Unauthorized"}), 401
 
     status_filter = request.args.get('status', 'pending')
@@ -7002,8 +7000,7 @@ def list_pending():
 @app.route('/pending/void', methods=['POST'])
 def void_pending():
     """Admin: Void a pending transfer before confirmation"""
-    admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not is_admin(request):
         return jsonify({"error": "Unauthorized"}), 401
     
     data = request.get_json()
@@ -7076,8 +7073,7 @@ def void_pending():
 @app.route('/pending/confirm', methods=['POST'])
 def confirm_pending():
     """Worker: Confirm pending transfers that have passed the delay period"""
-    admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, os.environ.get("RC_ADMIN_KEY", "")):
+    if not is_admin(request):
         return jsonify({"error": "Unauthorized"}), 401
     
     now = int(time.time())
