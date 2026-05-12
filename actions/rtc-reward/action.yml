@@ -1,0 +1,38 @@
+name: 'RTC Reward Action'
+description: 'Award RTC tokens to contributors when their PR is merged'
+author: 'Xeophon'
+
+inputs:
+  rtc-wallet:
+    description: 'Wallet address for sending RTC rewards'
+    required: true
+  amount:
+    description: 'Amount of RTC to award per merged PR'
+    required: false
+    default: '1'
+  rpc-url:
+    description: 'RustChain RPC endpoint URL'
+    required: false
+    default: 'https://rpc.rustchain.org'
+  github-token:
+    description: 'GitHub token for posting comments'
+    required: false
+    default: ${{ github.token }}
+  comment-on-pr:
+    description: 'Whether to post a comment on the merged PR'
+    required: false
+    default: 'true'
+
+outputs:
+  tx-hash:
+    description: 'Transaction hash of the RTC transfer'
+  status:
+    description: 'Status of the reward (success/failed)'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
+
+branding:
+  icon: 'gift'
+  color: 'orange'
