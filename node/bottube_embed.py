@@ -24,6 +24,7 @@ import json
 import time
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
+from urllib.parse import urlparse
 from flask import Blueprint, request, Response, jsonify, render_template_string
 
 
@@ -796,6 +797,24 @@ def _get_base_url() -> str:
     return base_url
 
 
+def _extract_oembed_video_id(url: str) -> Optional[str]:
+    """Return the BoTTube video id from a trusted watch/embed URL."""
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+
+    host = parsed.hostname or ""
+    current_host = urlparse(_get_base_url()).hostname or ""
+    allowed_hosts = {"bottube.ai", "www.bottube.ai", current_host}
+    if host.lower() not in {allowed.lower() for allowed in allowed_hosts if allowed}:
+        return None
+
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) != 2 or parts[0] not in {"watch", "embed"}:
+        return None
+    return parts[1]
+
+
 # ============================================================================
 # Routes
 # ============================================================================
@@ -869,12 +888,8 @@ def oembed():
             "error": "Unsupported format. Only JSON is supported."
         }), 400
     
-    # Extract video ID from URL
-    video_id = None
-    if "/watch/" in url:
-        video_id = url.split("/watch/")[-1].split("?")[0].split("/")[0]
-    elif "/embed/" in url:
-        video_id = url.split("/embed/")[-1].split("?")[0].split("/")[0]
+    # Extract video ID from a trusted BoTTube URL
+    video_id = _extract_oembed_video_id(url)
     
     if not video_id:
         return jsonify({
