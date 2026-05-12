@@ -18,7 +18,6 @@ This is the "Proof of Antiquity" anti-spoofing layer.
 """
 
 import hashlib
-import hmac
 import json
 import os
 import secrets
@@ -27,6 +26,28 @@ import time
 from dataclasses import dataclass, asdict
 from typing import Optional, Dict, List, Tuple
 from enum import Enum
+
+try:
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+        Ed25519PrivateKey,
+        Ed25519PublicKey,
+    )
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding,
+        NoEncryption,
+        PrivateFormat,
+        PublicFormat,
+    )
+except ImportError:  # pragma: no cover - exercised only in minimal installs
+    InvalidSignature = Exception
+    Ed25519PrivateKey = None
+    Ed25519PublicKey = None
+    Encoding = None
+    NoEncryption = None
+    PrivateFormat = None
+    PublicFormat = None
+
 
 class ChallengeType(Enum):
     FULL = 0x00        # All hardware tests
@@ -125,6 +146,67 @@ class ValidationResult:
     serial_ok: bool
     failure_reasons: List[str]
 
+
+def _require_ed25519() -> None:
+    if Ed25519PrivateKey is None or Ed25519PublicKey is None:
+        raise RuntimeError("cryptography is required for Ed25519 challenge signatures")
+
+
+def _clean_hex(value: str) -> str:
+    value = value.strip()
+    if value.startswith(("0x", "0X")):
+        return value[2:]
+    return value
+
+
+def _load_ed25519_private_key(private_key) -> Ed25519PrivateKey:
+    _require_ed25519()
+    if isinstance(private_key, Ed25519PrivateKey):
+        return private_key
+    if isinstance(private_key, str):
+        private_key = bytes.fromhex(_clean_hex(private_key))
+    if not isinstance(private_key, bytes) or len(private_key) != 32:
+        raise ValueError("Ed25519 private key must be 32 raw bytes or hex")
+    return Ed25519PrivateKey.from_private_bytes(private_key)
+
+
+def _private_key_bytes(private_key) -> bytes:
+    private_key = _load_ed25519_private_key(private_key)
+    return private_key.private_bytes(
+        encoding=Encoding.Raw,
+        format=PrivateFormat.Raw,
+        encryption_algorithm=NoEncryption(),
+    )
+
+
+def derive_validator_pubkey(private_key) -> str:
+    """Return the hex Ed25519 public key for a raw private key."""
+    private_key = _load_ed25519_private_key(private_key)
+    return private_key.public_key().public_bytes(
+        encoding=Encoding.Raw,
+        format=PublicFormat.Raw,
+    ).hex()
+
+
+def generate_validator_private_key() -> bytes:
+    """Generate raw Ed25519 private-key bytes for a validator instance."""
+    _require_ed25519()
+    return _private_key_bytes(Ed25519PrivateKey.generate())
+
+
+def _verify_ed25519(pubkey_hex: str, signature: bytes, payload: bytes) -> bool:
+    if Ed25519PublicKey is None:
+        return False
+    if not pubkey_hex or not signature:
+        return False
+    try:
+        public_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(_clean_hex(pubkey_hex)))
+        public_key.verify(signature, payload)
+        return True
+    except (ValueError, InvalidSignature):
+        return False
+
+
 class AntiSpoofValidator:
     """
     Validates challenge responses to detect emulators.
@@ -169,10 +251,11 @@ class AntiSpoofValidator:
         self,
         target_pubkey: str,
         expected_hardware: Dict,
-        challenger_privkey: bytes,  # For signing
+        challenger_privkey: bytes,  # Raw Ed25519 private key for signing
         challenge_type: ChallengeType = ChallengeType.FULL
     ) -> Challenge:
         """Generate a new challenge for a validator"""
+        private_key = _load_ed25519_private_key(challenger_privkey)
 
         challenge = Challenge(
             challenge_id=secrets.token_hex(16),
@@ -181,21 +264,43 @@ class AntiSpoofValidator:
             timestamp=int(time.time() * 1000),
             timeout_ms=self._get_timeout_for_hardware(expected_hardware),
             expected_hardware=expected_hardware,
-            challenger_pubkey=hashlib.sha256(challenger_privkey).hexdigest()[:40],
+            challenger_pubkey=derive_validator_pubkey(private_key),
             signature=b''  # Will be filled
         )
 
         # Sign the challenge
-        challenge.signature = hmac.new(
-            challenger_privkey,
-            challenge.to_bytes(),
-            hashlib.sha256
-        ).digest()
+        challenge.signature = private_key.sign(challenge.to_bytes())
 
         # Store for later validation
         self.challenge_history[challenge.challenge_id] = challenge
 
         return challenge
+
+    def validate_challenge_signature(self, challenge: Challenge) -> bool:
+        """Verify that the advertised challenger public key signed the challenge."""
+        return _verify_ed25519(
+            challenge.challenger_pubkey,
+            challenge.signature,
+            challenge.to_bytes(),
+        )
+
+    def sign_response(self, response: ChallengeResponse, responder_privkey: bytes) -> ChallengeResponse:
+        """Sign a response and bind it to the responder Ed25519 public key."""
+        private_key = _load_ed25519_private_key(responder_privkey)
+        responder_pubkey = derive_validator_pubkey(private_key)
+        if response.responder_pubkey and response.responder_pubkey != responder_pubkey:
+            raise ValueError("response responder_pubkey does not match responder private key")
+        response.responder_pubkey = responder_pubkey
+        response.signature = private_key.sign(response.to_bytes())
+        return response
+
+    def validate_response_signature(self, response: ChallengeResponse) -> bool:
+        """Verify that the advertised responder public key signed the response."""
+        return _verify_ed25519(
+            response.responder_pubkey,
+            response.signature,
+            response.to_bytes(),
+        )
 
     def _get_timeout_for_hardware(self, hardware: Dict) -> int:
         """Calculate appropriate timeout based on hardware age"""
@@ -224,6 +329,16 @@ class AntiSpoofValidator:
         """
         failures = []
         confidence = 100.0
+
+        challenge_signature_ok = self.validate_challenge_signature(challenge)
+        if not challenge_signature_ok:
+            failures.append("Challenge signature invalid or not bound to challenger public key")
+            confidence -= 100.0
+
+        response_signature_ok = self.validate_response_signature(response)
+        if not response_signature_ok:
+            failures.append("Response signature invalid or not bound to responder public key")
+            confidence -= 100.0
 
         # 1. Check timing window
         response_time = response.response_timestamp - challenge.timestamp
@@ -267,7 +382,7 @@ class AntiSpoofValidator:
             confidence -= 50.0
 
         # Final determination
-        valid = confidence >= 50.0
+        valid = confidence >= 50.0 and challenge_signature_ok and response_signature_ok
 
         return ValidationResult(
             valid=valid,
@@ -438,8 +553,20 @@ class NetworkChallengeProtocol:
     MAX_FAILURES_BEFORE_SLASH = 3    # 3 failures = slashed
     FAILURE_PENALTY_PERCENT = 10     # 10% reward penalty per failure
 
-    def __init__(self, validator_pubkey: str, hardware_profile: Dict):
-        self.pubkey = validator_pubkey
+    def __init__(
+        self,
+        validator_pubkey: Optional[str],
+        hardware_profile: Dict,
+        validator_private_key: Optional[bytes] = None,
+    ):
+        if validator_private_key is None:
+            validator_private_key = generate_validator_private_key()
+        self._signing_key = _load_ed25519_private_key(validator_private_key)
+        derived_pubkey = derive_validator_pubkey(self._signing_key)
+        if validator_pubkey and _clean_hex(validator_pubkey) != derived_pubkey:
+            raise ValueError("validator_pubkey does not match validator_private_key")
+
+        self.pubkey = derived_pubkey
         self.hardware = hardware_profile
         self.validator = AntiSpoofValidator()
         self.pending_challenges: Dict[str, Challenge] = {}
@@ -458,13 +585,10 @@ class NetworkChallengeProtocol:
 
     def create_challenge(self, target_pubkey: str, target_hardware: Dict) -> Challenge:
         """Create a challenge for another validator"""
-        # Use pubkey as signing key for demo (use real keys in production)
-        privkey = hashlib.sha256(self.pubkey.encode()).digest()
-
         challenge = self.validator.generate_challenge(
             target_pubkey=target_pubkey,
             expected_hardware=target_hardware,
-            challenger_privkey=privkey,
+            challenger_privkey=self._signing_key,
             challenge_type=ChallengeType.FULL
         )
 
@@ -569,7 +693,8 @@ if __name__ == "__main__":
     validator = AntiSpoofValidator()
 
     # Generate challenge
-    privkey = secrets.token_bytes(32)
+    privkey = generate_validator_private_key()
+    responder_privkey = generate_validator_private_key()
     challenge = validator.generate_challenge(
         target_pubkey="target_validator_pubkey",
         expected_hardware=expected_hardware,
@@ -594,10 +719,11 @@ if __name__ == "__main__":
         jitter_variance=25,  # 2.5% variance - natural
         pipeline_cycles=1200,
         response_hash=b'',
-        responder_pubkey="responder_key",
+        responder_pubkey="",
         signature=b''
     )
     real_response.response_hash = real_response.hash()
+    validator.sign_response(real_response, responder_privkey)
 
     print("\n  --- REAL HARDWARE RESPONSE ---")
     result = validator.validate_response(challenge, real_response)
@@ -620,10 +746,11 @@ if __name__ == "__main__":
         jitter_variance=1,  # Too consistent! Emulator detected
         pipeline_cycles=1200,
         response_hash=b'',
-        responder_pubkey="emulator_key",
+        responder_pubkey="",
         signature=b''
     )
     emu_response.response_hash = emu_response.hash()
+    validator.sign_response(emu_response, responder_privkey)
 
     print("\n  --- EMULATOR RESPONSE ---")
     result = validator.validate_response(challenge, emu_response)
