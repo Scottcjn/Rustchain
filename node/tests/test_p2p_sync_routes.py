@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 from flask import Flask
 
 from node.rustchain_p2p_sync import add_p2p_endpoints
