@@ -26,8 +26,13 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 INSTALL_DIR="$HOME/.rustchain"
-MINER_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/rustchain_universal_miner.py"
-FINGERPRINT_URL="https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/fingerprint_checks.py"
+RUSTCHAIN_REF="${RUSTCHAIN_REF:-main}"
+BASE_URL="${RUSTCHAIN_BASE_URL:-https://raw.githubusercontent.com/Scottcjn/Rustchain/${RUSTCHAIN_REF}}"
+MINER_PATH="linux/rustchain_linux_miner.py"
+FINGERPRINT_PATH="linux/fingerprint_checks.py"
+MINER_URL="${BASE_URL}/miners/${MINER_PATH}"
+FINGERPRINT_URL="${BASE_URL}/miners/${FINGERPRINT_PATH}"
+CHECKSUM_URL="${BASE_URL}/miners/checksums.sha256"
 NODE_URL="https://50.28.86.131"
 VERSION="1.0.0"
 
@@ -99,6 +104,57 @@ else
 fi
 echo "  CPU: $CPU"
 
+# ─── Download Helpers ────────────────────────────────────────────────
+
+download_file() {
+    url="$1"
+    output="$2"
+
+    if command -v curl &>/dev/null; then
+        curl -fsSL "$url" -o "$output"
+    elif command -v wget &>/dev/null; then
+        wget -q "$url" -O "$output"
+    else
+        echo -e "${RED}  Neither curl nor wget found. Cannot download.${NC}"
+        exit 1
+    fi
+}
+
+file_sha256() {
+    path="$1"
+
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "$path" | awk '{print $1}'
+    elif command -v shasum &>/dev/null; then
+        shasum -a 256 "$path" | awk '{print $1}'
+    else
+        echo -e "${RED}  sha256sum or shasum is required to verify downloads.${NC}" >&2
+        exit 1
+    fi
+}
+
+verify_download() {
+    file="$1"
+    manifest_path="$2"
+    manifest="$3"
+
+    expected=$(awk -v p="$manifest_path" '$2 == p {print $1}' "$manifest")
+    if [ -z "$expected" ]; then
+        echo -e "${RED}  Missing checksum for $manifest_path${NC}"
+        exit 1
+    fi
+
+    actual=$(file_sha256 "$file")
+    if [ "$actual" != "$expected" ]; then
+        echo -e "${RED}  Checksum verification failed for $manifest_path${NC}"
+        echo "  Expected: $expected"
+        echo "  Actual:   $actual"
+        exit 1
+    fi
+
+    echo -e "  ${GREEN}✓ Verified:${NC} $manifest_path"
+}
+
 # Detect GPU (informational)
 if command -v nvidia-smi &>/dev/null; then
     GPU=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
@@ -167,6 +223,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
     echo -e "${YELLOW}[DRY RUN] Would install to: $INSTALL_DIR${NC}"
     echo "  Miner: $MINER_URL"
     echo "  Fingerprint: $FINGERPRINT_URL"
+    echo "  Checksums: $CHECKSUM_URL"
     echo "  Wallet: $WALLET"
     echo "  Node: $NODE_URL"
     echo "  Silent: $SILENT"
@@ -180,22 +237,17 @@ echo -e "${GREEN}[4/6]${NC} Downloading miner..."
 
 mkdir -p "$INSTALL_DIR"
 
-# Download miner script
-if command -v curl &>/dev/null; then
-    curl -fsSL "$MINER_URL" -o "$INSTALL_DIR/rustchain_miner.py" --insecure 2>/dev/null
-    curl -fsSL "$FINGERPRINT_URL" -o "$INSTALL_DIR/fingerprint_checks.py" --insecure 2>/dev/null
-elif command -v wget &>/dev/null; then
-    wget -q "$MINER_URL" -O "$INSTALL_DIR/rustchain_miner.py" --no-check-certificate 2>/dev/null
-    wget -q "$FINGERPRINT_URL" -O "$INSTALL_DIR/fingerprint_checks.py" --no-check-certificate 2>/dev/null
-else
-    echo -e "${RED}  Neither curl nor wget found. Cannot download.${NC}"
-    exit 1
-fi
+download_file "$CHECKSUM_URL" "$INSTALL_DIR/checksums.sha256"
+download_file "$MINER_URL" "$INSTALL_DIR/rustchain_miner.py"
+download_file "$FINGERPRINT_URL" "$INSTALL_DIR/fingerprint_checks.py"
 
 if [ ! -s "$INSTALL_DIR/rustchain_miner.py" ]; then
     echo -e "${RED}  Download failed. Check your internet connection.${NC}"
     exit 1
 fi
+
+verify_download "$INSTALL_DIR/rustchain_miner.py" "$MINER_PATH" "$INSTALL_DIR/checksums.sha256"
+verify_download "$INSTALL_DIR/fingerprint_checks.py" "$FINGERPRINT_PATH" "$INSTALL_DIR/checksums.sha256"
 
 echo "  Downloaded to: $INSTALL_DIR/"
 
