@@ -6891,6 +6891,10 @@ def wallet_transfer_v2():
     try:
         c = conn.cursor()
         
+        # SECURITY: Acquire write lock BEFORE reading balance to prevent
+        # concurrent transfers from both passing the balance check.
+        c.execute("BEGIN IMMEDIATE")
+        
         # Check sender balance
         row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_miner,)).fetchone()
         sender_balance = row[0] if row else 0
