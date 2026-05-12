@@ -409,7 +409,7 @@ class UtxoDB:
 
             # -- validate inputs exist and are unspent -----------------------
             input_total = 0
-            for inp in inputs:
+            for box_id in input_box_ids:
                 row = conn.execute(
                     """SELECT value_nrtc, spent_at FROM utxo_boxes
                        WHERE box_id = ?""",
