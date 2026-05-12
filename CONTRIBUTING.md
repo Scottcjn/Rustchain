@@ -90,11 +90,11 @@ python -m pip install -r requirements.txt -r requirements-node.txt
 # Verify key Python entry points parse correctly
 python -m py_compile node/wsgi.py node/rustchain_v2_integrated_v2.2.1_rip200.py wallet/__main__.py
 
-# Run the main Python test suite configured in pyproject.toml
-python -m pytest
+# Run focused tests for the area you changed
+python -m pytest node/tests/test_mock_signature_guard.py
 
-# Or run a scoped test while working on one area
-python -m pytest node/tests/test_balance_endpoint.py
+# SDK tests need the local SDK package dependencies first
+python -m pip install -e ./sdk
 python -m pytest sdk/tests/test_client_unit.py
 
 # Test against live node
@@ -107,8 +107,8 @@ For package-specific work, use the closest local manifest or test folder:
 
 | Area | Example command |
 |------|-----------------|
-| Node API | `python -m pytest node/tests` |
-| SDK | `python -m pytest sdk/tests` |
+| Node API | `python -m pytest node/tests/test_mock_signature_guard.py` |
+| SDK | `python -m pip install -e ./sdk && python -m pytest sdk/tests/test_client_unit.py` |
 | Bridge | `python -m pytest bridge/test_bridge_api.py` |
 | Rust miner crate | `cargo check --manifest-path rustchain-miner/Cargo.toml` |
 | Native wallet crate | `cargo check --manifest-path rustchain-wallet/Cargo.toml` |
