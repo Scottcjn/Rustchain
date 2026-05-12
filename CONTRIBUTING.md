@@ -79,16 +79,23 @@ New to RustChain? Get 10 RTC for your **first merged PR** — even for small imp
 git clone https://github.com/Scottcjn/Rustchain.git
 cd Rustchain
 
+# Verify you are in the expected checkout
+test -f CONTRIBUTING.md && test -f pyproject.toml && test -f requirements.txt
+
 # Python environment
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+python3 -m venv .venv && source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt -r requirements-node.txt
+
+# Verify key Python entry points parse correctly
+python -m py_compile node/wsgi.py node/rustchain_v2_integrated_v2.2.1_rip200.py wallet/__main__.py
 
 # Run the main Python test suite configured in pyproject.toml
-pytest
+python -m pytest
 
 # Or run a scoped test while working on one area
-pytest node/tests/test_balance_endpoint.py
-pytest sdk/tests/test_client_unit.py
+python -m pytest node/tests/test_balance_endpoint.py
+python -m pytest sdk/tests/test_client_unit.py
 
 # Test against live node
 curl -sk https://rustchain.org/health
@@ -100,11 +107,12 @@ For package-specific work, use the closest local manifest or test folder:
 
 | Area | Example command |
 |------|-----------------|
-| Node API | `pytest node/tests` |
-| SDK | `pytest sdk/tests` |
-| Bridge | `pytest bridge/test_bridge_api.py` |
-| Rust miners | `cd miners/rust && cargo test` |
-| Frontend/package work | `cd onboard && npm test` |
+| Node API | `python -m pytest node/tests` |
+| SDK | `python -m pytest sdk/tests` |
+| Bridge | `python -m pytest bridge/test_bridge_api.py` |
+| Rust miner crate | `cargo check --manifest-path rustchain-miner/Cargo.toml` |
+| Native wallet crate | `cargo check --manifest-path rustchain-wallet/Cargo.toml` |
+| Onboarding script | `node --check onboard/index.js` |
 
 ## Live Infrastructure
 
@@ -148,7 +156,7 @@ This keeps bounty-quality docs usable by new contributors and operators.
 
 ## Code Style
 
-- Python 3.8+ compatible
+- Python 3.11+ recommended for the main node and repository-level checks
 - Type hints appreciated but not yet enforced
 - Keep PRs focused — one issue per PR
 - Test against the live node, not just local mocks
