@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 
-from flask import Flask, request, redirect, url_for, flash
+from flask import Flask, request, redirect, url_for, flash, jsonify, make_response
 import sqlite3
 import os
 import secrets
@@ -174,16 +174,55 @@ def api_contributors():
         ]
     }
 
-@app.route('/approve/<username>')
+# FIX(#4714): Add admin authorization for contributor approval endpoint.
+# Previously, anyone could approve contributors via GET /approve/<username>
+# without any authentication. Now requires POST method and admin key.
+@app.route('/approve/<username>', methods=['POST'])
 def approve_contributor(username):
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            'UPDATE contributors SET status = "approved" WHERE github_username = ?',
-            (username,)
-        )
-        conn.commit()
-    flash(f'Approved @{username} for 5 RTC bounty!')
-    return redirect(url_for('index'))
+    """
+    Approve a contributor for bounty payment.
+    
+    Security:
+    - Requires POST method (prevents CSRF via GET)
+    - Requires admin key via X-Admin-Key header or admin_key form field
+    - Admin key must match CONTRIBUTOR_ADMIN_KEY environment variable
+    
+    Returns:
+        - 200: Successfully approved
+        - 401: Unauthorized (invalid or missing admin key)
+        - 404: Contributor not found
+        - 500: Internal server error
+    """
+    # Verify admin authorization
+    admin_key = request.headers.get('X-Admin-Key') or request.form.get('admin_key', '')
+    
+    expected_key = os.environ.get('CONTRIBUTOR_ADMIN_KEY', '')
+    if not expected_key:
+        logging.error("CONTRIBUTOR_ADMIN_KEY not set! Approve endpoint is disabled.")
+        return jsonify({'error': 'Approval endpoint is disabled'}), 503
+    
+    if not secrets.compare_digest(admin_key, expected_key):
+        logging.warning(f"Unauthorized approve attempt for @{username}")
+        return jsonify({'error': 'Unauthorized. Admin key required.'}), 401
+    
+    # Perform approval
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.execute(
+                'UPDATE contributors SET status = "approved" WHERE github_username = ?',
+                (username,)
+            )
+            if cursor.rowcount == 0:
+                return jsonify({'error': f'Contributor @{username} not found'}), 404
+            conn.commit()
+        
+        logging.info(f"Approved contributor @{username}")
+        flash(f'Approved @{username} for 5 RTC bounty!')
+        return redirect(url_for('index'))
+    
+    except Exception as e:
+        logging.error(f"Error approving @{username}: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
     if not os.path.exists(DB_PATH):
