@@ -945,37 +945,6 @@ OPENAPI = {
                 }
             }
         },
-        "/balance/{miner_pk}": {
-            "get": {
-                "summary": "Get miner balance by public key",
-                "parameters": [
-                    {
-                        "name": "miner_pk",
-                        "in": "path",
-                        "required": True,
-                        "schema": {"type": "string"},
-                        "description": "Miner public key (hex)"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Miner balance",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "miner_pk": {"type": "string"},
-                                        "balance": {"type": "number"},
-                                        "pending_rewards": {"type": "number"}
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/wallet/balance": {
             "get": {
                 "summary": "Get wallet balance (requires wallet address)",
