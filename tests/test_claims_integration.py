@@ -597,6 +597,58 @@ class TestEdgeCases:
         
         assert result2["success"] is False
         assert "pending_claim_exists" in result2["error"] or "already exists" in result2["error"] or "Duplicate" in result2["error"]
+
+    def test_rejects_unregistered_payout_wallet_for_eligible_miner(self, integration_db, current_ts, current_slot):
+        """Eligible miners cannot redirect claims to a different payout wallet"""
+
+        test_epoch = max(0, current_slot // 144 - 3)
+
+        miner_id = "wallet-spoof-target"
+        registered_wallet = "RTC1RegisteredWallet1234567890"
+        attacker_wallet = "RTC1AttackerWallet123456789012"
+        setup_test_miner(integration_db, miner_id, "g4", registered_wallet, current_ts, epoch=test_epoch)
+
+        result = submit_claim(
+            db_path=integration_db,
+            miner_id=miner_id,
+            epoch=test_epoch,
+            wallet_address=attacker_wallet,
+            signature="mock_signature",
+            public_key="mock_public_key",
+            current_slot=current_slot,
+            current_ts=current_ts,
+            skip_signature_verify=True
+        )
+
+        assert result["success"] is False
+        assert result["error"] == "wallet_address_mismatch"
+        assert get_claim_status(integration_db, f"claim_{test_epoch}_{miner_id}") is None
+
+    def test_wallet_match_is_case_insensitive(self, integration_db, current_ts, current_slot):
+        """Wallet comparison follows the existing case-insensitive address format"""
+
+        test_epoch = max(0, current_slot // 144 - 3)
+
+        miner_id = "case-wallet-miner"
+        registered_wallet = "RTC1CaseWalletABC1234567890"
+        submitted_wallet = registered_wallet.lower()
+        setup_test_miner(integration_db, miner_id, "g4", registered_wallet, current_ts, epoch=test_epoch)
+
+        result = submit_claim(
+            db_path=integration_db,
+            miner_id=miner_id,
+            epoch=test_epoch,
+            wallet_address=submitted_wallet,
+            signature="mock_signature",
+            public_key="mock_public_key",
+            current_slot=current_slot,
+            current_ts=current_ts,
+            skip_signature_verify=True
+        )
+
+        assert result["success"] is True
+        status = get_claim_status(integration_db, result["claim_id"])
+        assert status["wallet_address"] == submitted_wallet
     
     def test_wallet_address_change(self, integration_db, current_ts, current_slot):
         """Test that wallet address can be updated between claims"""

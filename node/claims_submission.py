@@ -99,6 +99,16 @@ def validate_wallet_address_format(wallet_address: str) -> bool:
     return bool(re.match(pattern, wallet_address, re.IGNORECASE))
 
 
+def wallet_addresses_match(submitted_wallet: str, registered_wallet: str) -> bool:
+    """
+    Compare RustChain wallet addresses using the same case-insensitive
+    semantics as the address format validator.
+    """
+    if not isinstance(submitted_wallet, str) or not isinstance(registered_wallet, str):
+        return False
+    return submitted_wallet.casefold() == registered_wallet.casefold()
+
+
 def create_claim_payload(
     miner_id: str,
     epoch: int,
@@ -486,6 +496,11 @@ def submit_claim(
     
     if not eligibility["eligible"]:
         result["error"] = f"ineligible: {eligibility['reason']}"
+        return result
+
+    registered_wallet = eligibility.get("wallet_address")
+    if not wallet_addresses_match(wallet_address, registered_wallet):
+        result["error"] = "wallet_address_mismatch"
         return result
     
     # Verify signature (unless skipped for testing)
