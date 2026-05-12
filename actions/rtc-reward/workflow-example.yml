@@ -1,0 +1,22 @@
+# .github/workflows/rtc-reward.yml
+# Awards RTC tokens when a PR is merged
+name: RTC Reward
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  reward:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Award RTC
+        uses: Scottcjn/Rustchain/actions/rtc-reward@main
+        with:
+          rtc-wallet: ${{ secrets.RTC_WALLET }}
+          amount: '1'
+          rpc-url: 'https://rpc.rustchain.org'
+          comment-on-pr: 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
