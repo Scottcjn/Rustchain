@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 from importlib.util import module_from_spec, spec_from_file_location
 from types import SimpleNamespace
 from unittest.mock import Mock
