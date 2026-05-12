@@ -1,9 +1,17 @@
+import json
 import sqlite3
+from hashlib import blake2b
 
 import pytest
 from flask import Flask
 
 from bcos_routes import init_bcos_table, register_bcos_routes
+
+
+def bcos_commitment(report):
+    report_copy = {k: v for k, v in report.items() if k not in ("cert_id", "commitment")}
+    canonical = json.dumps(report_copy, sort_keys=True, separators=(",", ":"))
+    return blake2b(canonical.encode(), digest_size=32).hexdigest()
 
 
 @pytest.fixture
@@ -98,17 +106,19 @@ def test_bcos_attest_rejects_invalid_trust_score(bcos_client, trust_score, messa
 
 
 def test_bcos_attest_stores_numeric_trust_score(bcos_client):
+    report = {
+        "cert_id": "cert-good-score",
+        "repo": "Scottcjn/Rustchain",
+        "commit_sha": "abcdef1234567890",
+        "tier": "L1",
+        "trust_score": 81,
+    }
+    report["commitment"] = bcos_commitment(report)
+
     response = bcos_client.post(
         "/bcos/attest",
         headers={"X-Admin-Key": "0" * 32},
-        json={
-            "cert_id": "cert-good-score",
-            "commitment": "commitment",
-            "repo": "Scottcjn/Rustchain",
-            "commit_sha": "abcdef1234567890",
-            "tier": "L1",
-            "trust_score": "81",
-        },
+        json={**report, "trust_score": "81"},
     )
 
     assert response.status_code == 200
@@ -136,21 +146,45 @@ def test_bcos_public_urls_default_to_certificate_valid_host(bcos_client):
 def test_bcos_attest_uses_configured_public_url(monkeypatch, bcos_client):
     monkeypatch.setenv("RC_ADMIN_KEY", "test-admin")
     monkeypatch.setenv("RUSTCHAIN_BCOS_PUBLIC_BASE_URL", "https://bcos.example/")
+    report = {
+        "cert_id": "cert-custom-host",
+        "repo": "Scottcjn/Rustchain",
+        "commit_sha": "abcdef1234567890",
+        "tier": "L1",
+        "trust_score": 82,
+    }
+    report["commitment"] = bcos_commitment(report)
 
     response = bcos_client.post(
         "/bcos/attest",
         headers={"X-Admin-Key": "test-admin"},
-        json={
-            "cert_id": "cert-custom-host",
-            "commitment": "commitment",
-            "repo": "Scottcjn/Rustchain",
-            "commit_sha": "abcdef1234567890",
-            "tier": "L1",
-            "trust_score": 82,
-        },
+        json=report,
     )
 
     assert response.status_code == 200
     body = response.get_json()
     assert body["verify_url"] == "https://bcos.example/bcos/verify/cert-custom-host"
     assert body["badge_url"] == "https://bcos.example/bcos/badge/cert-custom-host.svg"
+
+
+def test_bcos_attest_rejects_mismatched_commitment(bcos_client):
+    response = bcos_client.post(
+        "/bcos/attest",
+        headers={"X-Admin-Key": "0" * 32},
+        json={
+            "cert_id": "cert-mismatch",
+            "commitment": "stale-commitment",
+            "repo": "Scottcjn/Rustchain",
+            "commit_sha": "abcdef1234567890",
+            "tier": "L1",
+            "trust_score": 81,
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["error"] == "commitment_mismatch"
+    assert body["message"] == "commitment does not match report"
+
+    verify_response = bcos_client.get("/bcos/verify/cert-mismatch")
+    assert verify_response.status_code == 404

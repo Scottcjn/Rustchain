@@ -104,7 +104,7 @@ def _verify_commitment(report_json_str: str, claimed_commitment: str) -> bool:
                        if k not in ("cert_id", "commitment")}
         canonical = json.dumps(report_copy, sort_keys=True, separators=(",", ":"))
         computed = blake2b(canonical.encode(), digest_size=32).hexdigest()
-        return computed == claimed_commitment
+        return hmac.compare_digest(computed, claimed_commitment)
     except Exception:
         return False
 
@@ -252,6 +252,11 @@ def bcos_attest():
 
     # Verify commitment matches report
     report_json_str = json.dumps(report, sort_keys=True, separators=(",", ":"))
+    if not _verify_commitment(report_json_str, commitment):
+        return jsonify({
+            "error": "commitment_mismatch",
+            "message": "commitment does not match report",
+        }), 400
 
     # Store
     now = int(time.time())
