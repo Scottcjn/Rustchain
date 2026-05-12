@@ -7,7 +7,7 @@ import sqlite3
 from utxo_db import UtxoDB, UNIT
 from utxo_genesis_migration import migrate, rollback_genesis, GENESIS_HEIGHT
 
-class TestGenesisDuplication(unittest.TestCase):
+class TestGenesisDuplicationFix(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
         self.tmp.close()
@@ -23,7 +23,7 @@ class TestGenesisDuplication(unittest.TestCase):
     def tearDown(self):
         os.unlink(self.db_path)
 
-    def test_genesis_duplication_via_rollback(self):
+    def test_genesis_rollback_prevention_on_spend(self):
         # 1. Migrate genesis
         result = migrate(self.db_path, dry_run=False)
         self.assertTrue(result['integrity']['ok'])
@@ -46,23 +46,20 @@ class TestGenesisDuplication(unittest.TestCase):
         self.assertEqual(db.get_balance('alice'), 0)
         self.assertEqual(db.get_balance('bob'), 100 * UNIT)
         
-        # 3. Admin rolls back genesis
-        # The rollback deletes the genesis box (which is now spent)
-        # But leaves Bob's box intact!
-        deleted = rollback_genesis(self.db_path)
-        self.assertEqual(deleted, 1)
+        # 3. Admin attempts to rollback genesis
+        # The rollback MUST FAIL because a genesis box has been spent.
+        # This prevents the duplication bug.
+        with self.assertRaises(ValueError) as cm:
+            rollback_genesis(self.db_path)
+        self.assertIn("Cannot rollback genesis: some genesis boxes have already been spent", str(cm.exception))
         
-        # 4. Admin re-runs migration
-        result = migrate(self.db_path, dry_run=False)
-        self.assertTrue(result['integrity']['ok'])
-        
-        # 5. Duplication!
-        # Alice has her genesis box back, AND Bob still has his 100 RTC!
-        self.assertEqual(db.get_balance('alice'), 100 * UNIT)
+        # 4. Verify that no boxes were deleted and balances are intact
+        # (Alice's spent box is still marked as spent, Bob's box still exists)
+        self.assertEqual(db.get_balance('alice'), 0)
         self.assertEqual(db.get_balance('bob'), 100 * UNIT)
         
-        # Total supply is now 200 RTC, even though account balance was 100 RTC
-        self.assertEqual(db.get_balance('alice') + db.get_balance('bob'), 200 * UNIT)
+        # Total supply remains 100 RTC
+        self.assertEqual(db.get_balance('alice') + db.get_balance('bob'), 100 * UNIT)
 
 if __name__ == '__main__':
     unittest.main()
