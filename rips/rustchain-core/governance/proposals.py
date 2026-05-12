@@ -401,10 +401,14 @@ class GovernanceEngine:
         to_wallet: str,
         weight: float,
         duration_days: Optional[int] = None,
+        caller_wallet: Optional[str] = None,
     ) -> Delegation:
         """Delegate voting power to another wallet (RIP-0006)."""
         if weight < 0 or weight > 1:
             raise ValueError("Delegation weight must be between 0 and 1")
+        # Authenticate that caller owns the from_wallet
+        if caller_wallet is not None and caller_wallet != from_wallet:
+            raise ValueError(f"Caller {caller_wallet} cannot delegate on behalf of {from_wallet}")
 
         now = int(time.time())
         expires_at = now + (duration_days * 86400) if duration_days else None
