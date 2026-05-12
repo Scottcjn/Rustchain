@@ -98,6 +98,13 @@ BADGE_CONFIG = {
     'font_size': 11,
 }
 
+CERT_ID_PATTERN = re.compile(r'^BCOS-[A-Za-z0-9_-]{1,64}$')
+
+
+def is_valid_cert_id(cert_id: str) -> bool:
+    """Return True for cert IDs that are safe to store and embed in badge URLs."""
+    return bool(CERT_ID_PATTERN.fullmatch(cert_id))
+
 # ── Database Functions ──────────────────────────────────────────────
 
 
@@ -1141,6 +1148,13 @@ def generate_badge():
         hash_input = f"{repo_name}{tier}{trust_score}{time.time()}"
         cert_hash = hashlib.blake2b(hash_input.encode(), digest_size=32).hexdigest()
         cert_id = f"BCOS-{cert_hash[:8]}"
+    elif not is_valid_cert_id(cert_id):
+        return jsonify({
+            'success': False,
+            'error': 'Invalid certificate ID. Use BCOS- followed by letters, numbers, underscores, or hyphens.',
+        })
+
+    cert_path = urllib.parse.quote(cert_id, safe='')
 
     # Generate SVG
     svg = generate_badge_svg(
@@ -1149,7 +1163,7 @@ def generate_badge():
         trust_score=trust_score,
         cert_id=cert_id,
         include_qr=include_qr,
-        verification_url=f"https://rustchain.org/bcos/verify/{cert_id}",
+        verification_url=f"https://rustchain.org/bcos/verify/{cert_path}",
     )
 
     # Record in database
@@ -1162,8 +1176,8 @@ def generate_badge():
         app.logger.error(f"Failed to record badge generation: {e}")
 
     # Generate embed codes
-    verification_url = f"https://rustchain.org/bcos/verify/{cert_id}"
-    svg_url = f"https://rustchain.org/bcos/badge/{cert_id}.svg"
+    verification_url = f"https://rustchain.org/bcos/verify/{cert_path}"
+    svg_url = f"https://rustchain.org/bcos/badge/{cert_path}.svg"
 
     markdown = f'[![BCOS {tier} Certified]({svg_url})]({verification_url})'
     html = f'<a href="{verification_url}"><img src="{svg_url}" alt="BCOS {tier} Certified"></a>'
