@@ -6,7 +6,7 @@ Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
 import os, time, json, secrets, hashlib, hmac, sqlite3, base64, struct, uuid, glob, logging, sys, binascii, math, re, statistics
 import ipaddress
 from urllib.parse import urlparse
-from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect
+from flask import Flask, request, jsonify, g, send_from_directory, send_file, abort, render_template_string, redirect, Response
 import json
 from decimal import Decimal, ROUND_HALF_UP
 from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, VALID_KINDS
@@ -6577,9 +6577,10 @@ def api_ready():
         return jsonify({"ready": False, "version": APP_VERSION}), 503
 
 @app.route('/metrics', methods=['GET'])
+@app.route('/api/metrics', methods=['GET'])
 def metrics():
     """Prometheus metrics endpoint"""
-    return generate_latest()
+    return Response(generate_latest(), content_type=CONTENT_TYPE_LATEST)
 
 
 @app.route('/rewards/settle', methods=['POST'])
