@@ -55,6 +55,19 @@ def get_optional_json_object():
     return data, None
 
 
+def admin_key_matches(admin_key: str, expected_admin_key: str) -> bool:
+    """Constant-time admin key comparison that treats malformed text as no match."""
+    if not admin_key or not expected_admin_key:
+        return False
+    try:
+        return hmac.compare_digest(
+            admin_key.encode('utf-8'),
+            expected_admin_key.encode('utf-8'),
+        )
+    except UnicodeError:
+        return False
+
+
 def require_configured_admin_key():
     """Require ADMIN_KEY for protected write routes and fail closed if unset."""
     expected_admin_key = os.environ.get('ADMIN_KEY', '').strip()
@@ -70,7 +83,7 @@ def require_configured_admin_key():
         or request.headers.get('X-API-Key')
         or ''
     ).strip()
-    if not admin_key or not hmac.compare_digest(admin_key, expected_admin_key):
+    if not admin_key_matches(admin_key, expected_admin_key):
         return jsonify({
             'ok': False,
             'error': 'unauthorized',
@@ -228,7 +241,7 @@ def create_passport():
     admin_key = request.headers.get('X-Admin-Key', '') or request.headers.get('X-API-Key', '')
     expected_admin_key = os.environ.get('ADMIN_KEY', '')
     
-    if expected_admin_key and not hmac.compare_digest(admin_key, expected_admin_key):
+    if expected_admin_key and not admin_key_matches(admin_key, expected_admin_key):
         return jsonify({
             'ok': False,
             'error': 'unauthorized',
@@ -322,7 +335,7 @@ def update_passport(machine_id: str):
     if not passport:
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
-    if expected_admin_key and not hmac.compare_digest(admin_key, expected_admin_key):
+    if expected_admin_key and not admin_key_matches(admin_key, expected_admin_key):
         return jsonify({
             'ok': False,
             'error': 'unauthorized',

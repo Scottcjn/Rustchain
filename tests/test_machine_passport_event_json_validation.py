@@ -153,6 +153,28 @@ def test_event_write_routes_reject_missing_or_wrong_admin_key(
     ledger.assert_no_writes()
 
 
+def test_event_write_routes_reject_malformed_admin_key_without_500(
+    client,
+    ledger,
+    monkeypatch,
+):
+    monkeypatch.setenv("ADMIN_KEY", "expected-admin-key")
+
+    response = client.post(
+        "/api/machine-passport/machine-1/repair-log",
+        json={"event_type": "transfer"},
+        headers={"X-Admin-Key": "é"},
+    )
+
+    assert response.status_code == 401
+    assert response.get_json() == {
+        "ok": False,
+        "error": "unauthorized",
+        "message": "Admin key required",
+    }
+    ledger.assert_no_writes()
+
+
 def test_repair_route_accepts_admin_key_header(client, ledger, auth_headers):
     response = client.post(
         "/api/machine-passport/machine-1/repair-log",

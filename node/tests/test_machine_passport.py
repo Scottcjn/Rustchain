@@ -547,7 +547,7 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 401)
         self.assertFalse(data['ok'])
         self.assertEqual(data['error'], 'unauthorized')
-        compare_digest.assert_called_once_with('wrong-admin-key', 'expected-admin-key')
+        compare_digest.assert_called_once_with(b'wrong-admin-key', b'expected-admin-key')
 
         get_resp = self.client.get('/api/machine-passport/owner_claim_test')
         passport = json.loads(get_resp.data)['passport']['passport']
@@ -575,7 +575,7 @@ class TestAPIEndpoints(unittest.TestCase):
         data = json.loads(resp.data)
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(data['ok'])
-        compare_digest.assert_called_once_with('expected-admin-key', 'expected-admin-key')
+        compare_digest.assert_called_once_with(b'expected-admin-key', b'expected-admin-key')
     
     def test_get_nonexistent_passport(self):
         """Test getting a nonexistent passport."""
