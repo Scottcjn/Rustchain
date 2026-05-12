@@ -1,0 +1,59 @@
+{
+  "name": "rustchain-dashboard",
+  "displayName": "RustChain Dashboard",
+  "description": "RustChain wallet balance, miner status, and bounty board in VS Code",
+  "version": "0.1.0",
+  "publisher": "xeophon",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other", "Blockchain"],
+  "keywords": ["rustchain", "blockchain", "mining", "bounty", "crypto"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [{
+        "id": "rustchain",
+        "title": "RustChain",
+        "icon": "media/icon.svg"
+      }]
+    },
+    "views": {
+      "rustchain": [
+        { "id": "rustchain.wallet", "name": "Wallet" },
+        { "id": "rustchain.miner", "name": "Miner Status" },
+        { "id": "rustchain.bounties", "name": "Bounties" }
+      ]
+    },
+    "commands": [
+      { "command": "rustchain.checkBalance", "title": "RustChain: Check Balance" },
+      { "command": "rustchain.refreshMiner", "title": "RustChain: Refresh Miner Status" },
+      { "command": "rustchain.refreshBounties", "title": "RustChain: Refresh Bounties" },
+      { "command": "rustchain.openBounty", "title": "RustChain: Open Bounty" },
+      { "command": "rustchain.claimBounty", "title": "RustChain: Claim Bounty" }
+    ],
+    "configuration": {
+      "title": "RustChain",
+      "properties": {
+        "rustchain.walletAddress": {
+          "type": "string",
+          "default": "",
+          "description": "Your RTC wallet address"
+        },
+        "rustchain.rpcUrl": {
+          "type": "string",
+          "default": "https://rpc.rustchain.org",
+          "description": "RustChain RPC endpoint"
+        },
+        "rustchain.refreshInterval": {
+          "type": "number",
+          "default": 60,
+          "description": "Refresh interval in seconds"
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0"
+  }
+}
