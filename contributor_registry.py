@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # SPDX-License-Identifier: MIT
 
 from flask import Flask, request, redirect, url_for, flash
