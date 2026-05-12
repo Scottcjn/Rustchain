@@ -105,6 +105,29 @@ def check_existing_genesis(utxo_db: UtxoDB, conn=None) -> bool:
             conn.close()
 
 
+def check_existing_non_genesis_utxo_state(utxo_db: UtxoDB, conn=None) -> bool:
+    """Check whether the UTXO tables already contain non-genesis state."""
+    own = conn is None
+    if own:
+        conn = utxo_db._conn()
+    try:
+        box_row = conn.execute(
+            """SELECT COUNT(*) AS n
+               FROM utxo_boxes AS b
+               LEFT JOIN utxo_transactions AS t ON t.tx_id = b.transaction_id
+               WHERE COALESCE(t.tx_type, '') <> 'genesis'"""
+        ).fetchone()
+        tx_row = conn.execute(
+            """SELECT COUNT(*) AS n
+               FROM utxo_transactions
+               WHERE tx_type <> 'genesis'"""
+        ).fetchone()
+        return (box_row['n'] + tx_row['n']) > 0
+    finally:
+        if own:
+            conn.close()
+
+
 def migrate(db_path: str, dry_run: bool = False) -> dict:
     """
     Run the genesis migration.
@@ -138,6 +161,13 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
             print("ERROR: Genesis boxes already exist. Aborting.")
             print("To re-run, use rollback_genesis() first.")
             return {'error': 'genesis_already_exists'}
+
+        if check_existing_non_genesis_utxo_state(utxo_db, conn=conn):
+            if not dry_run:
+                conn.execute("ROLLBACK")
+            print("ERROR: Non-genesis UTXO state already exists. Aborting.")
+            print("Run migration only on an empty UTXO set.")
+            return {'error': 'utxo_state_already_exists'}
 
         # Non-dry-run migrations load balances on the transaction connection
         # so the migrated snapshot is consistent with the acquired lock.

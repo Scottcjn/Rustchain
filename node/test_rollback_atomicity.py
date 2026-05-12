@@ -317,6 +317,28 @@ class TestRollbackAtomicity(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_09_migrate_rejects_existing_non_genesis_utxo_state(self):
+        """Verify migration fails before writing when UTXO state exists."""
+        box_id = self._insert_non_genesis_height_zero_box()
+
+        result = migrate(self.db_path, dry_run=False)
+        self.assertEqual(result['error'], 'utxo_state_already_exists')
+
+        conn = UtxoDB(self.db_path)._conn()
+        try:
+            box_count = conn.execute(
+                "SELECT COUNT(*) FROM utxo_boxes WHERE box_id = ?",
+                (box_id,),
+            ).fetchone()[0]
+            genesis_count = conn.execute(
+                "SELECT COUNT(*) FROM utxo_transactions WHERE tx_type = 'genesis'",
+            ).fetchone()[0]
+
+            self.assertEqual(box_count, 1)
+            self.assertEqual(genesis_count, 0)
+        finally:
+            conn.close()
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
