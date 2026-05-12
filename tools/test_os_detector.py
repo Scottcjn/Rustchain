@@ -3,7 +3,6 @@ import importlib.util
 from pathlib import Path
 from unittest.mock import patch
 
-
 MODULE_PATH = Path(__file__).resolve().parent / "os_detector.py"
 spec = importlib.util.spec_from_file_location("os_detector", MODULE_PATH)
 os_detector = importlib.util.module_from_spec(spec)
@@ -22,15 +21,14 @@ class FixedDateTime:
 
 
 def test_detect_legacy_os_badges_detects_multiple_matching_environments():
-    directory_listing = ["System Folder", "Finder", "win.ini", "progman.exe"]
+    directory_entries = ["System Folder", "Finder", "win.ini", "progman.exe"]
 
-    with patch.object(
-        os_detector.os,
-        "listdir",
-        return_value=directory_listing,
-    ), patch.object(os_detector, "datetime", FixedDateTime):
+    with patch("os.listdir", return_value=directory_entries) as listdir_mock, patch.object(
+        os_detector, "datetime", FixedDateTime
+    ):
         result = os_detector.detect_legacy_os_badges()
 
+    listdir_mock.assert_called_once_with(".")
     assert [badge["title"] for badge in result["badges"]] == [
         "MacInitiate",
         "Progman Pioneer",
@@ -43,11 +41,8 @@ def test_detect_legacy_os_badges_detects_multiple_matching_environments():
 
 
 def test_detect_legacy_os_badges_returns_empty_list_when_directory_probe_fails():
-    with patch.object(
-        os_detector.os,
-        "listdir",
-        side_effect=OSError("dir unavailable"),
-    ):
+    with patch("os.listdir", side_effect=OSError("directory unavailable")) as listdir_mock:
         result = os_detector.detect_legacy_os_badges()
 
+    listdir_mock.assert_called_once_with(".")
     assert result == {"badges": []}

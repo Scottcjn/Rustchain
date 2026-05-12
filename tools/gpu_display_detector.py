@@ -1,14 +1,16 @@
 # SPDX-License-Identifier: MIT
 import json
-import platform
 import subprocess
 from datetime import datetime
+
 
 def detect_gpu_and_display():
     badges = []
 
     try:
-        output = subprocess.check_output(["lspci"], stderr=subprocess.DEVNULL).decode().lower()
+        output = subprocess.check_output(
+            ["lspci"], stderr=subprocess.DEVNULL, timeout=5
+        ).decode().lower()
     except Exception:
         output = ""
 

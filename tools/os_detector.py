@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: MIT
-import os
-import platform
 import json
+import os
 from datetime import datetime
 
+
 def detect_legacy_os_badges():
-    detected_os = platform.system()
     badges = []
 
     simulated_os_data = {
