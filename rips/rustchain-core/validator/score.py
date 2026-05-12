@@ -137,8 +137,8 @@ def validate_hardware_claim(model: str, claimed_year: int) -> Tuple[bool, str]:
             else:
                 return False, f"Year mismatch: claimed {claimed_year}, actual {actual_year}"
 
-    # Unknown hardware - allow with warning
-    return True, f"Unknown hardware: {model} - accepting claimed year {claimed_year}"
+    # Unknown hardware - reject to prevent fraudulent claims
+    return False, f"Unknown hardware: {model} - cannot verify claimed year {claimed_year}"
 
 
 # =============================================================================
