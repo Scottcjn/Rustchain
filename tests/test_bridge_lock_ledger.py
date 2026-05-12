@@ -803,6 +803,36 @@ class TestLockLedgerRoutes:
         assert body["count"] == 1
         assert body["locks"][0]["miner_id"] == funded_miner
 
+    def test_pending_unlock_before_zero_applies_cutoff(self, setup_test_db, funded_miner):
+        lock_ledger = setup_test_db["lock_ledger"]
+        db_path = setup_test_db["db_path"]
+        now = int(time.time())
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """INSERT INTO lock_ledger
+                   (miner_id, amount_i64, lock_type, locked_at, unlock_at, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    funded_miner,
+                    5 * 1000000,
+                    "bridge_deposit",
+                    now - 3600,
+                    now - 60,
+                    "locked",
+                    now - 3600,
+                ),
+            )
+
+        client = self._client(lock_ledger, db_path)
+
+        response = client.get("/api/lock/pending-unlock?before=0&limit=10")
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["ok"] is True
+        assert body["count"] == 0
+        assert body["locks"] == []
+
 
 # =============================================================================
 # Integration Tests
