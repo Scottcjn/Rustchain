@@ -46,7 +46,7 @@ class TestWalletBalanceEndpoint:
             balance = resp.get("amount_rtc", resp.get("balance_rtc", resp.get("balance", 0)))
             assert isinstance(balance, (int, float))
 
-    @patch('urllib.request.urlopen')
+    @patch('rustchain_cli.urlopen')
     def test_wallet_show_handles_network_error_gracefully(self, mock_urlopen):
         """Test that wallet show handles network errors without crashing."""
         import urllib.error
@@ -54,14 +54,12 @@ class TestWalletBalanceEndpoint:
         # Simulate network timeout
         mock_urlopen.side_effect = urllib.error.URLError("timeout")
         
-        # Should not raise exception, should handle gracefully
-        # This is the behavior we want to preserve
-        try:
-            # Test the balance fetch logic directly
-            result = fetch_api("/wallet/balance?miner_id=test")
-        except Exception as e:
-            # Expected to fail with network error
-            assert "timeout" in str(e).lower() or "network" in str(e).lower()
+        # The CLI reports a controlled network error and exits instead of
+        # leaking a urllib traceback.
+        with pytest.raises(SystemExit) as exc_info:
+            fetch_api("/wallet/balance?miner_id=test")
+
+        assert exc_info.value.code == 1
 
     def test_balance_endpoint_returns_valid_json(self):
         """Integration test: verify /wallet/balance returns valid JSON."""
