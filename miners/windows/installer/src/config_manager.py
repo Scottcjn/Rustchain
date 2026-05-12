@@ -1,7 +1,7 @@
 """
 RustChain Config Manager
 Manages configuration between the installer and the miner.
-Config file location: %APPDATA%\RustChain\config.json
+Config file location: %APPDATA%\\RustChain\\config.json
 """
 
 import os
