@@ -413,7 +413,7 @@ class UtxoDB:
                 row = conn.execute(
                     """SELECT value_nrtc, spent_at FROM utxo_boxes
                        WHERE box_id = ?""",
-                    (inp['box_id'],),
+                    (box_id,),
                 ).fetchone()
                 if not row:
                     return abort()
@@ -714,11 +714,17 @@ class UtxoDB:
 
             conn.execute("BEGIN IMMEDIATE")
 
-            # Check for double-spend in mempool
+            # Check for malformed inputs and double-spends in mempool.
             for inp in inputs:
+                box_id = inp.get('box_id') if isinstance(inp, dict) else None
+                if not isinstance(box_id, str) or not box_id.strip():
+                    if manage_tx:
+                        conn.execute("ROLLBACK")
+                    return False
+
                 existing = conn.execute(
                     "SELECT tx_id FROM utxo_mempool_inputs WHERE box_id = ?",
-                    (inp['box_id'],),
+                    (box_id,),
                 ).fetchone()
                 if existing:
                     if manage_tx:
@@ -729,7 +735,7 @@ class UtxoDB:
                 box = conn.execute(
                     """SELECT spent_at FROM utxo_boxes
                        WHERE box_id = ? AND spent_at IS NULL""",
-                    (inp['box_id'],),
+                    (box_id,),
                 ).fetchone()
                 if not box:
                     if manage_tx:

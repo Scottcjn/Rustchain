@@ -699,6 +699,18 @@ class TestUtxoDB(unittest.TestCase):
             self.db.mempool_check_double_spend(boxes[0]['box_id'])
         )
 
+    def test_mempool_rejects_input_missing_box_id(self):
+        """Mempool should reject malformed inputs before admission."""
+        tx = {
+            'tx_id': 'missingbox' * 8,
+            'tx_type': 'transfer',
+            'inputs': [{}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 1 * UNIT}],
+            'fee_nrtc': 0,
+        }
+
+        self.assertFalse(self.db.mempool_add(tx))
+
     def test_mempool_rejects_output_missing_address(self):
         """Mempool must reject outputs that apply_transaction cannot create.
 
