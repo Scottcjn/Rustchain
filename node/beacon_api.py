@@ -497,7 +497,7 @@ def update_contract(contract_id):
         if not new_state:
             return jsonify({'error': 'Missing state field'}), 400
         
-        valid_states = {'offered', 'active', 'renewed', 'completed', 'breached', 'expired'}
+        valid_states = {'offered', 'active', 'renewed', 'completed', 'breached', 'expired', 'rejected'}
         if new_state not in valid_states:
             return jsonify({'error': f'Invalid state: {new_state}'}), 400
         
@@ -509,6 +509,7 @@ def update_contract(contract_id):
             'completed': set(),  # terminal state
             'breached': set(),   # terminal state
             'expired': set(),    # terminal state
+            'rejected': set(),   # terminal state
         }
         
         db = get_db()
