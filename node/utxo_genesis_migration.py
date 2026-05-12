@@ -232,6 +232,7 @@ def rollback_genesis(db_path: str) -> int:
     genesis data exists (returns 0).
     """
     conn = sqlite3.connect(db_path, timeout=30)
+    conn.row_factory = sqlite3.Row
     try:
         conn.execute("BEGIN IMMEDIATE")
 
