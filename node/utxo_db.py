@@ -398,17 +398,22 @@ class UtxoDB:
             # Without this, the same box_id counted twice inflates
             # input_total.  The spend-phase rowcount check catches it
             # today, but only accidentally.  Defense in depth.
-            input_box_ids = [i['box_id'] for i in inputs]
+            input_box_ids = []
+            for i in inputs:
+                box_id = i.get('box_id') if isinstance(i, dict) else None
+                if not isinstance(box_id, str) or not box_id.strip():
+                    return abort()
+                input_box_ids.append(box_id)
             if len(input_box_ids) != len(set(input_box_ids)):
                 return abort()
 
             # -- validate inputs exist and are unspent -----------------------
             input_total = 0
-            for inp in inputs:
+            for box_id in input_box_ids:
                 row = conn.execute(
                     """SELECT value_nrtc, spent_at FROM utxo_boxes
                        WHERE box_id = ?""",
-                    (inp['box_id'],),
+                    (box_id,),
                 ).fetchone()
                 if not row:
                     return abort()
@@ -430,14 +435,19 @@ class UtxoDB:
             if not outputs and tx_type not in MINTING_TX_TYPES:
                 return abort()
 
-            output_total = sum(o['value_nrtc'] for o in outputs)
-
-            # Every output must carry a strictly positive value.
-            # Without this, a negative-value output lowers output_total,
+            # Every output must be materializable and carry a strictly
+            # positive value. Without this, malformed outputs can raise during
+            # tx_id construction, and negative values can lower output_total,
             # letting an attacker create more value than the inputs hold.
+            output_total = 0
             for o in outputs:
-                if not isinstance(o['value_nrtc'], int) or o['value_nrtc'] <= 0:
+                val = o.get('value_nrtc') if isinstance(o, dict) else None
+                addr = o.get('address') if isinstance(o, dict) else None
+                if not isinstance(val, int) or val <= 0:
                     return abort()
+                if not isinstance(addr, str) or not addr.strip():
+                    return abort()
+                output_total += val
 
             # Cap minting (coinbase) output to prevent unbounded fund creation.
             # Without this, any caller that passes tx_type='mining_reward'
@@ -704,11 +714,17 @@ class UtxoDB:
 
             conn.execute("BEGIN IMMEDIATE")
 
-            # Check for double-spend in mempool
+            # Check for malformed inputs and double-spends in mempool.
             for inp in inputs:
+                box_id = inp.get('box_id') if isinstance(inp, dict) else None
+                if not isinstance(box_id, str) or not box_id.strip():
+                    if manage_tx:
+                        conn.execute("ROLLBACK")
+                    return False
+
                 existing = conn.execute(
                     "SELECT tx_id FROM utxo_mempool_inputs WHERE box_id = ?",
-                    (inp['box_id'],),
+                    (box_id,),
                 ).fetchone()
                 if existing:
                     if manage_tx:
@@ -719,7 +735,7 @@ class UtxoDB:
                 box = conn.execute(
                     """SELECT spent_at FROM utxo_boxes
                        WHERE box_id = ? AND spent_at IS NULL""",
-                    (inp['box_id'],),
+                    (box_id,),
                 ).fetchone()
                 if not box:
                     if manage_tx:
@@ -764,6 +780,13 @@ class UtxoDB:
             for o in outputs:
                 val = o.get('value_nrtc')
                 if not isinstance(val, int) or val <= 0:
+                    if manage_tx:
+                        conn.execute("ROLLBACK")
+                    return False
+                # Mirror apply_transaction(): every output must be
+                # materializable into a UTXO, which requires an address.
+                addr = o.get('address')
+                if not isinstance(addr, str) or not addr.strip():
                     if manage_tx:
                         conn.execute("ROLLBACK")
                     return False

@@ -89,6 +89,33 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.get_balance('bob'), 60 * UNIT)
         self.assertEqual(self.db.count_unspent(), 2)
 
+    def test_transfer_missing_input_box_id_rejected(self):
+        """Malformed inputs should fail validation instead of raising."""
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 1 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+
+    def test_transfer_missing_output_address_rejected(self):
+        """Malformed outputs should fail validation instead of raising."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        alice_boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [{'value_nrtc': 99 * UNIT}],
+            'fee_nrtc': 1 * UNIT,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+
     def test_transfer_insufficient_funds(self):
         self._apply_coinbase('alice', 50 * UNIT)
         alice_boxes = self.db.get_unspent_for_address('alice')
@@ -668,6 +695,42 @@ class TestUtxoDB(unittest.TestCase):
         ok = self.db.mempool_add(tx)
         self.assertFalse(ok)
         # Box should NOT be locked
+        self.assertFalse(
+            self.db.mempool_check_double_spend(boxes[0]['box_id'])
+        )
+
+    def test_mempool_rejects_input_missing_box_id(self):
+        """Mempool should reject malformed inputs before admission."""
+        tx = {
+            'tx_id': 'missingbox' * 8,
+            'tx_type': 'transfer',
+            'inputs': [{}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 1 * UNIT}],
+            'fee_nrtc': 0,
+        }
+
+        self.assertFalse(self.db.mempool_add(tx))
+
+    def test_mempool_rejects_output_missing_address(self):
+        """Mempool must reject outputs that apply_transaction cannot create.
+
+        A positive-valued output without an address passes the current mempool
+        value checks, claims the input box, and later raises KeyError in
+        apply_transaction() when block construction tries to materialize it.
+        """
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'addr' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'value_nrtc': 99 * UNIT}],
+            'fee_nrtc': 1 * UNIT,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        # Box should NOT be locked by a transaction that cannot be applied.
         self.assertFalse(
             self.db.mempool_check_double_spend(boxes[0]['box_id'])
         )
