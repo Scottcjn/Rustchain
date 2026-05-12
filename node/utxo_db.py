@@ -140,6 +140,14 @@ CREATE TABLE IF NOT EXISTS utxo_mempool_inputs (
 """
 
 
+def _execute_schema(conn: sqlite3.Connection):
+    """Execute schema statements without implicitly committing a transaction."""
+    for statement in SCHEMA_SQL.split(";"):
+        statement = statement.strip()
+        if statement:
+            conn.execute(statement)
+
+
 # ---------------------------------------------------------------------------
 # UtxoDB
 # ---------------------------------------------------------------------------
@@ -168,19 +176,28 @@ class UtxoDB:
 
     def _conn(self) -> sqlite3.Connection:
         c = sqlite3.connect(self.db_path, timeout=30)
-        c.row_factory = sqlite3.Row
-        c.execute("PRAGMA journal_mode=WAL")
-        c.execute("PRAGMA foreign_keys=ON")
-        return c
+        try:
+            c.row_factory = sqlite3.Row
+            c.execute("PRAGMA journal_mode=WAL")
+            c.execute("PRAGMA foreign_keys=ON")
+            return c
+        except Exception:
+            c.close()
+            raise
 
     def init_tables(self, conn: Optional[sqlite3.Connection] = None):
         """Create UTXO tables if they don't exist."""
         own = conn is None
         if own:
             conn = self._conn()
-        conn.executescript(SCHEMA_SQL)
-        if own:
-            conn.close()
+        try:
+            if own:
+                conn.executescript(SCHEMA_SQL)
+            else:
+                _execute_schema(conn)
+        finally:
+            if own:
+                conn.close()
 
     # -- box operations ------------------------------------------------------
 
@@ -380,6 +397,8 @@ class UtxoDB:
         # Require _allow_minting=True (internal flag) to permit mining_reward.
         MINTING_TX_TYPES = {'mining_reward'}
         if tx_type in MINTING_TX_TYPES and not tx.get('_allow_minting'):
+            if own:
+                conn.close()
             return False
 
         try:
