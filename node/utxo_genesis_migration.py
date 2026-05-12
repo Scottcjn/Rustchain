@@ -238,16 +238,20 @@ def rollback_genesis(db_path: str) -> int:
 
         # Prevent rollback if any genesis boxes have already been spent
         spent_count = conn.execute(
-            "SELECT COUNT(*) AS n FROM utxo_boxes WHERE creation_height = ? AND spent_at IS NOT NULL",
-            (GENESIS_HEIGHT,),
+            """SELECT COUNT(b.box_id) AS n
+               FROM utxo_boxes b
+               JOIN utxo_transactions t ON b.transaction_id = t.tx_id
+               WHERE t.tx_type = 'genesis' AND b.spent_at IS NOT NULL"""
         ).fetchone()['n']
         if spent_count > 0:
             raise ValueError("Cannot rollback genesis: some genesis boxes have already been spent.")
 
         # Delete genesis boxes first (child table)
         deleted = conn.execute(
-            "DELETE FROM utxo_boxes WHERE creation_height = ?",
-            (GENESIS_HEIGHT,),
+            """DELETE FROM utxo_boxes
+               WHERE transaction_id IN (
+                   SELECT tx_id FROM utxo_transactions WHERE tx_type = 'genesis'
+               )"""
         ).rowcount
 
         # Delete genesis transactions (parent table)
