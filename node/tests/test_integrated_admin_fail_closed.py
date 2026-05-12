@@ -43,6 +43,9 @@ class TestIntegratedAdminFailClosed(unittest.TestCase):
             os.environ.pop("RC_ADMIN_KEY", None)
         else:
             os.environ["RC_ADMIN_KEY"] = cls._prev_admin_key
+        cls.mod.DB_PATH = None
+        sys.modules.pop(cls.mod.__name__, None)
+        del cls.mod
         cls._import_tmp.cleanup()
 
     def setUp(self):
