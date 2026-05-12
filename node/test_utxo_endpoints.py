@@ -398,35 +398,41 @@ class TestUtxoEndpoints(unittest.TestCase):
         )
         client = dual_app.test_client()
 
-        r = client.post('/utxo/transfer', json={
-            'from_address': sender,
-            'to_address': recipient,
-            'amount_rtc': 10.0,
-            'public_key': 'aabbccdd' * 8,
-            'signature': 'sig' * 22,
-            'nonce': 616161,
-            'memo': {'not': 'a string'},
-        })
+        for nonce, bad_memo in (
+            (616161, {'not': 'a string'}),
+            (616162, None),
+            (616163, ['not', 'a', 'string']),
+        ):
+            with self.subTest(memo=bad_memo):
+                r = client.post('/utxo/transfer', json={
+                    'from_address': sender,
+                    'to_address': recipient,
+                    'amount_rtc': 10.0,
+                    'public_key': 'aabbccdd' * 8,
+                    'signature': 'sig' * 22,
+                    'nonce': nonce,
+                    'memo': bad_memo,
+                })
 
-        self.assertEqual(r.status_code, 400)
-        self.assertEqual(r.get_json()['error'], 'memo must be a string')
-        self.assertEqual(self.utxo_db.get_balance(sender), 100 * UNIT)
-        self.assertEqual(self.utxo_db.get_balance(recipient), 0)
+                self.assertEqual(r.status_code, 400)
+                self.assertEqual(r.get_json()['error'], 'memo must be a string')
+                self.assertEqual(self.utxo_db.get_balance(sender), 100 * UNIT)
+                self.assertEqual(self.utxo_db.get_balance(recipient), 0)
 
-        conn = sqlite3.connect(self.db_path)
-        try:
-            balances = dict(conn.execute(
-                "SELECT miner_id, amount_i64 FROM balances"
-            ).fetchall())
-            ledger_count = conn.execute(
-                "SELECT COUNT(*) FROM ledger"
-            ).fetchone()[0]
-        finally:
-            conn.close()
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    balances = dict(conn.execute(
+                        "SELECT miner_id, amount_i64 FROM balances"
+                    ).fetchall())
+                    ledger_count = conn.execute(
+                        "SELECT COUNT(*) FROM ledger"
+                    ).fetchone()[0]
+                finally:
+                    conn.close()
 
-        self.assertEqual(balances[sender], 100_000_000)
-        self.assertNotIn(recipient, balances)
-        self.assertEqual(ledger_count, 0)
+                self.assertEqual(balances[sender], 100_000_000)
+                self.assertNotIn(recipient, balances)
+                self.assertEqual(ledger_count, 0)
 
 
 if __name__ == '__main__':
