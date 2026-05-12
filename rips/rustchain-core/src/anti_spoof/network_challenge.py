@@ -72,6 +72,7 @@ class Challenge:
     """A cryptographic challenge sent to a validator"""
     challenge_id: str
     challenge_type: int
+    target_pubkey: str  # Intended responder
     nonce: bytes  # 32 bytes of randomness
     timestamp: int  # Unix timestamp in milliseconds
     timeout_ms: int  # Response must arrive within this window
@@ -84,6 +85,7 @@ class Challenge:
         return (
             self.challenge_id.encode() +
             struct.pack('>B', self.challenge_type) +
+            self.target_pubkey.encode() +
             self.nonce +
             struct.pack('>Q', self.timestamp) +
             struct.pack('>I', self.timeout_ms) +
@@ -260,6 +262,7 @@ class AntiSpoofValidator:
         challenge = Challenge(
             challenge_id=secrets.token_hex(16),
             challenge_type=challenge_type.value,
+            target_pubkey=target_pubkey,
             nonce=secrets.token_bytes(32),
             timestamp=int(time.time() * 1000),
             timeout_ms=self._get_timeout_for_hardware(expected_hardware),
@@ -291,6 +294,7 @@ class AntiSpoofValidator:
         if response.responder_pubkey and response.responder_pubkey != responder_pubkey:
             raise ValueError("response responder_pubkey does not match responder private key")
         response.responder_pubkey = responder_pubkey
+        response.response_hash = response.hash()
         response.signature = private_key.sign(response.to_bytes())
         return response
 
@@ -340,6 +344,11 @@ class AntiSpoofValidator:
             failures.append("Response signature invalid or not bound to responder public key")
             confidence -= 100.0
 
+        target_identity_ok = response.responder_pubkey == challenge.target_pubkey
+        if not target_identity_ok:
+            failures.append("Response signer does not match challenge target public key")
+            confidence -= 100.0
+
         # 1. Check timing window
         response_time = response.response_timestamp - challenge.timestamp
         timing_ok = self._check_timing(response_time, challenge.timeout_ms, failures)
@@ -377,12 +386,19 @@ class AntiSpoofValidator:
 
         # 6. Verify response hash
         computed_hash = response.hash()
-        if computed_hash != response.response_hash:
+        response_hash_ok = computed_hash == response.response_hash
+        if not response_hash_ok:
             failures.append("Response hash mismatch - tampered data")
             confidence -= 50.0
 
         # Final determination
-        valid = confidence >= 50.0 and challenge_signature_ok and response_signature_ok
+        valid = (
+            confidence >= 50.0
+            and challenge_signature_ok
+            and response_signature_ok
+            and target_identity_ok
+            and response_hash_ok
+        )
 
         return ValidationResult(
             valid=valid,

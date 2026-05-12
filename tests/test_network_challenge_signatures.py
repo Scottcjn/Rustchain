@@ -91,13 +91,34 @@ def test_validate_response_rejects_forged_response_signature():
     )
     response = _valid_response(module, challenge, responder_private_key)
 
-    assert validator.validate_response(challenge, response).valid is True
+    good_result = validator.validate_response(challenge, response)
+    assert good_result.valid is True
+    assert good_result.failure_reasons == []
 
     response.signature = b"\x00" * 64
     result = validator.validate_response(challenge, response)
 
     assert result.valid is False
     assert any("Response signature invalid" in reason for reason in result.failure_reasons)
+
+
+def test_validate_response_rejects_responder_that_is_not_challenge_target():
+    module = _load_module()
+    challenger_private_key = module.generate_validator_private_key()
+    victim_private_key = module.generate_validator_private_key()
+    attacker_private_key = module.generate_validator_private_key()
+    validator = module.AntiSpoofValidator()
+    challenge = validator.generate_challenge(
+        target_pubkey=module.derive_validator_pubkey(victim_private_key),
+        expected_hardware=_hardware_profile(),
+        challenger_privkey=challenger_private_key,
+    )
+    response = _valid_response(module, challenge, attacker_private_key)
+
+    result = validator.validate_response(challenge, response)
+
+    assert result.valid is False
+    assert any("does not match challenge target" in reason for reason in result.failure_reasons)
 
 
 def test_validate_response_rejects_forged_challenge_signature():
