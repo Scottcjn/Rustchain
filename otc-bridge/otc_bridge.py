@@ -684,6 +684,8 @@ def confirm_order(order_id):
 
     if not wallet:
         return jsonify({"error": "wallet required"}), 400
+    if not quote_tx:
+        return jsonify({"error": "quote_tx required"}), 400
 
     conn = get_db()
     try:

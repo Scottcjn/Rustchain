@@ -158,6 +158,31 @@ def test_buy_order_buyer_cannot_confirm_with_seller_secret(tmp_path):
         )
 
 
+def test_confirm_requires_quote_tx_before_releasing_escrow(tmp_path):
+    module = load_otc_bridge(tmp_path)
+
+    with module.app.test_client() as client:
+        create_response = create_buy_order(client)
+        order = create_response.get_json()
+        match_response = match_buy_order(module, client, order["order_id"])
+        assert match_response.status_code == 200
+        seller_secret = match_response.get_json()["htlc_secret"]
+
+        with patch.object(module.requests, "post") as mock_post:
+            confirm_response = client.post(
+                f"/api/orders/{order['order_id']}/confirm",
+                json={"wallet": "seller1", "secret": seller_secret},
+            )
+
+        assert confirm_response.status_code == 400
+        assert confirm_response.get_json()["error"] == "quote_tx required"
+        mock_post.assert_not_called()
+
+        public_order = client.get(f"/api/orders/{order['order_id']}").get_json()["order"]
+        assert public_order["status"] == "matched"
+        assert public_order["settlement_tx"] is None
+
+
 def test_invalid_htlc_secret_returns_client_error(tmp_path):
     module = load_otc_bridge(tmp_path)
 
