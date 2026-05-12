@@ -430,12 +430,14 @@ def create_order():
             "status": "open",
             "expires_at": now + ttl,
             "expires_in_hours": round(ttl / 3600, 1),
+            "htlc_hash": htlc_hash,
+            # Returned only once to the order creator; public order reads hide it until completion.
+            "htlc_secret": htlc_secret,
         }
         if escrow_job_id:
             response["escrow_job_id"] = escrow_job_id
             response["escrow_status"] = "locked"
         if side == "sell":
-            response["htlc_hash"] = htlc_hash
             response["message"] = f"Sell order created. {amount_rtc} RTC locked in escrow. HTLC hash published for buyer verification."
         else:
             response["message"] = f"Buy order created. Waiting for a seller to match."
@@ -685,7 +687,10 @@ def confirm_order(order_id):
             return jsonify({"error": "HTLC secret (preimage) required to confirm settlement"}), 400
 
         # Validate the provided secret matches the stored hash
-        computed_hash = hashlib.sha256(bytes.fromhex(secret)).hexdigest()
+        try:
+            computed_hash = hashlib.sha256(bytes.fromhex(secret)).hexdigest()
+        except ValueError:
+            return jsonify({"error": "Invalid HTLC secret format"}), 400
         if computed_hash != order["htlc_hash"]:
             return jsonify({"error": "Invalid HTLC secret (preimage hash mismatch)"}), 400
 
