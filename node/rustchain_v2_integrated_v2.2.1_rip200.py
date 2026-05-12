@@ -547,7 +547,7 @@ def _after(resp):
             "ip": get_client_ip(),
             "dur_ms": int(dur * 1000),
         }
-        log.info(json.dumps(rec, separators=(",", ":")))
+        app.logger.info(json.dumps(rec, separators=(",", ":")))
     except Exception:
         pass
     resp.headers["X-Request-Id"] = getattr(g, "request_id", "-")
