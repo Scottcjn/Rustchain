@@ -200,8 +200,8 @@ def estimate_release_year(cpu_model: str, cpu_vendor: str) -> int:
     if "8086" in model_lower or "8088" in model_lower:
         return 1978
 
-    # Default to somewhat recent
-    return 2020
+    # Default to current year for unknown CPUs (minimum antiquity)
+    return CURRENT_YEAR
 
 
 def determine_tier(release_year: int) -> Tuple[str, float]:
