@@ -767,6 +767,16 @@ class TestGlitchAPIAdminAuth(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.get_json()["error"], "unauthorized")
 
+    def test_non_ascii_admin_key_is_rejected_without_500(self):
+        with patch.dict("os.environ", {"GLITCH_ADMIN_KEY": "test-admin"}, clear=False):
+            response = self.client.post(
+                "/api/glitch/disable",
+                headers={"X-Admin-Key": "\u00e9"},
+            )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json()["error"], "unauthorized")
+
     def test_mutating_routes_allow_valid_admin_key(self):
         with patch.dict("os.environ", {"GLITCH_ADMIN_KEY": "test-admin"}, clear=False):
             response = self.client.post(

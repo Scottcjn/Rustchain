@@ -56,7 +56,10 @@ def require_admin():
         request.headers.get("X-Admin-Key", "")
         or request.headers.get("X-API-Key", "")
     )
-    if not hmac.compare_digest(provided_key, expected_key):
+    if not hmac.compare_digest(
+        provided_key.encode("utf-8"),
+        expected_key.encode("utf-8"),
+    ):
         return jsonify({
             "error": "unauthorized",
             "message": "Invalid admin key"
