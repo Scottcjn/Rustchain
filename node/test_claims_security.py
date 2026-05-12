@@ -64,7 +64,8 @@ class TestClaimsUnitConsistency(unittest.TestCase):
 class TestClaimsWalletBinding(unittest.TestCase):
     """Claim payouts must stay bound to the miner's registered wallet."""
 
-    def test_submit_claim_rejects_payout_wallet_mismatch(self):
+    def test_submit_claim_rejects_registered_wallet_mismatch(self):
+        """Reject claims when submitted wallet differs from the registered wallet."""
         import claims_submission as cs
 
         with patch.object(cs, "check_claim_eligibility", return_value={
