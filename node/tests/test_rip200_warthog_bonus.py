@@ -57,3 +57,37 @@ def test_epoch_rewards_apply_warthog_bonus_from_enrollment_path(tmp_path):
         "miner_bonus": bonus_share,
         "miner_plain": total_reward - bonus_share,
     }
+
+
+def test_epoch_rewards_fallback_allows_checks_without_warthog_bonus(tmp_path):
+    db_path = tmp_path / "legacy_rewards.db"
+    with sqlite3.connect(db_path) as db:
+        db.executescript(
+            """
+            CREATE TABLE miner_attest_recent (
+                miner TEXT NOT NULL,
+                device_arch TEXT,
+                ts_ok INTEGER NOT NULL,
+                fingerprint_passed INTEGER DEFAULT 1,
+                fingerprint_checks_json TEXT
+            );
+            """
+        )
+        db.executemany(
+            """
+            INSERT INTO miner_attest_recent(
+                miner, device_arch, ts_ok, fingerprint_passed, fingerprint_checks_json
+            )
+            VALUES (?, 'x86_64', ?, 1, '{}')
+            """,
+            [("legacy_a", rip200.GENESIS_TIMESTAMP), ("legacy_b", rip200.GENESIS_TIMESTAMP)],
+        )
+
+    rewards = rip200.calculate_epoch_rewards_time_aged(
+        str(db_path),
+        epoch=0,
+        total_reward_urtc=100,
+        current_slot=0,
+    )
+
+    assert rewards == {"legacy_a": 50, "legacy_b": 50}

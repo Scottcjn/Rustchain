@@ -598,17 +598,17 @@ def calculate_epoch_rewards_time_aged(
                 "miner_attest_recent time-window query (may drop miners "
                 "if settlement is delayed)", epoch
             )
+            bonus_expr = "COALESCE(warthog_bonus, 1.0)" if has_warthog_col else "1.0"
             if has_checks_col:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp,
                            NULL as enrolled_weight,
-                           COALESCE(fingerprint_checks_json, '{}') as checks_json,
-                           COALESCE(warthog_bonus, 1.0) as warthog_bonus
+                           COALESCE(fingerprint_checks_json, '{{}}') as checks_json,
+                           {bonus_expr} as warthog_bonus
                     FROM miner_attest_recent
                     WHERE ts_ok >= ? AND ts_ok <= ?
                 """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
             else:
-                bonus_expr = "COALESCE(warthog_bonus, 1.0)" if has_warthog_col else "1.0"
                 cursor.execute(f"""
                     SELECT DISTINCT miner, device_arch, COALESCE(fingerprint_passed, 1) as fp,
                            NULL as enrolled_weight,
