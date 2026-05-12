@@ -30,6 +30,8 @@ from ..config.chain_params import (
     MIN_ENTROPY_SCORE,
 )
 
+MIN_RELEASE_YEAR = 1970
+
 
 # =============================================================================
 # Hardware Database
@@ -127,6 +129,14 @@ def validate_hardware_claim(model: str, claimed_year: int) -> Tuple[bool, str]:
     Returns:
         (valid, message) tuple
     """
+    if not isinstance(model, str) or not model.strip():
+        return False, "Hardware model must be a non-empty string"
+    if not _is_valid_release_year(claimed_year):
+        return False, (
+            f"Release year must be between {MIN_RELEASE_YEAR} and "
+            f"{CURRENT_YEAR}: {claimed_year}"
+        )
+
     # Check if model is in database
     for known_model, info in HARDWARE_DATABASE.items():
         if known_model.lower() in model.lower():
@@ -137,13 +147,32 @@ def validate_hardware_claim(model: str, claimed_year: int) -> Tuple[bool, str]:
             else:
                 return False, f"Year mismatch: claimed {claimed_year}, actual {actual_year}"
 
-    # Unknown hardware - allow with warning
-    return True, f"Unknown hardware: {model} - accepting claimed year {claimed_year}"
+    return False, f"Unknown hardware: {model} - refusing unverified claimed year"
 
 
 # =============================================================================
 # Antiquity Score Calculator
 # =============================================================================
+
+def _is_valid_release_year(release_year: int) -> bool:
+    return (
+        isinstance(release_year, int)
+        and not isinstance(release_year, bool)
+        and MIN_RELEASE_YEAR <= release_year <= CURRENT_YEAR
+    )
+
+
+def _validate_antiquity_inputs(release_year: int, uptime_days: int) -> None:
+    if not _is_valid_release_year(release_year):
+        raise ValueError(
+            f"release_year must be an integer between {MIN_RELEASE_YEAR} "
+            f"and {CURRENT_YEAR}"
+        )
+    if not isinstance(uptime_days, int) or isinstance(uptime_days, bool):
+        raise ValueError("uptime_days must be an integer")
+    if uptime_days < 0:
+        raise ValueError("uptime_days must be greater than or equal to 0")
+
 
 def calculate_antiquity_score(release_year: int, uptime_days: int) -> float:
     """
@@ -156,6 +185,7 @@ def calculate_antiquity_score(release_year: int, uptime_days: int) -> float:
     - Node reliability (uptime)
     - NOT computational speed
     """
+    _validate_antiquity_inputs(release_year, uptime_days)
     age = max(0, CURRENT_YEAR - release_year)
     uptime_factor = math.log10(uptime_days + 1)
     return age * uptime_factor

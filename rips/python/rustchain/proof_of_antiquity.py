@@ -40,6 +40,7 @@ AS_MAX: float = 100.0  # Maximum Antiquity Score for reward capping
 AS_MIN: float = 1.0    # Minimum AS to participate in validation
 MAX_MINERS_PER_BLOCK: int = 100
 BLOCK_REWARD_AMOUNT: TokenAmount = TokenAmount.from_rtc(float(BLOCK_REWARD))
+MIN_RELEASE_YEAR: int = 1970
 
 
 # =============================================================================
@@ -71,6 +72,7 @@ def calculate_antiquity_score(release_year: int, uptime_days: int) -> float:
     """
     # Calculate age using current year to ensure calculations remain accurate
     current_year = datetime.now().year
+    _validate_antiquity_inputs(release_year, uptime_days, current_year)
     age = max(0, current_year - release_year)
 
     # log10 gives diminishing returns on uptime: day 1→0, day 10→1, day 100→2,
@@ -79,6 +81,27 @@ def calculate_antiquity_score(release_year: int, uptime_days: int) -> float:
     uptime_factor = math.log10(uptime_days + 1)
 
     return age * uptime_factor
+
+
+def _validate_antiquity_inputs(
+    release_year: int,
+    uptime_days: int,
+    current_year: int,
+) -> None:
+    if (
+        not isinstance(release_year, int)
+        or isinstance(release_year, bool)
+        or release_year < MIN_RELEASE_YEAR
+        or release_year > current_year
+    ):
+        raise ValueError(
+            f"release_year must be an integer between {MIN_RELEASE_YEAR} "
+            f"and {current_year}"
+        )
+    if not isinstance(uptime_days, int) or isinstance(uptime_days, bool):
+        raise ValueError("uptime_days must be an integer")
+    if uptime_days < 0:
+        raise ValueError("uptime_days must be greater than or equal to 0")
 
 
 def calculate_reward(antiquity_score: float, total_reward: TokenAmount) -> TokenAmount:

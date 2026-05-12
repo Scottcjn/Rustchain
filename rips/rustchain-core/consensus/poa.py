@@ -33,6 +33,8 @@ from ..config.chain_params import (
     calculate_block_reward,
 )
 
+MIN_RELEASE_YEAR = 1970
+
 
 # =============================================================================
 # Data Structures
@@ -143,9 +145,27 @@ def compute_antiquity_score(release_year: int, uptime_days: int) -> float:
         >>> compute_antiquity_score(2023, 30)   # Modern CPU
         2.96   # (2025-2023) * log10(31)
     """
+    _validate_antiquity_inputs(release_year, uptime_days)
     age = max(0, CURRENT_YEAR - release_year)
     uptime_factor = math.log10(uptime_days + 1)
     return age * uptime_factor
+
+
+def _validate_antiquity_inputs(release_year: int, uptime_days: int) -> None:
+    if (
+        not isinstance(release_year, int)
+        or isinstance(release_year, bool)
+        or release_year < MIN_RELEASE_YEAR
+        or release_year > CURRENT_YEAR
+    ):
+        raise ValueError(
+            f"release_year must be an integer between {MIN_RELEASE_YEAR} "
+            f"and {CURRENT_YEAR}"
+        )
+    if not isinstance(uptime_days, int) or isinstance(uptime_days, bool):
+        raise ValueError("uptime_days must be an integer")
+    if uptime_days < 0:
+        raise ValueError("uptime_days must be greater than or equal to 0")
 
 
 def compute_reward(antiquity_score: float, base_reward: int) -> int:

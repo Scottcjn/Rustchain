@@ -63,6 +63,7 @@ BOOTSTRAP_NODES = [
 ]
 
 CURRENT_YEAR = datetime.now().year
+MIN_RELEASE_YEAR = 1970
 
 # =============================================================================
 # Hardware Detection
@@ -369,8 +370,26 @@ def calculate_antiquity_score(release_year: int, uptime_days: int = 1) -> float:
     AS = (current_year - release_year) * log10(uptime_days + 1)
     """
     import math
+    _validate_antiquity_inputs(release_year, uptime_days)
     age = CURRENT_YEAR - release_year
     return age * math.log10(uptime_days + 1)
+
+
+def _validate_antiquity_inputs(release_year: int, uptime_days: int) -> None:
+    if (
+        not isinstance(release_year, int)
+        or isinstance(release_year, bool)
+        or release_year < MIN_RELEASE_YEAR
+        or release_year > CURRENT_YEAR
+    ):
+        raise ValueError(
+            f"release_year must be an integer between {MIN_RELEASE_YEAR} "
+            f"and {CURRENT_YEAR}"
+        )
+    if not isinstance(uptime_days, int) or isinstance(uptime_days, bool):
+        raise ValueError("uptime_days must be an integer")
+    if uptime_days < 0:
+        raise ValueError("uptime_days must be greater than or equal to 0")
 
 
 def register_validator(hardware: HardwareProfile, genesis: Dict) -> ValidatorConfig:
