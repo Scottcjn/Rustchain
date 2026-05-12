@@ -545,11 +545,16 @@ def update_contract(contract_id):
                 'error': 'Unauthorized — caller is not a party to this contract'
             }), 403
         
-        # Additional: only to_agent can accept (offered -> active)
+        # Only to_agent can accept or reject an offered contract
         if current_state == 'offered' and new_state == 'active':
             if agent_key != to_agent:
                 return jsonify({
                     'error': 'Only the recipient (to_agent) can accept this contract'
+                }), 403
+        if current_state == 'offered' and new_state == 'rejected':
+            if agent_key != to_agent:
+                return jsonify({
+                    'error': 'Only the recipient (to_agent) can reject this contract'
                 }), 403
         
         # Only from_agent can mark as breached

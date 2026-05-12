@@ -317,6 +317,46 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         contracts = json.loads(list_response.data)
         self.assertEqual(contracts[0]['state'], 'rejected')
 
+        for terminal_attempt in ('active', 'expired', 'completed'):
+            update_response = self.client.put(
+                f'/api/contracts/{contract_id}',
+                data=json.dumps({'state': terminal_attempt}),
+                content_type='application/json',
+                headers={'X-Agent-Key': 'bcn_test_to'},
+            )
+            self.assertEqual(update_response.status_code, 400)
+
+    def test_creator_cannot_reject_offered_contract(self):
+        """Only the recipient can reject an offered contract."""
+        contract_data = {
+            'from': 'bcn_test_from',
+            'to': 'bcn_test_to',
+            'type': 'service',
+            'amount': 25.0,
+            'term': '7d'
+        }
+
+        create_response = self.client.post(
+            '/api/contracts',
+            data=json.dumps(contract_data),
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_test_from'},
+        )
+        self.assertEqual(create_response.status_code, 201)
+        contract_id = json.loads(create_response.data)['id']
+
+        reject_response = self.client.put(
+            f'/api/contracts/{contract_id}',
+            data=json.dumps({'state': 'rejected'}),
+            content_type='application/json',
+            headers={'X-Agent-Key': 'bcn_test_from'},
+        )
+        self.assertEqual(reject_response.status_code, 403)
+
+        list_response = self.client.get('/api/contracts')
+        contracts = json.loads(list_response.data)
+        self.assertEqual(contracts[0]['state'], 'offered')
+
     def test_bounty_completion_updates_reputation(self):
         """Completing a bounty increases agent reputation."""
         # Insert test bounty
