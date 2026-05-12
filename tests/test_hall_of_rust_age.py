@@ -82,6 +82,22 @@ def test_node_hall_machine_of_the_day_preserves_default_age(tmp_path, monkeypatc
     assert response.get_json()["age_years"] == 6
 
 
+def test_node_hall_api_routes_treat_zero_year_as_known(tmp_path, monkeypatch):
+    module = _load_module("node_hall_of_rust_api_zero_age", "node/hall_of_rust.py")
+    monkeypatch.setattr(module, "_current_year", lambda: 2026)
+    db_path = tmp_path / "node_hall_zero.db"
+    _insert_hall_machine(module, db_path, 0)
+    client = _client_for(module, db_path)
+
+    leaderboard = client.get("/api/hall_of_fame/leaderboard")
+    machine = client.get("/api/hall_of_fame/machine?id=fp")
+
+    assert leaderboard.status_code == 200
+    assert leaderboard.get_json()["leaderboard"][0]["age_years"] == 2026
+    assert machine.status_code == 200
+    assert machine.get_json()["machine"]["age_years"] == 2026
+
+
 def test_explorer_hall_calculate_rust_score_uses_current_year(monkeypatch):
     module = _load_module("explorer_hall_of_rust_age", "explorer/hall_of_rust.py")
     monkeypatch.setattr(module, "_current_year", lambda: 2026)
@@ -124,3 +140,16 @@ def test_explorer_hall_machine_of_the_day_preserves_default_age(tmp_path, monkey
 
     assert response.status_code == 200
     assert response.get_json()["age_years"] == 6
+
+
+def test_explorer_hall_machine_route_treats_zero_year_as_known(tmp_path, monkeypatch):
+    module = _load_module("explorer_hall_of_rust_machine_zero_age", "explorer/hall_of_rust.py")
+    monkeypatch.setattr(module, "_current_year", lambda: 2026)
+    db_path = tmp_path / "explorer_hall_zero.db"
+    _insert_hall_machine(module, db_path, 0)
+    client = _client_for(module, db_path)
+
+    response = client.get("/api/hall_of_fame/machine?id=fp")
+
+    assert response.status_code == 200
+    assert response.get_json()["machine"]["age_years"] == 2026

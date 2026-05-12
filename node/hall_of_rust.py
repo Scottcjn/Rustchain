@@ -495,13 +495,12 @@ def api_hall_of_fame_leaderboard():
         conn.close()
 
         leaderboard = []
-        now_year = time.gmtime().tm_year
         for idx, row in enumerate(rows, 1):
             entry = dict(row)
             entry['rank'] = idx
             entry['badge'] = get_rust_badge(float(entry.get('rust_score') or 0))
             mfg = entry.get('manufacture_year')
-            entry['age_years'] = max(0, now_year - int(mfg)) if mfg else None
+            entry['age_years'] = _age_years(mfg) if mfg is not None else None
             leaderboard.append(entry)
 
         return jsonify({
@@ -541,8 +540,7 @@ def api_hall_of_fame_machine():
             machine.get('device_model'),
         )
         mfg = machine.get('manufacture_year')
-        current_year = time.gmtime(now).tm_year
-        machine['age_years'] = max(0, current_year - int(mfg)) if mfg else None
+        machine['age_years'] = _age_years(mfg) if mfg is not None else None
 
         # Last 30 days timeline from attestation history (best-effort).
         start_ts = now - 30 * 86400

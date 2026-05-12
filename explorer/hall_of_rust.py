@@ -474,8 +474,7 @@ def api_hall_of_fame_machine():
             machine.get('device_model'),
         )
         mfg = machine.get('manufacture_year')
-        current_year = time.gmtime(now).tm_year
-        machine['age_years'] = max(0, current_year - int(mfg)) if mfg else None
+        machine['age_years'] = _age_years(mfg) if mfg is not None else None
 
         # Last 30 days timeline from attestation history (best-effort).
         start_ts = now - 30 * 86400
