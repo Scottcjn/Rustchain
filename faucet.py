@@ -49,55 +49,104 @@ def get_client_ip():
     """
     remote = request.remote_addr or '127.0.0.1'
     return remote
-def get_last_drip_time(identifier, is_wallet=False):
-    """Get the last time this IP or wallet requested a drip."""
-    conn = sqlite3.connect(DATABASE)
-    c = conn.cursor()
-    
+
+
+def get_last_drip_time_for_cursor(cursor, identifier, is_wallet=False):
+    """Get the last drip timestamp using an existing SQLite cursor."""
     if is_wallet:
-        c.execute('''
+        cursor.execute('''
             SELECT timestamp FROM drip_requests
             WHERE wallet = ?
             ORDER BY timestamp DESC
             LIMIT 1
         ''', (identifier,))
     else:
-        c.execute('''
+        cursor.execute('''
             SELECT timestamp FROM drip_requests
             WHERE ip_address = ?
             ORDER BY timestamp DESC
             LIMIT 1
         ''', (identifier,))
-        
-    result = c.fetchone()
-    conn.close()
+
+    result = cursor.fetchone()
     return result[0] if result else None
-def can_drip(identifier, is_wallet=False):
-    """Check if the IP or Wallet can request a drip (rate limiting)."""
-    last_time = get_last_drip_time(identifier, is_wallet)
+
+
+def get_last_drip_time(identifier, is_wallet=False):
+    """Get the last time this IP or wallet requested a drip."""
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    result = get_last_drip_time_for_cursor(c, identifier, is_wallet)
+    conn.close()
+    return result
+
+
+def can_drip_from_timestamp(last_time):
+    """Check whether a last drip timestamp is outside the rate-limit window."""
     if not last_time:
         return True
-    
+
     last_drip = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
     now = datetime.now(last_drip.tzinfo)
     hours_since = (now - last_drip).total_seconds() / 3600
-    
+
     return hours_since >= RATE_LIMIT_HOURS
+
+
+def next_available_from_timestamp(last_time):
+    """Return the next available timestamp for a previous drip."""
+    if not last_time:
+        return None
+
+    last_drip = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
+    next_available = last_drip + timedelta(hours=RATE_LIMIT_HOURS)
+    now = datetime.now(last_drip.tzinfo)
+
+    if next_available > now:
+        return next_available.isoformat()
+    return None
+
+
+def create_drip_atomically(wallet, ip_address, amount):
+    """Check rate limits and record a drip inside one SQLite write transaction."""
+    conn = sqlite3.connect(DATABASE, timeout=30)
+    try:
+        c = conn.cursor()
+        c.execute('BEGIN IMMEDIATE')
+
+        ip_last_time = get_last_drip_time_for_cursor(c, ip_address)
+        if not can_drip_from_timestamp(ip_last_time):
+            conn.rollback()
+            return False, 'IP rate limit exceeded', next_available_from_timestamp(ip_last_time)
+
+        wallet_last_time = get_last_drip_time_for_cursor(c, wallet, is_wallet=True)
+        if not can_drip_from_timestamp(wallet_last_time):
+            conn.rollback()
+            return False, 'Wallet rate limit exceeded', next_available_from_timestamp(wallet_last_time)
+
+        c.execute('''
+            INSERT INTO drip_requests (wallet, ip_address, amount)
+            VALUES (?, ?, ?)
+        ''', (wallet, ip_address, amount))
+        conn.commit()
+        return True, None, (datetime.now() + timedelta(hours=RATE_LIMIT_HOURS)).isoformat()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def can_drip(identifier, is_wallet=False):
+    """Check if the IP or Wallet can request a drip (rate limiting)."""
+    last_time = get_last_drip_time(identifier, is_wallet)
+    return can_drip_from_timestamp(last_time)
 
 
 def get_next_available(identifier, is_wallet=False):
     """Get the next available time for this IP or wallet."""
     last_time = get_last_drip_time(identifier, is_wallet)
-    if not last_time:
-        return None
-    
-    last_drip = datetime.fromisoformat(last_time.replace('Z', '+00:00'))
-    next_available = last_drip + timedelta(hours=RATE_LIMIT_HOURS)
-    now = datetime.now(last_drip.tzinfo)
-    
-    if next_available > now:
-        return next_available.isoformat()
-    return None
+    return next_available_from_timestamp(last_time)
 
 
 def record_drip(wallet, ip_address, amount):
@@ -325,33 +374,21 @@ def drip():
     
     ip = get_client_ip()
 
-    # Check rate limit for IP
-    if not can_drip(ip):
-        next_available = get_next_available(ip)
+    amount = MAX_DRIP_AMOUNT
+    created, error, next_available = create_drip_atomically(wallet, ip, amount)
+
+    if not created:
         return jsonify({
             'ok': False,
-            'error': 'IP rate limit exceeded',
+            'error': error,
             'next_available': next_available
         }), 429
 
-    # Check rate limit for Wallet
-    if not can_drip(wallet, is_wallet=True):
-        next_available = get_next_available(wallet, is_wallet=True)
-        return jsonify({
-            'ok': False,
-            'error': 'Wallet rate limit exceeded',
-            'next_available': next_available
-        }), 429
-    # Record the drip (in production, this would actually transfer tokens)
-    # For now, we simulate the drip
-    amount = MAX_DRIP_AMOUNT
-    record_drip(wallet, ip, amount)
-    
     return jsonify({
         'ok': True,
         'amount': amount,
         'wallet': wallet,
-        'next_available': (datetime.now() + timedelta(hours=RATE_LIMIT_HOURS)).isoformat()
+        'next_available': next_available
     })
 
 
