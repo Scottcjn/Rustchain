@@ -28,10 +28,6 @@ NC='\033[0m' # No Color
 INSTALL_DIR="$HOME/.rustchain"
 RUSTCHAIN_REF="${RUSTCHAIN_REF:-main}"
 BASE_URL="${RUSTCHAIN_BASE_URL:-https://raw.githubusercontent.com/Scottcjn/Rustchain/${RUSTCHAIN_REF}}"
-MINER_PATH="linux/rustchain_linux_miner.py"
-FINGERPRINT_PATH="linux/fingerprint_checks.py"
-MINER_URL="${BASE_URL}/miners/${MINER_PATH}"
-FINGERPRINT_URL="${BASE_URL}/miners/${FINGERPRINT_PATH}"
 CHECKSUM_URL="${BASE_URL}/miners/checksums.sha256"
 NODE_URL="https://50.28.86.131"
 VERSION="1.0.0"
@@ -86,10 +82,21 @@ OS=$(uname -s)
 ARCH=$(uname -m)
 
 case "$OS" in
-    Linux)  echo "  OS: Linux" ;;
-    Darwin) echo "  OS: macOS" ;;
+    Linux)
+        echo "  OS: Linux"
+        MINER_PATH="linux/rustchain_linux_miner.py"
+        FINGERPRINT_PATH="linux/fingerprint_checks.py"
+        ;;
+    Darwin)
+        echo "  OS: macOS"
+        MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
+        FINGERPRINT_PATH="macos/fingerprint_checks.py"
+        ;;
     *)      echo -e "${RED}  Unsupported OS: $OS${NC}"; exit 1 ;;
 esac
+
+MINER_URL="${BASE_URL}/miners/${MINER_PATH}"
+FINGERPRINT_URL="${BASE_URL}/miners/${FINGERPRINT_PATH}"
 
 echo "  Architecture: $ARCH"
 
