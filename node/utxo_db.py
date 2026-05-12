@@ -430,14 +430,19 @@ class UtxoDB:
             if not outputs and tx_type not in MINTING_TX_TYPES:
                 return abort()
 
-            output_total = sum(o['value_nrtc'] for o in outputs)
-
-            # Every output must carry a strictly positive value.
-            # Without this, a negative-value output lowers output_total,
+            # Every output must be materializable and carry a strictly
+            # positive value. Without this, malformed outputs can raise during
+            # tx_id construction, and negative values can lower output_total,
             # letting an attacker create more value than the inputs hold.
+            output_total = 0
             for o in outputs:
-                if not isinstance(o['value_nrtc'], int) or o['value_nrtc'] <= 0:
+                val = o.get('value_nrtc') if isinstance(o, dict) else None
+                addr = o.get('address') if isinstance(o, dict) else None
+                if not isinstance(val, int) or val <= 0:
                     return abort()
+                if not isinstance(addr, str) or not addr.strip():
+                    return abort()
+                output_total += val
 
             # Cap minting (coinbase) output to prevent unbounded fund creation.
             # Without this, any caller that passes tx_type='mining_reward'

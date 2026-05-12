@@ -89,6 +89,22 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.get_balance('bob'), 60 * UNIT)
         self.assertEqual(self.db.count_unspent(), 2)
 
+    def test_transfer_missing_output_address_rejected(self):
+        """Malformed outputs should fail validation instead of raising."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        alice_boxes = self.db.get_unspent_for_address('alice')
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': alice_boxes[0]['box_id'],
+                         'spending_proof': 'sig'}],
+            'outputs': [{'value_nrtc': 99 * UNIT}],
+            'fee_nrtc': 1 * UNIT,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
+
     def test_transfer_insufficient_funds(self):
         self._apply_coinbase('alice', 50 * UNIT)
         alice_boxes = self.db.get_unspent_for_address('alice')
