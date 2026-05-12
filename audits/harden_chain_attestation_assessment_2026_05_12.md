@@ -1,10 +1,10 @@
 # Harden the Chain: Attestation and Reward Security Assessment
 
-**Repository:** RustChain  
-**Bounty:** [Harden the Chain security quest](https://github.com/Scottcjn/rustchain-bounties/issues/398)  
-**Contributor:** ctzxw520-lab  
-**RTC wallet name:** ctzxw520-lab  
-**Date:** 2026-05-12  
+**Repository:** RustChain
+**Bounty:** [Harden the Chain security quest](https://github.com/Scottcjn/rustchain-bounties/issues/398)
+**Contributor:** ctzxw520-lab
+**RTC wallet name:** ctzxw520-lab
+**Date:** 2026-05-12
 
 ## Scope
 
@@ -115,8 +115,8 @@ Current code mitigates this in two places:
 
 ## Finding: Low - Fingerprint Anomaly Detection Is Effectively Unreachable
 
-**Severity:** Low  
-**Impact:** Monitoring blind spot, not a direct reward bypass  
+**Severity:** Low
+**Impact:** Monitoring blind spot, not a direct reward bypass
 **Affected area:** `/attest/submit` replay-defense telemetry
 
 In `_submit_attestation_impl()`, `fingerprint_passed` is initialized to `False`
@@ -147,7 +147,7 @@ checks still operate on hashes before the anomaly telemetry branch.
 
 ## Verification
 
-Command:
+Local command on macOS/Unix-like host:
 
 ```bash
 python3 -m pytest tests/test_hardware_binding_v2_security.py tests/test_attestation_regression.py node/tests/test_attestation_overwrite_reward_loss.py -q
@@ -161,7 +161,22 @@ Result:
 
 The first attempt with `python -m pytest ...` failed locally because `python` is
 not installed under that command name in this environment. The same test set was
-rerun with `python3` and passed.
+rerun with `python3` and passed on this local host.
+
+This result is environment-specific. A Windows review host reported the same
+logical pytest target with `python` and backslash paths as `68 passed, 18
+skipped, 11 failed`; the failures were `PermissionError: [WinError 32]` in
+`node/tests/test_attestation_overwrite_reward_loss.py::tearDown()` while
+unlinking the temporary SQLite database. This report therefore does not claim a
+portable clean pass for the full pytest command on Windows.
+
+Portable syntax validation reported by review:
+
+```bash
+python -m py_compile node\hardware_binding_v2.py node\rustchain_v2_integrated_v2.2.1_rip200.py node\tests\test_attestation_overwrite_reward_loss.py tests\test_hardware_binding_v2_security.py tests\test_attestation_regression.py
+```
+
+Result: passed.
 
 ## Conclusion
 
