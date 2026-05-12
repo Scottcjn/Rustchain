@@ -1,9 +1,12 @@
+# SPDX-License-Identifier: MIT
+
 import importlib.util
 import os
 import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 
 
 NODE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -61,7 +64,7 @@ class TestIntegratedAdminFailClosed(unittest.TestCase):
         self._tmp.cleanup()
 
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as db:
+        with closing(sqlite3.connect(self.db_path)) as db:
             db.executescript(
                 """
                 CREATE TABLE balances (
@@ -114,7 +117,7 @@ class TestIntegratedAdminFailClosed(unittest.TestCase):
         )
 
         self.assertEqual(resp.status_code, 401)
-        with sqlite3.connect(self.db_path) as db:
+        with closing(sqlite3.connect(self.db_path)) as db:
             pending_count = db.execute("SELECT COUNT(*) FROM pending_ledger").fetchone()[0]
         self.assertEqual(pending_count, 0)
 
