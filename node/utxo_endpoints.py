@@ -361,7 +361,7 @@ def utxo_transfer():
 
     # --- validation ---------------------------------------------------------
 
-    if not all([from_address, to_address, public_key, signature, nonce]):
+    if not from_address or not to_address or not public_key or not signature or nonce is None:
         return jsonify({
             'error': 'Missing required fields',
             'required': ['from_address', 'to_address', 'public_key',
