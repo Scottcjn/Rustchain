@@ -746,6 +746,64 @@ class TestLockLedger:
         conn.close()
 
 
+class TestLockLedgerRoutes:
+    """Test lock ledger route-level validation and helper dispatch."""
+
+    def _client(self, lock_ledger, db_path):
+        lock_ledger.DB_PATH = db_path
+        app = Flask(__name__)
+        lock_ledger.register_lock_ledger_routes(app)
+        return app.test_client()
+
+    def test_miner_locks_rejects_malformed_limit(self, setup_test_db, funded_miner):
+        lock_ledger = setup_test_db["lock_ledger"]
+        client = self._client(lock_ledger, setup_test_db["db_path"])
+
+        response = client.get(f"/api/lock/miner/{funded_miner}?limit=abc")
+
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "limit must be an integer"}
+
+    def test_pending_unlock_rejects_malformed_before(self, setup_test_db):
+        lock_ledger = setup_test_db["lock_ledger"]
+        client = self._client(lock_ledger, setup_test_db["db_path"])
+
+        response = client.get("/api/lock/pending-unlock?before=not-a-timestamp")
+
+        assert response.status_code == 400
+        assert response.get_json() == {"error": "before must be an integer"}
+
+    def test_pending_unlock_route_calls_database_helper(self, setup_test_db, funded_miner):
+        lock_ledger = setup_test_db["lock_ledger"]
+        db_path = setup_test_db["db_path"]
+        now = int(time.time())
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """INSERT INTO lock_ledger
+                   (miner_id, amount_i64, lock_type, locked_at, unlock_at, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    funded_miner,
+                    5 * 1000000,
+                    "bridge_deposit",
+                    now - 3600,
+                    now - 60,
+                    "locked",
+                    now - 3600,
+                ),
+            )
+
+        client = self._client(lock_ledger, db_path)
+
+        response = client.get("/api/lock/pending-unlock?limit=10")
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["ok"] is True
+        assert body["count"] == 1
+        assert body["locks"][0]["miner_id"] == funded_miner
+
+
 # =============================================================================
 # Integration Tests
 # =============================================================================

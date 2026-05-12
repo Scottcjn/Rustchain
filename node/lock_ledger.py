@@ -637,12 +637,33 @@ def auto_release_expired_locks(
 def register_lock_ledger_routes(app):
     """Register lock ledger API routes with Flask app."""
     from flask import request, jsonify
+
+    def parse_bounded_int_arg(
+        name: str,
+        default: Optional[int],
+        minimum: int,
+        maximum: int,
+        *,
+        required: bool = False,
+    ):
+        raw = request.args.get(name)
+        if raw is None:
+            if required:
+                return None, (jsonify({"error": f"{name} required"}), 400)
+            return default, None
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return None, (jsonify({"error": f"{name} must be an integer"}), 400)
+        return max(minimum, min(value, maximum)), None
     
     @app.route('/api/lock/miner/<miner_id>', methods=['GET'])
     def get_miner_locks(miner_id: str):
         """Get locks for a specific miner."""
         status = request.args.get("status")
-        limit = int(request.args.get("limit", 100))
+        limit, error_response = parse_bounded_int_arg("limit", 100, 1, 500)
+        if error_response is not None:
+            return error_response
         
         conn = sqlite3.connect(DB_PATH)
         try:
@@ -700,12 +721,14 @@ def register_lock_ledger_routes(app):
             conn.close()
     
     @app.route('/api/lock/pending-unlock', methods=['GET'])
-    def get_pending_unlocks():
+    def get_pending_unlocks_endpoint():
         """Get locks ready to be released."""
-        before = request.args.get("before")
-        limit = int(request.args.get("limit", 100))
-        
-        before_ts = int(before) if before else None
+        limit, error_response = parse_bounded_int_arg("limit", 100, 1, 500)
+        if error_response is not None:
+            return error_response
+        before_ts, error_response = parse_bounded_int_arg("before", None, 0, 4_102_444_800)
+        if error_response is not None:
+            return error_response
         
         conn = sqlite3.connect(DB_PATH)
         try:
@@ -807,7 +830,9 @@ def register_lock_ledger_routes(app):
             return jsonify({"error": "RC_WORKER_KEY not configured — worker endpoints disabled"}), 503
         if not hmac.compare_digest(worker_key, expected_worker):
             return jsonify({"error": "Unauthorized"}), 401
-        batch_size = int(request.args.get("batch_size", 100))
+        batch_size, error_response = parse_bounded_int_arg("batch_size", 100, 1, 500)
+        if error_response is not None:
+            return error_response
         
         conn = sqlite3.connect(DB_PATH)
         try:
