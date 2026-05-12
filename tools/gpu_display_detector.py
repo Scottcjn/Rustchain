@@ -3,11 +3,20 @@ import platform
 import subprocess
 from datetime import datetime
 
+
+def _read_lspci_output():
+    return subprocess.check_output(
+        ["lspci"],
+        stderr=subprocess.DEVNULL,
+        timeout=10,
+    ).decode(errors="ignore").lower()
+
+
 def detect_gpu_and_display():
     badges = []
 
     try:
-        output = subprocess.check_output("lspci", shell=True).decode().lower()
+        output = _read_lspci_output()
     except Exception:
         output = ""
 
