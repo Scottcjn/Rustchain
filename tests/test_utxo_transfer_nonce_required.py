@@ -112,6 +112,23 @@ def test_utxo_transfer_accepts_numeric_zero_nonce():
         cleanup_db(db_path)
 
 
+def test_utxo_transfer_accepts_string_zero_nonce_as_same_replay_key():
+    client, utxo_db, db_path = build_client()
+    try:
+        seed_coinbase(utxo_db, "RTC_test_aabbccdd", 100 * UNIT)
+
+        response = client.post("/utxo/transfer", json=payload(nonce="0"))
+        assert response.status_code == 200
+        assert response.get_json()["ok"] is True
+
+        replay = client.post("/utxo/transfer", json=payload(nonce=0))
+        assert replay.status_code == 400
+        assert replay.get_json()["code"] == "REPLAY_DETECTED"
+        assert transfer_nonce_count(db_path) == 1
+    finally:
+        cleanup_db(db_path)
+
+
 def test_utxo_transfer_rejects_blank_nonce_values():
     for blank_nonce in ("", "   ", None, False):
         client, utxo_db, db_path = build_client()
@@ -121,6 +138,24 @@ def test_utxo_transfer_rejects_blank_nonce_values():
             response = client.post(
                 "/utxo/transfer",
                 json=payload(nonce=blank_nonce),
+            )
+
+            assert response.status_code == 400
+            assert response.get_json()["error"] == "Missing required fields"
+            assert transfer_nonce_count(db_path) == 0
+        finally:
+            cleanup_db(db_path)
+
+
+def test_utxo_transfer_rejects_container_nonce_values():
+    for container_nonce in ({}, [], {"x": 1}, [0]):
+        client, utxo_db, db_path = build_client()
+        try:
+            seed_coinbase(utxo_db, "RTC_test_aabbccdd", 100 * UNIT)
+
+            response = client.post(
+                "/utxo/transfer",
+                json=payload(nonce=container_nonce),
             )
 
             assert response.status_code == 400

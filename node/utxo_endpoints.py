@@ -145,6 +145,7 @@ def _missing_transfer_nonce(nonce) -> bool:
     return (
         nonce is None
         or isinstance(nonce, bool)
+        or not isinstance(nonce, (int, str))
         or (isinstance(nonce, str) and nonce.strip() == '')
     )
 
