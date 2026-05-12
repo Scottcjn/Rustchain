@@ -398,7 +398,12 @@ class UtxoDB:
             # Without this, the same box_id counted twice inflates
             # input_total.  The spend-phase rowcount check catches it
             # today, but only accidentally.  Defense in depth.
-            input_box_ids = [i['box_id'] for i in inputs]
+            input_box_ids = []
+            for i in inputs:
+                box_id = i.get('box_id') if isinstance(i, dict) else None
+                if not isinstance(box_id, str) or not box_id.strip():
+                    return abort()
+                input_box_ids.append(box_id)
             if len(input_box_ids) != len(set(input_box_ids)):
                 return abort()
 

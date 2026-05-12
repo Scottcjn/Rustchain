@@ -89,6 +89,17 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.get_balance('bob'), 60 * UNIT)
         self.assertEqual(self.db.count_unspent(), 2)
 
+    def test_transfer_missing_input_box_id_rejected(self):
+        """Malformed inputs should fail validation instead of raising."""
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 1 * UNIT}],
+            'fee_nrtc': 0,
+        }, block_height=10)
+
+        self.assertFalse(ok)
+
     def test_transfer_missing_output_address_rejected(self):
         """Malformed outputs should fail validation instead of raising."""
         self._apply_coinbase('alice', 100 * UNIT)
