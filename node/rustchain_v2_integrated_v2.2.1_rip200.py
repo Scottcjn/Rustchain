@@ -2210,8 +2210,10 @@ def _record_welcome_bonus_ledger(conn, miner: str, bonus_i64: int, source_charge
 
 def _check_welcome_bonus(miner: str):
     """Award welcome bonus on first-ever attestation. Funded from founder_community."""
+    from contextlib import closing
+
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with closing(sqlite3.connect(DB_PATH)) as conn:
             # Check if this miner has ever attested before
             history_count = conn.execute(
                 "SELECT COUNT(*) FROM miner_attest_history WHERE miner = ?", (miner,)
