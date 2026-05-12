@@ -11,6 +11,7 @@ import sys
 import os
 import time
 import json
+from unittest.mock import patch
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -28,6 +29,8 @@ from trigger import (
     TriggerConfig, DEFAULT_TRIGGERS
 )
 from glitch_engine import GlitchEngine, GlitchConfig
+from flask import Flask
+from api import glitch_bp, init_engine
 
 
 # ─── Glitch Event Tests ─────────────────────────────────────────────────────── #
@@ -722,6 +725,59 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertIn("glitch", response)
 
 
+class TestGlitchAPIAdminAuth(unittest.TestCase):
+    """Tests for admin authentication on mutating glitch API routes."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config["TESTING"] = True
+        self.app.register_blueprint(glitch_bp)
+        init_engine(GlitchConfig(enabled=True, base_probability=1.0, min_glitch_interval=0.0))
+        self.client = self.app.test_client()
+
+    def test_mutating_routes_require_admin_key(self):
+        routes = (
+            ("post", "/api/glitch/history/clear", None),
+            ("put", "/api/glitch/config", {"base_probability": 0.5}),
+            ("post", "/api/glitch/config/reset", None),
+            ("post", "/api/glitch/enable", None),
+            ("post", "/api/glitch/disable", None),
+            ("post", "/api/glitch/trigger", {"agent_id": "api_test", "message": "hello"}),
+        )
+
+        for method, path, payload in routes:
+            with self.subTest(path=path):
+                with patch.dict("os.environ", {"GLITCH_ADMIN_KEY": "test-admin"}, clear=False):
+                    response = getattr(self.client, method)(
+                        path,
+                        json=payload,
+                        headers={"X-Admin-Key": "wrong-admin"},
+                    )
+
+                self.assertEqual(response.status_code, 401)
+                self.assertEqual(response.get_json()["error"], "unauthorized")
+
+    def test_mutating_routes_fail_closed_when_admin_key_unconfigured(self):
+        with patch.dict("os.environ", {}, clear=True):
+            response = self.client.post(
+                "/api/glitch/disable",
+                headers={"X-Admin-Key": "test-admin"},
+            )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json()["error"], "unauthorized")
+
+    def test_mutating_routes_allow_valid_admin_key(self):
+        with patch.dict("os.environ", {"GLITCH_ADMIN_KEY": "test-admin"}, clear=False):
+            response = self.client.post(
+                "/api/glitch/disable",
+                headers={"X-Admin-Key": "test-admin"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"success": True, "enabled": False})
+
+
 # ─── Test Runner ────────────────────────────────────────────────────────────── #
 
 
@@ -741,6 +797,7 @@ def run_tests():
         TestGlitchEngine,
         TestGlitchEngineIntegration,
         TestAPIEndpoints,
+        TestGlitchAPIAdminAuth,
     ]
     
     for test_class in test_classes:

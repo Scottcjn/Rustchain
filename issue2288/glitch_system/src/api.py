@@ -8,7 +8,9 @@ and configuring the glitch engine.
 
 from flask import Blueprint, jsonify, request, Response
 from typing import Dict, Any
+import hmac
 import json
+import os
 import time
 
 try:
@@ -39,6 +41,28 @@ def get_json_object():
     if not isinstance(data, dict):
         return None, (jsonify({"error": "JSON object required"}), 400)
     return data, None
+
+
+def require_admin():
+    """Require admin authentication for destructive/configuration routes."""
+    expected_key = os.environ.get("GLITCH_ADMIN_KEY", "")
+    if not expected_key:
+        return jsonify({
+            "error": "unauthorized",
+            "message": "GLITCH_ADMIN_KEY not configured"
+        }), 401
+
+    provided_key = (
+        request.headers.get("X-Admin-Key", "")
+        or request.headers.get("X-API-Key", "")
+    )
+    if not hmac.compare_digest(provided_key, expected_key):
+        return jsonify({
+            "error": "unauthorized",
+            "message": "Invalid admin key"
+        }), 401
+
+    return None
 
 
 def parse_limit_arg(default: int = 50, max_value: int = 200):
@@ -299,6 +323,10 @@ def clear_history() -> Response:
     
     POST /api/glitch/history/clear
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     engine = get_engine()
     
     engine._glitch_history.clear()
@@ -391,6 +419,10 @@ def update_config() -> Response:
         "base_probability": 0.2
     }
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     engine = get_engine()
     
     data, error = get_json_object()
@@ -419,6 +451,10 @@ def reset_config() -> Response:
     
     POST /api/glitch/config/reset
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     engine = get_engine()
     
     engine.config.enabled = True
@@ -493,6 +529,10 @@ def enable_glitches() -> Response:
     
     POST /api/glitch/enable
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     engine = get_engine()
     engine.enable()
     
@@ -506,6 +546,10 @@ def disable_glitches() -> Response:
     
     POST /api/glitch/disable
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     engine = get_engine()
     engine.disable()
     
@@ -525,6 +569,10 @@ def trigger_glitch() -> Response:
         "message": "Test message"
     }
     """
+    auth_error = require_admin()
+    if auth_error is not None:
+        return auth_error
+
     engine = get_engine()
     
     data, error = get_json_object()
