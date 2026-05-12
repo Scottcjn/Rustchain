@@ -74,12 +74,16 @@ def load_account_balances(db_path: str) -> list:
 
 
 def check_existing_genesis(utxo_db: UtxoDB) -> bool:
-    """Check if genesis boxes already exist."""
+    """Check if genesis migration has already been applied.
+
+    Queries utxo_transactions for tx_type='genesis' rather than checking
+    creation_height=0 in utxo_boxes.  The old check was too broad — any
+    non-genesis box at height 0 would falsely block the migration.
+    """
     conn = utxo_db._conn()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) AS n FROM utxo_boxes WHERE creation_height = ?",
-            (GENESIS_HEIGHT,),
+            "SELECT COUNT(*) AS n FROM utxo_transactions WHERE tx_type = 'genesis'",
         ).fetchone()
         return row['n'] > 0
     finally:
