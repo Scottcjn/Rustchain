@@ -13,6 +13,7 @@ Lifecycle:
 """
 
 import hashlib
+import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Callable
@@ -386,7 +387,7 @@ class GovernanceEngine:
             raise ValueError("Vetoed proposals cannot be executed")
 
         now = int(time.time())
-        tx_hash = hashlib.sha256(f"{proposal_id}:{now}".encode()).hexdigest()
+        tx_hash = hashlib.sha256(f"{proposal_id}:{now}".encode() + secrets.token_bytes(32)).hexdigest()
 
         proposal.status = ProposalStatus.EXECUTED
         proposal.executed_at = now
