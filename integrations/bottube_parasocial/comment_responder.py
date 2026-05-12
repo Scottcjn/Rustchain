@@ -28,13 +28,22 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
-from audience_tracker import (
-    AudienceTracker, 
-    ViewerProfile, 
-    ViewerStatus, 
-    SentimentType,
-    SentimentAnalyzer,
-)
+try:
+    from .audience_tracker import (
+        AudienceTracker,
+        ViewerProfile,
+        ViewerStatus,
+        SentimentType,
+        SentimentAnalyzer,
+    )
+except ImportError:  # pragma: no cover - supports direct script-style imports
+    from audience_tracker import (
+        AudienceTracker,
+        ViewerProfile,
+        ViewerStatus,
+        SentimentType,
+        SentimentAnalyzer,
+    )
 
 
 class ResponseStyle(Enum):
