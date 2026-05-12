@@ -3708,7 +3708,9 @@ def get_epoch():
 @app.route('/epoch/enroll', methods=['POST'])
 def enroll_epoch():
     """Enroll in current epoch"""
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
 
     # Extract client IP (handle nginx proxy)
     client_ip = get_client_ip()
