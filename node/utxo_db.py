@@ -767,6 +767,13 @@ class UtxoDB:
                     if manage_tx:
                         conn.execute("ROLLBACK")
                     return False
+                # Mirror apply_transaction(): every output must be
+                # materializable into a UTXO, which requires an address.
+                addr = o.get('address')
+                if not isinstance(addr, str) or not addr.strip():
+                    if manage_tx:
+                        conn.execute("ROLLBACK")
+                    return False
 
             output_total = sum(o['value_nrtc'] for o in outputs)
             if input_total > 0 and (output_total + fee) > input_total:
