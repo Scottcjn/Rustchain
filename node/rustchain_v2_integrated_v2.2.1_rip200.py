@@ -547,7 +547,7 @@ def _after(resp):
             "ip": get_client_ip(),
             "dur_ms": int(dur * 1000),
         }
-        log.info(json.dumps(rec, separators=(",", ":")))
+        app.logger.info(json.dumps(rec, separators=(",", ":")))
     except Exception:
         pass
     resp.headers["X-Request-Id"] = getattr(g, "request_id", "-")
@@ -5498,7 +5498,13 @@ def get_balance(miner_pk):
         else:
             # Legacy schema: balances(miner_pk, balance_rtc)
             row = cur.execute("SELECT COALESCE(balance_rtc, 0.0) FROM balances WHERE miner_pk = ?", (miner_pk,)).fetchone()
-    return jsonify(miners)
+            balance_rtc = float(row[0]) if row else 0.0
+            balance_i64 = int(round(balance_rtc * ACCOUNT_UNIT))
+    return jsonify({
+        "miner_pk": miner_pk,
+        "balance_rtc": balance_i64 / ACCOUNT_UNIT,
+        "amount_i64": balance_i64,
+    })
 def get_stats():
     """Get system statistics"""
     epoch = slot_to_epoch(current_slot())
@@ -7653,7 +7659,7 @@ def resolve_bcn_wallet(bcn_id: str) -> dict:
             return {"found": False, "error": "beacon_id_not_registered"}
         
         if row["status"] != "active":
-            return {"found": False, "error": f"beacon_agent_status:{row[status]}"}
+            return {"found": False, "error": f"beacon_agent_status:{row['status']}"}
         
         pubkey_hex = row["pubkey_hex"]
         rtc_addr = address_from_pubkey(pubkey_hex)
