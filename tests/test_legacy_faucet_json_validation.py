@@ -34,3 +34,19 @@ def test_legacy_faucet_rejects_non_string_wallet(client):
 
     assert response.status_code == 400
     assert response.get_json() == {"ok": False, "error": "Invalid wallet address"}
+
+
+def test_legacy_faucet_accepts_native_rtc_wallet(client):
+    wallet = "RTC9d7caca3039130d3b26d41f7343d8f4ef4592360"
+
+    response = client.post("/faucet/drip", json={"wallet": wallet})
+
+    assert response.status_code == 200
+    assert response.get_json()["wallet"] == wallet
+
+
+def test_legacy_faucet_rejects_malformed_rtc_wallet(client):
+    response = client.post("/faucet/drip", json={"wallet": "RTCnot-a-native-wallet"})
+
+    assert response.status_code == 400
+    assert response.get_json() == {"ok": False, "error": "Invalid wallet address"}

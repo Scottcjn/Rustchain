@@ -12,6 +12,7 @@ Features:
 import sqlite3
 import time
 import os
+import re
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template_string
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -23,6 +24,7 @@ DATABASE = 'faucet.db'
 # Rate limiting settings (per 24 hours)
 MAX_DRIP_AMOUNT = 0.5  # RTC
 RATE_LIMIT_HOURS = 24
+RTC_WALLET_RE = re.compile(r'^RTC[0-9a-fA-F]{40}$')
 
 
 def init_db():
@@ -49,6 +51,11 @@ def get_client_ip():
     """
     remote = request.remote_addr or '127.0.0.1'
     return remote
+
+
+def is_valid_wallet_address(wallet):
+    """Validate faucet-compatible legacy and native RustChain wallet formats."""
+    return (wallet.startswith('0x') and len(wallet) >= 10) or RTC_WALLET_RE.fullmatch(wallet)
 def get_last_drip_time(identifier, is_wallet=False):
     """Get the last time this IP or wallet requested a drip."""
     conn = sqlite3.connect(DATABASE)
@@ -206,7 +213,7 @@ HTML_TEMPLATE = """
         <p>Get free test RTC tokens for development.</p>
         <form id="faucetForm">
             <label for="wallet">Your RTC Wallet Address:</label>
-            <input type="text" id="wallet" name="wallet" placeholder="0x..." required>
+            <input type="text" id="wallet" name="wallet" placeholder="0x... or RTC..." required>
             <button type="submit" id="submitBtn">Get Test RTC</button>
         </form>
         
@@ -300,7 +307,7 @@ def drip():
     Handle drip requests.
     
     Request body:
-        {"wallet": "0x..."}
+        {"wallet": "0x..."} or {"wallet": "RTC..."}
     
     Response:
         {"ok": true, "amount": 0.5, "next_available": "2026-03-08T12:00:00Z"}
@@ -319,8 +326,7 @@ def drip():
 
     wallet = wallet_value.strip()
     
-    # Basic wallet validation (should start with 0x and be reasonably long)
-    if not wallet.startswith('0x') or len(wallet) < 10:
+    if not is_valid_wallet_address(wallet):
         return jsonify({'ok': False, 'error': 'Invalid wallet address'}), 400
     
     ip = get_client_ip()
