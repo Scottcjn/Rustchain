@@ -521,6 +521,29 @@ class TestFlaskIntegration(unittest.TestCase):
         self.assertIn('Invalid certificate ID', data['error'])
         self.assertFalse(is_valid_cert_id(payload['cert_id']))
 
+    def test_generate_badge_rejects_non_string_cert_id(self):
+        """Non-string cert IDs should fail validation instead of raising 500."""
+        invalid_ids = [123, True, ['BCOS-safe'], {'id': 'BCOS-safe'}]
+
+        for cert_id in invalid_ids:
+            with self.subTest(cert_id=cert_id):
+                response = self.client.post(
+                    '/api/badge/generate',
+                    json={
+                        'repo_name': 'test/repo',
+                        'tier': 'L1',
+                        'trust_score': 75,
+                        'cert_id': cert_id,
+                    },
+                    content_type='application/json',
+                )
+
+                self.assertEqual(response.status_code, 200)
+                data = json.loads(response.data)
+                self.assertFalse(data['success'])
+                self.assertIn('Invalid certificate ID', data['error'])
+                self.assertFalse(is_valid_cert_id(cert_id))
+
     def test_generate_badge_accepts_safe_custom_cert_id(self):
         """Safe custom cert IDs remain supported."""
         response = self.client.post(
