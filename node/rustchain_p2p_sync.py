@@ -1,3 +1,5 @@
+from flask import request, jsonify
+
 #!/usr/bin/env python3
 """
 RustChain v2 - P2P Synchronization Module
