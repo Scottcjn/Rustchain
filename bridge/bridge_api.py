@@ -29,6 +29,7 @@ BRIDGE_RECEIPT_SECRET = os.environ.get("BRIDGE_RECEIPT_SECRET", "")
 
 # Security: require proof for all bridge locks (Issue #727)
 BRIDGE_REQUIRE_PROOF = os.environ.get("BRIDGE_REQUIRE_PROOF", "true").lower() == "true"
+FLASK_DEBUG = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
 
 # Target chain identifiers
 CHAIN_SOLANA = "solana"
@@ -621,4 +622,4 @@ if __name__ == "__main__":
     app = Flask(__name__)
     register_bridge_routes(app)
     print("Bridge dev server on http://0.0.0.0:8096")
-    app.run(host="0.0.0.0", port=8096, debug=True)
+    app.run(host="0.0.0.0", port=8096, debug=FLASK_DEBUG)

@@ -11,6 +11,7 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'bcos-directory-dev-key'
 
 DATABASE = 'bcos_directory.db'
+FLASK_DEBUG = os.environ.get('FLASK_DEBUG', '').lower() in {'1', 'true', 'yes'}
 
 def init_db():
     """Initialize the database with projects table"""
@@ -482,4 +483,4 @@ def serve_dist(filename):
 if __name__ == '__main__':
     init_db()
     load_projects_from_json()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=FLASK_DEBUG, host='0.0.0.0', port=5000)

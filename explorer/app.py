@@ -1,4 +1,5 @@
 from flask import Flask, render_template, jsonify
+import os
 import requests
 import json
 from datetime import datetime
@@ -8,6 +9,7 @@ app = Flask(__name__)
 # Configuration
 API_BASE_URL = "http://localhost:8000"
 MINERS_ENDPOINT = f"{API_BASE_URL}/api/miners"
+FLASK_DEBUG = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
 
 @app.route('/')
 def dashboard():
@@ -134,4 +136,4 @@ def internal_error(error):
     return render_template('500.html'), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=FLASK_DEBUG)

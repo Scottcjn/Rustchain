@@ -27,6 +27,7 @@ from datetime import datetime
 NODE_API = os.environ.get("RUSTCHAIN_NODE_API", "http://localhost:8000")
 FAUCET_DB = "faucet_service/faucet.db"
 PORT = 8095
+FLASK_DEBUG = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
 
 app = Flask(__name__)
 CORS(app)
@@ -377,4 +378,4 @@ RETRO_HTML = """
 if __name__ == '__main__':
     import hashlib # needed for mock hash
     print(f"[*] Starting Fossil-Punk Keeper Explorer on port {PORT}...")
-    app.run(host='0.0.0.0', port=PORT, debug=True)
+    app.run(host='0.0.0.0', port=PORT, debug=FLASK_DEBUG)
