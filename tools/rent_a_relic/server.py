@@ -18,6 +18,8 @@ RTC escrow: locked on reserve, released on completion or timeout.
 from __future__ import annotations
 
 import hashlib
+import hmac
+import os
 import sqlite3
 import time
 import uuid
@@ -53,6 +55,17 @@ def _get_json_object_or_empty() -> dict:
     if not isinstance(data, dict):
         abort(400, description="JSON object required")
     return data
+
+
+def _require_admin_key() -> None:
+    """Require an admin key before privileged reservation state changes."""
+    expected = os.environ.get("RC_ADMIN_KEY", "")
+    if not expected:
+        abort(503, description="RC_ADMIN_KEY not configured")
+
+    provided = request.headers.get("X-Admin-Key") or request.headers.get("X-API-Key") or ""
+    if not hmac.compare_digest(provided.encode("utf-8"), expected.encode("utf-8")):
+        abort(401, description="invalid admin key")
 
 
 @contextmanager
@@ -425,6 +438,7 @@ def get_reservation(session_id: str):
 @app.post("/relic/complete/<session_id>")
 def post_complete(session_id: str):
     """Mark a session as completed and release escrow."""
+    _require_admin_key()
     data        = _get_json_object_or_empty()
     output_hash = data.get("output_hash") or hashlib.sha256(session_id.encode()).hexdigest()
 
@@ -457,9 +471,11 @@ def post_complete(session_id: str):
 
 
 @app.errorhandler(400)
+@app.errorhandler(401)
 @app.errorhandler(404)
 @app.errorhandler(409)
 @app.errorhandler(500)
+@app.errorhandler(503)
 def handle_error(e):
     return jsonify({"error": str(e.description), "code": e.code}), e.code
 
