@@ -51,6 +51,7 @@ from enum import Enum, auto
 import hashlib
 import struct
 import secrets
+import hmac
 import time
 from datetime import datetime
 
@@ -289,7 +290,7 @@ class MultiArchOracleRing:
             final_seed,
             b''.join(a.encode() for a in sorted(contributions.keys())),
             hashlib.sha256
-        ).digest() if 'hmac' in dir() else hashlib.sha256(final_seed).digest()
+        ).digest()
 
         seed = MultiArchMutationSeed(
             seed=final_seed,
