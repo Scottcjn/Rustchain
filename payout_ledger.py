@@ -12,11 +12,31 @@ import sqlite3
 import uuid
 import json
 import logging
+import math
 from flask import request, jsonify, render_template_string
 
 logger = logging.getLogger(__name__)
 
 DB_PATH = os.environ.get("RUSTCHAIN_DB", "rustchain.db")
+
+
+def _get_json_object():
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "JSON object required"}), 400)
+    return data, None
+
+
+def _parse_amount_rtc(value):
+    if isinstance(value, bool):
+        return None, (jsonify({"error": "amount_rtc must be a finite positive number"}), 400)
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return None, (jsonify({"error": "amount_rtc must be a finite positive number"}), 400)
+    if not math.isfinite(amount) or amount <= 0:
+        return None, (jsonify({"error": "amount_rtc must be a finite positive number"}), 400)
+    return amount, None
 
 PAYOUT_LEDGER_COLUMNS = [
     ("id", "TEXT"),
@@ -198,15 +218,20 @@ def register_ledger_routes(app):
     @app.route("/api/ledger", methods=["POST"])
     def api_ledger_create():
         init_payout_ledger_tables()
-        data = request.get_json(force=True)
+        data, error = _get_json_object()
+        if error:
+            return error
         required = ["bounty_id", "contributor", "amount_rtc"]
         for field in required:
             if field not in data:
                 return jsonify({"error": f"missing {field}"}), 400
+        amount_rtc, error = _parse_amount_rtc(data["amount_rtc"])
+        if error:
+            return error
         record_id = ledger_create(
             bounty_id=data["bounty_id"],
             contributor=data["contributor"],
-            amount_rtc=float(data["amount_rtc"]),
+            amount_rtc=amount_rtc,
             bounty_title=data.get("bounty_title", ""),
             wallet_address=data.get("wallet_address", ""),
             pr_url=data.get("pr_url", ""),
@@ -217,7 +242,9 @@ def register_ledger_routes(app):
     @app.route("/api/ledger/<record_id>/status", methods=["PATCH"])
     def api_ledger_update(record_id):
         init_payout_ledger_tables()
-        data = request.get_json(force=True)
+        data, error = _get_json_object()
+        if error:
+            return error
         new_status = data.get("status")
         if not new_status:
             return jsonify({"error": "missing status"}), 400
