@@ -258,6 +258,36 @@ class TestBridgeValidation:
         result = bridge_api.validate_bridge_request(data)
         assert result.ok is False
         assert "must be different" in result.error
+
+    def test_deposit_must_start_from_rustchain(self, setup_test_db):
+        """Deposits must be RustChain-to-external so balance locking applies."""
+        bridge_api = setup_test_db['bridge_api']
+        data = {
+            "direction": "deposit",
+            "source_chain": "solana",
+            "dest_chain": "rustchain",
+            "source_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            "dest_address": "RTC_test123",
+            "amount_rtc": 10.0
+        }
+        result = bridge_api.validate_bridge_request(data)
+        assert result.ok is False
+        assert "Deposit source_chain must be rustchain" in result.error
+
+    def test_withdraw_must_end_on_rustchain(self, setup_test_db):
+        """Withdrawals must be external-to-RustChain, not disguised deposits."""
+        bridge_api = setup_test_db['bridge_api']
+        data = {
+            "direction": "withdraw",
+            "source_chain": "rustchain",
+            "dest_chain": "solana",
+            "source_address": "RTC_test123",
+            "dest_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            "amount_rtc": 10.0
+        }
+        result = bridge_api.validate_bridge_request(data)
+        assert result.ok is False
+        assert "Withdraw source_chain must be external" in result.error
     
     def test_amount_below_minimum(self, setup_test_db):
         """Test amount below minimum fails validation."""
