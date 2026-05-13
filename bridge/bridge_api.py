@@ -38,6 +38,9 @@ SUPPORTED_CHAINS = {CHAIN_SOLANA, CHAIN_BASE}
 # RTC decimal precision
 RTC_DECIMALS = 6
 
+def _flask_debug_enabled():
+    return os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes", "on"}
+
 # Minimum lock amounts
 MIN_LOCK_AMOUNT = 1  # 1 RTC
 MAX_LOCK_AMOUNT = 10_000  # 10,000 RTC per transaction
@@ -621,4 +624,4 @@ if __name__ == "__main__":
     app = Flask(__name__)
     register_bridge_routes(app)
     print("Bridge dev server on http://0.0.0.0:8096")
-    app.run(host="0.0.0.0", port=8096, debug=True)
+    app.run(host="0.0.0.0", port=8096, debug=_flask_debug_enabled())

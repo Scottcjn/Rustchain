@@ -34,6 +34,9 @@ app.secret_key = SECRET_KEY
 
 DB_PATH = 'contributors.db'
 
+def _flask_debug_enabled():
+    return os.environ.get('FLASK_DEBUG', '').lower() in {'1', 'true', 'yes', 'on'}
+
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute('''
@@ -188,4 +191,4 @@ def approve_contributor(username):
 if __name__ == '__main__':
     if not os.path.exists(DB_PATH):
         init_db()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=_flask_debug_enabled(), host='0.0.0.0', port=5000)

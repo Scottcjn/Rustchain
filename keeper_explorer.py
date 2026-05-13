@@ -31,6 +31,9 @@ PORT = 8095
 app = Flask(__name__)
 CORS(app)
 
+def _flask_debug_enabled():
+    return os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes", "on"}
+
 # --- Faucet Logic (Integrated) ---
 
 def init_faucet_db():
@@ -377,4 +380,4 @@ RETRO_HTML = """
 if __name__ == '__main__':
     import hashlib # needed for mock hash
     print(f"[*] Starting Fossil-Punk Keeper Explorer on port {PORT}...")
-    app.run(host='0.0.0.0', port=PORT, debug=True)
+    app.run(host='0.0.0.0', port=PORT, debug=_flask_debug_enabled())
