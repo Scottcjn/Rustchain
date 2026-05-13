@@ -6,8 +6,10 @@ Covers the fix for: /epoch/enroll lacks signature verification / ownership proof
 Without this fix, any caller who knows a pubkey with a recent attestation can enroll
 it — including hijacking the miner_id mapping via INSERT OR REPLACE INTO miner_header_keys.
 
-The fix requires Ed25519 signatures on enrollment requests, verified against the
-signing pubkey stored during the miner's most recent attestation.
+The fix requires Ed25519 signatures on enrollment requests by default, verified
+against the signing pubkey stored during the miner's most recent attestation.
+Private legacy deployments can temporarily opt into unsigned enrollment with
+ENROLL_ALLOW_UNSIGNED_LEGACY=1.
 """
 
 import importlib.util
@@ -15,6 +17,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -66,6 +69,7 @@ class TestEnrollSignatureVerification(unittest.TestCase):
         cls._tmp = tempfile.TemporaryDirectory()
         cls._prev_admin_key = os.environ.get("RC_ADMIN_KEY")
         cls._prev_db_path = os.environ.get("RUSTCHAIN_DB_PATH")
+        cls._loaded_modules = []
         os.environ["RC_ADMIN_KEY"] = "0123456789abcdef0123456789abcdef"
 
         if NODE_DIR not in sys.path:
@@ -81,18 +85,65 @@ class TestEnrollSignatureVerification(unittest.TestCase):
             os.environ.pop("RUSTCHAIN_DB_PATH", None)
         else:
             os.environ["RUSTCHAIN_DB_PATH"] = cls._prev_db_path
+        cls._release_loaded_modules()
         cls._tmp.cleanup()
+
+    @classmethod
+    def _release_loaded_modules(cls):
+        try:
+            from prometheus_client import REGISTRY
+        except Exception:
+            cls._loaded_modules = []
+            return
+
+        for mod in cls._loaded_modules:
+            block_sync = getattr(mod, "block_sync", None)
+            if block_sync is not None:
+                block_sync.running = False
+
+            for metric_name in (
+                "withdrawal_requests",
+                "withdrawal_completed",
+                "withdrawal_failed",
+                "balance_gauge",
+                "epoch_gauge",
+                "withdrawal_queue_size",
+            ):
+                metric = getattr(mod, metric_name, None)
+                if metric is None:
+                    continue
+                try:
+                    REGISTRY.unregister(metric)
+                except (KeyError, ValueError):
+                    pass
+        cls._loaded_modules = []
+
+    def tearDown(self):
+        self._release_loaded_modules()
 
     def _db_path(self, name: str) -> str:
         return str(Path(self._tmp.name) / name)
 
     def _load_module(self, module_name: str, db_name: str):
+        self._release_loaded_modules()
         db_path = self._db_path(db_name)
         os.environ["RUSTCHAIN_DB_PATH"] = db_path
         spec = importlib.util.spec_from_file_location(module_name, MODULE_PATH)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        mod.init_db()
+        self._loaded_modules.append(mod)
+        # These tests target /epoch/enroll signature behavior, not the replay
+        # defense package. Disabling that optional init avoids cross-import
+        # SQLite locks from its module-level schema setup in integrated tests.
+        mod.HAVE_REPLAY_DEFENSE = False
+        for attempt in range(5):
+            try:
+                mod.init_db()
+                break
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc).lower() or attempt == 4:
+                    raise
+                time.sleep(0.2)
         with sqlite3.connect(db_path) as conn:
             for stmt in EXTRA_SCHEMA:
                 conn.execute(stmt)
@@ -254,8 +305,8 @@ class TestEnrollSignatureVerification(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(body["code"], "INVALID_ENROLLMENT_SIGNATURE")
 
-    def test_unsigned_enrollment_accepted_backward_compat(self):
-        """Unsigned enrollment requests should still be accepted (backward compatibility)."""
+    def test_unsigned_enrollment_rejected_by_default(self):
+        """Unsigned enrollment requests are rejected unless legacy mode is explicit."""
         mod, db_path = self._load_module("rustchain_enroll_unsigned", "enroll_unsigned.db")
 
         miner = "RTC_UNSIGNED_MINER"
@@ -282,9 +333,87 @@ class TestEnrollSignatureVerification(unittest.TestCase):
         }
         status, body = self._enroll(mod, payload)
 
-        # Should succeed — backward compatibility
+        self.assertEqual(status, 401)
+        self.assertEqual(body["code"], "SIGNED_ENROLLMENT_REQUIRED")
+
+    def test_unsigned_enrollment_accepted_with_legacy_flag(self):
+        """Temporary private-node legacy mode still accepts unsigned enrollment."""
+        previous = os.environ.get("ENROLL_ALLOW_UNSIGNED_LEGACY")
+        os.environ["ENROLL_ALLOW_UNSIGNED_LEGACY"] = "1"
+        try:
+            mod, db_path = self._load_module("rustchain_enroll_unsigned_legacy", "enroll_unsigned_legacy.db")
+        finally:
+            if previous is None:
+                os.environ.pop("ENROLL_ALLOW_UNSIGNED_LEGACY", None)
+            else:
+                os.environ["ENROLL_ALLOW_UNSIGNED_LEGACY"] = previous
+
+        miner = "RTC_UNSIGNED_LEGACY_MINER"
+        miner_id = "miner_legacy_005"
+
+        # Attest without signature (legacy path)
+        nonce = self._get_challenge(mod)
+        payload = {
+            "miner": miner,
+            "miner_id": miner_id,
+            "report": {"nonce": nonce, "commitment": "deadbeef"},
+            "device": {"family": "x86_64", "arch": "default", "model": "test-box", "cores": 4},
+            "signals": {"hostname": "test-host", "macs": []},
+            "fingerprint": {},
+        }
+        status, body = self._submit_attestation(mod, payload)
         self.assertEqual(status, 200)
+
+        # Enroll without signature
+        payload = {
+            "miner_pubkey": miner,
+            "miner_id": miner_id,
+            "device": {"family": "x86_64", "arch": "default"},
+        }
+        status, body = self._enroll(mod, payload)
+
         self.assertTrue(body["ok"])
+
+    @unittest.skipUnless(HAVE_NACL, "pynacl not installed")
+    def test_signed_enrollment_without_stored_attestation_key_rejected_by_default(self):
+        """A signature is not enough if the node has no attested signing key."""
+        mod, db_path = self._load_module(
+            "rustchain_enroll_sig_no_stored_key",
+            "enroll_sig_no_stored_key.db",
+        )
+
+        miner = "RTC_NO_STORED_KEY_MINER"
+        miner_id = "miner_no_key_005"
+
+        # Legacy unsigned attestation creates no miner_attest_recent.signing_pubkey.
+        nonce = self._get_challenge(mod)
+        payload = {
+            "miner": miner,
+            "miner_id": miner_id,
+            "report": {"nonce": nonce, "commitment": "deadbeef"},
+            "device": {"family": "x86_64", "arch": "default", "model": "test-box", "cores": 4},
+            "signals": {"hostname": "test-host", "macs": []},
+            "fingerprint": {},
+        }
+        status, body = self._submit_attestation(mod, payload)
+        self.assertEqual(status, 200)
+
+        with mod.app.test_request_context("/epoch", method="GET"):
+            epoch_body = mod.get_epoch().get_json()
+        signing_key = nacl.signing.SigningKey.generate()
+        sig_hex, pubkey_hex = _sign_enrollment(miner, miner_id, epoch_body["epoch"], signing_key)
+
+        payload = {
+            "miner_pubkey": miner,
+            "miner_id": miner_id,
+            "device": {"family": "x86_64", "arch": "default"},
+            "signature": sig_hex,
+            "public_key": pubkey_hex,
+        }
+        status, body = self._enroll(mod, payload)
+
+        self.assertEqual(status, 412)
+        self.assertEqual(body["code"], "ENROLLMENT_SIGNING_KEY_REQUIRED")
 
     @unittest.skipUnless(HAVE_NACL, "pynacl not installed")
     def test_enrollment_with_incomplete_signature_rejected(self):

@@ -1967,6 +1967,7 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
 ENROLL_REQUIRE_TICKET = os.getenv("ENROLL_REQUIRE_TICKET", "1") == "1"
 ENROLL_TICKET_TTL_S = int(os.getenv("ENROLL_TICKET_TTL_S", "600"))
 ENROLL_REQUIRE_MAC = os.getenv("ENROLL_REQUIRE_MAC", "1") == "1"
+ENROLL_ALLOW_UNSIGNED_LEGACY = os.getenv("ENROLL_ALLOW_UNSIGNED_LEGACY", "0") == "1"
 MAC_MAX_UNIQUE_PER_DAY = int(os.getenv("MAC_MAX_UNIQUE_PER_DAY", "3"))
 PRIVACY_PEPPER = os.getenv("PRIVACY_PEPPER", "rustchain_poa_v2")
 
@@ -3726,8 +3727,8 @@ def enroll_epoch():
     # verifies the enrollment signature against it.  This proves the enrollment
     # caller is the same entity that performed the attestation, closing the
     # unauthorized-enrollment / miner_id-hijack vector.
-    # Backward-compatible: unsigned requests are still accepted (warn-only) to
-    # allow legacy miners to continue working while operators upgrade.
+    # Unsigned enrollment is rejected by default. Operators running private
+    # legacy migrations can temporarily set ENROLL_ALLOW_UNSIGNED_LEGACY=1.
     sig_hex = (data.get('signature') or '').strip().lower()
     pubkey_hex = (data.get('public_key') or '').strip().lower()
     epoch = slot_to_epoch(current_slot())
@@ -3770,22 +3771,38 @@ def enroll_epoch():
                         "code": "INVALID_ENROLLMENT_SIGNATURE",
                     }), 400
             else:
-                # No stored signing pubkey — accept with warning (legacy attestation)
+                if not ENROLL_ALLOW_UNSIGNED_LEGACY:
+                    logging.warning(
+                        "[ENROLL/SIG] REJECTED: no stored attestation signing "
+                        "pubkey for %s...",
+                        miner_pk[:20],
+                    )
+                    return jsonify({
+                        "ok": False,
+                        "error": "enrollment_signing_key_required",
+                        "message": (
+                            "No attestation signing key is stored for this miner. "
+                            "Re-attest with signature/public_key before enrolling."
+                        ),
+                        "code": "ENROLLMENT_SIGNING_KEY_REQUIRED",
+                    }), 412
+
+                # No stored signing pubkey — legacy private-node escape hatch.
                 logging.warning(
                     "[ENROLL/SIG] No stored signing pubkey for %s... "
-                    "(legacy attestation — accepting unsigned path)",
+                    "(legacy attestation — accepting unverified path)",
                     miner_pk[:20],
                 )
         else:
             # pynacl not available but signature provided — fail-closed.
             print("[ENROLL/SIG] REJECTED: pynacl not installed — cannot verify "
-                  "enrollment signature (install pynacl or submit unsigned)")
+                  "enrollment signature")
             return jsonify({
                 "ok": False,
                 "error": "ed25519_unavailable",
                 "message": (
                     "Ed25519 signature was provided but pynacl is not installed "
-                    "on the node. Install pynacl or submit an unsigned enrollment."
+                    "on the node. Install pynacl to verify signed enrollment."
                 ),
                 "code": "ED25519_UNAVAILABLE",
             }), 503
@@ -3798,9 +3815,26 @@ def enroll_epoch():
             "code": "INCOMPLETE_SIGNATURE",
         }), 400
     else:
-        # No signature — backward compatibility path (warn-only)
+        if not ENROLL_ALLOW_UNSIGNED_LEGACY:
+            logging.warning(
+                "[ENROLL/SIG] REJECTED unsigned enrollment for %s...",
+                miner_pk[:20],
+            )
+            return jsonify({
+                "ok": False,
+                "error": "signed_enrollment_required",
+                "message": (
+                    "Epoch enrollment requires signature/public_key ownership "
+                    "proof. Re-attest with a signing key and submit a signed "
+                    "enrollment request."
+                ),
+                "code": "SIGNED_ENROLLMENT_REQUIRED",
+            }), 401
+
+        # No signature — legacy private-node escape hatch.
         logging.warning(
-            "[ENROLL/SIG] UNSIGNED enrollment accepted for %s... (upgrade miner to signed flow)",
+            "[ENROLL/SIG] UNSIGNED enrollment accepted for %s... "
+            "(ENROLL_ALLOW_UNSIGNED_LEGACY=1; upgrade miner to signed flow)",
             miner_pk[:20],
         )
 
@@ -6393,6 +6427,7 @@ def attest_debug():
             "ENROLL_REQUIRE_TICKET": ENROLL_REQUIRE_TICKET,
             "ENROLL_TICKET_TTL_S": ENROLL_TICKET_TTL_S,
             "ENROLL_REQUIRE_MAC": ENROLL_REQUIRE_MAC,
+            "ENROLL_ALLOW_UNSIGNED_LEGACY": ENROLL_ALLOW_UNSIGNED_LEGACY,
             "MAC_MAX_UNIQUE_PER_DAY": MAC_MAX_UNIQUE_PER_DAY
         }
     }
