@@ -10,7 +10,7 @@ use sha2::{Sha256, Digest};
 use serde::{Serialize, Deserialize};
 
 // Import from RIP-001
-use crate::core_types::{WalletAddress, HardwareTier, TokenAmount, TxHash};
+use crate::core_types::WalletAddress;
 
 /// Badge rarity tiers
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -498,9 +498,10 @@ impl BadgeMinter {
         let mut minted = Vec::new();
 
         for badge_type in eligible {
-            match self.mint_badge(badge_type, stats.wallet.clone(), block, timestamp) {
+match self.mint_badge(badge_type, stats.wallet.clone(), block, timestamp) {
                 Ok(badge) => minted.push(badge),
                 Err(MintError::AlreadyMinted(_)) => continue, // Already has this badge
+                Err(MintError::InvalidCriteria(_)) => continue, // Criteria not met
             }
         }
 
@@ -528,8 +529,8 @@ impl BadgeSvgGenerator {
         let name = badge.badge_type.name();
         let description = badge.badge_type.description();
 
-        format!(
-            r#"<?xml version="1.0" encoding="UTF-8"?>
+format!(
+            r##"<?xml version="1.0" encoding="UTF-8"?>
 <svg width="300" height="350" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="grad1" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -573,7 +574,7 @@ impl BadgeSvgGenerator {
   <text x="150" y="320" font-family="monospace" font-size="10" text-anchor="middle" fill="#FFFFFF" opacity="0.6">
     {badge_id}
   </text>
-</svg>"#,
+</svg>"##,
             color = color,
             icon = icon,
             name = name,
