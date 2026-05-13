@@ -106,6 +106,12 @@ class TestFaucetValidator(unittest.TestCase):
         valid, error = self.validator.validate_wallet('0x9683744B6b94F2b0966aBDb8C6BdD9805d207c6E')
         self.assertTrue(valid)
         self.assertIsNone(error)
+
+    def test_valid_native_rtc_wallet(self):
+        """Default config accepts native RTC wallet addresses."""
+        valid, error = self.validator.validate_wallet('RTCe4fbe4c9085b8b2ed3f1228504de66799025f6ce')
+        self.assertTrue(valid)
+        self.assertIsNone(error)
     
     def test_empty_wallet(self):
         """Test empty wallet address."""
@@ -127,6 +133,16 @@ class TestFaucetValidator(unittest.TestCase):
         valid, error = validator.validate_wallet('9683744B6b94F2b0966aBDb8C6BdD9805d207c6E')
         self.assertFalse(valid)
         self.assertIn("must start with", error)
+
+    def test_multiple_required_prefixes_rejects_unknown_prefix(self):
+        """List-style required_prefix rejects unsupported wallet prefixes."""
+        self.config['validation']['required_prefix'] = ['0x', 'RTC']
+        validator = FaucetValidator(self.config, self.logger)
+
+        valid, error = validator.validate_wallet('bc1qw5s80n4aqmrt95p6p9psf4q4echqye6279d36u')
+        self.assertFalse(valid)
+        self.assertIn("0x", error)
+        self.assertIn("RTC", error)
     
     def test_too_short(self):
         """Test wallet that is too short."""
