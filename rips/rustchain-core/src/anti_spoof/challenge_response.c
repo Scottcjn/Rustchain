@@ -18,9 +18,11 @@
  * - No real thermal sensors
  * - OpenFirmware values don't match hardware
  *
- * Compile: gcc -O0 challenge_response.c -o challenge -framework CoreFoundation -framework IOKit
+ * Compile: gcc -O0 challenge_response.c -o challenge -framework CoreFoundation -framework IOKit -framework Security
  */
 
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +32,11 @@
 #ifdef __APPLE__
 #include <sys/sysctl.h>
 #include <mach/mach_time.h>
+#include <Security/Security.h>
+#endif
+
+#ifdef __linux__
+#include <sys/random.h>
 #endif
 
 #ifdef __ppc__
@@ -81,6 +88,64 @@ typedef struct {
     float confidence_score;
     char failure_reason[256];
 } ValidationResult;
+
+static int fill_random_from_urandom(unsigned char *buf, size_t len) {
+    size_t offset = 0;
+    int fd = open("/dev/urandom", O_RDONLY);
+
+    if (fd < 0) {
+        return -1;
+    }
+
+    while (offset < len) {
+        ssize_t n = read(fd, buf + offset, len - offset);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            close(fd);
+            return -1;
+        }
+        if (n == 0) {
+            close(fd);
+            return -1;
+        }
+        offset += (size_t)n;
+    }
+
+    close(fd);
+    return 0;
+}
+
+static int fill_secure_random(unsigned char *buf, size_t len) {
+#ifdef __linux__
+    size_t offset = 0;
+
+    while (offset < len) {
+        ssize_t n = getrandom(buf + offset, len - offset, 0);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return fill_random_from_urandom(buf, len);
+        }
+        if (n == 0) {
+            return fill_random_from_urandom(buf, len);
+        }
+        offset += (size_t)n;
+    }
+
+    return 0;
+#elif defined(__APPLE__)
+    if (SecRandomCopyBytes(kSecRandomDefault, len, buf) == errSecSuccess) {
+        return 0;
+    }
+
+    return fill_random_from_urandom(buf, len);
+#else
+    return fill_random_from_urandom(buf, len);
+#endif
+}
 
 /* PowerPC-specific: Read timebase register */
 static inline unsigned long long read_timebase(void) {
@@ -290,14 +355,13 @@ static void compute_response_hash(Response *resp, unsigned char *hash) {
 /* Generate a challenge */
 Challenge generate_challenge(unsigned char type) {
     Challenge c;
-    int i;
 
     c.challenge_type = type;
     c.timestamp = read_timebase();
 
-    /* Generate random nonce */
-    for (i = 0; i < 32; i++) {
-        c.nonce[i] = (unsigned char)(rand() ^ (c.timestamp >> (i % 8)));
+    if (fill_secure_random(c.nonce, sizeof(c.nonce)) != 0) {
+        fprintf(stderr, "failed to generate secure challenge nonce\n");
+        exit(EXIT_FAILURE);
     }
 
     /* Set expected timing based on challenge type */
@@ -515,8 +579,6 @@ int main(int argc, char *argv[]) {
     printf("║   Philosophy: \"It's cheaper to buy a $50 vintage Mac                ║\n");
     printf("║                than to emulate one\"                                  ║\n");
     printf("╚══════════════════════════════════════════════════════════════════════╝\n");
-
-    srand((unsigned int)time(NULL) ^ (unsigned int)read_timebase());
 
     printf("\n  Generating comprehensive challenge...\n");
     c = generate_challenge(0); /* Full challenge */
