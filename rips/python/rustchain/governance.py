@@ -14,6 +14,7 @@ Features:
 
 import hashlib
 import json
+import secrets
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -458,8 +459,9 @@ class GovernanceEngine:
 
         proposal.status = ProposalStatus.EXECUTED
         proposal.executed_at = int(time.time())
+        execution_nonce = secrets.token_bytes(32)
         proposal.execution_tx_hash = hashlib.sha256(
-            f"{proposal_id}:{proposal.executed_at}".encode()
+            f"{proposal_id}:{proposal.executed_at}".encode() + execution_nonce
         ).hexdigest()
 
         print(f"⚡ Proposal {proposal_id} executed at block height [N]")
