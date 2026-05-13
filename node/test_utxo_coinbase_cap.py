@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """
 Regression tests for the UTXO coinbase mint cap.
 """
