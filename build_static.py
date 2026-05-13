@@ -271,7 +271,7 @@ def generate_index_html(projects):
         </div>
         
         <div class="projects-grid" id="projectsGrid">
-            {''.join(generate_project_card(project) for project in projects)}
+            {''.join(generate_project_card(project, index) for index, project in enumerate(projects))}
         </div>
         
         <div class="no-results" id="noResults" style="display: none;">
@@ -357,7 +357,7 @@ def generate_index_html(projects):
     
     return html_content
 
-def generate_project_card(project):
+def generate_project_card(project, index=0):
     """Generate HTML for a single project card"""
     categories_html = ''.join(
         f'<span class="category-tag">{category}</span>' 
@@ -367,7 +367,7 @@ def generate_project_card(project):
     badge_embed = f'<img src="https://img.shields.io/badge/BCOS-{project.get("bcos_tier", "Unknown")}-{"green" if project.get("bcos_tier") == "L0" else "yellow" if project.get("bcos_tier") == "L1" else "red"}" alt="BCOS {project.get("bcos_tier", "Unknown")}" />'
     
     return f'''
-    <div class="project-card" data-project-index="{projects.index(project)}">
+    <div class="project-card" data-project-index="{index}">
         <div class="project-header">
             <div>
                 <a href="{project.get('url', '#')}" class="project-title" target="_blank">
