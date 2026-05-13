@@ -96,14 +96,7 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
     utxo_db = UtxoDB(db_path)
     utxo_db.init_tables()
 
-    # Safety check
-    if check_existing_genesis(utxo_db):
-        print("ERROR: Genesis boxes already exist. Aborting.")
-        print("To re-run, first delete genesis boxes:")
-        print(f"  DELETE FROM utxo_boxes WHERE creation_height = {GENESIS_HEIGHT};")
-        return {'error': 'genesis_already_exists'}
-
-    # Load balances
+    # Load balances (read-only, no transaction needed)
     balances = load_account_balances(db_path)
     if not balances:
         print("WARNING: No non-zero balances found.")
@@ -119,7 +112,10 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
         print("=== DRY RUN — computing what would be created ===")
         print()
 
-    # Create genesis boxes
+    # Create genesis boxes inside a single transaction.
+    # The genesis-existence check is now inside the same connection+transaction,
+    # closing the TOCTOU window where two concurrent migrations could both
+    # pass check_existing_genesis() before either commits.
     conn = utxo_db._conn()
     now = int(time.time())
     boxes_created = 0
@@ -127,6 +123,19 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
     try:
         if not dry_run:
             conn.execute("BEGIN IMMEDIATE")
+
+        # Safety check — inside the transaction
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM utxo_boxes WHERE creation_height = ?",
+            (GENESIS_HEIGHT,),
+        ).fetchone()
+        if row['n'] > 0:
+            print("ERROR: Genesis boxes already exist. Aborting.")
+            print("To re-run, first delete genesis boxes:")
+            print(f"  DELETE FROM utxo_boxes WHERE creation_height = {GENESIS_HEIGHT};")
+            if not dry_run:
+                conn.execute("ROLLBACK")
+            return {'error': 'genesis_already_exists'}
 
         for miner_id, amount_nrtc in balances:
             tx_id = compute_genesis_tx_id(miner_id)
