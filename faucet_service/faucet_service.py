@@ -320,12 +320,57 @@ class RateLimiter:
             return True, None
 
         if self.redis_client and REDIS_AVAILABLE:
-            allowed, next_available = self._check_redis(identifier)
-            if allowed:
-                self._record_redis(identifier)
-            return allowed, next_available
+            return self._record_redis_if_allowed(identifier)
 
         return self._record_sqlite_if_allowed(ip_address, wallet, amount)
+
+    def _record_redis_if_allowed(self, identifier: str) -> Tuple[bool, Optional[str]]:
+        """Check and record the Redis rate limit in one atomic script."""
+        key = self._get_key(identifier, 'rl')
+        count_key = self._get_key(identifier, 'count')
+        max_requests = self.config['rate_limit'].get('max_requests', 1)
+        window_seconds = self.config['rate_limit']['window_seconds']
+        now_iso = datetime.now().isoformat()
+
+        result = self.redis_client.eval(
+            """
+            local count_key = KEYS[1]
+            local marker_key = KEYS[2]
+            local max_requests = tonumber(ARGV[1])
+            local window_seconds = tonumber(ARGV[2])
+            local now_iso = ARGV[3]
+
+            local current = tonumber(redis.call('GET', count_key) or '0')
+            if current >= max_requests then
+                local ttl = redis.call('TTL', marker_key)
+                if ttl < 0 then
+                    ttl = redis.call('TTL', count_key)
+                end
+                return {0, ttl}
+            end
+
+            local new_count = redis.call('INCR', count_key)
+            if new_count == 1 or redis.call('TTL', count_key) < 0 then
+                redis.call('EXPIRE', count_key, window_seconds)
+            end
+            redis.call('SET', marker_key, now_iso, 'EX', window_seconds)
+            return {1, redis.call('TTL', marker_key)}
+            """,
+            2,
+            count_key,
+            key,
+            max_requests,
+            window_seconds,
+            now_iso,
+        )
+
+        allowed = int(result[0]) == 1
+        if allowed:
+            return True, None
+
+        ttl = int(result[1]) if len(result) > 1 and result[1] is not None else 0
+        next_available = datetime.now() + timedelta(seconds=max(0, ttl))
+        return False, next_available.isoformat()
     
     def _record_redis(self, identifier: str) -> None:
         """Record request in Redis."""

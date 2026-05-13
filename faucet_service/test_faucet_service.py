@@ -20,6 +20,7 @@ import json
 import time
 import sqlite3
 import tempfile
+import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -38,6 +39,30 @@ from faucet_service import (
     get_client_ip,
     DEFAULT_CONFIG
 )
+
+
+class FakeAtomicRedis:
+    """Small Redis stand-in that serializes eval like Redis does."""
+
+    def __init__(self):
+        self.values = {}
+        self.ttls = {}
+        self.lock = threading.Lock()
+
+    def eval(self, _script, _numkeys, count_key, marker_key, max_requests, window_seconds, now_iso):
+        with self.lock:
+            max_requests = int(max_requests)
+            window_seconds = int(window_seconds)
+            current = int(self.values.get(count_key, 0))
+
+            if current >= max_requests:
+                return [0, self.ttls.get(marker_key, self.ttls.get(count_key, window_seconds))]
+
+            self.values[count_key] = current + 1
+            self.values[marker_key] = now_iso
+            self.ttls[count_key] = window_seconds
+            self.ttls[marker_key] = window_seconds
+            return [1, window_seconds]
 
 
 class TestConfiguration(unittest.TestCase):
@@ -288,6 +313,34 @@ class TestRateLimiter(unittest.TestCase):
             self.assertEqual(c.fetchone()[0], 1)
         finally:
             conn.close()
+
+    def test_redis_record_request_if_allowed_is_atomic(self):
+        """Test Redis drip attempts use one atomic check-and-record operation."""
+        self.config['rate_limit']['window_seconds'] = 60
+        self.config['rate_limit']['max_requests'] = 1
+        self.config['rate_limit']['redis']['enabled'] = True
+        self.rate_limiter.redis_client = FakeAtomicRedis()
+
+        def attempt_drip(_):
+            return self.rate_limiter.record_request_if_allowed(
+                '192.168.1.10:0xwallet-redis-race',
+                '192.168.1.10',
+                '0xwallet-redis-race',
+                0.5,
+            )[0]
+
+        with patch('faucet_service.REDIS_AVAILABLE', True):
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                results = list(executor.map(attempt_drip, range(8)))
+
+        self.assertEqual(results.count(True), 1)
+        self.assertEqual(results.count(False), 7)
+        count_keys = [
+            key for key in self.rate_limiter.redis_client.values
+            if key.startswith('rustchain_faucet:count:192.168.1.10:0xwallet-redis-race:')
+        ]
+        self.assertEqual(len(count_keys), 1)
+        self.assertEqual(self.rate_limiter.redis_client.values[count_keys[0]], 1)
 
 
 class TestDatabase(unittest.TestCase):
