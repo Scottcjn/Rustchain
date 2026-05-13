@@ -30,6 +30,20 @@ class ProofOfIronStub:
         return True
 
 
+class CaptureRecorder:
+    def __init__(self):
+        self.calls = []
+        self.saved_path = None
+
+    def capture(self, duration, trigger=False):
+        self.calls.append((duration, trigger))
+        return object()
+
+    def save_audio(self, captured, path):
+        self.saved_path = Path(path)
+        self.saved_path.write_bytes(b"RIFF\x24\x00\x00\x00WAVEfmt ")
+
+
 def install_dependency_stubs(monkeypatch):
     flask_cors = types.ModuleType("flask_cors")
     flask_cors.CORS = lambda app: app
@@ -104,3 +118,38 @@ def test_revoke_accepts_valid_json_body(client, api_module):
     assert response.status_code == 200
     assert api_module.poi_system.revoked == ("miner-1", "retired")
     assert response.get_json() == {"success": True, "message": "Attestation revoked"}
+
+
+def test_capture_rejects_excessive_duration_before_recording(client, api_module):
+    recorder = CaptureRecorder()
+    api_module.audio_capture = recorder
+
+    response = client.post("/api/v1/capture?duration=999999")
+
+    assert response.status_code == 400
+    assert "duration must be between" in response.get_json()["error"]
+    assert recorder.calls == []
+
+
+@pytest.mark.parametrize("duration", ("nan", "inf", "-1", "0", "not-a-number"))
+def test_capture_rejects_non_finite_or_invalid_duration(client, api_module, duration):
+    recorder = CaptureRecorder()
+    api_module.audio_capture = recorder
+
+    response = client.post(f"/api/v1/capture?duration={duration}")
+
+    assert response.status_code == 400
+    assert recorder.calls == []
+
+
+def test_capture_accepts_bounded_duration_and_removes_temp_file(client, api_module):
+    recorder = CaptureRecorder()
+    api_module.audio_capture = recorder
+
+    response = client.post("/api/v1/capture?duration=3.5&trigger=true")
+
+    assert response.status_code == 200
+    assert response.mimetype == "audio/wav"
+    assert recorder.calls == [(3.5, True)]
+    assert recorder.saved_path is not None
+    assert not recorder.saved_path.exists()

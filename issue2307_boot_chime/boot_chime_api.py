@@ -7,7 +7,9 @@ Integrates with RustChain node for miner attestation.
 
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+import io
 import json
+import math
 import os
 import time
 import tempfile
@@ -32,6 +34,8 @@ API_PORT = int(os.getenv('BOOT_CHIME_API_PORT', '8085'))
 DB_PATH = os.getenv('BOOT_CHIME_DB_PATH', 'proof_of_iron.db')
 SIMILARITY_THRESHOLD = float(os.getenv('BOOT_CHIME_THRESHOLD', '0.85'))
 CHALLENGE_TTL = int(os.getenv('BOOT_CHIME_CHALLENGE_TTL', '300'))
+MIN_CAPTURE_DURATION_SECONDS = float(os.getenv('BOOT_CHIME_MIN_CAPTURE_DURATION', '0.1'))
+MAX_CAPTURE_DURATION_SECONDS = float(os.getenv('BOOT_CHIME_MAX_CAPTURE_DURATION', '30.0'))
 
 # Initialize Proof-of-Iron system
 poi_system = ProofOfIron(
@@ -55,12 +59,36 @@ class JsonBodyError(ValueError):
     """Raised when a JSON endpoint receives a non-object body."""
 
 
+class CaptureDurationError(ValueError):
+    """Raised when a capture request duration is missing or unsafe."""
+
+
 def get_json_object() -> Dict[str, Any]:
     """Return the request JSON body when it is an object."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         raise JsonBodyError("JSON object required")
     return data
+
+
+def get_capture_duration() -> float:
+    """Return a finite capture duration within configured safety bounds."""
+    raw_duration = request.args.get('duration', '5.0')
+    try:
+        duration = float(raw_duration)
+    except (TypeError, ValueError):
+        raise CaptureDurationError("duration must be a number")
+
+    if not math.isfinite(duration):
+        raise CaptureDurationError("duration must be finite")
+
+    if not MIN_CAPTURE_DURATION_SECONDS <= duration <= MAX_CAPTURE_DURATION_SECONDS:
+        raise CaptureDurationError(
+            "duration must be between "
+            f"{MIN_CAPTURE_DURATION_SECONDS:g} and {MAX_CAPTURE_DURATION_SECONDS:g} seconds"
+        )
+
+    return duration
 
 
 # ============= Health & Info =============
@@ -278,23 +306,30 @@ def capture_audio():
     Response: WAV file
     """
     try:
-        duration = request.args.get('duration', default=5.0, type=float)
+        duration = get_capture_duration()
         trigger = request.args.get('trigger', default='false').lower() == 'true'
         
         captured = audio_capture.capture(duration=duration, trigger=trigger)
         
-        # Save to temp file and return
+        tmp_path = None
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
-            audio_capture.save_audio(captured, tmp.name)
             tmp_path = tmp.name
+        try:
+            audio_capture.save_audio(captured, tmp_path)
+            audio_bytes = Path(tmp_path).read_bytes()
+        finally:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
         
         return send_file(
-            tmp_path,
+            io.BytesIO(audio_bytes),
             mimetype='audio/wav',
             as_attachment=True,
             download_name=f'boot_chime_{int(time.time())}.wav'
         )
         
+    except CaptureDurationError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
