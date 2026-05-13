@@ -200,6 +200,7 @@ _ADMIN_RATE_LIMIT_PATHS = {
     "/api/bridge/void",
     "/api/lock/forfeit",
     "/api/lock/release",
+    "/genesis/export",
     "/miner/headerkey",
     "/ops/attest/debug",
     "/rewards/settle",
@@ -212,28 +213,36 @@ _ADMIN_RATE_LIMIT_PATHS = {
 }
 
 
-def _is_admin_rate_limited_path(path: str) -> bool:
+def _admin_rate_limit_bucket_path(path: str) -> Optional[str]:
     if path in _ADMIN_RATE_LIMIT_PATHS:
-        return True
+        return path
     if path.startswith("/api/miner/") and path.endswith("/attestations"):
-        return True
-    if path.startswith("/api/bridge/lock/") and (
-        path.endswith("/confirm") or path.endswith("/release")
-    ):
-        return True
+        return "/api/miner/:miner_id/attestations"
+    if path.startswith("/api/bridge/lock/"):
+        if path.endswith("/confirm"):
+            return "/api/bridge/lock/:lock_id/confirm"
+        if path.endswith("/release"):
+            return "/api/bridge/lock/:lock_id/release"
     if path.startswith("/withdraw/history/"):
-        return True
-    return any(path.startswith(prefix) for prefix in _ADMIN_RATE_LIMIT_PREFIXES)
+        return "/withdraw/history/:miner_pk"
+    for prefix in _ADMIN_RATE_LIMIT_PREFIXES:
+        if path.startswith(prefix):
+            return f"{prefix.rstrip('/')}/*"
+    return None
 
 
-def _check_admin_rate_limit(client_ip: str, path: str, now_ts: Optional[int] = None):
+def _is_admin_rate_limited_path(path: str) -> bool:
+    return _admin_rate_limit_bucket_path(path) is not None
+
+
+def _check_admin_rate_limit(client_ip: str, route_key: str, now_ts: Optional[int] = None):
     """Bound repeated admin endpoint attempts per client IP and route."""
     if ADMIN_RATE_LIMIT_MAX <= 0:
         return True, 0
     now_ts = int(time.time()) if now_ts is None else int(now_ts)
     window = max(1, ADMIN_RATE_LIMIT_WINDOW)
     cutoff = now_ts - window
-    key = (client_ip or "unknown", path)
+    key = (client_ip or "unknown", route_key)
     with _ADMIN_RATE_LIMIT_LOCK:
         attempts = [ts for ts in _ADMIN_RATE_LIMIT_BUCKETS.get(key, []) if ts > cutoff]
         if len(attempts) >= ADMIN_RATE_LIMIT_MAX:
@@ -554,8 +563,9 @@ except Exception as e:
 def _start_timer():
     g._ts = time.time()
     g.request_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex
-    if _is_admin_rate_limited_path(request.path):
-        allowed, retry_after = _check_admin_rate_limit(get_client_ip(), request.path)
+    rate_limit_path = _admin_rate_limit_bucket_path(request.path)
+    if rate_limit_path:
+        allowed, retry_after = _check_admin_rate_limit(get_client_ip(), rate_limit_path)
         if not allowed:
             return _admin_rate_limit_response(retry_after)
 

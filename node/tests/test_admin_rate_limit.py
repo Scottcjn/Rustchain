@@ -90,12 +90,50 @@ class TestAdminRateLimit(unittest.TestCase):
 
         self.assertTrue(all(response.status_code == 200 for response in responses))
 
+    def test_dynamic_admin_route_variants_share_rate_limit_bucket(self):
+        paths = [
+            "/withdraw/history/miner-a",
+            "/withdraw/history/miner-b",
+            "/withdraw/history/miner-c",
+        ]
+        statuses = []
+        with mock.patch.object(self.mod.time, "time", return_value=1000):
+            with self.mod.app.test_client() as client:
+                for path in paths:
+                    response = client.get(
+                        path,
+                        headers={"X-Admin-Key": "wrong-admin-key"},
+                        environ_base={"REMOTE_ADDR": "198.51.100.44"},
+                    )
+                    statuses.append(response.status_code)
+
+        self.assertEqual(statuses, [401, 401, 429])
+
     def test_registered_admin_extension_routes_are_limited(self):
         self.assertTrue(self.mod._is_admin_rate_limited_path("/wallet/link-coinbase"))
         self.assertTrue(self.mod._is_admin_rate_limited_path("/api/bridge/void"))
         self.assertTrue(self.mod._is_admin_rate_limited_path("/api/lock/release"))
         self.assertTrue(self.mod._is_admin_rate_limited_path("/api/bridge/lock/abc123/confirm"))
+        self.assertTrue(self.mod._is_admin_rate_limited_path("/genesis/export"))
         self.assertFalse(self.mod._is_admin_rate_limited_path("/wallet/swap-info"))
+
+    def test_dynamic_admin_route_bucket_keys_are_normalized(self):
+        self.assertEqual(
+            self.mod._admin_rate_limit_bucket_path("/api/miner/alice/attestations"),
+            "/api/miner/:miner_id/attestations",
+        )
+        self.assertEqual(
+            self.mod._admin_rate_limit_bucket_path("/withdraw/history/miner-a"),
+            "/withdraw/history/:miner_pk",
+        )
+        self.assertEqual(
+            self.mod._admin_rate_limit_bucket_path("/api/bridge/lock/abc123/confirm"),
+            "/api/bridge/lock/:lock_id/confirm",
+        )
+        self.assertEqual(
+            self.mod._admin_rate_limit_bucket_path("/api/bridge/lock/def456/release"),
+            "/api/bridge/lock/:lock_id/release",
+        )
 
 
 if __name__ == "__main__":
