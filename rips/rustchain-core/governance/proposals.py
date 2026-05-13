@@ -400,9 +400,13 @@ class GovernanceEngine:
         from_wallet: str,
         to_wallet: str,
         weight: float,
+        caller_wallet: str,
         duration_days: Optional[int] = None,
     ) -> Delegation:
         """Delegate voting power to another wallet (RIP-0006)."""
+        if caller_wallet != from_wallet:
+            raise ValueError("caller_wallet must match from_wallet")
+
         if weight < 0 or weight > 1:
             raise ValueError("Delegation weight must be between 0 and 1")
 
