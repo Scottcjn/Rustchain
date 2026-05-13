@@ -441,6 +441,26 @@ class TestFlaskApp(unittest.TestCase):
         data = json.loads(response.data)
         self.assertEqual(data['status'], 'healthy')
         self.assertIn('timestamp', data)
+
+    def test_metrics_endpoint_uses_configured_database(self):
+        """Test metrics endpoint reads from the configured database path."""
+        self.config['monitoring']['metrics_enabled'] = True
+        app = create_app(self.config)
+        client = app.test_client()
+
+        drip_response = client.post('/faucet/drip',
+                                    json={'wallet': '0x9683744B6b94F2b0966aBDb8C6BdD9805d207c6E'},
+                                    content_type='application/json')
+        self.assertEqual(drip_response.status_code, 200)
+
+        response = client.get('/metrics')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, 'text/plain')
+
+        metrics = response.get_data(as_text=True)
+        self.assertIn('faucet_drips_total 1', metrics)
+        self.assertIn('faucet_amount_total 0.5', metrics)
+        self.assertIn('faucet_up 1', metrics)
     
     def test_client_ip_detection(self):
         """Test client IP detection with headers."""
