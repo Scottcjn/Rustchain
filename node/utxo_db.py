@@ -765,6 +765,14 @@ class UtxoDB:
 
             outputs = tx.get('outputs', [])
 
+            # FIX(#9273): Reject excessive outputs in mempool to prevent UTXO bloat
+            MAX_OUTPUTS = 1000
+            if len(outputs) > MAX_OUTPUTS and tx_type not in MINTING_TX_TYPES:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
+                return False
+
+
             # FIX(#2179): Mirror apply_transaction() output validation.
             # Reject outputs with missing, non-int, zero, or negative value_nrtc.
             # Without this, unmineable transactions enter the mempool and lock
@@ -775,6 +783,11 @@ class UtxoDB:
                     if manage_tx:
                         conn.execute("ROLLBACK")
                     return False
+                    # FIX(#9273): Reject dust outputs in mempool to prevent UTXO set bloat
+                    if val < DUST_THRESHOLD and tx_type not in MINTING_TX_TYPES:
+                        if manage_tx:
+                            conn.execute("ROLLBACK")
+                        return False
 
             output_total = sum(o['value_nrtc'] for o in outputs)
             if input_total > 0 and (output_total + fee) > input_total:
