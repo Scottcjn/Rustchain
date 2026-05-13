@@ -17,6 +17,7 @@ import json
 import os
 import socket
 import ssl
+import struct
 import time
 import threading
 import queue
@@ -38,6 +39,7 @@ P2P_TLS_CERT_ENV = "RC_P2P_TLS_CERT"
 P2P_TLS_KEY_ENV = "RC_P2P_TLS_KEY"
 P2P_TLS_CA_ENV = "RC_P2P_TLS_CA"
 P2P_REQUIRE_MTLS_ENV = "RC_P2P_REQUIRE_MTLS"
+WIRE_MESSAGE_MAX_BYTES = 4 * 1024 * 1024
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -392,6 +394,7 @@ class NetworkManager:
         validator_id: str = "",
         mtls_config: Optional[MTLSConfig] = None,
         require_mtls: Optional[bool] = None,
+        auto_send: bool = True,
     ):
         self.listen_port = listen_port
         self.chain_id = chain_id
@@ -403,6 +406,9 @@ class NetworkManager:
         self.mtls_config = mtls_config or MTLSConfig.from_env()
         self._server_ssl_context: Optional[ssl.SSLContext] = None
         self._client_ssl_context: Optional[ssl.SSLContext] = None
+        self.auto_send = auto_send
+        self._server_socket: Optional[socket.socket] = None
+        self._listener_thread: Optional[threading.Thread] = None
 
         self.peer_manager = PeerManager()
         self.message_handler = MessageHandler()
@@ -440,6 +446,98 @@ class NetworkManager:
             self._server_ssl_context = self.mtls_config.build_server_context()
         if self._client_ssl_context is None:
             self._client_ssl_context = self.mtls_config.build_client_context()
+
+    def _wrap_client_socket(self, raw_sock: socket.socket, peer_id: PeerId) -> socket.socket:
+        if not self.require_mtls:
+            return raw_sock
+        self._ensure_mtls_ready()
+        return self._client_ssl_context.wrap_socket(raw_sock, server_hostname=peer_id.address)
+
+    def _wrap_server_socket(self, raw_sock: socket.socket) -> socket.socket:
+        if not self.require_mtls:
+            return raw_sock
+        self._ensure_mtls_ready()
+        return self._server_ssl_context.wrap_socket(raw_sock, server_side=True)
+
+    def _send_wire_message(self, peer_id: PeerId, message: Message, timeout: float = 5.0) -> bool:
+        payload = message.to_bytes()
+        frame = struct.pack("!I", len(payload)) + payload
+        raw_sock = socket.create_connection((peer_id.address, peer_id.port), timeout=timeout)
+        try:
+            with self._wrap_client_socket(raw_sock, peer_id) as tls_sock:
+                tls_sock.sendall(frame)
+        finally:
+            if not getattr(raw_sock, "_closed", False):
+                raw_sock.close()
+        return True
+
+    @staticmethod
+    def _recv_exact(sock: socket.socket, size: int) -> bytes:
+        chunks = []
+        remaining = size
+        while remaining:
+            chunk = sock.recv(remaining)
+            if not chunk:
+                raise ConnectionError("P2P peer closed connection while reading frame")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
+    def receive_message_from_socket(self, raw_sock: socket.socket, address) -> bool:
+        """Receive one length-prefixed message from a TLS-authenticated peer socket."""
+        peer_id = PeerId(address=address[0], port=address[1])
+        with self._wrap_server_socket(raw_sock) as tls_sock:
+            size = struct.unpack("!I", self._recv_exact(tls_sock, 4))[0]
+            if size <= 0 or size > WIRE_MESSAGE_MAX_BYTES:
+                raise ValueError("invalid P2P message frame size")
+            payload = self._recv_exact(tls_sock, size)
+
+        return self.message_handler.handle_message(Message.from_bytes(payload, peer_id))
+
+    def _open_listener_socket(self) -> socket.socket:
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            server_sock.bind(("0.0.0.0", self.listen_port))
+            server_sock.listen()
+        except Exception:
+            server_sock.close()
+            raise
+        return server_sock
+
+    def _handle_peer_socket(self, raw_sock: socket.socket, address):
+        try:
+            self.receive_message_from_socket(raw_sock, address)
+        except Exception as e:
+            print(f"P2P peer socket error from {address}: {e}")
+        finally:
+            if not getattr(raw_sock, "_closed", False):
+                raw_sock.close()
+
+    def _accept_loop(self):
+        while self.running and self._server_socket is not None:
+            try:
+                raw_sock, address = self._server_socket.accept()
+            except OSError:
+                if self.running:
+                    print("P2P listener socket closed unexpectedly")
+                break
+
+            thread = threading.Thread(
+                target=self._handle_peer_socket,
+                args=(raw_sock, address),
+                daemon=True,
+            )
+            thread.start()
+
+    def flush_outbound_once(self) -> bool:
+        """Send one queued outbound message through the configured transport."""
+        try:
+            peer_id, message = self.outbound_queue.get_nowait()
+        except queue.Empty:
+            return False
+
+        return self._send_wire_message(peer_id, message)
 
     def _register_default_handlers(self):
         """Register default message handlers"""
@@ -522,7 +620,11 @@ class NetworkManager:
             payload=payload,
         )
 
+        if self.auto_send:
+            return self._send_wire_message(peer_id, message)
+
         self.outbound_queue.put((peer_id, message))
+        return True
 
     def broadcast(self, msg_type: MessageType, payload: Dict[str, Any]):
         """Broadcast a message to all peers"""
@@ -549,6 +651,9 @@ class NetworkManager:
         """Start the network manager"""
         self._ensure_mtls_ready()
         self.running = True
+        self._server_socket = self._open_listener_socket()
+        self._listener_thread = threading.Thread(target=self._accept_loop, daemon=True)
+        self._listener_thread.start()
         print(f"Network started on port {self.listen_port}")
 
         # Start peer cleanup thread
@@ -558,6 +663,9 @@ class NetworkManager:
     def stop(self):
         """Stop the network manager"""
         self.running = False
+        if self._server_socket is not None:
+            self._server_socket.close()
+            self._server_socket = None
         print("Network stopped")
 
     def _cleanup_loop(self):
