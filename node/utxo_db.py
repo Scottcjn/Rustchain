@@ -439,6 +439,8 @@ class UtxoDB:
 
         Returns True on success, False on validation failure.
         """
+        own = conn is None
+
         ts = tx.get('timestamp', int(time.time()))
         if not _is_nonnegative_int64(ts):
             return False

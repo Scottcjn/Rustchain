@@ -241,6 +241,14 @@ class TestUtxoDB(unittest.TestCase):
         """Oversized timestamps must reject cleanly before SQLite persistence."""
         self._apply_coinbase('alice', 100 * UNIT)
         alice_boxes = self.db.get_unspent_for_address('alice')
+        opened = []
+        original_conn = self.db._conn
+
+        def tracking_conn():
+            opened.append(True)
+            return original_conn()
+
+        self.db._conn = tracking_conn
 
         ok = self.db.apply_transaction({
             'tx_type': 'transfer',
@@ -252,6 +260,7 @@ class TestUtxoDB(unittest.TestCase):
         }, block_height=10)
 
         self.assertFalse(ok)
+        self.assertFalse(opened)
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
         self.assertEqual(self.db.get_balance('bob'), 0)
 
@@ -259,6 +268,14 @@ class TestUtxoDB(unittest.TestCase):
         """Invalid block heights must not reach box-id serialization."""
         self._apply_coinbase('alice', 100 * UNIT)
         alice_boxes = self.db.get_unspent_for_address('alice')
+        opened = []
+        original_conn = self.db._conn
+
+        def tracking_conn():
+            opened.append(True)
+            return original_conn()
+
+        self.db._conn = tracking_conn
 
         ok = self.db.apply_transaction({
             'tx_type': 'transfer',
@@ -269,6 +286,7 @@ class TestUtxoDB(unittest.TestCase):
         }, block_height=-1)
 
         self.assertFalse(ok)
+        self.assertFalse(opened)
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
         self.assertEqual(self.db.get_balance('bob'), 0)
 
