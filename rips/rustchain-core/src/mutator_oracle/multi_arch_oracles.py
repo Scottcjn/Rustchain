@@ -45,14 +45,15 @@ can generate. Compromising requires controlling ALL architectures.
 "Diversity is security. The chain speaks many silicon dialects."
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Set
-from enum import Enum, auto
 import hashlib
-import struct
+import hmac
 import secrets
+import struct
 import time
+from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
+from typing import Dict, List, Optional, Set, Tuple
 
 class CPUArchitecture(Enum):
     """Supported CPU architectures for oracle nodes"""
@@ -289,7 +290,7 @@ class MultiArchOracleRing:
             final_seed,
             b''.join(a.encode() for a in sorted(contributions.keys())),
             hashlib.sha256
-        ).digest() if 'hmac' in dir() else hashlib.sha256(final_seed).digest()
+        ).digest()
 
         seed = MultiArchMutationSeed(
             seed=final_seed,
@@ -478,5 +479,4 @@ def demo_multi_arch_network():
 
 
 if __name__ == "__main__":
-    import hmac  # Import for ring signature
     demo_multi_arch_network()
