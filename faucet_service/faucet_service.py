@@ -214,9 +214,12 @@ class RateLimiter:
         current_window = int(time.time()) // window
         return f"{prefix}{id_type}:{identifier}:{current_window}"
     
-    def check_rate_limit(self, ip_address: str, wallet: str) -> Tuple[bool, Optional[str]]:
+    def check_and_record(self, ip_address: str, wallet: str, amount: float) -> Tuple[bool, Optional[str]]:
         """
-        Check if request is within rate limits.
+        Atomically check rate limit and record request (race-condition-safe).
+        
+        Uses a single SQLite IMMEDIATE transaction to prevent TOCTOU where
+        concurrent requests all pass the check before any are recorded.
         
         Returns:
             Tuple of (allowed: bool, next_available: Optional[str])
@@ -226,109 +229,84 @@ class RateLimiter:
         
         method = self.config['rate_limit'].get('method', 'ip')
         
-        # Determine identifier based on method
         if method == 'ip':
             identifier = ip_address
         elif method == 'wallet':
             identifier = wallet
         elif method == 'hybrid':
-            # Use both IP and wallet
             identifier = f"{ip_address}:{wallet}"
         else:
             identifier = ip_address
         
         if self.redis_client and REDIS_AVAILABLE:
-            return self._check_redis(identifier)
+            return self._check_and_record_redis(identifier, ip_address, wallet, amount)
         else:
-            return self._check_sqlite(identifier, ip_address, wallet)
+            return self._check_and_record_sqlite(identifier, ip_address, wallet, amount)
     
-    def _check_redis(self, identifier: str) -> Tuple[bool, Optional[str]]:
-        """Check rate limit using Redis."""
-        key = self._get_key(identifier, 'rl')
-        count_key = self._get_key(identifier, 'count')
-        
-        current_count = self.redis_client.get(count_key)
-        current_count = int(current_count) if current_count else 0
-        
-        max_requests = self.config['rate_limit'].get('max_requests', 1)
-        window_seconds = self.config['rate_limit']['window_seconds']
-        
-        if current_count >= max_requests:
-            ttl = self.redis_client.ttl(key)
-            next_available = datetime.now() + timedelta(seconds=max(0, ttl))
-            return False, next_available.isoformat()
-        
-        return True, None
-    
-    def _check_sqlite(self, identifier: str, ip_address: str, wallet: str) -> Tuple[bool, Optional[str]]:
-        """Check rate limit using SQLite."""
-        conn = sqlite3.connect(self.config['database']['path'])
-        c = conn.cursor()
-        
-        window_seconds = self.config['rate_limit']['window_seconds']
-        cutoff = datetime.now() - timedelta(seconds=window_seconds)
-        
-        c.execute('''
-            SELECT COUNT(*) FROM drip_requests
-            WHERE (ip_address = ? OR wallet = ?)
-            AND timestamp > ?
-        ''', (ip_address, wallet, cutoff.isoformat()))
-        
-        count = c.fetchone()[0]
-        max_requests = self.config['rate_limit'].get('max_requests', 1)
-        
-        conn.close()
-        
-        if count >= max_requests:
-            # Calculate next available time.
-            conn = sqlite3.connect(self.config['database']['path'])
-            try:
-                c = conn.cursor()
+    def _check_and_record_sqlite(self, identifier: str, ip_address: str, wallet: str, amount: float) -> Tuple[bool, Optional[str]]:
+        """Atomic rate limit check + record using SQLite IMMEDIATE transaction."""
+        conn = sqlite3.connect(self.config['database']['path'], timeout=5)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            c = conn.cursor()
+            
+            window_seconds = self.config['rate_limit']['window_seconds']
+            cutoff = datetime.now() - timedelta(seconds=window_seconds)
+            max_requests = self.config['rate_limit'].get('max_requests', 1)
+            
+            c.execute('''
+                SELECT COUNT(*) FROM drip_requests
+                WHERE (ip_address = ? OR wallet = ?)
+                AND timestamp > ?
+            ''', (ip_address, wallet, cutoff.isoformat()))
+            
+            count = c.fetchone()[0]
+            
+            if count >= max_requests:
                 c.execute('''
                     SELECT MAX(timestamp) FROM drip_requests
                     WHERE (ip_address = ? OR wallet = ?)
                     AND timestamp > ?
                 ''', (ip_address, wallet, cutoff.isoformat()))
                 last_request = c.fetchone()[0]
-            finally:
-                conn.close()
-
-            if last_request:
-                last_time = datetime.fromisoformat(last_request)
-                next_available = last_time + timedelta(seconds=window_seconds)
-                return False, next_available.isoformat()
-        
-        return True, None
+                conn.rollback()
+                if last_request:
+                    last_time = datetime.fromisoformat(last_request)
+                    next_available = last_time + timedelta(seconds=window_seconds)
+                    return False, next_available.isoformat()
+                return False, None
+            
+            c.execute('''
+                INSERT INTO drip_requests (wallet, ip_address, amount, timestamp)
+                VALUES (?, ?, ?, ?)
+            ''', (wallet, ip_address, amount, datetime.now().isoformat()))
+            conn.commit()
+            return True, None
+        finally:
+            conn.close()
     
-    def record_request(self, identifier: str, ip_address: str, wallet: str, amount: float) -> None:
-        """Record a rate-limited request."""
-        if self.redis_client and REDIS_AVAILABLE:
-            self._record_redis(identifier)
-        else:
-            self._record_sqlite(ip_address, wallet, amount)
-    
-    def _record_redis(self, identifier: str) -> None:
-        """Record request in Redis."""
+    def _check_and_record_redis(self, identifier: str, ip_address: str, wallet: str, amount: float) -> Tuple[bool, Optional[str]]:
+        """Atomic rate limit check + record using Redis pipeline (already atomic)."""
         key = self._get_key(identifier, 'rl')
         count_key = self._get_key(identifier, 'count')
         window_seconds = self.config['rate_limit']['window_seconds']
+        max_requests = self.config['rate_limit'].get('max_requests', 1)
         
         pipe = self.redis_client.pipeline()
+        pipe.get(count_key)
+        current_count = pipe.execute()[0]
+        current_count = int(current_count) if current_count else 0
+        
+        if current_count >= max_requests:
+            ttl = self.redis_client.ttl(key)
+            next_available = datetime.now() + timedelta(seconds=max(0, ttl))
+            return False, next_available.isoformat()
+        
         pipe.incr(count_key)
         pipe.expire(count_key, window_seconds)
         pipe.set(key, datetime.now().isoformat(), ex=window_seconds)
         pipe.execute()
-    
-    def _record_sqlite(self, ip_address: str, wallet: str, amount: float) -> None:
-        """Record request in SQLite."""
-        conn = sqlite3.connect(self.config['database']['path'])
-        c = conn.cursor()
-        c.execute('''
-            INSERT INTO drip_requests (wallet, ip_address, amount, timestamp)
-            VALUES (?, ?, ?, ?)
-        ''', (wallet, ip_address, amount, datetime.now().isoformat()))
-        conn.commit()
-        conn.close()
+        return True, None
 
 
 # =============================================================================
@@ -419,6 +397,11 @@ class FaucetValidator:
 def init_database(db_path: str) -> None:
     """Initialize SQLite database with required tables."""
     conn = sqlite3.connect(db_path)
+    
+    # Enable WAL mode for better concurrent performance
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    
     c = conn.cursor()
     
     c.execute('''
@@ -546,8 +529,11 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
             logger.warning(f"Invalid wallet {wallet}: {error}")
             return jsonify({'ok': False, 'error': error}), 400
         
-        # Check rate limit
-        allowed, next_available = rate_limiter.check_rate_limit(ip, wallet)
+        # Process drip
+        amount = config.get('distribution', {}).get('amount', 0.5)
+        
+        # Atomically check rate limit and record (prevents TOCTOU race condition)
+        allowed, next_available = rate_limiter.check_and_record(ip, wallet, amount)
         if not allowed:
             logger.info(f"Rate limit exceeded for {ip}/{wallet}")
             return jsonify({
@@ -555,9 +541,6 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
                 'error': 'Rate limit exceeded',
                 'next_available': next_available
             }), 429
-        
-        # Process drip
-        amount = config.get('distribution', {}).get('amount', 0.5)
         
         # In mock mode, just record the request
         if config.get('distribution', {}).get('mock_mode', True):
@@ -567,9 +550,6 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
             # TODO: Implement actual token transfer
             tx_hash = None
             logger.info(f"Real drip: {amount} RTC to {wallet}")
-        
-        # Record the request
-        rate_limiter.record_request(f"{ip}:{wallet}", ip, wallet, amount)
         
         # Calculate next available time
         window_seconds = config.get('rate_limit', {}).get('window_seconds', 86400)
@@ -685,11 +665,12 @@ faucet_up 1
 
 
 def get_client_ip(request) -> str:
-    """Get client IP address from request, handling proxies."""
-    if request.headers.get('X-Forwarded-For'):
-        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
-    if request.headers.get('X-Real-IP'):
-        return request.headers.get('X-Real-IP')
+    """Get client IP address from request.
+    
+    Note: X-Forwarded-For and X-Real-IP are NOT trusted for rate limiting
+    as they can be spoofed by attackers to bypass IP-based restrictions.
+    Only request.remote_addr (the actual TCP connection IP) is reliable.
+    """
     return request.remote_addr or '127.0.0.1'
 
 
