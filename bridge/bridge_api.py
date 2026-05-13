@@ -24,7 +24,12 @@ from flask import Flask, Blueprint, request, jsonify
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 BRIDGE_DB_PATH = os.environ.get("BRIDGE_DB_PATH", "bridge_ledger.db")
-BRIDGE_ADMIN_KEY = os.environ.get("BRIDGE_ADMIN_KEY", "")  # set in production
+BRIDGE_ADMIN_KEY = os.environ.get("BRIDGE_ADMIN_KEY")
+if not BRIDGE_ADMIN_KEY:
+    raise RuntimeError(
+        "BRIDGE_ADMIN_KEY environment variable must be set in production. "
+        "This is a critical security requirement for the bridge API."
+    )
 BRIDGE_RECEIPT_SECRET = os.environ.get("BRIDGE_RECEIPT_SECRET", "")
 
 # Security: require proof for all bridge locks (Issue #727)

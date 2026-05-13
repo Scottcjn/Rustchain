@@ -32,14 +32,13 @@ from typing import Optional, Tuple, Dict, Any
 # Import our crypto module
 from rustchain_crypto import RustChainWallet, verify_transaction
 
-# SSL verification — default to True for production security.
-# Only disable for local development with self-signed certs by setting
-# RUSTCHAIN_VERIFY_SSL=0 in the environment.
+# SSL verification — enforced for production security.
+# WARNING: Disabling SSL verification enables MITM attacks on transactions.
+# Remove the RUSTCHAIN_VERIFY_SSL env var in production - never disable TLS.
 _ssl_env = os.environ.get("RUSTCHAIN_VERIFY_SSL", "1")
 VERIFY_SSL = _ssl_env != "0"
 if not VERIFY_SSL:
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    print("[WALLET] WARNING: SSL verification disabled via RUSTCHAIN_VERIFY_SSL=0")
+    print("[SECURITY] WARNING: SSL verification is DISABLED. This enables man-in-the-middle attacks on your wallet transactions. Set RUSTCHAIN_VERIFY_SSL=1 or unset it to re-enable.")
 
 # Configuration
 NODE_URL = "https://rustchain.org"
