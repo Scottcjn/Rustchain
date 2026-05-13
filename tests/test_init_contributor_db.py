@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 import sqlite3
 
 import init_contributor_db as contributor_db
