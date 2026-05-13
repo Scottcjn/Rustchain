@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 import agent_sdk_demo
 
 
