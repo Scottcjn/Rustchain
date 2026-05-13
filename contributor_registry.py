@@ -23,11 +23,9 @@ if not SECRET_KEY:
         UserWarning
     )
 elif SECRET_KEY == 'rustchain_contributor_secret_2024':
-    import warnings
-    warnings.warn(
+    raise ValueError(
         "CONTRIBUTOR_SECRET_KEY is set to the known placeholder value. "
-        "Please set a new, secure secret before deployment.",
-        UserWarning
+        "Please set a new, secure secret before deployment."
     )
 
 app.secret_key = SECRET_KEY
