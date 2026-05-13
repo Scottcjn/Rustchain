@@ -40,6 +40,13 @@ def _is_allowed_proxy_route(method, path):
     return (method.upper(), path) in ALLOWED_PROXY_ROUTES
 
 
+def _build_upstream_url(path):
+    """Map proxy paths to the upstream route namespace."""
+    if path == "wallet/balance":
+        return f"{LOCAL_SERVER}/{path}"
+    return f"{LOCAL_SERVER}/api/{path}"
+
+
 @app.route('/api/<path:path>', methods=['GET', 'POST'])
 def proxy(path):
     """Forward only explicitly allowlisted public API requests."""
@@ -47,7 +54,7 @@ def proxy(path):
     if not normalized_path or not _is_allowed_proxy_route(request.method, normalized_path):
         return jsonify({'error': 'Proxy path not allowed'}), 403
 
-    url = f"{LOCAL_SERVER}/api/{normalized_path}"
+    url = _build_upstream_url(normalized_path)
 
     try:
         if request.method == 'POST':

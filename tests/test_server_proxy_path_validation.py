@@ -82,6 +82,30 @@ def test_proxy_allows_public_stats_get_with_query(monkeypatch):
     ]
 
 
+def test_proxy_maps_wallet_balance_to_non_api_upstream_route(monkeypatch):
+    module = load_server_proxy()
+    calls = []
+
+    def fake_get(url, params=None, timeout=None):
+        calls.append({"url": url, "params": dict(params), "timeout": timeout})
+        return FakeResponse({"amount_rtc": 1.25})
+
+    monkeypatch.setattr(module.requests, "get", fake_get)
+
+    client = module.app.test_client()
+    response = client.get("/api/wallet/balance?miner_id=demo")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"amount_rtc": 1.25}
+    assert calls == [
+        {
+            "url": "http://localhost:8088/wallet/balance",
+            "params": {"miner_id": "demo"},
+            "timeout": 10,
+        }
+    ]
+
+
 def test_proxy_allows_public_mine_post_json(monkeypatch):
     module = load_server_proxy()
     calls = []
