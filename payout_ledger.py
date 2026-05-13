@@ -12,6 +12,7 @@ import sqlite3
 import uuid
 import json
 import logging
+import hmac
 from flask import request, jsonify, render_template_string
 
 logger = logging.getLogger(__name__)
@@ -167,12 +168,31 @@ def ledger_summary():
     return {r[0]: {"count": r[1], "total_rtc": r[2]} for r in rows}
 
 
+def _require_admin():
+    """Require configured admin auth before exposing payout ledger state."""
+    expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not expected_admin_key:
+        return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
+
+    provided_admin_key = request.headers.get("X-Admin-Key", "")
+    if not hmac.compare_digest(
+        provided_admin_key.encode("utf-8"),
+        expected_admin_key.encode("utf-8"),
+    ):
+        return jsonify({"error": "unauthorized"}), 401
+
+    return None
+
+
 # ── Flask route registration ───────────────────────────────────
 def register_ledger_routes(app):
     """Register /ledger/* routes on the given Flask app."""
 
     @app.route("/ledger")
     def ledger_page():
+        auth_error = _require_admin()
+        if auth_error is not None:
+            return auth_error
         init_payout_ledger_tables()
         status_filter = request.args.get("status")
         records = ledger_list(status=status_filter)
@@ -181,6 +201,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger", methods=["GET"])
     def api_ledger_list():
+        auth_error = _require_admin()
+        if auth_error is not None:
+            return auth_error
         init_payout_ledger_tables()
         status = request.args.get("status")
         contributor = request.args.get("contributor")
@@ -189,6 +212,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger/<record_id>", methods=["GET"])
     def api_ledger_get(record_id):
+        auth_error = _require_admin()
+        if auth_error is not None:
+            return auth_error
         init_payout_ledger_tables()
         record = ledger_get(record_id)
         if not record:
@@ -197,6 +223,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger", methods=["POST"])
     def api_ledger_create():
+        auth_error = _require_admin()
+        if auth_error is not None:
+            return auth_error
         init_payout_ledger_tables()
         data = request.get_json(force=True)
         required = ["bounty_id", "contributor", "amount_rtc"]
@@ -216,6 +245,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger/<record_id>/status", methods=["PATCH"])
     def api_ledger_update(record_id):
+        auth_error = _require_admin()
+        if auth_error is not None:
+            return auth_error
         init_payout_ledger_tables()
         data = request.get_json(force=True)
         new_status = data.get("status")
@@ -233,6 +265,9 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger/summary", methods=["GET"])
     def api_ledger_summary():
+        auth_error = _require_admin()
+        if auth_error is not None:
+            return auth_error
         init_payout_ledger_tables()
         return jsonify(ledger_summary())
 
