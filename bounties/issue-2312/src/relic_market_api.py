@@ -367,26 +367,64 @@ class EscrowManager:
 
 class ReceiptSigner:
     """Signs provenance receipts with machine Ed25519 keys"""
+
+    MACHINE_IDS = ("vm-001", "vm-002", "vm-003", "vm-004", "vm-005")
     
     def __init__(self):
         self.machine_keys: Dict[str, nacl.signing.SigningKey] = {}
         self._initialize_machine_keys()
+
+    @staticmethod
+    def _key_env_name(machine_id: str) -> str:
+        """Return the environment variable name for a machine signing key."""
+        safe_id = machine_id.upper().replace("-", "_")
+        return f"RELIC_MACHINE_KEY_{safe_id}"
+
+    @classmethod
+    def _load_signing_key_from_env(cls, machine_id: str) -> Optional[nacl.signing.SigningKey]:
+        """Load a 32-byte Ed25519 seed from hex/base64 environment config."""
+        env_name = cls._key_env_name(machine_id)
+        encoded = os.getenv(env_name, "").strip()
+        if not encoded:
+            return None
+
+        if encoded.startswith("hex:"):
+            encoded = encoded[4:]
+        elif encoded.startswith("base64:"):
+            encoded = encoded[7:]
+            try:
+                seed = base64.b64decode(encoded, validate=True)
+            except Exception as exc:
+                raise ValueError(f"{env_name} must be a 32-byte hex or base64 Ed25519 seed") from exc
+            if len(seed) != 32:
+                raise ValueError(f"{env_name} must decode to 32 bytes")
+            return nacl.signing.SigningKey(seed)
+
+        try:
+            seed = bytes.fromhex(encoded)
+        except ValueError:
+            try:
+                seed = base64.b64decode(encoded, validate=True)
+            except Exception as exc:
+                raise ValueError(f"{env_name} must be a 32-byte hex or base64 Ed25519 seed") from exc
+
+        if len(seed) != 32:
+            raise ValueError(f"{env_name} must decode to 32 bytes")
+
+        return nacl.signing.SigningKey(seed)
     
     def _initialize_machine_keys(self):
-        """Initialize Ed25519 keys for machines"""
-        # In production, these would be securely stored per machine
-        # For demo, we generate deterministic keys from machine IDs
-        sample_keys = [
-            ("vm-001", "power8-beast-key-seed-001"),
-            ("vm-002", "g5-tower-key-seed-002"),
-            ("vm-003", "p3-workstation-key-seed-003"),
-            ("vm-004", "sparcstation-20-key-seed-004"),
-            ("vm-005", "alphaserver-800-key-seed-005"),
-        ]
-        
-        for machine_id, seed in sample_keys:
-            seed_hash = hashlib.sha256(seed.encode()).digest()[:32]
-            self.machine_keys[machine_id] = nacl.signing.SigningKey(seed_hash)
+        """Initialize Ed25519 keys without embedding reusable private seeds."""
+        for machine_id in self.MACHINE_IDS:
+            signing_key = self._load_signing_key_from_env(machine_id)
+            if signing_key is None:
+                signing_key = nacl.signing.SigningKey.generate()
+                logger.warning(
+                    "Generated ephemeral signing key for %s; set %s for stable production receipts",
+                    machine_id,
+                    self._key_env_name(machine_id),
+                )
+            self.machine_keys[machine_id] = signing_key
     
     def get_public_key(self, machine_id: str) -> Optional[str]:
         """Get machine's public key as hex string"""
