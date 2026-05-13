@@ -369,6 +369,7 @@ class ReceiptSigner:
     """Signs provenance receipts with machine Ed25519 keys"""
 
     MACHINE_IDS = ("vm-001", "vm-002", "vm-003", "vm-004", "vm-005")
+    REQUIRE_STABLE_KEYS_ENV = "RELIC_REQUIRE_STABLE_MACHINE_KEYS"
     
     def __init__(self):
         self.machine_keys: Dict[str, nacl.signing.SigningKey] = {}
@@ -379,6 +380,16 @@ class ReceiptSigner:
         """Return the environment variable name for a machine signing key."""
         safe_id = machine_id.upper().replace("-", "_")
         return f"RELIC_MACHINE_KEY_{safe_id}"
+
+    @classmethod
+    def _requires_stable_keys(cls) -> bool:
+        """Return whether production mode requires configured machine keys."""
+        return os.getenv(cls.REQUIRE_STABLE_KEYS_ENV, "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
 
     @classmethod
     def _load_signing_key_from_env(cls, machine_id: str) -> Optional[nacl.signing.SigningKey]:
@@ -415,14 +426,22 @@ class ReceiptSigner:
     
     def _initialize_machine_keys(self):
         """Initialize Ed25519 keys without embedding reusable private seeds."""
+        require_stable_keys = self._requires_stable_keys()
         for machine_id in self.MACHINE_IDS:
             signing_key = self._load_signing_key_from_env(machine_id)
             if signing_key is None:
+                env_name = self._key_env_name(machine_id)
+                if require_stable_keys:
+                    raise ValueError(
+                        f"{self.REQUIRE_STABLE_KEYS_ENV}=1 requires {env_name} "
+                        "for stable production receipt verification"
+                    )
+
                 signing_key = nacl.signing.SigningKey.generate()
                 logger.warning(
-                    "Generated ephemeral signing key for %s; set %s for stable production receipts",
+                    "Generated demo-only ephemeral signing key for %s; set %s for stable production receipts",
                     machine_id,
-                    self._key_env_name(machine_id),
+                    env_name,
                 )
             self.machine_keys[machine_id] = signing_key
     

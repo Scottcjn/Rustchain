@@ -20,6 +20,7 @@ def load_relic_market_api():
 
 
 def clear_relic_key_env(monkeypatch, module):
+    monkeypatch.delenv(module.ReceiptSigner.REQUIRE_STABLE_KEYS_ENV, raising=False)
     for machine_id in module.ReceiptSigner.MACHINE_IDS:
         monkeypatch.delenv(module.ReceiptSigner._key_env_name(machine_id), raising=False)
 
@@ -57,6 +58,33 @@ def test_receipt_signer_rejects_invalid_environment_seed(monkeypatch):
 
     with pytest.raises(ValueError, match="RELIC_MACHINE_KEY_VM_001"):
         module.ReceiptSigner()
+
+
+def test_receipt_signer_requires_stable_keys_in_production_mode(monkeypatch):
+    module = load_relic_market_api()
+    clear_relic_key_env(monkeypatch, module)
+    monkeypatch.setenv(module.ReceiptSigner.REQUIRE_STABLE_KEYS_ENV, "1")
+
+    with pytest.raises(ValueError, match="RELIC_MACHINE_KEY_VM_001"):
+        module.ReceiptSigner()
+
+
+def test_receipt_signer_stable_keys_verify_across_restart(monkeypatch):
+    module = load_relic_market_api()
+    clear_relic_key_env(monkeypatch, module)
+    monkeypatch.setenv(module.ReceiptSigner.REQUIRE_STABLE_KEYS_ENV, "1")
+    for index, machine_id in enumerate(module.ReceiptSigner.MACHINE_IDS, start=1):
+        seed = bytes([index]) * 32
+        monkeypatch.setenv(module.ReceiptSigner._key_env_name(machine_id), seed.hex())
+
+    first = module.ReceiptSigner()
+    receipt_data = {"receipt_id": "receipt-1", "session_id": "session-1"}
+    signature = first.sign_receipt(receipt_data, "vm-001")
+
+    second = module.ReceiptSigner()
+
+    assert second.get_public_key("vm-001") == first.get_public_key("vm-001")
+    assert second.verify_signature(receipt_data, signature, "vm-001")
 
 
 def test_public_seed_literals_removed_from_source():
