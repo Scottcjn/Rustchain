@@ -100,3 +100,13 @@ def test_pending_list_requires_admin(client):
     """Unauthenticated /pending/list should return 401."""
     response = client.get('/pending/list?limit=abc')
     assert response.status_code == 401
+
+
+def test_attest_debug_fails_closed_when_admin_key_unconfigured(client, monkeypatch):
+    """No configured admin key must not authenticate a missing header."""
+    monkeypatch.setattr(integrated_node, "ADMIN_KEY", None)
+
+    response = client.post('/ops/attest/debug', json={"miner": "miner-test"})
+
+    assert response.status_code == 503
+    assert response.get_json()["error"] == "Admin key not configured"
