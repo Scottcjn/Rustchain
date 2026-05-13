@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 
 from flask import Flask, request, redirect, url_for, flash
+import hmac
 import sqlite3
 import os
 import secrets
@@ -33,6 +34,26 @@ elif SECRET_KEY == 'rustchain_contributor_secret_2024':
 app.secret_key = SECRET_KEY
 
 DB_PATH = 'contributors.db'
+
+
+def _require_contributor_admin():
+    """Require a configured admin key for contributor approval."""
+    expected_key = os.environ.get("CONTRIBUTOR_ADMIN_KEY", "").strip()
+    if not expected_key:
+        return {
+            "error": "unauthorized",
+            "message": "CONTRIBUTOR_ADMIN_KEY not configured",
+        }, 401
+
+    provided_key = (
+        request.headers.get("X-Admin-Key")
+        or request.headers.get("X-API-Key")
+        or ""
+    ).strip()
+    if not provided_key or not hmac.compare_digest(provided_key, expected_key):
+        return {"error": "unauthorized"}, 401
+
+    return None
 
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
@@ -174,8 +195,12 @@ def api_contributors():
         ]
     }
 
-@app.route('/approve/<username>')
+@app.route('/approve/<username>', methods=['POST'])
 def approve_contributor(username):
+    auth_error = _require_contributor_admin()
+    if auth_error:
+        return auth_error
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             'UPDATE contributors SET status = "approved" WHERE github_username = ?',

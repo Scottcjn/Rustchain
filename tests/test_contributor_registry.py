@@ -9,9 +9,10 @@ import contributor_registry as cr
 
 
 @pytest.fixture
-def app():
+def app(monkeypatch):
     """Create a test Flask app with a temporary database."""
     db_fd, db_path = tempfile.mkstemp(suffix=".db")
+    monkeypatch.delenv("CONTRIBUTOR_ADMIN_KEY", raising=False)
     cr.DB_PATH = db_path
     cr.app.config["TESTING"] = True
     cr.init_db()
@@ -122,21 +123,73 @@ class TestApiContributors:
 
 
 class TestApproveRoute:
-    def test_approve_pending_contributor(self, client):
-        """GET /approve/<username> should set status to approved."""
+    def _register_pending(self, client, username="pendinguser"):
         client.post("/register", data={
-            "github_username": "pendinguser",
+            "github_username": username,
             "contributor_type": "bot",
             "rtc_wallet": "RTC0pending",
             "contribution_history": "",
         }, follow_redirects=True)
-        response = client.get("/approve/pendinguser", follow_redirects=True)
-        assert response.status_code == 200
+
+    def _status_for(self, username):
         with sqlite3.connect(cr.DB_PATH) as conn:
-            row = conn.execute(
-                "SELECT status FROM contributors WHERE github_username='pendinguser'"
-            ).fetchone()
-        assert row[0] == "approved"
+            return conn.execute(
+                "SELECT status FROM contributors WHERE github_username=?",
+                (username,),
+            ).fetchone()[0]
+
+    def test_approve_get_is_not_allowed(self, client):
+        """GET /approve/<username> must not mutate contributor state."""
+        self._register_pending(client)
+        response = client.get("/approve/pendinguser")
+        assert response.status_code == 405
+        assert self._status_for("pendinguser") == "pending"
+
+    def test_approve_fails_closed_without_admin_key(self, client):
+        """POST /approve/<username> should fail when no admin key is configured."""
+        self._register_pending(client)
+        response = client.post("/approve/pendinguser")
+        assert response.status_code == 401
+        assert self._status_for("pendinguser") == "pending"
+
+    def test_approve_rejects_missing_or_wrong_admin_key(self, client, monkeypatch):
+        """POST /approve/<username> should reject missing or invalid admin keys."""
+        monkeypatch.setenv("CONTRIBUTOR_ADMIN_KEY", "contrib-admin-secret")
+        self._register_pending(client)
+
+        missing = client.post("/approve/pendinguser")
+        wrong = client.post(
+            "/approve/pendinguser",
+            headers={"X-Admin-Key": "wrong"},
+        )
+
+        assert missing.status_code == 401
+        assert wrong.status_code == 401
+        assert self._status_for("pendinguser") == "pending"
+
+    def test_approve_pending_contributor_with_admin_key(self, client, monkeypatch):
+        """POST /approve/<username> should set status to approved with admin auth."""
+        monkeypatch.setenv("CONTRIBUTOR_ADMIN_KEY", "contrib-admin-secret")
+        self._register_pending(client)
+        response = client.post(
+            "/approve/pendinguser",
+            headers={"X-Admin-Key": "contrib-admin-secret"},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert self._status_for("pendinguser") == "approved"
+
+    def test_approve_accepts_legacy_api_key_header(self, client, monkeypatch):
+        """POST /approve/<username> should accept X-API-Key for compatibility."""
+        monkeypatch.setenv("CONTRIBUTOR_ADMIN_KEY", "contrib-admin-secret")
+        self._register_pending(client, username="legacyuser")
+        response = client.post(
+            "/approve/legacyuser",
+            headers={"X-API-Key": "contrib-admin-secret"},
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert self._status_for("legacyuser") == "approved"
 
 
 class TestDatabaseConstraints:
@@ -165,4 +218,3 @@ class TestDatabaseConstraints:
                 "SELECT status FROM contributors WHERE github_username='defaultstatus'"
             ).fetchone()
         assert row[0] == "pending"
-
