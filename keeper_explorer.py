@@ -24,12 +24,16 @@ import requests
 from flask import Flask, request, jsonify, render_template_string, send_from_directory
 from flask_cors import CORS
 from datetime import datetime
+from urllib.parse import quote
 
 # Configuration
 NODE_API = os.environ.get("RUSTCHAIN_NODE_API", "http://localhost:8000")
 FAUCET_DB = "faucet_service/faucet.db"
 PORT = 8095
 WALLET_ADDRESS_RE = re.compile(r"^[A-Za-z0-9._:-]{3,128}$")
+ALLOWED_PROXY_EXACT_PATHS = {"epoch", "headers/tip"}
+ALLOWED_PROXY_PREFIXES = ("headers/", "balance/")
+SAFE_RESPONSE_HEADERS = {"content-type", "cache-control", "etag", "last-modified"}
 
 app = Flask(__name__)
 CORS(app)
@@ -97,17 +101,35 @@ def home():
 
 @app.route('/api/proxy/<path:path>')
 def proxy_api(path):
-    """Proxy requests to the RustChain node."""
+    """Proxy only read-only explorer requests to the RustChain node."""
+    normalized_path = path.strip("/")
+    if (
+        not normalized_path
+        or "\\" in normalized_path
+        or ".." in normalized_path.split("/")
+        or not (
+            normalized_path in ALLOWED_PROXY_EXACT_PATHS
+            or any(normalized_path.startswith(prefix) for prefix in ALLOWED_PROXY_PREFIXES)
+        )
+    ):
+        return jsonify({"error": "Proxy path not allowed"}), 403
+
     try:
-        url = f"{NODE_API}/{path}"
-        # Keep query parameters
-        if request.query_string:
-            url += f"?{request.query_string.decode('utf-8')}"
-            
-        resp = requests.get(url, timeout=5)
-        return (resp.content, resp.status_code, resp.headers.items())
-    except Exception as e:
-        return jsonify({"error": f"Node Connection Error: {str(e)}"}), 502
+        encoded_path = "/".join(quote(part, safe="") for part in normalized_path.split("/"))
+        url = f"{NODE_API.rstrip('/')}/{encoded_path}"
+        params = request.args.to_dict(flat=False)
+        if params:
+            resp = requests.get(url, params=params, timeout=5)
+        else:
+            resp = requests.get(url, timeout=5)
+        safe_headers = [
+            (name, value)
+            for name, value in resp.headers.items()
+            if name.lower() in SAFE_RESPONSE_HEADERS
+        ]
+        return (resp.content, resp.status_code, safe_headers)
+    except requests.RequestException:
+        return jsonify({"error": "Node connection error"}), 502
 
 @app.route('/api/faucet/drip', methods=['POST'])
 def faucet_drip():
@@ -144,7 +166,7 @@ def faucet_drip():
 
 # --- Fossil-punk UI Template ---
 
-RETRO_HTML = """
+RETRO_HTML = r"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
