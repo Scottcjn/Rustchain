@@ -2,6 +2,7 @@ import importlib.util
 import sqlite3
 import sys
 import types
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -57,20 +58,59 @@ def test_faucet_drip_rejects_non_string_address(tmp_path, monkeypatch):
 
 def test_faucet_drip_records_valid_address(tmp_path, monkeypatch):
     keeper = load_keeper_explorer(tmp_path, monkeypatch)
+    monkeypatch.setattr(keeper.secrets, "token_hex", lambda n: "a" * (n * 2))
 
     response = keeper.app.test_client().post(
         "/api/faucet/drip",
-        json={"address": "  rtc-test-wallet  "},
+        json={"address": "  RTC1TestWalletAddress1234567890  "},
     )
 
     assert response.status_code == 200
     body = response.get_json()
     assert body["success"] is True
-    assert body["message"] == "Drip successful! 0.5 RTC sent to rtc-test-wallet"
-    assert len(body["tx_hash"]) == 64
+    assert body["message"] == "Drip successful! 0.5 RTC sent to RTC1TestWalletAddress1234567890"
+    assert body["tx_hash"] == "a" * 64
 
     with sqlite3.connect(tmp_path / "faucet_service" / "faucet.db") as conn:
         row = conn.execute(
             "SELECT address, amount FROM faucet_claims"
         ).fetchone()
-    assert row == ("rtc-test-wallet", 0.5)
+    assert row == ("RTC1TestWalletAddress1234567890", 0.5)
+
+
+def test_faucet_drip_rejects_invalid_wallet_string(tmp_path, monkeypatch):
+    keeper = load_keeper_explorer(tmp_path, monkeypatch)
+
+    response = keeper.app.test_client().post(
+        "/api/faucet/drip",
+        json={"address": "not-a-wallet"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "success": False,
+        "error": "Invalid wallet address",
+    }
+
+
+def test_faucet_claim_record_is_atomic(tmp_path, monkeypatch):
+    keeper = load_keeper_explorer(tmp_path, monkeypatch)
+    address = "RTC1RaceWalletAddress123456789"
+    ip = "198.51.100.10"
+
+    def attempt_claim(_):
+        return keeper.record_faucet_claim_if_allowed(address, ip, 0.5)
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = list(executor.map(attempt_claim, range(8)))
+
+    assert results.count(True) == 1
+    assert results.count(False) == 7
+
+    with sqlite3.connect(tmp_path / "faucet_service" / "faucet.db") as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM faucet_claims WHERE address = ? OR ip_address = ?",
+            (address, ip),
+        ).fetchone()[0]
+
+    assert count == 1
