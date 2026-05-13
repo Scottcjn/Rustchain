@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 import pytest
 
 from node.consensus_probe import (
