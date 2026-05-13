@@ -5,14 +5,17 @@ import types
 from pathlib import Path
 
 
-def load_otc_bridge(tmp_path):
-    if "flask_cors" not in sys.modules:
-        flask_cors = types.ModuleType("flask_cors")
-        flask_cors.CORS = lambda app: app
-        sys.modules["flask_cors"] = flask_cors
+def load_otc_bridge(tmp_path, cors_origins=None):
+    flask_cors = sys.modules.get("flask_cors") or types.ModuleType("flask_cors")
+    flask_cors.CORS = lambda app, **kwargs: app
+    sys.modules["flask_cors"] = flask_cors
 
     db_path = tmp_path / "otc_bridge.db"
     os.environ["OTC_DB_PATH"] = str(db_path)
+    if cors_origins is None:
+        os.environ.pop("OTC_CORS_ORIGINS", None)
+    else:
+        os.environ["OTC_CORS_ORIGINS"] = cors_origins
 
     module_path = Path(__file__).resolve().parents[1] / "otc-bridge" / "otc_bridge.py"
     spec = importlib.util.spec_from_file_location("otc_bridge_under_test", module_path)
@@ -21,6 +24,25 @@ def load_otc_bridge(tmp_path):
     module.app.testing = True
     module.init_db()
     return module
+
+
+def test_cors_defaults_to_restricted_public_origins(tmp_path):
+    otc_bridge = load_otc_bridge(tmp_path)
+
+    assert otc_bridge.OTC_CORS_ORIGINS == ["https://bottube.ai", "https://rustchain.org"]
+    assert "*" not in otc_bridge.OTC_CORS_ORIGINS
+
+
+def test_cors_env_ignores_wildcard_origin(tmp_path):
+    otc_bridge = load_otc_bridge(
+        tmp_path,
+        cors_origins="*, https://trusted.example, http://localhost:3000",
+    )
+
+    assert otc_bridge.OTC_CORS_ORIGINS == [
+        "https://trusted.example",
+        "http://localhost:3000",
+    ]
 
 
 def test_orders_rejects_malformed_pagination(tmp_path):

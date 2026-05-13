@@ -40,6 +40,22 @@ from flask_cors import CORS
 
 RUSTCHAIN_NODE = os.environ.get("RUSTCHAIN_NODE", "https://50.28.86.131")
 DB_PATH = os.environ.get("OTC_DB_PATH", "otc_bridge.db")
+DEFAULT_OTC_CORS_ORIGINS = ("https://bottube.ai", "https://rustchain.org")
+
+
+def _parse_cors_origins(raw_origins):
+    if raw_origins is None:
+        return list(DEFAULT_OTC_CORS_ORIGINS)
+
+    origins = [
+        origin.strip()
+        for origin in raw_origins.split(",")
+        if origin.strip() and origin.strip() != "*"
+    ]
+    return origins or list(DEFAULT_OTC_CORS_ORIGINS)
+
+
+OTC_CORS_ORIGINS = _parse_cors_origins(os.environ.get("OTC_CORS_ORIGINS"))
 
 # TLS verification: defaults to True (secure).
 # Set RUSTCHAIN_TLS_VERIFY=false only for local development with self-signed certs.
@@ -73,7 +89,7 @@ log = logging.getLogger("otc_bridge")
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__, static_folder="static")
-CORS(app)
+CORS(app, origins=OTC_CORS_ORIGINS)
 
 
 # ---------------------------------------------------------------------------
