@@ -21,6 +21,7 @@ import time
 import sqlite3
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -257,6 +258,36 @@ class TestRateLimiter(unittest.TestCase):
         # Should be allowed again
         allowed, next_available = self.rate_limiter.check_rate_limit('192.168.1.1', '0xwallet1')
         self.assertTrue(allowed)
+
+    def test_sqlite_record_request_if_allowed_is_atomic(self):
+        """Test concurrent SQLite drip attempts only record once."""
+        self.config['rate_limit']['window_seconds'] = 60
+        self.config['rate_limit']['max_requests'] = 1
+
+        def attempt_drip(_):
+            return self.rate_limiter.record_request_if_allowed(
+                '192.168.1.9:0xwallet-race',
+                '192.168.1.9',
+                '0xwallet-race',
+                0.5,
+            )[0]
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(attempt_drip, range(8)))
+
+        self.assertEqual(results.count(True), 1)
+        self.assertEqual(results.count(False), 7)
+
+        conn = sqlite3.connect(self.temp_db.name)
+        try:
+            c = conn.cursor()
+            c.execute('''
+                SELECT COUNT(*) FROM drip_requests
+                WHERE ip_address = ? OR wallet = ?
+            ''', ('192.168.1.9', '0xwallet-race'))
+            self.assertEqual(c.fetchone()[0], 1)
+        finally:
+            conn.close()
 
 
 class TestDatabase(unittest.TestCase):
