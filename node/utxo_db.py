@@ -856,13 +856,24 @@ class UtxoDB:
 
             outputs = tx.get('outputs', [])
 
-            # Mirror apply_transaction() output validation. Reject outputs with
-            # missing, non-int, or below-dust value_nrtc. Without this,
-            # unmineable transactions enter the mempool and lock UTXOs until
-            # expiry (DoS vector).
+            # FIX(#9273): Reject transactions with too many outputs (UTXO bloat).
+            if len(outputs) > MAX_OUTPUTS:
+                if manage_tx:
+                    conn.execute("ROLLBACK")
+                return False
+
+            # FIX(#2179): Mirror apply_transaction() output validation.
+            # Reject outputs with missing, non-int, zero, or negative value_nrtc.
+            # Without this, unmineable transactions enter the mempool and lock
+            # UTXOs until expiry (DoS vector).
             for o in outputs:
                 val = o.get('value_nrtc')
                 if isinstance(val, bool) or not isinstance(val, int) or val < DUST_THRESHOLD:
+                    if manage_tx:
+                        conn.execute("ROLLBACK")
+                    return False
+                # FIX(#9273): Reject dust outputs below DUST_THRESHOLD.
+                if val < DUST_THRESHOLD:
                     if manage_tx:
                         conn.execute("ROLLBACK")
                     return False
