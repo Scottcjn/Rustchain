@@ -9,8 +9,9 @@ import contributor_registry as cr
 
 
 @pytest.fixture
-def app():
+def app(monkeypatch):
     """Create a test Flask app with a temporary database."""
+    monkeypatch.setenv("CONTRIBUTOR_REGISTRATION_KEY", "test-registration-key")
     db_fd, db_path = tempfile.mkstemp(suffix=".db")
     cr.DB_PATH = db_path
     cr.app.config["TESTING"] = True
@@ -36,6 +37,18 @@ def seed_contributor(app):
             ("testuser", "human", "RTC019e78d600fb3131c29d7ba80aba8fe644be426e", "PR reviews and bug reports", "approved"),
         )
         conn.commit()
+
+
+def registration_form(**overrides):
+    data = {
+        "github_username": "newuser",
+        "contributor_type": "agent",
+        "rtc_wallet": "RTC0abc123000000000000000000000000000000000",
+        "contribution_history": "Mining and staking",
+        "registration_key": "test-registration-key",
+    }
+    data.update(overrides)
+    return data
 
 
 class TestInitDb:
@@ -70,12 +83,7 @@ class TestIndexRoute:
 class TestRegisterRoute:
     def test_register_new_contributor(self, client):
         """POST /register should add a new contributor."""
-        response = client.post("/register", data={
-            "github_username": "newuser",
-            "contributor_type": "agent",
-            "rtc_wallet": "RTC0abc123",
-            "contribution_history": "Mining and staking",
-        }, follow_redirects=True)
+        response = client.post("/register", data=registration_form(), follow_redirects=True)
         assert response.status_code == 200
         with sqlite3.connect(cr.DB_PATH) as conn:
             row = conn.execute(
@@ -85,14 +93,67 @@ class TestRegisterRoute:
         assert row[0] == "agent"
         assert row[1] == "pending"
 
+    def test_register_rejects_missing_registration_key(self, client):
+        """POST /register without the shared key must not create a contributor."""
+        response = client.post(
+            "/register",
+            data=registration_form(registration_key=""),
+            follow_redirects=False,
+        )
+        assert response.status_code == 401
+        with sqlite3.connect(cr.DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT id FROM contributors WHERE github_username='newuser'"
+            ).fetchone()
+        assert row is None
+
+    def test_register_rejects_when_registration_key_unconfigured(self, client, monkeypatch):
+        """Registration fails closed if the server key is not configured."""
+        monkeypatch.delenv("CONTRIBUTOR_REGISTRATION_KEY", raising=False)
+        response = client.post("/register", data=registration_form(), follow_redirects=False)
+        assert response.status_code == 401
+        with sqlite3.connect(cr.DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT id FROM contributors WHERE github_username='newuser'"
+            ).fetchone()
+        assert row is None
+
+    def test_register_rejects_invalid_github_username(self, client):
+        """POST /register should reject usernames that GitHub cannot own."""
+        response = client.post(
+            "/register",
+            data=registration_form(github_username="-not-valid"),
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+        with sqlite3.connect(cr.DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT id FROM contributors WHERE github_username='-not-valid'"
+            ).fetchone()
+        assert row is None
+
+    def test_register_rejects_invalid_wallet(self, client):
+        """POST /register should reject arbitrary wallet strings."""
+        response = client.post(
+            "/register",
+            data=registration_form(rtc_wallet="not-a-wallet"),
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+        with sqlite3.connect(cr.DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT id FROM contributors WHERE github_username='newuser'"
+            ).fetchone()
+        assert row is None
+
     def test_register_duplicate_username(self, client, seed_contributor):
         """POST /register with existing username should flash error."""
-        response = client.post("/register", data={
-            "github_username": "testuser",
-            "contributor_type": "human",
-            "rtc_wallet": "RTC0dup",
-            "contribution_history": "",
-        }, follow_redirects=True)
+        response = client.post("/register", data=registration_form(
+            github_username="testuser",
+            contributor_type="human",
+            rtc_wallet="RTC0abc123000000000000000000000000000000000",
+            contribution_history="",
+        ), follow_redirects=True)
         assert response.status_code == 200
         assert b"already registered" in response.data
 
@@ -124,12 +185,12 @@ class TestApiContributors:
 class TestApproveRoute:
     def test_approve_pending_contributor(self, client):
         """GET /approve/<username> should set status to approved."""
-        client.post("/register", data={
-            "github_username": "pendinguser",
-            "contributor_type": "bot",
-            "rtc_wallet": "RTC0pending",
-            "contribution_history": "",
-        }, follow_redirects=True)
+        client.post("/register", data=registration_form(
+            github_username="pendinguser",
+            contributor_type="bot",
+            rtc_wallet="RTC0abc123000000000000000000000000000000000",
+            contribution_history="",
+        ), follow_redirects=True)
         response = client.get("/approve/pendinguser", follow_redirects=True)
         assert response.status_code == 200
         with sqlite3.connect(cr.DB_PATH) as conn:
@@ -145,24 +206,23 @@ class TestDatabaseConstraints:
         with sqlite3.connect(cr.DB_PATH) as conn:
             conn.execute(
                 "INSERT INTO contributors (github_username, contributor_type, rtc_wallet) VALUES (?, ?, ?)",
-                ("unique_test", "human", "RTC0unique"),
+                ("unique_test", "human", "RTC0abc123000000000000000000000000000000000"),
             )
             with pytest.raises(sqlite3.IntegrityError):
                 conn.execute(
                     "INSERT INTO contributors (github_username, contributor_type, rtc_wallet) VALUES (?, ?, ?)",
-                    ("unique_test", "agent", "RTC0dup2"),
+                    ("unique_test", "agent", "RTC0def456000000000000000000000000000000000"),
                 )
 
     def test_default_status_is_pending(self, client):
         """New registrations should have status=pending by default."""
-        client.post("/register", data={
-            "github_username": "defaultstatus",
-            "contributor_type": "human",
-            "rtc_wallet": "RTC0default",
-        }, follow_redirects=True)
+        client.post("/register", data=registration_form(
+            github_username="defaultstatus",
+            contributor_type="human",
+            rtc_wallet="RTC0abc123000000000000000000000000000000000",
+        ), follow_redirects=True)
         with sqlite3.connect(cr.DB_PATH) as conn:
             row = conn.execute(
                 "SELECT status FROM contributors WHERE github_username='defaultstatus'"
             ).fetchone()
         assert row[0] == "pending"
-

@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: MIT
 
 from flask import Flask, request, redirect, url_for, flash
+import hmac
 import sqlite3
 import os
+import re
 import secrets
 from datetime import datetime
 
@@ -33,6 +35,36 @@ elif SECRET_KEY == 'rustchain_contributor_secret_2024':
 app.secret_key = SECRET_KEY
 
 DB_PATH = 'contributors.db'
+CONTRIBUTOR_TYPES = {'human', 'bot', 'agent'}
+GITHUB_USERNAME_RE = re.compile(r'^(?!-)(?!.*--)[A-Za-z0-9-]{1,39}(?<!-)$')
+RTC_WALLET_RE = re.compile(
+    r'^(?:RTC[0-9a-fA-F]{40}|[0-9a-fA-F]{40}RTC|0x[0-9a-fA-F]{40})$'
+)
+
+
+def _registration_key_error():
+    expected_key = os.environ.get('CONTRIBUTOR_REGISTRATION_KEY', '')
+    if not expected_key:
+        return 'Registration is closed until CONTRIBUTOR_REGISTRATION_KEY is configured.'
+
+    supplied_key = request.headers.get('X-Registration-Key', '')
+    if not supplied_key:
+        supplied_key = request.form.get('registration_key', '')
+
+    if not supplied_key or not hmac.compare_digest(supplied_key, expected_key):
+        return 'A valid registration key is required.'
+
+    return None
+
+
+def _validate_registration(github_username, contributor_type, rtc_wallet):
+    if not GITHUB_USERNAME_RE.fullmatch(github_username):
+        return 'Invalid GitHub username.'
+    if contributor_type not in CONTRIBUTOR_TYPES:
+        return 'Invalid contributor type.'
+    if not RTC_WALLET_RE.fullmatch(rtc_wallet):
+        return 'Invalid RTC wallet address.'
+    return None
 
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
@@ -95,6 +127,11 @@ def index():
                 <label for="rtc_wallet">RTC Wallet Address:</label>
                 <input type="text" id="rtc_wallet" name="rtc_wallet" required>
             </div>
+
+            <div class="form-group">
+                <label for="registration_key">Registration Key:</label>
+                <input type="password" id="registration_key" name="registration_key" required>
+            </div>
             
             <div class="form-group">
                 <label for="contribution_history">Contribution History:</label>
@@ -136,10 +173,20 @@ def index():
 
 @app.route('/register', methods=['POST'])
 def register():
-    github_username = request.form['github_username']
-    contributor_type = request.form['contributor_type']
-    rtc_wallet = request.form['rtc_wallet']
+    key_error = _registration_key_error()
+    if key_error:
+        flash(key_error)
+        return key_error, 401
+
+    github_username = request.form.get('github_username', '').strip()
+    contributor_type = request.form.get('contributor_type', '').strip()
+    rtc_wallet = request.form.get('rtc_wallet', '').strip()
     contribution_history = request.form.get('contribution_history', '')
+
+    validation_error = _validate_registration(github_username, contributor_type, rtc_wallet)
+    if validation_error:
+        flash(validation_error)
+        return validation_error, 400
     
     try:
         with sqlite3.connect(DB_PATH) as conn:
