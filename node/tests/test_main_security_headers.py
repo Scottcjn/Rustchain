@@ -52,6 +52,16 @@ class TestMainSecurityHeaders(unittest.TestCase):
         self.assertIn("default-src 'self'", response.headers["Content-Security-Policy"])
         self.assertIn("script-src 'self' 'unsafe-inline'", response.headers["Content-Security-Policy"])
 
+    def test_museum_csp_allows_existing_external_assets(self):
+        response = self.client.get("/museum")
+
+        self.assertEqual(response.status_code, 200)
+        csp = response.headers["Content-Security-Policy"]
+        self.assertIn("https://fonts.googleapis.com", csp)
+        self.assertIn("https://fonts.gstatic.com", csp)
+        self.assertIn("https://raw.githubusercontent.com", csp)
+        self.assertIn("https://img.shields.io", csp)
+
 
 if __name__ == "__main__":
     unittest.main()
