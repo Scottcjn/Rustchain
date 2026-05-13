@@ -2,6 +2,9 @@
 *founder*
 *premine*
 *genesis*
+!tools/validate_genesis.py
+!test_*genesis*.py
+!tests/**/test_*genesis*.py
 *private*key*
 *secret*
 *.env
