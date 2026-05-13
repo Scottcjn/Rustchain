@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """
 Hall of Rust - Immortal Registry for Dying Hardware
 ====================================================
@@ -6,6 +8,7 @@ This is the emotional core of RustChain.
 """
 
 from flask import Blueprint, jsonify, request
+from datetime import datetime, timezone
 import sqlite3
 import hashlib
 import time
@@ -24,6 +27,11 @@ RUST_WEIGHTS = {
     'capacitor_plague': 100,   # Bonus for 2001-2006 bad cap era
     'first_attestation': 50,   # Bonus for being among first 100 miners
 }
+
+
+def _current_utc_year():
+    return datetime.now(timezone.utc).year
+
 
 # Capacitor plague era models (infamous bad electrolytic caps)
 CAPACITOR_PLAGUE_MODELS = [
@@ -82,13 +90,14 @@ def init_hall_tables(db_path):
     conn.commit()
     conn.close()
 
-def calculate_rust_score(machine):
+def calculate_rust_score(machine, current_year=None):
     """Calculate the Rust Score for a machine - higher = rustier = better."""
     score = 0
+    current_year = current_year if current_year is not None else _current_utc_year()
     
     # Age bonus (estimated from model/arch)
     if machine.get('manufacture_year'):
-        age = 2025 - machine['manufacture_year']
+        age = max(0, current_year - int(machine['manufacture_year']))
         score += age * RUST_WEIGHTS['age_years']
     
     # Attestation loyalty
@@ -689,7 +698,8 @@ def machine_of_the_day():
         machine = dict(row)
         machine['badge'] = get_rust_badge(machine['rust_score'])
         machine['fun_fact'] = random.choice(VINTAGE_FACTS)
-        machine['age_years'] = 2025 - machine.get('manufacture_year', 2020)
+        mfg_year = machine.get('manufacture_year') or 2020
+        machine['age_years'] = max(0, _current_utc_year() - int(mfg_year))
         
         return jsonify(machine)
     except Exception:
