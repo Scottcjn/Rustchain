@@ -18,6 +18,7 @@ import os
 import sys
 import json
 import time
+import threading
 import sqlite3
 import tempfile
 import unittest
@@ -257,6 +258,49 @@ class TestRateLimiter(unittest.TestCase):
         # Should be allowed again
         allowed, next_available = self.rate_limiter.check_rate_limit('192.168.1.1', '0xwallet1')
         self.assertTrue(allowed)
+
+    def test_check_and_record_request_is_atomic_for_sqlite(self):
+        """Test concurrent check-and-record attempts reserve only one drip."""
+        self.config['rate_limit']['window_seconds'] = 86400
+        self.config['rate_limit']['max_requests'] = 1
+
+        attempts = 8
+        barrier = threading.Barrier(attempts)
+        outcomes = []
+        errors = []
+        lock = threading.Lock()
+
+        def worker():
+            try:
+                barrier.wait(timeout=5)
+                allowed, _ = self.rate_limiter.check_and_record_request(
+                    '192.168.1.50',
+                    '0xwallet-race',
+                    0.5,
+                )
+                with lock:
+                    outcomes.append(allowed)
+            except Exception as exc:
+                with lock:
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(attempts)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual([], errors)
+        self.assertEqual(attempts, len(outcomes))
+        self.assertEqual(1, sum(1 for allowed in outcomes if allowed))
+
+        conn = sqlite3.connect(self.temp_db.name)
+        c = conn.cursor()
+        c.execute('SELECT COUNT(*) FROM drip_requests')
+        count = c.fetchone()[0]
+        conn.close()
+
+        self.assertEqual(1, count)
 
 
 class TestDatabase(unittest.TestCase):
