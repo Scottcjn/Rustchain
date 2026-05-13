@@ -217,6 +217,34 @@ class TestOEmbedEndpoint(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("html", data)
 
+    def test_oembed_ignores_untrusted_forwarded_host(self):
+        """Untrusted forwarded hosts must not poison generated embed URLs."""
+        response = self.client.get(
+            "/oembed?url=https://bottube.ai/watch/demo-001",
+            headers={"X-Forwarded-Host": "evil.example"},
+            base_url="https://bottube.ai",
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("https://bottube.ai/embed/demo-001", data["html"])
+        self.assertNotIn("evil.example", data["html"])
+        self.assertNotIn("evil.example", data["thumbnail_url"])
+
+    def test_oembed_allows_trusted_forwarded_host(self):
+        """Trusted forwarded hosts remain supported for proxy deployments."""
+        self.app.config["TRUSTED_FORWARD_HOSTS"] = ["embed.bottube.ai"]
+
+        response = self.client.get(
+            "/oembed?url=https://bottube.ai/watch/demo-001",
+            headers={"X-Forwarded-Host": "embed.bottube.ai"},
+            base_url="https://internal.example",
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("https://embed.bottube.ai/embed/demo-001", data["html"])
+
 
 class TestWatchPage(unittest.TestCase):
     """Test suite for watch page with Share > Embed UI."""
