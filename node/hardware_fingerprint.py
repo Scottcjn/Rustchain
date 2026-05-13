@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+
 """
 RIP-PoA Hardware Fingerprint Collection
 ========================================
@@ -13,6 +15,7 @@ import statistics
 import struct
 import subprocess
 import time
+from datetime import datetime, timezone
 from typing import Dict, List, Tuple, Optional
 
 # Number of samples for each measurement
@@ -20,6 +23,10 @@ CLOCK_DRIFT_SAMPLES = 1000
 CACHE_TIMING_ITERATIONS = 100
 JITTER_SAMPLES = 500
 THERMAL_SAMPLES = 50
+
+
+def _current_utc_year() -> int:
+    return datetime.now(timezone.utc).year
 
 
 class HardwareFingerprint:
@@ -433,7 +440,7 @@ class HardwareFingerprint:
             release_year = 2023
         
         oracle["estimated_release_year"] = release_year
-        oracle["estimated_age_years"] = 2025 - release_year
+        oracle["estimated_age_years"] = max(0, _current_utc_year() - release_year)
         oracle["valid"] = "cpu_model" in oracle or "processor" in oracle
         
         return oracle
