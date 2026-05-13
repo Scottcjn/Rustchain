@@ -14,7 +14,9 @@ Security Features:
 
 import hashlib
 import json
+import os
 import socket
+import ssl
 import time
 import threading
 import queue
@@ -30,6 +32,63 @@ from ..config.chain_params import (
     PEER_TIMEOUT_SECONDS,
     SYNC_BATCH_SIZE,
 )
+
+
+P2P_TLS_CERT_ENV = "RC_P2P_TLS_CERT"
+P2P_TLS_KEY_ENV = "RC_P2P_TLS_KEY"
+P2P_TLS_CA_ENV = "RC_P2P_TLS_CA"
+P2P_REQUIRE_MTLS_ENV = "RC_P2P_REQUIRE_MTLS"
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+@dataclass(frozen=True)
+class MTLSConfig:
+    """mTLS material required before P2P traffic can be enabled."""
+
+    certfile: str
+    keyfile: str
+    cafile: str
+
+    @classmethod
+    def from_env(cls) -> "MTLSConfig":
+        return cls(
+            certfile=os.environ.get(P2P_TLS_CERT_ENV, "").strip(),
+            keyfile=os.environ.get(P2P_TLS_KEY_ENV, "").strip(),
+            cafile=os.environ.get(P2P_TLS_CA_ENV, "").strip(),
+        )
+
+    def missing_values(self) -> List[str]:
+        missing = []
+        if not self.certfile:
+            missing.append(P2P_TLS_CERT_ENV)
+        if not self.keyfile:
+            missing.append(P2P_TLS_KEY_ENV)
+        if not self.cafile:
+            missing.append(P2P_TLS_CA_ENV)
+        return missing
+
+    def missing_files(self) -> List[str]:
+        files = [self.certfile, self.keyfile, self.cafile]
+        return [path for path in files if path and not os.path.exists(path)]
+
+    def build_server_context(self) -> ssl.SSLContext:
+        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=self.cafile)
+        context.load_cert_chain(certfile=self.certfile, keyfile=self.keyfile)
+        context.verify_mode = ssl.CERT_REQUIRED
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        return context
+
+    def build_client_context(self) -> ssl.SSLContext:
+        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=self.cafile)
+        context.load_cert_chain(certfile=self.certfile, keyfile=self.keyfile)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        return context
 
 
 # =============================================================================
@@ -331,10 +390,19 @@ class NetworkManager:
         listen_port: int = DEFAULT_PORT,
         chain_id: int = 2718,
         validator_id: str = "",
+        mtls_config: Optional[MTLSConfig] = None,
+        require_mtls: Optional[bool] = None,
     ):
         self.listen_port = listen_port
         self.chain_id = chain_id
         self.validator_id = validator_id
+        self.require_mtls = (
+            _env_bool(P2P_REQUIRE_MTLS_ENV, True)
+            if require_mtls is None else require_mtls
+        )
+        self.mtls_config = mtls_config or MTLSConfig.from_env()
+        self._server_ssl_context: Optional[ssl.SSLContext] = None
+        self._client_ssl_context: Optional[ssl.SSLContext] = None
 
         self.peer_manager = PeerManager()
         self.message_handler = MessageHandler()
@@ -349,6 +417,29 @@ class NetworkManager:
 
         # Register default handlers
         self._register_default_handlers()
+
+    def _ensure_mtls_ready(self):
+        """Fail closed instead of silently starting a plaintext P2P node."""
+        if not self.require_mtls:
+            return
+
+        missing_values = self.mtls_config.missing_values()
+        if missing_values:
+            required = ", ".join(missing_values)
+            raise RuntimeError(
+                "P2P mTLS is required. Set "
+                f"{required}, or explicitly pass require_mtls=False for local tests."
+            )
+
+        missing_files = self.mtls_config.missing_files()
+        if missing_files:
+            missing = ", ".join(missing_files)
+            raise RuntimeError(f"P2P mTLS file(s) not found: {missing}")
+
+        if self._server_ssl_context is None:
+            self._server_ssl_context = self.mtls_config.build_server_context()
+        if self._client_ssl_context is None:
+            self._client_ssl_context = self.mtls_config.build_client_context()
 
     def _register_default_handlers(self):
         """Register default message handlers"""
@@ -411,6 +502,8 @@ class NetworkManager:
 
     def connect_to_peer(self, peer_id: PeerId) -> bool:
         """Initiate connection to a peer"""
+        self._ensure_mtls_ready()
+
         # Send HELLO message
         self.send_message(peer_id, MessageType.HELLO, {
             "version": PROTOCOL_VERSION,
@@ -454,6 +547,7 @@ class NetworkManager:
 
     def start(self):
         """Start the network manager"""
+        self._ensure_mtls_ready()
         self.running = True
         print(f"Network started on port {self.listen_port}")
 
