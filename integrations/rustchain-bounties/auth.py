@@ -20,8 +20,8 @@ def verify_webhook_signature(payload_bytes: bytes, signature_header: Optional[st
     """
     secret = os.environ.get("WEBHOOK_SECRET", "")
     if not secret:
-        # No secret configured — skip verification (development/local mode)
-        return True
+        # No secret configured means verification cannot succeed.
+        return False
 
     if not signature_header:
         return False
