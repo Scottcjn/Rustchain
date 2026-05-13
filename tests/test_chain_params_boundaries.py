@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Regression tests for RustChain chain parameter helpers."""
 
 import importlib.util
