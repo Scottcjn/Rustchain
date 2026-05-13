@@ -32,6 +32,10 @@ API_PORT = int(os.getenv('BOOT_CHIME_API_PORT', '8085'))
 DB_PATH = os.getenv('BOOT_CHIME_DB_PATH', 'proof_of_iron.db')
 SIMILARITY_THRESHOLD = float(os.getenv('BOOT_CHIME_THRESHOLD', '0.85'))
 CHALLENGE_TTL = int(os.getenv('BOOT_CHIME_CHALLENGE_TTL', '300'))
+MAX_AUDIO_UPLOAD_BYTES = int(
+    os.getenv('BOOT_CHIME_MAX_AUDIO_BYTES', str(10 * 1024 * 1024))
+)
+ALLOWED_AUDIO_MIME_TYPES = {'audio/wav', 'audio/x-wav', 'audio/wave'}
 
 # Initialize Proof-of-Iron system
 poi_system = ProofOfIron(
@@ -55,12 +59,47 @@ class JsonBodyError(ValueError):
     """Raised when a JSON endpoint receives a non-object body."""
 
 
+class AudioUploadError(ValueError):
+    """Raised when an uploaded boot-chime audio file is not acceptable."""
+
+    def __init__(self, message: str, status_code: int = 400):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def get_json_object() -> Dict[str, Any]:
     """Return the request JSON body when it is an object."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         raise JsonBodyError("JSON object required")
     return data
+
+
+def validate_audio_upload(audio_file, *, required: bool = True):
+    """Validate an uploaded boot-chime WAV before saving it to disk."""
+    if audio_file is None:
+        if required:
+            raise AudioUploadError("audio file required")
+        return None
+
+    mimetype = (audio_file.mimetype or audio_file.content_type or "").lower()
+    if mimetype not in ALLOWED_AUDIO_MIME_TYPES:
+        raise AudioUploadError("only WAV files accepted")
+
+    stream = audio_file.stream
+    stream.seek(0, os.SEEK_END)
+    size = stream.tell()
+    stream.seek(0)
+
+    if size > MAX_AUDIO_UPLOAD_BYTES:
+        raise AudioUploadError("file too large", 413)
+
+    header = stream.read(12)
+    stream.seek(0)
+    if len(header) < 12 or not header.startswith(b"RIFF") or header[8:12] != b"WAVE":
+        raise AudioUploadError("invalid WAV file")
+
+    return audio_file
 
 
 # ============= Health & Info =============
@@ -171,7 +210,7 @@ def submit_proof():
         # Load audio file if provided
         audio_data = None
         if 'audio' in request.files:
-            audio_file = request.files['audio']
+            audio_file = validate_audio_upload(request.files.get('audio'), required=False)
             with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
                 audio_file.save(tmp)
                 tmp_path = tmp.name
@@ -200,6 +239,8 @@ def submit_proof():
         
         return jsonify(result.to_dict()), status_code
         
+    except AudioUploadError as e:
+        return jsonify({'error': str(e)}), e.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -251,7 +292,7 @@ def enroll_miner():
         # Check if audio file provided
         audio_file = None
         if 'audio' in request.files:
-            audio = request.files['audio']
+            audio = validate_audio_upload(request.files.get('audio'), required=False)
             with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
                 audio.save(tmp)
                 audio_file = tmp.name
@@ -262,6 +303,8 @@ def enroll_miner():
         
         return jsonify(result.to_dict()), status_code
         
+    except AudioUploadError as e:
+        return jsonify({'error': str(e)}), e.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -425,10 +468,7 @@ def analyze_audio():
         }
     """
     try:
-        if 'audio' not in request.files:
-            return jsonify({'error': 'audio file required'}), 400
-        
-        audio_file = request.files['audio']
+        audio_file = validate_audio_upload(request.files.get('audio'), required=True)
         
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
             audio_file.save(tmp)
@@ -462,6 +502,8 @@ def analyze_audio():
         finally:
             os.unlink(tmp_path)
             
+    except AudioUploadError as e:
+        return jsonify({'error': str(e)}), e.status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
