@@ -7,6 +7,7 @@ Integrates with RustChain node for miner attestation.
 
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+import hmac
 import json
 import os
 import time
@@ -63,6 +64,37 @@ def get_json_object() -> Dict[str, Any]:
     return data
 
 
+def get_admin_key() -> str:
+    """Return the configured boot chime admin key."""
+    return os.getenv('BOOT_CHIME_ADMIN_KEY') or os.getenv('RC_ADMIN_KEY') or ''
+
+
+def get_request_admin_key() -> str:
+    """Return the admin key supplied with the current request."""
+    key = request.headers.get('X-Admin-Key', '')
+    if key:
+        return key
+
+    authorization = request.headers.get('Authorization', '')
+    if authorization.startswith('Bearer '):
+        return authorization.removeprefix('Bearer ').strip()
+
+    return ''
+
+
+def require_admin_key():
+    """Fail closed unless a configured admin key is supplied."""
+    expected_key = get_admin_key()
+    if not expected_key:
+        return jsonify({'error': 'BOOT_CHIME_ADMIN_KEY or RC_ADMIN_KEY not configured'}), 503
+
+    provided_key = get_request_admin_key()
+    if not hmac.compare_digest(provided_key, expected_key):
+        return jsonify({'error': 'unauthorized'}), 401
+
+    return None
+
+
 # ============= Health & Info =============
 
 @app.route('/health', methods=['GET'])
@@ -113,6 +145,10 @@ def issue_challenge():
             "expires_at": 1234567890
         }
     """
+    auth_error = require_admin_key()
+    if auth_error:
+        return auth_error
+
     try:
         data = get_json_object()
         miner_id = data.get('miner_id')
@@ -158,6 +194,10 @@ def submit_proof():
             "ttl_seconds": 86400
         }
     """
+    auth_error = require_admin_key()
+    if auth_error:
+        return auth_error
+
     try:
         miner_id = request.form.get('miner_id')
         challenge_id = request.form.get('challenge_id')
@@ -242,6 +282,10 @@ def enroll_miner():
             "confidence": 0.92
         }
     """
+    auth_error = require_admin_key()
+    if auth_error:
+        return auth_error
+
     try:
         miner_id = request.form.get('miner_id')
         
@@ -277,6 +321,10 @@ def capture_audio():
     
     Response: WAV file
     """
+    auth_error = require_admin_key()
+    if auth_error:
+        return auth_error
+
     try:
         duration = request.args.get('duration', default=5.0, type=float)
         trigger = request.args.get('trigger', default='false').lower() == 'true'
@@ -313,6 +361,10 @@ def revoke_attestation():
     Response:
         { "success": true, "message": "..." }
     """
+    auth_error = require_admin_key()
+    if auth_error:
+        return auth_error
+
     try:
         data = get_json_object()
         miner_id = data.get('miner_id')
